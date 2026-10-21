@@ -43,3 +43,15 @@ Layer split, checked against what is blocked:
 | FND-003 | medium | No test drives a bounded event (FR-189 "Per sample", ADR-018 SM-4) into a terminal model state inside its horizon, so SR-12245 FND-001 is not caught. Add a model-backed test over a model with a terminal state (for example `process` or the `Stop` fixture in `prob_world`). It should assert the closed-boundary value, and agree with EN-5's value for the same claim. | qsl-analyze/tests/it/statistical_model.rs |
 | FND-004 | low | The disclosed choices have no test: a probability bound over a measure that is not activated (choice 1), a zero-total weighted fraction (choice 2), a weighted fraction's `h + 1` draws (choice 3) and a bounded event over the automaton budget (choice 4). Once the owner rules on SR-12245 FND-002 to FND-004, each needs a test that pins the ruling. | qsl-analyze/src/statistical/model.rs:694-758 |
 | FND-005 | low | FR-192 "estimate" for a quantile claim reports "the empirical nearest-rank quantile of the counted samples beside it". This PR is the first to produce real measure values (`Sample::Measured.value`), but the tally keeps none, and the Remainder does not list the item. FR-192 has no AC on it, so it is a low. Add it to part 2b, or to QSL-571. | qsl-analyze/src/statistical.rs:530-547 |
+
+## Dispositions
+
+Round 1, reviewed at 640e6fdff (fix commit fdb1ee815, then a merge of origin/main).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Coordinator: the symmetry orbits and FR-189-AC-5's undecided successor on a real model move to QSL-570 part 2b / QSL-571 and will be noted on QSL-570. The two-initial-state clause of FR-189-AC-3 was done in fdb1ee815 (`World::with_initials`, `two_initial_states_run_two_interleaved_tests`: m = 2, α' = β' = 1/200, trace stride 2, witnesses of test j at trace ≡ j mod 2). |
+| FND-002 | fixed | fdb1ee815. FR-189-AC-1 now runs `Zero` (`<= 0`, which every activated sample violates) over the same seed and trace indices with `max_witnesses` `u32::MAX`. It asserts 23,026 witnesses, each with at most 10 steps, so every sample's position count is checked. |
+| FND-003 | fixed | fdb1ee815. `a_bounded_event_closes_at_a_terminal_state` drives a bounded event into `Process`'s terminal state inside the horizon and asserts the closed value (Rejected, estimate near 9/16, no stutter step after the terminal state). |
+| FND-004 | fixed | fdb1ee815. Choice 1 is pinned by `an_unactivated_measure_under_a_probability_bound_counts_against_it`, choice 2 by `a_weightless_fraction_is_an_undefined_sample`, and choice 4 by `an_automaton_over_its_limit_stops_and_a_refused_read_refuses` and the settle test. Choice 3 (the weighted `h + 1`-th draw) is covered only indirectly: the weightless test reads position 0's weight from the step that leaves it. That is acceptable for a low. |
+| FND-005 | deferred | Coordinator: FR-192's empirical nearest-rank quantile beside a quantile estimate moves to QSL-570 part 2b / QSL-571 and will be noted on QSL-570. FR-192 has no AC on it. |
