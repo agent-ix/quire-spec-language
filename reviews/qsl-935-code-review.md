@@ -80,7 +80,11 @@ fixing in this PR: FND-001 (medium) and FND-002 (low).
 
 ## Dispositions
 
-| FND | outcome | reason |
+Round 1, reviewed at `9a330c2e7` (the fix commit, after `origin/main` was
+merged in). Each row was checked against the fix commit's diff, not
+against the coder's claims.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | The dispatch-path test is tagged `QSpec-TC-196`, `QSpec-FR-151-AC-19` and the new `FR-120-AC-15`; it no longer carries bare `TC-196` or `FR-120-AC-9`. |
-| FND-002 | fixed | New FR-120-AC-15 states the reverse order (undefined clause first gives one finding, the false clause is not reached) and the dispatch path's name order in both source orders; the simulator test is tagged to it. |
+| FND-001 | fixed | 9a330c2e7: the dispatch test is now `#[trace("QSpec-TC-196", "QSpec-FR-151-AC-19", "FR-120-AC-15")]`. The bare `TC-196` and the `FR-120-AC-9` binding are gone, and the new FR-120-AC-15 states the dispatch-path case this test asserts. |
+| FND-002 | fixed | 9a330c2e7: the new FR-120-AC-15 states both name orders on the simulator path (undefined first gives one `ContractUndetermined` for `Aaa` and the false clause is not reached; false first gives none), and the dispatch path's name order with equal outcome and charges in both source orders. The simulator test is retagged to it. |

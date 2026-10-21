@@ -36,6 +36,9 @@ PASS with one medium gap, to fix in-PR. Nothing blocks.
 
 ## Dispositions
 
-| FND | outcome | reason |
+Round 1, reviewed at `9a330c2e7` (the fix commit, after `origin/main` was
+merged in). The row was checked against the fix commit's diff.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | FR-120 no longer says "None" under Remaining work. It states the order rule is verified for a one-unit package and keeps a Remaining-work entry for the split-unit variant, which has no QSL form today. A second entry says the nested-call undefined form stands in for D10's `lookup` / `absent-key`, and why that does not change the ordering check. |
+| FND-001 | fixed | 9a330c2e7: FR-120 now says the order rule is "verified for a package of one unit, FR-120-AC-15; see Remaining work". The Remaining-work section keeps two entries: the split-unit variant (no QSL form while a checked package is one unit), and the `absent-key` form (the nested-call undefined clause stands in, because the ordering and short-circuit do not depend on the reason). |
