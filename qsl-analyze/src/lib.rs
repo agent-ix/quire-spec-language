@@ -11,11 +11,14 @@
 //! [`statistical`] holds EN-4, statistical model checking of probabilistic
 //! claims (ADR-024 ST-1, FR-189 to FR-191).
 //!
+//! [`exact_probabilistic`] holds EN-5's probabilistic product (FR-196).
+//!
 //! [`schedulability`] holds EN-7, the closed-form schedulability engine
 //! (ADR-026 §12, FR-247).
 
 #![forbid(unsafe_code)]
 
+pub mod exact_probabilistic;
 pub mod model_check;
 pub mod schedulability;
 pub mod statistical;

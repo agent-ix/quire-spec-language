@@ -101,7 +101,20 @@ pub enum StepTargetForm {
 - S2 SHALL build the header's `abstract-subject` (QSpec FR-375) as
   `AbstractSideForm::Model(alias)` for an alias alone and as
   `AbstractSideForm::Protocol(alias, clause)` for `abstract <A>::<protocol>`.
-  Whether the clause resolves is S3's (FR-147; ADR-020 QS-11).
+  Whether the clause resolves is S3's (FR-147; ADR-020 QS-11). The header
+  is QSpec FR-375's `abstract-subject = ident, [ '::', member-name ]`
+  production (the shared grammar's refinement header). S2 builds the
+  concrete side as one model alias and never as a protocol: the concrete
+  protocol is selected by the step rows (FR-136), which S2 builds
+  unclassified.
+- S1 SHALL refuse a header spelling outside that production, as QSpec
+  FR-375-AC-11 states, with `invalid_syntax`/`unexpected-token` at the
+  token it names: a third segment (`abstract Spec::Twice::finish concrete
+  Impl`, at the second `::`), a leading `::` (at the `::`), a trailing `::`
+  before `concrete` (`abstract Spec:: concrete Impl`, at `Impl`, because
+  `concrete` is read as the protocol name), a trailing `::` before `{`
+  (at the `{`), and a protocol name that is not a `member-name`
+  (`abstract Spec::1`, at the `1`).
 - S2 SHALL build each field row's right side, each step-row argument and
   each history update as an expression form as written, the
   population-valued forms (FR-139) included, and an open argument `_` as
@@ -120,9 +133,10 @@ pub enum StepTargetForm {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-310-AC-1 | ADR-020 §8's `CasRefinesCounter` builds one `RefinementForm` with abstract side `Model(Spec)`, concrete `Impl`, and its population, object, seven step, `assume` and `ensure` rows in source order, each with its span; the `ensure` row's granularity is `each` as written. | Test (TC-889) |
-| FR-310-AC-2 | `RingIsQueue`'s `items` row builds its `seq` and `only` forms as expression forms, and `put -> enq(self.ring, _)` builds `Apply` with arguments `[self.ring, Open]`. FR-147's `CasTwice` builds abstract side `Protocol(Spec, Twice)`; a protocol step row `step fork Impl::P::par -> node Spec::Twice::a1;` builds a `Named` source of kind `fork` and a `Node` target; `step Impl::P::a::S -> stutter;` builds a `Named` source with no kind, whichever class the name later resolves to. | Test (TC-889) |
+| FR-310-AC-2 | `RingIsQueue`'s `items` row builds its `seq` and `only` forms as expression forms, and `put -> enq(self.ring, _)` builds `Apply` with arguments `[self.ring, Open]`. FR-147's `CasTwice`, whose header is `abstract Spec::Twice concrete Impl`, builds abstract side `Protocol(Spec, Twice)` from source and concrete side `Impl`; a protocol step row `step fork Impl::P::par -> node Spec::Twice::a1;` builds a `Named` source of kind `fork` and a `Node` target; `step Impl::P::a::S -> stutter;` builds a `Named` source with no kind, whichever class the name later resolves to. | Test (TC-889) |
 | FR-310-AC-3 | A declaration whose abstract alias names no model, and one with a duplicate `population` row, both build forms; the refusals come from S3 (FR-135-AC-2). | Test (TC-889) |
 | FR-310-AC-4 | A history row with initial `-3`, `true`, `none`, `"a"`, `rational(1, 2)` and `Impl::Mode::idle` builds `Integer`, `Boolean`, `None`, `Text`, `Exact` and `EnumMember` literal forms respectively, with no expression form; a fairness row `assume fair strong Impl::Counter::retryA;` builds kind `Strong` with granularity absent. | Test (TC-889) |
+| FR-310-AC-5 | The headers `abstract Spec::Twice concrete Impl` and `abstract Spec concrete Impl` build `Protocol(Spec, Twice)` and `Model(Spec)`; `abstract Spec::Twice::finish concrete Impl`, `abstract ::Twice concrete Impl`, `abstract Spec:: concrete Impl {`, `abstract Spec:: {` and `abstract Spec::1 concrete Impl` each refuse `invalid_syntax`/`unexpected-token` at the second `::`, the `::`, `Impl`, the `{` and the `1`, and build no form. | Test (TC-889) |
 
 ## Dependencies
 
