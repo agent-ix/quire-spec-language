@@ -12,6 +12,9 @@
 //!   of a bounded request's obligation identity, never a resource limit.
 //! - [`IntervalKey`] is QSpec FR-255's key of one bounded temporal interval,
 //!   in its wire form, so `qsl-replay` can name it.
+//! - [`TimedInterval`] is QSL FR-234's validated timed interval, exact
+//!   rational bounds with open or closed ends, and [`TimedIntervalKey`] its
+//!   QSpec FR-255 key with the ends' openness.
 //!
 //! ADR-014 §1: no value of another bound kind converts into these types.
 //! This module defines no `From`/`TryFrom` from an authored bound (B-1), an
@@ -25,7 +28,7 @@
 use std::fmt;
 use std::num::NonZeroU64;
 
-use quire_exact::{EmptyInterval, Integer, IntegerInterval};
+use quire_exact::{EmptyInterval, Integer, IntegerInterval, Rational};
 
 use crate::digest::WireNodeId;
 use crate::selection::DefinitionRef;
@@ -455,6 +458,154 @@ impl TemporalInterval {
     }
 }
 
+/// A validated timed interval (QSL FR-234, ADR-026 DF-2): exact rational
+/// bounds `0 <= lower <= upper` in the clock binding's time unit, each end
+/// closed or open, an open end only with `lower < upper`. [`Self::new`] is
+/// the only constructor.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TimedInterval {
+    lower: Rational,
+    lower_closed: bool,
+    upper: Rational,
+    upper_closed: bool,
+}
+
+/// Why [`TimedInterval::new`] refused its bounds: one of FR-234's
+/// `invalid_timed_model`/`invalid-interval` conditions.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
+pub enum InvalidTimedInterval {
+    /// The lower bound is below zero.
+    #[error("a timed interval's lower bound is negative")]
+    NegativeLower,
+    /// `lower > upper`.
+    #[error("a timed interval's lower bound exceeds its upper bound")]
+    Inverted,
+    /// `lower = upper` with an open end: the interval holds no offset.
+    #[error("a timed interval with equal bounds has an open end")]
+    EmptyOpenEnd,
+}
+
+impl TimedInterval {
+    /// The interval with `lower` and `upper`, each end closed when its flag
+    /// is `true`, refusing a negative lower bound, `lower > upper`, and an
+    /// open end with `lower = upper` (FR-234 "Behavior").
+    pub fn new(
+        lower: Rational,
+        lower_closed: bool,
+        upper: Rational,
+        upper_closed: bool,
+    ) -> Result<Self, InvalidTimedInterval> {
+        if lower < Rational::from_integer(Integer::zero()) {
+            return Err(InvalidTimedInterval::NegativeLower);
+        }
+        match lower.cmp(&upper) {
+            std::cmp::Ordering::Greater => return Err(InvalidTimedInterval::Inverted),
+            std::cmp::Ordering::Equal if !(lower_closed && upper_closed) => {
+                return Err(InvalidTimedInterval::EmptyOpenEnd)
+            }
+            std::cmp::Ordering::Equal | std::cmp::Ordering::Less => {}
+        }
+        Ok(Self {
+            lower,
+            lower_closed,
+            upper,
+            upper_closed,
+        })
+    }
+
+    /// The lower bound.
+    pub fn lower(&self) -> &Rational {
+        &self.lower
+    }
+
+    /// Whether the lower end is closed.
+    pub fn lower_closed(&self) -> bool {
+        self.lower_closed
+    }
+
+    /// The upper bound.
+    pub fn upper(&self) -> &Rational {
+        &self.upper
+    }
+
+    /// Whether the upper end is closed.
+    pub fn upper_closed(&self) -> bool {
+        self.upper_closed
+    }
+
+    /// Whether the interval is punctual: `lower = upper`, both ends closed
+    /// (ADR-026 DF-2).
+    pub fn is_punctual(&self) -> bool {
+        self.lower == self.upper
+    }
+
+    /// Whether the time-stamp difference `offset` lies in the interval,
+    /// read with each end's openness, in exact arithmetic.
+    pub fn contains(&self, offset: &Rational) -> bool {
+        let above = match offset.cmp(&self.lower) {
+            std::cmp::Ordering::Greater => true,
+            std::cmp::Ordering::Equal => self.lower_closed,
+            std::cmp::Ordering::Less => false,
+        };
+        above && self.admits_at_most(offset)
+    }
+
+    /// Whether some offset of the interval is at least `offset`.
+    pub fn reaches(&self, offset: &Rational) -> bool {
+        match self.upper.cmp(offset) {
+            std::cmp::Ordering::Greater => true,
+            std::cmp::Ordering::Equal => self.upper_closed,
+            std::cmp::Ordering::Less => false,
+        }
+    }
+
+    fn admits_at_most(&self, offset: &Rational) -> bool {
+        match offset.cmp(&self.upper) {
+            std::cmp::Ordering::Less => true,
+            std::cmp::Ordering::Equal => self.upper_closed,
+            std::cmp::Ordering::Greater => false,
+        }
+    }
+
+    /// This interval's QSpec FR-255 key under `profile` and
+    /// `clock_binding`: its bounds and each end's openness, so `[a, b)` and
+    /// `[a, b]` have different keys.
+    pub fn key(&self, profile: DefinitionRef, clock_binding: WireNodeId) -> TimedIntervalKey {
+        TimedIntervalKey {
+            interval: self.clone(),
+            profile,
+            clock_binding,
+        }
+    }
+}
+
+/// QSpec FR-255's key of one timed interval: its bounds with each end's
+/// openness, the selected profile identity and the clock binding (QSL
+/// FR-234-AC-2). Equality is componentwise.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct TimedIntervalKey {
+    interval: TimedInterval,
+    profile: DefinitionRef,
+    clock_binding: WireNodeId,
+}
+
+impl TimedIntervalKey {
+    /// The interval the key names.
+    pub fn interval(&self) -> &TimedInterval {
+        &self.interval
+    }
+
+    /// The selected temporal profile.
+    pub fn profile(&self) -> &DefinitionRef {
+        &self.profile
+    }
+
+    /// The clock-binding node the bounds count under.
+    pub fn clock_binding(&self) -> WireNodeId {
+        self.clock_binding
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// FR-097-AC-9: a proof bound exists only with the kind its variant
@@ -624,5 +775,57 @@ mod tests {
         assert_ne!(key, IntervalKey::new(0, 4, profile(), node(8)).unwrap());
         assert_ne!(key, IntervalKey::new(1, 4, profile(), node(9)).unwrap());
         assert_eq!((key.lower(), key.upper()), (0, 4));
+    }
+
+    fn ratio(numerator: i64, denominator: i64) -> Rational {
+        Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()
+    }
+
+    /// FR-234 "Behavior": a timed interval admits `0 <= a <= b`, refusing a
+    /// negative lower bound, `a > b` and an open end with `a = b`; `[a, a]`
+    /// is punctual; membership and reach read each end's openness exactly;
+    /// the FR-255 key tells `[a, b)` from `[a, b]`.
+    #[trace("TC-689", "FR-234")]
+    #[test]
+    fn a_timed_interval_validates_its_bounds_and_reads_each_end() {
+        let (zero, two, three) = (ratio(0, 1), ratio(2, 1), ratio(3, 1));
+        assert_eq!(
+            TimedInterval::new(ratio(-1, 2), true, two.clone(), true),
+            Err(InvalidTimedInterval::NegativeLower)
+        );
+        assert_eq!(
+            TimedInterval::new(three.clone(), true, two.clone(), true),
+            Err(InvalidTimedInterval::Inverted)
+        );
+        for (lower_closed, upper_closed) in [(false, true), (true, false), (false, false)] {
+            assert_eq!(
+                TimedInterval::new(two.clone(), lower_closed, two.clone(), upper_closed),
+                Err(InvalidTimedInterval::EmptyOpenEnd)
+            );
+        }
+        let punctual = TimedInterval::new(two.clone(), true, two.clone(), true).unwrap();
+        assert!(punctual.is_punctual());
+        assert!(punctual.contains(&two));
+        assert!(!punctual.contains(&ratio(201, 100)));
+
+        let right_open = TimedInterval::new(zero.clone(), true, three.clone(), false).unwrap();
+        assert!(!right_open.is_punctual());
+        assert!(right_open.contains(&zero));
+        assert!(right_open.contains(&ratio(299, 100)));
+        assert!(!right_open.contains(&three));
+        assert!(right_open.reaches(&ratio(299, 100)));
+        assert!(!right_open.reaches(&three));
+        let left_open = TimedInterval::new(ratio(1, 1), false, three.clone(), true).unwrap();
+        assert!(!left_open.contains(&ratio(1, 1)));
+        assert!(left_open.contains(&three));
+        assert!(left_open.reaches(&three));
+        assert!(!left_open.reaches(&ratio(301, 100)));
+
+        let closed = TimedInterval::new(zero, true, three, true).unwrap();
+        assert_ne!(
+            right_open.key(profile(), node(1)),
+            closed.key(profile(), node(1))
+        );
+        assert_eq!(closed.key(profile(), node(1)).interval(), &closed);
     }
 }

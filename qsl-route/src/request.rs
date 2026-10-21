@@ -49,9 +49,9 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
-use qsl_semantics::family::{ClaimExtent, Requirements};
+use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 
-use crate::{CandidateOutcome, Registry};
+use crate::{CandidateOutcome, CandidateSet, Registry};
 use qsl_foundation::BackendId;
 
 /// An item's QSpec FR-331 extent classification (QSpec FR-290 `bounded`/
@@ -99,6 +99,7 @@ pub struct RequestItem {
     kind: Capability,
     extent: ExtentClassification,
     domains: Vec<ProofBound>,
+    unsupported: Option<UnsupportedItem>,
 }
 
 impl RequestItem {
@@ -133,6 +134,13 @@ impl RequestItem {
     /// item requested without bounds.
     pub fn domains(&self) -> &[ProofBound] {
         &self.domains
+    }
+
+    /// The cause the writer disposed the item `Unsupported` for, routing it
+    /// to no engine (FR-234 "Punctuality"); `None` for an item negotiation
+    /// settles.
+    pub fn unsupported(&self) -> Option<&UnsupportedItem> {
+        self.unsupported.as_ref()
     }
 }
 
@@ -210,7 +218,7 @@ impl RequestWriter {
     /// the checked extent alone.
     pub fn item(&mut self, occurrence: OccurrenceKey, requirements: &Requirements) -> RequestIndex {
         let extent = ExtentClassification::of(requirements.extent());
-        self.push(occurrence, requirements.kind(), extent, Vec::new())
+        self.push(occurrence, requirements, extent, Vec::new())
     }
 
     /// Write the bounded item for the claim at `occurrence` with
@@ -240,7 +248,7 @@ impl RequestWriter {
         let domains = substitute(&unbounded, &bounds)?;
         Ok(self.push(
             occurrence,
-            requirements.kind(),
+            requirements,
             ExtentClassification::Bounded,
             domains,
         ))
@@ -259,7 +267,7 @@ impl RequestWriter {
     fn push(
         &mut self,
         occurrence: OccurrenceKey,
-        kind: Capability,
+        requirements: &Requirements,
         extent: ExtentClassification,
         domains: Vec<ProofBound>,
     ) -> RequestIndex {
@@ -267,9 +275,10 @@ impl RequestWriter {
         self.items.push(RequestItem {
             index,
             occurrence,
-            kind,
+            kind: requirements.kind(),
             extent,
             domains,
+            unsupported: requirements.unsupported().cloned(),
         });
         index
     }
@@ -344,6 +353,7 @@ pub struct RequirementItem {
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
     candidates: CandidateOutcome,
+    unsupported: Option<UnsupportedItem>,
 }
 
 impl RequirementItem {
@@ -456,6 +466,13 @@ impl RequirementItem {
     pub fn candidates(&self) -> &CandidateOutcome {
         &self.candidates
     }
+
+    /// The cause the writer disposed the item `Unsupported` for (FR-234
+    /// "Punctuality"); such an item has no candidate, so it is routed to no
+    /// engine.
+    pub fn unsupported(&self) -> Option<&UnsupportedItem> {
+        self.unsupported.as_ref()
+    }
 }
 
 /// The requested items of a checked package's requirement `records`
@@ -496,18 +513,23 @@ pub fn items_from_requirements(
                 conversion_context: record.conversion_context().cloned(),
                 path_condition: record.path_condition().to_vec(),
                 candidates: candidates_of(requirements, registry, named),
+                unsupported: requirements.unsupported().cloned(),
             }
         })
         .collect()
 }
 
 /// The candidate outcome of one item's `requirements`: backends of its
-/// capability kind that advertise every fairness kind it uses (FR-134).
+/// capability kind that advertise every fairness kind it uses (FR-134). An
+/// item the writer disposes `Unsupported` has no candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,
     registry: &Registry,
     named: Option<&BackendId>,
 ) -> CandidateOutcome {
+    if requirements.unsupported().is_some() {
+        return CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named));
+    }
     registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness())
 }
 
@@ -879,5 +901,53 @@ mod tests {
             panic!("a candidate outcome");
         };
         assert_eq!(plain.candidates().len(), 2);
+    }
+
+    /// FR-234 "Punctuality": the writer disposes an item whose requirements
+    /// carry `PunctualInterval` `Unsupported`, naming the interval's span,
+    /// and gives it no candidate though a backend advertises its kind; the
+    /// same item without the cause keeps that backend.
+    #[trace("TC-689", "FR-234-AC-3")]
+    #[test]
+    fn a_punctual_item_is_disposed_unsupported_and_routed_to_no_engine() {
+        use crate::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+        use qsl_semantics::family::UnsupportedItem;
+
+        let mut registry = Registry::new();
+        registry
+            .register(
+                BackendDescriptor::new(
+                    Candidate::new(BackendId::new("zones")),
+                    ProviderOrigin::Linked,
+                    ManifestDigest::from_digest([3; 32]),
+                    [(Capability::TemporalSatisfaction, Mode::Unbounded)],
+                    None,
+                )
+                .expect("a well-formed descriptor"),
+            )
+            .expect("admitted");
+        let cause = UnsupportedItem::PunctualInterval {
+            span: qsl_foundation::Span { start: 4, end: 16 },
+        };
+        let plain = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+        let punctual = plain.clone().with_unsupported(cause.clone());
+
+        let mut writer = RequestWriter::new();
+        writer.item(occurrence(), &punctual);
+        writer.item(occurrence(), &plain);
+        let [disposed, negotiated] = writer.items() else {
+            panic!("two items");
+        };
+        assert_eq!(disposed.unsupported(), Some(&cause));
+        assert_eq!(negotiated.unsupported(), None);
+
+        let CandidateOutcome::Candidates(none) = candidates_of(&punctual, &registry, None) else {
+            panic!("a candidate outcome");
+        };
+        assert!(none.candidates().is_empty());
+        let CandidateOutcome::Candidates(some) = candidates_of(&plain, &registry, None) else {
+            panic!("a candidate outcome");
+        };
+        assert_eq!(some.candidates(), [Candidate::new(BackendId::new("zones"))]);
     }
 }

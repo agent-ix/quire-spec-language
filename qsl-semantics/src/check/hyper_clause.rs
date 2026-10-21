@@ -41,7 +41,7 @@ use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{population_of, PopulationDomain};
 use super::temporal_clause::{
     build_formula, checked_constraint, checked_operators, in_safety_fragment, CheckedFormula,
-    CheckedOperator, TemporalClaim, TemporalDeclarations, TemporalSelection,
+    CheckedOperator, IntervalReading, TemporalClaim, TemporalDeclarations, TemporalSelection,
 };
 #[cfg(any(test, feature = "test-support"))]
 use super::Scope;
@@ -923,7 +923,11 @@ fn check_behaviours(
     // them. A clause under another profile records its profile and no form,
     // so no bounded-profile rule applies to it here.
     let mut temporal_causes: Vec<TemporalCause> = Vec::new();
-    let operators = checked_operators(&form.body, false, &mut temporal_causes)?;
+    let (operators, _) = checked_operators(
+        &form.body,
+        &IntervalReading::Steps { bounded: false },
+        &mut temporal_causes,
+    )?;
     found.extend(temporal_causes.into_iter().map(Found::Temporal));
     let atom_roots = || -> BTreeMap<&str, Root> {
         parameters
@@ -993,7 +997,7 @@ fn check_behaviours(
 
     let intervals: BTreeMap<_, _> = operators
         .iter()
-        .map(|operator| (operator.node, operator.interval))
+        .map(|operator| (operator.node, operator.interval.clone()))
         .collect();
     let body = build_formula(&form.body, &intervals)?;
 
@@ -2397,6 +2401,12 @@ pub fn check_hyper_clauses(
             embedding: None,
             position_limit: 10_000,
             models: &package.models,
+            // A hyper body reads step intervals only.
+            timed: super::temporal_clause::TimedContext {
+                units: &super::time_units::TimeUnits::default(),
+                time_sources: &[],
+                rational_bits: 0,
+            },
         },
         models: &package.models,
         // The helper checks clauses over no declared function.

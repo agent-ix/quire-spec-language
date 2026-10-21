@@ -36,7 +36,8 @@ use crate::check::node_key::{
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::temporal_clause::condition::TypedCondition;
 use crate::check::temporal_clause::{
-    BinaryTemporal, CheckedTemporalClause, FormulaNode, FormulaNodeId, UnaryTemporal,
+    BinaryTemporal, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
+    UnaryTemporal,
 };
 use crate::value::member::Member;
 
@@ -258,7 +259,7 @@ impl Lowering<'_> {
                 } => (
                     unary_identity(*operator),
                     Some(Member::TemporalInterval {
-                        interval: *interval,
+                        interval: step_interval(interval.as_ref(), &location)?,
                     }),
                     vec![operand(*only)?],
                 ),
@@ -270,7 +271,7 @@ impl Lowering<'_> {
                 } => (
                     binary_identity(*operator),
                     Some(Member::TemporalInterval {
-                        interval: *interval,
+                        interval: step_interval(interval.as_ref(), &location)?,
                     }),
                     vec![operand(*left)?, operand(*right)?],
                 ),
@@ -334,4 +335,18 @@ fn stage_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
         location,
         KeyFault::StageFault(qsl_foundation::InternalFault::new(STAGE, invariant)),
     )
+}
+
+/// A checked operator's step interval as S4 writes it. A timed interval
+/// never reaches S4: `temporal_clause::is_emitted` refuses a
+/// clause under the timed profile before lowering.
+fn step_interval(
+    interval: Option<&CheckedInterval>,
+    location: &Location,
+) -> Result<Option<qsl_foundation::bound::TemporalInterval>, CheckRefusal> {
+    match interval {
+        None => Ok(None),
+        Some(CheckedInterval::Steps(interval)) => Ok(Some(*interval)),
+        Some(CheckedInterval::Timed(_)) => Err(stage_fault(location, "timed-clause-not-lowered")),
+    }
 }

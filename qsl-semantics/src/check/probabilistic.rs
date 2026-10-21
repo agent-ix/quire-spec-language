@@ -28,6 +28,7 @@
 
 mod claim;
 mod exact;
+pub(crate) use exact::{value as exact_value, ExactFault};
 mod model;
 
 pub use claim::{
@@ -649,6 +650,11 @@ fn exact_refusal(
             limit_refusal(Excess { bits, ceiling }, location)
         }
     }
+}
+
+/// The refusal of an exact value at `span` written `rational(n, 0)`.
+pub(crate) fn zero_denominator(span: Span) -> CheckRefusal {
+    refusal(ProbabilisticCause::ZeroDenominator { span })
 }
 
 /// A quantity literal's magnitude, reduced, or the refusal it is at
