@@ -66,7 +66,9 @@ not reflexive for population arguments.
 
 ## Dispositions
 
-| Finding | Disposition |
-| --- | --- |
-| FND-001 | fixed: `associate` checks the owner with the new `CheckedGraph::declares_function`, which includes clause-built functions. FR-062 "Owner" and FR-395 "Broken ownership" now say a function synthesized from an operation `body` or `pre` clause is a function of the package; new FR-395-AC-12 and TC-1089 step 8 are tested by `a_clause_function_is_a_known_owner_and_no_fault` in `qsl-replay/tests/dispatch_link_compile.rs`, which faulted before the fix. |
-| FND-002 | fixed: `same_call` compares values with the kernel's `planned_equality` (a population by its id, since the kernel refuses a population pair); the doc comment is corrected; `a_population_argument_is_equal_to_itself_and_not_to_another` covers it. |
+Round 1, reviewed at 7218f53c928b4de8adfc52f538348793099d1381. Each fix was verified against the code at that sha. `cargo test -p qsl-replay --test dispatch_link_compile`: 14 passed, including `a_clause_function_is_a_known_owner_and_no_fault`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7218f53c9. `associate` now checks `graph.declares_function(name)`, a new `CheckedGraph` accessor over every declared function, clause-built ones included. FR-062 "Owner" and FR-395 "Broken ownership" now state that a function synthesized from a `body` or `pre` clause is a function of the package. The new FR-395-AC-12 and TC-1089 step 8 are tested by the repro unit, which asserts that the owner is declared but not callable, and that `inc` completes with one member. |
+| FND-002 | fixed | 7218f53c9. `same_call` uses `same_value`: population by id, everything else by `planned_equality` with unlimited accounting. The doc comment is corrected. `a_population_argument_is_equal_to_itself_and_not_to_another` covers it. |

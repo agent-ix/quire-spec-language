@@ -49,7 +49,9 @@ that finding's fix, not repeated here.
 
 ## Dispositions
 
-| Finding | Disposition |
-| --- | --- |
-| FND-001 | fixed: the FR-062-AC-14 owner test now also checks RR-14's unit. |
-| FND-002 | fixed by amending the spec: FR-062-AC-14 and TC-1089 step 6 now name the ConfigVersion `post Q using v on Config::ConfigVersion::attemptUpdate` vector the test runs. |
+Round 1, reviewed at 7218f53c928b4de8adfc52f538348793099d1381. Each fix was verified against the code and spec at that sha.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7218f53c9. The owner test now chains RR-14's unit (`function all_positive ... { forall(v in s: v + 1 > 0) }`) onto `fixtures()`. |
+| FND-002 | fixed | 7218f53c9. FR-062-AC-14 and TC-1089 step 6 now name the `post Q using v on Config::ConfigVersion::attemptUpdate { true }` vector that the test runs. |
