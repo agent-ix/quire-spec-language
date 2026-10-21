@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1090 (FR-396-AC-2 to FR-396-AC-4): `compile_admitted`'s context holds
-//! every record and tuple declaration the check admitted, with the keys the
+//! every record, tuple and union declaration the check admitted, with the keys the
 //! spine's own checked graph minted, and refuses as typed. Only the oracle
 //! that produces the expected keys runs the spine directly. FR-396-AC-1 (the
 //! crate root alone) is `admitted_composite_root_only.rs`.
@@ -15,24 +15,29 @@ use qsl_replay::{
 };
 use std::collections::BTreeSet;
 
-use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm, NodeTag};
+use qsl_semantics::check::{mint_union_member_key, CheckedGraph, NodeTag};
+use qsl_semantics::value::enumeration::mint_union_variant_id;
 use quire_exact::Cancel;
-use quire_exact::ValueType;
+use quire_exact::{ValueType, VariantId};
 use quire_semantic_value::declaration::CompositeShape;
 
 const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
-// Two same-shaped records and two same-shaped tuples, plus an enum, a union
-// and a function: the nodes a composite lookup refuses as the wrong kind.
+// Two same-shaped records, tuples and unions, a union with a record payload,
+// an enum and functions: the enum and the functions are the nodes a composite
+// lookup refuses as the wrong kind.
 const UNIT: &str = "record Left { a: Boolean; b: Boolean; }\n\
      record Right { a: Boolean; b: Boolean; }\n\
      tuple First(Boolean, Boolean);\n\
      tuple Second(Boolean, Boolean);\n\
      enum Color { BLUE, RED }\n\
      union Shape { Empty, Circle(Integer) }\n\
+     union Twin { Empty, Circle(Integer) }\n\
+     union Holder { Nothing, Has(Left, Boolean) }\n\
+     union Nest { Flat, Deep(Shape, Holder) }\n\
      function is_blue using v(c: Color): Boolean pure { false }\n\
      function uses_left using v(x: Left): Boolean pure { x.a }\n";
-const POINTS: &str = "record Point { x: Boolean; }\n";
+const POINTS: &str = "record Point { x: Boolean; }\nunion Pick { A, B(Point) }\n";
 
 fn unit_identity() -> SourceIdentity {
     SourceIdentity::new("a", "u", "git", "1")
@@ -107,14 +112,20 @@ fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
 /// not from the checked type nodes the facade reads.
 type Expected = (NodeKey, NodeKey, String, AdmittedCompositeForm);
 
-/// Every record and tuple declaration of `graph`, ascending by node id.
+/// A union member as the producer's own minting gives it: the member name,
+/// the `VariantId` of the FR-441 key over the union's node id, and the
+/// payload position types from the checked `TypeEnvironment`.
+type ExpectedMember = (String, VariantId, Vec<ValueType>);
+
+/// Every record, tuple and union declaration of `graph`, ascending by node
+/// id.
 fn spine_composites(graph: &CheckedGraph) -> Vec<Expected> {
     let mut composites = Vec::new();
     for declaration in graph.scope().types().composites() {
         let form = match declaration.shape() {
             CompositeShape::Record(_) => AdmittedCompositeForm::Record,
             CompositeShape::Tuple(_) => AdmittedCompositeForm::Tuple,
-            CompositeShape::Union(_) => continue,
+            CompositeShape::Union(_) => AdmittedCompositeForm::Union,
         };
         let name = declaration.name().to_owned();
         let node = graph
@@ -153,7 +164,10 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
     });
     let mut names: Vec<_> = expected.iter().map(|(.., name, _)| name.as_str()).collect();
     names.sort_unstable();
-    assert_eq!(names, ["First", "Left", "Right", "Second"]);
+    assert_eq!(
+        names,
+        ["First", "Holder", "Left", "Nest", "Right", "Second", "Shape", "Twin"]
+    );
 
     let admitted = admit(&text, &DependencyInput::default());
     let context = admitted.context();
@@ -185,7 +199,7 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
     assert_ne!(left.key(), left.node());
 
     let keys: BTreeSet<_> = expected.iter().map(|(_, key, ..)| *key).collect();
-    assert_eq!(keys.len(), 4, "each declaration has its own key");
+    assert_eq!(keys.len(), 8, "each declaration has its own key");
 
     for (node, key, ..) in &expected {
         let first = context.composite_declaration(wire(*node)).expect("found");
@@ -199,8 +213,8 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
     assert_eq!(again, first);
 }
 
-/// An id nobody admitted is `Unknown`; an enum, a union and a function of
-/// this package are `WrongKind`; no lookup returns a partial value.
+/// An id nobody admitted is `Unknown`; an enum and a function of this
+/// package are `WrongKind`; no lookup returns a partial value.
 #[trace("TC-1090", "FR-396-AC-3")]
 #[test]
 fn composite_lookups_refuse_unknown_and_wrong_kind_ids() {
@@ -222,29 +236,149 @@ fn composite_lookups_refuse_unknown_and_wrong_kind_ids() {
         Err(AdmittedLookupRefusal::WrongKind { declaration: color })
     );
 
-    // The union's checked type node and the function's node, from the
-    // spine's own graph.
-    let (union, function) = with_spine_graph(&format!("{HEADER}{UNIT}"), |graph| {
-        let union = graph
-            .checked_type_nodes()
-            .find_map(|type_node| match type_node {
-                CheckedTypeNode::Composite {
-                    node,
-                    form: CompositeForm::Union,
-                    ..
-                } => Some(*node),
-                _ => None,
-            })
-            .expect("the union's node");
-        let function = graph.function_identity("is_blue").expect("the function");
-        (union, function)
+    let function = with_spine_graph(&format!("{HEADER}{UNIT}"), |graph| {
+        graph.function_identity("is_blue").expect("the function")
     });
-    for id in [wire(union), wire(function)] {
-        assert_eq!(
-            context.composite_declaration(id),
-            Err(AdmittedLookupRefusal::WrongKind { declaration: id })
-        );
+    let id = wire(function);
+    assert_eq!(
+        context.composite_declaration(id),
+        Err(AdmittedLookupRefusal::WrongKind { declaration: id })
+    );
+}
+
+/// The oracle for a union's members: the member keys the producer mints over
+/// the union's node id, retyped as `VariantId`s, with the payload types the
+/// checked `TypeEnvironment` declares, read independently of the facade.
+fn spine_members(graph: &CheckedGraph, name: &str) -> (NodeKey, Vec<ExpectedMember>) {
+    let types = graph.scope().types();
+    let declaration = types
+        .composites()
+        .find(|declaration| declaration.name() == name)
+        .expect("the union");
+    let node = types.union_key(declaration.key()).expect("sealed");
+    let CompositeShape::Union(members) = declaration.shape() else {
+        panic!("{name} is a union");
+    };
+    let members = members
+        .iter()
+        .map(|member| {
+            let minted =
+                mint_union_variant_id(mint_union_member_key(node, member.identifier().as_str()));
+            // The sealed environment's own binding agrees with the minting.
+            let sealed = types
+                .union_member_named(declaration.key(), member.identifier().as_str())
+                .and_then(|(_, declared)| declared.member())
+                .expect("a sealed member");
+            assert_eq!(sealed.variant(), minted);
+            (
+                member.identifier().as_str().to_owned(),
+                minted,
+                member.positions().to_vec(),
+            )
+        })
+        .collect();
+    (node, members)
+}
+
+/// A union is found by its `composite_type` node id with its kernel key and
+/// every member's `VariantId` and payload in declared order; two same-shaped
+/// unions have distinct keys and member ids; a record payload position is
+/// `ValueType::Composite` of the record's admitted key.
+#[trace("TC-1090", "FR-396-AC-6", "FR-396-AC-8")]
+#[test]
+fn union_members_are_the_producers_minted_variants_in_declared_order() {
+    let text = format!("{HEADER}{UNIT}");
+    let admitted = admit(&text, &DependencyInput::default());
+    let context = admitted.context();
+    let by_name = |name: &str| {
+        context
+            .composites()
+            .find(|composite| composite.qualified_name().last().map(|n| n.as_str()) == Some(name))
+            .expect("admitted")
+    };
+
+    let shape_of = |name: &str| by_name(name).union_members().expect("members");
+    let mut seen = BTreeSet::new();
+    for name in ["Shape", "Twin", "Holder"] {
+        let (node, expected) = with_spine_graph(&text, |graph| spine_members(graph, name));
+        let found = by_name(name);
+        assert_eq!(found.form(), AdmittedCompositeForm::Union);
+        // The witness value of a union names the settled node.
+        assert_eq!(found.node(), node);
+        assert_eq!(context.composite_declaration(wire(node)), Ok(found));
+        let members: Vec<ExpectedMember> = found
+            .union_members()
+            .expect("a union has members")
+            .iter()
+            .map(|member| {
+                (
+                    member.identifier().as_str().to_owned(),
+                    member.variant(),
+                    member.payload().to_vec(),
+                )
+            })
+            .collect();
+        assert_eq!(members, expected);
+        for (_, variant, _) in &members {
+            assert!(
+                seen.insert(*variant),
+                "member ids are distinct across unions"
+            );
+        }
     }
+    assert_eq!(seen.len(), 2 + 2 + 2, "Shape, Twin and Holder: six members");
+
+    let (shape, twin) = (by_name("Shape"), by_name("Twin"));
+    assert_ne!(shape.key(), twin.key());
+    assert_eq!(
+        shape.union_members().map(<[_]>::len),
+        twin.union_members().map(<[_]>::len)
+    );
+
+    // Literal payloads, independent of the environment the oracle reads.
+    for union in [shape_of("Shape"), shape_of("Twin")] {
+        let payloads: Vec<_> = union.iter().map(|m| m.payload().to_vec()).collect();
+        assert_eq!(payloads, [vec![], vec![ValueType::Integer]]);
+    }
+
+    // A record payload position carries the record's kernel key.
+    let left = by_name("Left");
+    let has = &by_name("Holder").union_members().expect("members")[1];
+    assert_eq!(
+        has.payload(),
+        [ValueType::Composite(left.key()), ValueType::Boolean]
+    );
+    assert!(by_name("Left").union_members().is_none());
+
+    // A union position is `ValueType::Composite` of that union's kernel key
+    // (its type handle), not of its node id; the checked signature of a
+    // parameter of the union's type says the same.
+    let (shape, holder) = (by_name("Shape"), by_name("Holder"));
+    let deep = &by_name("Nest").union_members().expect("members")[1];
+    assert_eq!(
+        deep.payload(),
+        [
+            ValueType::Composite(shape.key()),
+            ValueType::Composite(holder.key())
+        ]
+    );
+    assert_ne!(shape.key(), shape.node());
+    let parameter = with_spine_graph(
+        &format!("{HEADER}{UNIT}function takes using v(s: Shape): Boolean pure {{ false }}\n"),
+        |graph| {
+            graph.callable("takes").expect("function").parameters[0]
+                .1
+                .clone()
+        },
+    );
+    assert_eq!(parameter, ValueType::Composite(shape.key()));
+
+    // Recompiling returns the same union declarations.
+    let again = admit(&text, &DependencyInput::default());
+    assert_eq!(
+        again.context().composites().cloned().collect::<Vec<_>>(),
+        context.composites().cloned().collect::<Vec<_>>()
+    );
 }
 
 /// A record a dependency admitted is `Foreign`, naming that dependency,
@@ -264,8 +398,19 @@ fn a_dependencys_composite_is_foreign() {
         ReplayLimits::default(),
     )
     .expect("the library compiles");
-    let point = alone.context().composites().next().expect("the record");
-    let point_id = wire(point.node());
+    let found = |name: &str| {
+        wire(
+            alone
+                .context()
+                .composites()
+                .find(|composite| {
+                    composite.qualified_name().last().map(|n| n.as_str()) == Some(name)
+                })
+                .expect("the declaration")
+                .node(),
+        )
+    };
+    let (point_id, pick_id) = (found("Point"), found("Pick"));
     let package = alone.context().package_id();
     let mid = library(
         "test/mid",
@@ -283,14 +428,16 @@ fn a_dependencys_composite_is_foreign() {
             &DependencyInput::new(dependencies).expect("a dependency input"),
         );
         let context = admitted.context();
-        assert_eq!(
-            context.composite_declaration(point_id),
-            Err(AdmittedLookupRefusal::Foreign {
-                declaration: point_id,
-                package,
-            })
-        );
-        assert_eq!(context.composites().count(), 4);
+        for declaration in [point_id, pick_id] {
+            assert_eq!(
+                context.composite_declaration(declaration),
+                Err(AdmittedLookupRefusal::Foreign {
+                    declaration,
+                    package,
+                })
+            );
+        }
+        assert_eq!(context.composites().count(), 8);
         for own in context.composites() {
             assert_eq!(context.composite_declaration(wire(own.node())), Ok(own));
         }

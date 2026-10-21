@@ -62,7 +62,7 @@ mod witness;
 pub use admitted::{
     compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
     AdmittedContext, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal, AdmittedRefusal,
-    AdmittedResource,
+    AdmittedResource, AdmittedUnionMember,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_requirements::{
