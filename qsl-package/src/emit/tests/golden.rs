@@ -106,6 +106,18 @@ fn typed(
     )
 }
 
+/// `7 op -2`: an application whose operands are both integer literals, which
+/// the lowering writes as inline literal terms of the application's
+/// arguments (FR-358, ADR-013 O-09), as QSpec's integer fixtures do.
+fn literals(operator: BinaryOperator) -> Expression {
+    use quire_exact::Integer;
+    Expression::binary(
+        operator,
+        Expression::integer(Integer::from(7_i64)),
+        Expression::integer(Integer::from(-2_i64)),
+    )
+}
+
 fn binary(operator: BinaryOperator, left: &str, right: &str) -> Expression {
     Expression::binary(operator, name(left), name(right))
 }
@@ -214,9 +226,9 @@ pub(super) fn cases() -> Vec<Case> {
             None,
             package(vec![typed(
                 "add",
-                &[("x", integer()), ("y", integer())],
+                &[],
                 integer(),
-                binary(BinaryOperator::Add, "x", "y"),
+                literals(BinaryOperator::Add),
             )]),
         ),
         case(
@@ -224,9 +236,9 @@ pub(super) fn cases() -> Vec<Case> {
             None,
             package(vec![typed(
                 "mul",
-                &[("x", integer()), ("y", integer())],
+                &[],
                 integer(),
-                binary(BinaryOperator::Multiply, "x", "y"),
+                literals(BinaryOperator::Multiply),
             )]),
         ),
         case(

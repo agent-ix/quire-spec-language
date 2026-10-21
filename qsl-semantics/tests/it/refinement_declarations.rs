@@ -283,16 +283,32 @@ fn bounded_counter(package: &str, upper: u32) -> Vec<u8> {
     )
 }
 
-/// `Counter { value }` with `inc()` and the population `counters`.
+/// `Counter { value }` with `inc()` and the population `counters`, and the
+/// record value type `Try { done }`, the attempt type of a compensation
+/// template (FR-381).
 fn counter_spec() -> Vec<u8> {
-    document(
+    let attempt = declaration(
         SPEC,
-        vec![object_type(
+        "Try",
+        "record_value_type",
+        json!({"fields": [field(SPEC, "Try", "done", BOOLEAN)]}),
+    );
+    document_with(
+        SPEC,
+        vec![construct(
             SPEC,
-            "Counter",
-            &[("value", INTEGER)],
-            vec![operation(SPEC, "Counter", "inc", &[], None, &["value"])],
+            "record_value_type",
+            meaning::RECORD_VALUE_TYPE,
         )],
+        vec![
+            object_type(
+                SPEC,
+                "Counter",
+                &[("value", INTEGER)],
+                vec![operation(SPEC, "Counter", "inc", &[], None, &["value"])],
+            ),
+            attempt,
+        ],
         vec![population(SPEC, "counters", "Counter")],
     )
 }

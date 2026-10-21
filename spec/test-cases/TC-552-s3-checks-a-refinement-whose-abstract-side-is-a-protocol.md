@@ -24,7 +24,7 @@ has built a feature is checked by that feature's own criteria. The
 
 ## Test Procedure
 
-Fixtures: `Twice`, `CasTwice` and `Full` (FR-147); `CasRefinesCounter`
+Fixtures: `Twice`, `CasTwice`, `Full` and `Rich` (FR-147); `CasRefinesCounter`
 (ADR-020 §8).
 
 1. Check `CasTwice`, and with `commitA -> node Spec::Twice::a1(self)`.
@@ -41,7 +41,7 @@ Fixtures: `Twice`, `CasTwice` and `Full` (FR-147); `CasRefinesCounter`
 6. Resolve each defect variant of FR-147-AC-6, one value per variant.
 7. Give the refinement check a non-empty resolved list for `CasTwice` and for
    `CasRefinesCounter`, and an empty one.
-8. Resolve a value naming one entry of every class over `Full`.
+8. Resolve a value naming one entry of every class over `Full` and `Rich`.
 9. Resolve `CasTwice`'s list, rename the abstract alias to `S` with the value
    renamed to match, and resolve again; compare with the empty list.
 10. Place one defect in the unit's value and the same defect in a supplied
