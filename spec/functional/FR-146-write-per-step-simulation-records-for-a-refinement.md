@@ -79,7 +79,7 @@ pub enum StepObligation {
 
 Each is written as a requirement record of kind `operation-contract`. The
 record's content identity is specified by ADR-013 O-09; its occurrence key
-awaits QSpec FR-322's generated-owner ruling, as described below.
+follows QSpec FR-322-AC-88 through AC-91, as described below.
 `StepSimulationRecord` and `StepObligation` live in `quire-semantic-value`,
 since the compiler writes them and CG reads them (ADR-018 LA-5).
 
@@ -133,13 +133,13 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   the UTF-8 bytes of the alias-free class spelling (the memory kind name for
   `memory` rows). Reordering the rows in source SHALL change none.
 
-### Record identity and occurrence dependency
+### Record identity and occurrence
 
 ADR-013 O-09 defines the requirement record's content identity from QSV's
 `StepSimulationRecord`, and CG FR-015-AC-120 through AC-122 govern its digest,
-carrier and refusals. The generated-owner occurrence key in ADR-013 O-07
-awaits QSpec FR-322's occurrence-role ruling; QSL shall follow that ruling
-for role and ordinal. The
+carrier and refusals. QSpec FR-322-AC-88 through AC-91 define the
+generated-owner occurrence role, ordinal, region and proof-eligibility rule
+that ADR-013 O-07 follows. The
 types `StepRowRef`, `StepObligation` and the `hypotheses` rule are owned by
 quire-semantic-value FR-123, which still says "declaration order" and "the
 concrete package's invariant clauses"; it is to change to this requirement's
@@ -207,7 +207,7 @@ wording.
 
 - ADR-020 §5 RE-2, RE-3, "Claim kinds" and "Strength", §9 DS-2 and DS-3;
   ADR-018 EN-2 and V-3, V-6, V-8; ADR-012 (requirement records at S3);
-  ADR-013 O-07 and O-09 (occurrence role pending QSpec FR-322); ADR-018 PC-2 and PC-6; ADR-020
+  ADR-013 O-07 and O-09; QSpec FR-322-AC-88 through AC-91; ADR-018 PC-2 and PC-6; ADR-020
   RM-1; QSpec FR-375 (row order).
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md),

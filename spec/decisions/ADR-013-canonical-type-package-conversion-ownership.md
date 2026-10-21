@@ -248,21 +248,25 @@ In the code, `model` builds one universe per model over every root type
 | Public type | An occurrence is keyed by (checked node id, `role`, `ordinal`), exactly the FR-322 `source_map` key. It carries one or more regions; each region is (`RawSourceRef`, byte start, byte end), where `RawSourceRef` names the source document by authority and identity and binds it to its bytes by its `quire.source.bytes/v1` digest (QSpec STD-150). Every node has at least one occurrence (FR-322). |
 | Serialized authority | v2 `source_map` entries (`SourceMapEntry`: `node_id`, `role`, `ordinal`, `regions`; FR-322). |
 | Conversions | node id → occurrences through the package source map (O-12, C-14). Occurrences are excluded from the node-identity and package-identity preimages (FR-322 `identity_projection`). The clause, application and function forms of O-09 include their subject occurrence key; the per-step record form excludes its occurrence key from content identity. No form includes regions. The occurrence key (node id, role, ordinal) of the failing node is carried in the counterexample packet (O-25, QC-8), and ADR-011 E9 resolves spans by it. Remaining work: agent-ix/quire-specification#141. |
-| Validation and diagnostics | IR refuses a source-map entry naming an unknown node. |
+| Validation and diagnostics | IR refuses a source-map entry naming an unknown node. On a refinement owner, FR-322-AC-88 through AC-91 require the declaration occurrence, require generated occurrences only when the refinement is proof-eligible, and refuse invalid generated keys or regions as `invalid_package`/`invalid-value`. |
 | Equality | lexical over (node id, role, ordinal). |
 
 For a QSV `StepSimulationRecord`, the occurrence key names the owning checked
 `relation`/`refinement` node, with role `generated`; the record does not mint a
-second checked node id. The initial record has ordinal 0. A step record for
+second checked node id. Only a proof-eligible refinement carries these
+generated occurrences. FR-322 defines proof eligibility as no hidden field,
+history field, or `any` step target; an ineligible refinement carries only its
+`declaration` occurrence (FR-322-AC-91). The initial record has ordinal 0. A step record for
 zero-based row `i` has ordinal `i + 1`, where `i` is the row's position in the
 refinement's FR-375 `steps` total order (FR-375-AC-19), not its source order.
 For a protocol subject, QSpec FR-375-AC-19 places `memory` rows after rows
 that name a declaration, then breaks ties by the UTF-8 bytes of the alias-free
 step-class spelling. These positions, not source order, determine the row
 ordinals; a source permutation cannot change a record's key.
-This uses FR-322's `generated` role while specifying an owner-key mapping for
-the derived record; FR-322-AC-87's generated-node example mints a node per
-row. The O-07 occurrence key is assigned and carried as a locator, but is not
+QSpec FR-322-AC-88 through AC-91 authorize and validate these owner-node
+occurrences. FR-322-AC-87 separately covers a node derived from a step row;
+its ordinal counts derived nodes, so its row index differs from this proof
+obligation index. The O-07 occurrence key is assigned and carried as a locator, but is not
 a member of the per-step record content digest in O-09. Each generated
 occurrence has a `source_map` entry: `Initial` names the refinement declaration
 region, and `Step` names its corresponding authored step-row region. Those
