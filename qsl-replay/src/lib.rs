@@ -28,6 +28,7 @@
 
 #![forbid(unsafe_code)]
 
+mod admitted;
 mod bounds;
 mod call_site;
 mod compile;
@@ -57,6 +58,10 @@ pub mod statistical;
 mod supplied_limits;
 mod witness;
 
+pub use admitted::{
+    compile_admitted, AdmittedCompilation, AdmittedContext, AdmittedEnum, AdmittedEnumCase,
+    AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource,
+};
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
@@ -215,7 +220,7 @@ pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNod
 // so CG names `Category::Success` and `Category::Violation` through this crate.
 pub use qsl_foundation::diagnostic::Category;
 pub use qsl_foundation::SourceIdentity;
-pub use quire_exact::{Identifier, Origin, Role, ScalarLimits, Value};
+pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
 pub use quire_semantic_value::call::InputRefusal;
