@@ -299,3 +299,127 @@ fn timed_traces_and_timed_clauses_are_read_by_the_timed_evaluator_only() {
         })
     );
 }
+
+/// The value of `body` at `position` of the timed lasso with `stamps` (in
+/// `ms`), `c.level` `levels`, re-entering position `loop_start` after
+/// `delay` ms.
+fn lasso_at(
+    body: &str,
+    stamps: &[u64],
+    levels: &[i64],
+    loop_start: u64,
+    delay: u64,
+    position: u64,
+) -> TemporalOutcome {
+    let fixture = timed(body);
+    let trace = TimedTrace::lasso(
+        stamps.iter().copied().map(ms).collect(),
+        loop_start,
+        ms(delay),
+    )
+    .expect("a timed lasso");
+    let mut letters = Levels {
+        fixture: &fixture,
+        levels: levels.to_vec(),
+    };
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    evaluate_timed_at(
+        &fixture.clause,
+        &trace,
+        TemporalPosition::new(position),
+        &mut letters,
+        &mut meter,
+    )
+    .expect("the lasso is readable")
+}
+
+/// FR-231 "Evaluation": a position past the represented trace is the loop
+/// position it wraps to, with stamps growing by the loop's total delay. On
+/// stamps `0, 1` (levels `0, 2`) looping to 0 with delay 2, `c.level = 2`
+/// holds at 1, 3, 5, ... ms, so `eventually[5 ms, 5 ms]` of it holds at
+/// position 0 and not at 1, where the finite prefix decides neither.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn a_timed_lasso_grows_its_stamps_by_the_loops_delay() {
+    let body = "eventually[5 ms, 5 ms] holds(c.level = 2)";
+    assert_eq!(
+        lasso_at(body, &[0, 1], &[0, 2], 0, 2, 0),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(lasso_at(body, &[0, 1], &[0, 2], 0, 2, 1), violated(1));
+    assert_eq!(at(body, &[0, 1], &[0, 2], 0), TemporalOutcome::Pending);
+    // Position 5 wraps to position 1, and position 4 to position 0.
+    assert_eq!(lasso_at(body, &[0, 1], &[0, 2], 0, 2, 5), violated(5));
+    assert_eq!(
+        lasso_at(body, &[0, 1], &[0, 2], 0, 2, 4),
+        TemporalOutcome::Holds
+    );
+}
+
+/// FR-231 "Evaluation": an unbounded operator over a lasso is decided, not
+/// left to the prefix. `always eventually holds(c.level = 2)` holds when
+/// the loop contains the level and is violated when it does not, and a
+/// level seen only before the loop is no help.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn an_unbounded_claim_is_decided_on_a_timed_lasso() {
+    let body = "always eventually holds(c.level = 2)";
+    assert_eq!(
+        lasso_at(body, &[0, 1, 2], &[0, 2, 0], 1, 3, 0),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(lasso_at(body, &[0, 1, 2], &[2, 0, 0], 1, 3, 0), violated(0));
+    // `until` needs its guard on every position before the witness.
+    let until = "holds(c.level = 0) until holds(c.level = 2)";
+    assert_eq!(
+        lasso_at(until, &[0, 1, 2], &[0, 0, 2], 0, 4, 0),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        lasso_at(until, &[0, 1, 2], &[0, 1, 2], 0, 4, 0),
+        violated(0)
+    );
+}
+
+/// FR-231 "Evaluation": a past operator over a lasso reads the unrolled
+/// history. On stamps `0, 1` (levels `0, 2`) looping to 0 with delay 2,
+/// `always once holds(c.level = 2)` fails at position 0, which has not seen
+/// the level yet, and holds from position 1 on, repetitions included.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn a_past_operator_reads_the_unrolled_loop() {
+    let body = "always once holds(c.level = 2)";
+    assert_eq!(lasso_at(body, &[0, 1], &[0, 2], 0, 2, 0), violated(0));
+    assert_eq!(
+        lasso_at(body, &[0, 1], &[0, 2], 0, 2, 1),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        lasso_at(body, &[0, 1], &[0, 2], 0, 2, 7),
+        TemporalOutcome::Holds
+    );
+}
+
+/// A timed lasso refuses a loop start that is not a represented position,
+/// a loop of no positive delay, and a delay that re-enters before the last
+/// represented stamp.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn a_timed_lasso_refuses_a_loop_that_is_not_time_divergent() {
+    let stamps = || vec![ms(0), ms(3)];
+    assert_eq!(
+        TimedTrace::lasso(stamps(), 2, ms(1)),
+        Err(TemporalRefusal::EmptyLoop)
+    );
+    assert_eq!(
+        TimedTrace::lasso(stamps(), 0, ms(0)),
+        Err(TemporalRefusal::NonPositiveLoopDelay)
+    );
+    assert_eq!(
+        TimedTrace::lasso(stamps(), 0, ms(2)),
+        Err(TemporalRefusal::LoopReentersBeforeLastStamp)
+    );
+    assert!(TimedTrace::lasso(stamps(), 0, ms(3))
+        .expect("a loop that re-enters at the last stamp")
+        .is_lasso());
+}

@@ -23,6 +23,7 @@ use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::{CatalogCode, Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
+use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
@@ -362,6 +363,23 @@ pub enum UnavailabilityCause {
     /// `unsupported_projection`/`unsupported-requested-capability`, naming
     /// the refusal.
     StatisticalRequest(StatisticalRequestRefusal),
+    /// FR-235 (ADR-026 DF-5, TV-1): a timed invariant, safety or liveness
+    /// claim holds a punctual interval, so the request writer routed it to
+    /// no engine. Wire cause `punctual-interval`.
+    PunctualInterval {
+        /// The punctual interval's span.
+        span: qsl_foundation::Span,
+    },
+}
+
+/// FR-235 V-8: an item the request writer disposed `Unsupported` settles
+/// with the cause it was disposed for.
+impl From<&UnsupportedItem> for UnavailabilityCause {
+    fn from(item: &UnsupportedItem) -> Self {
+        match item {
+            UnsupportedItem::PunctualInterval { span } => Self::PunctualInterval { span: *span },
+        }
+    }
 }
 
 /// The EN-4 refusal an [`UnavailabilityCause::StatisticalRequest`] names
@@ -415,6 +433,7 @@ impl UnavailabilityCause {
             Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
+            Self::PunctualInterval { .. } => "punctual-interval",
         }
     }
 
@@ -427,7 +446,8 @@ impl UnavailabilityCause {
             | Self::NotMarkov
             | Self::TotalAboveDrawRange { .. }
             | Self::ConfidenceBeyondPrecision
-            | Self::WeakAccessShape { .. } => None,
+            | Self::WeakAccessShape { .. }
+            | Self::PunctualInterval { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
@@ -1400,6 +1420,23 @@ mod tests {
             None
         );
     }
+    /// FR-235-AC-4, V-8: FR-234-AC-3's punctual claim, disposed `Unsupported`
+    /// by the request writer with no candidate, settles `unsupported`,
+    /// `punctual-interval`, basis `unavailable`, naming the interval.
+    #[trace("TC-690", "FR-235-AC-4")]
+    #[test]
+    fn a_punctual_item_settles_unsupported_naming_the_interval() {
+        let span = qsl_foundation::Span { start: 4, end: 16 };
+        let cause = UnavailabilityCause::from(&UnsupportedItem::PunctualInterval { span });
+        assert_eq!(cause, UnavailabilityCause::PunctualInterval { span });
+        assert_eq!(cause.as_str(), "punctual-interval");
+        assert_eq!(cause.basis().as_str(), "unavailable");
+        assert_eq!(
+            TerminalValue::Unsupported(cause).category(),
+            Category::Unsupported
+        );
+    }
+
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use crate::result::Verdict;
