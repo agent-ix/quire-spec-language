@@ -89,3 +89,13 @@ FND-002 to FND-005 are recorded and do not block.
 | FND-003 | low | The repetition case `over(&fixture, &["b", "a", "b"])` is a subject that FR-120 admission refuses (`conflicting-identity` on the duplicate key), so the test asserts identity equality with a subject that can never reach a verdict. The order half (`["b", "a"]`) is the meaningful case. Use an admissible reordering. | qsl-analyze/tests/it/universe_obligation.rs:69-75; qsl-eval/src/simulation/model.rs:509-517 |
 | FND-004 | low | `clause_occurrence` re-derives the occurrence triple that `qsl_replay::ClauseIdentity::resolve` already builds the same way (`WireNodeId::from_digest(node.identity())`, `node.claim()`). Two copies of the O-07 triple construction can drift. Reuse one. | qsl-analyze/src/model_check/request.rs:96-101; qsl-replay/src/model_check/identity.rs:68-71 |
 | FND-005 | low | `pub mod request;` exposes the module path, while every other `model_check` submodule is private and re-exported with `pub use`. Follow the module's pattern (a private `mod request;` plus `pub use request::{...}`). | qsl-analyze/src/model_check/mod.rs:25 |
+
+## Dispositions
+
+| FND | outcome | sha |
+|-----|---------|-----|
+| FND-001 | fixed: SubjectIdentity holds the checked package's emitted package_id; test arm fails without it | 10ee83f10 |
+| FND-002 | fixed: domain digests come from the package's model selections only; test arm with an unselected package | 10ee83f10 |
+| FND-003 | fixed: repetition case replaced by the admitted reordering [b, a] | 10ee83f10 |
+| FND-004 | fixed: qsl_replay::node_occurrence is the one triple construction, used by ClauseIdentity::resolve and author_clause | 10ee83f10 |
+| FND-005 | fixed: private mod request plus pub use | 10ee83f10 |

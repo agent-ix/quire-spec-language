@@ -63,3 +63,10 @@ FND-002 is low: the ticket's AC-2 item needs an owner after this PR.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-336-AC-5's adverse cases cover a proof bound and an initial state, but not a subject that differs only in its checked package. Its foreign-clause arm passes only because the foreign clause's formula differs (`c.value = 3`), so its node id differs. A clause with the same text in a package with different contracts is accepted: the reviewer probe got index 0 for it (SR-12285 FND-001). Add a "differs only in the checked package" arm to AC-5 and to the test. | qsl-analyze/tests/it/universe_obligation.rs:124-168; spec/functional/FR-336-bound-a-model-subject-by-its-universes.md:107 |
 | FND-002 | low | The QSL-889 scope names the explored half of FR-336-AC-2. The PR leaves it out and says so ("Not claimed"), with "Remaining work: QSL-889". If this PR closes QSL-889, that half has no ticket. Its blocker is the EN-1 liveness `FormNotDecided`, not `ModelRequest`. Give it a ticket of its own, or keep QSL-889 open for it. | qsl-analyze/tests/it/model_check.rs:998-1004 |
+
+## Dispositions
+
+| FND | outcome | sha |
+|-----|---------|-----|
+| FND-001 | fixed: FR-336-AC-5 and its test gain the differs-only-in-checked-package arm | 10ee83f10 |
+| FND-002 | accepted-no-change: QSL-889 stays open for the AC-2 explored half; the PR body says so | 10ee83f10 |

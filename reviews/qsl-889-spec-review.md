@@ -50,3 +50,12 @@ FND-001 shows in code. FND-002 to FND-004 are low.
 | FND-002 | low | "The order and repetition of any of these SHALL NOT change the identity". FR-120 admission refuses a repeated universe key and a repeated population (`conflicting-identity`), so for universes the repetition clause specifies the identity of a subject that never reaches a verdict. Say "order", and limit "repetition" to the initial states, where it is admissible. | spec/functional/FR-336-bound-a-model-subject-by-its-universes.md:89-90 |
 | FND-003 | low | The exclusion sentence names the expansion limits, the meter and the observation limits. It does not name the other two subject members that are also absent from the projection: the normalization limits (also a caller budget) and the snapshot provision (bound through each initial state's digest). Name both so the projection is a complete partition of `ModelSimulationRequest`'s members. | spec/functional/FR-336-bound-a-model-subject-by-its-universes.md:90-92 |
 | FND-004 | low | "The domain packages the subject is admitted against" could mean the FR-056 provision map (what the code reads) or the model's selected domain packages (what admission checks). Two implementers would read it differently, and the readings split identities differently (SR-12285 FND-002). Say "the domain packages the checked package's model selects, by digest". | spec/functional/FR-336-bound-a-model-subject-by-its-universes.md:88-89 |
+
+## Dispositions
+
+| FND | outcome | sha |
+|-----|---------|-----|
+| FND-001 | fixed: the projection bullet names the checked package | 10ee83f10 |
+| FND-002 | fixed: only order is immaterial; repetition dropped | 10ee83f10 |
+| FND-003 | fixed: the exclusion sentence names normalization limits and the snapshot provision | 10ee83f10 |
+| FND-004 | fixed: reads as the packages the checked package's model selections name | 10ee83f10 |
