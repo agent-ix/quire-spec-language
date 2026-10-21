@@ -44,9 +44,11 @@ FR-396-AC-3 (Unknown, WrongKind for enum/union/function, Foreign directly and th
 
 ## Dispositions
 
-| FND | Outcome | SHA |
+Round 1, reviewed at 10f224f74 (fix commit 1a902624f). These rows replace the coder's proposed outcomes, which the reviewer checked against the code. Re-run for this round: the admitted test binaries (9 tests), `admitted_composite_keys_are_the_keys_replay_converts_against`, the qsl-semantics `check::` unit tests (457 pass), clippy for qsl-replay and qsl-semantics with all targets and features, and string-edge. All pass.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: key() is the TypeEnvironment handle | 1a902624f |
-| FND-002 | fixed: FR-396-AC-2 and AC-5 oracles are independent of the implementation | 1a902624f |
-| FND-003 | fixed: the root-only test no longer imports qsl-foundation; AC-1 names the kernel | 1a902624f |
-| FND-004 | fixed: case cannot occur; FR-396 Behavior states it | 1a902624f |
+| FND-001 | fixed | 1a902624f: `key()` is the `TypeEnvironment` handle, verified against the checked environment, a checked signature and replay (QSL-937 checks 1 and 2 met in QSL; check 5 is CG adoption, not claimed here). |
+| FND-002 | fixed | 1a902624f: the FR-396-AC-2 oracle is independent of the facade's source, and FR-396-AC-5 adds a replay witness oracle. |
+| FND-003 | fixed | 1a902624f: the root-only test uses `StageLimits::default()` and no longer imports qsl_foundation. |
+| FND-004 | rejected | The case cannot occur (`ImportedTypeName`, assemble.rs:1908-1917); see SR-12280 FND-006. |

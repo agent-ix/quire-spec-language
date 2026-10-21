@@ -52,11 +52,13 @@ Not mergeable. FND-001 is a correctness defect: the facade returns a key that QS
 
 ## Dispositions
 
-| FND | Outcome | SHA |
+Round 1, reviewed at 10f224f74 (fix commit 1a902624f). These rows replace the coder's proposed outcomes, which the reviewer checked against the code. Re-run for this round: the admitted test binaries (9 tests), `admitted_composite_keys_are_the_keys_replay_converts_against`, the qsl-semantics `check::` unit tests (457 pass), clippy for qsl-replay and qsl-semantics with all targets and features, and string-edge. All pass.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: key() is the TypeEnvironment handle, node() is the composite_type node id | 1a902624f |
-| FND-002 | fixed: oracles compare with the checked TypeEnvironment, a checked signature and a replayed witness (FR-396-AC-5) | 1a902624f |
-| FND-003 | fixed: kind-neutral Unknown and Foreign text | 1a902624f |
-| FND-004 | fixed: the memory growth is documented on the field and in FR-396 Behavior; the set stays because WrongKind is specified | 1a902624f |
-| FND-005 | fixed: the breaking WrongKind variant is stated in the PR body; no #[non_exhaustive], as no other lookup enum in qsl-replay uses it | 1a902624f |
-| FND-006 | fixed: FR-396 states a unit cannot name an imported composite (assembler refuses ImportedTypeName), so the case cannot occur | 1a902624f |
+| FND-001 | fixed | 1a902624f: `composite_table` returns `CheckedTypeNode::Composite.declaration` (filled from `composite.key()`) as `key()`; `node()` carries the lookup id. The AC-2 test asserts it equals `scope().types().composites()` and the `uses_left` signature parameter type, and the AC-5 replay witness accepts it and refuses the node id. |
+| FND-002 | fixed | 1a902624f: the AC-2 oracle reads the checked `TypeEnvironment`, the semantic graph's `composite_type` nodes and a checked signature, not `checked_type_nodes()`. New AC-5: a witness replays on both arms with the admitted keys and refuses with the node ids. |
+| FND-003 | fixed | 1a902624f: the `Unknown` and `Foreign` docs and messages are kind-neutral. |
+| FND-004 | accepted-no-change | WrongKind is a specified refusal (FR-396 Behavior), and its O(graph) cost is now stated on the field and in FR-396. Acceptable for V1. |
+| FND-005 | accepted-no-change | The PR body states the break for exhaustive matches. No other lookup refusal enum in qsl-replay is `#[non_exhaustive]`. |
+| FND-006 | rejected | The case cannot occur: a type position naming an imported declaration is refused with `AssemblyCause::ImportedTypeName` (qsl-semantics/src/check/assemble.rs:1908-1917), so no own declaration can have a field of a dependency's composite type. FR-396 Behavior now says so. |
