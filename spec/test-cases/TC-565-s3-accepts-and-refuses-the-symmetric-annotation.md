@@ -19,11 +19,11 @@ Scope: FR-150-AC-1 to FR-150-AC-2.
 Fixtures: ADR-021 §7.1's ConfigVersion unit, with and without `symmetric` on `config_history`; the same unit with `peers: Set<Reference<ConfigVersion>>` and a post clause that folds over `self.peers`.
 
 1. Check the annotated unit; read the `config_history` record and the package identity. Check the unannotated unit and compare package identities.
-2. Check the `peers` variant with and without the annotation.
+2. Check the `peers` variant with and without the annotation, and the variant whose `fold` is `fold<Integer>(acc, p in self.peers: acc + 1, identity: 0)` with and without it.
 
 Tag the tests `#[trace("TC-565", "FR-150-AC-n")]`.
 
 ## Expected Results
 
 - Step 1: the unit checks, `symmetric: true`, and the two package identities differ.
-- Step 2: annotated, `ill_typed`/`identity-observing-form` at the `fold` span naming `fold` and `config_history`, and no checked package; unannotated, the unit checks.
+- Step 2: annotated, `ill_typed`/`identity-observing-form` at the `fold` span naming `fold` and `config_history`, and no checked package; unannotated, `ill_typed`/`operator-ineligible` at the `fold` (FR-145); the counting `fold` checks in both units (FR-150-AC-2).

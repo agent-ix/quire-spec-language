@@ -71,6 +71,15 @@ rather than from an `inconclusive` verdict after a long request (US-019).
   3. a reference literal that names a key.
   An ordering comparison over references is already ill-typed (the S3
   ordering arm) and keeps its existing refusal.
+- QSpec FR-145 refuses a `fold` or `reduce` over a `Set` or `Bag` whose step is
+  not in its commutative and associative catalog, `ill_typed`/
+  `operator-ineligible`, in every unit, annotated or not. In a unit that
+  annotates the population, the checker SHALL report such a fold or reduce
+  over a value that contains a reference into it as form 1 above
+  (`identity-observing-form`), because that refusal names the population the
+  operator should unannotate or restructure; in an unannotated unit FR-145's
+  refusal stands. A fold or reduce whose step is in the catalog does not
+  depend on element order and is not form 1.
 - Each refusal SHALL be `ill_typed`/`identity-observing-form` at the span of
   the refused node and SHALL name the node kind and the population's
   declaration identity text. The code and cause are QSpec's (References).
@@ -90,7 +99,7 @@ rather than from an `inconclusive` verdict after a long request (US-019).
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-150-AC-1 | ADR-021 §7.1's ConfigVersion unit with `config_history` annotated checks: its post clause reads `self.versionNumber`, and the invariants `ParentOrder` and `NoCycle` read `parent` by `deref` and equality. The checked package's `config_history` record has `symmetric: true`, and its package identity differs from the same unit's package without the annotation. | Test (TC-565) |
-| FR-150-AC-2 | Adding field `peers: Set<Reference<ConfigVersion>>` and a post clause that chooses the new parent with `fold` over `self.peers` refuses `ill_typed`/`identity-observing-form` at the `fold` node's span, naming `fold` and `config_history`; no checked package is produced. The same unit without the annotation checks. | Test (TC-565) |
+| FR-150-AC-2 | Adding field `peers: Set<Reference<ConfigVersion>>` and a post clause that chooses the new parent with `fold` over `self.peers` refuses `ill_typed`/`identity-observing-form` at the `fold` node's span, naming `fold` and `config_history`; no checked package is produced. The same unit without the annotation refuses `ill_typed`/`operator-ineligible` at the `fold` (FR-145: a step that chooses an element is not commutative and associative). A `fold<Integer>(acc, p in self.peers: acc + 1, identity: 0)` counting the peers checks in both units. | Test (TC-565) |
 | FR-150-AC-3 | Over the annotated unit, an invariant comparing `self` to a reference literal naming key `a` refuses at the literal; a temporal atom converting `c` to text refuses at the conversion; a `terminal when` predicate with a `reduce` over a `Bag` of `ConfigVersion` references refuses at the `reduce`; a state constraint with the `fold` refuses at the `fold`. A unit with two refused forms reports both, in source order. | Test (TC-566) |
 | FR-150-AC-4 | Over the annotated unit, an invariant `forall p in config_history: p.parent = self implies p != self` and an atom `holds(c.parent = a.parent)` check, and `fold` over a `Set<Int[0, 3]>` field checks: neither reads the population by an identity-observing form. | Test (TC-566) |
 
