@@ -76,4 +76,4 @@ needed to judge the diff's own tags.
 
 | FND | outcome | sha |
 | --- | --- | --- |
-| FND-001 | fixed | HEADSHA |
+| FND-001 | fixed | aa8364abb |
