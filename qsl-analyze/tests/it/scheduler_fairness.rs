@@ -17,14 +17,15 @@ use qsl_analyze::model_check::{check_protocol, LivenessRefusal, ModelCheckRefusa
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState};
 use qsl_eval::simulation::protocol::{
-    FairnessOrigin, ProtocolClass, ProtocolFairness, ProtocolTarget, ProtocolTransition, StepKind,
-    ThreadPath,
+    FairnessOrigin, MemorySelection, ProtocolClass, ProtocolFairness, ProtocolTarget,
+    ProtocolTransition, ResolvedMemory, StepKind, ThreadPath,
 };
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::MemoryModelName;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -34,7 +35,8 @@ use qsl_replay::{
     ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample,
 };
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedProtocolTarget, PackageDeclarations, TemporalCause,
+    CheckCause, CheckRefusal, CheckedProtocolTarget, PackageDeclarations, ProtocolAnchorCause,
+    TemporalCause,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -504,12 +506,14 @@ fn temporal(refusal: &CheckRefusal) -> &TemporalCause {
 
 /// `Chatter`'s liveness clause with the fairness constraint `fairness`.
 fn with_constraint(members: &str, fairness: &str) -> String {
-    chatter_body(
-        members,
-        &format!(
-            "temporal Eventually using t0 over (k: M::Cell) clock \"model-steps\" \
-             on origin {{ {fairness} eventually holds(k.v = 1) }}\n"
-        ),
+    chatter_body(members, &eventually_with(fairness))
+}
+
+/// `EVENTUALLY` with the fairness constraint `fairness`.
+fn eventually_with(fairness: &str) -> String {
+    format!(
+        "temporal Eventually using t0 over (k: M::Cell) clock \"model-steps\" \
+         on origin {{ {fairness} eventually holds(k.v = 1) }}\n"
     )
 }
 
@@ -581,6 +585,22 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
         (Code::AmbiguousDeclaration, Some("ambiguous-name")),
         "{twice:?}"
     );
+    let CheckCause::ProtocolAnchor(anchor) = &twice.cause else {
+        panic!("{twice:?}");
+    };
+    let ProtocolAnchorCause::Ambiguous { name, loci, span } = anchor.as_ref() else {
+        panic!("{twice:?}");
+    };
+    let text = unit_text(&chatter_body(
+        "scheduling adversarial; scheduling adversarial;",
+        EVENTUALLY,
+    ));
+    let first = text.find("scheduling").expect("a first member");
+    assert_eq!(name, "scheduling");
+    assert_eq!(loci.len(), 2, "{loci:?}");
+    assert_eq!(loci[0].start, first, "the first member is named");
+    assert_eq!(loci[1], *span, "the refusal sits at the second");
+    assert!(span.start > first);
 
     let fill = crate::protocol_system::Case::new(&fill_unit("self.v = 0", ""), &[0]);
     let subject = fill.subject("Fill");
@@ -612,5 +632,83 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
     assert_eq!(
         left_class,
         BTreeSet::from([(StepKind::Attempt, "Main/Both/left/A".to_owned())])
+    );
+}
+
+/// FR-212 Outputs (TC-657): an authored operation constraint over a protocol
+/// subject enters the fairness set beside the three scheduler constraints,
+/// with origin `authored` and the written strength and granularity, and the
+/// set stays in ascending JCS order.
+#[trace("TC-657")]
+#[test]
+fn an_authored_operation_constraint_joins_the_scheduler_constraints() {
+    let chatter = Chatter::new(
+        "",
+        &eventually_with("fair strong each M::Cell::inc;"),
+        &IS_ONE,
+    );
+    let fairness = chatter.fairness();
+    assert_eq!(fairness.len(), 4, "{fairness:?}");
+    let [authored] = fairness
+        .iter()
+        .filter(|member| member.origin() == FairnessOrigin::Authored)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one authored member: {fairness:?}");
+    };
+    assert_eq!(
+        (authored.kind(), authored.granularity()),
+        (FairnessKind::Strong, FairnessGranularity::Each)
+    );
+    assert!(
+        matches!(authored.target(), ProtocolTarget::Operation { .. }),
+        "{authored:?}"
+    );
+    let keys: Vec<Vec<u8>> = fairness
+        .iter()
+        .map(|member| {
+            quire_canonical::to_vec(member, quire_canonical::Limits::new(4096))
+                .expect("a member encodes")
+        })
+        .collect();
+    assert!(keys.windows(2).all(|pair| pair[0] < pair[1]), "{keys:?}");
+}
+
+/// FR-228: a liveness clause over a protocol whose `Both` runs under `tso`
+/// refuses `unsupported_construct`/`not-yet-implemented`: the engine reads
+/// no memory fairness, and an unflushed store buffer would give a false
+/// counterexample.
+#[trace("TC-657")]
+#[test]
+fn liveness_over_a_weak_parallel_refuses() {
+    let chatter = Chatter::new("", EVENTUALLY, &IS_ONE);
+    let mut subject = chatter.subject();
+    let checked = chatter
+        .checked
+        .graph()
+        .protocol("Chatter")
+        .expect("the protocol");
+    subject.memory = ResolvedMemory::resolve(
+        checked,
+        &[MemorySelection {
+            parallel: "Chatter::Both".to_owned(),
+            model: MemoryModelName::Tso,
+        }],
+    )
+    .expect("the selection resolves");
+    let refusal = check_protocol(
+        ProtocolCheckRequest {
+            subject,
+            item: chatter.item(),
+            max_depth: None,
+            max_store_buffer: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("a weak liveness clause refuses");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::WeakLiveness),
+        "{refusal:?}"
     );
 }

@@ -87,8 +87,7 @@ use qsl_eval::fairness::{
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
-    protocol_constraints, ProtocolFairness, ProtocolFairnessError, ProtocolSystem,
-    ProtocolTransition, Sc,
+    protocol_constraints, ProtocolFairness, ProtocolSystem, ProtocolTransition, Sc,
 };
 use qsl_eval::simulation::{
     EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit, Limits,
@@ -282,14 +281,7 @@ pub(super) fn check_protocol(
             Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
             Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
         };
-    let fairness = system
-        .fairness_set(clause.fairness())
-        .map_err(|refusal| match refusal {
-            ProtocolFairnessError::UnknownOperation { name } => {
-                ModelCheckRefusal::from(LivenessRefusal::UnknownOperation { name })
-            }
-            ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
-        })?;
+    let fairness = system.fairness_set(clause.fairness())?;
     let bindings: Vec<Binding> = model
         .instances(&clause.over().1)
         .map_err(not_simulated)?
@@ -416,19 +408,12 @@ trait LiveSubject: SubjectSystem<TransitionId: Ord> + Sized {
     /// Retain `binding`'s product in FR-101's canonical order within
     /// `limits`, through ample sets when the request selects partial-order
     /// reduction.
-    #[allow(
-        clippy::type_complexity,
-        reason = "the retained product over the subject's types"
-    )]
     fn retain(
         run: &Run<'_, Self>,
         product: &LassoSystem<'_, Self>,
         binding: &Binding,
         limits: Limits,
-    ) -> Result<
-        GraphExploration<LState<Self::State>, PT<Tr<Self>>, Finding<Tr<Self>>>,
-        ModelCheckRefusal,
-    >;
+    ) -> Result<Exploration<Self>, ModelCheckRefusal>;
 
     /// The second phase over a reduced graph (FR-153).
     fn reduced_second_phase(
@@ -438,17 +423,13 @@ trait LiveSubject: SubjectSystem<TransitionId: Ord> + Sized {
 }
 
 /// The retained product of `product` under `group` and `ample`.
-#[allow(
-    clippy::type_complexity,
-    reason = "the retained product over the subject's types"
-)]
 fn retained<'l, S: LiveSubject>(
     run: &Run<'_, S>,
     product: &LassoSystem<'l, S>,
     group: &SymmetryGroup,
     ample: Option<&dyn Ample<LassoSystem<'l, S>>>,
     limits: Limits,
-) -> Result<GraphExploration<LState<S::State>, PT<Tr<S>>, Finding<Tr<S>>>, ModelCheckRefusal> {
+) -> Result<Exploration<S>, ModelCheckRefusal> {
     retain_reduced(
         product,
         group,
@@ -494,10 +475,7 @@ impl<'a> LiveSubject for ModelSystem<'a> {
         product: &LassoSystem<'_, Self>,
         binding: &Binding,
         limits: Limits,
-    ) -> Result<
-        GraphExploration<LState<ModelSimState>, PT<ModelTransition>, Finding<ModelTransition>>,
-        ModelCheckRefusal,
-    > {
+    ) -> Result<Exploration<Self>, ModelCheckRefusal> {
         if !run.request.partial_order {
             return retained(run, product, &binding.group, None, limits);
         }
@@ -554,10 +532,7 @@ impl LiveSubject for ProtocolSystem<'_, Sc> {
         product: &LassoSystem<'_, Self>,
         binding: &Binding,
         limits: Limits,
-    ) -> Result<
-        GraphExploration<LState<Self::State>, PT<ProtocolTransition>, Finding<ProtocolTransition>>,
-        ModelCheckRefusal,
-    > {
+    ) -> Result<Exploration<Self>, ModelCheckRefusal> {
         retained(run, product, &binding.group, None, limits)
     }
 
@@ -737,6 +712,10 @@ type Fair<S> = <Tr<S> as SubjectTransition>::Fairness;
 
 /// A product edge's identity over a subject's identities `T`.
 type PT<T> = ProductTransition<T>;
+
+/// One binding's explored product over the subject `S`.
+type Exploration<S> =
+    GraphExploration<LState<<S as TransitionSystem>::State>, PT<Tr<S>>, Finding<Tr<S>>>;
 
 /// One binding's retained product over the subject `S`.
 type Retained<S> = RetainedGraph<LState<<S as TransitionSystem>::State>, PT<Tr<S>>, Finding<Tr<S>>>;
@@ -965,10 +944,6 @@ impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
         }
     }
 
-    #[allow(
-        clippy::type_complexity,
-        reason = "the product's expansion over the subject's types"
-    )]
     fn successors(
         &self,
         state: &Self::State,

@@ -322,6 +322,17 @@ impl From<EncodingRefusal> for Halt {
     }
 }
 
+impl From<ProtocolFairnessError> for ModelCheckRefusal {
+    fn from(error: ProtocolFairnessError) -> Self {
+        match error {
+            ProtocolFairnessError::UnknownOperation { name } => {
+                super::liveness::LivenessRefusal::UnknownOperation { name }.into()
+            }
+            ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
+        }
+    }
+}
+
 pub(super) fn fault(invariant: &'static str) -> ModelCheckRefusal {
     ModelCheckRefusal::Fault(InternalFault::new("model-check", invariant))
 }
@@ -642,15 +653,12 @@ impl ProtocolRun<'_> {
         automaton: Box<dyn SafetyAutomaton>,
         bound: Option<MemoryBound>,
     ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
-        let fairness =
-            system
-                .fairness_set(self.item.fairness())
-                .map_err(|refusal| match refusal {
-                    ProtocolFairnessError::UnknownOperation { name } => ModelCheckRefusal::from(
-                        super::liveness::LivenessRefusal::UnknownOperation { name },
-                    ),
-                    ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
-                })?;
+        // FR-430 adds scheduler constraints to infinite-trace clauses, not
+        // to the derived deadlock-freedom item.
+        let fairness = match self.item {
+            Item::Deadlock => Vec::new(),
+            Item::Clause { .. } => system.fairness_set(self.item.fairness())?,
+        };
         let mut run = Run {
             system,
             fairness: &fairness,

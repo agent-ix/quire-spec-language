@@ -46,8 +46,9 @@ use qsl_eval::simulation::model::{
     TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, protocol_constraints, MemoryModel, ProtocolFairness, ProtocolRefusal,
-    ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, SendRecord, StepKind, SubjectMemory,
+    check_protocol_bounds, protocol_constraints, MemoryModel, ProtocolFairness,
+    ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc,
+    SendRecord, StepKind, SubjectMemory,
 };
 use qsl_eval::simulation::{
     ConstraintValue, Expansion, ExpansionStop, NotSimulated, SubjectSystem, SubjectTransition,
@@ -294,6 +295,13 @@ pub enum ModelTraceRefusal {
         /// The first member of the fairness set the loop fails.
         constraint: Box<ProtocolFairness>,
     },
+    /// The recompiled clause's fairness constraint names an operation the
+    /// subject's model does not apply (FR-212).
+    #[error("invalid_runtime_input/invalid-value: the fairness constraint on `{name}` names an operation the subject does not apply")]
+    UnknownFairnessOperation {
+        /// The operation's resolved name.
+        name: String,
+    },
     /// The subject's protocol system does not build (FR-205).
     #[error("{0}")]
     Protocol(ProtocolRefusal),
@@ -349,7 +357,8 @@ impl ModelTraceRefusal {
             | Self::HyperShape { .. }
             | Self::HyperUnmatched { .. }
             | Self::HyperUnfair { .. }
-            | Self::UnfairProtocolLasso { .. } => Code::InvalidRuntimeInput,
+            | Self::UnfairProtocolLasso { .. }
+            | Self::UnknownFairnessOperation { .. } => Code::InvalidRuntimeInput,
         }
     }
 
@@ -384,7 +393,8 @@ impl ModelTraceRefusal {
             | Self::HyperShape { .. }
             | Self::HyperUnmatched { .. }
             | Self::HyperUnfair { .. }
-            | Self::UnfairProtocolLasso { .. } => "invalid-value",
+            | Self::UnfairProtocolLasso { .. }
+            | Self::UnknownFairnessOperation { .. } => "invalid-value",
         }
     }
 }
@@ -523,16 +533,16 @@ pub fn replay_model_trace(
         envelope,
         replay_limits,
         |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, &package.1)?;
-            if let Some(clause) = clause {
+            let clause = resolve_item(envelope, package.0, &package.1, |clause| {
                 let payload = envelope.family_payload();
-                if payload.fairness != clause.fairness() {
-                    return Err(refused(ModelTraceRefusal::FairnessSet {
-                        payload: payload.fairness.clone(),
-                        recompiled: clause.fairness().to_vec(),
-                    }));
+                if payload.fairness == clause.fairness() {
+                    return Ok(());
                 }
-            }
+                Err(refused(ModelTraceRefusal::FairnessSet {
+                    payload: payload.fairness.clone(),
+                    recompiled: clause.fairness().to_vec(),
+                }))
+            })?;
             let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
             let formula = clause.map(|clause| FormulaReplay {
                 clause,
@@ -575,7 +585,9 @@ pub fn replay_protocol_trace(
         envelope,
         replay_limits,
         |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, &package.1)?;
+            // The fairness set depends on the protocol system, so it is
+            // compared in `ProtocolReplay::settle`.
+            let clause = resolve_item(envelope, package.0, &package.1, |_| Ok(()))?;
             let payload = envelope.family_payload();
             let simulation = simulation(&subject.model);
             let protocol = package
@@ -637,9 +649,16 @@ impl ProtocolReplay<'_> {
     ) -> Result<ModelTraceSettlement, ReplayRefusal> {
         let payload = self.payload;
         let fairness = match self.clause {
-            Some(clause) => system
-                .fairness_set(clause.fairness())
-                .map_err(|_| fault("a-recompiled-fairness-names-an-applied-operation"))?,
+            Some(clause) => {
+                system
+                    .fairness_set(clause.fairness())
+                    .map_err(|error| match error {
+                        ProtocolFairnessError::UnknownOperation { name } => {
+                            refused(ModelTraceRefusal::UnknownFairnessOperation { name })
+                        }
+                        ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
+                    })?
+            }
             None => Vec::new(),
         };
         if self.clause.is_some() && payload.fairness != fairness {
@@ -758,13 +777,15 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 /// identity, refuses [`ModelTraceRefusal::ItemIdentity`]. Any other identity
 /// names an authored clause: the package's temporal clause node of that
 /// `clause_node`, whose `claim` occurrence the envelope must carry; the
-/// caller checks the payload's fairness set against the subject's. A
-/// package with no such node refuses
+/// caller's `check_fairness` compares the payload's fairness set with the
+/// subject's before the clause's own refusals. A package with no such node
+/// refuses
 /// [`ModelTraceRefusal::UnknownTemporalClause`].
 fn resolve_item<'p, T: SubjectTransition>(
     envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
     package: &'p CheckedPackage,
     package_id: &DigestRecord,
+    check_fairness: impl FnOnce(&CheckedTemporalClause) -> Result<(), ReplayRefusal>,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
     let (node, occurrence) = deadlock_freedom_clause(package_id);
     let derived = envelope.clause_node() == node && *envelope.occurrence_key() == occurrence;
@@ -802,6 +823,7 @@ fn resolve_item<'p, T: SubjectTransition>(
         return Err(identity_mismatch(envelope.clause_node(), expected));
     }
     let clause = found.clause();
+    check_fairness(clause)?;
     let payload = envelope.family_payload();
     if matches!(payload.kind, CounterexampleKind::UndefinedEvaluation(_)) {
         return Err(refused(ModelTraceRefusal::AuthoredUndefined));
@@ -1288,20 +1310,19 @@ pub(super) struct LoopState<T = ModelTransition> {
     pub(super) taken: T,
 }
 
+/// A lasso's loop steps with their enabled identities.
+pub(super) type LoopStates<T> = Vec<LoopState<T>>;
+
 /// The steps of the lasso's loop with the identities enabled at each state
 /// they leave, read from the subject's own successor relation. The
 /// terminal stutter step is outside every constraint and enables none
 /// (SM-4), so a stutter loop has none. `None` when an expansion stops.
-#[allow(
-    clippy::type_complexity,
-    reason = "the loop's states, none when an expansion stops, or a refusal"
-)]
 pub(super) fn loop_states_of<S: SubjectSystem>(
     system: &S,
     payload: &TemporalCounterexample<S::TransitionId>,
     positions: &[Position<S::State>],
     lasso: Lasso,
-) -> Result<Option<Vec<LoopState<S::TransitionId>>>, ReplayRefusal> {
+) -> Result<Option<LoopStates<S::TransitionId>>, ReplayRefusal> {
     let mut states = Vec::new();
     if lasso.terminal_stutter {
         return Ok(Some(states));
