@@ -731,6 +731,56 @@ fn a_symmetric_clause_has_a_copy_group_and_an_asymmetric_one_has_none() {
     assert_eq!(classes(&clause(&["V"], OPAQUE)), empty);
 }
 
+/// FR-174 "Canonicalisation": a copy group carries one generator for each pair
+/// of consecutive variables of a class, with the atom each of the body's atoms
+/// becomes under the exchange. `NonInterference` has one atom, which the swap
+/// fixes; a body of one atom for each copy has two, which it exchanges; three
+/// copies have two generators, of an atom for each pair of copies.
+#[trace("TC-599")]
+#[test]
+fn a_copy_group_carries_the_exchange_of_the_body_s_atoms() {
+    use qsl_semantics::check::CopyGenerator;
+    let generator = |first, second, atoms: &[usize]| CopyGenerator {
+        first,
+        second,
+        atoms: atoms.to_vec(),
+    };
+    assert_eq!(
+        clause(&["V"], &non_interference()).copy_group().generators,
+        [generator(0, 1, &[0])]
+    );
+    let each = "hyper H using inf over behaviours (v: V::ConfigVersion) \
+         forall trace a of V forall trace b of V \
+         { always (holds(v.versionNumber @ a = 0) and holds(v.versionNumber @ b = 0)) }";
+    assert_eq!(
+        clause(&["V"], each).copy_group().generators,
+        [generator(0, 1, &[1, 0])]
+    );
+    let pairs = "hyper H using inf over behaviours (v: V::ConfigVersion) \
+         forall trace a of V forall trace b of V forall trace c of V \
+         { always (holds(v.versionNumber @ a = v.versionNumber @ b) \
+         and holds(v.versionNumber @ b = v.versionNumber @ c) \
+         and holds(v.versionNumber @ a = v.versionNumber @ c)) }";
+    let three = clause(&["V"], pairs);
+    assert_eq!(
+        three.copy_group().classes,
+        [["a", "b", "c"].map(str::to_owned).to_vec()]
+    );
+    // The atoms in arena order are `a = c`, `a = b` and `b = c`. Exchanging
+    // `a` and `b` takes `a = c` to `b = c` and back, and fixes `a = b`;
+    // exchanging `b` and `c` takes `a = c` to `a = b` and back, and fixes
+    // `b = c`.
+    assert_eq!(
+        three.copy_group().generators,
+        [generator(0, 1, &[2, 1, 0]), generator(1, 2, &[1, 0, 2])]
+    );
+    // A body one copy alone reads has none.
+    let one = "hyper H using inf over behaviours (v: V::ConfigVersion) \
+         forall trace a of V forall trace b of V \
+         { always holds(v.versionNumber @ a = 0) }";
+    assert!(clause(&["V"], one).copy_group().generators.is_empty());
+}
+
 /// FR-180-AC-1 (S3): `Det` over a vault whose `step` is bound to an
 /// implementation has a code claim beside its model claim; with no binding it
 /// has the model claim alone.

@@ -48,7 +48,7 @@ const INVERSE: &str = "(if present(a.step.Vault::step.i) \
      then 1 / value(a.step.Vault::step.i) else 1) = 1";
 
 /// The vault's two idle initial states `(h, l, busy)`.
-const IDLE: [(i64, i64, i64); 2] = [(0, 0, 0), (1, 0, 0)];
+pub(crate) const IDLE: [(i64, i64, i64); 2] = [(0, 0, 0), (1, 0, 0)];
 
 /// The secret-1 run caught mid-operation, `busy` already set: its first step
 /// is a `mix`.
@@ -72,7 +72,7 @@ fn lockstep() -> String {
 
 /// Section 13's clause with `align skip { V::Vault::mix }` and the `match`
 /// conjuncts `conjuncts`.
-fn aligned(conjuncts: &[&str]) -> String {
+pub(crate) fn aligned(conjuncts: &[&str]) -> String {
     format!(
         "hyper NonInterference using inf over behaviours (v: V::Vault) \
          forall trace a of V forall trace b of V align skip {{ V::Vault::mix }} \
