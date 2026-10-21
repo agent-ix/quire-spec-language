@@ -83,6 +83,18 @@ a bound and how to give one, instead of picking one.
   included (ADR-013 O-09), so a verdict over one universe joins only its own
   request and is no verdict over another universe or over the unbounded
   declaration.
+- The subject enters the obligation identity as its identity projection, not
+  as the whole subject: the initial states, each population's universe, the
+  domain packages the subject is admitted against, and the proof bounds. The
+  order and repetition of any of these SHALL NOT change the identity. The
+  expansion limits, the evaluation meter and the observation limits decide
+  whether a run finishes, not what a finished run holds, so they are no part
+  of it.
+- The EN-1 request path SHALL write a clause's item from the clause and the
+  model subject: the item's requirement record is the clause's own record in
+  the subject's checked package, and its obligation identity is the subject's
+  identity projection with the clause's occurrence. A clause the subject's
+  package has no record for is refused, not written.
 
 ## Acceptance Criteria
 
@@ -92,6 +104,7 @@ a bound and how to give one, instead of picking one.
 | FR-336-AC-2 | The same subject with no universe for `config_history` returns `RequiresBound` naming the population root and explores no state; with `{a, b}` it explores and returns FR-126-AC-1's outcome. | Test (TC-846) |
 | FR-336-AC-3 | A `Counter` variant whose operation `step(n: Integer)` takes an unranged parameter returns `RequiresBound` naming that parameter root, both with no `ProofBound` and with a `ProofBound{IntegerRange{0, 3}}` on the clause's domain; with `n: Int[0, 3]` declared in the model it explores. | Test (TC-846) |
 | FR-336-AC-4 | `ReachesTwo` under `fair weak each` over universe `{a, b}` and over `{a, b, c}` gives two obligation identities that differ only in the subject's universe, and each `proved` result joins only its own request index. | Test (TC-846) |
+| FR-336-AC-5 | A subject that differs from another only in a proof bound, or only in an initial state, has a different identity; a clause the subject's package has no requirement record for is refused and no item is written. | Test (TC-846) |
 
 ## Dependencies
 

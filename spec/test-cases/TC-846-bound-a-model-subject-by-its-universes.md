@@ -14,7 +14,7 @@ Verify that universes, not proof bounds, make a model subject's roots
 finite, that the requirement record ignores universes, and that the
 universe enters the obligation identity.
 
-Scope: FR-336-AC-1 to FR-336-AC-4.
+Scope: FR-336-AC-1 to FR-336-AC-5.
 
 ## Test Procedure
 
@@ -29,6 +29,8 @@ with no maximum.
 4. Request `ReachesTwo` under `fair weak each` over `{a, b}` and
    `{a, b, c}`; compare obligation identities and the joins of the two
    results.
+5. Change only a proof bound, then only an initial state, of a subject and
+   compare identities; request a clause of another package.
 
 Tag the tests `#[trace("TC-846", "FR-336-AC-n")]`.
 
@@ -42,3 +44,5 @@ Tag the tests `#[trace("TC-846", "FR-336-AC-n")]`.
   run.
 - Step 4: identities differ only in the universe; each `proved` joins its
   own request index.
+- Step 5: each change gives a different identity; the foreign clause is
+  refused and no item is written.
