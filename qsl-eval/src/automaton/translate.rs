@@ -560,13 +560,10 @@ fn translate_formula(
     let mut intervals = false;
     for id in &order {
         match ir.node(*id)? {
-            Node::Future { window, .. } if window != Window::From { lower: 0 } => {
-                intervals = true;
-            }
-            Node::Past { window, .. }
-                if counting == Counting::ByKind && window != Window::From { lower: 0 } =>
+            Node::Future { window, .. } | Node::Past { window, .. }
+                if window != Window::From { lower: 0 } =>
             {
-                return Err(AutomatonError::PastIntervalInCountedSteps);
+                intervals = true;
             }
             _ => {}
         }
@@ -817,13 +814,11 @@ impl Translator {
     /// the position as well, and keeps one transition for both readings
     /// where they agree.
     fn expand(&self, config: &Config) -> Result<Vec<(Guard, Config)>, AutomatonError> {
-        let truths = self.truths(&config.memory)?;
-        let memories = Self::memories(&truths);
-        let counted = self.transitions(config, &truths, &memories, true)?;
+        let counted = self.transitions(config, true)?;
         let Some(uncounted) = self.uncounted else {
             return Ok(counted);
         };
-        let held = self.transitions(config, &truths, &memories, false)?;
+        let held = self.transitions(config, false)?;
         if held == counted {
             return Ok(counted);
         }
@@ -843,13 +838,15 @@ impl Translator {
     fn transitions(
         &self,
         config: &Config,
-        truths: &Truths,
-        memories: &[(Guard, BTreeMap<NodeId, Memory>)],
         counted: bool,
     ) -> Result<Vec<(Guard, Config)>, AutomatonError> {
+        // The truth of a past operator at the position read depends on
+        // whether the step into it counts (ADR-027 PB-3).
+        let truths = self.truths(&config.memory, counted)?;
+        let memories = Self::memories(&truths);
         let mut transitions = Vec::new();
-        for (cube, next) in self.branches(config, truths, counted)? {
-            for (memory_cube, memory) in memories {
+        for (cube, next) in self.branches(config, &truths, counted)? {
+            for (memory_cube, memory) in &memories {
                 let guard = cube.conjoined(*memory_cube);
                 if guard.is_satisfiable() {
                     transitions.push((
@@ -868,8 +865,13 @@ impl Translator {
     }
 
     /// The condition under which each state formula holds at the position
-    /// read, from the memory of the positions before it.
-    fn truths(&self, memory: &BTreeMap<NodeId, Memory>) -> Result<Truths, AutomatonError> {
+    /// read, from the memory of the positions before it, when the step into
+    /// it `counted` or not.
+    fn truths(
+        &self,
+        memory: &BTreeMap<NodeId, Memory>,
+        counted: bool,
+    ) -> Result<Truths, AutomatonError> {
         let mut truths = Truths {
             conditions: vec![Dnf::never(); self.ir.len()],
             outcomes: Vec::new(),
@@ -895,8 +897,12 @@ impl Translator {
                         .get(id)
                         .ok_or_else(|| invariant("past-operator-remembered"))?;
                     let guard = left.map(|left| truths.of(left)).transpose()?;
-                    let cases =
-                        Past::new(kind, window).outcomes(remembered, guard, truths.of(right)?);
+                    let cases = Past::new(kind, window).outcomes(
+                        remembered,
+                        guard,
+                        truths.of(right)?,
+                        counted,
+                    );
                     let holding = cases
                         .iter()
                         .filter(|case| case.holds)

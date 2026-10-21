@@ -361,7 +361,6 @@ fn settle<T: SubjectTransition>(
             UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
             UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
             UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
-            UndecidedCause::UncountedLoop => InconclusiveCause::UncountedLoop,
             UndecidedCause::InstanceBoundReached { bound, states } => {
                 InconclusiveCause::InstanceBoundReached {
                     bound: *bound,

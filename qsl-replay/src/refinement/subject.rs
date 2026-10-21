@@ -11,7 +11,7 @@
 
 use qsl_eval::simulation::model::{ModelSimulationRequest, ModelSystem, PopulationUniverse};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::CheckedRefinement;
+use qsl_semantics::check::{AbstractSide, CheckedRefinement};
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef};
 
 use crate::refinement::map::subject_models;
@@ -26,6 +26,9 @@ pub enum SubjectRefusal {
     /// An abstract population's source population has no universe in the
     /// concrete request.
     NoUniverse,
+    /// The abstract subject is a protocol clause, whose steps FR-148 decides
+    /// and no model system does.
+    ProtocolAbstractSide,
 }
 
 /// The concrete and abstract systems of `refinement`.
@@ -50,6 +53,9 @@ pub fn open_systems<'a>(
     abstract_package: &'a CheckedPackage,
     abstract_initial: Vec<DocumentRef>,
 ) -> Result<RefinementSystems<'a>, SubjectRefusal> {
+    if !matches!(refinement.abstract_side(), AbstractSide::Model) {
+        return Err(SubjectRefusal::ProtocolAbstractSide);
+    }
     let (concrete_model, abstract_model) =
         subject_models(refinement).ok_or(SubjectRefusal::NoModels)?;
     let universes = refinement

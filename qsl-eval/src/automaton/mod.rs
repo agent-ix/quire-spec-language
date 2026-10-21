@@ -34,10 +34,12 @@
 //!   IV-3's counter construction for interval operators: one counter per
 //!   occurrence for a lower bound of 0, and sets of open windows or offsets
 //!   otherwise.
-//! - [`SafetyTranslation`] is FR-338's canonical translation of the safety
-//!   items EN-1 decides, whose states have the order-independent
+//! - [`SafetyTranslation`] and [`BoundedTranslation`] are FR-338's canonical
+//!   translations of the safety items and the bounded single-interval clauses
+//!   EN-1 decides, whose states have the order-independent
 //!   [`AutomatonStateKey`] the closure certificate carries.
 
+mod bounded;
 mod counters;
 mod dnf;
 mod error;
@@ -51,6 +53,7 @@ mod past;
 mod state;
 mod translate;
 
+pub use bounded::{bounded_shape, BoundedKind, BoundedState, BoundedTranslation};
 pub use counters::{
     AlwaysOffsets, DeadlineCounter, EventuallyWindows, Expired, ExtentCounter, PastAgeCounter,
     ShiftCounter, Violated,
