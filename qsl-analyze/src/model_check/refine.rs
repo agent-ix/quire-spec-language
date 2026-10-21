@@ -294,6 +294,7 @@ impl Run<'_, '_> {
             product_edges: widen(self.edges),
             automaton_states: 0,
             depth: widen(self.nodes.iter().map(|node| node.depth).max().unwrap_or(0)),
+            bound_limited: 0,
         }
     }
 

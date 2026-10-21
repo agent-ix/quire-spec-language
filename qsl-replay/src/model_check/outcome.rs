@@ -24,6 +24,9 @@ pub struct RunStats {
     pub automaton_states: u64,
     /// The greatest depth of a created product state.
     pub depth: u64,
+    /// The distinct model states whose expansion cut a store at the memory
+    /// bound (ADR-025 MB-3); 0 for a subject with no memory bound.
+    pub bound_limited: u64,
 }
 
 /// Why a run decided nothing (ADR-018 V-6).
