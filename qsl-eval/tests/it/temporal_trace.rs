@@ -162,6 +162,10 @@ struct Letters<'a> {
     fixture: &'a Fixture,
     observations: Vec<Observation>,
     reads: Vec<u64>,
+    /// The positions whose step does not count for interval distance.
+    uncounted: Vec<u64>,
+    /// Whether the step that closes a lasso's loop does not count.
+    uncounted_loop_edge: bool,
 }
 
 impl<'a> Letters<'a> {
@@ -170,6 +174,8 @@ impl<'a> Letters<'a> {
             fixture,
             observations,
             reads: Vec::new(),
+            uncounted: Vec::new(),
+            uncounted_loop_edge: false,
         }
     }
 
@@ -246,6 +252,14 @@ impl TemporalLetters for Letters<'_> {
     ) -> Result<AtomReading, LetterStop> {
         panic!("these clauses have no `when` condition");
     }
+
+    fn counts_step(&self, position: TemporalPosition) -> bool {
+        !self.uncounted.contains(&position.index())
+    }
+
+    fn counts_loop_edge(&self) -> bool {
+        !self.uncounted_loop_edge
+    }
 }
 
 fn limits(work_units: u64) -> ScalarLimits {
@@ -318,6 +332,94 @@ fn a_closed_trace_settles_bounded_clauses_with_false_extension_past_its_end() {
         closed("always[0,3] not holds(c.level > 2)"),
         TemporalOutcome::Holds
     );
+}
+
+/// The outcome of `fixture` on the closed trace `c.level` 0 to 4, the steps
+/// into positions 1 and 3 uncounted: the counted distance from position 0 is
+/// 0, 0, 1, 1, 2 (ADR-027 PB-3).
+fn counted(fixture: &Fixture) -> TemporalOutcome {
+    let mut letters = Letters::new(fixture, counters(&[0, 1, 2, 3, 4]));
+    letters.uncounted = vec![1, 3];
+    evaluate(
+        &fixture.clause,
+        finite(5),
+        &mut letters,
+        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    )
+    .expect("the trace is readable")
+}
+
+/// ADR-027 PB-3: an interval measures distance in
+/// counted steps, several positions share a distance and an uncounted step
+/// does not move it. With the steps into positions 1 and 3 uncounted,
+/// `eventually[0,1]` reaches `c.level = 3` at position 3, `always[0,1]`
+/// reads positions 0 to 3, `eventually[1,1]` reads positions 2 and 3, and the
+/// past operator `once[0,0]` at position 3 still reads position 2.
+#[trace("TC-658")]
+#[test]
+fn an_uncounted_step_moves_the_position_and_not_the_distance() {
+    let holds = |body: &str| counted(&counter(EVENT, body));
+    assert_eq!(
+        holds("eventually[0,1] holds(c.level = 3)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(holds("eventually[0,1] holds(c.level = 4)"), violated(0));
+    assert_eq!(
+        holds("eventually[1,1] holds(c.level = 3)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(holds("eventually[1,1] holds(c.level = 4)"), violated(0));
+    assert_eq!(
+        holds("always[0,1] holds(c.level <= 3)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(holds("always[0,1] holds(c.level <= 2)"), violated(0));
+    let each = fixture(
+        EVENT,
+        "c: Counter",
+        "on each (q: Counter)",
+        "holds(c.level = 3) implies once[0,0] holds(c.level = 2)",
+    );
+    assert_eq!(counted(&each), TemporalOutcome::Holds);
+    let farther = fixture(
+        EVENT,
+        "c: Counter",
+        "on each (q: Counter)",
+        "holds(c.level = 4) implies once[0,0] holds(c.level = 3)",
+    );
+    assert_eq!(counted(&farther), violated(4));
+}
+
+/// ADR-027 PB-3: a lasso with an uncounted step, its loop-closing step
+/// included, is not
+/// read in counted steps.
+#[test]
+fn a_lasso_with_an_uncounted_step_is_refused() {
+    let fixture = counter(INFINITE, "eventually[0,1] holds(c.level = 2)");
+    let mut letters = Letters::new(&fixture, counters(&[0, 1, 2]));
+    letters.uncounted = vec![1];
+    let refusal = evaluate(
+        &fixture.clause,
+        TemporalTrace::Lasso {
+            prefix: 1,
+            loop_len: 2,
+        },
+        &mut letters,
+        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    );
+    assert_eq!(refusal, Err(TemporalRefusal::UncountedLasso));
+    let mut letters = Letters::new(&fixture, counters(&[0, 1, 2]));
+    letters.uncounted_loop_edge = true;
+    let refusal = evaluate(
+        &fixture.clause,
+        TemporalTrace::Lasso {
+            prefix: 1,
+            loop_len: 2,
+        },
+        &mut letters,
+        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    );
+    assert_eq!(refusal, Err(TemporalRefusal::UncountedLasso));
 }
 
 /// FR-327-AC-2: `always[0,0] holds(c.level <= 1)` with activation `on each`

@@ -48,6 +48,14 @@ pub trait SafetyAutomaton {
     /// [`AutomatonError::StateLimit`] when reaching a target would exceed the
     /// automaton's limit.
     fn row(&mut self, from: StateId) -> Result<Vec<Transition>, AutomatonError>;
+
+    /// Whether `state` owes an interval eventuality that only a counted
+    /// step can close (ADR-027 PB-3): a pending `eventually` or `until`
+    /// deadline, or one waiting out its lower bound. An explicit automaton
+    /// keeps no counters.
+    fn owes_eventuality(&self, _state: StateId) -> bool {
+        false
+    }
 }
 
 impl SafetyAutomaton for &Gba {
@@ -102,6 +110,10 @@ impl SafetyAutomaton for PropertyAutomaton {
     fn row(&mut self, from: StateId) -> Result<Vec<Transition>, AutomatonError> {
         self.transitions(from)
     }
+
+    fn owes_eventuality(&self, state: StateId) -> bool {
+        PropertyAutomaton::owes_eventuality(self, state)
+    }
 }
 
 impl<A: SafetyAutomaton + ?Sized> SafetyAutomaton for Box<A> {
@@ -119,6 +131,10 @@ impl<A: SafetyAutomaton + ?Sized> SafetyAutomaton for Box<A> {
 
     fn row(&mut self, from: StateId) -> Result<Vec<Transition>, AutomatonError> {
         (**self).row(from)
+    }
+
+    fn owes_eventuality(&self, state: StateId) -> bool {
+        (**self).owes_eventuality(state)
     }
 }
 
