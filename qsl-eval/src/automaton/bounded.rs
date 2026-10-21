@@ -22,12 +22,11 @@
 //! the false extension supplies the counted false letters through the
 //! remaining horizon and closes the last region.
 
-use qsl_semantics::check::{
-    Activation, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
-    UnaryTemporal,
-};
 use qsl_foundation::bound::TemporalUpper;
 use qsl_foundation::IdentityLimits;
+use qsl_semantics::check::{
+    Activation, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId, UnaryTemporal,
+};
 use quire_canonical::{Limits, Node, NodeRef};
 
 use crate::automaton::key::{

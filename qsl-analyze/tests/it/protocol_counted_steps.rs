@@ -26,9 +26,10 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_protocol_trace, settle_protocol_check, ModelCheckItem, ModelCheckLimits,
-    ModelCheckOutcome, ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject,
-    ReplayLimits, ResultLabel, TemporalCounterexample, UndecidedCause,
+    check_protocol_closure, replay_protocol_trace, settle_protocol_check, CertificateLocus,
+    CertificateRejection, CertificateRule, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
+    ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ResultLabel,
+    TemporalCertificateCheck, TemporalCounterexample,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::observation::DocumentRef;
@@ -554,8 +555,7 @@ fn an_uncounted_cend_and_finish_end_the_window_after_the_refund() {
 #[trace("TC-658", "FR-338-AC-6")]
 #[test]
 fn a_past_window_is_measured_in_counted_steps() {
-    let case =
-        repaired_fill("always[0,5] (holds(k.v = 3) implies not once[1,1] holds(k.v = 3))");
+    let case = repaired_fill("always[0,5] (holds(k.v = 3) implies not once[1,1] holds(k.v = 3))");
     let subject = case.subject("Fill");
     let system = sc_system(&subject);
     let mut behaviour = Behaviour::follow(&system, is_three, preferring("/B"));
@@ -586,36 +586,121 @@ fn a_past_window_is_measured_in_counted_steps() {
     );
 }
 
-/// ADR-027 PB-3: a cycle of uncounted steps keeps an interval that needs a
-/// counted step open, so it is not met on that lasso. On a channel whose
-/// delivery is `unknown`, `duplicate` then `lose` returns to the state it
-/// left, the product state coalesces and the monitor never rejects; EN-1
-/// must not answer `Holds` for `eventually[0,2] holds(k.v = 1)`, which every
-/// behaviour that takes its counted steps satisfies at the attempt. It
-/// settles `Undecided` with the uncounted-loop cause.
-#[test]
-fn an_uncounted_cycle_that_keeps_an_interval_open_is_not_holds() {
-    let members = "channel ch from w to w carries Boolean ordering fifo by (m: Boolean) \
-                   { true } delivery unknown capacity 2 overflow block;";
+/// The claim `eventually[0,2] holds(k.v = 1)` over a protocol that sends
+/// on a channel whose delivery is `unknown`, so `duplicate` then `lose`
+/// returns to the state it left, and then runs `A`, which makes `k.v` 1. The
+/// product state of the cycle coalesces and the monitor never rejects.
+fn lossy_channel(members: &str) -> Case {
+    let members = format!(
+        "channel ch from w to w carries Boolean ordering fifo by (m: Boolean) \
+         {{ true }} delivery unknown capacity 2 overflow block; {members}"
+    );
     let run = format!(
         "sequence Main {{ send S1 via ch as (s1: Boolean) {{ s1 }}; \
          {} }}",
         attempt("A", "inc", "IncPre, IncPost", "a", "true")
     );
-    let unit = contracts("self.v <= 1") + &protocol("P", members, &run, "d");
-    let case = Case::new(&(unit + &claim("eventually[0,2] holds(k.v = 1)")));
+    let unit = contracts("self.v <= 1") + &protocol("P", &members, &run, "d");
+    Case::new(&(unit + &claim("eventually[0,2] holds(k.v = 1)")))
+}
+
+/// ADR-027 PB-3 (FR-338): a cycle of uncounted steps keeps an interval that
+/// needs a counted step open, so it is not met on that lasso, but the lasso
+/// is a behaviour only when it is fair. With the default scheduler
+/// constraints the thread at `A` can still move, `A` is enabled at every
+/// state of the `duplicate`/`lose` cycle and never taken, so the cycle is
+/// unfair, every fair behaviour takes `A`, and the claim holds: EN-1 settles
+/// `proved`, the core's closure checker having run the same search.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn an_uncounted_cycle_that_a_thread_can_leave_is_not_a_fair_behaviour() {
+    let case = lossy_channel("");
     let letters = CellV(|value| value == 1);
     let outcome = case.check("P", &letters);
     assert!(
-        matches!(
-            outcome,
-            ModelCheckOutcome::Undecided {
-                cause: UndecidedCause::UncountedLoop,
-                ..
-            }
-        ),
-        "{outcome:?}"
+        matches!(outcome, ModelCheckOutcome::Holds { .. }),
+        "{:?}",
+        outcome.stats()
     );
+    assert_eq!(case.label("P", &letters, &outcome), ResultLabel::Proved);
+}
+
+/// ADR-027 PB-3 (FR-338): under `scheduling adversarial` the same cycle is a
+/// fair behaviour, and it is the counterexample: the lasso whose stem is the
+/// `send` and whose loop is `duplicate` then `lose`, the thread resting
+/// before `A` throughout. The claim is refuted, and the lasso replays, read in
+/// counted steps with a loop that has none.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn an_uncounted_cycle_that_keeps_an_interval_open_refutes_it_under_adversarial_scheduling() {
+    let case = lossy_channel("scheduling adversarial;");
+    let letters = CellV(|value| value == 1);
+    let outcome = case.check("P", &letters);
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("{:?}", outcome.stats());
+    };
+    let lasso = counterexample.lasso.expect("a lasso");
+    assert!(!lasso.terminal_stutter);
+    assert!(counterexample.fairness.is_empty());
+    let (stem, cycle) = counterexample.prefix.split_at(lasso.entry);
+    assert_eq!(
+        stem.iter()
+            .map(|step| step.transition.kind())
+            .collect::<Vec<_>>(),
+        [StepKind::Send]
+    );
+    assert_eq!(
+        cycle
+            .iter()
+            .map(|step| step.transition.kind())
+            .collect::<Vec<_>>(),
+        [StepKind::Duplicate, StepKind::Lose]
+    );
+    assert!(cycle.iter().all(|step| !step.transition.counts()));
+    assert_eq!(case.label("P", &letters, &outcome), ResultLabel::Refuted);
+}
+
+/// FR-338 "Protocol non-progress acceptance": a closure that reaches the same
+/// product states is no proof when the cycle of uncounted steps is a fair
+/// behaviour. The certificate the default package's proof carries, offered
+/// for the adversarial package's claim over the same states, is rejected
+/// `WitnessFails` at the least product state of the cycle; offered for the
+/// default package it is accepted, the thread at `A` excluding the cycle.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_closure_with_a_fair_uncounted_cycle_is_rejected_as_a_proof() {
+    let fair = lossy_channel("");
+    let letters = CellV(|value| value == 1);
+    let ModelCheckOutcome::Holds { certificate, .. } = fair.check("P", &letters) else {
+        panic!("the default scheduler excludes the cycle");
+    };
+    let check = |case: &Case| {
+        check_protocol_closure(
+            &ProtocolCertificateRequest {
+                subject: case.subject("P"),
+                item: ModelCheckItem::Clause {
+                    clause: case.clause(),
+                    letters: &letters,
+                },
+                max_store_buffer: None,
+                max_live_instances: None,
+            },
+            &certificate,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the request is checked")
+    };
+    assert_eq!(check(&fair), TemporalCertificateCheck::Accepted);
+    let adversarial = lossy_channel("scheduling adversarial;");
+    let TemporalCertificateCheck::Rejected(CertificateRejection {
+        rule: CertificateRule::WitnessFails,
+        at: CertificateLocus::ProductState(at),
+    }) = check(&adversarial)
+    else {
+        panic!("the fair cycle is a witness");
+    };
+    assert!(certificate.states.contains(&at));
 }
 
 /// ADR-027 PB-3: an operation, an event (an `activate` included), a `send`

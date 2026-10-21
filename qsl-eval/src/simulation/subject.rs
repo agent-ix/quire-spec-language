@@ -9,10 +9,12 @@ use std::borrow::Cow;
 
 use qsl_foundation::digest::DigestRecord;
 
+use crate::fairness::{Constraint, Identity};
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
+use crate::simulation::progress::ZeroProgressError;
 use crate::simulation::protocol::{BlockedThread, ProtocolFairness, ProtocolTransition};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -89,6 +91,26 @@ pub trait SubjectSystem:
     /// every step of a model subject does, ADR-018's reading.
     fn counts_step(&self, _transition: &Self::TransitionId) -> bool {
         true
+    }
+
+    /// The kernels' fairness constraints over `transitions`, the transitions
+    /// of a zero-progress graph numbered by `identity` (ADR-027 PB-3, FR-338
+    /// "Protocol non-progress acceptance"): the `authored` constraints and the
+    /// subject's own scheduler constraints (FR-212). Every step of a model
+    /// subject counts, so it has no loop of steps that do not and none to
+    /// constrain.
+    ///
+    /// # Errors
+    ///
+    /// [`ZeroProgressError`] when a constraint names an operation the subject
+    /// does not admit, or a transition cannot be numbered.
+    fn progress_constraints(
+        &self,
+        _authored: &[FairnessConstraint],
+        _transitions: &[Self::TransitionId],
+        _identity: &dyn Fn(&Self::TransitionId) -> Result<Identity, ZeroProgressError>,
+    ) -> Result<Vec<Constraint>, ZeroProgressError> {
+        Ok(Vec::new())
     }
 
     /// The model state a temporal atom reads at `state` (ADR-027 PB-2, SE-1

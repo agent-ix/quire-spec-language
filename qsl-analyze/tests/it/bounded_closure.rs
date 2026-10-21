@@ -88,7 +88,8 @@ impl Bounded {
             parameter: identity.over().expect("an over node"),
             value: Value::Reference(reference(&fixture.package, &fixture.documents, "c")),
         }];
-        let context = StateContext::clause(&fixture.clauses[0], identity.occurrence().clone(), binding);
+        let context =
+            StateContext::clause(&fixture.clauses[0], identity.occurrence().clone(), binding);
         BoundedTranslation::clause(&fixture.clauses[0], &context).expect("translates")
     }
 
@@ -127,8 +128,10 @@ impl Bounded {
     }
 
     fn certificate_of(&self, states: &[(i64, BoundedState)]) -> ClosureCertificate {
-        let mut states: Vec<ProductStateRef> =
-            states.iter().map(|(v, state)| self.at(*v, *state)).collect();
+        let mut states: Vec<ProductStateRef> = states
+            .iter()
+            .map(|(v, state)| self.at(*v, *state))
+            .collect();
         states.sort();
         ClosureCertificate { states }
     }
@@ -149,7 +152,10 @@ fn certificate(outcome: &ModelCheckOutcome) -> ClosureCertificate {
     }
 }
 
-fn check(request: &CertificateRequest<'_>, certificate: &ClosureCertificate) -> TemporalCertificateCheck {
+fn check(
+    request: &CertificateRequest<'_>,
+    certificate: &ClosureCertificate,
+) -> TemporalCertificateCheck {
     check_closure(
         request,
         certificate,
@@ -184,7 +190,10 @@ fn a_bounded_eventually_that_is_met_carries_a_certificate_the_core_accepts() {
     ]);
     assert_eq!(certificate(&outcome), expected);
     let request = clause.request();
-    assert_eq!(check(&request, &expected), TemporalCertificateCheck::Accepted);
+    assert_eq!(
+        check(&request, &expected),
+        TemporalCertificateCheck::Accepted
+    );
     let record = settle_model_check(
         &outcome,
         &ModelCheckLimits::default(),
@@ -196,8 +205,8 @@ fn a_bounded_eventually_that_is_met_carries_a_certificate_the_core_accepts() {
     assert_eq!(record.label, ResultLabel::Proved);
 }
 
-/// FR-338-AC-6: p false then false rejects. `eventually[0,1] holds(c.value
-/// >= 2)` reads false at 0 and 1, so EN-1 refutes it and carries no
+/// FR-338-AC-6: p false then false rejects. `eventually[0,1]` over a letter
+/// that reads false at 0 and 1 is refuted by EN-1, which carries no
 /// certificate.
 #[trace("TC-525", "FR-338-AC-6")]
 #[test]
@@ -234,11 +243,16 @@ fn a_bounded_certificate_missing_a_reached_state_is_rejected_at_it() {
         rejected(CertificateRule::InitialMissing, at)
     );
     let mut renamed = full.clone();
-    renamed.states.retain(|held| *held != clause.at(1, BoundedState::Accept));
+    renamed
+        .states
+        .retain(|held| *held != clause.at(1, BoundedState::Accept));
     renamed.states.push(clause.at(1, open(0)));
     assert_eq!(
         check(&request, &renamed),
-        rejected(CertificateRule::SuccessorMissing, clause.at(1, BoundedState::Accept))
+        rejected(
+            CertificateRule::SuccessorMissing,
+            clause.at(1, BoundedState::Accept)
+        )
     );
 }
 
@@ -254,12 +268,7 @@ fn a_bounded_certificate_missing_a_reached_state_is_rejected_at_it() {
 fn the_terminal_false_extension_closes_the_last_region() {
     let closes = bounded("always[0,3] holds(c.value >= 0)", |v| Some(v >= 0));
     let outcome = closes.run();
-    let expected = closes.certificate_of(&[
-        (0, open(3)),
-        (1, open(2)),
-        (2, open(1)),
-        (3, open(0)),
-    ]);
+    let expected = closes.certificate_of(&[(0, open(3)), (1, open(2)), (2, open(1)), (3, open(0))]);
     assert_eq!(certificate(&outcome), expected);
     assert_eq!(
         check(&closes.request(), &expected),
@@ -271,12 +280,8 @@ fn the_terminal_false_extension_closes_the_last_region() {
         open_at_end.run(),
         ModelCheckOutcome::Violated { .. }
     ));
-    let held = open_at_end.certificate_of(&[
-        (0, open(4)),
-        (1, open(3)),
-        (2, open(2)),
-        (3, open(1)),
-    ]);
+    let held =
+        open_at_end.certificate_of(&[(0, open(4)), (1, open(3)), (2, open(2)), (3, open(1))]);
     assert_eq!(
         check(&open_at_end.request(), &held),
         rejected(CertificateRule::BadState, open_at_end.at(3, open(1)))
@@ -303,10 +308,7 @@ fn the_positions_of_the_horizon_are_read_after_the_monitor_accepts() {
     );
 
     let read = bounded("eventually[0,2] holds(c.value >= 1)", undefined_at_two);
-    assert!(matches!(
-        read.run(),
-        ModelCheckOutcome::Violated { .. }
-    ));
+    assert!(matches!(read.run(), ModelCheckOutcome::Violated { .. }));
     let held = read.certificate_of(&[
         (0, open(2)),
         (1, BoundedState::Accept),

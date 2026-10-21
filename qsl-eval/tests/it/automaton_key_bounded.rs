@@ -87,7 +87,10 @@ fn eventually_one_on_origin_walks_to_accept_and_to_reject() {
     let rejected = translation.step(last, true, true);
     assert_eq!(rejected, BoundedState::Reject);
     assert_eq!(text(&translation, rejected), key(r#"["reject"]"#));
-    assert_eq!(translation.step(translation.start(true), true, false), BoundedState::Accept);
+    assert_eq!(
+        translation.step(translation.start(true), true, false),
+        BoundedState::Accept
+    );
     assert_eq!(translation.step(rejected, true, true), BoundedState::Reject);
 }
 
@@ -102,7 +105,10 @@ fn a_step_that_does_not_count_reads_its_letter_without_reducing_the_debt() {
     let origin = translation.start(false);
     let after_fork = translation.step(origin, false, false);
     assert_eq!(after_fork, origin);
-    assert_eq!(translation.step(after_fork, true, true), BoundedState::Accept);
+    assert_eq!(
+        translation.step(after_fork, true, true),
+        BoundedState::Accept
+    );
     // The counted step that follows a false counted one closes the region.
     let counted = translation.step(origin, true, false);
     assert_eq!(translation.step(counted, true, true), BoundedState::Reject);
@@ -151,11 +157,23 @@ fn the_terminal_false_extension_closes_the_open_region() {
             BoundedState::Reject
         );
     }
-    assert_eq!(eventually.terminal(BoundedState::Accept), BoundedState::Accept);
+    assert_eq!(
+        eventually.terminal(BoundedState::Accept),
+        BoundedState::Accept
+    );
     let always = clause("always[0,2] holds(true)");
-    assert_eq!(always.terminal(BoundedState::Open { remaining: 0 }), BoundedState::Accept);
-    assert_eq!(always.terminal(BoundedState::Open { remaining: 1 }), BoundedState::Reject);
-    assert_eq!(always.terminal(BoundedState::Open { remaining: 2 }), BoundedState::Reject);
+    assert_eq!(
+        always.terminal(BoundedState::Open { remaining: 0 }),
+        BoundedState::Accept
+    );
+    assert_eq!(
+        always.terminal(BoundedState::Open { remaining: 1 }),
+        BoundedState::Reject
+    );
+    assert_eq!(
+        always.terminal(BoundedState::Open { remaining: 2 }),
+        BoundedState::Reject
+    );
 }
 
 /// u64::MAX bounds stay exact: the horizon and the remaining distance are
@@ -213,10 +231,8 @@ fn a_bounded_key_is_admitted_against_its_own_context_only() {
         translation.admit(each.as_bytes()),
         Err(KeyRefusal::ForeignContext)
     );
-    let infinite = text(&translation, BoundedState::Accept).replace(
-        "quire.temporal.event-position.false-extension/v1",
-        INFINITE,
-    );
+    let infinite = text(&translation, BoundedState::Accept)
+        .replace("quire.temporal.event-position.false-extension/v1", INFINITE);
     assert_eq!(
         translation.admit(infinite.as_bytes()),
         Err(KeyRefusal::ForeignContext)
@@ -231,19 +247,30 @@ fn a_bounded_key_is_admitted_against_its_own_context_only() {
         (open(r#""1""#, r#""deadline","2""#), KeyRefusal::Unreachable),
         (open(r#""3""#, r#""deadline","3""#), KeyRefusal::Unreachable),
         (open(r#""1""#, r#""extent","1""#), KeyRefusal::Unresolved),
-        (open(r#""01""#, r#""deadline","01""#), KeyRefusal::Decimal("01".into())),
         (
-            open(r#""18446744073709551616""#, r#""deadline","18446744073709551616""#),
+            open(r#""01""#, r#""deadline","01""#),
+            KeyRefusal::Decimal("01".into()),
+        ),
+        (
+            open(
+                r#""18446744073709551616""#,
+                r#""deadline","18446744073709551616""#,
+            ),
             KeyRefusal::Decimal("18446744073709551616".into()),
         ),
         (open("1", r#""deadline","1""#), KeyRefusal::Members),
-        (key(r#"["bounded",["origin","1"],[]]"#), KeyRefusal::Unreachable),
+        (
+            key(r#"["bounded",["origin","1"],[]]"#),
+            KeyRefusal::Unreachable,
+        ),
         (
             key(r#"["bounded",["origin","1"],[[[],[],[],[]]]]"#),
             KeyRefusal::Unresolved,
         ),
         (
-            key(r#"["bounded",["origin","1"],[[[[[],"positive"]],[],[[[],"positive","deadline","1"]],[]]]]"#),
+            key(
+                r#"["bounded",["origin","1"],[[[[[],"positive"]],[],[[[],"positive","deadline","1"]],[]]]]"#,
+            ),
             KeyRefusal::Unresolved,
         ),
         (
@@ -255,8 +282,14 @@ fn a_bounded_key_is_admitted_against_its_own_context_only() {
             KeyRefusal::Unresolved,
         ),
         (key(r#"["accept","extra"]"#), KeyRefusal::Members),
-        (key(r#"["safety",[]]"#), KeyRefusal::WrongForm("safety".into())),
-        (key(r#"["pending"]"#), KeyRefusal::UnknownTag("pending".into())),
+        (
+            key(r#"["safety",[]]"#),
+            KeyRefusal::WrongForm("safety".into()),
+        ),
+        (
+            key(r#"["pending"]"#),
+            KeyRefusal::UnknownTag("pending".into()),
+        ),
     ];
     for (octets, why) in refused {
         assert_eq!(translation.admit(octets.as_bytes()), Err(why), "{octets}");
@@ -275,7 +308,11 @@ fn a_bounded_key_is_admitted_against_its_own_context_only() {
 fn another_shape_has_no_bounded_translation() {
     for (profile, activation, body) in [
         (EVENT, "on origin", "eventually[1,2] holds(true)"),
-        (EVENT, "on origin", "eventually[0,2] (holds(true) and holds(false))"),
+        (
+            EVENT,
+            "on origin",
+            "eventually[0,2] (holds(true) and holds(false))",
+        ),
         (EVENT, "on origin", "once[0,2] holds(true)"),
         (EVENT, "on origin", "holds(true) until[0,2] holds(true)"),
         (EVENT, "on each (q: Counter)", "eventually[0,2] holds(true)"),

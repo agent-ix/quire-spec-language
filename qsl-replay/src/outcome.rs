@@ -370,7 +370,6 @@ impl ItemCause {
                 | InconclusiveCause::NoInstance
                 | InconclusiveCause::MatchUndetermined
                 | InconclusiveCause::VacuousMatch
-                | InconclusiveCause::UncountedLoop
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::SolverInconclusive,

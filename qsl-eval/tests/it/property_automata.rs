@@ -93,6 +93,9 @@ fn atom(index: usize) -> Atom {
 struct WordLetters<'a> {
     property: &'a PropertyAutomaton,
     word: &'a [Letter],
+    /// Whether the step that closes a lasso's loop counts: the step into
+    /// the loop's entry, which its letter says.
+    loop_edge_counts: bool,
 }
 
 impl WordLetters<'_> {
@@ -132,6 +135,10 @@ impl TemporalLetters for WordLetters<'_> {
             .uncounted()
             .is_none_or(|uncounted| !self.letter(position).holds(uncounted))
     }
+
+    fn counts_loop_edge(&self) -> bool {
+        self.loop_edge_counts
+    }
 }
 
 fn reading(holds: bool) -> AtomReading {
@@ -144,9 +151,17 @@ fn reading(holds: bool) -> AtomReading {
 
 /// Whether the clause holds on `trace` over `word`, by the evaluator.
 fn evaluator_holds(subject: &Subject, word: &[Letter], trace: TemporalTrace) -> bool {
+    let loop_edge_counts = match (trace, subject.property.uncounted()) {
+        (TemporalTrace::Lasso { prefix, .. }, Some(uncounted)) => usize::try_from(prefix)
+            .ok()
+            .and_then(|entry| word.get(entry))
+            .is_none_or(|letter| !letter.holds(uncounted)),
+        _ => true,
+    };
     let mut letters = WordLetters {
         property: &subject.property,
         word,
+        loop_edge_counts,
     };
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     match evaluate(&subject.fixture.clause, trace, &mut letters, &mut meter) {
@@ -300,6 +315,22 @@ fn agree(subject: &Subject, longest: usize) -> usize {
             }
             AutomatonKind::Safety | AutomatonKind::Liveness => {
                 for prefix in 0..word.len() {
+                    // A bad-prefix or finitely-accepting automaton cannot see
+                    // that a loop with no counted step never meets an
+                    // interval: EN-1 decides those loops by the non-progress
+                    // check, and the evaluator reads them directly.
+                    if let Some(uncounted) = property.uncounted() {
+                        // The loop's steps are those into its positions after
+                        // the entry, and its closing step is the entry's own.
+                        let progress = word
+                            .get(prefix..)
+                            .into_iter()
+                            .flatten()
+                            .any(|letter| !letter.holds(uncounted));
+                        if !progress {
+                            continue;
+                        }
+                    }
                     let expected = evaluator_holds(
                         subject,
                         &word,
@@ -432,6 +463,76 @@ fn a_past_interval_over_counted_steps_answers_to_counted_distance() {
     ] {
         let subject = counted(body);
         assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, 4) > 0, "{body}");
+    }
+}
+
+/// ADR-027 PB-3 (FR-338): an infinite-trace clause with an interval over a
+/// subject whose steps count by kind answers to the lasso evaluation in
+/// counted steps, over every lasso of up to four positions and every split
+/// into prefix and loop. A loop with no counted step keeps every distance
+/// constant, so an interval that needs a counted step after the loop is
+/// entered is not met on it; the loop's closing step counts as its entry's
+/// letter says.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_counted_lasso_answers_to_counted_distance() {
+    for (body, kind) in [
+        ("eventually[1,2] holds(p)", AutomatonKind::Safety),
+        (
+            "always (holds(p) implies eventually[0,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies eventually[1,2] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies always[1,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies (holds(q) until[0,2] holds(p)))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies once[1,2] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies eventually[2,3] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies once[2,3] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies historically[0,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        ("always eventually[0,1] holds(p)", AutomatonKind::Safety),
+        ("eventually[0,1] always holds(p)", AutomatonKind::Safety),
+        (
+            "always (holds(p) implies eventually[1,*] holds(q))",
+            AutomatonKind::Liveness,
+        ),
+        ("eventually always[0,1] holds(p)", AutomatonKind::Liveness),
+    ] {
+        let fixture = fixture(INFINITE, "c: Counter", ORIGIN, body);
+        let mut property =
+            translate_counted(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+        let gba = property
+            .explore()
+            .unwrap_or_else(|why| panic!("{body}: {why}"));
+        let subject = Subject {
+            body: body.to_owned(),
+            fixture,
+            property,
+            gba,
+        };
+        assert_eq!(subject.property.kind(), kind, "{body}");
         assert!(subject.property.uncounted().is_some(), "{body}");
         assert!(agree(&subject, 4) > 0, "{body}");
     }

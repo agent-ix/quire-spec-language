@@ -53,8 +53,18 @@ const DEADLOCK_FREEDOM: &str = "deadlock-freedom";
 /// wraps octets read from a certificate as they arrived: such a key is
 /// unadmitted, and a checker admits it against its own context before it
 /// is used for membership.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AutomatonStateKey(pub(super) Vec<u8>);
+
+impl std::fmt::Debug for AutomatonStateKey {
+    /// The key's octets as text: a key is canonical UTF-8 JSON.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("AutomatonStateKey")
+            .field(&String::from_utf8_lossy(&self.0))
+            .finish()
+    }
+}
 
 impl AutomatonStateKey {
     /// The octets of a key as a certificate carried them, not yet admitted.

@@ -43,24 +43,32 @@
 //! `InstanceBoundReached` with the distinct instance-limited model states
 //! (after `MemoryBoundReached`), never an acceptance.
 //!
-//! Both items EN-1 decides here, TP-1 and deadlock freedom, have no future
-//! interval, so FR-338's non-progress acceptance check does not apply: they
-//! keep pure bad-prefix closure.
+//! TP-1 and deadlock freedom have no future interval, so FR-338's
+//! non-progress acceptance check does not apply: they keep pure bad-prefix
+//! closure. A bounded `eventually[0,u]` clause (TP-2) is closed over its
+//! bounded monitor's states and counted distance. Over a protocol subject the
+//! steps that do not count are recorded between the product states that hold
+//! its debt open, and a component of them with a cycle fair under the
+//! subject's scheduler constraints and the clause's own rejects the
+//! certificate `WitnessFails` at the least of its product states, since that
+//! cycle is a behaviour that never meets the interval. Remaining work:
+//! QSL-878 charges that search to the state, edge and automaton budgets.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
-    AutomatonStateKey, BoundedState, BoundedTranslation, SafetyItem, SafetyState, SafetyTranslation,
+    AutomatonStateKey, BoundedKind, BoundedState, BoundedTranslation, SafetyItem, SafetyState,
+    SafetyTranslation,
 };
 use qsl_eval::model_subject::{ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
-    activates_on_each, check_protocol_bounds, live_instance_bound, ProtocolRefusal, ProtocolSystem,
-    Sc, SubjectMemory,
+    activates_on_each, check_protocol_bounds, live_instance_bound, ProtocolFairnessError,
+    ProtocolRefusal, ProtocolSystem, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
     Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
-    BOUND_POSITIONS,
+    ZeroProgress, ZeroProgressError, BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
@@ -202,6 +210,10 @@ pub enum ClosureRefusal {
     /// The subject's protocol system does not build (FR-205).
     #[error(transparent)]
     Protocol(ProtocolRefusal),
+    /// A fairness constraint of the item names an operation the subject does
+    /// not admit.
+    #[error(transparent)]
+    Fairness(ProtocolFairnessError),
     /// An invariant of the subject broke.
     #[error("the closure check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -418,9 +430,11 @@ fn check_system<S: SubjectSystem>(
             )));
         }
         let admitted = state.model_state.domain() == DigestDomain::SimulationStateKeyV1
-            && instances
-                .iter()
-                .any(|instance| instance.translation.admits(state.automaton_state.as_bytes()));
+            && instances.iter().any(|instance| {
+                instance
+                    .translation
+                    .admits(state.automaton_state.as_bytes())
+            });
         if !admitted {
             let order = |state: &ProductStateRef| {
                 (
@@ -515,13 +529,31 @@ struct BoundedPending<S: SubjectSystem> {
     distance: u64,
 }
 
+/// A product state of a bounded instance, as the run tells two apart.
+type BoundedKey = (DigestRecord, BoundedState, u64);
+
+/// A successor of an expansion with its state-key digest.
+type Keyed<S> = (
+    <S as TransitionSystem>::TransitionId,
+    DigestRecord,
+    <S as TransitionSystem>::State,
+);
+
+/// The steps that do not count between the product states of a bounded
+/// instance that hold an `eventually` debt open (FR-338 "Protocol
+/// non-progress acceptance"), with the model state of each end.
+struct ZeroEdges<S: SubjectSystem> {
+    states: BTreeMap<BoundedKey, S::State>,
+    edges: Vec<(BoundedKey, BoundedKey, S::TransitionId)>,
+}
+
 /// What a bounded instance's run keeps: its translation, its `holds` atom's
 /// binding and the product states it has reached.
 struct BoundedRun<'i> {
     translation: &'i BoundedTranslation,
     letters: &'i dyn ModelLetters,
     binding: &'i qsl_eval::model_subject::ModelInstance,
-    visited: BTreeSet<(DigestRecord, BoundedState, u64)>,
+    visited: BTreeSet<BoundedKey>,
     /// The atom at each model state read so far; `None` is undefined.
     readings: BTreeMap<DigestRecord, Option<bool>>,
 }
@@ -657,17 +689,24 @@ impl<S: SubjectSystem> Check<'_, S> {
             readings: BTreeMap::new(),
         };
         let mut queue = VecDeque::new();
+        let mut zero = ZeroEdges::<S> {
+            states: BTreeMap::new(),
+            edges: Vec::new(),
+        };
         for (_, _, digest, state) in initial {
-            if let Some(pending) = self.reach_bounded(
+            let (pending, _, _) = self.reach_bounded(
                 &mut run,
                 state.clone(),
                 *digest,
                 None,
                 CertificateRule::InitialMissing,
-            )? {
-                queue.push_back(pending);
-            }
+            )?;
+            queue.extend(pending);
         }
+        // Only an `eventually` debt can stay open on a loop of steps that
+        // do not count: a surviving `always` obligation discharges at its
+        // closed boundary and fails on no letter the loop reads twice.
+        let owes = translation.kind() == BoundedKind::Eventually;
         while let Some(pending) = queue.pop_front() {
             self.poll()?;
             let (expansion, cut) = self.expand(&pending.state, &pending.at)?;
@@ -687,25 +726,117 @@ impl<S: SubjectSystem> Check<'_, S> {
                 self.poll()?;
                 self.charge_edge()?;
                 let counted = self.system.counts_step(&transition);
-                if let Some(next) = self.reach_bounded(
+                let holds_open =
+                    owes && !counted && matches!(pending.automaton, BoundedState::Open { .. });
+                let target = holds_open.then(|| state.clone());
+                let (next, after, distance) = self.reach_bounded(
                     &mut run,
                     state,
                     digest,
                     Some((pending.automaton, pending.distance, counted)),
                     CertificateRule::SuccessorMissing,
-                )? {
-                    queue.push_back(next);
+                )?;
+                queue.extend(next);
+                if let (Some(target), BoundedState::Open { .. }) = (target, after) {
+                    let from = (pending.at.model_state, pending.automaton, pending.distance);
+                    zero.states
+                        .entry(from)
+                        .or_insert_with(|| pending.state.clone());
+                    let to = (digest, after, distance);
+                    zero.states.entry(to).or_insert(target);
+                    zero.edges.push((from, to, transition));
                 }
             }
         }
+        if let Some(at) = self.zero_progress(&run, zero)? {
+            return Err(Self::reject(CertificateRule::WitnessFails, at));
+        }
         Ok(())
+    }
+
+    /// FR-338 "Protocol non-progress acceptance": a cycle of steps that do
+    /// not count among the product states that hold an `eventually` debt
+    /// open, fair under the subject's scheduler constraints and the item's
+    /// own (ADR-019), is a behaviour that never meets the interval, so the
+    /// closure is no proof. The product state of the least state of the
+    /// first such component, by product state, is where the check fails.
+    fn zero_progress(
+        &mut self,
+        run: &BoundedRun<'_>,
+        zero: ZeroEdges<S>,
+    ) -> Step<Option<ProductStateRef>> {
+        if zero.edges.is_empty() {
+            return Ok(None);
+        }
+        let ModelCheckItem::Clause { clause, .. } = self.item else {
+            return Err(fault("clause-item-translation").into());
+        };
+        let mut graph = ZeroProgress::<S>::new();
+        let mut vertex_of = BTreeMap::new();
+        let mut keys = Vec::with_capacity(zero.states.len());
+        for (key, state) in &zero.states {
+            self.poll()?;
+            let at = self.bounded_ref(run, key)?;
+            let (expansion, _) = self.expand(state, &at)?;
+            let enabled = expansion
+                .successors
+                .iter()
+                .map(|(transition, _)| transition);
+            vertex_of.insert(*key, graph.vertex(self.system, enabled)?);
+            keys.push(*key);
+        }
+        for (from, to, transition) in &zero.edges {
+            let (Some(from), Some(to)) = (vertex_of.get(from), vertex_of.get(to)) else {
+                return Err(fault("an-edge-joins-two-states").into());
+            };
+            graph.edge(self.system, *from, *to, transition)?;
+        }
+        let found = match graph.fair_loop(self.system, clause.fairness(), self.cancel) {
+            Ok(found) => found,
+            Err(ZeroProgressError::Cancelled) => {
+                self.poll()?;
+                return Err(fault("a-cancelled-run-has-a-cause").into());
+            }
+            Err(ZeroProgressError::Encoding(refusal)) => return Err(refusal.into()),
+            Err(ZeroProgressError::Fairness(error)) => {
+                return Err(ClosureRefusal::Fairness(error).into())
+            }
+            Err(ZeroProgressError::Graph) => {
+                return Err(fault("the-zero-progress-graph-is-built-from-states").into())
+            }
+        };
+        let Some(found) = found else {
+            return Ok(None);
+        };
+        let mut least: Option<ProductStateRef> = None;
+        for vertex in &found.component {
+            let key = keys
+                .get(vertex.index())
+                .ok_or_else(|| fault("a-vertex-is-a-state"))?;
+            let at = self.bounded_ref(run, key)?;
+            if least.as_ref().is_none_or(|held| at < *held) {
+                least = Some(at);
+            }
+        }
+        Ok(least)
+    }
+
+    /// The certificate's reference to the bounded product state `key`.
+    fn bounded_ref(&mut self, run: &BoundedRun<'_>, key: &BoundedKey) -> Step<ProductStateRef> {
+        let automaton = run
+            .translation
+            .key(key.1)
+            .map_err(|_| ClosureRefusal::Encoding)?;
+        self.product_of(key.0, automaton)
     }
 
     /// Reach `state`, whose digest is `digest`, from the monitor state and
     /// counted distance `before` (`None` at position zero) by a step that
     /// counts or not: read its letter when the claim reads its distance,
     /// reject a bad state, then require it in the certificate under
-    /// `missing`. `None` when this instance reached it before.
+    /// `missing`. The state is pending unless this instance reached it
+    /// before; the monitor state and counted distance it was read to come
+    /// back either way.
     fn reach_bounded(
         &mut self,
         run: &mut BoundedRun<'_>,
@@ -713,7 +844,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         digest: DigestRecord,
         before: Option<(BoundedState, u64, bool)>,
         missing: CertificateRule,
-    ) -> Step<Option<BoundedPending<S>>> {
+    ) -> Step<(Option<BoundedPending<S>>, BoundedState, u64)> {
         let horizon = run.translation.horizon();
         let distance = match before {
             None => 0,
@@ -764,7 +895,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             return Err(Self::reject(CertificateRule::BadState, at));
         }
         if run.visited.contains(&(digest, after, distance)) {
-            return Ok(None);
+            return Ok((None, after, distance));
         }
         if self.reached >= self.limits.limits.max_states {
             return Err(stopped(
@@ -777,20 +908,18 @@ impl<S: SubjectSystem> Check<'_, S> {
         if !self.members.contains(&at) {
             return Err(Self::reject(missing, at));
         }
-        Ok(Some(BoundedPending {
+        let pending = BoundedPending {
             state,
             at,
             automaton: after,
             distance,
-        }))
+        };
+        Ok((Some(pending), after, distance))
     }
 
     /// The successors of an expansion in FR-101's canonical order, each
     /// with its state-key digest.
-    fn ordered(
-        &self,
-        successors: Vec<(S::TransitionId, S::State)>,
-    ) -> Step<Vec<(S::TransitionId, DigestRecord, S::State)>> {
+    fn ordered(&self, successors: Vec<(S::TransitionId, S::State)>) -> Step<Vec<Keyed<S>>> {
         let mut keyed = Vec::with_capacity(successors.len());
         for (transition, state) in successors {
             let order = self.system.transition_key(&transition)?;

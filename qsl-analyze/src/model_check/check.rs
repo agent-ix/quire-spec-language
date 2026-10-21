@@ -41,12 +41,24 @@
 //! closure certificate the core checks before the proof settles (ADR-018
 //! PC-3, FR-338): for a TP-1 clause under infinite-trace and the
 //! deadlock-freedom item, every explored model state with the canonical key,
-//! under each instance's context, of the carried root. A run that reaches its
+//! under each instance's context, of the carried root; for a bounded clause
+//! `eventually[0,u] holds(A)` or `always[0,u] holds(A)` on origin (TP-2), every
+//! explored model state with the key of the bounded monitor state it was read
+//! to, which the run follows beside its own monitor's. A run that reaches its
 //! horizon with a state left unexpanded settles V-5; a run that reaches a
 //! limit or is cancelled settles V-7; neither is ever `Holds`.
 //!
-//! Remaining work: QSL-878 gives the TP-2 and TP-3 translation states their
-//! FR-338 canonical keys. Until it lands such a `Holds` carries an empty
+//! A protocol subject's steps that do not count (ADR-027 PB-3) leave interval
+//! distance where it was, so a cycle of them can keep an interval eventuality
+//! open for ever. The run records those steps between the product states that
+//! owe an eventuality; after a frontier that empties, a cycle fair under the
+//! scheduler constraints of FR-212 and the clause's own is a behaviour that
+//! never meets the interval, and the run settles with its lasso. A cycle the
+//! scheduler constraints exclude, because a thread can still move, is no
+//! behaviour and the run proves.
+//!
+//! Remaining work: QSL-878 gives the other TP-2 and TP-3 translation states
+//! their FR-338 canonical keys. Until it lands such a `Holds` carries an empty
 //! closure certificate, which the core checker cannot admit, so it never
 //! settles `proved`. A liveness clause (TP-4) is decided by `liveness`,
 //! which adds the second phase; an `on each` activation with a `when`
@@ -57,10 +69,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
-    bounded_shape, translate, translate_counted, Atom, AutomatonError, AutomatonKind,
-    BoundedState, BoundedTranslation, Gba, GbaBuilder, Guard, KeyRefusal, Letter, Monitor,
-    SafetyAutomaton, SafetyState, StateId,
+    bounded_shape, translate, translate_counted, Atom, AutomatonError, AutomatonKind, BoundedState,
+    BoundedTranslation, Gba, GbaBuilder, Guard, KeyRefusal, Letter, Monitor, SafetyAutomaton,
+    SafetyState, StateId,
 };
+use qsl_eval::fairness::{EdgeLabel, Vertex};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
@@ -70,8 +83,9 @@ use qsl_eval::simulation::protocol::{
     ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    ConstraintValue, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
-    Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup, TransitionSystem,
+    ConstraintValue, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, FairLoop,
+    NotSimulated, Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup,
+    TransitionSystem, ZeroProgress, ZeroProgressError,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
@@ -79,7 +93,7 @@ use qsl_foundation::InternalFault;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
-    Instance, InstanceBound, ItemRefusal, MemoryBound, MemoryBoundMember, MemoryCause,
+    Instance, InstanceBound, ItemRefusal, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
     ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
     Translation, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
@@ -93,6 +107,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
+use super::fair_walk::FairModel;
 use super::false_extension::false_extension_rejects;
 use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
 
@@ -1307,7 +1322,7 @@ struct Run<'r, S: SubjectSystem> {
     /// The product edges taken on a step that does not count for interval
     /// distance (ADR-027 PB-3), by node, kept only for a claim that reads
     /// the distinction.
-    uncounted_edges: Vec<(usize, usize)>,
+    uncounted_edges: Vec<(usize, usize, S::TransitionId)>,
     queue: VecDeque<usize>,
     edges: usize,
     horizon_cut: bool,
@@ -1461,7 +1476,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                         depth: widen(self.max_depth.unwrap_or(0)),
                         stats: self.stats(),
                     }
-                } else if let Some(outcome) = self.uncounted_loop_outcome()? {
+                } else if let Some(outcome) = self.zero_progress_outcome()? {
                     outcome
                 } else {
                     ModelCheckOutcome::Holds {
@@ -1789,20 +1804,22 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         if let Some((parent, Some(transition))) = &node.parent {
             if !self.system.counts_step(transition) {
-                self.uncounted_edges.push((*parent, target));
+                self.uncounted_edges
+                    .push((*parent, target, transition.clone()));
             }
         }
     }
 
-    /// The outcome that replaces `Holds` when an uncounted cycle keeps an
-    /// interval eventuality open, or when the scan is cancelled.
-    fn uncounted_loop_outcome(
+    /// The outcome that replaces `Holds` when a fair cycle of steps that do
+    /// not count keeps an interval eventuality open (ADR-027 PB-3, FR-338
+    /// "Protocol non-progress acceptance"), or when the search is cancelled.
+    fn zero_progress_outcome(
         &self,
     ) -> Result<Option<ModelCheckOutcome<S::TransitionId>>, ModelCheckRefusal> {
-        Ok(match self.uncounted_loop() {
-            Ok(false) => None,
-            Ok(true) => Some(ModelCheckOutcome::Undecided {
-                cause: UndecidedCause::UncountedLoop,
+        Ok(match self.zero_progress() {
+            Ok(None) => None,
+            Ok(Some(counterexample)) => Some(ModelCheckOutcome::Violated {
+                counterexample: Box::new(counterexample),
                 stats: self.stats(),
             }),
             Err(Halt::Refusal(refusal)) => return Err(refusal),
@@ -1811,57 +1828,169 @@ impl<S: SubjectSystem> Run<'_, S> {
                 limit,
                 stats: self.stats(),
             }),
-            Err(Halt::Finish(_)) => return Err(fault("an-uncounted-loop-scan-stops-or-finds")),
+            Err(Halt::Finish(_)) => return Err(fault("a-zero-progress-search-stops-or-finds")),
         })
     }
 
-    /// Whether a cycle of uncounted steps keeps an interval eventuality
-    /// open (ADR-027 PB-3: such an interval is not met on that lasso).
-    /// Every node of the cycle owes the eventuality, since an uncounted step
-    /// neither ages it nor, being on a cycle, discharges it for good.
-    fn uncounted_loop(&self) -> Step<bool> {
+    /// The lasso of the first fair cycle of steps that do not count among
+    /// the product states that owe an interval eventuality, for the first
+    /// instance that has one. An uncounted step neither ages the debt nor,
+    /// being on a cycle, discharges it for good, so the behaviour that takes
+    /// the cycle forever never meets the interval; it is a counterexample when
+    /// the scheduler constraints and the claim's own admit it, each read over
+    /// the complete subject at every state of the cycle (FR-212).
+    fn zero_progress(&self) -> Step<Option<TemporalCounterexample<S::TransitionId>>> {
+        let Item::Clause {
+            uncounted: Some(_),
+            bindings,
+            ..
+        } = self.item
+        else {
+            return Ok(None);
+        };
+        if self.uncounted_edges.is_empty() {
+            return Ok(None);
+        }
+        for instance in 0..bindings.len() {
+            let owing = self.owing(instance)?;
+            let owes = |node: &usize| owing.get(*node).copied().unwrap_or(false);
+            let edges: Vec<&(usize, usize, S::TransitionId)> = self
+                .uncounted_edges
+                .iter()
+                .filter(|(from, to, _)| owes(from) && owes(to))
+                .collect();
+            let mut touched: Vec<usize> = edges
+                .iter()
+                .flat_map(|(from, to, _)| [*from, *to])
+                .collect();
+            touched.sort_unstable();
+            touched.dedup();
+            let mut graph = ZeroProgress::<S>::new();
+            let mut vertex_of = BTreeMap::new();
+            for node in &touched {
+                self.poll()?;
+                let state = &self
+                    .nodes
+                    .get(*node)
+                    .ok_or_else(|| fault("an-edge-names-a-node"))?
+                    .state;
+                let (expansion, _) = self
+                    .system
+                    .successors_bounded(state)
+                    .map_err(|stop| self.expansion_stop(stop))?;
+                let enabled = expansion
+                    .successors
+                    .iter()
+                    .map(|(transition, _)| transition);
+                vertex_of.insert(*node, graph.vertex(self.system, enabled)?);
+            }
+            for (from, to, transition) in &edges {
+                let (Some(from), Some(to)) = (vertex_of.get(from), vertex_of.get(to)) else {
+                    return Err(fault("an-edge-joins-two-vertices").into());
+                };
+                graph.edge(self.system, *from, *to, transition)?;
+            }
+            let found = graph
+                .fair_loop(self.system, self.item.fairness(), self.cancel)
+                .map_err(|error| self.progress_stop(error))?;
+            let Some(found) = found else {
+                continue;
+            };
+            return self
+                .zero_progress_lasso(instance, &touched, found)
+                .map(Some);
+        }
+        Ok(None)
+    }
+
+    /// Whether each node's instance `instance` monitor state owes an
+    /// interval eventuality.
+    fn owing(&self, instance: usize) -> Step<Vec<bool>> {
         let mut owing = vec![false; self.nodes.len()];
         for (index, node) in self.nodes.iter().enumerate() {
-            for state in &node.monitor {
-                let members = self
-                    .monitor
-                    .members(*state)
-                    .ok_or_else(|| fault("a-node-has-a-monitor-state"))?;
-                if members
+            let Some(state) = node.monitor.get(instance) else {
+                continue;
+            };
+            let members = self
+                .monitor
+                .members(*state)
+                .ok_or_else(|| fault("a-node-has-a-monitor-state"))?;
+            if let Some(slot) = owing.get_mut(index) {
+                *slot = members
                     .iter()
-                    .any(|member| self.monitor.automaton().owes_eventuality(*member))
-                {
-                    owing[index] = true;
-                }
+                    .any(|member| self.monitor.automaton().owes_eventuality(*member));
             }
         }
-        let edges: Vec<(usize, usize)> = self
-            .uncounted_edges
-            .iter()
-            .copied()
-            .filter(|(from, to)| owing[*from] && owing.get(*to).copied().unwrap_or(false))
-            .collect();
-        // Peel the nodes that no edge enters: what is left lies on, or
-        // leads from, a cycle.
-        let mut entered = vec![0_usize; self.nodes.len()];
-        let mut leaving: Vec<Vec<usize>> = vec![Vec::new(); self.nodes.len()];
-        for (from, to) in &edges {
-            entered[*to] += 1;
-            leaving[*from].push(*to);
+        Ok(owing)
+    }
+
+    /// The halt of a failed search for a fair cycle.
+    fn progress_stop(&self, error: ZeroProgressError) -> Halt {
+        match error {
+            ZeroProgressError::Encoding(refusal) => refusal.into(),
+            ZeroProgressError::Fairness(error) => ModelCheckRefusal::from(error).into(),
+            ZeroProgressError::Cancelled => match self.cancel.cause() {
+                Some(source) => Finish::Stopped(IncompleteCause::Cancelled { source }, None).into(),
+                None => fault("a-cancelled-run-has-a-cause").into(),
+            },
+            ZeroProgressError::Graph => fault("the-zero-progress-graph-is-built-from-nodes").into(),
         }
-        let mut ready: Vec<usize> = (0..entered.len()).filter(|n| entered[*n] == 0).collect();
-        let mut peeled = 0_usize;
-        while let Some(node) = ready.pop() {
-            self.poll()?;
-            peeled += 1;
-            for to in &leaving[node] {
-                entered[*to] -= 1;
-                if entered[*to] == 0 {
-                    ready.push(*to);
-                }
-            }
+    }
+
+    /// The counterexample whose stem is the breadth-first tree path to the
+    /// first node of the fair component `found` and whose loop is CX-5's
+    /// greedy walk inside it. `touched` numbers the component's nodes by
+    /// vertex.
+    fn zero_progress_lasso(
+        &self,
+        instance: usize,
+        touched: &[usize],
+        found: FairLoop<S::TransitionId>,
+    ) -> Step<TemporalCounterexample<S::TransitionId>> {
+        let FairLoop {
+            graph,
+            constraints,
+            component,
+            removed,
+            entry,
+            transitions,
+        } = found;
+        let model = FairModel { graph, constraints };
+        let walk = model.greedy_loop(&component, &removed, entry)?;
+        let node_of = |vertex: Vertex| {
+            touched
+                .get(vertex.index())
+                .copied()
+                .ok_or_else(|| fault("a-vertex-is-a-node"))
+        };
+        let mut counterexample = self.counterexample(
+            CounterexampleKind::Formula,
+            node_of(entry)?,
+            self.binding_of(instance),
+        )?;
+        let entry_position = counterexample.prefix.len();
+        for (_, edge) in &walk {
+            let EdgeLabel::Transition(identity) = edge.label else {
+                return Err(fault("a-zero-progress-edge-is-a-transition").into());
+            };
+            let transition = usize::try_from(identity.value())
+                .ok()
+                .and_then(|number| transitions.get(number))
+                .ok_or_else(|| fault("an-edge-names-a-transition"))?;
+            let node = &self.nodes[node_of(edge.target)?];
+            counterexample.prefix.push(ModelStep {
+                transition: self
+                    .system
+                    .reported(transition.clone(), &node.state)
+                    .map_err(|stop| self.expansion_stop(stop))?,
+                post_state: node.digest,
+            });
         }
-        Ok(peeled < self.nodes.len())
+        counterexample.lasso = Some(Lasso {
+            entry: entry_position,
+            terminal_stutter: false,
+        });
+        Ok(counterexample)
     }
 
     /// The product key of a model state's `key` read to the monitor states
