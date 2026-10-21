@@ -400,8 +400,9 @@ pub struct CheckedTemporalClause {
 /// a branch, and `<protocol>` the root.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedProtocolTarget {
-    /// An attempt node, by its static declaration path. `qsl_eval` has no
-    /// class for it yet, so S4 refuses a clause that names one.
+    /// An attempt node, by its static declaration path. S4 has no member
+    /// that can emit an attempt-node target yet, so `qsl_eval` has no class
+    /// for it; the class is unreachable until S4 emits one.
     AttemptNode {
         /// The node's static declaration path.
         node: String,

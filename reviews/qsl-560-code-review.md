@@ -93,3 +93,5 @@ Focused run `cargo test -p qsl-analyze --test it scheduler_fairness` through `lo
 | FND-007 | fixed | e7bcfdc6e: the `Exploration<S>` and `LoopStates<T>` aliases. All four `type_complexity` allows are removed. |
 
 Disposition pass 1 at e7bcfdc6e: focused run `scheduler_fairness` through `locked-build.sh`: 7 passed, 0 failed. `target/` deleted after.
+
+Disposition pass 2: FND-005 fixed (note on `ProtocolTarget` and `CheckedProtocolTarget::AttemptNode` now gives the real reason: S4 has no member to emit an attempt-node target); FND-008 fixed (`a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted` asserts the deadlock counterexample `fairness` is empty). Focused run `scheduler_fairness` plus the deadlock test: 8 passed, 0 failed.

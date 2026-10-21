@@ -33,10 +33,10 @@ use crate::simulation::model::encode::Enc;
 
 /// What a protocol fairness constraint names (ADR-027 PA-1).
 ///
-/// An attempt node is not a target yet: its class (every step of that
-/// node, `each` one per thread path and application, QSpec FR-430) needs
-/// the node's path on the transition, which `ProtocolTransition` does not
-/// carry. S4 refuses a clause that names one before it reaches here.
+/// An attempt node is not a target yet: S4 has no member that can emit
+/// an attempt-node target, so its class (every step of that node, `each` one
+/// per thread path and application, QSpec FR-430) is unreachable until S4
+/// emits one.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProtocolTarget {
     /// An operation, by the text its applications' FR-120 identities carry.
