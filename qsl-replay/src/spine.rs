@@ -1113,6 +1113,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: the `over` parameter `{parameter}` of claim `{claim}` must have \
                      an object type of the claim's model"
                 ),
+                ProbabilisticCause::NotStatePredicate { claim, .. } => format!(
+                    "{message}: an operand of the reachability event of claim `{claim}` must be a \
+                     `holds(..)` state predicate"
+                ),
                 ProbabilisticCause::NotYetImplemented {
                     claim, construct, ..
                 } => format!("{message}: `probabilistic {claim}` uses {construct}, which is not checked yet"),

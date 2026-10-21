@@ -141,6 +141,24 @@ fn link_steps_weigh_operations_then_draws() {
     let weighted = steps(&system, &start, &world, "Even");
     assert_eq!(weighted.len(), 4);
     assert_eq!(sum(&weighted), ratio(1, 1));
+    for step in &weighted {
+        let TransitionId::Operation(transition) = &step.transition else {
+            panic!("an operation step");
+        };
+        let identity = step
+            .identity
+            .as_ref()
+            .expect("the step's scheduled identity");
+        assert_eq!(identity.operation, transition.operation());
+        assert!(identity.arguments.is_empty());
+        let [lost] = &step.random[..] else {
+            panic!("one drawn value: {:?}", step.random);
+        };
+        assert_eq!(
+            boolean_of(lost),
+            !boolean_of(&field(&step.post, "delivered"))
+        );
+    }
     let probability = |operation: &str, lost: bool| {
         weighted
             .iter()
@@ -202,6 +220,8 @@ fn link_steps_weigh_operations_then_draws() {
     let [stutter] =
         <[_; 1]>::try_from(steps(&system, &delivered.post, &world, "Even")).expect("one step");
     assert_eq!(stutter.transition, TransitionId::Stutter);
+    assert!(stutter.identity.is_none());
+    assert!(stutter.random.is_empty());
     assert_eq!(stutter.probability, ratio(1, 1));
     assert!(stutter.rewards.is_empty());
 }

@@ -55,7 +55,9 @@ think about is a compile error and never passes the check unexamined.
 
 - S3 SHALL check the rows of a refinement over a concrete protocol subject
   with FR-136's coverage and refusals, which already cover every protocol
-  step class.
+  step class. The rows select the protocol, one per refinement (FR-136
+  "Selecting the concrete protocol"), and the coverage is checked after the
+  protocol clause is (FR-136 "Order of the checks").
 - `observation` SHALL return `Visible{label}` for a row whose target is an
   abstract operation or node, with the label that abstract step carries
   (its kind, its node or operation, and the binder record the row's
@@ -77,6 +79,7 @@ think about is a compile error and never passes the check unexamined.
 | FR-214-AC-2 | Removing the `join` row refuses `missing_declaration`/`missing-name` naming `Both`'s join; removing the `finish` row refuses naming `Done`. Adding a second `step M::Cell::inc -> …` row refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-659) |
 | FR-214-AC-3 | Adding `step M::Fill::A -> stutter` beside `step M::Cell::inc -> Abs::Acc::add(self)` maps `A`'s steps by the node row (`Internal`) and leaves the `inc` operation row unused by `A`. Over ADR-027 §7.1, omitting the `Refund` template's `cend` row refuses naming the template; over `Chatter` (FR-212), omitting either of `ch`'s two channel rows (`duplicate` and `lose`, since its delivery is `unknown`) refuses naming `ch`. | Test (TC-659) |
 | FR-214-AC-4 | A row `-> any` gives `Either`. An abstract protocol whose internal list names `fork` as internal gives that abstract step internal, and its other abstract steps visible. | Test (TC-659) |
+| FR-214-AC-5 | The rows of FR-214-AC-1 check whether the `Fill` protocol is declared before or after the refinement in the unit's source; with `Fill` refused by its own checks, the unit reports `Fill`'s refusals and no coverage refusal (FR-136-AC-8). | Test (TC-659) |
 
 ## Dependencies
 

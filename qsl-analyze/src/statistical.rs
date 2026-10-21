@@ -15,6 +15,10 @@
 //! whether the next position regenerates. The sampler drives FR-188's
 //! sampler and the layer-5 evaluator over the subject; this module owns the
 //! statistics, the budgets, the trace-index assignment and the outcome.
+//!
+//! [`require_statistical`] is the negotiation gate before any of it: it
+//! refuses a checked claim only exact evidence decides, so no sample is drawn
+//! for it.
 
 mod bounds;
 mod claim;
@@ -37,8 +41,8 @@ use qsl_replay::UndefinedEvaluation;
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 
 pub use claim::{
-    reduce_quantile, Bound, ClaimRefusal, Comparison, MeasureEvent, MeasureValue,
-    QuantileComparison, StatisticalClaim,
+    reduce_quantile, require_statistical, Bound, ClaimRefusal, Comparison, MeasureEvent,
+    MeasureValue, QuantileComparison, StatisticalClaim,
 };
 
 use bounds::{int, normal_quantile_upper, quotient, QuantileFailure};

@@ -14,7 +14,7 @@ Verify that S2 builds one `RefinementForm` per `refinement` declaration with
 every row as written, open arguments and population-valued forms included,
 and resolves no name.
 
-Scope: FR-310-AC-1 to FR-310-AC-4.
+Scope: FR-310-AC-1 to FR-310-AC-5.
 
 ## Test Procedure
 
@@ -30,6 +30,10 @@ FR-147's `CasTwice`.
    fairness row `assume fair strong Impl::Counter::retryA;`.
 4. Build the forms of a declaration whose abstract alias names no model and
    of one with a duplicate `population` row, then run S3 on them.
+5. Parse the headers `abstract Spec::Twice concrete Impl` and `abstract Spec
+   concrete Impl`, then `abstract Spec::Twice::finish concrete Impl`,
+   `abstract ::Twice concrete Impl`, `abstract Spec:: concrete Impl {`,
+   `abstract Spec:: {` and `abstract Spec::1 concrete Impl`.
 
 Tag the tests `#[trace("TC-889", "<AC id>")]`.
 
@@ -46,3 +50,6 @@ Tag the tests `#[trace("TC-889", "<AC id>")]`.
   `Text`, `Exact` and `EnumMember` forms, none as an expression form; the
   fairness row builds kind `Strong`, granularity absent.
 - Step 4: both forms build; S3 refuses each with FR-135-AC-2's code.
+- Step 5: `Protocol(Spec, Twice)` and `Model(Spec)`; the other five refuse
+  `invalid_syntax`/`unexpected-token` at the second `::`, the `::`, `Impl`,
+  the `{` and the `1`, with no form built.
