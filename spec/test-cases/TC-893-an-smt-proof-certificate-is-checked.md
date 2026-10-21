@@ -15,7 +15,7 @@ FR-315 encodes, both for an inductive proof, and rejects a query mismatch,
 an invalid proof step, a proof that does not refute and a
 certificate of the wrong shape.
 
-Scope: FR-314-AC-1 and FR-314-AC-2.
+Scope: FR-314-AC-1, FR-314-AC-2 and FR-314-AC-3.
 
 ## Test Procedure
 
@@ -30,6 +30,11 @@ Scope: FR-314-AC-1 and FR-314-AC-2.
    bounded certificate with one step's rule replaced by `hole`, then by
    `lia_generic`.
 
+4. Check FR-314-AC-3's `RefinementInductive` certificate for
+   `CasRefinesCounter` (a base part and seven step parts), then with the
+   fourth step part missing, an eighth step part added, a step part first, and
+   the third step part's query replaced by the fourth's.
+
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
 ## Expected Results
@@ -41,3 +46,8 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `CertificateRejected`.
 - Step 3: `proved`, `Uncertified`; `Unverifiable` at that step and
   `proved`, `Uncertified`, twice.
+- Step 4: the complete certificate `Verified`; the missing part
+  `ShapeMismatch` at `Step` row 3; the extra part `ShapeMismatch` at `Step`
+  row 7; the step part first `ShapeMismatch` at `Base`; the swapped query
+  `QueryMismatch` at `Step` row 2; each rejection `inconclusive`,
+  `CertificateRejected`.

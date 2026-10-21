@@ -63,13 +63,13 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 14 | row 13 with delivery `at-most-once` | checks; a different checked channel from row 13's; ordering, capacity and overflow unchanged; the same with `loss tail` and with `loss new` are two further different checked channels |
 | 15 | `relationship Pipe = M::pipe;` | checks; the checked relationship holds `pipe`'s declaration key and end types `Peer`, `Node` in that order |
 | 16 | `relationship Pipe = M::nothing;` | `missing_declaration`/`missing-name` at `nothing` |
-| 17 | `relationship Pipe = M::out;` and `relationship Pipe = M::Node;` | each `invalid_model_binding`/`wrong-export` at the name; required kind `relationship`, actual kind `port` and `object type`, both declaration keys |
+| 17 | `relationship Pipe = M::out;` and `relationship Pipe = M::Node;` | each `invalid_model_binding`/`wrong-export` at the name; required kind `relationship`, actual kind `port` and `object type`, the export's declaration key |
 | 18 | two `relationship Pipe = ...;` | `ambiguous_declaration`/`ambiguous-name` at both declarations |
 | 19 | row 15 and `related by Pipe (sent.peer, view)` on `Got`, `view` the protocol input of type `M::Node` | checks; `Got` holds one checked clause with both ends |
 | 20 | row 19 with `related by Absent (sent.peer, view)` | `missing_declaration`/`missing-name` at `Absent`; `node` `Got` |
 | 21 | row 19 with the ends swapped, `(view, sent.peer)` | `ill_typed`/`type-mismatch` at each end; `end` `first` expected `Peer` actual `Node`, then `end` `second` expected `Node` actual `Peer` |
 | 22 | row 19 plus `related by Owns (sent.peer, view)` (with `relationship Owns = M::owns;`) and a repeat of `related by Pipe (sent.peer, view)` | checks; `Got` holds three checked clauses in source order |
-| 23 | `requires temporal Due;` | checks; the requirement is bound to `Due`'s node key |
+| 23 | `requires temporal Due;` | checks; the requirement is bound to `Due`'s position among the unit's temporal clauses, from which S4 mints its node key |
 | 24 | `requires temporal Nothing;`, and `requires temporal Due;` where `Due` is declared only in an imported unit | each `missing_declaration`/`missing-name` at the name; no package |
 | 25 | `requires temporal Accept;` | `ill_typed`/`operator-ineligible` at `Accept`; the resolved kind named |
 | 26 | `requires temporal Due;` written twice | checks; one requirement recorded, at the first position |

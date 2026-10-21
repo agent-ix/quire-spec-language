@@ -53,6 +53,9 @@ pub struct RefutedQuery {
 pub enum SmtProofCertificate {
     BoundedComplete { format: ProofFormat, unrolling: RefutedQuery },
     Inductive { format: ProofFormat, base: RefutedQuery, step: RefutedQuery },
+    /// A refinement's per-step simulation obligations (QSpec FR-468): one base
+    /// part and one step part per step row, in the refinement's `steps` order.
+    RefinementInductive { format: ProofFormat, base: RefutedQuery, steps: Vec<RefutedQuery> },
 }
 
 pub fn check_smt_proof(
@@ -87,10 +90,22 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
   `BoundedComplete`, `Base` for `Inductive`), a certificate whose variant
   differs from the basis: `BoundedComplete` carries one unrolling query and
   `Inductive` carries a base query and a step query.
+- For the per-step simulation obligations of a refinement (QSpec FR-468,
+  FR-146), the certificate SHALL be `RefinementInductive`: a base part, the
+  refutation of the initial query, and one step part per step row, in the
+  refinement's `steps` order, each the refutation of that row's step query. The
+  checker SHALL reject with `ShapeMismatch` at `Base` a certificate with no
+  base part or whose first part is a step part, and at `Step { row }` a
+  certificate whose step parts are fewer or more than the step rows, `row`
+  being the first missing or extra row. A step part is never accepted in the
+  base position. `QueryPart::Step` (FR-338) carries the row index for this
+  variant and none for `Inductive`.
 - The checker SHALL encode each expected query with FR-315 from the
   recompiled package and the re-admitted subject at the basis's depth: the
   unrolling for `BoundedComplete{depth}`, and the base case and the step
-  case for `Inductive{depth}` (ADR-018 V-2, V-3).
+  case for `Inductive{depth}` (ADR-018 V-2, V-3), and for
+  `RefinementInductive` the initial query for the base and each row's step
+  query for its step part (QSpec FR-377 Engines negated).
 - The checker SHALL reject with `QueryMismatch` at that part when a
   carried query differs, byte for byte, from FR-315's canonical printing of
   the expected query.
@@ -132,6 +147,7 @@ command. Every other rule is unchecked.
 |----|----------|--------------|
 | FR-314-AC-1 | Accepted vectors: over the `Counter` subject under event-position false-extension, the TP-2 `on origin` claim `always[0,3] holds(c.value <= 3)` proved `BoundedComplete{depth: 3}`, at its horizon 3 (ADR-018 V-2), with an Alethe certificate whose unrolling query is FR-315's encoding at depth 3 and whose proof refutes it with checked rules, is accepted; `always holds(c.value <= 3)` proved `Inductive{depth: 1}` with base and step queries FR-315 encodes at depth 1, each refuted with checked rules, is accepted. Each item settles `proved`, `Certified`, success. | Test (TC-893) |
 | FR-314-AC-2 | Rejected vectors: AC-1's bounded certificate with its query encoded at depth 2 is rejected `QueryMismatch` at `Unrolling`; with one step's premise replaced by a later step, `ProofStepInvalid` at that step; with its last step removed so the proof ends short of the empty clause, `NotRefutation`. AC-1's inductive certificate with an invalid step proof is rejected `ProofStepInvalid` at that `Step` step, and a `BoundedComplete` certificate offered for the `Inductive` basis is rejected `ShapeMismatch`. Each settles `inconclusive`, `CertificateRejected`. Unverifiable vector: AC-1's bounded certificate with one step's rule replaced by `hole`, or by `lia_generic`, and no other defect returns `Unverifiable` at that step and settles `proved`, `Uncertified`, the same as the bounded result with no certificate. | Test (TC-893) |
+| FR-314-AC-3 | `CasRefinesCounter`'s `RefinementInductive` certificate with a base part and seven step parts in `steps` order, each refuting its FR-315 query with checked rules, is `Verified`; the same with the fourth step part missing is rejected `ShapeMismatch` at `Step` row 3, with an eighth step part `ShapeMismatch` at `Step` row 7, with a step part first `ShapeMismatch` at `Base`, and with the third step part's query replaced by the fourth's `QueryMismatch` at `Step` row 2. | Test (TC-893) |
 
 ## Dependencies
 

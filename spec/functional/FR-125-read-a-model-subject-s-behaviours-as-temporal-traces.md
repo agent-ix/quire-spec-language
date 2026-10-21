@@ -158,8 +158,11 @@ reports.
 - When any one of those populations has an empty universe, the hyper clause
   has zero instances. QSL SHALL then report `NoInstance` for the item before
   it explores any state, and FR-127 and FR-182 settle it `inconclusive`.
-- QSL SHALL give a clause or claim with no `over` parameter one instance, with
-  no bound object.
+- QSL SHALL give a state-graph, probabilistic or hyper clause or claim with no
+  `over` parameter one instance, with no bound object. A `temporal` clause
+  always names an `over` parameter (QSpec FR-370-AC-13); written without one it
+  refuses `invalid_syntax`/`unexpected-token` at the token that stands where
+  `over` is required, and QSL produces no node.
 
 ### Reading a lasso
 
