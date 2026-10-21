@@ -87,7 +87,7 @@ impl AdmittedEnum {
 pub enum AdmittedLookupRefusal {
     /// The declaration id names no enum declaration of this package or of
     /// any package it depends on, or the declaration has no such case.
-    #[error("unknown_declaration: no admitted enum declaration {declaration}{}", case_suffix(.case))]
+    #[error("unknown_declaration: {}", unknown_what(.declaration, .case))]
     Unknown {
         /// The declaration id looked up.
         declaration: WireNodeId,
@@ -106,9 +106,14 @@ pub enum AdmittedLookupRefusal {
     },
 }
 
-fn case_suffix(case: &Option<Identifier>) -> String {
-    case.as_ref()
-        .map_or_else(String::new, |case| format!(" case {}", case.as_str()))
+fn unknown_what(declaration: &WireNodeId, case: &Option<Identifier>) -> String {
+    match case {
+        None => format!("no admitted enum declaration {declaration}"),
+        Some(case) => format!(
+            "admitted enum declaration {declaration} has no case {}",
+            case.as_str()
+        ),
+    }
 }
 
 /// The package context a compile admitted: this package's enum key table and
@@ -223,7 +228,7 @@ pub enum AdmittedRefusal {
     #[error(transparent)]
     Resource(AdmittedResource),
     /// A QSL invariant the compile relies on did not hold.
-    #[error("internal fault: {0:?}")]
+    #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
 }
 
@@ -238,9 +243,41 @@ impl From<ReplayRefusal> for AdmittedRefusal {
                 Self::Resource(AdmittedResource::AboveReader(limit))
             }
             ReplayRefusal::Fault(fault) => Self::Fault(fault),
-            // The compile path raises no other refusal; a replay-only one
-            // here is a broken invariant, not a caller error.
-            _ => Self::Fault(InternalFault::new(
+            // The compile path raises no replay-only refusal; one here is a
+            // broken invariant, not a caller error. Each is named so that a
+            // new variant forces a decision.
+            ReplayRefusal::Request(_)
+            | ReplayRefusal::NotASource(_)
+            | ReplayRefusal::SourceCount(_)
+            | ReplayRefusal::DependencySelections(_)
+            | ReplayRefusal::DependencyIdentityMismatch { .. }
+            | ReplayRefusal::PackageIdMismatch { .. }
+            | ReplayRefusal::UnknownFunction { .. }
+            | ReplayRefusal::UnknownParameter(_)
+            | ReplayRefusal::DuplicateArgument(_)
+            | ReplayRefusal::UnboundParameter(_)
+            | ReplayRefusal::Witness { .. }
+            | ReplayRefusal::Input(_)
+            | ReplayRefusal::NativePayload { .. }
+            | ReplayRefusal::Storage { .. }
+            | ReplayRefusal::Supplied(_)
+            | ReplayRefusal::UnsupportedHelper(_)
+            | ReplayRefusal::Cancelled(_)
+            | ReplayRefusal::NotAPredicate { .. }
+            | ReplayRefusal::NotAValueFunction { .. }
+            | ReplayRefusal::ScalarIdentity(_)
+            | ReplayRefusal::ParityBound(_)
+            | ReplayRefusal::UnknownOperation { .. }
+            | ReplayRefusal::FrameIdentity(_)
+            | ReplayRefusal::UnknownClause { .. }
+            | ReplayRefusal::ClauseIdentity(_)
+            | ReplayRefusal::WrongObservation { .. }
+            | ReplayRefusal::Admission(_)
+            | ReplayRefusal::UnusedObjectEnvironment
+            | ReplayRefusal::ForeignReference { .. }
+            | ReplayRefusal::ObjectEnvironment(_)
+            | ReplayRefusal::ModelTrace(_)
+            | ReplayRefusal::UnfairLasso { .. } => Self::Fault(InternalFault::new(
                 "replay",
                 "compile-refuses-only-compile-refusals",
             )),

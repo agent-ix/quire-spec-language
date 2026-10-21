@@ -56,7 +56,7 @@ and never names `qsl_replay::spine` (FR-060, T12-A).
 |----|----------|--------------|
 | FR-394-AC-1 | `compile_admitted` over a unit that declares an enum returns the same package bytes and `package_id` as `compile_package`, and a context whose `package_id` is that id and whose enum has every declared case, including a case no function uses, in canonical order, with keys equal to those the spine's checked graph holds for the declaration and member nodes. | Test (TC-1088) |
 | FR-394-AC-2 | `enum_declaration` and `enum_case` return the admitted declaration and case for the declaration's wire node id, and refuse `Unknown` for an id no package admitted and `Unknown` naming the case for a case the enum lacks. | Test (TC-1088) |
-| FR-394-AC-3 | Over a unit importing a library that declares an enum, `enum_declaration` of the library enum's id refuses `Foreign` naming the library's `package_id`, while the unit's own enum is found. | Test (TC-1088) |
+| FR-394-AC-3 | Over a unit that imports, directly or transitively, a library that declares an enum, `enum_declaration` of the library enum's id refuses `Foreign` naming the library's `package_id`, while the unit's own enum is found. | Test (TC-1088) |
 | FR-394-AC-4 | A malformed source and a library with the unit's source owner refuse `Package`; an S1 limit below the source size and an S1 limit above the reader limit refuse `Resource`. | Test (TC-1088) |
 | FR-394-AC-5 | A consumer reaches the entry and its types through the `qsl_replay` root alone, without naming `qsl_replay::spine`. | Test (TC-1088) |
 

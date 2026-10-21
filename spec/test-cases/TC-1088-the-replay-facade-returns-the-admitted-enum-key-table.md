@@ -23,8 +23,9 @@ From an integration test that reaches only the `qsl_replay` root:
    spine's checked graph.
 2. Look up the enum and each case by wire node id; look up an id no package
    admitted and a case the enum lacks.
-3. Compile a unit importing a library that declares an enum; look up the
-   library enum's id from the library's own context.
+3. Compile a unit importing a library that declares an enum, directly and
+   through an intermediate library; look up the library enum's id from the
+   library's own context.
 4. Compile a malformed source, a unit against a library with the unit's
    owner, a source above a 4-byte S1 limit, and a limit above the reader.
 
@@ -33,5 +34,5 @@ From an integration test that reaches only the `qsl_replay` root:
 1. Equal bytes and `package_id`; every case present with the spine's keys.
 2. The declaration and cases are found; the unknown id and the missing case
    refuse `Unknown`.
-3. `Foreign` naming the library's `package_id`; the unit's own enum is found.
+3. `Foreign` naming the library's `package_id`, direct or transitive; the unit's own enum is found.
 4. `Package`, `Package`, `Resource`, `Resource`.
