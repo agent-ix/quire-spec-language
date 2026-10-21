@@ -177,10 +177,10 @@ impl Emitted {
     }
 
     /// The `relation`/`population` node of the population declared as
-    /// `suffix`: the one whose `identity` text is its declaration's node.
+    /// `suffix`: the one whose model owner is its declaration's node.
     fn population(&self, suffix: &str) -> &Value {
         self.node("relation", "population", |node| {
-            node["body"]["members"][0]["value"]["value"] == fixture::id(suffix)
+            node["owner"]["node"] == fixture::id(suffix)
         })
     }
 

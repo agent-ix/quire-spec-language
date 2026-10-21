@@ -66,8 +66,8 @@
 //! A package that carries a checked abstraction relation
 //! ([`CheckedPackage::abstraction`], FR-304) writes it as the one
 //! `correspondence`/`abstraction_relation` node of QSpec FR-451 (FR-306),
-//! with the `model`/`object_type`, `relation`/`population` and
-//! `scalar_type`/`text` nodes it names that the graph does not hold.
+//! with the `model`/`object_type` and `relation`/`population` nodes it
+//! names that the graph does not hold.
 //! `check` builds and keys these ([`CheckedGraph::abstraction_nodes`]); the
 //! relation node has one `declaration` occurrence per declaration, the
 //! others one `generated`, at [`AbstractionNodes::sites`].

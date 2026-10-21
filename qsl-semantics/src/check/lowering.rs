@@ -94,7 +94,7 @@ mod state;
 mod temporal;
 mod wire;
 
-pub(crate) use abstraction::{object_type_node, population_node, relation_node, text_scalar_node};
+pub(crate) use abstraction::{object_type_node, population_node, relation_node};
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{bound_origin, record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
