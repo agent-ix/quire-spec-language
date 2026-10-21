@@ -2298,21 +2298,30 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
         "{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}\n\
          function g using v(): Boolean pure {{ f(3 s) }}"
     );
-    let refusals = assemble(&source)
-        .1
-        .expect("the unit assembles")
+    let (text, assembled) = assemble(&source);
+    let package = assembled.expect("the unit assembles");
+    let regions = assemble(&source).1.expect("the unit assembles");
+    let refusals = package
         .check(CheckingLimits::default())
         .expect_err("a Quantity<s> argument is not a Quantity<ms>");
+    let argument = last(&text, "3 s");
+    let located = |refusal: &crate::check::CheckRefusal| {
+        regions.region(&refusal.location).is_some_and(|region| {
+            (region.start(), region.end()) == (argument.start as u64, argument.end as u64)
+        })
+    };
     assert!(
-        refusals.iter().any(|refusal| refusal
-            .cause
-            .catalog_code()
-            .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
-        "{refusals:?}"
+        refusals.iter().any(|refusal| located(refusal)
+            && refusal
+                .cause
+                .catalog_code()
+                .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
+        "the mismatch is located at the argument: {refusals:?}"
     );
     // A `3 ms` argument has the right type; the checked package has no
     // literal form to emit a quantity as (`ProbabilisticCause::QuantityLiteral`),
-    // so the only refusal left is that named gap, not a type mismatch.
+    // so the only refusal left is that named gap (Remaining work: QSL-949),
+    // not a type mismatch.
     let ok = format!(
         "{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}\n\
          function g using v(): Boolean pure {{ f(3 ms) }}"
@@ -2334,6 +2343,9 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
 
 /// FR-091-AC-44: the unit namespace is its own: a unit and a record both
 /// named `ms` check, and two units named `ms` refuse at both declarations.
+/// The strict checked-package reader refuses the emitted package of a unit
+/// and a record that share a name (`AmbiguousDeclaration`); that is
+/// Remaining work: QSL-950, so this test asserts `check` only.
 #[trace("FR-091-AC-44", "TC-483")]
 #[test]
 fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
@@ -2348,14 +2360,21 @@ fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
         .check(CheckingLimits::default())
         .expect("Quantity<ms> means the unit and ms the record");
 
-    let (_, found) = errors(
+    let (text, found) = errors(
         "dimension Time;\n\
          unit ms : Time = rational(1, 1);\n\
          unit ms : Time = rational(1, 1);",
     );
+    let at = |start: usize| Span {
+        start,
+        end: start + "ms".len(),
+    };
+    let first = text.find("unit ms").expect("first") + "unit ".len();
+    let second = text.rfind("unit ms").expect("second") + "unit ".len();
     assert!(found.iter().any(|error| matches!(
         &error.cause,
-        AssemblyCause::DuplicateQuantityName { name, spans } if name == "ms" && spans.len() == 2
+        AssemblyCause::DuplicateQuantityName { name, spans }
+            if name == "ms" && *spans == vec![at(first), at(second)]
     ) && error.cause.catalog_code().to_string()
         == "ambiguous_declaration/ambiguous-name"));
 }

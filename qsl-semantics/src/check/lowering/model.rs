@@ -82,7 +82,10 @@ pub(crate) fn bound_origin(label: &str) -> String {
 
 /// The `Origin::TypeDeclaration` name the declaration of the dimension or
 /// unit `name` is located under (FR-091-AC-44: dimensions, units and types
-/// are namespaces of their own). Spaced, so it names no declared type.
+/// are namespaces of their own). Spaced, so it names no declared type. The
+/// position is namespaced, the node's `declaration` name is not: a unit and
+/// a record of one name emit a package the strict reader refuses
+/// (Remaining work: QSL-950).
 pub(crate) fn quantity_origin(kind: QuantityKind, name: &str) -> String {
     match kind {
         QuantityKind::Dimension => format!("dimension {name}"),

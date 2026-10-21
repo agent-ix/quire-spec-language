@@ -844,6 +844,15 @@ fn quantity_typed_source_operations_are_admitted_by_the_strict_reader() {
                 .flatten()
                 .any(|node| outcome.applies(node, identity))
         });
+        // The identity conversion writes no node: the body is the parameter.
+        if identity.is_none()
+            && outcome
+                .families
+                .keys()
+                .any(|kind| matches!(kind, CheckedNodeKind::Expression(_)))
+        {
+            failures.push(format!("{name}: wrote an expression node"));
+        }
         if !applied {
             failures.push(format!("{name}: no application of {identity:?}"));
         }
