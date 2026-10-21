@@ -64,9 +64,11 @@
 //!   enforces it (see that variant's own doc for the FR-272 cause choice).
 //!
 //! Effective-precondition semantics (FR-151
-//! `quire.model.conformance.refinement/v1`: "the disjunction of its own
-//! precondition clauses with the effective preconditions of the members it
-//! redefines... An absent precondition is `true`") are computed twice, for
+//! `quire.model.conformance.refinement/v1`: `own(m) or eff(r)` for the one
+//! member `r` that `m` redefines, `own(m)` being the member's own
+//! precondition clauses conjoined in ascending clause name (UTF-8 bytes)
+//! under FR-006's short-circuit, whatever their source position, unit or
+//! link order; an absent own precondition is `true`) are computed twice, for
 //! two different consumers, over the same redefinition ancestry:
 //!
 //! - `effective_terms` is the *runtime* computation: Boolean absorption

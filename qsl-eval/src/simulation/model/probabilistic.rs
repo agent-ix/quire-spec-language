@@ -142,7 +142,7 @@ impl PartialEq for NotMarkov {
     }
 }
 
-/// [`same_values`] is an equivalence: a drawn vector equals itself.
+/// `same_values` is an equivalence: a drawn vector equals itself.
 impl Eq for NotMarkov {}
 
 /// A contract conjunction of an application or a postcondition candidate
