@@ -744,6 +744,26 @@ fn a_weightless_fraction_is_an_undefined_sample() {
     );
 }
 
+/// FR-189 "Per sample": a weighted fraction draws `h + 1` steps, since the
+/// step that leaves a position weighs it. Over `[0, 1]` of `Service` the
+/// walk is `request` (weight 0) then `attempt` (weight `d`, the duration):
+/// position 1 (`Busy`) is weighed only by the second step, the one leaving
+/// the window's last position. Drawing `h` steps would leave total weight 0
+/// and every sample undefined; drawing `h + 1` makes every sample exactly
+/// `d / d = 1`.
+#[trace("TC-624", "FR-189-AC-1")]
+#[test]
+fn a_weighted_fraction_draws_the_step_leaving_its_last_position() {
+    let claim = "probabilistic Leaving using ev on M over (s: M::Server) under Steady \
+         on origin with alpha 0.1, beta 0.1, indifference 0.1 \
+         { mean of (fraction holds(s.phase = 1) over [0, 1] weighted by duration) >= 0.5 }";
+    let world = World::new(&prob_world::service(claim));
+    let verdict = decided(&world, "Leaving", StatisticalMethod::Okamoto);
+    assert_eq!(verdict.decision, Decision::Accepted);
+    assert_eq!(verdict.tests[0].undefined, None);
+    assert_eq!(verdict.estimate, Some(ratio(1, 1)));
+}
+
 /// Checks FR-189-AC-3's first clause (TC-624 step 3): a `Service` with two
 /// initial states runs `m = 2` tests, each with `α' = β' = 1/200`, sample
 /// `i` of test `j` at trace index `2i + j`.
