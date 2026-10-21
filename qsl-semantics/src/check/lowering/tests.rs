@@ -2041,7 +2041,7 @@ fn a_declaration_key_follows_the_authority_and_identity_not_the_revision() {
         let keys: Vec<_> = graph
             .checked_type_nodes()
             .filter_map(|node| match node {
-                CheckedTypeNode::Composite { node } => Some(*node),
+                CheckedTypeNode::Composite { node, .. } => Some(*node),
                 _ => None,
             })
             .collect();

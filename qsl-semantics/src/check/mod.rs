@@ -285,8 +285,9 @@ pub use hyper_clause::{
     ObjectParameter, OperationContractClaim, StepRead,
 };
 pub use identity::{
-    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
-    InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
+    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CompositeForm,
+    CorrespondenceConflict, InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant,
+    SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
@@ -2723,7 +2724,13 @@ impl PackageDeclarations {
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
-                    type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
+                    type_nodes.insert(
+                        node,
+                        identity::CheckedTypeNode::Composite {
+                            node,
+                            form: composite.shape().into(),
+                        },
+                    );
                 }
                 Err(refusal) => refusals.push(refusal),
             }

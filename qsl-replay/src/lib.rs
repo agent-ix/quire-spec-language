@@ -60,8 +60,9 @@ mod supplied_limits;
 mod witness;
 
 pub use admitted::{
-    compile_admitted, AdmittedCompilation, AdmittedContext, AdmittedEnum, AdmittedEnumCase,
-    AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource,
+    compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
+    AdmittedContext, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal, AdmittedRefusal,
+    AdmittedResource,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_requirements::{

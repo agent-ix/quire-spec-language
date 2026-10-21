@@ -48,7 +48,7 @@
 //! **One id per declaration.** A composite's checked type node id is its
 //! FR-092 node key, the key `check` mints for the record or tuple's
 //! `quire.structural-node/v1` node (FR-092-AC-12,
-//! `CheckedTypeNode::Composite { node }`); the handle a caller passes to
+//! `CheckedTypeNode::Composite { node, .. }`); the handle a caller passes to
 //! `CompositeDeclaration::new` selects the declaration inside one check and
 //! enters no id. An enum's id is its `AdmittedEnumDeclaration::key()`, verified
 //! against its own content-addressed QSpec preimage at `admit`
@@ -68,6 +68,8 @@ use quire_exact::{
     DecimalType, EnumShape, FloatType, Identifier, IntegerInterval, NodeKey, RationalDomain,
     TextType, UnitId, ValueType,
 };
+
+use quire_semantic_value::declaration::CompositeShape;
 
 use crate::model::key::DeclarationKey;
 use crate::value::enumeration::mint_variant_id;
@@ -487,11 +489,34 @@ impl SumVariants {
     }
 }
 
+/// Which composite a [`CheckedTypeNode::Composite`] declaration is, read from
+/// the admitted declaration's shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompositeForm {
+    /// A record: named fields.
+    Record,
+    /// A tuple: positions.
+    Tuple,
+    /// A union: members.
+    Union,
+}
+
+impl From<&CompositeShape> for CompositeForm {
+    fn from(shape: &CompositeShape) -> Self {
+        match shape {
+            CompositeShape::Record(_) => Self::Record,
+            CompositeShape::Tuple(_) => Self::Tuple,
+            CompositeShape::Union(_) => Self::Union,
+        }
+    }
+}
+
 /// ADR-013 O-14: a package type declaration, identified by its checked node
 /// id -- one checked graph node per `scalar_type`, `composite_type`,
 /// `bounded_domain` or sum form. Record, tuple and union identity is that
-/// node id alone (FR-143-AC-6): [`Self::Composite`] carries no further
-/// shape, since the kernel `ValueType::Composite(NodeKey)` needs none -- the
+/// node id alone (FR-143-AC-6): [`Self::Composite`] carries only its
+/// [`CompositeForm`], since the kernel `ValueType::Composite(NodeKey)` needs
+/// no further shape -- the
 /// node's own id carries the declaration's own pre-existing key
 /// (`composite.key()`, `value/declaration.rs`) unchanged into this module's
 /// checked-node-id space -- the declaration holds the kernel `NodeKey` this
@@ -507,10 +532,12 @@ pub enum CheckedTypeNode {
         /// The declared scalar shape.
         shape: ScalarShape,
     },
-    /// A `composite_type` node (a record or a tuple).
+    /// A `composite_type` node: a record, a tuple or a union.
     Composite {
         /// This declaration's own checked node id.
         node: NodeKey,
+        /// Which composite the declaration is.
+        form: CompositeForm,
     },
     /// A `bounded_domain` node: a declared bounded integer domain.
     BoundedDomain {
@@ -535,7 +562,7 @@ impl CheckedTypeNode {
     pub fn node(&self) -> NodeKey {
         match self {
             Self::Scalar { node, .. }
-            | Self::Composite { node }
+            | Self::Composite { node, .. }
             | Self::BoundedDomain { node, .. }
             | Self::Sum { node, .. } => *node,
         }
@@ -572,7 +599,7 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
             ScalarShape::Quantity(unit) => ValueType::Quantity(*unit),
             ScalarShape::Text(text) => ValueType::Text(*text),
         },
-        CheckedTypeNode::Composite { node } => ValueType::Composite(*node),
+        CheckedTypeNode::Composite { node, .. } => ValueType::Composite(*node),
         CheckedTypeNode::BoundedDomain { bound, .. } => ValueType::Int(bound.clone()),
         CheckedTypeNode::Sum { node, variants } => ValueType::Enum(EnumShape::new(
             variants.is_ordered(),
@@ -936,7 +963,10 @@ mod tests {
         };
         assert_eq!(to_kernel_value_type(&scalar), ValueType::Boolean);
 
-        let composite = CheckedTypeNode::Composite { node: node_key(2) };
+        let composite = CheckedTypeNode::Composite {
+            node: node_key(2),
+            form: CompositeForm::Record,
+        };
         assert_eq!(
             to_kernel_value_type(&composite),
             ValueType::Composite(node_key(2))
