@@ -30,6 +30,12 @@ use crate::simulation::model::{
 };
 use crate::simulation::sample::is_pinned_sampler;
 
+mod replay;
+
+pub use replay::{
+    replay_sampled, SampledDisagreement, SampledRecord, SampledReplay, SampledReplayRefusal,
+};
+
 /// One step of a sampled behaviour (FR-188).
 #[derive(Clone, Debug)]
 pub struct SampledStep {
@@ -60,6 +66,8 @@ impl PartialEq for SampledStep {
             && same_rewards(&self.rewards, &other.rewards)
     }
 }
+
+impl Eq for SampledStep {}
 
 /// One sampled behaviour: a start state and its steps (FR-188).
 #[derive(Clone, Debug, PartialEq)]

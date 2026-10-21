@@ -19,7 +19,7 @@ use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::statistical::{
     ClaimForm, Confidence, Coverage, Decision, StatisticalLimit, StatisticalLimits,
     StatisticalMethod, StatisticalOutcome, StatisticalRefusal, StatisticalStop,
-    StatisticalUnsupported, StatisticalVerdict, TestResult, UndecidedCause,
+    StatisticalUnsupported, StatisticalVerdict, TestResult, UndecidedCause, WitnessValue,
 };
 use qsl_replay::{UndefinedEvaluation, UndefinedLocus, UndefinedSite};
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
@@ -100,6 +100,7 @@ fn request<'a>(
         seed: 7,
         sampler,
         limits: StatisticalLimits::default(),
+        max_witnesses: DEFAULT_MAX_WITNESSES,
     }
 }
 
@@ -114,6 +115,35 @@ fn completed(outcome: StatisticalOutcome) -> StatisticalVerdict {
     match outcome {
         StatisticalOutcome::Completed(verdict) => *verdict,
         other => panic!("expected a completed run, got {other:?}"),
+    }
+}
+
+/// A stub sampler that reads the claim's sample with no steps: the
+/// samplers of the engine's statistics, which keep witnesses with empty
+/// paths.
+pub trait ClaimSampler {
+    /// A regeneration walk.
+    type Walk: RegenerationWalk;
+
+    /// The sample at `trace`, as the claim reads it.
+    fn read(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt>;
+
+    /// A regeneration walk.
+    fn walk(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Self::Walk;
+}
+
+impl<T: ClaimSampler> BehaviourSampler for T {
+    type Walk = T::Walk;
+
+    fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Drawn, SampleHalt> {
+        self.read(test, seed, trace).map(|sample| Drawn {
+            sample,
+            steps: Vec::new(),
+        })
+    }
+
+    fn walk(&mut self, test: &TestSubject, seed: u64, trace: u64) -> T::Walk {
+        ClaimSampler::walk(self, test, seed, trace)
     }
 }
 
@@ -141,6 +171,9 @@ struct Service {
     drawn: Vec<(u32, u64)>,
     /// Each activated sample's `M`, by trace index.
     latencies: BTreeMap<u64, i64>,
+    /// Each activated sample's attempts, by trace index: the index of `d`
+    /// drawn and whether the attempt failed.
+    attempts: BTreeMap<u64, Vec<(usize, bool)>>,
 }
 
 impl Service {
@@ -153,6 +186,7 @@ impl Service {
             coin: weights(&[1, 1]),
             drawn: Vec::new(),
             latencies: BTreeMap::new(),
+            attempts: BTreeMap::new(),
         }
     }
 
@@ -166,10 +200,10 @@ impl Service {
 
 const MILLISECONDS: [i64; 3] = [1, 3, 12];
 
-impl BehaviourSampler for Service {
+impl ClaimSampler for Service {
     type Walk = NoWalk;
 
-    fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
         self.drawn.push((test.initial, trace));
         let mut step = 0;
         if self.activation {
@@ -179,15 +213,19 @@ impl BehaviourSampler for Service {
             step += 1;
         }
         let mut latency = 0;
+        let mut attempts = Vec::new();
         for _attempt in 0..2 {
-            latency += MILLISECONDS[draw(seed, trace, step, 0, &self.durations)];
+            let duration = draw(seed, trace, step, 0, &self.durations);
+            latency += MILLISECONDS[duration];
             let failed = draw(seed, trace, step, 1, &self.outcomes) == 1;
+            attempts.push((duration, failed));
             step += 1;
             if !failed {
                 break;
             }
         }
         self.latencies.insert(trace, latency);
+        self.attempts.insert(trace, attempts);
         let (event, _) = reduce_quantile(
             ratio(95, 100),
             QuantileComparison::AtMost,
@@ -356,15 +394,10 @@ struct Fixed {
     calls: u64,
 }
 
-impl BehaviourSampler for Fixed {
+impl ClaimSampler for Fixed {
     type Walk = NoWalk;
 
-    fn sample(
-        &mut self,
-        _test: &TestSubject,
-        _seed: u64,
-        _trace: u64,
-    ) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> Result<Sample, SampleHalt> {
         self.calls += 1;
         self.sample.clone()
     }
@@ -471,10 +504,10 @@ fn coin_position(seed: u64, trace: u64, bit: &[Rational]) -> Option<u64> {
         .map(|step| step + 1)
 }
 
-impl BehaviourSampler for Coin {
+impl ClaimSampler for Coin {
     type Walk = NoWalk;
 
-    fn sample(&mut self, _test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, _test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
         self.calls += 1;
         Ok(match coin_position(seed, trace, &self.bit) {
             Some(position) => Sample::Undefined(UndefinedEvaluation {
@@ -543,15 +576,10 @@ struct Wide {
     calls: u64,
 }
 
-impl BehaviourSampler for Wide {
+impl ClaimSampler for Wide {
     type Walk = NoWalk;
 
-    fn sample(
-        &mut self,
-        _test: &TestSubject,
-        _seed: u64,
-        _trace: u64,
-    ) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> Result<Sample, SampleHalt> {
         self.calls += 1;
         let two_256 = Rational::from_integer(Integer::one().shifted_left(256));
         let spin = [int(1), two_256];
@@ -676,15 +704,10 @@ impl RegenerationWalk for AvailWalk {
     }
 }
 
-impl BehaviourSampler for Avail {
+impl ClaimSampler for Avail {
     type Walk = AvailWalk;
 
-    fn sample(
-        &mut self,
-        _test: &TestSubject,
-        _seed: u64,
-        _trace: u64,
-    ) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> Result<Sample, SampleHalt> {
         Err(SampleHalt::NotMarkov)
     }
 
@@ -830,15 +853,10 @@ impl RegenerationWalk for IdenticalWalk {
     }
 }
 
-impl BehaviourSampler for Identical {
+impl ClaimSampler for Identical {
     type Walk = IdenticalWalk;
 
-    fn sample(
-        &mut self,
-        _test: &TestSubject,
-        _seed: u64,
-        _trace: u64,
-    ) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> Result<Sample, SampleHalt> {
         Err(SampleHalt::NotMarkov)
     }
 
@@ -1214,10 +1232,10 @@ fn requests_and_claims_outside_the_method_are_refused() {
 /// the trace index.
 struct ByInitial(fn(u32, u64) -> Sample);
 
-impl BehaviourSampler for ByInitial {
+impl ClaimSampler for ByInitial {
     type Walk = UndefinedWalk;
 
-    fn sample(&mut self, test: &TestSubject, _seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, test: &TestSubject, _seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
         Ok((self.0)(test.initial, trace))
     }
 
@@ -1231,7 +1249,10 @@ struct UndefinedWalk;
 
 impl RegenerationWalk for UndefinedWalk {
     fn step(&mut self) -> Result<WalkStep, SampleHalt> {
-        Ok(WalkStep::Undefined(undefined_evaluation(0)))
+        Ok(WalkStep::Undefined {
+            evaluation: undefined_evaluation(0),
+            steps: Vec::new(),
+        })
     }
 }
 
@@ -1317,14 +1338,14 @@ fn an_undefined_first_sample_rejects_with_no_estimate() {
 /// undefined.
 struct SecondUndefined(Service);
 
-impl BehaviourSampler for SecondUndefined {
+impl ClaimSampler for SecondUndefined {
     type Walk = NoWalk;
 
-    fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+    fn read(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
         if trace == 1 {
             Ok(undefined_at(1))
         } else {
-            self.0.sample(test, seed, trace)
+            self.0.read(test, seed, trace)
         }
     }
 
@@ -1589,4 +1610,452 @@ fn a_regenerative_request_is_not_refused_for_the_interleaved_trace_range() {
     let verdict = completed(run(huge, &mut Identical));
     assert_eq!(verdict.decision, Decision::Accepted);
     assert_eq!(verdict.provenance.tests[1].traces.first, 1);
+}
+
+/// `Service` with the steps of each sample: one step per attempt, drawing
+/// `d` and `outcome`, with the step probability `w(d) · w(outcome)`.
+struct ServiceSteps(Service);
+
+/// The step probability of an attempt that drew `d` at `duration` and
+/// failed or not: `w(d)/100 · w(outcome)/100`.
+fn attempt_probability(duration: usize, failed: bool) -> Rational {
+    let d = [90, 7, 3][duration];
+    let outcome = if failed { 2 } else { 98 };
+    ratio(d * outcome, 10_000)
+}
+
+impl BehaviourSampler for ServiceSteps {
+    type Walk = NoWalk;
+
+    fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Drawn, SampleHalt> {
+        let sample = self.0.read(test, seed, trace)?;
+        let attempts = self.0.attempts.get(&trace).cloned().unwrap_or_default();
+        let steps = attempts
+            .into_iter()
+            .map(|(duration, failed)| SampledStep {
+                transition: qsl_eval::simulation::model::TransitionId::Stutter,
+                post_digest: DigestRecord::raw_artifact(b"attempt"),
+                choices: vec![u32::try_from(duration).expect("small"), u32::from(failed)],
+                random: vec![
+                    quire_exact::Value::Integer(Integer::from(MILLISECONDS[duration])),
+                    quire_exact::Value::Boolean(!failed),
+                ],
+                probability: attempt_probability(duration, failed),
+                rewards: Vec::new(),
+            })
+            .collect();
+        Ok(Drawn { sample, steps })
+    }
+
+    fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> NoWalk {
+        NoWalk
+    }
+}
+
+fn settle(outcome: &StatisticalOutcome) -> qsl_replay::statistical::StatisticalRecord {
+    let meter = quire_exact::ScalarLimits {
+        integer_bits: 64,
+        decimal_digits: 64,
+        scale_expansion: 64,
+        text_input_bytes: 64,
+        text_scalars: 64,
+        normalized_scalars: 64,
+        unit_edges: 64,
+        value_occurrences: 64,
+        work_units: 4_096,
+        result_units: 64,
+    };
+    qsl_replay::statistical::settle_statistical(
+        outcome,
+        qsl_replay::statistical::SubjectLimits {
+            expansion: qsl_eval::simulation::model::ExpansionLimits {
+                max_candidates: 512,
+            },
+            meter: &meter,
+        },
+    )
+}
+
+fn measured(record: &qsl_replay::statistical::StatisticalRecord) -> &StatisticalVerdict {
+    match &record.value {
+        qsl_replay::TerminalValue::Measured(verdict) => verdict,
+        other => panic!("expected a measured record, got {other:?}"),
+    }
+}
+
+fn item(outcome: &StatisticalOutcome, index: usize) -> qsl_replay::OutcomeItem {
+    let record = settle(outcome).into_terminal(
+        qsl_replay::RequestIndex::new(index),
+        qsl_foundation::BackendId::new("en-4"),
+    );
+    qsl_replay::OutcomeItem::from_terminal(&record)
+}
+
+/// FR-192-AC-2: FR-189-AC-1's Okamoto result at 5 ms settles `measured`,
+/// accepted, with an interval, finite-sample coverage, 23,026 samples, one
+/// test and `α' = 1/100`; the SPRT result at 2 ms settles `measured`,
+/// rejected, with no interval; FR-190-AC-1's result settles accepted with
+/// asymptotic coverage.
+#[trace("TC-627", "FR-192-AC-2")]
+#[test]
+fn okamoto_sprt_and_regenerative_results_settle_measured() {
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let at = |milliseconds: i64| {
+        let (_, bound) = reduce_quantile(
+            ratio(95, 100),
+            QuantileComparison::AtMost,
+            int(milliseconds),
+        );
+        StatisticalClaim::new(ClaimForm::Quantile, bound, confidence(ratio(1, 100))).expect("P95")
+    };
+    let five = at(5);
+    let two = at(2);
+
+    let okamoto = settle(&run(
+        request(&five, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut Service::new(5),
+    ));
+    assert_eq!(okamoto.measured(), Some(Decision::Accepted));
+    assert_eq!(okamoto.category(), qsl_replay::Category::Success);
+    let verdict = measured(&okamoto);
+    assert!(verdict.interval.is_some());
+    assert_eq!(verdict.basis.coverage, Coverage::FiniteSample);
+    assert_eq!(verdict.basis.samples, 23_026);
+    assert_eq!(verdict.basis.tests, 1);
+    assert_eq!(verdict.basis.alpha_per_test, ratio(1, 100));
+
+    let sprt = settle(&run(
+        request(&two, &tests, StatisticalMethod::Sprt, &sampler),
+        &mut Service::new(2),
+    ));
+    assert_eq!(sprt.measured(), Some(Decision::Rejected));
+    assert_eq!(sprt.category(), qsl_replay::Category::Violation);
+    assert_eq!(measured(&sprt).interval, None);
+
+    let long = long_run(Comparison::AtLeast, ratio(999, 1000));
+    let regenerative = settle(&run(
+        request(
+            &long,
+            &tests,
+            StatisticalMethod::Regenerative { min_cycles: 100 },
+            &sampler,
+        ),
+        &mut Avail::default(),
+    ));
+    assert_eq!(regenerative.measured(), Some(Decision::Accepted));
+    assert_eq!(measured(&regenerative).basis.coverage, Coverage::Asymptotic);
+}
+
+/// FR-192-AC-3: a request with `P95` accepted and the 2 ms claim rejected
+/// fails the pipeline gate with the status of a request holding one O-16
+/// violation; without the rejected item it passes; its proof summary counts
+/// no proved item.
+#[trace("TC-627", "FR-192-AC-3")]
+#[test]
+fn a_rejected_measurement_fails_the_gate_as_a_violation() {
+    use qsl_replay::{Category, Operation, OutcomeDocument, OutcomeItem, RequestIndex};
+
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let at = |milliseconds: i64| {
+        let (_, bound) = reduce_quantile(
+            ratio(95, 100),
+            QuantileComparison::AtMost,
+            int(milliseconds),
+        );
+        StatisticalClaim::new(ClaimForm::Quantile, bound, confidence(ratio(1, 100))).expect("P95")
+    };
+    let (five, two) = (at(5), at(2));
+    let accepted = run(
+        request(&five, &tests, StatisticalMethod::Sprt, &sampler),
+        &mut Service::new(5),
+    );
+    let rejected = run(
+        request(&two, &tests, StatisticalMethod::Sprt, &sampler),
+        &mut Service::new(2),
+    );
+
+    let both = OutcomeDocument::settled(
+        Operation::Analyze,
+        None,
+        vec![item(&accepted, 0), item(&rejected, 1)],
+    );
+    let violation = OutcomeDocument::settled(
+        Operation::Analyze,
+        None,
+        vec![
+            item(&accepted, 0),
+            OutcomeItem::undefined_evaluation(RequestIndex::new(1), "at", "cause"),
+        ],
+    );
+    assert_eq!(violation.category(), Category::Violation);
+    assert_eq!(both.category(), violation.category());
+    assert_eq!(
+        both.category().exit_code(),
+        violation.category().exit_code()
+    );
+    let passing = OutcomeDocument::settled(Operation::Analyze, None, vec![item(&accepted, 0)]);
+    assert_eq!(passing.category(), Category::Success);
+
+    let json = serde_json::to_value(both.items()).expect("items");
+    let proved = json
+        .as_array()
+        .expect("an array")
+        .iter()
+        .filter(|item| item["result"] == "proved")
+        .count();
+    assert_eq!(proved, 0);
+}
+
+/// FR-192-AC-5: FR-189-AC-6's result settles `measured`, rejected, category
+/// violation, with the test's `UndefinedEvaluation` in the record, and fails
+/// the pipeline gate as a violation does.
+#[trace("TC-640", "FR-192-AC-5")]
+#[test]
+fn an_undefined_sample_settles_measured_rejected() {
+    let claim = claim(
+        ClaimForm::Probability,
+        Comparison::AtLeast,
+        ratio(1, 2),
+        ratio(1, 10),
+    );
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let outcome = run(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut Coin {
+            bit: weights(&[1, 1]),
+            calls: 0,
+        },
+    );
+    let record = settle(&outcome);
+    assert_eq!(record.measured(), Some(Decision::Rejected));
+    assert_eq!(record.category(), qsl_replay::Category::Violation);
+    let undefined = measured(&record).tests[0]
+        .undefined
+        .clone()
+        .expect("the record keeps the undefined evaluation");
+    assert_eq!(
+        undefined.evaluation.cause,
+        UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
+    );
+
+    let entry = item(&outcome, 0);
+    let json = serde_json::to_value(&entry).expect("an item");
+    assert_eq!(json["measured"], "rejected");
+    assert_eq!(json["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(
+        json["cause"]["where"],
+        format!(
+            "test 0, trace {}, position {}",
+            undefined.trace, undefined.evaluation.site.position
+        )
+    );
+    assert_eq!(json["cause"]["cause"], "division-by-zero");
+    let gate =
+        qsl_replay::OutcomeDocument::settled(qsl_replay::Operation::Analyze, None, vec![entry]);
+    assert_eq!(gate.category(), qsl_replay::Category::Violation);
+}
+
+/// FR-193 "Keeping witnesses" over `Service` and the 2 ms claim with seed
+/// 7 and `max_witnesses` 3: the three violating samples first in trace
+/// order, each with latency above 2 ms, its event false and its path
+/// probability the product of its steps'; an attempt that drew `d = 3 ms`
+/// and `Ok` has probability `343/5000`.
+#[trace("TC-628")]
+#[test]
+fn the_first_violating_samples_are_kept_in_trace_order() {
+    let (_, bound) = reduce_quantile(ratio(95, 100), QuantileComparison::AtMost, int(2));
+    let two = StatisticalClaim::new(ClaimForm::Quantile, bound, confidence(ratio(1, 100)))
+        .expect("P95 at 2 ms");
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let mut witnessed = ServiceSteps(Service::new(2));
+    let verdict = completed(run(
+        StatisticalRequest {
+            max_witnesses: 3,
+            ..request(&two, &tests, StatisticalMethod::Sprt, &sampler)
+        },
+        &mut witnessed,
+    ));
+    let latencies = &witnessed.0.latencies;
+    let expected: Vec<u64> = latencies
+        .iter()
+        .filter(|(_, latency)| **latency > 2)
+        .map(|(trace, _)| *trace)
+        .take(3)
+        .collect();
+    let kept: Vec<u64> = verdict
+        .witnesses
+        .iter()
+        .map(|witness| witness.trace)
+        .collect();
+    assert_eq!(kept, expected);
+    for witness in &verdict.witnesses {
+        assert_eq!(witness.test, 0);
+        assert_eq!(witness.value, WitnessValue::Event(false));
+        let product = witness
+            .steps
+            .iter()
+            .fold(int(1), |product, step| product.mul(&step.probability));
+        assert_eq!(witness.path_probability, product);
+        assert!(!witness.steps.is_empty());
+    }
+    assert_eq!(attempt_probability(1, false), ratio(343, 5000));
+}
+
+/// FR-193: witnesses are kept first in trace-index order across tests, not
+/// in the order the tests ran.
+#[trace("TC-628")]
+#[test]
+fn witnesses_interleave_across_tests_by_trace_index() {
+    let (_, bound) = reduce_quantile(ratio(95, 100), QuantileComparison::AtMost, int(2));
+    let two = StatisticalClaim::new(ClaimForm::Quantile, bound, confidence(ratio(1, 100)))
+        .expect("P95 at 2 ms");
+    let tests = two_tests();
+    let sampler = sampler_ref();
+    let mut witnessed = ServiceSteps(Service::new(2));
+    let verdict = completed(run(
+        StatisticalRequest {
+            max_witnesses: 4,
+            ..request(&two, &tests, StatisticalMethod::Sprt, &sampler)
+        },
+        &mut witnessed,
+    ));
+    let expected: Vec<u64> = witnessed
+        .0
+        .latencies
+        .iter()
+        .filter(|(_, latency)| **latency > 2)
+        .map(|(trace, _)| *trace)
+        .take(4)
+        .collect();
+    let kept: Vec<(u32, u64)> = verdict
+        .witnesses
+        .iter()
+        .map(|witness| (witness.test, witness.trace))
+        .collect();
+    assert_eq!(
+        kept.iter().map(|(_, trace)| *trace).collect::<Vec<_>>(),
+        expected
+    );
+    for (test, trace) in &kept {
+        assert_eq!(
+            u64::from(*test),
+            trace % 2,
+            "trace i · 2 + j belongs to test j"
+        );
+    }
+    for test in 0..2 {
+        assert!(
+            kept.iter().any(|(kept, _)| *kept == test),
+            "test {test} contributes a witness: {kept:?}"
+        );
+    }
+}
+
+/// FR-193: a sample on which the claim evaluates undefined is kept as a
+/// witness with value `Undefined(UndefinedEvaluation)` whatever
+/// `max_witnesses` is.
+#[trace("TC-640")]
+#[test]
+fn an_undefined_sample_is_kept_whatever_max_witnesses_is() {
+    let claim = claim(
+        ClaimForm::Probability,
+        Comparison::AtLeast,
+        ratio(1, 2),
+        ratio(1, 10),
+    );
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let verdict = completed(run(
+        StatisticalRequest {
+            max_witnesses: 0,
+            ..request(&claim, &tests, StatisticalMethod::Okamoto, &sampler)
+        },
+        &mut Coin {
+            bit: weights(&[1, 1]),
+            calls: 0,
+        },
+    ));
+    let undefined = verdict.tests[0].undefined.clone().expect("undefined");
+    let [witness] = &verdict.witnesses[..] else {
+        panic!("one witness: {:?}", verdict.witnesses)
+    };
+    assert_eq!(witness.trace, undefined.trace);
+    assert_eq!(witness.value, WitnessValue::Undefined(undefined.evaluation));
+}
+
+/// FR-193: `LongRun` keeps no witness.
+#[trace("TC-628")]
+#[test]
+fn a_long_run_fraction_keeps_no_witness() {
+    let claim = long_run(Comparison::AtLeast, ratio(999, 1000));
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let verdict = completed(run(
+        request(
+            &claim,
+            &tests,
+            StatisticalMethod::Regenerative { min_cycles: 100 },
+            &sampler,
+        ),
+        &mut Avail::default(),
+    ));
+    assert_eq!(verdict.decision, Decision::Accepted);
+    assert!(verdict.witnesses.is_empty());
+}
+
+/// FR-193: a sample is on the violating side of its bound when its event is
+/// false against `>= θ` and true against `<= θ` or the strict `< θ`, and
+/// when its fraction is below `θ` against `>= θ` or above it against `<= θ`;
+/// an unactivated sample is no witness.
+#[trace("TC-628")]
+#[test]
+fn the_violating_side_follows_the_bound_direction() {
+    let bound = |comparison| Bound {
+        comparison,
+        threshold: ratio(1, 2),
+    };
+    let fraction =
+        |value: Rational| Sample::Fraction(UnitFraction::try_from(value).expect("a fraction"));
+    for (comparison, sample, value) in [
+        (
+            Comparison::AtLeast,
+            Sample::Event(false),
+            Some(WitnessValue::Event(false)),
+        ),
+        (Comparison::AtLeast, Sample::Event(true), None),
+        (
+            Comparison::AtMost,
+            Sample::Event(true),
+            Some(WitnessValue::Event(true)),
+        ),
+        (
+            Comparison::Below,
+            Sample::Event(true),
+            Some(WitnessValue::Event(true)),
+        ),
+        (Comparison::Below, Sample::Event(false), None),
+        (
+            Comparison::AtLeast,
+            fraction(ratio(1, 4)),
+            Some(WitnessValue::Fraction(ratio(1, 4))),
+        ),
+        (Comparison::AtLeast, fraction(ratio(1, 2)), None),
+        (
+            Comparison::AtMost,
+            fraction(ratio(3, 4)),
+            Some(WitnessValue::Fraction(ratio(3, 4))),
+        ),
+        (Comparison::AtMost, fraction(ratio(1, 4)), None),
+        (Comparison::AtLeast, Sample::NotActivated, None),
+    ] {
+        assert_eq!(
+            violating(&bound(comparison), &sample),
+            value,
+            "{comparison:?} {sample:?}"
+        );
+    }
 }

@@ -21,13 +21,13 @@ Fixtures: synthetic `StatisticalOutcome` values for each row; FR-189-AC-1's and 
 1. Map each outcome row, including a `ConfidenceBeyondPrecision` refusal, a `Stopped` by an expansion naming `EvaluationMeter`, and two expansion stops naming no limit, one an internal failure and one not.
 2. Settle FR-189-AC-1's Okamoto and SPRT results and FR-190-AC-1's result.
 3. Gate the two-item request, then the request without the rejected item; read the proof summary.
-4. Read EN-4's manifest; call `check_statistical` with an every-scheduler claim, `NoFault` without confidence and an `expected accumulate` claim.
+4. Read EN-4's manifest; run EN-4's gate (FR-195) on the checked claims: an every-scheduler claim, `NoFault` without confidence and an `expected accumulate` claim.
 
 Tag the tests `#[trace("TC-627", "FR-192-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: each row as FR-192's table states, with no truth and no basis; the `ConfidenceBeyondPrecision` refusal settles `unsupported`, `confidence-beyond-precision`; the meter stop settles `incomplete`, `limit-reached` with limit `EvaluationMeter`, the configured value and setting `model_check.meter`; the internal unnamed stop settles `failed`, `runtime_invariant`/`established-invariant-broken`; the non-internal unnamed stop settles `failed` carrying the stop's own `ExpansionStop.cause` (QSL FR-120) as its one diagnostic.
+- Step 1: each row as FR-192's table states, with no truth and no basis; the `ConfidenceBeyondPrecision` refusal settles `unsupported`, `confidence-beyond-precision`; the meter stop settles `incomplete`, `limit-reached` with limit `EvaluationMeter`, the configured value and setting `meter`, and the candidate stop with limit `MaxCandidates`, the configured value and setting `max_candidates`; the internal unnamed stop settles `failed`, `runtime_invariant`/`established-invariant-broken`; the non-internal unnamed stop settles `failed` carrying the stop's own `ExpansionStop.cause` (QSL FR-120) as its one diagnostic.
 - Step 2: the values of FR-192-AC-2.
 - Step 3: the gate fails as on one violation, then passes; 0 proved.
 - Step 4: exactly (`probabilistic-satisfaction`, `statistical`); `EveryScheduler`, `MissingConfidence`, `ExactOnlyForm`, each `unsupported` with no sample drawn.
