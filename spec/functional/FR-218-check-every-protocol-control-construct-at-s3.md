@@ -84,8 +84,9 @@ protocol system only ever runs a protocol whose meaning is fixed.
   capacity, overflow, delivery and ordering; roles; the declared
   relationships, each with the key of its model relationship and the types of
   its two ends; each event node's `related by` clauses, in source order; the
-  `requires temporal` requirements, each bound to the key of the temporal
-  clause it names; the owner and visible facts of each `choice` and `repeat`;
+  `requires temporal` requirements, each bound to the temporal clause it names
+  by that clause's position among the unit's `temporal` clauses in declaration
+  order; the owner and visible facts of each `choice` and `repeat`;
   the compensation templates and the activation (FR-381); and the protocol's
   `terminal` and `scheduling` members (FR-211, FR-212).
 - A typed `CheckRefusal` with a span on refusal, and no checked clause.
@@ -227,8 +228,10 @@ that relationship with those two typed ends (QSpec FR-051).
   resolves to no export of the package SHALL refuse with `missing_declaration`/
   `missing-name` at the name. A name that resolves to an export that is not a
   relationship SHALL refuse with `invalid_model_binding`/`wrong-export` at the
-  name, retaining the required kind `relationship`, the actual kind and both
-  declaration keys, as FR-086 refuses a wrong kind.
+  name, retaining the required kind `relationship`, the actual kind and the
+  export's declaration key, as FR-086 refuses a wrong kind. The relationship
+  member being checked has no declaration key at S3, so the export's key is
+  the only key the refusal holds.
 - If a scope declares two relationships of one name, then S3 SHALL refuse
   `ambiguous_declaration`/`ambiguous-name` at each declaration, naming both in
   source order.
@@ -254,8 +257,16 @@ that relationship with those two typed ends (QSpec FR-051).
 - A `requires temporal T;` member names one temporal clause declared in the
   same unit. S3 SHALL resolve the written name once, in the unit's own
   declaration scope, and SHALL bind the checked requirement to that clause's
-  typed node key (`quire.checked-semantic-node/v1`), never to the name. No
-  later stage looks the name up again (FR-088).
+  position among the unit's `temporal` clauses in declaration order, never to
+  the name; S4 SHALL mint the requirement's target node key
+  (`quire.checked-semantic-node/v1`) from that position when it emits the
+  clause, as a protocol reference binds its target (FR-092). No later stage
+  looks the name up again (FR-088).
+- S3 SHALL bind a requirement by position for every temporal clause,
+  whatever its activation or captures, and SHALL decide the refusals below at
+  S3 before S4 emits any node, so a unit with a requirement refusal reports it
+  whatever its other clauses hold. FR-337 specifies the emission of every
+  checked clause, from which S4 mints the target key.
 - A name that resolves to no declaration of the unit SHALL refuse with
   `missing_declaration`/`missing-name` at the name. A name that resolves only
   through an import SHALL refuse the same way: a requirement binds a local
@@ -403,9 +414,9 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-11 | A `send` via a name that is no channel refuses `missing_declaration`/`missing-name` at the name. A `send` or `receive` whose binder type differs from the channel's `carries` type refuses `ill_typed`/`type-mismatch` at the binder type, retaining channel, expected and actual; the same node with the channel's type checks, and a `receive` via a channel other than its `send`'s still refuses as FR-113-AC-7 states. The binder of a `send` holds the payload, not the send record. | Test (TC-1056) |
 | FR-218-AC-12 | `ordering fifo by (m: M::Plain) {m.ready}` on a channel carrying `M::Plain` checks and the checked channel holds `Fifo` with that binder and key; a binder of another type refuses `ill_typed`/`type-mismatch` at the type; a key that reads model state refuses `ill_typed`/`operator-ineligible` at the read; `ordering unordered` holds no key. | Test (TC-1056) |
 | FR-218-AC-13 | A channel written with delivery `exactly-once-premise`, capacity `symbolic(Bound)`, overflow `loss head` and `ordering unordered` records exactly those four premises, `Bound` unresolved and the selector `Head`; the same channel with delivery `at-most-once` is a different checked channel, so is the same channel with `loss tail` and with `loss new`, and no premise changes another. | Test (TC-1056) |
-| FR-218-AC-14 | `relationship Pipe = M::pipe;` over an exported relationship binds the checked relationship to the export's key and the types of its two ends; `M::nothing` refuses `missing_declaration`/`missing-name` at the name; `M::out`, a port, and `M::Node`, an object type, each refuse `invalid_model_binding`/`wrong-export` at the name retaining required kind `relationship`, the actual kind and both keys; two relationships `Pipe` refuse `ambiguous_declaration`/`ambiguous-name` at both. | Test (TC-1056) |
+| FR-218-AC-14 | `relationship Pipe = M::pipe;` over an exported relationship binds the checked relationship to the export's key and the types of its two ends; `M::nothing` refuses `missing_declaration`/`missing-name` at the name; `M::out`, a port, and `M::Node`, an object type, each refuse `invalid_model_binding`/`wrong-export` at the name retaining required kind `relationship`, the actual kind and the export's declaration key; two relationships `Pipe` refuse `ambiguous_declaration`/`ambiguous-name` at both. | Test (TC-1056) |
 | FR-218-AC-15 | `related by Pipe (a, b)` checks when `a` and `b` have the types of the relationship's first and second ends, and the node holds the clause; `related by Absent (a, b)` refuses `missing_declaration`/`missing-name` at `Absent`; swapped ends, or an end of another type, refuse `ill_typed`/`type-mismatch` at that end, retaining relationship, `end`, expected and actual. A node with `related by Pipe (a, b)` and `related by Owns (c, d)` holds two checked clauses in source order. | Test (TC-1056) |
-| FR-218-AC-16 | `requires temporal Due;` over a temporal clause `Due` binds the requirement to `Due`'s node key; `requires temporal Nothing;` and a clause offered only through an import alias each refuse `missing_declaration`/`missing-name` at the name; `requires temporal Accept;` naming a predicate refuses `ill_typed`/`operator-ineligible` at the name, naming the kind; `Due` required twice is recorded once. Each refusal produces no package. | Test (TC-1056) |
+| FR-218-AC-16 | `requires temporal Due;` over a temporal clause `Due` binds the requirement to `Due`'s position among the unit's temporal clauses, from which S4 mints its node key, the same for a clause with an `on each` activation and a capture; `requires temporal Nothing;` and a clause offered only through an import alias each refuse `missing_declaration`/`missing-name` at the name; `requires temporal Accept;` naming a predicate refuses `ill_typed`/`operator-ineligible` at the name, naming the kind; `Due` required twice is recorded once. Each refusal produces no package. | Test (TC-1056) |
 | FR-218-AC-17 | A `choice` or `repeat` owned by an undeclared role refuses `missing_declaration`/`missing-name` at the owner. An owner that is the channel's `to` role decides on its `receive` record's Boolean field listed individually in `visible`; the other role, a `send` binder, an `effect` record, a `commit` record, the protocol's activation binder, an unlisted fact and a fact reachable only inside a composite entry each refuse `wrong_snapshot`/`wrong-observation` at the read, retaining node, owner, read and `reason` `other-role`, `ineligible-kind` (for the four binder kinds), `unlisted`; a `finish` record read by a decision refuses `missing_declaration`/`missing-name` as an out-of-scope read, because no decision reaches it, and a read that is out of scope and also unlisted reports the scope refusal only. A discarded `let` that reads a fact still needs the fact listed. A read of the `over` input refuses `ill_typed`/`operator-ineligible` at the read, naming the guard; a read of a protocol capture checks without listing. | Test (TC-1056) |
 | FR-218-AC-18 | A sibling branch's record before its join, an optional choice branch's record, an `await` match read after the `await`, and a record bound inside a `repeat` body read by that `repeat`'s own `visible` entry or guard each refuse `missing_declaration`/`missing-name` at every original use, retaining `name`. | Test (TC-1056) |
 | FR-218-AC-19 | Over two visible facts, guards that leave both facts true uncovered, that overlap on both true, that leave one fact out, and constant guards `true`/`not false` or `false`/`not true` each refuse `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining `failed` (`[missing-arm]`, `[duplicate-arm]` or `[missing-arm, duplicate-arm]`) and the case names; complementary guards over the individually listed facts check. | Test (TC-1056) |
@@ -433,6 +444,11 @@ one protocol declared in the same unit. It carries no package selector.
   FR-171, FR-172, FR-228.
   The protocol reference's resolution rules follow QSpec FR-322-AC-66, and
   its production and meaning are QSpec FR-463's.
+
+## Remaining work
+
+- AC-16's binding of a clause with an `on each` activation or a capture (TC-1056
+  row 23a) is exercised once S4 emits those clauses: Linear QSL-926.
 
 ## References
 

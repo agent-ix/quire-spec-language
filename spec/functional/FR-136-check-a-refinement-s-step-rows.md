@@ -82,25 +82,26 @@ pub enum StepTarget {
 - A row's `StepRowRef` (FR-146) SHALL be its zero-based position in that
   emitted order. `CheckedRefinement.steps` itself may keep source order, so
   long as the `StepRowRef` mapping and the emitted node follow FR-375.
-- Over a protocol subject, S4 SHALL emit the rows ordered ascending by the
-  tuple (1) the node-key digest of the declaration the row's left side
+- Over a protocol subject, S4 SHALL emit the rows in QSpec FR-375's order:
+  ascending by (1) the node-key digest of the declaration the row's left side
   names: the operation, or the attempt, event, send, receive, timeout,
   finish or fence node, the `parallel` node, the template, the channel or
-  the role; for `activate` and `memory` rows, which name no declaration of
-  their own, the selected protocol clause; (2) the row's leading step
-  keyword (`fork`, `join`, `cend`, `duplicate`, `lose`, `spawn`, `retire`,
-  `activate`, `memory`) as UTF-8 bytes, a row with no keyword sorting first;
-  (3) the memory step kind name as UTF-8 bytes, for `memory` rows. It is not
-  source order.
+  the role, or, for an `activate` row, the selected protocol clause; a row that
+  names no declaration (every `memory` row) sorts after every row that names
+  one; (2) among rows that tie on (1), the UTF-8 bytes of the row's
+  alias-free class spelling, the concrete alias `<C>::` removed (`duplicate
+  P::ch` before `lose P::ch`, `fork P::par` before `join P::par`, and, among
+  `memory` rows, the memory kind name). It is not source order.
 - The checker SHALL give a protocol subject's row the `StepRowRef` equal to
   its zero-based position in that order, and reordering the rows in source
   SHALL change no `StepRowRef` and no emitted `steps` array.
 
 The key is the model case's rule (the declaration's key, then the step's name
-bytes) extended to the classes that share a declaration: `MemoryStep` rows
-name no declaration, and rows such as `duplicate` and `lose` of one channel,
-or `fork` and `join` of one `parallel` node, name the same one. The tuple is
-unique per row, because coverage admits one row per class.
+bytes) extended to the classes that share a declaration: `memory` rows name no
+declaration and sort after every row that does, and rows such as `duplicate`
+and `lose` of one channel, or `fork` and `join` of one `parallel` node, name the
+same declaration and are ordered by the alias-free class spelling. The order is
+total, because coverage admits one row per class.
 
 ### Selecting the concrete protocol
 
@@ -252,7 +253,7 @@ subject until the checked clause is available meets the same rule.
 | FR-136-AC-4 | Over a concrete protocol subject whose model has the two operations `incA` and `incB`, each mapped `-> Spec::Counter::inc(self)`, and whose `run` is a `parallel` with branches `A` and `B` holding one attempt of `incA` and one of `incB`, with rows for both operations and no `fork`, `join` or `finish` row, the checker refuses `missing_declaration`/`missing-name` naming the `fork` node first in source order. With node rows for `fork`, `join` and `finish` written `-> stutter` it checks; a further row naming branch `A`'s attempt node `-> any` checks and takes precedence over `incA`'s row for that node; two rows for the `join` node refuse `invalid_model_binding`/`conflicting-binding`. | Test (TC-541) |
 | FR-136-AC-5 | Over a model subject, `CasRefinesCounter` checked with its seven `step` rows in source order and in the reverse source order emits the same `steps` array in ascending node-key digest order of each row's concrete operation, and gives each row the same `StepRowRef`. | Test (TC-541) |
 | FR-136-AC-6 | With FR-136-AC-4's protocol, named `Run`, the concrete alias `M` names the model and the rows naming `M::Run::…` select the protocol, recorded as `concrete_protocol`; a refinement whose rows name no protocol clause has a model subject and `concrete_protocol` absent. A row `step M::Other::fin -> stutter` naming a second protocol clause `Other` of `M` beside `Run` refuses `invalid_model_binding`/`conflicting-binding` at that row naming both rows; `step M::Nope::fin -> stutter` refuses `missing_declaration`/`missing-name` at `Nope`; a clause of the package acting only on another model refuses `invalid_model_binding`/`malformed-declaration` at the protocol name. A `step memory flush` row under a model subject, and one naming a kind the selected memory model lacks, each refuse `missing_declaration`/`missing-name` at the kind. An operation row for an operation no attempt uses checks. | Test (TC-541) |
-| FR-136-AC-7 | Over FR-136-AC-4's protocol extended with a channel `ch` whose delivery is `unknown` (so `duplicate` and `lose` are both classes) and with its outermost `parallel` under `tso` (so `flush` is a memory step kind), with `fork`, `join` and `finish` rows, a `duplicate` and a `lose` row for `ch` and a `memory flush` row written in source order and again in reverse, the emitted `steps` array and every `StepRowRef` are equal, ordered by the tuple of FR-136's protocol sort key: the two channel rows share the channel's digest and `duplicate` precedes `lose`; the `memory` row carries the clause's digest and sorts by the kind name; the `fork` and `join` rows of the `parallel` node share its digest and `fork` precedes `join`. | Test (TC-541) |
+| FR-136-AC-7 | Over FR-136-AC-4's protocol extended with a channel `ch` whose delivery is `unknown` (so `duplicate` and `lose` are both classes) and with its outermost `parallel` under `tso` (so `flush` is a memory step kind), with `fork`, `join` and `finish` rows, a `duplicate` and a `lose` row for `ch` and a `memory flush` row written in source order and again in reverse, the emitted `steps` array and every `StepRowRef` are equal, ordered by QSpec FR-375's protocol order as FR-136 states it: the two channel rows share the channel's digest and `duplicate` precedes `lose`; the `memory` row names no declaration and sorts after every other row, among `memory` rows by the kind name; the `fork` and `join` rows of the `parallel` node share its digest and `fork` precedes `join`. | Test (TC-541) |
 | FR-136-AC-8 | A protocol clause that fails its own checks, named by a refinement's rows, reports the clause's refusals and no coverage refusal for a class drawn from it, and gives no `CheckedRefinement` for the refinement; a refusal of a row not drawn from the clause is still reported. The same clause checked cleanly gives FR-136-AC-4's coverage refusals when a row is missing, whatever the declaration order of the clause and the refinement in the source. | Test (TC-541) |
 | FR-136-AC-9 | With rows naming `P`, `Q` and `R` in that order, `P` is selected and two `conflicting-binding` refusals are reported, at `Q`'s first row and at `R`'s, each naming that row and `P`'s first row. A protocol clause declared in a package other than the declaring one is not a clause for the rows and refuses `missing_declaration`/`missing-name` at its segment. | Test (TC-541) |
 | FR-136-AC-10 | Over FR-136-AC-7's protocol, the source-resolved memory model of its outermost `parallel` is `tso`, so a `memory flush` row is required and a `memory nope` row refuses `missing_declaration`/`missing-name` at `nope`. With a protocol whose `parallel` is under `sc` and a `memory flush` row, S3 refuses at `flush`. A check request that selects `tso` for the `sc` protocol, with no `flush` row, is refused when admitted with `missing_declaration`/`missing-name` naming `flush`; a request that selects `sc` for the `tso` protocol admits and leaves the `flush` row unused. With two outermost `parallel` nodes, one `sc` and one `tso`, one `memory flush` row covers the kind for both. | Test (TC-541) |

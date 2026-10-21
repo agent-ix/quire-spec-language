@@ -377,6 +377,7 @@ impl Totals {
             product_edges: self.edges,
             automaton_states: self.automaton_states,
             depth: self.depth,
+            bound_limited: 0,
         }
     }
 

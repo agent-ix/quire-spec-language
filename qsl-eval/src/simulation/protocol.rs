@@ -63,8 +63,8 @@ pub use footprint::{
     visible, AnchorName, ClaimReads, ParallelInstance, ProtocolFootprintError, ProtocolLocation,
 };
 pub use identity::{
-    BlockedThread, PathStep, ProtocolTransition, RegistrationKey, RestKind, RestPoint, SendOutcome,
-    SendRecord, StepKind, ThreadPath, WaitCause,
+    BlockedThread, CarriedComponent, PathStep, PositionAnchor, ProtocolTransition, RegistrationKey,
+    RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
 };
 pub use memory::{
     Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent,
@@ -1300,6 +1300,20 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
         state: &Self::State,
     ) -> Result<Bounded<Self::TransitionId, Self::State>, ExpansionStop> {
         self.expand_bounded(state)
+    }
+
+    /// Over a weak `parallel`, `transition` carrying `post`'s memory
+    /// component (ADR-025 MK-1).
+    fn reported(
+        &self,
+        transition: ProtocolTransition,
+        post: &Self::State,
+    ) -> Result<ProtocolTransition, ExpansionStop> {
+        if self.governing.values().any(|model| model.is_weak()) {
+            Ok(transition.with_memory(CarriedComponent::of(&post.memory)?))
+        } else {
+            Ok(transition)
+        }
     }
 }
 

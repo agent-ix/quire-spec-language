@@ -33,7 +33,7 @@ use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
     AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
-    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
+    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause, TimeUnitCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -1059,6 +1059,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                      probabilistic claim has a model subject, and observed statistics of a trace \
                      are window aggregates (FR-194)"
                 ),
+                ProbabilisticCause::TimedEventProfile { claim, .. } => format!(
+                    "{message}: claim `{claim}` is checked under the timed profile, which has no \
+                     probabilistic event reading"
+                ),
                 ProbabilisticCause::UnresolvedProfile { claim, alias, .. } => {
                     format!("{message}: claim `{claim}` uses `{alias}`, which names no profile")
                 }
@@ -1167,6 +1171,38 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 }
                 TemporalCause::TimedIntervalNotChecked { .. } => {
                     format!("{message}: a timed interval is not checked yet")
+                }
+                TemporalCause::InvalidTimedInterval { reason, .. } => {
+                    format!("{message}: the timed interval is invalid: {reason}")
+                }
+                TemporalCause::ModelTimeOnUntimedModel { model, .. } => {
+                    format!("{message}: `model-time` over `{model}`, which has no time member")
+                }
+                TemporalCause::UnitlessTimedBound { .. } => {
+                    format!("{message}: a `model-time` interval bound needs a time unit")
+                }
+                TemporalCause::ZeroDenominator { .. } => {
+                    format!("{message}: an interval bound has a zero denominator")
+                }
+                TemporalCause::TimeQuantity { cause, .. } => match &**cause {
+                    TimeUnitCause::NoTimeDimension => {
+                        format!("{message}: the unit graph has no base dimension `Time`")
+                    }
+                    TimeUnitCause::UnknownUnit { name } => {
+                        format!("{message}: the unit graph has no unit `{name}`")
+                    }
+                    TimeUnitCause::NotTimeDimension { name } => {
+                        format!("{message}: `{name}` is not a unit of the dimension `Time`")
+                    }
+                    TimeUnitCause::AffineUnit { name, offset } => {
+                        format!("{message}: the time unit `{name}` has the offset {offset}")
+                    }
+                },
+                TemporalCause::TimedProfileWithoutModelTime { clock, .. } => format!(
+                    "{message}: the timed profile under `clock \"{clock}\"` is not checked yet"
+                ),
+                TemporalCause::TimedTraceSubject { .. } => {
+                    format!("{message}: a timed clause over a trace subject is not checked yet")
                 }
             };
         }

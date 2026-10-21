@@ -199,7 +199,8 @@ fn a_clause_with_no_universal_variable_holds_exactly_when_the_witness_set_never_
                 product_states: 2,
                 product_edges: 2,
                 automaton_states: 2,
-                depth: 1
+                depth: 1,
+                bound_limited: 0,
             }
         }
     );

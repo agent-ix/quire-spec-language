@@ -101,7 +101,7 @@ for a clause DF-5 does not admit over a timed subject.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-234-AC-1 | Over `Rpc`, `Settles` classifies as `TimedSafety`; `always holds(not c.late)` under the timed profile as `TimedInvariant`; `eventually[0 ms, 3 ms] holds(c.phase = Replied)` on origin as `BoundedWindow{horizon: 3}`; `always eventually[0 ms, 5 ms] holds(c.phase = Idle)` as `TimedLiveness`. | Test (TC-689) |
+| FR-234-AC-1 | Over `Rpc`, `Settles` classifies as `TimedSafety`; `always holds(not c.late)` under the timed profile as `TimedInvariant`; `eventually[0 ms, 3 ms] holds(c.phase = Replied)` on origin as `BoundedWindow{horizon: 3}`; `always eventually holds(c.phase = Idle)` as `TimedLiveness`. | Test (TC-689) |
 | FR-234-AC-2 | `[0 ms, 3 ms)` and `(1 ms, 3 ms]` check with their ends' openness recorded and different FR-255 keys from `[0 ms, 3 ms]`; `(2 ms, 2 ms]` and `[3 ms, 2 ms]` refuse `invalid_timed_model`/`invalid-interval` at the interval's span. | Test (TC-689) |
 | FR-234-AC-3 | `always (holds(p) implies eventually[2 ms, 2 ms] holds(q))` over a timed subject is disposed `Unsupported`, `PunctualInterval`, naming the interval; the bounded `eventually[2 ms, 2 ms] holds(q)` on origin is admitted as `BoundedWindow{horizon: 2}`; the unbounded form evaluates on a supplied timed trace. | Test (TC-689) |
 | FR-234-AC-4 | On the timed trace with stamps `0, 1, 3` and `q` true only at position 2, `eventually[0 ms, 3 ms] holds(q)` at 0 is `true`, `eventually[0 ms, 3 ms) holds(q)` at 0 is `false`, and `once(1 ms, 2 ms] holds(p)` at 2 with `p` only at position 1 is `true`. Inserting a step that repeats position 1's discrete state at stamp 1 leaves each value unchanged. | Test (TC-689) |

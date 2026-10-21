@@ -420,7 +420,12 @@ fn translate_formula(
     max_states: u64,
     symmetry: Option<&AtomSymmetry<'_>>,
 ) -> Result<PropertyAutomaton, AutomatonError> {
-    if matches!(profile, TemporalProfile::TimestampedEventFiniteWindow) {
+    // The timed profile's intervals count time, which a step automaton
+    // does not read (FR-234; its claim automata are FR-242's).
+    if matches!(
+        profile,
+        TemporalProfile::TimestampedEventFiniteWindow | TemporalProfile::Timed
+    ) {
         return Err(AutomatonError::ProfileNotTranslated { profile });
     }
     let bounded = profile.is_bounded();

@@ -617,6 +617,19 @@ pub struct CandidateSet {
 }
 
 impl CandidateSet {
+    /// The empty set of an item of `kind` that is routed to no engine
+    /// whatever is registered (an item the request writer disposes
+    /// `Unsupported`, FR-234).
+    pub(crate) fn none(kind: Capability, named: Option<&BackendId>) -> Self {
+        Self {
+            kind,
+            requested_backend: named.cloned(),
+            candidates: Vec::new(),
+            fairness: BTreeMap::new(),
+            missing_fairness: BTreeSet::new(),
+        }
+    }
+
     /// The requested item's capability kind.
     pub fn kind(&self) -> Capability {
         self.kind

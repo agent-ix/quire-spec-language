@@ -164,7 +164,9 @@ impl Shape {
         };
         let represented = trace.represented().ok_or(TemporalRefusal::TraceTooLong)?;
         let mode = match (profile, trace) {
-            (TemporalProfile::TimestampedEventFiniteWindow, _) => {
+            // The timed profile reads time stamps: `evaluate_timed_at` is its
+            // evaluator (FR-234).
+            (TemporalProfile::TimestampedEventFiniteWindow | TemporalProfile::Timed, _) => {
                 return Err(TemporalRefusal::ProfileNotEvaluated { profile })
             }
             (
