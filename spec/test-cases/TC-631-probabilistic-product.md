@@ -12,7 +12,7 @@ relationships:
 
 Verify the product for §15.1, §15.2 and §15.4, intermediate states for residual nondeterminism, `NotMarkov`, and determinism.
 
-Scope: FR-196-AC-1 to FR-196-AC-4 and FR-196-AC-6 to FR-196-AC-9.
+Scope: FR-196-AC-1 to FR-196-AC-4 and FR-196-AC-6 to FR-196-AC-12.
 Canonical-key procedures below are prospective, not execution evidence.
 
 ## Test Procedure
@@ -63,6 +63,10 @@ Fixtures: ADR-024 §7.1 and §7.2 models and claims; `Link` with `Deliver`; the 
    shape/clock/deadline negative; stop at the actual identity-byte/product
    budget and inspect the outcome.
 
+9. Build a claim `over` an object type of a population with two live objects; read `initial` and compare the keys of equal model and monitor states under the two bindings.
+10. Build a `steps` measure whose `A` never holds, and a `steps` measure activated at a terminal model state; build a fraction whose predicate differs between a position and its successor.
+11. Build an every-scheduler `accumulate` over a draw with several post-states and a nonzero reward on the drawn step; read the reward of the draw edge and of each resolution edge.
+
 Tag the tests `#[trace("TC-631", "FR-196-AC-n")]`.
 
 ## Expected Results
@@ -99,3 +103,12 @@ Tag the tests `#[trace("TC-631", "FR-196-AC-n")]`.
   Early+delay and late share the same (f=true,x2) key; only late is a goal
   edge, with terminal elapsed contribution0 versus the unhit residual
   minimum1. Objective absorption supplies no fabricated key/default row.
+- Step 9: one initial entry per binding; the same model and monitor state
+  under the two bindings are two states whose keys differ in `binding`.
+- Step 10: every path of the never-activated measure ends at the decided
+  `unactivated` control with amount zero; the terminal-activated `steps`
+  measure adds 1 per stutter step to its horizon; the fraction counts the
+  position a step leaves.
+- Step 11: the draw edge carries the draw's reward, each resolution edge
+  carries every reward at 0, and the accumulator holds the draw's reward
+  once.
