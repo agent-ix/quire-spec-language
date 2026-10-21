@@ -593,8 +593,9 @@ default profile. Profile, import and model aliases are unique within a
 unit (QSpec `shared-grammar.md`): a unit that declares one alias twice
 refuses with a duplicate-alias error naming the alias and both selection
 spans.
-Resolving a selection's definition reference against the library lock, and
-building `ieee_profile` from it, are E3 steps outside this requirement.
+Resolving a selection's definition reference against the library lock is an E3
+step outside this requirement; the `ieee_profile` selection and its build are
+[FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)'s.
 
 **Node key owner.** `check` mints the node keys of record, tuple and
 function declarations over the unit's `SourceOwner{authority, identity}`
