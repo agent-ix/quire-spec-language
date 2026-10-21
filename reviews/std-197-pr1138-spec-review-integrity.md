@@ -138,3 +138,9 @@ Round 3, head 627a11b2b, checked against origin/main 5c4a96692, QSpec main 98217
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-008 | fixed | Fixed in 627a11b2b: codingRefusal`; a `Step` query for an abstract-operation row (`step Impl::Counter::commitA -> Spec:: |
+
+Round 4, head 94761803d, checked against origin/main 5c4a96692, QSpec main 9821787 (#313 and #316 merged) and QSpec #314 13bd4aa (open).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-009 | fixed | Fixed in 94761803d: QSpec FR-331 carries `certificate-rejected{rule, at}` with `rule` and `at` as non-empty texts and catalogues no finer spelling. Of the loci in this family only FR-314's `QueryPart` has a text spelling (below); FR-149 writes `SimulationStep` as a JSON object, and `ProductState`, FR-314's `ProofStep` index form, FR-163's `HyperProductState` and FR-169's `ModelState` have no catalogued `at` spelling, which STD-238 asks QSpec FR-331 to catalog. This requirement carries an `AutomatonStateKey` as the bytes of its canonical encoding. |
