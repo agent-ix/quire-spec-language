@@ -37,7 +37,7 @@ Scope: FR-314-AC-1 to FR-314-AC-4.
    six step parts, with eight, with the base part and a step part exchanged,
    with the third step part's query replaced by the fourth's, with the fifth step part's proof (at least four commands) having its
    command 3 not follow from its premises, and with command 3 of the base
-   proof using `hole`, and over `CasRefinesCounterAdd` (FR-315-AC-6) with its parts valid for the other rows.
+   proof using `hole`, and over `CasRefinesCounterAdd` (FR-315-AC-6) with a base part and eight step parts, valid for the seven rows other than `bump`, the part at `bump`'s position being present but neither compared nor checked.
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
