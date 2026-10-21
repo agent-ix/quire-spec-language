@@ -653,6 +653,11 @@ pub fn replay_protocol_trace(
                         .map_err(built)?
                         .with_max_live_instances(live_instances),
                 )?,
+                SubjectMemory::Ra(ra) => replayed.settle(
+                    &ProtocolSystem::new(model, &protocol_subject, ra)
+                        .map_err(built)?
+                        .with_max_live_instances(live_instances),
+                )?,
             };
             Ok((settlement, Vec::new()))
         },

@@ -290,28 +290,36 @@ pub(crate) fn weak_join(
 
 /// The memory model a protocol system runs a subject under, by its resolved
 /// models: [`super::Tso`] when some outermost `parallel` resolves to `tso`,
-/// else [`super::Sc`]. A subject that resolves a `parallel` to `ra` gets
-/// `Sc`, which refuses it when the system is built (FR-222 is not stepped).
+/// else [`super::Ra`] when some resolves to `ra`, else [`super::Sc`]. A
+/// subject that resolves `parallel`s to both gets `Tso`, which refuses the
+/// `ra` one when the system is built.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SubjectMemory {
     /// Every `parallel` resolves to `sc`.
     Sc,
     /// Some `parallel` resolves to `tso`, with its store buffer bound.
     Tso(super::Tso),
+    /// Some `parallel` resolves to `ra`, with its message bound.
+    Ra(super::Ra),
 }
 
 impl SubjectMemory {
     /// The memory model for `resolved`, with `max_store_buffer` entries per
-    /// buffer, the published default 4 when `None` (ADR-025 MB-2).
+    /// buffer, the published default 4 when `None` (ADR-025 MB-2). A
+    /// subject under `ra` runs with the published default message bound.
     pub fn of(resolved: &ResolvedMemory, max_store_buffer: Option<u64>) -> Self {
-        if resolved
-            .parallels()
-            .iter()
-            .any(|parallel| parallel.model == MemoryModelName::Tso)
-        {
+        let resolves = |model| {
+            resolved
+                .parallels()
+                .iter()
+                .any(|parallel| parallel.model == model)
+        };
+        if resolves(MemoryModelName::Tso) {
             Self::Tso(super::Tso::new(
                 max_store_buffer.unwrap_or(super::DEFAULT_MEMORY_BOUND),
             ))
+        } else if resolves(MemoryModelName::Ra) {
+            Self::Ra(super::Ra::default())
         } else {
             Self::Sc
         }

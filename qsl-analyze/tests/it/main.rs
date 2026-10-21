@@ -47,6 +47,7 @@ mod refinement_liveness;
 mod refinement_reads;
 mod refinement_replay;
 mod refinement_safety;
+mod release_acquire;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod schedulability;

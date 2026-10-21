@@ -31,6 +31,7 @@ mod footprint;
 mod identity;
 mod memory;
 mod program;
+mod ra;
 mod roles;
 mod selection;
 mod settle;
@@ -75,10 +76,11 @@ pub use identity::{
     RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
 };
 pub use memory::{
-    Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent,
-    SharedCell, Written,
+    Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryChoice, MemoryModel, MemoryStep,
+    MemoryStepId, Read, ReadChoice, Sc, ScComponent, SharedCell, Written,
 };
 use program::{Program, Rest};
+pub use ra::{CarriedView, Ra, RaComponent};
 pub use selection::{
     MemorySelection, MemorySelectionRefusal, ResolvedMemory, ResolvedParallel, SubjectMemory,
 };
@@ -347,6 +349,9 @@ struct Entry {
     payload: Value,
     enc: Enc,
     bytes: Vec<u8>,
+    /// The memory view the send carried (SE-1 channel effect); none under a
+    /// model whose sends carry none.
+    carried: Option<CarriedView>,
 }
 
 /// A compensation registration's status (ADR-027 CP-1 to CP-5, QSpec
@@ -1236,7 +1241,21 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                         kind,
                         vec![(
                             "elements",
-                            Enc::Array(entries.iter().map(|entry| entry.enc.clone()).collect()),
+                            Enc::Array(
+                                entries
+                                    .iter()
+                                    .map(|entry| match &entry.carried {
+                                        Some(carried) => Enc::Object(vec![
+                                            ("entry", entry.enc.clone()),
+                                            (
+                                                "view",
+                                                self.memory.carried_key(&state.memory, carried).0,
+                                            ),
+                                        ]),
+                                        None => entry.enc.clone(),
+                                    })
+                                    .collect(),
+                            ),
                         )],
                     ),
                 ));
