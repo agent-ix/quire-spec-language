@@ -60,8 +60,9 @@ mod supplied_limits;
 mod witness;
 
 pub use admitted::{
-    compile_admitted, AdmittedCompilation, AdmittedContext, AdmittedEnum, AdmittedEnumCase,
-    AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource,
+    compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
+    AdmittedContext, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal, AdmittedRefusal,
+    AdmittedResource,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_requirements::{
@@ -187,8 +188,8 @@ pub use proof_result::{
     DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
     Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
-    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, TerminalRecord,
-    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

@@ -95,8 +95,9 @@ use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, InstanceBound, ItemRefusal, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
-    ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
-    Translation, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats, SymmetryRefusal,
+    TemporalCounterexample, Translation, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -109,7 +110,7 @@ use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
 use super::fair_walk::FairModel;
 use super::false_extension::false_extension_rejects;
-use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
+use super::reduce::{self, InstanceGroup, Reductions, TableForm};
 
 pub(super) use qsl_eval::simulation::BOUND_POSITIONS;
 

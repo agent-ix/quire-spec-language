@@ -174,7 +174,7 @@ fn the_context_holds_every_case_with_the_keys_the_check_minted() {
 
 /// A declaration and a case are found by wire node id; an id nobody admitted
 /// and a case the enum lacks are `Unknown`.
-#[trace("TC-1088", "FR-394-AC-2")]
+#[trace("TC-1088", "FR-394-AC-2", "TC-1090", "FR-396-AC-4")]
 #[test]
 fn lookups_find_admitted_keys_and_refuse_unknown_ones() {
     let admitted = admit_ok(&format!("{HEADER}{COLORS}"));
@@ -292,7 +292,7 @@ fn a_transitive_dependencys_enum_is_foreign() {
 
 /// A source or dependency input that does not compile is a package refusal;
 /// a stage limit or an S1 limit above the reader is a resource refusal.
-#[trace("TC-1088", "FR-394-AC-4")]
+#[trace("TC-1088", "FR-394-AC-4", "TC-1090", "FR-396-AC-4")]
 #[test]
 fn compile_failures_are_package_or_resource_refusals() {
     let none = DependencyInput::default();

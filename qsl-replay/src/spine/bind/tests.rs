@@ -341,12 +341,15 @@ fn tc_1053_step_2_literals_repeats_and_unary_operands() {
     ));
     let literal = &plus.operands()[1];
     assert_eq!(literal.range, bound_range(1, 1));
-    let OperandSource::InlineLiteral { node: Some(node) } = literal.source else {
-        panic!("a source literal is a graph node, got {:?}", literal.source);
-    };
+    assert_eq!(literal.source, OperandSource::InlineLiteral);
     let graph = unit.checked.package().graph().semantic_graph();
-    let literal_node = graph.node(graph.resolve_wire(node).unwrap()).unwrap();
-    assert_eq!(literal_node.semantic_form(), "literal");
+    assert!(
+        graph.nodes().all(|node| {
+            serde_json::from_slice::<serde_json::Value>(node.preimage())
+                .map_or(true, |json| json["body"]["value"] != "1")
+        }),
+        "a source integer literal operand has no node of its own"
+    );
 
     let occurrence = the_application(&unit, "lead", ScalarOperator::Add);
     assert_eq!(
@@ -411,7 +414,7 @@ fn tc_1053_step_2_inline_literal_term_binds_without_a_node() {
             ordinal: 0,
             value: 7,
             range: bound_range(7, 7),
-            source: OperandSource::InlineLiteral { node: None },
+            source: OperandSource::InlineLiteral,
         }]
     );
 }
@@ -839,11 +842,8 @@ fn tc_1053_step_8_binding_is_the_operator_claims_operand_list() {
                     Integer::from(operand.range.upper),
                 );
                 match operand.source {
-                    OperandSource::InlineLiteral { node: None } => {
-                        ScalarOperand::literal(operand.value)
-                    }
-                    OperandSource::Argument { node, .. }
-                    | OperandSource::InlineLiteral { node: Some(node) } => {
+                    OperandSource::InlineLiteral => ScalarOperand::literal(operand.value),
+                    OperandSource::Argument { node, .. } => {
                         ScalarOperand::graph_child(operand.value, range, node)
                     }
                 }
@@ -874,7 +874,7 @@ fn tc_1053_step_8_binding_is_the_operator_claims_operand_list() {
     let (right, left) = (operands.pop().unwrap(), operands.pop().unwrap());
     assert!(matches!(
         right.identity,
-        crate::scalar::OperandIdentity::GraphChild(_)
+        crate::scalar::OperandIdentity::InlineLiteral
     ));
     let operation = ScalarOperation::Add { left, right };
     assert!(check_operands(&preimage, occurrence.application, &operation).is_ok());
