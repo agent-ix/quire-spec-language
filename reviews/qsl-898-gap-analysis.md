@@ -64,9 +64,11 @@ one low trace tag.
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, checked by the reviewer at 570caa863 (fix commit a0c3085b0). This table replaces the coder-appended one.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: `a_guards_footprint_makes_the_transitions_it_reads_visible` (partial_order.rs) and `a_partial_order_run_reads_the_guards_footprint`, tagged FR-126-AC-16; AC-16 names the clause | a0c3085b0 |
-| FND-002 | fixed: claim restated as a dispatch-family fixture not built in this crate; header and TC-521 say so; Remaining work: QSL-898 (a dispatch fixture needs a domain with `redefines` and dispatch tables, which only qsl-eval builds) | a0c3085b0 |
-| FND-003 | fixed: test tagged FR-338-AC-3 | a0c3085b0 |
-| FND-004 | fixed: FR-128-AC-6 and TC-539 step 6 state the refusal (`AuthoredUndefined`, already tested) and the reproduction as Remaining work: QSL-898 | a0c3085b0 |
+| FND-001 | fixed a0c3085b0 | `a_guards_footprint_makes_the_transitions_it_reads_visible` (partial_order.rs, TC-576/FR-126-AC-16): `bump(a)` is visible only when guarded, and b and c are never visible. `a_partial_order_run_reads_the_guards_footprint` (model_check_safety.rs): a guard footprint with no rule refuses the reduced run `Footprint`, and the unreduced runs, with or without a rule, still find the violation. AC-16 states the clause. |
+| FND-002 | deferred | Remaining work: QSL-898. The refused-contract row is restated as not built, naming the dispatch-family fixture (`family_steps`/`ancestor_steps` ceiling) in the test header and TC-521 step 6. The AC row is unchanged and still has no test. |
+| FND-003 | fixed a0c3085b0 | The test is tagged `#[trace("TC-525", "FR-338-AC-3")]`. |
+| FND-004 | fixed a0c3085b0 | FR-128-AC-6 and TC-539 step 6 now say the payload is refused `AuthoredUndefined` (the refusal is asserted at lasso_replay.rs:518), with the reproduction as Remaining work: QSL-898. |

@@ -81,7 +81,9 @@ marker matches the lasso shape and replays. Two low findings below.
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, checked by the reviewer at 570caa863 (fix commit a0c3085b0). This table replaces the coder-appended one.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | accepted-no-change: recorded as untested and unreachable (S4 emits no `on each` clause) in the test header and the PR body; Remaining work: QSL-898 | a0c3085b0 |
-| FND-002 | fixed: module header states the guard reading is the test's own and `when (true)` is a placeholder | a0c3085b0 |
+| FND-001 | deferred | Remaining work: QSL-898. The replay path cannot be reached until S4 emits `on each` clauses; a0c3085b0 records it in the model_check_safety.rs header. A test needs that emission. |
+| FND-002 | fixed a0c3085b0 | The model_check_safety.rs header now says the guard reading is the test's own and `when (true)` is a placeholder, given to the engine directly. |

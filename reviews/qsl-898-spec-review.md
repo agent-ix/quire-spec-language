@@ -82,9 +82,11 @@ ticket owns that. Three low wording findings.
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, checked by the reviewer at 570caa863 (fix commit a0c3085b0). This table replaces the coder-appended one.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: FR-126 states a guarded Holds never settles proved (failed today, inconclusive once S4 emits the clause) and names Remaining work: QSL-898 | a0c3085b0 |
-| FND-002 | fixed: names `ModelCheckRefusal::GuardedActivation` | a0c3085b0 |
-| FND-003 | fixed: AC-16 carries the given-directly note and the reading-not-source note | a0c3085b0 |
-| FND-004 | fixed: Outputs text and engine limit the marker to formula counterexamples | a0c3085b0 |
+| FND-001 | fixed a0c3085b0 | FR-126 now states a guarded Holds never settles `proved`: it is `failed` while S4 emits no clause root, `inconclusive` with `CertificateRejected` once S4 does, and a when-keyed certificate is Remaining work: QSL-898. This matches the measured settlement. |
+| FND-002 | fixed a0c3085b0 | FR-126 names `ModelCheckRefusal::GuardedActivation`. |
+| FND-003 | fixed a0c3085b0 | AC-16 opens with the given-directly note and the reading-not-source note. |
+| FND-004 | fixed a0c3085b0 | The Outputs text says "on a formula counterexample of a safety clause", and check.rs sets the marker only for `CounterexampleKind::Formula`. The AC-17 test passes at 570caa863 (32 focused tests run, all pass). |
