@@ -57,8 +57,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
-    translate, translate_counted, Atom, AutomatonError, AutomatonKind, Gba, GbaBuilder, Guard,
-    KeyRefusal, Letter, Monitor, SafetyAutomaton, SafetyState, StateId,
+    bounded_shape, translate, translate_counted, Atom, AutomatonError, AutomatonKind,
+    BoundedState, BoundedTranslation, Gba, GbaBuilder, Guard, KeyRefusal, Letter, Monitor,
+    SafetyAutomaton, SafetyState, StateId,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{
@@ -81,7 +82,7 @@ use qsl_replay::{
     Instance, InstanceBound, ItemRefusal, MemoryBound, MemoryBoundMember, MemoryCause,
     ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
     ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
-    UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    Translation, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -222,6 +223,10 @@ enum Item<'a> {
         /// The last position the claim reads: the horizon `h` of a TP-2 `on
         /// origin` clause, none when it reads every position (UE-1).
         last_read: Option<u64>,
+        /// Each instance's canonical bounded translation, whose states the
+        /// run follows beside the monitor's to key a TP-2 proof's closure
+        /// certificate (FR-338); empty for every other run.
+        canonical: Vec<BoundedTranslation>,
     },
     Deadlock,
 }
@@ -300,9 +305,9 @@ type Step<T> = Result<T, Halt>;
 /// What reading a position found, and the instance that found it.
 type Finding = (CounterexampleKind, usize);
 
-/// Each instance's monitor state after reading a position, and what the read
-/// found.
-type Reading = (Vec<StateId>, Option<Finding>);
+/// Each instance's monitor state and canonical bounded state after reading a
+/// position, and what the read found.
+type Reading = (Vec<StateId>, Vec<BoundedState>, Option<Finding>);
 
 /// One successor of an expansion: the transition identity's order bytes, the
 /// successor's state-key bytes and digest, the transition (none for the
@@ -430,9 +435,18 @@ pub fn check_model(
     } else {
         (Vec::new(), None)
     };
-    if let (Item::Clause { bindings, .. }, ModelCheckItem::Clause { clause, .. }) =
-        (&mut item, request.item)
+    if let (
+        Item::Clause {
+            bindings,
+            canonical,
+            ..
+        },
+        ModelCheckItem::Clause { clause, .. },
+    ) = (&mut item, request.item)
     {
+        if certified {
+            *canonical = bounded_translations(&instances);
+        }
         // FR-125: the instances come from the subject's universes; a
         // certified proof's are those its certificate's translations carry.
         *bindings = if certified {
@@ -455,6 +469,7 @@ pub fn check_model(
         max_candidates,
         cancel,
         nodes: Vec::new(),
+        canonical: Vec::new(),
         known: BTreeMap::new(),
         uncounted_edges: Vec::new(),
         queue: VecDeque::new(),
@@ -585,9 +600,18 @@ pub fn check_protocol(
     } else {
         (Vec::new(), None)
     };
-    if let (Item::Clause { bindings, .. }, ModelCheckItem::Clause { clause, .. }) =
-        (&mut item, request.item)
+    if let (
+        Item::Clause {
+            bindings,
+            canonical,
+            ..
+        },
+        ModelCheckItem::Clause { clause, .. },
+    ) = (&mut item, request.item)
     {
+        if certified {
+            *canonical = bounded_translations(&instances);
+        }
         *bindings = if certified {
             instances
                 .iter()
@@ -742,6 +766,7 @@ impl ProtocolRun<'_> {
             max_candidates: self.max_candidates,
             cancel: self.cancel,
             nodes: Vec::new(),
+            canonical: Vec::new(),
             known: BTreeMap::new(),
             uncounted_edges: Vec::new(),
             queue: VecDeque::new(),
@@ -899,6 +924,7 @@ fn check_reduced(
             max_candidates,
             cancel,
             nodes: Vec::new(),
+            canonical: Vec::new(),
             known: BTreeMap::new(),
             uncounted_edges: Vec::new(),
             queue: VecDeque::new(),
@@ -1180,8 +1206,9 @@ fn prepare(
     if automaton.kind() == AutomatonKind::Liveness {
         return Err(fault("a-safety-form-translates-to-a-safety-automaton"));
     }
-    let certified = form == Some(PropertyForm::ReachableInvariant)
-        && clause.profile() == TemporalProfile::InfiniteTrace;
+    let certified = (form == Some(PropertyForm::ReachableInvariant)
+        && clause.profile() == TemporalProfile::InfiniteTrace)
+        || (bounded && bounded_shape(clause).is_some());
     let last_read = match clause.activation() {
         Activation::Origin if bounded => clause.horizon(),
         Activation::Origin | Activation::Each { .. } => None,
@@ -1196,8 +1223,21 @@ fn prepare(
         counting,
         bounded,
         last_read,
+        canonical: Vec::new(),
     };
     Ok((prepared, Box::new(automaton), certified))
+}
+
+/// The canonical bounded translation of each instance, none for a run whose
+/// instances translate otherwise.
+fn bounded_translations(instances: &[Instance]) -> Vec<BoundedTranslation> {
+    instances
+        .iter()
+        .filter_map(|instance| match &instance.translation {
+            Translation::Bounded(translation) => Some(translation.clone()),
+            Translation::Safety(_) => None,
+        })
+        .collect()
 }
 
 /// The automaton of `always a`, with `a` the letter's atom 0 (`not
@@ -1258,6 +1298,9 @@ struct Run<'r, S: SubjectSystem> {
     max_candidates: u64,
     cancel: &'r Cancel,
     nodes: Vec<Node<S::State, S::TransitionId>>,
+    /// For each node, each instance's canonical bounded state after reading
+    /// its position; empty unless the item has canonical translations.
+    canonical: Vec<Vec<BoundedState>>,
     /// Each product state's index by its key: the model state's key bytes
     /// and the monitor state of each instance.
     known: BTreeMap<ProductKey, usize>,
@@ -1310,18 +1353,38 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
     }
 
-    /// The closure certificate of a run that proved its item: every explored
-    /// model state under each instance's carried root, sorted by model state
-    /// then key. With no instance translation (a TP-2 or TP-3 clause) it is
-    /// empty; Remaining work: QSL-878.
+    /// The closure certificate of a run that proved its item: for a TP-1
+    /// clause or the deadlock-freedom item, every explored model state under
+    /// each instance's carried root; for a bounded clause, every explored
+    /// model state under the canonical bounded state it was read to. Sorted
+    /// by model state then key. With no instance translation (a clause of
+    /// another shape) it is empty; Remaining work: QSL-878.
     fn certificate(&self, instances: &[Instance]) -> Result<ClosureCertificate, ModelCheckRefusal> {
         let mut states = Vec::with_capacity(self.nodes.len().saturating_mul(instances.len()));
-        for instance in instances {
-            let key = instance.translation.key(SafetyState::Carried)?;
-            states.extend(self.nodes.iter().map(|node| ProductStateRef {
-                model_state: node.digest,
-                automaton_state: key.clone(),
-            }));
+        for (index, instance) in instances.iter().enumerate() {
+            match &instance.translation {
+                Translation::Safety(translation) => {
+                    let key = translation.key(SafetyState::Carried)?;
+                    states.extend(self.nodes.iter().map(|node| ProductStateRef {
+                        model_state: node.digest,
+                        automaton_state: key.clone(),
+                    }));
+                }
+                Translation::Bounded(translation) => {
+                    for (node, canonical) in self.nodes.iter().zip(&self.canonical) {
+                        let state = canonical
+                            .get(index)
+                            .ok_or_else(|| fault("a-bounded-node-has-a-canonical-state"))?;
+                        if state.is_rejecting() {
+                            return Err(fault("a-proved-run-reaches-no-rejecting-state"));
+                        }
+                        states.push(ProductStateRef {
+                            model_state: node.digest,
+                            automaton_state: translation.key(*state)?,
+                        });
+                    }
+                }
+            }
         }
         states.sort();
         states.dedup();
@@ -1560,7 +1623,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                             permutation,
                             boundary: false,
                         };
-                        let (after, bad) = self.advance(&node, &before)?;
+                        let (after, _, bad) = self.advance(&node, &before)?;
                         bad.is_some()
                             || !self
                                 .known
@@ -1645,7 +1708,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 permutation: permutation.clone(),
                 boundary: false,
             };
-            let (after, bad) = self.advance(&node, before)?;
+            let (after, canonical, bad) = self.advance(&node, before)?;
             fresh.push(
                 bad.is_some()
                     || !self.known.contains_key(&self.product(
@@ -1654,7 +1717,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                         node.distance,
                     )),
             );
-            readings.push((after, bad));
+            readings.push((after, canonical, bad));
         }
         let reaches_known = |transition: &S::TransitionId| {
             steps
@@ -1832,7 +1895,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         before: &[StateId],
         read: Option<Reading>,
     ) -> Step<()> {
-        let (after, mut bad) = match read {
+        let (after, canonical, mut bad) = match read {
             Some(read) => read,
             None => self.advance(&node, before)?,
         };
@@ -1880,6 +1943,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         let at = self.nodes.len();
         self.nodes.push(node);
+        self.canonical.push(canonical);
         self.queue.push_back(at);
         match bad {
             Some((kind, instance)) => {
@@ -1901,9 +1965,9 @@ impl<S: SubjectSystem> Run<'_, S> {
         &mut self,
         node: &Node<S::State, S::TransitionId>,
         before: &[StateId],
-    ) -> Step<(Vec<StateId>, Option<Finding>)> {
+    ) -> Step<Reading> {
         if matches!(self.item, Item::Deadlock) {
-            return Ok((before.to_vec(), None));
+            return Ok((before.to_vec(), Vec::new(), None));
         }
         let counted = match &node.parent {
             Some((_, Some(transition))) => self.system.counts_step(transition),
@@ -1911,11 +1975,33 @@ impl<S: SubjectSystem> Run<'_, S> {
             // step counts (ADR-027 PB-3).
             Some((_, None)) | None => true,
         };
+        let earlier: Vec<BoundedState> = node
+            .parent
+            .as_ref()
+            .and_then(|(parent, _)| self.canonical.get(*parent))
+            .cloned()
+            .unwrap_or_default();
         let mut after = Vec::with_capacity(before.len());
+        let mut canonical = Vec::new();
         let mut bad = None;
         for (instance, from) in before.iter().enumerate() {
-            let (state, finding) = self.read(node, instance, *from, counted)?;
+            let (state, finding, holds) = self.read(node, instance, *from, counted)?;
             after.push(state);
+            if let Item::Clause {
+                canonical: translations,
+                ..
+            } = self.item
+            {
+                if let Some(translation) = translations.get(instance) {
+                    // A position the claim does not read carries no letter;
+                    // a step out of the window closes it before one.
+                    let holds = holds.unwrap_or(false);
+                    canonical.push(match earlier.get(instance) {
+                        Some(previous) => translation.step(*previous, counted, holds),
+                        None => translation.start(holds),
+                    });
+                }
+            }
             match finding {
                 Some(undefined @ CounterexampleKind::UndefinedEvaluation(_)) => {
                     bad = Some((undefined, instance));
@@ -1928,7 +2014,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             }
         }
         after.extend_from_slice(before.get(after.len()..).unwrap_or_default());
-        Ok((after, bad))
+        Ok((after, canonical, bad))
     }
 
     /// Instance `instance`'s monitor state after reading `node`'s letter
@@ -1941,7 +2027,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         instance: usize,
         from: StateId,
         counted: bool,
-    ) -> Step<(StateId, Option<CounterexampleKind>)> {
+    ) -> Step<(StateId, Option<CounterexampleKind>, Option<bool>)> {
         let Item::Clause {
             bindings,
             letters,
@@ -1963,6 +2049,9 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         let reads_position = last_read.is_none_or(|last| widen(node.distance) <= last);
         let read: &[FormulaNodeId] = if reads_position { atoms } else { &[] };
+        // The first atom's reading, the one atom a canonical bounded clause
+        // has.
+        let mut holds = None;
         for (index, formula_atom) in read.iter().enumerate() {
             let atom = Atom::new(index).map_err(|_| fault("clause-atom-in-range"))?;
             self.poll()?;
@@ -1978,21 +2067,24 @@ impl<S: SubjectSystem> Run<'_, S> {
                     Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
                 })?;
             match reading {
-                AtomReading::True => letter = letter.with(atom),
-                AtomReading::False => {}
+                AtomReading::True => {
+                    letter = letter.with(atom);
+                    holds = holds.or(Some(true));
+                }
+                AtomReading::False => holds = holds.or(Some(false)),
                 AtomReading::Undefined(cause) => {
                     let site = Self::site(node, UndefinedLocus::Atom(*formula_atom), None);
                     let kind = CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                         site,
                         cause,
                     });
-                    return Ok((from, Some(kind)));
+                    return Ok((from, Some(kind), None));
                 }
             }
         }
         let after = self.monitor.step(from, letter).map_err(Self::automaton)?;
         let finding = self.rejects(after)?.then_some(CounterexampleKind::Formula);
-        Ok((after, finding))
+        Ok((after, finding, holds))
     }
 
     /// QSpec FR-091's closed-boundary rule at the terminal node `at` of a

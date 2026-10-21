@@ -411,14 +411,10 @@ fn counted_steps_decide_the_interval_over_the_compensation_paths() {
 
 /// FR-213-AC-3 (TC-658): EN-1 reproduces AC-1. Over the repaired `Fill`,
 /// `eventually[0,2] holds(k.v >= 2)` under event-position false-extension
-/// holds on every behaviour; `eventually[0,1] holds(k.v = 3)` settles
-/// `refuted` with a prefix on which no position at counted distance 0 or 1
-/// from position 0 has `k.v = 3`, and that prefix replays. Not met: the
-/// first claim does not settle `proved` yet. FR-127 gives a bounded clause
-/// that label only with a closure certificate, FR-338's translation covers
-/// TP-1 items alone, and `settle_protocol_check` returns `Failed` for it.
-/// The test asserts that label, so it flips when the certificate lands.
-/// Remaining work: QSL-878.
+/// settles `proved`, its closure certificate checked by the core (FR-338);
+/// `eventually[0,1] holds(k.v = 3)` settles `refuted` with a prefix on which
+/// no position at counted distance 0 or 1 from position 0 has `k.v = 3`, and
+/// that prefix replays.
 #[trace("TC-658", "FR-213-AC-3")]
 #[test]
 fn the_model_checker_counts_steps_over_the_repaired_fill() {
@@ -431,7 +427,7 @@ fn the_model_checker_counts_steps_over_the_repaired_fill() {
     );
     assert_eq!(
         proved.label("Fill", &letters, &outcome),
-        ResultLabel::Failed
+        ResultLabel::Proved
     );
 
     let refuted = repaired_fill("eventually[0,1] holds(k.v = 3)");

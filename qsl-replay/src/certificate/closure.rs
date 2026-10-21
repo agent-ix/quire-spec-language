@@ -47,9 +47,11 @@
 //! interval, so FR-338's non-progress acceptance check does not apply: they
 //! keep pure bad-prefix closure.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use qsl_eval::automaton::{AutomatonStateKey, SafetyItem, SafetyState};
+use qsl_eval::automaton::{
+    AutomatonStateKey, BoundedState, BoundedTranslation, SafetyItem, SafetyState, SafetyTranslation,
+};
 use qsl_eval::model_subject::{ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
@@ -72,7 +74,7 @@ use crate::certificate::check::{
 };
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::identity::ClauseRootRefusal;
-use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem};
+use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBoundMember};
 
@@ -416,12 +418,9 @@ fn check_system<S: SubjectSystem>(
             )));
         }
         let admitted = state.model_state.domain() == DigestDomain::SimulationStateKeyV1
-            && instances.iter().any(|instance| {
-                instance
-                    .translation
-                    .admit(state.automaton_state.as_bytes())
-                    .is_ok()
-            });
+            && instances
+                .iter()
+                .any(|instance| instance.translation.admits(state.automaton_state.as_bytes()));
         if !admitted {
             let order = |state: &ProductStateRef| {
                 (
@@ -502,6 +501,31 @@ struct Pending<S: SubjectSystem> {
     expansion: Option<SubjectExpansion<S>>,
 }
 
+/// An initial state of the subject: its key bytes, its position in the
+/// subject's list, its digest and the state.
+type Initial<S> = (Vec<u8>, usize, DigestRecord, <S as TransitionSystem>::State);
+
+/// A reached product state of a bounded instance waiting to be expanded.
+struct BoundedPending<S: SubjectSystem> {
+    state: S::State,
+    at: ProductStateRef,
+    automaton: BoundedState,
+    /// The counted distance from position 0, held at one past the horizon
+    /// once it is passed.
+    distance: u64,
+}
+
+/// What a bounded instance's run keeps: its translation, its `holds` atom's
+/// binding and the product states it has reached.
+struct BoundedRun<'i> {
+    translation: &'i BoundedTranslation,
+    letters: &'i dyn ModelLetters,
+    binding: &'i qsl_eval::model_subject::ModelInstance,
+    visited: BTreeSet<(DigestRecord, BoundedState, u64)>,
+    /// The atom at each model state read so far; `None` is undefined.
+    readings: BTreeMap<DigestRecord, Option<bool>>,
+}
+
 /// One expansion of a subject's state, and what a method bound left of it
 /// unexpanded.
 type SubjectExpansion<S> = (
@@ -548,56 +572,247 @@ impl<S: SubjectSystem> Check<'_, S> {
         initial.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         initial.dedup_by(|later, earlier| later.0 == earlier.0);
         for instance in instances {
-            let mut visited = BTreeSet::new();
-            let mut queue = VecDeque::new();
-            for (_, _, digest, state) in &initial {
-                let before = None;
-                if let Some(pending) = self.reach(
-                    instance,
-                    state.clone(),
-                    *digest,
-                    before,
-                    CertificateRule::InitialMissing,
-                    &mut visited,
-                )? {
-                    queue.push_back(pending);
+            match &instance.translation {
+                Translation::Safety(translation) => {
+                    self.run_safety(instance, translation, &initial)?;
                 }
-            }
-            while let Some(pending) = queue.pop_front() {
-                self.poll()?;
-                let (expansion, _) = match pending.expansion {
-                    Some(expansion) => expansion,
-                    None => self.expand(&pending.state, &pending.at)?,
-                };
-                let mut successors = Vec::with_capacity(expansion.successors.len());
-                for (transition, state) in expansion.successors {
-                    let order = self.system.transition_key(&transition)?;
-                    let (key, digest) = self.system.state_key(&state)?;
-                    successors.push((order, key, digest, state));
-                }
-                successors.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
-                for (_, _, digest, state) in successors {
-                    self.poll()?;
-                    if self.edges >= self.limits.limits.max_transitions {
-                        return Err(stopped(
-                            ModelCheckLimit::MaxTransitions,
-                            widen(self.limits.limits.max_transitions),
-                        ));
-                    }
-                    self.edges += 1;
-                    if let Some(next) = self.reach(
-                        instance,
-                        state,
-                        digest,
-                        Some(SafetyState::Carried),
-                        CertificateRule::SuccessorMissing,
-                        &mut visited,
-                    )? {
-                        queue.push_back(next);
-                    }
+                Translation::Bounded(translation) => {
+                    self.run_bounded(instance, translation, &initial)?;
                 }
             }
         }
+        Ok(())
+    }
+
+    /// The closure of a safety item's instance: every reached model state
+    /// stays under the carried root.
+    fn run_safety(
+        &mut self,
+        instance: &Instance,
+        translation: &SafetyTranslation,
+        initial: &[Initial<S>],
+    ) -> Step<()> {
+        let mut visited = BTreeSet::new();
+        let mut queue = VecDeque::new();
+        for (_, _, digest, state) in initial {
+            let before = None;
+            if let Some(pending) = self.reach(
+                instance,
+                translation,
+                state.clone(),
+                *digest,
+                before,
+                CertificateRule::InitialMissing,
+                &mut visited,
+            )? {
+                queue.push_back(pending);
+            }
+        }
+        while let Some(pending) = queue.pop_front() {
+            self.poll()?;
+            let (expansion, _) = match pending.expansion {
+                Some(expansion) => expansion,
+                None => self.expand(&pending.state, &pending.at)?,
+            };
+            for (_, digest, state) in self.ordered(expansion.successors)? {
+                self.poll()?;
+                self.charge_edge()?;
+                if let Some(next) = self.reach(
+                    instance,
+                    translation,
+                    state,
+                    digest,
+                    Some(SafetyState::Carried),
+                    CertificateRule::SuccessorMissing,
+                    &mut visited,
+                )? {
+                    queue.push_back(next);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The closure of a bounded instance (TP-2): every product state of a
+    /// model state, its bounded monitor state and, up to one past the
+    /// horizon, its counted distance, from the initial states.
+    fn run_bounded(
+        &mut self,
+        instance: &Instance,
+        translation: &BoundedTranslation,
+        initial: &[Initial<S>],
+    ) -> Step<()> {
+        let ModelCheckItem::Clause { letters, .. } = self.item else {
+            return Err(fault("clause-item-translation").into());
+        };
+        let binding = instance
+            .binding
+            .as_ref()
+            .ok_or_else(|| fault("clause-instance-binding"))?;
+        let mut run = BoundedRun {
+            translation,
+            letters: *letters,
+            binding,
+            visited: BTreeSet::new(),
+            readings: BTreeMap::new(),
+        };
+        let mut queue = VecDeque::new();
+        for (_, _, digest, state) in initial {
+            if let Some(pending) = self.reach_bounded(
+                &mut run,
+                state.clone(),
+                *digest,
+                None,
+                CertificateRule::InitialMissing,
+            )? {
+                queue.push_back(pending);
+            }
+        }
+        while let Some(pending) = queue.pop_front() {
+            self.poll()?;
+            let (expansion, cut) = self.expand(&pending.state, &pending.at)?;
+            if expansion.successors.is_empty() {
+                // A state whose every step the memory or instance bound cut
+                // is a boundary state, never closed (ADR-025 MB-3, ADR-027
+                // AE-4); any other terminal state closes the monitor by the
+                // bounded profile's closed-boundary rule (QSpec FR-091).
+                if !(cut.memory || cut.instances)
+                    && translation.terminal(pending.automaton).is_rejecting()
+                {
+                    return Err(Self::reject(CertificateRule::BadState, pending.at));
+                }
+                continue;
+            }
+            for (transition, digest, state) in self.ordered(expansion.successors)? {
+                self.poll()?;
+                self.charge_edge()?;
+                let counted = self.system.counts_step(&transition);
+                if let Some(next) = self.reach_bounded(
+                    &mut run,
+                    state,
+                    digest,
+                    Some((pending.automaton, pending.distance, counted)),
+                    CertificateRule::SuccessorMissing,
+                )? {
+                    queue.push_back(next);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Reach `state`, whose digest is `digest`, from the monitor state and
+    /// counted distance `before` (`None` at position zero) by a step that
+    /// counts or not: read its letter when the claim reads its distance,
+    /// reject a bad state, then require it in the certificate under
+    /// `missing`. `None` when this instance reached it before.
+    fn reach_bounded(
+        &mut self,
+        run: &mut BoundedRun<'_>,
+        state: S::State,
+        digest: DigestRecord,
+        before: Option<(BoundedState, u64, bool)>,
+        missing: CertificateRule,
+    ) -> Step<Option<BoundedPending<S>>> {
+        let horizon = run.translation.horizon();
+        let distance = match before {
+            None => 0,
+            Some((_, distance, counted)) => distance
+                .saturating_add(u64::from(counted))
+                .min(horizon.saturating_add(1)),
+        };
+        // A position past the horizon is never read (ADR-018 UE-1), and a
+        // step that counts out of the window closes it before its letter.
+        let holds = if distance <= horizon {
+            let reading = match run.readings.get(&digest) {
+                Some(reading) => *reading,
+                None => {
+                    let reading = self.atom(
+                        run.letters,
+                        run.translation.atom(),
+                        run.binding,
+                        &self.system.atom_state(&state),
+                    )?;
+                    run.readings.insert(digest, reading);
+                    reading
+                }
+            };
+            match reading {
+                Some(holds) => holds,
+                None => {
+                    let key = run
+                        .translation
+                        .key(BoundedState::Reject)
+                        .map_err(|_| ClosureRefusal::Encoding)?;
+                    let at = self.product_of(digest, key)?;
+                    return Err(Self::reject(CertificateRule::BadState, at));
+                }
+            }
+        } else {
+            false
+        };
+        let after = match before {
+            None => run.translation.start(holds),
+            Some((monitor, _, counted)) => run.translation.step(monitor, counted, holds),
+        };
+        let key = run
+            .translation
+            .key(after)
+            .map_err(|_| ClosureRefusal::Encoding)?;
+        let at = self.product_of(digest, key)?;
+        if after.is_rejecting() {
+            return Err(Self::reject(CertificateRule::BadState, at));
+        }
+        if run.visited.contains(&(digest, after, distance)) {
+            return Ok(None);
+        }
+        if self.reached >= self.limits.limits.max_states {
+            return Err(stopped(
+                ModelCheckLimit::MaxStates,
+                widen(self.limits.limits.max_states),
+            ));
+        }
+        self.reached += 1;
+        run.visited.insert((digest, after, distance));
+        if !self.members.contains(&at) {
+            return Err(Self::reject(missing, at));
+        }
+        Ok(Some(BoundedPending {
+            state,
+            at,
+            automaton: after,
+            distance,
+        }))
+    }
+
+    /// The successors of an expansion in FR-101's canonical order, each
+    /// with its state-key digest.
+    fn ordered(
+        &self,
+        successors: Vec<(S::TransitionId, S::State)>,
+    ) -> Step<Vec<(S::TransitionId, DigestRecord, S::State)>> {
+        let mut keyed = Vec::with_capacity(successors.len());
+        for (transition, state) in successors {
+            let order = self.system.transition_key(&transition)?;
+            let (key, digest) = self.system.state_key(&state)?;
+            keyed.push((order, key, digest, transition, state));
+        }
+        keyed.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+        Ok(keyed
+            .into_iter()
+            .map(|(_, _, digest, transition, state)| (transition, digest, state))
+            .collect())
+    }
+
+    /// Charge one newly materialized edge against `max_transitions`.
+    fn charge_edge(&mut self) -> Step<()> {
+        if self.edges >= self.limits.limits.max_transitions {
+            return Err(stopped(
+                ModelCheckLimit::MaxTransitions,
+                widen(self.limits.limits.max_transitions),
+            ));
+        }
+        self.edges += 1;
         Ok(())
     }
 
@@ -605,9 +820,11 @@ impl<S: SubjectSystem> Check<'_, S> {
     /// `before` (`None` at position zero): read its letter, reject a bad
     /// state, then require it in the certificate under `missing`. `None`
     /// when this instance reached it before.
+    #[allow(clippy::too_many_arguments)]
     fn reach(
         &mut self,
         instance: &Instance,
+        translation: &SafetyTranslation,
         state: S::State,
         digest: DigestRecord,
         before: Option<SafetyState>,
@@ -617,7 +834,6 @@ impl<S: SubjectSystem> Check<'_, S> {
         if visited.contains(&digest) {
             return Ok(None);
         }
-        let translation = &instance.translation;
         let (after, expansion) = match translation.item() {
             SafetyItem::ReachableInvariant { atom } => {
                 let ModelCheckItem::Clause { letters, .. } = self.item else {
@@ -630,17 +846,17 @@ impl<S: SubjectSystem> Check<'_, S> {
                 match self.atom(*letters, atom, bound, &self.system.atom_state(&state))? {
                     Some(holds) => (translation.read(before, holds), None),
                     None => {
-                        let at = self.product(instance, digest, SafetyState::Rejected)?;
+                        let at = self.product(translation, digest, SafetyState::Rejected)?;
                         return Err(Self::reject(CertificateRule::BadState, at));
                     }
                 }
             }
             SafetyItem::DeadlockFreedom => {
                 if !self.models.contains(&digest) {
-                    let at = self.product(instance, digest, SafetyState::Carried)?;
+                    let at = self.product(translation, digest, SafetyState::Carried)?;
                     return Err(Self::reject(missing, at));
                 }
-                let carried = self.product(instance, digest, SafetyState::Carried)?;
+                let carried = self.product(translation, digest, SafetyState::Carried)?;
                 let (expansion, cut) = self.expand(&state, &carried)?;
                 // ADR-025 MB-3: a state whose only enabled steps were cut at
                 // the memory bound is a boundary state, never a deadlock; the
@@ -657,14 +873,14 @@ impl<S: SubjectSystem> Check<'_, S> {
                     TerminalClass::NotTerminal | TerminalClass::Intended => true,
                     TerminalClass::Deadlocked => false,
                     TerminalClass::Undefined { .. } | TerminalClass::Undecided { .. } => {
-                        let at = self.product(instance, digest, SafetyState::Rejected)?;
+                        let at = self.product(translation, digest, SafetyState::Rejected)?;
                         return Err(Self::reject(CertificateRule::BadState, at));
                     }
                 };
                 (translation.read(before, holds), Some((expansion, cut)))
             }
         };
-        let at = self.product(instance, digest, after)?;
+        let at = self.product(translation, digest, after)?;
         if after.is_rejecting() {
             return Err(Self::reject(CertificateRule::BadState, at));
         }
@@ -719,14 +935,23 @@ impl<S: SubjectSystem> Check<'_, S> {
     /// context, charging a newly materialized automaton key.
     fn product(
         &mut self,
-        instance: &Instance,
+        translation: &SafetyTranslation,
         digest: DigestRecord,
         state: SafetyState,
     ) -> Step<ProductStateRef> {
-        let key = instance
-            .translation
+        let key = translation
             .key(state)
             .map_err(|_| ClosureRefusal::Encoding)?;
+        self.product_of(digest, key)
+    }
+
+    /// The product state of `digest` and the automaton key `key`, charging
+    /// a newly materialized key.
+    fn product_of(
+        &mut self,
+        digest: DigestRecord,
+        key: AutomatonStateKey,
+    ) -> Step<ProductStateRef> {
         if !self.keys.contains(&key) {
             let count = widen(self.keys.len());
             if count >= self.limits.max_automaton_states {
