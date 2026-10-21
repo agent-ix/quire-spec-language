@@ -1589,7 +1589,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#8b69bedcafa708141958ff222fef2cc272cc4e46"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#1cfbae8b9ca63625d609ca7d1f634dc1a625f2b8"
 dependencies = [
  "quire-canonical-derive",
  "ryu-js",
@@ -1602,7 +1602,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical-derive"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#8b69bedcafa708141958ff222fef2cc272cc4e46"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#1cfbae8b9ca63625d609ca7d1f634dc1a625f2b8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1624,7 +1624,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#7c4367d621888ec653778892efc818515440ae4b"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#2140725d0c522541f303853c0f07b4f8771cfc71"
 dependencies = [
  "jsonschema 0.17.1",
  "num-bigint",
@@ -1736,7 +1736,7 @@ dependencies = [
 [[package]]
 name = "quire-verification-contracts"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#5e0aa4aa87493f42a658f1eb7d5686acc3f146aa"
+source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#f9e70671322bafdbacab396450d989bc3441b389"
 dependencies = [
  "chrono",
  "jsonschema 0.55.1",
@@ -1753,7 +1753,7 @@ dependencies = [
 [[package]]
 name = "quire-walk"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-walk?branch=main#22c81dec7cd4eac9dacbbd75b02f29a397d2880c"
+source = "git+https://github.com/agent-ix/quire-walk?branch=main#b38a3c9b4341ece401ad1b1e2ae109f4c82bd80e"
 
 [[package]]
 name = "quote"
