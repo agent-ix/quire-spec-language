@@ -3,7 +3,7 @@
 //! real `ModelSubject` over the `Counter` package (`crate::liveness`'s
 //! fixture) and its checked `fair weak each` clause.
 //!
-//! The request is built by `qsl_analyze::model_check::request::author_clause`,
+//! The request is built by `SubjectContext::author_clause`,
 //! which reads the clause's requirement record from the subject's own checked
 //! package and identifies the subject by its `SubjectIdentity`. Two requests
 //! for one clause over subjects that differ only in a universe get two
@@ -11,7 +11,7 @@
 //! index.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{author_clause, RequestRefusal, SubjectIdentity};
+use qsl_analyze::model_check::{RequestRefusal, SubjectContext, SubjectIdentity};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::digest::WireNodeId;
@@ -53,6 +53,14 @@ fn over<'a>(fixture: &'a Fixture, keys: &[&str]) -> ModelSubject<'a> {
     )
 }
 
+fn author(
+    request: &mut ModelRequest<SubjectIdentity>,
+    subject: &ModelSubject<'_>,
+    clause: &qsl_semantics::check::TemporalClauseNode,
+) -> Result<qsl_foundation::RequestIndex, RequestRefusal> {
+    SubjectContext::new(subject)?.author_clause(request, clause)
+}
+
 fn identity(subject: &ModelSubject<'_>) -> SubjectIdentity {
     SubjectIdentity::of(subject).expect("the package emits")
 }
@@ -75,14 +83,14 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
     );
 
     let mut request = ModelRequest::new();
-    let at_two = author_clause(&mut request, &two, clause).expect("the clause has a record");
-    let at_three = author_clause(&mut request, &three, clause).expect("the clause has a record");
+    let at_two = author(&mut request, &two, clause).expect("the clause has a record");
+    let at_three = author(&mut request, &three, clause).expect("the clause has a record");
     assert_eq!([at_two.get(), at_three.get()], [0, 1]);
     // Writing the same obligation again is the same item, whatever order the
     // universe lists its keys in.
     let again = over(&fixture, &["b", "a"]);
     assert_eq!(
-        author_clause(&mut request, &again, clause).expect("the clause has a record"),
+        author(&mut request, &again, clause).expect("the clause has a record"),
         at_two
     );
     assert_eq!(request.items().len(), 2);
@@ -168,8 +176,8 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
     assert_eq!(node_occurrence(rival_clause), node_occurrence(clause));
     assert_ne!(identity(&rival_subject), plain);
     let mut shared = ModelRequest::new();
-    let first = author_clause(&mut shared, &over(&fixture, &["a", "b"]), clause).expect("record");
-    let second = author_clause(&mut shared, &rival_subject, rival_clause).expect("record");
+    let first = author(&mut shared, &over(&fixture, &["a", "b"]), clause).expect("record");
+    let second = author(&mut shared, &rival_subject, rival_clause).expect("record");
     assert_ne!(first, second);
 
     // A provision carrying a package the model does not select is the same
@@ -195,7 +203,7 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
         panic!("one declared clause");
     };
     let mut request = ModelRequest::new();
-    let refusal = author_clause(&mut request, &over(&fixture, &["a"]), foreign)
+    let refusal = author(&mut request, &over(&fixture, &["a"]), foreign)
         .expect_err("the clause is not a claim site of the subject's package");
     assert_eq!(
         refusal,

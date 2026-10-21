@@ -2,7 +2,7 @@
 //! FR-336-AC-4 (ADR-013 O-09): the EN-1 request path's writer of a model
 //! subject's temporal items.
 //!
-//! [`author_clause`] builds an item of a [`ModelRequest`] from a checked
+//! [`SubjectContext::author_clause`] builds an item of a [`ModelRequest`] from a checked
 //! clause and the [`ModelSubject`] EN-1 would check it over. The request is
 //! generic over the subject it identifies, and a [`ModelSubject`] is a large
 //! live input (a checked package, document bytes, limits) with no equality of
@@ -100,7 +100,7 @@ impl SubjectIdentity {
     }
 }
 
-/// Why [`author_clause`] wrote no item.
+/// Why [`SubjectContext::author_clause`] wrote no item.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RequestRefusal {
     /// The subject's checked package has no requirement record for the
@@ -115,37 +115,64 @@ pub enum RequestRefusal {
     Package(#[from] EmitRefusal),
 }
 
-/// Write the item of the checked `clause` node over `subject` into `request` and return its
-/// index.
-///
-/// The item's requirement record is the clause's own, read from the
-/// subject's checked package, so the subject's universes reach the item only
-/// through its obligation identity (FR-336-AC-1). The obligation is the
-/// subject's [`SubjectIdentity`] and the clause's occurrence, so the same
-/// clause over a different universe is a different item, and writing the
-/// same obligation twice returns the one index.
-///
-/// # Errors
-///
-/// [`RequestRefusal::NoRequirementRecord`] when the package has no record for
-/// the clause; [`RequestRefusal::Package`] when it has no canonical identity.
-pub fn author_clause(
-    request: &mut ModelRequest<SubjectIdentity>,
-    subject: &ModelSubject<'_>,
-    clause: &TemporalClauseNode,
-) -> Result<RequestIndex, RequestRefusal> {
-    let package = subject.simulation.package.graph();
-    let occurrence = node_occurrence(clause);
-    let record = package.requirements().get(&occurrence).ok_or_else(|| {
-        RequestRefusal::NoRequirementRecord {
-            occurrence: occurrence.clone(),
-        }
-    })?;
-    let identity = SubjectIdentity::of(subject)?;
-    let item = ModelTemporalItem {
-        occurrence: &occurrence,
-        subject: &identity,
-        package,
-    };
-    Ok(request.authored(&item, record.requirements()))
+/// A model subject with its identity computed once, from which the items of
+/// any number of clauses are written. Building it emits the subject's checked
+/// package for its `package_id`; writing a clause's item does not.
+pub struct SubjectContext<'s, 'a> {
+    subject: &'s ModelSubject<'a>,
+    identity: SubjectIdentity,
+}
+
+impl<'s, 'a> SubjectContext<'s, 'a> {
+    /// The context of `subject`.
+    ///
+    /// # Errors
+    ///
+    /// [`RequestRefusal::Package`] when the subject's checked package has no
+    /// canonical identity.
+    pub fn new(subject: &'s ModelSubject<'a>) -> Result<Self, RequestRefusal> {
+        Ok(Self {
+            subject,
+            identity: SubjectIdentity::of(subject)?,
+        })
+    }
+
+    /// The subject's identity.
+    pub fn identity(&self) -> &SubjectIdentity {
+        &self.identity
+    }
+
+    /// Write the item of the checked `clause` node over this subject into
+    /// `request` and return its index.
+    ///
+    /// The item's requirement record is the clause's own, read from the
+    /// subject's checked package, so the subject's universes reach the item
+    /// only through its obligation identity (FR-336-AC-1). The obligation is
+    /// the subject's [`SubjectIdentity`] and the clause's occurrence, so the
+    /// same clause over a different universe is a different item, and
+    /// writing the same obligation twice returns the one index.
+    ///
+    /// # Errors
+    ///
+    /// [`RequestRefusal::NoRequirementRecord`] when the package has no record
+    /// for the clause.
+    pub fn author_clause(
+        &self,
+        request: &mut ModelRequest<SubjectIdentity>,
+        clause: &TemporalClauseNode,
+    ) -> Result<RequestIndex, RequestRefusal> {
+        let package = self.subject.simulation.package.graph();
+        let occurrence = node_occurrence(clause);
+        let record = package.requirements().get(&occurrence).ok_or_else(|| {
+            RequestRefusal::NoRequirementRecord {
+                occurrence: occurrence.clone(),
+            }
+        })?;
+        let item = ModelTemporalItem {
+            occurrence: &occurrence,
+            subject: &self.identity,
+            package,
+        };
+        Ok(request.authored(&item, record.requirements()))
+    }
 }

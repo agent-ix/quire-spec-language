@@ -44,7 +44,7 @@ pub use reduce::{
     ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, TableForm,
 };
 pub use refine::{check_refinement, RefinementCheckRequest};
-pub use request::{author_clause, RequestRefusal, SubjectIdentity};
+pub use request::{RequestRefusal, SubjectContext, SubjectIdentity};
 pub use scc::Component;
 pub use state_graph::{
     check_state_graph, ExploredStateGraph, GraphEdge, GraphNode, GraphStats, NodeIndex,
