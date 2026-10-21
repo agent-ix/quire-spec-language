@@ -81,3 +81,16 @@ Re-reviewed at head dde724464. Fix commit dde724464 amends FR-358 step 6, the FR
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-006 | medium | FR-358 step 6 now gives a narrowed integer literal operand the empty `bounds` domain "as a composite literal operand is". ADR-013 O-09, which the PR treats as the authority over the parity preimage, was not amended. Its *Domain* rule gives `range` to a scalar operand and `bounds` to a composite operand, and it scopes the empty-`bounds` literal case to "a record or collection literal". A narrowed `Int[0, 9]` literal is a scalar operand, so under the ADR as written it takes a `range`. ADR-013 O-09 needs the same narrowed-literal bullet, or FR-358 must use the ADR's domain. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:339-343; spec/functional/FR-358-settle-a-composite-bounded-shadow-item.md:270-276 |
+
+## Cross-review outcomes (disposition pass 5)
+
+Round 5, at head f071d6769. These rows are this reviewer's independent checks of the parallel planner records SR-12275 and SR-12276, committed in 16d21857b. Those files themselves are left untouched. No finding of SR-13696 to SR-13698 is open.
+
+| Record | FND | outcome | reason |
+| --- | --- | --- | --- |
+| SR-12275 | FND-001 | fixed | Same defect as SR-13696 FND-004. Fixed in dde724464 (FR-358 step 6) and 63543b3f5 (ADR-013 O-09). |
+| SR-12275 | FND-002 | fixed | Same defect as SR-13696 FND-005. Fixed in dde724464 by `tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it`. |
+| SR-12275 | FND-003 | fixed | f071d6769 moves `takes_inline_integer_literals` above `#[cfg(test)] mod tests;`, which is now the last item of lowering.rs. |
+| SR-12275 | FND-004 | accepted-no-change | Landing order, not a code change: QSpec #323 (head 3b17ea8a) merges first. At f071d6769 the golden test passes against #323 and fails against QSpec main fc98b5e, as expected. Re-run QSL conformance against the merged QSpec main before merging #1161. |
+| SR-12276 | FND-001 | fixed | `assert_no_literal_node` now runs for every FR-093-AC-30 body: `x + 1`; `1 + x`, `1 - x` and `1 * x`; `x - 1`; `x * 2`; `-5`; `x == 1` and `1 != x` (both sides, eq and ne); and `2 * (x + 1)`. Mutant M11 writes the inline term and also keeps a stray literal node. The new tests fail it in 4 tests; the b643c5b8d tests failed it only in `an_integer_literal_right_operand_of_add_is_inline`. |
+| SR-12276 | FND-002 | fixed | The narrowed `x == 1` test asserts that eq argument 1's digest is the narrow node's key and that narrow argument 0's digest is `vector_key("L6")`. Mutant M12 keeps L6 but points the narrow application at a literal-0 node. It now fails `integer_literals_are_inline_operands_of_integer_equality`, which passed on the b643c5b8d tests, where only the unrelated `differential::keying_each_content_once_keeps_every_key_and_preimage` caught it. No producer mutant was found that keeps the narrow node while retargeting the eq argument; removing the narrow node is already caught by the test's `expect`. |
