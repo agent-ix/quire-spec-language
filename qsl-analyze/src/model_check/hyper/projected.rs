@@ -8,7 +8,8 @@
 use qsl_eval::hyper::{ComponentStep, HyperTransition, ParameterBinding};
 use qsl_eval::temporal::{evaluate_projected_prefix, TemporalOutcome};
 use qsl_replay::{
-    HyperCounterexample, HyperCounterexampleKind, HyperOutcome, ModelCheckLimit, StepMark,
+    BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperOutcome, ModelCheckLimit,
+    StepMark,
 };
 use quire_exact::Meter;
 
@@ -37,6 +38,7 @@ impl Run<'_, '_> {
             (Some((_, hit)), _, _) => Self::finding(hit, &totals),
             (None, true, Some(depth)) => Ok(HyperOutcome::BoundReached {
                 depth: widen(depth),
+                covers: BoundCovers::Moves,
                 stats: totals.stats(),
             }),
             (None, _, _) => Ok(HyperOutcome::Holds {
