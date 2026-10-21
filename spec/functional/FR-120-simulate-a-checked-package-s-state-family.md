@@ -398,15 +398,22 @@ clause in ascending name order (UTF-8 bytes):
   `Refused`, the conjunction is undecided, and the expanded state gains one
   `ModelFinding::ContractUndetermined { transition, candidate, clause,
   evaluation }` per such clause, in name order; `candidate` is the
-  candidate's state-key digest for a postcondition and none for a
-  precondition. The result depends only on the set of clause outcomes.
+  candidate's state-key digest. The result depends only on the set of clause
+  outcomes.
 
 For the effective precondition the conjunction over one member's own
 clauses is QSpec FR-151's: clauses in ascending name order, each evaluated
-under FR-006's short-circuit, so evaluation stops at the first `false` clause
-and the clauses after it are not evaluated or charged. For the effective
-postcondition the conjunction keeps the outcome rule above and depends only on
-the set of clause outcomes.
+under FR-006's short-circuit, and evaluation stops at the first clause that is
+not `Completed(true)`; the clauses after it are not evaluated or charged. A
+`Completed(false)` clause makes the precondition `false`: the application is
+not enabled and no finding is recorded. A clause that is `Undefined` or
+`Refused` makes the precondition undecided: the application is not enabled
+and the expanded state gains one `ModelFinding::ContractUndetermined
+{ transition, candidate, clause, evaluation }` for that stopping clause, with
+`candidate` none. An undefined clause that sorts before a false one therefore
+gives the undecided outcome, and the reverse order gives `false`. For the
+effective postcondition the conjunction keeps the outcome rule above and
+depends only on the set of clause outcomes.
 
 An application is enabled when its effective precondition is `true`.
 
@@ -600,4 +607,4 @@ identity text of operation `op`.
 
 ## Remaining work
 
-- QSL-935: today the simulator's `evaluate_clause_set` evaluates every applicable precondition clause with a fresh meter in ascending name order and decides by the set of outcomes (one `false` makes the conjunction `false` even when an undefined clause sorts first), and `view_clauses` on the dispatch path conjoins in source-declaration order. Both conjoin in ascending clause name under short-circuit as QSpec FR-151-AC-19 states, and the module documentation of `checked_dispatch.rs` is reworded to match.
+- QSL-935: today the simulator's `evaluate_clause_set` evaluates every applicable precondition clause with a fresh meter in ascending name order and decides by the set of outcomes (one `false` makes the conjunction `false` even when an undefined clause sorts first), and `view_clauses` on the dispatch path conjoins in source-declaration order. Both paths conjoin in ascending clause name under short-circuit as QSpec FR-151-AC-19 states: the simulator stops at the first clause that is false or undefined instead of deciding by the set of outcomes, `view_clauses` changes from source order to ascending clause name, the module documentation at `checked_dispatch.rs` lines 66 to 69 is reworded to match, and a test covers QSpec TC-196 D10 on both paths.
