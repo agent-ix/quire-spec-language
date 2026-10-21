@@ -143,6 +143,7 @@ mod step_simulation;
 mod sum_case;
 mod temporal_clause;
 mod terminal;
+mod time_units;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
     CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Event, FractionMeasure,
@@ -323,7 +324,8 @@ pub use refusal::{
     InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
     NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
     ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration,
-    SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimedConstruct, WrongSnapshotCause,
+    SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimeUnitCause, TimedConstruct,
+    WrongSnapshotCause,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -333,9 +335,10 @@ pub use state_graph_claim::{
 pub use temporal_clause::check_clauses;
 
 pub use temporal_clause::{
-    Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
-    FormulaNode, FormulaNodeId, TemporalClaim, TemporalDeclaration, TemporalDeclarations,
-    TemporalSelection, TemporalTraceFamily, UnaryTemporal,
+    Activation, BinaryTemporal, CheckedFormula, CheckedInterval, CheckedOperator,
+    CheckedTemporalClause, FormulaNode, FormulaNodeId, ModelTimeBinding, ModelTimeSource,
+    TemporalClaim, TemporalDeclaration, TemporalDeclarations, TemporalSelection,
+    TemporalTraceFamily, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
 };
 
 /// A checked function.
@@ -2139,6 +2142,8 @@ impl PackageDeclarations {
         // emit (an `on each` activation or a capture) is refused rather
         // than compiled and silently missing from the package
         // (`temporal_clause::not_emitted`).
+        let time_units =
+            time_units::TimeUnits::new(&self.units, self.nominal_spans.keys().copied());
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
             selections: &self.temporal_selections,
@@ -2146,6 +2151,11 @@ impl PackageDeclarations {
             embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
             models: &models,
+            timed: temporal_clause::TimedContext {
+                units: &time_units,
+                time_sources: &self.time_sources,
+                rational_bits: limits.rational_bits(),
+            },
         };
         let mut checked_temporal = Vec::with_capacity(self.temporal_clauses.len());
         for (index, clause) in self.temporal_clauses.iter().enumerate() {
@@ -2157,7 +2167,7 @@ impl PackageDeclarations {
                 &mut contract_scopes,
             );
             match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
-                Ok(staged) if !temporal_clause::is_emitted(&clause.form) => {
+                Ok(staged) if !temporal_clause::is_emitted(&clause.form, staged.value()) => {
                     refusals.push(temporal_clause::not_emitted(&staged.into_value()));
                 }
                 Ok(staged) => {
@@ -2319,6 +2329,11 @@ impl PackageDeclarations {
                 embedding: embedding.as_deref(),
                 position_limit: limits.nodes(),
                 models: &models,
+                timed: temporal_clause::TimedContext {
+                    units: &time_units,
+                    time_sources: &self.time_sources,
+                    rational_bits: limits.rational_bits(),
+                },
             },
             models: &models,
             signatures: &signatures,

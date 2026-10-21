@@ -142,6 +142,9 @@ impl PartialEq for NotMarkov {
     }
 }
 
+/// [`same_values`] is an equivalence: a drawn vector equals itself.
+impl Eq for NotMarkov {}
+
 /// A contract conjunction of an application or a postcondition candidate
 /// was undecided at the state (FR-120's `ContractUndetermined` finding), so
 /// its successors, and its step probabilities, are not exactly known

@@ -15,7 +15,7 @@ FR-315 encodes, both for an inductive proof, and rejects a query mismatch,
 an invalid proof step, a proof that does not refute and a
 certificate of the wrong shape.
 
-Scope: FR-314-AC-1 and FR-314-AC-2.
+Scope: FR-314-AC-1 to FR-314-AC-4.
 
 ## Test Procedure
 
@@ -29,6 +29,15 @@ Scope: FR-314-AC-1 and FR-314-AC-2.
 3. Settle the bounded result with no certificate; check and settle the
    bounded certificate with one step's rule replaced by `hole`, then by
    `lia_generic`.
+4. Check the bounded certificate with its proof replaced by each proof of
+   FR-314-AC-3, the renamed one included, and the inductive certificate
+   with an empty base proof and with a malformed step proof. Settle each.
+5. Check FR-314-AC-4's `RefinementSmtCertificate` for `CasRefinesCounter` (a
+   base part and seven step parts) with `check_refinement_smt_proof`, then with
+   six step parts, with eight, with the base part and a step part exchanged,
+   with the third step part's query replaced by the fourth's, with the fifth step part's proof (at least four commands) having its
+   command 3 not follow from its premises, and with command 3 of the base
+   proof using `hole`, and over `CasRefinesCounterAdd` (FR-315-AC-6) with a base part and eight step parts, valid for the seven rows other than `bump`, the part at `bump`'s position being present but neither compared nor checked.
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
@@ -41,3 +50,16 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `CertificateRejected`.
 - Step 3: `proved`, `Uncertified`; `Unverifiable` at that step and
   `proved`, `Uncertified`, twice.
+- Step 4: `ProofStepInvalid` at `ProofStep { Unrolling, 3 }`, both before
+  and after the renaming; `NotRefutation` at `ProofStep { Unrolling, 4 }`;
+  `Unverifiable { Unrolling, 3 }`, `proved`, `Uncertified`; `NotRefutation`
+  at `Query { Unrolling }` for the empty proof; `Malformed` at
+  `Query { Unrolling }` for each of the four malformed proofs;
+  `NotRefutation` at `Query { Base }`; `Malformed` at `Query { Step }`.
+  Each rejection is `inconclusive`, `CertificateRejected`.
+- Step 5: the complete certificate `Verified`; six parts `ShapeMismatch` at
+  `step/6`; eight parts `ShapeMismatch` at `step/7`; the exchanged parts
+  `QueryMismatch` at `base`; the swapped query `QueryMismatch` at `step/2`;
+  the invalid command `ProofStepInvalid` at `ProofStep { Step { row: 4 }, 3 }`;
+  the `hole` `Unverifiable { Base, 3 }`; the `bump` row `Unencodable { Step { row: r } }`, `r` its position in the `steps` order; each rejection `inconclusive`,
+  `CertificateRejected`.

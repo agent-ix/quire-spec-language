@@ -122,14 +122,16 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   its row in the refinement node's `steps` array, which QSpec FR-375 sorts
   ascending by the node-key digest of the row's first named declaration (a
   model subject's row names its concrete operation), then by member name as
-  UTF-8 bytes.
+  UTF-8 bytes. A model subject has one row per concrete operation, so no two
+  rows tie.
 - Reordering the `step` rows in source SHALL change no record's `StepRowRef`.
 - The checker SHALL give a protocol subject's `Step` record the `StepRowRef`
-  that is the row's zero-based position in FR-136's protocol sort order: the
-  node-key digest of the declaration the row names (the selected clause for
-  `activate` and `memory` rows), then the row's step keyword, then the memory
-  step kind name, as UTF-8 bytes. Reordering the rows in source SHALL change
-  none.
+  that is the row's zero-based position in FR-136's protocol sort order, which
+  is QSpec FR-375's: the node-key digest of the declaration the row names (the
+  selected clause for an `activate` row), a row that names no declaration (a
+  `memory` row) after every row that names one, and rows that tie ordered by
+  the UTF-8 bytes of the alias-free class spelling (the memory kind name for
+  `memory` rows). Reordering the rows in source SHALL change none.
 
 ### Record identity, pending
 
@@ -162,8 +164,30 @@ wording.
   SHALL settle V-6 `Inconclusive(CertificateRejected{rule, at})` with
   FR-314's rule and locus (ADR-018 PC-2), never `proved`.
 - A certificate FR-314 cannot verify without showing it wrong SHALL settle
-  `Uncertified`, not `CertificateRejected`. A `Certified` RE-2 settlement is
-  pending FR-315 encoding the RE-2 per-step query, which it does not yet do.
+  `Uncertified`, not `CertificateRejected`. QSL SHALL settle every RE-2
+  record of a refinement `Certified` exactly when `check_refinement_smt_proof`
+  (FR-314 "Refinement certificates") returns `Verified` for the refinement's
+  certificate, against the queries FR-315 encodes (FR-315 "Refinement
+  queries"); `Uncertified` when it returns `Unverifiable` or no certificate
+  came; and, when it rejects at a part, the record of that part (the `Initial`
+  record for `Base`, row `r`'s `Step` record for `Step { row: Some(r) }`)
+  `Inconclusive(CertificateRejected{rule, at})` and every other record
+  `Uncertified`. A refinement with a row whose query FR-315 refuses to encode (a
+  `_` argument, an `any` row or a term outside `QF_LIA`) gets `Unencodable`
+  from the checker (FR-314), so every record of it is `Uncertified` unless the
+  checker rejects a part (that part's record is then
+  `Inconclusive(CertificateRejected{rule, at})`); a backend counterexample still settles
+  `Inconclusive(InductionNotClosed{depth: 1})`.
+- QSL SHALL settle the refinement's safety half from its records and the
+  hypothesis items by QSpec FR-468 "Settlement", in its order: an initial
+  counterexample, a hypothesis item not `proved`
+  (`hypotheses-not-established`), a step counterexample, a certificate FR-314
+  shows wrong (`certificate-rejected{rule, at}`), then the verified or
+  unverified proofs, the half being `certified` only when every part and every
+  hypothesis item is certified, with other backend results as FR-468 states.
+  The certificate FR-314 checks for it is a `RefinementSmtCertificate`
+  (FR-314 "Refinement certificates"): one base part and one step part per row
+  in `steps` order.
 
 ## Acceptance Criteria
 
@@ -172,10 +196,11 @@ wording.
 | FR-146-AC-1 | ADR-020 §8's `CasRefinesCounter` writes eight `operation-contract` records beside its refinement record: one `Initial` and one `Step` for each of its seven rows, each listing the invariant clauses whose context is a concrete-model object type (none) as hypotheses. With the `commitB` row changed to `-> any` it writes none. | Test (TC-551) |
 | FR-146-AC-2 | `RegisterHistory` (FR-138) and `Coin` with `side` hidden (FR-141-AC-4) write no `StepSimulationRecord`; each still writes its refinement record. | Test (TC-551) |
 | FR-146-AC-3 | With an invariant `CasInv` (`self.busyA or self.tmpA <= self.value`) added to `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` in `hypotheses`, the request also holds `CasInv`'s own `operation-contract` record. | Test (TC-551) |
-| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` when the settlement map is given the checker's `Verified` result directly (a certificate FR-314 verifies on an RE-2 query is pending FR-315 encoding that query, FR-146-AC-7); for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
-| FR-146-AC-5 | Over a model subject, `StepRowRef` is the zero-based position in the digest-sorted `steps` order. For `CasRefinesCounter`, the seven `Step` records name the positions 0 to 6, each once, and the row at position i has a first named declaration whose node-key digest is not greater than the row at position i + 1's; writing the seven `step` rows in reverse source order gives each `Step` record the same `StepRowRef`. Over FR-136-AC-7's protocol (with its `unknown`-delivery channel and `tso` `parallel`) the `Step` records name the positions of that requirement's sort key, and reversing the source order of the rows changes none. | Test (TC-551) |
+| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` for every record of a refinement whose certificate `check_refinement_smt_proof` verifies, a refinement with a `_` row (`CasRefinesCounterAdd`, FR-315-AC-6) having every record `Uncertified` ; for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
+| FR-146-AC-5 | Over a model subject, `StepRowRef` is the zero-based position in the `steps` order QSpec FR-375 fixes (node-key digest of the first named declaration, then member name). For `CasRefinesCounter`, the seven `Step` records name the positions 0 to 6, each once, and the row at position i has a first named declaration whose node-key digest is not greater than the row at position i + 1's; writing the seven `step` rows in reverse source order gives each `Step` record the same `StepRowRef`. Over FR-136-AC-7's protocol (with its `unknown`-delivery channel and `tso` `parallel`) the `Step` records name the positions of FR-375's protocol order (a `memory` row after every declaration-naming row, ties by alias-free class spelling), and reversing the source order of the rows changes none. | Test (TC-551) |
 | FR-146-AC-6 | With a package that holds `Spec::Counter` and `Impl::Counter` and an invariant `AbsInv` on `Spec::Counter` beside `CasInv` on `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` and not `AbsInv` in `hypotheses`, and writing the clauses in the opposite source order leaves each record's `hypotheses` unchanged. | Test (TC-551) |
-| FR-146-AC-7 | The settlement map treats a certificate by what FR-314 finds: a backend outcome "holds" for a `Step` record whose certificate FR-314 shows wrong settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{rule, at})` with FR-314's rule and locus, never `proved`; the same outcome with a certificate that FR-314 cannot verify and does not show wrong settles `Proved{Inductive{depth: 1}, Uncertified}`; a `Certified` settlement is not exercised until FR-315 encodes the RE-2 query. The vector feeds the settlement map the checker's `Rejected` and `Unverifiable` results directly. | Test (TC-551) |
+| FR-146-AC-7 | The settlement map treats a certificate by what FR-314 finds: a backend outcome "holds" for a `Step` record whose certificate FR-314 shows wrong settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{rule, at})` with FR-314's rule and locus, never `proved`; the same outcome with a certificate that FR-314 cannot verify and does not show wrong settles `Proved{Inductive{depth: 1}, Uncertified}`. The vector feeds the settlement map the checker's `Rejected` and `Unverifiable` results directly. | Test (TC-551) |
+| FR-146-AC-8 | The safety half of `CasRefinesCounter` settles from its eight records and hypothesis items by QSpec FR-468: `proved`, `Certified` when all eight records are proved with verified certificates and every hypothesis item is certified; `proved`, `Uncertified` when one hypothesis item is `Uncertified`; `inconclusive`, `hypotheses-not-established` for the invariant `self.value < 0` whose hypothesis items are not proved, although every step record is proved; `Inconclusive(InductionNotClosed{depth: 1})` for a backend counterexample for one `Step` record; `refuted` through FR-145's replay for a counterexample for the `Initial` record. | Test (TC-551) |
 
 ## Dependencies
 

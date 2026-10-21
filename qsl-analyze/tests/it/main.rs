@@ -53,6 +53,7 @@ mod schedulability;
 mod state_graph;
 mod state_graph_certificate;
 mod state_graph_settle;
+mod statistical_model;
 mod strong_fairness;
 mod strong_hint;
 mod units;

@@ -252,6 +252,7 @@ fn service_unit_over(
          profile v = \"quire.model.complete/v1\";\n\
          profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile tm = \"quire.temporal.timed/v1\";\n\
          model Service = {P:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          {selections}\n\
          dimension Time;\n\
@@ -1593,6 +1594,18 @@ fn an_unbounded_event_is_refused_and_a_windowed_one_has_its_horizon() {
     );
     let [ProbabilisticCause::UnboundedEvent { claim: named, .. }] = &causes(&inf)[..] else {
         panic!("an unbounded event: {:?}", causes(&inf));
+    };
+    assert_eq!(named, "C");
+    // The timed profile has no event reading: it is refused for that alone.
+    let timed = service(
+        None,
+        &format!(
+            "probabilistic C using tm on Service {OVER} under Steady on origin \
+             {{ probability >= 0.99 [ eventually[0,5] {holds} ] }}"
+        ),
+    );
+    let [ProbabilisticCause::TimedEventProfile { claim: named, .. }] = &causes(&timed)[..] else {
+        panic!("a timed event profile: {:?}", causes(&timed));
     };
     assert_eq!(named, "C");
 }

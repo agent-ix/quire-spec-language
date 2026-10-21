@@ -70,6 +70,22 @@ pub enum UndefinedLocus {
     Protocol(String),
     /// A refinement's mapping row or step-row argument (ADR-020 RE-5).
     Mapping(Box<MappingSite>),
+    /// A state predicate of a probabilistic claim's bounded measure,
+    /// fraction or long-run fraction (ADR-024 PF-2, PF-6), by its role;
+    /// a `holds` atom of a claim's temporal event is an [`Self::Atom`].
+    ClaimPredicate(ClaimPredicate),
+}
+
+/// Which state predicate of a probabilistic claim's measure an undefined
+/// evaluation names (ADR-024 PF-2, PF-6).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ClaimPredicate {
+    /// `A`: an `accumulate` or `steps` measure's activation.
+    From,
+    /// `B`: an `accumulate` or `steps` measure's end.
+    Until,
+    /// `P`: a fraction's or a long-run fraction's predicate.
+    Target,
 }
 
 /// The row and object a refinement's undefined mapping names.
