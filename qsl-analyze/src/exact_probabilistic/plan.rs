@@ -21,7 +21,7 @@ use super::{
 
 /// Why a plan could not advance a state.
 #[derive(Debug)]
-pub(super) enum PlanFault {
+pub(crate) enum PlanFault {
     /// The monitor's automaton refused.
     Automaton(AutomatonError),
     /// A broken invariant of the product.
@@ -401,7 +401,7 @@ enum Activation {
 
 /// The monitor state after reading one letter: rejecting or settled states
 /// are decided.
-fn read_letter(
+pub(crate) fn read_letter(
     monitor: &mut Monitor<PropertyAutomaton>,
     from: StateId,
     truths: &[bool],

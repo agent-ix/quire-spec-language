@@ -190,7 +190,8 @@ impl ProtocolFairness {
                 let holds = match (&self.target, thread.steps.last()) {
                     (ProtocolTarget::Root, None) => true,
                     (ProtocolTarget::Branch { parallel, branch }, Some(step)) => {
-                        step.node == *parallel && step.branch == *branch
+                        step.node() == Some(parallel.as_str())
+                            && step.branch() == Some(branch.as_str())
                     }
                     _ => false,
                 };

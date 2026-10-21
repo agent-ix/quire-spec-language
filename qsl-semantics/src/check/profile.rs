@@ -36,8 +36,9 @@ pub(crate) fn protocol_profile(identity: &str) -> Option<DefinitionReference> {
 }
 
 /// The `TemporalTrace` family's temporal profile catalog (QSpec FR-250 as
-/// FR-326 admits it): the four profiles a `temporal` clause is checked under.
-/// A clause is checked under exactly one, selected by identity.
+/// FR-326 admits it, with the timed profile FR-234 admits): the five profiles
+/// a `temporal` clause is checked under. A clause is checked under exactly
+/// one, selected by identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TemporalProfile {
     /// `quire.temporal.event-position.false-extension/v1`.
@@ -48,15 +49,19 @@ pub enum TemporalProfile {
     TimestampedEventFiniteWindow,
     /// `quire.temporal.infinite-trace/v1`.
     InfiniteTrace,
+    /// `quire.temporal.timed/v1` (QSpec FR-250, FR-416; QSL FR-234): intervals
+    /// measure exact rational time between time-stamped positions.
+    Timed,
 }
 
 impl TemporalProfile {
     /// Every profile, in catalog order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::EventPositionFalseExtension,
         Self::FixedSampleFalseExtension,
         Self::TimestampedEventFiniteWindow,
         Self::InfiniteTrace,
+        Self::Timed,
     ];
 
     /// The profile's definition identity.
@@ -68,6 +73,7 @@ impl TemporalProfile {
                 "quire.temporal.timestamped-event.finite-window/v1"
             }
             Self::InfiniteTrace => "quire.temporal.infinite-trace/v1",
+            Self::Timed => "quire.temporal.timed/v1",
         }
     }
 
@@ -83,13 +89,14 @@ impl TemporalProfile {
 
     /// Whether every operator needs a closed interval and the clause has a
     /// finite horizon (FR-326 "Bounded profiles"); `false` for
-    /// infinite-trace.
+    /// infinite-trace and for the timed profile, which admits every
+    /// unbounded operator infinite-trace admits (FR-234).
     pub const fn is_bounded(self) -> bool {
         match self {
             Self::EventPositionFalseExtension
             | Self::FixedSampleFalseExtension
             | Self::TimestampedEventFiniteWindow => true,
-            Self::InfiniteTrace => false,
+            Self::InfiniteTrace | Self::Timed => false,
         }
     }
 
@@ -224,10 +231,10 @@ mod tests {
         assert_eq!(refused[0].cause, ProfileCause::UnsupportedSelection);
     }
 
-    /// FR-326, FR-110: the four temporal profiles resolve in the
-    /// `TemporalTrace` family's catalog by identity, each as bounded or
-    /// not; a near-miss identity and the timed profile (FR-234) are in no
-    /// catalog yet and refuse.
+    /// FR-326, FR-234, FR-110: the five temporal profiles, the timed
+    /// profile `quire.temporal.timed/v1` among them, resolve in the
+    /// `TemporalTrace` family's catalog by identity, each as bounded or not;
+    /// a near-miss identity refuses.
     #[trace("FR-110")]
     #[test]
     fn the_temporal_profiles_resolve_in_the_temporal_catalog() {
@@ -245,11 +252,19 @@ mod tests {
             assert_eq!(resolve_profiles(&[selection(profile.identity())]), Ok(()));
             assert_eq!(
                 profile.is_bounded(),
-                profile != TemporalProfile::InfiniteTrace
+                !matches!(
+                    profile,
+                    TemporalProfile::InfiniteTrace | TemporalProfile::Timed
+                )
             );
         }
+        assert_eq!(
+            TemporalProfile::from_identity("quire.temporal.timed/v1"),
+            Some(TemporalProfile::Timed)
+        );
         for unknown in [
-            "quire.temporal.timed/v1",
+            "quire.temporal.timed/v2",
+            "quire.temporal.Timed/v1",
             "quire.temporal.infinite-trace/v2",
             "quire.temporal.Infinite-trace/v1",
         ] {

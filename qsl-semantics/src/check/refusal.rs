@@ -1043,9 +1043,10 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
-    /// A timed interval (FR-393), which no S3 check reads yet (FR-233,
-    /// FR-234): refused rather than checked as a step interval. Located at
-    /// the interval.
+    /// A timed interval (FR-393) under a profile other than the timed
+    /// profile, where FR-233's `model-steps` rule is not checked yet:
+    /// refused rather than checked as a step interval. Located at the
+    /// interval.
     TimedIntervalNotChecked {
         /// The interval's span.
         span: Span,
@@ -1069,6 +1070,87 @@ pub enum TemporalCause {
         /// The constraint name's span.
         span: Span,
     },
+    /// FR-234: a timed interval with a negative lower bound, `a > b`, or an
+    /// open end with `a = b`. Located at the interval.
+    InvalidTimedInterval {
+        /// Which condition the bounds broke.
+        reason: qsl_foundation::bound::InvalidTimedInterval,
+        /// The interval's span.
+        span: Span,
+    },
+    /// FR-233: a clause writes `clock "model-time"` over a model with no
+    /// `time` member. Located at the clock clause, naming the model.
+    ModelTimeOnUntimedModel {
+        /// The model the clause's subject belongs to.
+        model: String,
+        /// The clock clause's span.
+        span: Span,
+    },
+    /// FR-233 "Intervals": under `model-time` an interval bound with no
+    /// unit (a step interval `[a, b]`). Located at the bound.
+    UnitlessTimedBound {
+        /// The bound's span.
+        span: Span,
+    },
+    /// An interval bound written `rational(n, 0)`. Located at the bound.
+    ZeroDenominator {
+        /// The bound's span.
+        span: Span,
+    },
+    /// FR-230 "The time dimension and its units", read by FR-233 for an
+    /// interval bound: the bound's unit is not a time unit of the checked
+    /// package's unit graph.
+    TimeQuantity {
+        /// Why the unit is not a time unit (boxed: an affine unit's offset
+        /// is an exact rational).
+        cause: Box<TimeUnitCause>,
+        /// The unit name's span.
+        span: Span,
+    },
+    /// A clause under the timed profile whose clock binding is not
+    /// `model-time` over a timed model: ADR-026 CB-1 has the timed profile
+    /// selected only by `model-time`, and no QSL requirement names the
+    /// refusal of the timed profile under another binding. Located at the
+    /// clock clause.
+    TimedProfileWithoutModelTime {
+        /// The clock role, as written.
+        clock: String,
+        /// The clock clause's span.
+        span: Span,
+    },
+    /// A clause under the timed profile over a subject that is not a model
+    /// object type: a timed-trace subject, whose clock binding and time unit
+    /// no QSL requirement states (QSpec FR-252 supplies it "through the
+    /// shared observation interface"). Located at the clause.
+    TimedTraceSubject {
+        /// The clause's span.
+        span: Span,
+    },
+}
+
+/// Why a quantity's unit is not a time unit (FR-230 "The time dimension and
+/// its units"), in the order the checker reads it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum TimeUnitCause {
+    /// The unit graph has no base dimension named `Time`.
+    NoTimeDimension,
+    /// The unit graph has no unit with the written name.
+    UnknownUnit {
+        /// The unit as written.
+        name: String,
+    },
+    /// The unit is typed by a dimension other than the `Time` base node.
+    NotTimeDimension {
+        /// The unit as written.
+        name: String,
+    },
+    /// The unit's composed offset to its root is not zero.
+    AffineUnit {
+        /// The unit as written.
+        name: String,
+        /// The composed offset.
+        offset: quire_exact::Rational,
+    },
 }
 
 impl TemporalCause {
@@ -1087,7 +1169,14 @@ impl TemporalCause {
             | Self::FairnessUnderBoundedProfile { span }
             | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
-            | Self::ProtocolFairnessNotEmitted { span, .. } => *span,
+            | Self::ProtocolFairnessNotEmitted { span, .. }
+            | Self::InvalidTimedInterval { span, .. }
+            | Self::ModelTimeOnUntimedModel { span, .. }
+            | Self::UnitlessTimedBound { span }
+            | Self::ZeroDenominator { span }
+            | Self::TimeQuantity { span, .. }
+            | Self::TimedProfileWithoutModelTime { span, .. }
+            | Self::TimedTraceSubject { span } => *span,
         }
     }
 
@@ -1100,8 +1189,23 @@ impl TemporalCause {
             | Self::FairnessUnderBoundedProfile { .. }
             | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
-            | Self::ProtocolFairnessNotEmitted { .. } => Code::UnsupportedConstruct,
+            | Self::ProtocolFairnessNotEmitted { .. }
+            | Self::TimedProfileWithoutModelTime { .. }
+            | Self::TimedTraceSubject { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
+            Self::InvalidTimedInterval { .. } | Self::ModelTimeOnUntimedModel { .. } => {
+                Code::InvalidTimedModel
+            }
+            Self::UnitlessTimedBound { .. } => Code::IllTyped,
+            Self::ZeroDenominator { .. } => Code::UndefinedExpression,
+            Self::TimeQuantity { cause, .. } => match &**cause {
+                TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
+                    Code::MissingDeclaration
+                }
+                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
+                    Code::IllTyped
+                }
+            },
             Self::AmbiguousFairnessOperation { .. } | Self::AmbiguousPopulation { .. } => {
                 Code::AmbiguousDeclaration
             }
@@ -1124,8 +1228,22 @@ impl TemporalCause {
             Self::InvertedInterval { .. } => "type-mismatch",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
-            | Self::ProtocolFairnessNotEmitted { .. } => "not-yet-implemented",
+            | Self::ProtocolFairnessNotEmitted { .. }
+            | Self::TimedProfileWithoutModelTime { .. }
+            | Self::TimedTraceSubject { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
+            Self::InvalidTimedInterval { .. } => "invalid-interval",
+            Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
+            Self::UnitlessTimedBound { .. } => "type-mismatch",
+            Self::ZeroDenominator { .. } => "unproved-nonzero",
+            Self::TimeQuantity { cause, .. } => match &**cause {
+                TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
+                    "missing-name"
+                }
+                TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
+                    "type-mismatch"
+                }
+            },
         }
     }
 }

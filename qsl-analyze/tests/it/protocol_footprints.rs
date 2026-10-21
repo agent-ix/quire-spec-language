@@ -25,6 +25,7 @@ use crate::fill::{
     attempt, contracts, fill_unit, instance, key, model_subject, package, protocol, reachable,
     sc_system, source_memory, Documents, Reached, PACKAGE,
 };
+use crate::protocol_compensation as compensation;
 use crate::protocol_system::touch;
 
 /// A unit checked over cells `keys`, each from `v = 0` and `w = 0`.
@@ -608,7 +609,16 @@ pub(crate) fn assert_independent_steps_commute<M: MemoryModel>(
     system: &ProtocolSystem<'_, M>,
     reached: &[Reached<M>],
 ) -> usize {
-    let mut checked = 0;
+    commuting_pairs(system, reached).len()
+}
+
+/// [`assert_independent_steps_commute`]'s check, with the kinds of each
+/// independent pair it checked.
+fn commuting_pairs<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
+    reached: &[Reached<M>],
+) -> Vec<(StepKind, StepKind)> {
+    let mut checked = Vec::new();
     for (at, state) in reached.iter().enumerate() {
         let mut identities: Vec<&ProtocolTransition> = Vec::new();
         for (step, _) in &state.steps {
@@ -623,7 +633,7 @@ pub(crate) fn assert_independent_steps_commute<M: MemoryModel>(
                 if !independent(&left, &right) {
                     continue;
                 }
-                checked += 1;
+                checked.push((first.kind(), second.kind()));
                 let forward = after_both(reached, at, first, second);
                 let backward = after_both(reached, at, second, first);
                 assert!(
@@ -646,7 +656,9 @@ pub(crate) fn assert_independent_steps_commute<M: MemoryModel>(
 /// branch reads its own copy of a binder its parent gained at an `all`
 /// join, and a binder is copied up through two nested `all` joins to the
 /// root while a sibling branch reads its own copy of the root's binder. One
-/// more holds a `fence` in each branch.
+/// more holds a `fence` in each branch. Three run ADR-027 §7.1's
+/// compensation: a registration, its activation and its compensation
+/// thread's `cattempt` and `cend`, beside a branch that keeps stepping.
 #[trace("TC-661")]
 #[test]
 fn every_independent_pair_of_steps_commutes() {
@@ -775,6 +787,14 @@ fn every_independent_pair_of_steps_commutes() {
             "P",
             vec!["c"],
         ),
+        // ADR-027 §7.1's `Pay`; its effect and failure twice in a `repeat`,
+        // so a second registration and activation race the first thread's
+        // `cend`; and branch `settle` beside branch `pay`, whose `touch`
+        // runs beside the compensation thread (CP-1 to CP-5, FT-1).
+        (compensation::pay("true"), "Pay", vec!["c"]),
+        (compensation::twice(), "Pay", vec!["c"]),
+        (compensation::settled(&touch("TS")), "Pay", vec!["c"]),
+        (compensation::crosswise(), "Pay", vec!["c"]),
     ];
     let mut total = 0;
     for (index, (body, name, keys)) in units.iter().enumerate() {
@@ -782,10 +802,26 @@ fn every_independent_pair_of_steps_commutes() {
         let subject = unit.subject(name);
         let system = sc_system(&subject);
         let reached = reachable(&system);
-        let checked = assert_independent_steps_commute(&system, &reached);
-        // The re-forking `repeat` and the environment fixtures have
-        // independent pairs of their own.
-        assert!(![6, 9, 10, 11].contains(&index) || checked > 0, "{body}");
+        let pairs = commuting_pairs(&system, &reached);
+        let checked = pairs.len();
+        // Beside the compensation thread, its `cattempt` and `cend` commute
+        // with the steps of another branch.
+        if index == 14 {
+            for kind in [StepKind::CAttempt, StepKind::CEnd] {
+                assert!(
+                    pairs
+                        .iter()
+                        .any(|(first, second)| *first == kind || *second == kind),
+                    "{kind:?} in {pairs:?}"
+                );
+            }
+        }
+        // The re-forking `repeat`, the environment fixtures and the
+        // settled `Pay` have independent pairs of their own.
+        assert!(
+            ![6, 9, 10, 11, 14].contains(&index) || checked > 0,
+            "{body}"
+        );
         total += checked;
     }
     assert!(total > 0);

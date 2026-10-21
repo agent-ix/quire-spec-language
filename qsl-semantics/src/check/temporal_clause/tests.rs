@@ -61,6 +61,10 @@ type Outcome = Result<CheckedTemporalClause, StageFailure<CheckRefusal>>;
 
 /// The unit's one clause, checked by the family.
 fn check(package: &PackageDeclarations) -> Outcome {
+    let units = crate::check::time_units::TimeUnits::new(
+        &package.units,
+        package.nominal_spans.keys().copied(),
+    );
     let scope = Scope::new(
         package.types.clone(),
         package.operations.clone(),
@@ -78,6 +82,11 @@ fn check(package: &PackageDeclarations) -> Outcome {
         position_limit: 10_000,
         models: &package.models,
         protocols: &[],
+        timed: TimedContext {
+            units: &units,
+            time_sources: &package.time_sources,
+            rational_bits: CheckingLimits::default().rational_bits(),
+        },
     };
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut diagnostics = DiagnosticSink::default();
@@ -193,13 +202,17 @@ fn intervals_are_admitted_by_profile_and_the_horizon_is_the_greatest_reach() {
     let intervals: Vec<_> = nested
         .operators()
         .iter()
-        .map(|operator| operator.interval)
+        .map(|operator| operator.interval.clone())
         .collect();
     assert_eq!(
         intervals,
         [
-            Some(TemporalInterval::new(0, TemporalUpper::Finite(2)).unwrap()),
-            Some(TemporalInterval::new(1, TemporalUpper::Finite(3)).unwrap()),
+            Some(CheckedInterval::Steps(
+                TemporalInterval::new(0, TemporalUpper::Finite(2)).unwrap()
+            )),
+            Some(CheckedInterval::Steps(
+                TemporalInterval::new(1, TemporalUpper::Finite(3)).unwrap()
+            )),
         ]
     );
 
@@ -216,7 +229,9 @@ fn intervals_are_admitted_by_profile_and_the_horizon_is_the_greatest_reach() {
     let (_, open) = checked(&[INFINITE], formula);
     assert_eq!(
         open.operators()[0].interval,
-        Some(TemporalInterval::new(3, TemporalUpper::Open).unwrap())
+        Some(CheckedInterval::Steps(
+            TemporalInterval::new(3, TemporalUpper::Open).unwrap()
+        ))
     );
     assert_eq!(open.horizon(), None);
 

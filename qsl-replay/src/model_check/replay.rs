@@ -46,7 +46,7 @@ use qsl_eval::simulation::model::{
     TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, protocol_constraints, MemoryModel, ProtocolFairness,
+    check_protocol_bounds, protocol_constraints, CarriedComponent, MemoryModel, ProtocolFairness,
     ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc,
     SendRecord, StepKind, SubjectMemory,
 };
@@ -269,6 +269,18 @@ pub enum ModelTraceRefusal {
         /// The replayed send record.
         replayed: Box<SendRecord>,
     },
+    /// A step whose carried post-state memory component differs from the
+    /// one replay recomputes, or that carries none where one is recomputed
+    /// (ADR-025 MK-2, FR-227).
+    #[error("stale_dependency/content-mismatch: step {step} carries the memory component {recorded:?}; it replays {replayed:?}")]
+    MemoryComponent {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+        /// The carried component.
+        recorded: Option<CarriedComponent>,
+        /// The recomputed component.
+        replayed: Option<CarriedComponent>,
+    },
     /// A `send` step without a send record, or another step with one: a
     /// wire-shape defect of the counterexample (ADR-027 PX-1, PX-2).
     #[error("invalid_runtime_input/invalid-value: step {step} carries a send record only if it is a send")]
@@ -336,7 +348,8 @@ impl ModelTraceRefusal {
             Self::UnknownTemporalClause { .. }
             | Self::ItemIdentity { .. }
             | Self::PostState { .. }
-            | Self::SendRecord { .. } => Code::StaleDependency,
+            | Self::SendRecord { .. }
+            | Self::MemoryComponent { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } | Self::ProtocolFairnessSet { .. } => Code::StaleDependency,
             Self::AuthoredUndefined
             | Self::GuardedActivation
@@ -370,7 +383,8 @@ impl ModelTraceRefusal {
             | Self::FairnessSet { .. }
             | Self::ProtocolFairnessSet { .. }
             | Self::PostState { .. }
-            | Self::SendRecord { .. } => "content-mismatch",
+            | Self::SendRecord { .. }
+            | Self::MemoryComponent { .. } => "content-mismatch",
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::HyperWitnessExhausted
@@ -558,13 +572,16 @@ pub fn replay_model_trace(
 /// `subject` by [`replay_model_trace`]'s rules, re-executing each step
 /// through the subject's protocol system under its resolved memory models
 /// and store buffer bound (FR-227): a step whose recomputed post-state
-/// differs under them refuses on its digest. An authored clause's payload
-/// carries the fairness set the recompiled clause and protocol give,
-/// scheduler constraints included (FR-212), and a lasso's loop must be fair
-/// under it over FR-212's classes, enabledness read from the protocol
-/// system at every loop state. For a deadlock it checks that no protocol
-/// step is enabled at the last state, that some protocol instance is live
-/// there, and that the blocked threads recompute equal to the payload's.
+/// differs under them refuses on its digest, and one whose recomputed
+/// memory component differs from the one it carries refuses
+/// [`ModelTraceRefusal::MemoryComponent`] (ADR-025 MK-2). An authored
+/// clause's payload carries the fairness set the recompiled clause and
+/// protocol give, scheduler constraints included (FR-212), and a lasso's
+/// loop must be fair under it over FR-212's classes, enabledness read from
+/// the protocol system at every loop state. For a deadlock it checks that
+/// no protocol step is enabled at the last state, that some protocol
+/// instance is live there, and that the blocked threads recompute equal to
+/// the payload's.
 ///
 /// # Errors
 ///
@@ -905,8 +922,9 @@ fn protocol_not_enabled(step: usize, transition: &ProtocolTransition) -> ModelTr
     }
 }
 
-/// ADR-027 PX-2: the refusal of a `send` step whose replayed send record
-/// differs from the one it records.
+/// ADR-027 PX-2 and ADR-025 MK-2: the refusal of a `send` step whose
+/// replayed send record differs from the one it records, and of a step
+/// whose recomputed memory component differs from the one it carries.
 fn protocol_result(
     step: usize,
     recorded: &ProtocolTransition,
@@ -914,14 +932,21 @@ fn protocol_result(
 ) -> Option<ModelTraceRefusal> {
     match (recorded.send_record(), replayed.send_record()) {
         (Some(recorded), Some(replayed)) if recorded != replayed => {
-            Some(ModelTraceRefusal::SendRecord {
+            return Some(ModelTraceRefusal::SendRecord {
                 step,
                 recorded: Box::new(recorded.clone()),
                 replayed: Box::new(replayed.clone()),
             })
         }
-        _ => None,
+        _ => {}
     }
+    (recorded.memory_component() != replayed.memory_component()).then(|| {
+        ModelTraceRefusal::MemoryComponent {
+            step,
+            recorded: recorded.memory_component().cloned(),
+            replayed: replayed.memory_component().cloned(),
+        }
+    })
 }
 
 /// ADR-027 PX-1 and PX-2, before any step is replayed: every `send` step
@@ -1085,6 +1110,9 @@ fn replay_prefix<S: SubjectSystem>(
                 reached: digests,
             })
         })?;
+        let replayed = system
+            .reported(replayed, &next.state)
+            .map_err(|_| fault("a-replayed-step-reports"))?;
         if let Some(refusal) = (rules.result)(index, &step.transition, &replayed) {
             return Err(refused(refusal));
         }
@@ -1608,7 +1636,8 @@ fn undefined<S: SubjectSystem>(
         | UndefinedLocus::Contract(_)
         | UndefinedLocus::Terminal(_)
         | UndefinedLocus::Protocol(_)
-        | UndefinedLocus::Mapping { .. } => None,
+        | UndefinedLocus::Mapping { .. }
+        | UndefinedLocus::ClaimPredicate(_) => None,
     };
     if constraint.is_some_and(|name| !constraints.has_constraint(name)) {
         return Ok(disagrees(Category::Success));
