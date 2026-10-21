@@ -11,7 +11,6 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_forms::{AbstractSideForm, DeclaredName, RefinementRowForm, StepSourceForm};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     step_row_refs, step_simulation_records, AssemblyRefusal, CheckCause, CheckRefusal,
@@ -30,8 +29,8 @@ use serde_json::{json, Value};
 const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
-const SPEC: &str = "example/counter-spec";
-const CAS: &str = "example/counter-cas";
+pub(crate) const SPEC: &str = "example/counter-spec";
+pub(crate) const CAS: &str = "example/counter-cas";
 const QUEUE: &str = "example/queue-spec";
 const RING: &str = "example/ring-buffer";
 
@@ -419,7 +418,7 @@ fn unit_text(
     (text, packages)
 }
 
-fn assemble(
+pub(crate) fn assemble(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -523,7 +522,7 @@ fn only(found: &[Refused]) -> &Refused {
     only
 }
 
-fn counters() -> (Vec<u8>, Vec<u8>) {
+pub(crate) fn counters() -> (Vec<u8>, Vec<u8>) {
     (counter_spec(), counter_cas())
 }
 
@@ -566,7 +565,7 @@ fn cas_refines_counter() -> String {
 }
 
 /// `body` with the one occurrence of `from` replaced by `to`.
-fn mutated(body: &str, from: &str, to: &str) -> String {
+pub(crate) fn mutated(body: &str, from: &str, to: &str) -> String {
     assert_eq!(body.matches(from).count(), 1, "{from} occurs once");
     body.replace(from, to)
 }
@@ -847,6 +846,7 @@ fn every_concrete_operation_has_a_checked_step_row() {
             }
             StepTarget::Stutter => stuttered += 1,
             StepTarget::Any => panic!("no row maps to any"),
+            StepTarget::Node { .. } => panic!("no row names a protocol node"),
         }
     }
     applied.sort();
@@ -1264,67 +1264,6 @@ fn protocol_step_rows_refuse_over_a_model_subject() {
             name: "Spec::Twice::a1".to_owned()
         }
     );
-}
-
-/// FR-147: an abstract protocol side is a form QSpec has no production for
-/// (STD-182), so S2 never builds it from source; built by hand, S3 refuses it
-/// `unsupported_construct`/`not-yet-implemented` at the clause name and still
-/// checks, and reports, the rest of the declaration.
-#[trace("TC-540", "FR-135-AC-5")]
-#[test]
-fn a_protocol_abstract_side_refuses_and_the_rest_is_still_checked() {
-    let (spec, cas) = counters();
-    let (text, declarations) = assemble(
-        "",
-        &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)],
-        &cas_refines_counter(),
-    );
-    let mut declarations = declarations.expect("the unit assembles");
-    let [declaration] = &mut declarations.refinements[..] else {
-        panic!("one refinement");
-    };
-    let AbstractSideForm::Model(alias) = declaration.form.abstract_side.clone() else {
-        panic!("a model side as written");
-    };
-    // Rows that would otherwise refuse against the protocol side stay.
-    let clause = DeclaredName {
-        name: "Twice".to_owned(),
-        span: alias.span,
-    };
-    declaration.form.abstract_side = AbstractSideForm::Protocol { alias, clause };
-    // A step row the concrete model needs is missing.
-    declaration.form.rows.retain(|row| {
-        !matches!(row, RefinementRowForm::Step(step)
-            if matches!(&step.source, StepSourceForm::Named { name, .. }
-                if name.name == "Impl::Counter::peek"))
-    });
-    let found = check_declarations(&text, declarations).expect_err("the protocol side refuses");
-    let [protocol, missing] = &found[..] else {
-        panic!(
-            "two refusals: {:?}",
-            found.iter().map(|r| &r.refusal).collect::<Vec<_>>()
-        );
-    };
-    assert_eq!(
-        protocol.code_and_cause(),
-        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
-    );
-    assert_eq!(protocol.at, "Spec");
-    let RefinementCause::Unsupported {
-        feature, profile, ..
-    } = protocol.refinement()
-    else {
-        panic!("an unsupported feature: {:?}", protocol.refinement());
-    };
-    assert_eq!(feature.name(), "protocol-abstract-side");
-    assert_eq!(profile, "quire.temporal.infinite-trace/v1");
-    assert!(matches!(
-        missing.refinement(),
-        RefinementCause::MissingRow {
-            class: RowClass::Step,
-            ..
-        }
-    ));
 }
 
 /// FR-361-AC-4 (TC-1015), the refinement half: the same refinement unit that

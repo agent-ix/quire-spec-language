@@ -217,6 +217,11 @@ pub enum ClosureRefusal {
     /// not admit.
     #[error(transparent)]
     Fairness(ProtocolFairnessError),
+    /// A refinement whose abstract side is a protocol clause: no abstract
+    /// protocol step is decided yet (FR-148)
+    /// (`unsupported_construct/not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: a refinement over an abstract protocol subject is not decided yet")]
+    ProtocolAbstractSide,
     /// An invariant of the subject broke.
     #[error("the closure check broke invariant {0:?}")]
     Fault(InternalFault),

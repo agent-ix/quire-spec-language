@@ -209,6 +209,11 @@ pub enum ModelCheckRefusal {
     /// rule for.
     #[error(transparent)]
     Footprint(#[from] qsl_eval::simulation::model::FootprintError),
+    /// A refinement whose abstract side is a protocol clause: the engine
+    /// decides no abstract protocol step yet (FR-148)
+    /// (`unsupported_construct/not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a refinement over an abstract protocol subject yet")]
+    ProtocolAbstractSide,
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),
