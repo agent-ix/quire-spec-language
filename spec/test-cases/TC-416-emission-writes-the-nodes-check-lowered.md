@@ -129,7 +129,7 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   from graph order gives G4 to G6.
 - Step 6: every emitted list equals its rebuilt list. In ascending digest
   order, E1 lists P2, P1; F2 lists P2, P1, E1; E2 lists L1, F2, P1; T4 lists
-  T2; G4 lists G5, P4; G5 lists L1, E11, G6; G6 lists G4, E13; G7 lists G9;
+  T2; G4 lists G5, P4; G5 lists L1, G6, E11; G6 lists E13, G4; G7 lists G9;
   G8 lists G7; G9 lists G8; T1, L1 and P1 list none.
 - Step 7: IR admits each emitted package, and each compared member equals
   the fixture's. The compared members are exactly those FR-093-AC-13

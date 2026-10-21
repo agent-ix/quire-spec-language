@@ -2124,7 +2124,7 @@ fn a_standalone_integer_literal_is_a_node_l6() {
 
 /// FR-358, ADR-013 O-09: the integer literal operand of `x + 1` is a literal
 /// term in the application's arguments, and no node holds that literal.
-#[trace("FR-357-AC-17", "TC-904")]
+#[trace("FR-093-AC-30", "TC-415")]
 #[test]
 fn an_integer_literal_right_operand_of_add_is_inline() {
     let body = binary(BinaryOperator::Add, name_expr("x"), integer_expr(1));
@@ -2144,7 +2144,7 @@ fn an_integer_literal_right_operand_of_add_is_inline() {
 }
 
 /// The literal on the left, and every operator FR-357 settles.
-#[trace("FR-357-AC-17", "TC-904")]
+#[trace("FR-093-AC-30", "TC-415")]
 #[test]
 fn integer_literals_are_inline_on_either_side_of_each_scalar_operator() {
     for (operator, identity) in [
@@ -2170,7 +2170,7 @@ fn integer_literals_are_inline_on_either_side_of_each_scalar_operator() {
 
 /// Nested arithmetic: each literal is inline in its own application, and the
 /// inner application stays a graph child of the outer.
-#[trace("FR-357-AC-17", "TC-904")]
+#[trace("FR-093-AC-30", "TC-415")]
 #[test]
 fn nested_arithmetic_keeps_each_literal_inline_in_its_application() {
     let inner = binary(BinaryOperator::Add, name_expr("x"), integer_expr(1));
@@ -2186,7 +2186,7 @@ fn nested_arithmetic_keeps_each_literal_inline_in_its_application() {
 
 /// A literal operand of any other operator stays a `value`/`literal` node:
 /// `x > 0` references L5, and a Boolean literal operand references its node.
-#[trace("FR-357-AC-17", "TC-904")]
+#[trace("FR-093-AC-30", "TC-415")]
 #[test]
 fn literal_operands_of_other_operators_stay_nodes() {
     let compare = function(
@@ -2212,5 +2212,71 @@ fn literal_operands_of_other_operators_stay_nodes() {
         ),
     );
     let graph = check(vec![conjunction]).expect("h checks");
+    assert_holds(graph.semantic_graph(), "L1");
+}
+
+/// FR-358 step 6: an integer literal operand of an integer `==` or `!=`
+/// over `Integer` operands, on either side, is inline. Against an
+/// `Int[lo, hi]` operand the literal is narrowed to it, so the operand is a
+/// `numeric.narrow` application (a graph child) over the literal's node. A
+/// Boolean equality keeps its literal node.
+#[trace("FR-093-AC-30", "TC-415")]
+#[test]
+fn integer_literals_are_inline_operands_of_integer_equality() {
+    for (operator, identity) in [
+        (BinaryOperator::Equal, "quire.op.integer.eq"),
+        (BinaryOperator::NotEqual, "quire.op.integer.ne"),
+    ] {
+        for literal_left in [false, true] {
+            let (left, right) = if literal_left {
+                (integer_expr(1), name_expr("x"))
+            } else {
+                (name_expr("x"), integer_expr(1))
+            };
+            let compare = function(
+                "g",
+                &[("x", integer_form())],
+                boolean(),
+                None,
+                binary(operator, left, right),
+            );
+            let graph = check(vec![compare]).expect("g checks");
+            let node = application(graph.semantic_graph(), identity);
+            let (inline, other) = if literal_left { (0, 1) } else { (1, 0) };
+            let arguments = &node["body"]["arguments"];
+            assert!(
+                is_inline_integer(&arguments[inline], "1"),
+                "{identity}: {arguments}"
+            );
+            assert_eq!(arguments[other]["term"], "reference", "{identity}");
+        }
+        let narrowed = function(
+            "n",
+            &[("x", int_form(0, 9))],
+            boolean(),
+            None,
+            binary(operator, name_expr("x"), integer_expr(1)),
+        );
+        let graph = check(vec![narrowed]).expect("n checks");
+        let node = application(graph.semantic_graph(), identity);
+        assert_eq!(node["body"]["arguments"][1]["term"], "reference");
+        let narrow = application(graph.semantic_graph(), "quire.op.numeric.narrow");
+        assert_eq!(narrow["body"]["arguments"][0]["term"], "reference");
+        assert_holds(graph.semantic_graph(), "L6");
+    }
+    let boolean_equality = function(
+        "h",
+        &[("a", boolean())],
+        boolean(),
+        None,
+        binary(
+            BinaryOperator::Equal,
+            name_expr("a"),
+            Expression::boolean(true),
+        ),
+    );
+    let graph = check(vec![boolean_equality]).expect("h checks");
+    let node = application(graph.semantic_graph(), "quire.op.boolean.eq");
+    assert_eq!(node["body"]["arguments"][1]["term"], "reference");
     assert_holds(graph.semantic_graph(), "L1");
 }

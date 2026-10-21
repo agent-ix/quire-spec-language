@@ -2949,22 +2949,73 @@ mod operator_arm {
                 Code::InvalidRuntimeInput
             ))
         );
-        let literal = ScalarOperand::literal(7);
-        assert_eq!(literal.range, range(7, 7));
-        let with_literal = |value: i64| ScalarOperation::Add {
-            left: operand(1),
-            right: ScalarOperand {
-                value,
-                range: literal.range.clone(),
-                identity: operand(0).identity,
-            },
-        };
         // The compiled `x + 1` holds the literal `1`, so a singleton-range
-        // literal of that value agrees.
+        // literal of that value agrees, and the constructor's range is the
+        // singleton.
+        assert_eq!(ScalarOperand::literal(7).range, range(7, 7));
         assert!(matches!(
-            replayed(claim(with_literal(1), completed(2))).result(),
+            replayed(claim(add(2, 1), completed(3))).result(),
             OperatorParityResult::Agrees { .. }
         ));
+    }
+
+    /// FR-357-AC-9: a refusal names the second operand's index when only it
+    /// is outside its range. A two-parameter `x + y` has two graph-child
+    /// operands, so this reaches index 1.
+    #[trace("TC-904", "FR-357-AC-9")]
+    #[test]
+    fn tc_904_a_second_operand_outside_its_range_is_refused_at_index_1() {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+             function two using v(x: Int[0, 9], y: Int[0, 9]): Integer pure {{ x + y }}\n"
+        );
+        let compiled = spine(&source, &BTreeMap::new());
+        let graph = compiled.package.graph().semantic_graph();
+        let application = graph
+            .nodes()
+            .find(|node| {
+                serde_json::from_slice::<serde_json::Value>(node.preimage()).is_ok_and(|json| {
+                    json["body"]["operation"]["identity"] == "quire.op.integer.add"
+                })
+            })
+            .expect("the unit has the application");
+        let node = WireNodeId::from_digest(*application.key().as_bytes());
+        let children = (0..2)
+            .map(|index| parameter(&compiled, "two", index))
+            .collect::<Vec<_>>();
+        let claim = claim_raw(
+            node,
+            ScalarOperation::Add {
+                left: ScalarOperand::graph_child(1, range(0, 100), children[0]),
+                right: ScalarOperand::graph_child(101, range(0, 100), children[1]),
+            },
+            completed(102),
+        );
+        let mut wire = request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["two"]),
+            ReplaySource::Input(vec![
+                CanonicalAssignment {
+                    parameter: children[0],
+                    value: WitnessValue::Integer(1),
+                },
+                CanonicalAssignment {
+                    parameter: children[1],
+                    value: WitnessValue::Integer(2),
+                },
+            ]),
+        );
+        wire.obligation_identity = *minted(&claim).as_bytes();
+        let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
+        assert!(
+            matches!(
+                report.result(),
+                OperatorParityResult::RefusedInput(OperandRefusal { index: 1 })
+            ),
+            "{:?}",
+            report.result()
+        );
     }
 
     /// FR-357-AC-10: an agreement settles `Inconclusive(ScalarAgrees)` and a

@@ -69,7 +69,8 @@ selection whose alias is `v`.
 9. Check, each in its own unit under (`a`, `u`), the recursion groups of
    FR-092's Recursion-group vectors: `f`, `record List { next: List?; }`,
    `record Tree { kids: Sequence<Tree>[0, 3]; }`, and `ping` with `pong`.
-   Check `ping` and `pong` again with `pong` declared first. Key G1's node
+   Check `ping` and `pong` again with `pong` declared first. Check
+   `function one using v(): Integer pure { 1 }`. Key G1's node
    through the key function. Read each member's preimage bytes and key and
    each group's digest.
 10. Build `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`)
@@ -106,8 +107,8 @@ cause's code is always `stage_limit_exceeded` and its cause the limit kind's
 - Step 7: T10 and T9, T12 and T11, D5, D3, D4 (differing from D3), and L3
   for both literals, spelled `"1/2"`.
 - Step 8: no `_` arm.
-- Step 9: G1 to G15, L5, L6 and E11 to E13, byte for byte, and the group
-  digests FR-092 lists; `pong` first gives the same keys. G9's
+- Step 9: G1 to G15, L5 and E11 to E13, byte for byte, L6 from the unit
+  whose body is `1`, and the group digests FR-092 lists; `pong` first gives the same keys. G9's
   `semantic_type` is `{term: "group_reference", ordinal: 1}`.
 - Step 10: D1 both times, the checked type node's id is D1 both times, and
   no supplied key appears.
