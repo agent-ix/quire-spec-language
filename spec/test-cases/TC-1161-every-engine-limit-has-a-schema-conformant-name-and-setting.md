@@ -21,14 +21,18 @@ Scope: FR-255-AC-12, FR-255-AC-13.
 ## Test Procedure
 
 1. For each limits type of FR-255's engine table (`ModelCheckLimits`,
-   `ExpansionLimits`, `ExactProbLimits`, `StatisticalLimits`,
+   `ModelCheckRequest`'s method bounds, `ExpansionLimits`, `ExactProbLimits`, `StatisticalLimits`,
    `TimedSampling`, `ZoneCheckLimits`, `CertificateCheckLimits`,
    `ScheduleLimits`, the monitor run's window limit and `hybrid.limits`),
-   read its member-to-name mapping and match each name against the two
-   patterns; collect every setting name of the setting, engine and
+   read its mapping from each limit member (not `TimedSampling`'s `q`; for
+   `ExactProbLimits`, the `model` members included) to its names and match
+   each name against the two patterns; collect every setting name of the setting, engine and
    accounting tables.
-2. For each engine limit enum, map every variant through its limit-name
-   and setting-name functions.
+2. For each engine limit enum, map every variant that names a member of
+   the engine's limits types through its limit-name and setting-name
+   functions; skip the variants outside those types (evaluation meter,
+   `Time`, `ClauseMeter`, cancellation). Give the settings operation
+   `model_check.max_states=0` and `model_check.witness_samples=0`.
 3. Run FR-126-AC-8's `max_states` 2 model check; raise it with the
    settings operation operand `model_check.max_states=3`.
 4. Run FR-101-AC-15's exploration with `max_states` 2; run the model check
@@ -41,8 +45,11 @@ Tag the tests `#[trace("TC-1161", "<criterion>")]`.
 ## Expected Results
 
 - Step 1: every name matches its pattern; the mapping equals the table
+  rows, `ExactProbLimits.model`'s members giving the `exact_prob.*` product
   rows; no setting name repeats across the three tables.
-- Step 2: each variant's pair is a row of the table.
+- Step 2: each mapped variant's pair is its member's row; `max_states=0`
+  is a usage refusal naming the operand, `witness_samples=0` returns
+  `witness_samples` 0.
 - Step 3: `incomplete`, `LimitReached{limit: max_states, value: 2,
   setting: model_check.max_states}`; the raised run passes the limit.
 - Step 4: `Outcome::Bounded` at `Limit::States`, value 2, setting
