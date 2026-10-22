@@ -228,6 +228,14 @@ graph as the closure and its `ObjectEnvironment` as the environment. The
 FR-402 differential runs and this requirement's FR-262 runs use that entry.
 `qsl-eval` re-exports no `quire-eval` item.
 
+In QSL, the `no_std` evaluator's checked input is the admitted
+`CheckedPackage`'s checked graph, handed over in the process that admitted
+it. No byte form carries an evaluable checked graph: the
+`quire.checked-package/v2` wire's I2 reader yields an import view, not a
+checked graph. Because `quire-eval` has no `std` feature, a build that also
+links QSL's `std` crates compiles the same evaluator source as
+`quire-eval`'s `thumbv7em-none-eabi` build.
+
 The host-body registry, its admission result, the session, its step, the
 body contract and the child request stay in `quire-eval` (FR-401), so
 FR-262-AC-3, AC-4 and AC-6 to AC-8 exercise the same scheduler under both
