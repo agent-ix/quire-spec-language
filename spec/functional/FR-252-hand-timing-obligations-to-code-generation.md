@@ -35,9 +35,14 @@ unsupported.
 
 - A `TimedMonitorPlan` (FR-251), and checked contracts over integer
   timestamp parameters.
-- `TimingObligationSettings { kani_events: u64 }`, default 8: the agreement
-  obligation's horizon in events, a method parameter of the request. It
-  defines what the obligation proves, and the obligation states it.
+- `TimingObligationSettings { agreement_horizon: u64, timestamp_parameters:
+  Set<Name> }`, method parameters of the request. `agreement_horizon`,
+  default 8, is the agreement obligation's horizon in events; it defines what
+  the obligation proves, and the obligation states it. `timestamp_parameters`,
+  default empty, names the integer parameters of a checked contract that carry
+  timestamps; the caller states them as a premise, as it states
+  `max_reading_gap`, because an integer parameter's type does not say it is a
+  timestamp.
 
 ## Outputs
 
@@ -56,18 +61,26 @@ each timing obligation outside the code model.
 
 - For each monitor plan QSL SHALL write a `MonitorAgreement` obligation:
   the monitor's step function agrees with the layer-5 reference evaluator
-  on every trace of up to `kani_events` events with symbolic integer time
-  stamps. The obligation SHALL carry `kani_events` as its stated horizon,
+  on every trace of up to `agreement_horizon` events with symbolic integer time
+  stamps. The obligation SHALL carry `agreement_horizon` as its stated horizon,
   and a discharged obligation holds for traces up to that length only.
 - For each monitor plan QSL SHALL write a `TickArithmetic` obligation: tick
   arithmetic never panics or overflows, modular differences are correct
   across wraparound, and no buffer exceeds its capacity under the plan's
   rate.
-- When a contract's clauses relate integer timestamp parameters, QSL SHALL
-  write a `TimestampContract` obligation for it over symbolic integers.
-- QSL SHALL dispose a timing obligation that reads elapsed real time, WCET,
+- When a contract's clauses relate integer parameters that
+  `timestamp_parameters` names, QSL SHALL write a `TimestampContract`
+  obligation for it over symbolic integers. A contract whose clauses name
+  none of them gets no `TimestampContract` obligation.
+- A **timing clause** is a comparison `m <op> d` whose left operand `m` is
+  `elapsed_wall_time(h)`, the elapsed real time of handler `h`, or `wcet(f)`,
+  the worst-case execution time of function `f`, whose right operand `d` is a
+  time quantity, and whose `<op>` is one of `<`, `<=`, `=`, `>=` and `>`. QSL
+  SHALL dispose a timing obligation that reads elapsed real time, WCET,
   preemption or interrupt timing as `unsupported`,
-  `unsupported-requested-capability`, naming its timing kind.
+  `unsupported-requested-capability`, naming its timing kind; a timing clause
+  with `elapsed_wall_time` names elapsed real time and one with `wcet` names
+  WCET.
 - QSL SHALL route a schedulability claim to EN-7 (FR-246), with WCET as a
   stated premise.
 
@@ -75,8 +88,9 @@ each timing obligation outside the code model.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-252-AC-1 | FR-251-AC-1's plan yields a `MonitorAgreement` obligation with `events` 8 and a `TickArithmetic` obligation carrying the counter's width, the plan's buffers and its rate; with `kani_events` 4 the agreement obligation carries 4 and states that it covers traces of up to 4 events. | Test (TC-707) |
-| FR-252-AC-2 | A contract `when now - start > d then timed_out` over `u32` parameters yields a `TimestampContract` obligation; a clause `elapsed_wall_time(handler) <= 50 µs` is disposed `unsupported`, `unsupported-requested-capability`, naming elapsed real time; a clause bounding a function's WCET is disposed the same way, naming WCET. | Test (TC-707) |
+| FR-252-AC-1 | FR-251-AC-1's plan yields a `MonitorAgreement` obligation with `events` 8 and a `TickArithmetic` obligation carrying the counter's width, the plan's buffers and its rate; with `agreement_horizon` 4 the agreement obligation carries 4 and states that it covers traces of up to 4 events. | Test (TC-707) |
+| FR-252-AC-2 | A contract `when now - start > d then timed_out` over `u32` parameters, with `timestamp_parameters` `{now, start}`, yields a `TimestampContract` obligation; a clause `elapsed_wall_time(handler) <= 50 µs` is disposed `unsupported`, `unsupported-requested-capability`, naming elapsed real time; a clause bounding a function's WCET is disposed the same way, naming WCET. | Test (TC-707) |
+| FR-252-AC-3 | The contract of FR-252-AC-2 with `timestamp_parameters` empty yields no `TimestampContract` obligation; the clauses `elapsed_wall_time(handler) <= 50 µs` and `wcet(f) < 2 ms` are timing clauses, and a comparison of two `u32` parameters is not. | Test (TC-707) |
 
 ## Dependencies
 
