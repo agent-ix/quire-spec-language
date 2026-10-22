@@ -23,18 +23,20 @@
 //! frame. One interpreted frame therefore runs to its terminal evaluation in
 //! a single transition, and never returns a child request. A host body
 //! registered for a callable is reached from the root application and from
-//! a host body's child request; an interpreted body's own call to that
-//! callable still runs the interpreted body. The `no_std` evaluator (IR-590)
-//! is the steppable implementation that closes this.
+//! a host body's child request. FR-401 requires an interpreted body's own
+//! call to such a callable to dispatch to the host body too; the reference
+//! evaluator does not yet, and that gap is carried by a code ticket. The
+//! steppable `no_std` evaluator (IR-590) closes it.
 
+use std::collections::BTreeSet;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
 use qsl_semantics::check::CheckedExpression;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
-use quire_eval::{CheckedClosure, Evaluation, Signature, Transition};
-use quire_exact::{Cancel, Meter, NodeKey, Value, ValueType};
+use quire_eval::{CheckedClosure, Evaluation, RequestRefusal, Signature, Transition};
+use quire_exact::{Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 
@@ -94,12 +96,11 @@ where
     /// this one, or the first of its dependency closure that does.
     fn declaring(&self, identity: NodeKey) -> Option<&CheckedPackage> {
         let mut pending = vec![&*self.package];
-        let mut seen: Vec<*const CheckedPackage> = Vec::new();
+        let mut seen: BTreeSet<*const CheckedPackage> = BTreeSet::new();
         while let Some(package) = pending.pop() {
-            if seen.contains(&std::ptr::from_ref(package)) {
+            if !seen.insert(std::ptr::from_ref(package)) {
                 continue;
             }
-            seen.push(std::ptr::from_ref(package));
             if package.graph().callable_by_identity(identity).is_some() {
                 return Some(package);
             }
@@ -113,9 +114,13 @@ where
         parameters: &[(String, ValueType)],
         arguments: &[Value],
         environment: &ObjectEnvironment,
+        meter: &Meter,
     ) -> Result<(), CallFailure> {
+        // The meter's installed handle is the session's: a handle cancelled
+        // before `Begin` ends it as `Cancelled`, before any charge.
+        let cancel = meter.cancel().cloned().unwrap_or_default();
         let mut run =
-            SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).map_err(|stop| {
+            SuppliedRun::new(SuppliedLimits::default(), cancel).map_err(|stop| {
                 CallFailure::from(quire_semantic_value::supplied_stop::SuppliedFailure::Stop(
                     stop,
                 ))
@@ -131,21 +136,16 @@ where
 }
 
 /// The saved state of the reference adapter's one interpreted frame.
-pub enum PackageTask<X> {
+pub struct PackageTask<X>(Frame<X>);
+
+enum Frame<X> {
     /// An admitted application of a callable.
     Call {
-        /// The callable's minted identity.
         callable: NodeKey,
-        /// The admitted arguments.
         arguments: Vec<Value>,
     },
     /// An admitted checked expression.
-    Expression {
-        /// The checked expression.
-        expression: X,
-        /// The admitted parameter values.
-        parameters: Vec<Value>,
-    },
+    Expression { expression: X, parameters: Vec<Value> },
     /// The frame ran; nothing remains to resume.
     Finished,
 }
@@ -177,6 +177,7 @@ where
         callable: &NodeKey,
         arguments: &[Value],
         environment: &ObjectEnvironment,
+        meter: &Meter,
     ) -> Result<(), CallFailure> {
         let package = self
             .declaring(*callable)
@@ -188,36 +189,46 @@ where
             .graph()
             .callable_by_identity(*callable)
             .ok_or_else(|| InputRefusal::UnknownFunction(identity_spelling(callable)))?;
-        self.admit(function.parameters, arguments, environment)
+        self.admit(function.parameters, arguments, environment, meter)
     }
 
-    fn admits_request(
+    fn admit_request(
         &self,
         callable: &NodeKey,
         arguments: &[Value],
         environment: &ObjectEnvironment,
-    ) -> bool {
-        let Some(package) = self.declaring(*callable) else {
-            return false;
-        };
-        let Some(function) = package.graph().callable_by_identity(*callable) else {
-            return false;
-        };
-        let types = package.graph().scope().types();
-        function.parameters.len() == arguments.len()
-            && function
-                .parameters
-                .iter()
-                .zip(arguments)
-                .all(|((_, value_type), argument)| match (value_type, argument) {
-                    // `Population<T>[N]` is admitted by its resolved binding's
-                    // declared maximum (FR-089-AC-5), as `admit_arguments` does.
-                    (ValueType::Population(maximum), Value::Population(id)) => environment
-                        .resolve_population(*id)
-                        .is_some_and(|binding| binding.declared_maximum() == *maximum),
-                    // A refused reservation decides nothing, so it admits nothing.
-                    _ => types.admits(value_type, argument).unwrap_or(false),
-                })
+    ) -> Result<(), RequestRefusal> {
+        let function = self
+            .declaring(*callable)
+            .and_then(|package| package.graph().callable_by_identity(*callable))
+            .ok_or(RequestRefusal::NotAdmitted)?;
+        if function.parameters.len() != arguments.len() {
+            return Err(RequestRefusal::NotAdmitted);
+        }
+        let types = self
+            .declaring(*callable)
+            .ok_or(RequestRefusal::NotAdmitted)?
+            .graph()
+            .scope()
+            .types();
+        for (parameter, ((_, value_type), argument)) in
+            function.parameters.iter().zip(arguments).enumerate()
+        {
+            let member = match (value_type, argument) {
+                // `Population<T>[N]` is admitted by its resolved binding's
+                // declared maximum (FR-089-AC-5), as `admit_arguments` does.
+                (ValueType::Population(maximum), Value::Population(id)) => environment
+                    .resolve_population(*id)
+                    .is_some_and(|binding| binding.declared_maximum() == *maximum),
+                _ => types
+                    .admits(value_type, argument)
+                    .map_err(|failure| RequestRefusal::Storage { parameter, failure })?,
+            };
+            if !member {
+                return Err(RequestRefusal::NotAdmitted);
+            }
+        }
+        Ok(())
     }
 
     fn admit_expression(
@@ -225,11 +236,12 @@ where
         expression: &X,
         parameters: &[Value],
         environment: &ObjectEnvironment,
+        meter: &Meter,
     ) -> Result<(), CallFailure> {
         if self.pre_admitted {
             return Ok(());
         }
-        self.admit(expression.parameters(), parameters, environment)
+        self.admit(expression.parameters(), parameters, environment, meter)
     }
 
     fn bind_call(
@@ -238,10 +250,10 @@ where
         arguments: Vec<Value>,
         _environment: &ObjectEnvironment,
     ) -> Result<Self::Task, InternalFault> {
-        Ok(PackageTask::Call {
+        Ok(PackageTask(Frame::Call {
             callable: *callable,
             arguments,
-        })
+        }))
     }
 
     fn bind_expression(
@@ -250,10 +262,10 @@ where
         parameters: Vec<Value>,
         _environment: &ObjectEnvironment,
     ) -> Result<Self::Task, InternalFault> {
-        Ok(PackageTask::Expression {
+        Ok(PackageTask(Frame::Expression {
             expression: expression.clone(),
             parameters,
-        })
+        }))
     }
 
     fn advance(
@@ -269,8 +281,8 @@ where
                 "reference-adapter-frame-never-requests-a-child",
             ));
         }
-        match std::mem::replace(task, PackageTask::Finished) {
-            PackageTask::Call {
+        match std::mem::replace(&mut task.0, Frame::Finished) {
+            Frame::Call {
                 callable,
                 arguments,
             } => {
@@ -287,7 +299,7 @@ where
                 )
                 .map(Transition::Done)
             }
-            PackageTask::Expression {
+            Frame::Expression {
                 expression,
                 parameters,
             } => {
@@ -302,7 +314,7 @@ where
                 .run(expression.root(), expression.slots(), parameters)
                 .map(Transition::Done)
             }
-            PackageTask::Finished => Err(InternalFault::new(
+            Frame::Finished => Err(InternalFault::new(
                 "S6a",
                 "reference-adapter-frame-resumed-after-it-ran",
             )),

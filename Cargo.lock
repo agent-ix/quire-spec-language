@@ -1630,7 +1630,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#942a1b4efd65baf363f66a0a1266cfa28d12778f"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#0fa333aac6ba5f9dbc39134b6618fd6725e56be2"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",

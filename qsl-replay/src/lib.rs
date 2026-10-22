@@ -233,7 +233,7 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
 // The ADR-013 O-16 category a `Verdict` and each arm result carry, re-exported
 // so CG names `Category::Success` and `Category::Violation` through this crate.
-
+pub use quire_semantic_value::catalog::Category;
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not
