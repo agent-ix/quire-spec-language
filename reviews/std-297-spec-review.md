@@ -49,3 +49,13 @@ Judgement of the ten lead defaults (lead defaults, not owner answers):
 10. `OperationTable` moves with the `Scope` view: sound. The view itself is incomplete (SR-15524 FND-001).
 
 Mergeable after these minor fixes and the majors in SR-15524 and SR-15525.
+
+## Dispositions
+
+Round 1. Reviewed QSL #1225 at dc6e2b208 against origin/main a89136bfa, which includes #1224 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

@@ -157,8 +157,8 @@ here. The ordering rationale is as follows.
   authority, source locations and identities, under FR-400. Besides FR-400
   it needs the repository `agent-ix/quire-eval`, whose creation with its
   licence, CLA and content-rights checks is an owner action. It does not
-  wait for S1: FR-400 exempts `WrongSnapshotCause` from the evaluator's
-  import rule until S1 places it.
+  wait for S1: when S1 has not moved `WrongSnapshotCause`, S2 moves it to
+  SV's `call` module (FR-400).
 - IR-587 (S3) makes `qsl-foundation` no_std + alloc capable with `std` on by
   default. NFR-015 gives its build contract, target and gate (closure tier,
   `thumbv7em-none-eabi`, `make build-no-std`). The foundation items the leaf
@@ -245,7 +245,8 @@ evidence that the RT target accepts the later implementation.
   representation opaque until X-13 lands.
 - `quire-checked` joins FB-05's shared-leaf class, so a backend may depend on
   it. Only the `construct` feature exposes its constructors; in QSL, T12-G
-  limits their callers to `check`, and across repositories FR-059 refuses a
+  limits their callers to `check`, plus `library` for `PackageId` and
+  `value::definition` for `AdmittedIntegerDivision`, and across repositories FR-059 refuses a
   backend that enables the feature. Within one workspace, feature
   unification makes the constructors visible to any crate that builds with
   `qsl-semantics`; the caller rule, not the type system, closes that gap.
@@ -255,9 +256,8 @@ evidence that the RT target accepts the later implementation.
 - S2 cannot land before the repository `agent-ix/quire-eval` is created and
   passes its licence, CLA and content-rights checks. The evaluation-core
   crate in that repository, its layer and the placement of the S6a result
-  vocabulary (`FamilyOutcome`, `FamilyResult`, `EvalOutcome`,
-  `WrongSnapshotCause`) belong to S0/S1 and must stay consistent with
-  layer C.
+  vocabulary (`FamilyOutcome`, `FamilyResult`, `EvalOutcome`) belong to S0
+  and must stay consistent with layer C.
 - RT AD-004 predates FR-262 and describes a fixed call-depth guard and a
   different Q-1 fork. RT must amend that document and its FR-273 acceptance
   before claiming that the new interface completes the old port migration.

@@ -101,7 +101,8 @@ each.
   `NodeKind::Dispatch` indexes), each imported library's checked graph keyed
   by its `PackageId` (what `imported_graph` returns), and whether the package
   admitted an IEEE profile. The admitted IEEE profile itself
-  (`AdmittedIeeeProfile`, its definition reference and the declared-float
+  (`AdmittedIeeeProfile`, which wraps a `value::definition::DefinitionReference`,
+  and the declared-float
   selection) and `AdmittedImport` with its `ImportView` stay in the
   checker's `Scope`, which `qsl-package`'s emitter reads.
 - **Admitted operations**: `model::operation`'s `OperationTable` and
@@ -160,8 +161,13 @@ applied recursively to the types its fields hold:
 1. **Source positions and forms stay with the checker.** A field holding an
    F `Span`, a `qsl-forms` `DeclarationSpans` or `ExpressionSpans`, or a
    `qsl-forms` syntax tree is not part of the moved record. It goes to a
-   checker-side table in `qsl-semantics`, keyed by the record's identity
-   (its node key, or its declaration index where it has no node key). This
+   checker-side table in `qsl-semantics`, keyed by the record's identity:
+   its node key, or its declaration index where it has no node key. A
+   nested member with no node key of its own (a protocol's
+   `CheckedChannel`, relationship or requirement, a fairness premise) is
+   keyed by its enclosing record's key and its declaration-order index within
+   that record, so every span of `CheckedChannel`, `CheckedRelationship` and
+   `CheckedRequirement` has a key. This
    covers `CheckedTemporalClause`'s and its fairness premises' spans,
    `FormulaNode::Holds`'s span, `TemporalClaim`'s punctual span,
    `CheckedStateGraphClaim`'s and `CheckedHyperClause`'s spans,
@@ -176,10 +182,15 @@ applied recursively to the types its fields hold:
    `TemporalInterval`, `TimedInterval`, `ProfileSelection` and
    `DefinitionRef` from F, and `StateClauseKind` and the protocol premises
    `AccessOrdering`, `ChannelCapacity`, `ChannelDelivery`, `ChannelOverflow`,
-   `LossSelector` and `ProtocolNodeKind` from layer 2.
+   `LossSelector`, `ProtocolNodeKind`, `TemporalOperator`, `TemporalNodeId`,
+   `FairnessKind` and `FairnessGranularity` from layer 2.
 3. **Values from layer 3 move to C.** A type that a moved record carries
    and that `qsl-semantics` defines moves into `quire-checked`, as the lists
-   above name. A layer-3 type that cannot move this way (one that names a
+   above name. This includes `value::member::Member` (the
+   structured checked member identity the `node_key` terms carry) and
+   `value::definition::DefinitionReference` wherever a moved record carries
+   it; the lock catalog and admission that produce a `DefinitionReference`
+   stay in `value::definition`. A layer-3 type that cannot move this way (one that names a
    checker-only type) is not carried by the moved record; its field stays in
    the checker-side table of rule 1.
 
@@ -196,9 +207,13 @@ in the trait's crate; the name-resolution index of `Scope`; the full
 `SemanticGraph`; and source-region resolution, which moves from
 `CheckedGraph::region` to the checker-side record. `SCALAR_LIMITS_UNLIMITED`
 stays a `qsl-semantics` test fixture. The S6a result vocabulary
-(`FamilyOutcome`, `FamilyResult`, `EvalOutcome`, `FamilyKind`) and the
-runtime evaluation cause `WrongSnapshotCause` do not move in this slice; the
-S1 slice places them with the evaluation vocabulary.
+(`FamilyOutcome`, `FamilyResult`, `EvalOutcome`, `FamilyKind`) does not
+move in this slice; S0 places it with the evaluation vocabulary. The
+runtime evaluation cause `WrongSnapshotCause` leaves `check` in whichever of
+S1 and S2 lands first: when the S1 slice has not moved it, X-13 moves it from
+`check::refusal` to SV's `call` module, where the checker's `CheckCause` and
+`qsl-eval`'s runtime snapshot cause both name it, and the S1 slice then
+moves nothing for it.
 
 Two `check` modules are runtime analyses over checked terms and `model`
 items, not checking: the footprint derivation (`check::footprint`, with its
@@ -236,9 +251,8 @@ environment to the evaluation core; one that needs a checker type stays in
 After this separation, the shipped modules of `qsl-eval`'s `value`,
 `simulation`, `automaton`, `hyper`, `temporal`, `fairness` and
 `model_subject` SHALL name no `qsl_semantics::check` item except the two
-family marker types `ValueFunctionFamily` and `ProtocolClauseFamily` and,
-until the S1 slice moves it, `WrongSnapshotCause`, and SHALL name no
-`qsl_forms` item. `#[cfg(test)]` code may still build checked terms through
+family marker types `ValueFunctionFamily` and `ProtocolClauseFamily`, and
+SHALL name no `qsl_forms` item. `#[cfg(test)]` code may still build checked terms through
 `qsl-semantics`' checker.
 
 ### Source locations
@@ -248,10 +262,12 @@ A checked term SHALL carry its source position as the SV
 evaluation, losses, refusals and call-site locations use that value
 unchanged. Resolving a `Location` to a `SourceRegion` SHALL stay a
 checker-side step over the checker-side record, which keeps the spans and
-the `SourceMap` embedding. `qsl-eval`'s `Evaluation::refusal_record` SHALL
-take a region resolver, a function from `Location` to an optional
-`SourceRegion`, in place of a `CheckedGraph`; its callers (`qsl-replay`'s
-spine and the tests) pass the checker-side record's resolver. For every
+the `SourceMap` embedding. The method `Evaluation::refusal_record` SHALL
+become a free function in `qsl-eval` over the evaluation and a region
+resolver, a function from `Location` to an optional `SourceRegion`, and
+SHALL return the same FR-096 record; its callers (`qsl-replay`'s spine and
+the tests) pass the checker-side record's resolver, so `qsl-eval` names no
+checker-side type. For every
 `Location`, the resolved `SourceRegion` is the one `CheckedGraph::region`
 returned before the move, so FR-096 refusal records and FR-262's location
 and loss behaviour are unchanged.
@@ -282,8 +298,12 @@ SHALL construct a checked term:
 3. In QSL, only `qsl-semantics` SHALL enable `construct`. FR-060 rule T12-G
    SHALL allow calls into the `construct` module only from `qsl-semantics`'
    `check` and its descendant modules, and in addition from `library` for
-   `PackageId` (its one minter, ADR-013 O-02) and from `value::definition`
-   for `AdmittedIntegerDivision`, with no debt list.
+   `PackageId` and from `value::definition` for `AdmittedIntegerDivision`,
+   with no debt list. `library` keeps the one public `PackageId` minting
+   function (`PackageId::of_preimage` before the move, ADR-013 O-02), which
+   calls the `construct` constructor; `qsl-package`'s emitter
+   (`checked.rs`) and I2 reader (`checked_v2.rs`) mint a package id through
+   that `library` function and never call `construct` themselves.
 4. FR-059's direction check SHALL report, as an FB-05 violation, a resolved
    IR, RT or CG dependency on `quire-checked` with its `construct` feature
    enabled. A backend reads checked terms and never builds one.
@@ -304,7 +324,7 @@ move MAY land in steps, in this order: expression terms; clause records;
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-400-AC-1 | `quire-checked`'s manifest names only `quire-semantic-value`, `quire-exact`, `quire-walk`, `quire-canonical`, `serde` and `thiserror` as normal dependencies, each with default features off, and names no QSL crate in any table. In QSL, TC-390's table check asserts that `qsl-semantics` is the only crate that enables `quire-checked`'s `construct` feature; a fixture manifest in which `qsl-eval` enables it fails the check, naming the crate and the table. | Test |
-| FR-400-AC-2 | The import-direction check reports, in the shipped (non-`#[cfg(test)]`) modules of `qsl-eval`, no `qsl_forms` item and no `qsl_semantics::check` item other than `ValueFunctionFamily`, `ProtocolClauseFamily` and `WrongSnapshotCause`. A fixture shipped `qsl-eval` module that imports `qsl_semantics::check::PackageDeclarations` is reported with its file and line. | Test |
+| FR-400-AC-2 | The import-direction check reports, in the shipped (non-`#[cfg(test)]`) modules of `qsl-eval`, no `qsl_forms` item and no `qsl_semantics::check` item other than `ValueFunctionFamily` and `ProtocolClauseFamily`; `qsl-eval` names `WrongSnapshotCause` at `quire_semantic_value::call`. A fixture shipped `qsl-eval` module that imports `qsl_semantics::check::PackageDeclarations` is reported with its file and line. | Test |
 | FR-400-AC-3 | Run on the QSL tree, rule T12-G reports `passing`. A fixture call to a `quire_checked::construct` function from `qsl-eval`, `qsl-package` or `qsl-semantics`' `model` reports `failing` with the call site's file, line and module, and so does a `PackageId` constructor call from `model`. FR-059's check reports an RT graph whose `quire-checked` dependency enables `construct` as one FB-05 violation, and the same graph without the feature as clean. | Test |
 | FR-400-AC-4 | In QSL, outside `quire-checked`, a struct literal of `CheckedGraph`, `CheckedBody`, `Node` or `OperationSelection` and a write to a `Node` field each fail to compile, and each paired `no_run` block naming the same type compiles. In `agent-ix/quire-eval`'s own gate, a doctest of `quire-checked` built with default features, where `construct` is off, shows that a call to a `construct` function fails to compile; QSL cannot run that clause, because feature unification turns `construct` on for its workspace. | Test |
 | FR-400-AC-5 | No `qsl_semantics::` path to a moved item resolves: `qsl_semantics::check::CheckedBody`, `qsl_semantics::check::CheckedGraph`, `qsl_semantics::library::PackageId` and `qsl_semantics::model::key::DeclarationKey` each fail to compile from another crate, and no F or layer-2 path names a value that moved to SV. | Test |

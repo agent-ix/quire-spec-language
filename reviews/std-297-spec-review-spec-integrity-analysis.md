@@ -46,3 +46,23 @@ should fix it in FR-262 and resolve its AD-001 conflict as main plus FR-400's re
 and the minor findings are applied, the cross-document edits are consistent: the ADR-011 layer C row, crate map,
 FB-05 amendment, FB-14, X-8 and X-13, and FR-059 and FR-060. The PR is mergeable after those fixes, a main sync and
 SR-15524's majors.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | major: this PR conflicts in meaning with open #1227 (STD-298, FR-401, 2013cea1d). <br>- `WrongSnapshotCause`: #1227's X-15 says "When X-13 lands first, X-13 moves it to the same place" (SV `call`), and its AD-001 text says "whichever of S1 and S2 lands first moves `WrongSnapshotCause`". FR-400 says the type "does not move in this slice", and AC-2 and FB-14 exempt it until S1. <br>- `refusal_record`: #1227 moves `Evaluation` to E and makes `Evaluation::refusal_record` a qsl-eval free function, while FR-400 specifies it as an `Evaluation` method that takes a region resolver. <br>- FB-05: #1225 sets the shared-leaf class to four members, and #1227 adds E, which makes five. <br>The two PRs also conflict textually in ADR-011. Whichever merges second must use one rule, ideally #1227's: X-13 moves `WrongSnapshotCause` to SV `call` when S1 has not, and the exemption applies only in the other order. That PR also restates `refusal_record` as the free function and counts five members. | spec/functional/FR-400-separate-checked-terms-from-the-checker.md:198-201, 236-242, 251-254, 307; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:571, 580 |
+| FND-007 | medium | minor: some X-13 and AD-001 text was not updated by the fix round. <br>- X-13 still lists `SemanticGraph` among the moved identities, whereas FR-400 and §6.2 move a projection and keep the full graph. <br>- X-13 calls `construct`'s "only QSL caller is `check`", and AD-001 Risks says "T12-G limits their callers to `check`". `library` and `value::definition` are now callers too. <br>- X-13 names only TC-244 row 1's `compile_fail` checks, while FR-400 rule 5 lists more. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1185; spec/assurance/AD-001-shared-evaluation-core-interface.md:238-243 |
+| FND-008 | medium | minor: X-13 says `qsl-semantics`, `qsl-package`, `qsl-route` and `qsl-replay` add `quire-checked` to their `[dependencies]` (the X-6, X-7, X-9 and X-10 tables). Only X-8's row was amended. X-7 and X-10 state their sets "exactly", and TC-390 asserts the exact sets. Amend those rows as X-8 was amended. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1185 |
+
+## Dispositions
+
+Round 1. Reviewed QSL #1225 at dc6e2b208 against origin/main a89136bfa, which includes #1224 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head. `git merge-tree` of the head with #1223 (8a42d6e84) is now clean, and with #1227 (2013cea1d) it conflicts in ADR-011.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |

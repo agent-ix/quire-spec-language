@@ -45,3 +45,24 @@ mergeable until the `Scope` view, the per-record closure rule, `refusal_record` 
 `WrongSnapshotCause` exemption or S1 dependency are stated. The type names, the `model` admission stay-list, the
 `footprint` move, the `DeclarationKey::identity` → `model` move (T12-C) and the `OperationTable` move are sound.
 Mergeable after the fixes.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | minor: shipped qsl-package mints `PackageId` itself: the emitter at `checked.rs:653` and the I2 reader at `checked_v2.rs:678`, both through `PackageId::of_preimage`. FR-400 makes `PackageId` a checked term that only `construct` builds, with `library` as "its one minter". AC-3 reports a `construct` call from `qsl-package` as `failing`. Say that qsl-package mints through `library`'s minting function, which is the one caller of `construct` for `PackageId`, so that T12-G passes on the QSL tree. | spec/functional/FR-400-separate-checked-terms-from-the-checker.md:282-286, 308 |
+| FND-008 | low | minor: the closure lists do not name every type the rules reach. <br>- The `node_key` terms carry layer-3 `value::member::Member` (in `Operation.member`) and `value::definition::DefinitionReference` (in `OperationLaw.definition`). Rule 3 says layer-3 types move "as the lists above name", and neither is named. The Scope-view sentence also keeps the IEEE profile's "definition reference" with the checker, which reads as the type staying behind. <br>- `CheckedOperator` and `CheckedProtocolFairness` carry the forms values `TemporalOperator`, `TemporalNodeId`, `FairnessKind` and `FairnessGranularity`, which rule 2's known set omits. <br>Name these types. | spec/functional/FR-400-separate-checked-terms-from-the-checker.md:98-106, 127-139, 170-184 |
+| FND-009 | low | minor: rule 1 keys a checker-side span table by "its node key, or its declaration index". Nested protocol members that carry a span have neither: `CheckedChannel.span`, `CheckedRelationship.span` and `CheckedRequirement.span`. Key them by the owning record's identity plus their position. | spec/functional/FR-400-separate-checked-terms-from-the-checker.md:160-169 |
+
+## Dispositions
+
+Round 1. Reviewed QSL #1225 at dc6e2b208 against origin/main a89136bfa, which includes #1224 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
