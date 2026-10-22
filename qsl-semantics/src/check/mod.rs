@@ -1067,6 +1067,9 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        scope
+            .select_declared_ieee_profile(&signatures)
+            .map_err(|refusal| vec![refusal])?;
         let signatures = Signatures::new(signatures);
         let mut seen_operations = std::collections::BTreeSet::new();
         for operation in &scope.dispatch_operations {

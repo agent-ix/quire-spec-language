@@ -963,7 +963,7 @@ fn query_type_consumers_are_exercised_individually_after_population_resolution()
 }
 
 #[test]
-#[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
+#[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16", "FR-397-AC-9")]
 fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
     let ieee = body(|ids| {
         NodeKind::Ieee(

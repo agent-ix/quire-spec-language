@@ -78,7 +78,8 @@ often than the protocol allows, is refuted with a prefix that replays.
   **visible** with that target's observation label: for an operation, any
   `attempt` or `cattempt` step of that operation with the row's receiver
   and arguments (and the concrete result when bound); for a node, a step of
-  that node whose binder record equals the row's expressions.
+  that node whose binder record agrees with the row's expressions on every
+  field the row gives.
 - A visible step SHALL pass when some member of the pre set has an enabled
   abstract step with its label whose post-state's visible fields equal the
   post mapped state. The post set SHALL be the internal closure of all such
