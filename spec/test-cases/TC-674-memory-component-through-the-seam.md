@@ -12,7 +12,7 @@ relationships:
 
 Verify the memory member of the state key, the thread observation, atoms over memory values, the `memory` anchor, terminal states under `tso`, and memory footprints and visibility.
 
-Scope: FR-229-AC-1 to FR-229-AC-5.
+Scope: FR-229-AC-1 to FR-229-AC-6.
 
 ## Test Procedure
 
@@ -27,6 +27,8 @@ Use ADR-025 §10's `SB` protocol.
 4. Compute visibility and independence for the steps of FR-229-AC-4.
 5. Collect `SB`'s terminal states under `tso` and run its deadlock-freedom
    item.
+6. Under `ra`, run the guarded store and load of FR-229-AC-6 and list the
+   enabled store and load choices after the second branch's store.
 
 Tag the tests `#[trace("TC-674", "FR-229-AC-n")]`.
 
@@ -38,3 +40,5 @@ Tag the tests `#[trace("TC-674", "FR-229-AC-n")]`.
 - Step 3: no new message; only the acting thread's view moves.
 - Step 4: the visibility and dependence of FR-229-AC-4.
 - Step 5: every buffer empty; `proved`.
+- Step 6: the store enabled by the current-view message only; the load enabled
+  for each satisfying message at or after the view.

@@ -27,10 +27,15 @@ Scope: FR-216-AC-1 to FR-216-AC-6.
    a forked inner `parallel` under `cancel`; read the
    `receive` enabling footprint and the `Chatter` independence pairs.
 4. Read §7.1's registration footprints, and the `cend` and second-activation
-   footprints of FR-216-AC-4's two-registration `Refund` variant; for each step, perturb a location
-   outside its `R` and diff the post-states.
+   footprints of FR-216-AC-4's two-registration `Refund` variant and the
+   `commit Committed` variant's dependence of the commit step and `cattempt`;
+   for each step of §7.1 and each model location outside its `R`, run the
+   pre-state and the one-location-perturbed pre-state, compare enabledness,
+   pair the successors by transition identity and by their values outside the
+   location, and diff the post-states against `W`.
 5. Read the enabling footprints of FR-216-AC-5's `bump` attempt and of
-   `duplicate(ch, Tx)`, the reference-type `event`'s membership read and
+   `duplicate(ch, Tx)`, the reference-type `event`'s membership read, the
+   `event` and `finish` constraint reads of a model field and
    the channel, template and role visibility cases.
 6. Read the footprint of a `retire` step and the enabling footprint of an
    `activate` step with FR-216-AC-6's predicates, and test the dependence
@@ -47,9 +52,11 @@ Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
   reads of the second fork; control steps invisible.
 - Step 3: the footprints and pairs of FR-216-AC-3, the inner threads and
   instances in the cancel case.
-- Step 4: the `reg` footprints and the dependent `cend`/activation pair of
-  FR-216-AC-4; every change confined to
-  the step's `W`.
+- Step 4: the `reg` footprints, the dependent `cend`/activation pair and the
+  dependent commit step/`cattempt` pair of FR-216-AC-4; for every perturbation
+  outside `R(s)`, equal enabledness, successor pairs that differ at most at the
+  perturbed location, and every location outside `W(s)` unchanged from the
+  pre-state in both runs.
 - Step 5: exactly the enabling locations FR-216-AC-5 lists, as
   `Footprint` values with `Location::Protocol` for protocol locations.
 - Step 6: the read locations FR-216-AC-6 lists; the writer of a read field is
