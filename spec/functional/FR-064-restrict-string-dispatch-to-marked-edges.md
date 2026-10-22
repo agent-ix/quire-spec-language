@@ -19,10 +19,12 @@ edge (source lexing, a typed wire reader, a protocol-artifact or state-input
 intake reader, or CLI argument parsing), and at that edge one total
 conversion turns the string into a closed enum or a typed identity, or
 refuses it with a typed cause. After the edge, no code compares a string to
-choose behaviour. QSL SHALL provide a tool attribute that marks an edge
-function and a scan that reports every string comparison or string `match`
-outside a marked function in the selected crates' non-test code, so this rule is
-enforced by a running check rather than by convention alone.
+choose behaviour. The attribute `#[string_edge]` marks an edge function, and it is owned by the
+neutral crate `ix-trace-rs` (agent-ix/ix-trace-rs), which provides it beside
+`#[trace]` and `#[implements]`. QSL SHALL provide the scan that reports every
+string comparison or string `match` outside a marked function in the selected
+crates' non-test code, so this rule is enforced by a running check rather than
+by convention alone. QSL SHALL define no `string_edge` attribute of its own.
 
 The authoritative scanner SHALL be a standalone Rust library and command
 that consumers can obtain from this repository and run against their own
@@ -37,7 +39,7 @@ QSL's roots and edge rules.
 - The selected crates' source (non-test code; `#[cfg(test)]` items, files declared
   by `#[cfg(test)] mod x;` and files under a `tests/` directory are out of
   scope for the scan; a file is never out of scope by its name alone).
-- The `#[string_edge]` tool attribute applied to an edge function.
+- The `#[string_edge]` attribute of `ix-trace-rs` applied to an edge function.
 - A checked-in allow-list of string comparisons that compare a user-supplied
   value and select no behaviour on its content.
 
@@ -57,10 +59,26 @@ chain, is a match arm's own value, or is a `strip_prefix` call.
 
 ### The marker attribute
 
-`#[string_edge]` SHALL be a tool attribute applicable to a function. It
-SHALL carry no runtime behaviour: it exists only for `xtask string-edge` to
-read, and its presence or absence SHALL NOT change what the marked function
-compiles to.
+`#[string_edge]` is the proc-macro attribute `ix_trace_rs::string_edge`.
+- It SHALL be applicable to a function.
+- It SHALL take no argument; a call with any argument SHALL be a compile error
+  that retains the annotated item, so the diagnostic is not followed by a stack
+  of errors from the missing function.
+- It SHALL expand to the annotated item unchanged and carry no runtime
+  behaviour: its presence or absence SHALL NOT change what the marked function
+  compiles to.
+- It SHALL denote the one total conversion at a permitted edge, and it is no
+  exemption of a file or a crate.
+- `ix-trace-rs` SHALL have no normal dependency, no dependency on QSL, and no
+  dependency on a model, IR or code-generation crate, so a consumer depends on
+  it directly.
+
+QSL and every consumer SHALL import the attribute from `ix-trace-rs`
+(`use ix_trace_rs::string_edge;`) or write its qualified form
+`#[ix_trace_rs::string_edge]`. The QSL workspace SHALL hold no definition,
+re-export or alias of `string_edge`, and SHALL hold no crate whose only purpose is
+that marker; the scan recognises the attribute by its final path segment
+`string_edge` and by that name only.
 
 ### What the scan reports
 
@@ -163,11 +181,12 @@ and a non-empty reason. These are the stable-anchor alternative already
 allowed above. Unknown fields, wrong field types, missing fields, malformed
 JSON and paths outside the base SHALL be rule errors. The library SHALL
 accept the equivalent typed rule value without requiring a rules file.
-The marker remains `#[string_edge]`, including its qualified form
-`#[qsl_attrs::string_edge]`; consumers that compile marked functions SHALL
-obtain the existing `qsl-attrs` crate by reference to the same authoritative
-repository. A marker identifies the one total conversion at a permitted
-edge; it is not a consumer-defined exemption for an entire crate or file.
+The marker is `#[string_edge]`, including its qualified form
+`#[ix_trace_rs::string_edge]`; consumers that compile marked functions SHALL
+obtain the `ix-trace-rs` crate by Cargo dependency on its repository
+(agent-ix/ix-trace-rs). A marker identifies the one total conversion at a
+permitted edge; it is not a consumer-defined exemption for an entire crate or
+file.
 
 Consumer rules SHALL obey the allow-list restrictions above. An entry
 covering any detected branch-gating occurrence in its item SHALL be refused
@@ -217,6 +236,10 @@ comparisons, external constants or indirect branch dataflow.
 | FR-064-AC-9 | Empty, missing, non-directory, duplicate, overlapping or out-of-base roots; a selection with no production Rust files; unreadable or malformed source; malformed rules; and a source link escaping the base or forming a cycle cannot produce a clean result. Each returns a typed library error identifying its input and command exit 2. Rule failures include unknown or missing fields, wrong types, empty reasons and out-of-base entry paths. | Test |
 | FR-064-AC-10 | Installing `qsl-string-edge` using the documented authoritative Git route and running it outside QSL against a non-QSL crate succeeds without QSL-named fixture directories. The documented clean fixture exits 0. Replacing its production body with an unmarked literal-string dispatch exits 1 and names the expected consumer file and line. A separate Rust consumer imports the public scanner API through the documented Git dependency without copied scanner sources. | Test |
 | FR-064-AC-11 | QSL's adapter passes its roots and rules to the standalone library, with no second detector implementation. On clean, violating and invalid-input fixtures, its report content and success/failure agree with the library; its existing lint prerequisite still propagates failure. Extraction adds only the scanner crate's own tests to QSL verification. | Test |
+| FR-064-AC-12 | A fixture function marked `#[ix_trace_rs::string_edge]` and one marked with `#[string_edge]` imported by `use ix_trace_rs::string_edge;` each hold a string comparison that the library, the command and QSL's adapter do not report; an unmarked function in the same fixture is reported. | Test (TC-162) |
+| FR-064-AC-13 | A consumer crate that applies `#[string_edge]` from `ix-trace-rs` to a function compiles and runs the function with the behaviour of the unmarked function; `#[string_edge(anything)]` fails to compile with the one error "`#[string_edge]` takes no arguments" and no further error from the retained function. | Test (TC-162) |
+| FR-064-AC-14 | The QSL workspace holds no `proc_macro_attribute` definition named `string_edge`, no `pub use` or alias of it, no `qsl_attrs` path and no workspace member `qsl-attrs`; every `string_edge` marker in the workspace's production code resolves to `ix_trace_rs::string_edge`. | Test (TC-162) |
+| FR-064-AC-15 | `cargo metadata` over the QSL workspace lists `ix-trace-rs` as the provider of `string_edge`, and `ix-trace-rs`'s own manifest lists no normal dependency and no QSL, model, IR or code-generation package; the layer table of ADR-011 and ADR-012 §9 names `ix-trace-rs` as the exempt marker crate. | Test (TC-162) |
 
 ## Dependencies
 

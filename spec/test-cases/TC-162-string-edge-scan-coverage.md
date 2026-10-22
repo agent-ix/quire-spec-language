@@ -14,7 +14,7 @@ Verify [FR-064](../functional/FR-064-restrict-string-dispatch-to-marked-edges.md
 through both QSL's adapter and the reusable scanner's library and command.
 The scan reports unmarked string dispatch, respects valid consumer rules,
 excludes test code, rejects branch-gating allow-list entries and preserves
-source locations. Scope: FR-064-AC-1 through FR-064-AC-11.
+source locations. Scope: FR-064-AC-1 through FR-064-AC-15.
 
 The consumer procedures below are acceptance obligations for the extraction;
 existing QSL-only tests do not establish consumer installation or adoption.
@@ -60,7 +60,7 @@ dataflow retain the limitations stated by FR-064.
    absolute paths. Add a named string constant in reader and a same-named
    numeric constant and numeric comparison in emitter to check crate scope.
 9. Exercise the fixtures from steps 1–5 through the public library and binary
-   with consumer rules. Add qualified `#[qsl_attrs::string_edge]` coverage.
+   with consumer rules. Add qualified `#[ix_trace_rs::string_edge]` coverage and the imported form.
    Submit a branch-gating allow-list entry both before and after marking its
    function. Compare occurrence fields and errors with the QSL adapter.
 10. Submit each invalid case independently: no roots; missing, non-directory,
@@ -81,6 +81,17 @@ dataflow retain the limitations stated by FR-064.
     in the adapter. Feed clean, violating and invalid-input fixtures through
     the adapter and direct library call. Confirm the existing lint
     prerequisite remains and extraction adds only the scanner crate's tests.
+
+13. Mark one function `#[ix_trace_rs::string_edge]` and one `#[string_edge]`
+    imported from `ix-trace-rs`; scan with the library, the command and the
+    adapter (FR-064-AC-12).
+14. Compile a consumer crate with a marked function and run it; compile a
+    second with `#[string_edge(anything)]` (FR-064-AC-13).
+15. Search the QSL workspace's manifests and production source for a
+    `string_edge` definition, re-export or alias, a `qsl_attrs` path and a
+    `qsl-attrs` member, and resolve each marker (FR-064-AC-14).
+16. Read `cargo metadata` for the QSL workspace and `ix-trace-rs`'s manifest
+    (FR-064-AC-15).
 
 ### Worked external consumer acceptance
 
@@ -125,17 +136,16 @@ package using:
 qsl-string-edge = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 ```
 
-A consumer compiling marked intake functions uses the existing attribute
-crate by reference as well:
+A consumer compiling marked intake functions uses the marker crate by
+reference as well:
 
 ```toml
 [dependencies]
-qsl-attrs = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 ```
 
 These commands are the acceptance recipe, not a claim that the standalone
 package has already been implemented or the installation run has passed.
-
 ## Expected Results
 
 - Steps 1 and 3: only the unmarked production occurrence is reported, with
@@ -167,3 +177,12 @@ package has already been implemented or the installation run has passed.
 - Step 12 (FR-064-AC-11): the adapter calls the public scanner with QSL's
   roots and rules and propagates its reports and failures. No duplicate
   detector or additional QSL gate is introduced.
+- Step 13 (FR-064-AC-12): both marked comparisons are absent from every
+  report and the unmarked one is present.
+- Step 14 (FR-064-AC-13): the marked function behaves as the unmarked one; the
+  argument case reports exactly the one error.
+- Step 15 (FR-064-AC-14): no definition, re-export, alias, path or member is
+  found, and each marker resolves to `ix_trace_rs::string_edge`.
+- Step 16 (FR-064-AC-15): `ix-trace-rs` provides `string_edge`, has no normal
+  dependency and no QSL, model, IR or code-generation package, and the
+  layer tables name it as the exempt marker crate.
