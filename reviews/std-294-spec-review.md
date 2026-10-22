@@ -53,3 +53,11 @@ Round 1 checked head 795467742, which contains main 6fb751a31 and merges cleanly
 | FND-003 | fixed | The observable is now the spend difference of exactly 6 against `a and a and a`. Checked by hand. |
 | FND-004 | fixed | The gap case now uses `a and b and c` and `not a`, which has three real atoms. |
 | FND-005 | fixed | Atoms are compared once per guard term node, and the 6-unit difference tests that. TC-133's old proof-budget sentence is left for QSL-840 to delete (planner item). |
+
+## Dispositions (round 2)
+
+Round 2 checked head 211e9af6e, which contains main 4c3562eaa and merges cleanly with main and with #1261. `make check-spec-validation` on the merge exits 0. No new findings.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-006 | fixed | FR-096's direct-`CheckRefusal` list now names "a `choice`'s partition-proof charge (FR-218)". |
