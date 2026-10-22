@@ -48,8 +48,9 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 mod (2 -
    c.versionNumber) >= 0)` over the example unit with both versions 0 and
    with `a` 0 and `b` 1 (FR-126-AC-11).
-9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each with its
-   `when` condition read by the test's own letters.
+9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each from a
+   test-built checked package carrying its `temporal_clause` node in QSpec
+   FR-370's shape, with its `when` condition read by the test's own letters.
 10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
     counterexample replayed.
 
@@ -87,8 +88,8 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   `kind: UndefinedEvaluation`, cause division-by-zero; `Violated` bound to
   `b` with the prefix `(0,1) -upd(b)-> (0,2)` at position 1.
 - Step 9: `Violated` with the prefix `0 -inc-> 1 -inc-> 2`; `Holds{Exhaustive}`;
-  `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; `Holds` with an
-  empty closure certificate; `Violated`, `kind: UndefinedEvaluation` naming
+  `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; `Holds` with the
+  closure certificate of its explored product states, keyed `"each-when"`; `Violated`, `kind: UndefinedEvaluation` naming
   the activation at position 2.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then

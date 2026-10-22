@@ -37,6 +37,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-278
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-404
+    type: references
   - target: "ix://agent-ix/quire-specification/FR-272"
     type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-305"
@@ -334,6 +336,10 @@ of its own. `PluginReplayContext::new` takes:
 It copies what it needs and refuses nothing. A pair of units that do not
 match is caught by the replay's own recompile, which requires the recompiled
 `package_id` to equal the request's (FR-098).
+
+A consumer that runs a call through the replay facade names none of these
+units: it takes the context of that same run from `run_with_replay_context`
+(FR-404), which builds requests only for the call's own items.
 
 `PluginReplayContext::request(occurrence, proof_bounds, plugin, assignments)`
 builds the `ReplayRequestWire` for one counterexample. It takes:
