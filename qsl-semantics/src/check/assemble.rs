@@ -730,37 +730,6 @@ struct Unit {
 }
 
 impl Unit {
-    /// Unit lookup is separate from type and dimension lookup, but their
-    /// emitted declarations cannot share one qualified name.
-    fn quantity_name_collisions(&self) -> Vec<AssemblyError> {
-        let mut other_names: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
-        for name in self.dimensions.iter().map(|form| &form.name).chain(
-            self.composites
-                .iter()
-                .filter(|form| matches!(&form.members, Members::Record(_)))
-                .map(|form| &form.name),
-        ) {
-            other_names.entry(&name.name).or_default().push(name.span);
-        }
-        self.units
-            .iter()
-            .filter_map(|form| {
-                let others = other_names.get(form.name.name.as_str())?;
-                let mut candidates = others.clone();
-                candidates.push(form.name.span);
-                candidates.sort_by_key(|span| (span.start, span.end));
-                Some(AssemblyError {
-                    cause: AssemblyCause::AmbiguousTypeName {
-                        name: form.name.name.clone(),
-                        candidates,
-                        native: false,
-                    },
-                    span: form.name.span,
-                })
-            })
-            .collect()
-    }
-
     fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
         let mut unit = Self {
             aliases: Vec::new(),
@@ -2740,8 +2709,6 @@ impl PackageDeclarations {
                 });
             }
         }
-
-        errors.extend(unit.quantity_name_collisions());
 
         // An enum names each case once.
         for enumeration in &unit.enums {
