@@ -446,7 +446,14 @@ position whose letter is undefined, so the locus is the reached product
 state whose expansion read that model state's condition. For an initial
 model state, which no product state precedes, the locus is the least
 certificate state carrying that model state, or, when none carries it, the
-least certificate state, ordered as for refused keys above. Every other
+least certificate state, ordered as for refused keys above. For an empty
+certificate the rejection is `BadState` at `ProductState` with that initial
+model state (the least such state by `model_state` digest octets when
+several read undefined) and the item context's rejecting key,
+`K_C(["safety",[]])` for TP-1 and TP-3 or `K_C(["reject"])` for TP-2: an
+undefined letter is a violation (UE-1), so `BadState` is the rule that
+fits, and the rejecting key is the one automaton state the checker derives
+from the context alone without reading the undefined letter. Every other
 outcome of the reading, an evaluation-meter stop included, follows the rule
 this requirement states for an atom of the letter.
 

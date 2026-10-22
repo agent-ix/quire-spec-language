@@ -47,3 +47,22 @@ The `code-review` method was skipped because the diff holds no code.
 ## Verdict
 
 The design is sound. The condition is bound through the clause root's content identity and re-read by the checker, so a certificate cannot smuggle in a condition reading. The TP-4 refusal is consistent with FR-339. The PR is not mergeable until FND-001 to FND-005 are fixed. These are wording and AC-determinacy fixes inside FR-126, FR-338, TC-521 and TC-525, and none needs a QSpec change. FND-006 is the lead's call.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The new locus rule for a condition that is undefined at an initial model state has no case for an empty certificate. The rule picks "the least certificate state carrying that model state, or, when none carries it, the least certificate state". When `states` is empty, neither exists, so `BadState` has no `ProductStateRef`, and `InitialMissing` cannot be keyed because no initial automaton key exists. <br>Fix: name the outcome for an empty certificate, for example `BadState` at a `ProductState` whose `automaton_state` is empty, or `InitialMissing` with the initial model state's digest. | spec/functional/FR-338-check-an-en-1-closure-certificate.md:443-449 |
+
+## Dispositions
+
+Round 1 is at head 202af2833. Main is an ancestor of the head. `make check-spec-validation` exits 0 with no diagnostic in a changed file. Both new lead defaults are sound. Reading the condition at a stutter position on the last model state's letter matches how the atoms are read there, and it stays a function of the terminal model state, so keys stay deterministic. The initial-state locus rule only chooses where to report a rejection that always happens, so it cannot let a bad certificate through. FND-007 covers its one missing case.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-338 now says a misread gives `InitialMissing` or `SuccessorMissing` at the first missing recomputed state, never `ShapeMismatch` (which follows only an unadmitted context such as a non-`"each-when"` activation member), and that a superset certificate is accepted. AC-10 and TC-525 step 9 add the superset vector. |
+| FND-002 | fixed | FR-126 and FR-338 both state one rule. A guarded activation starts only at a model position. A false-extension position reads no condition and adds no activation, a constant `true` guard included. A stutter position reads the condition on the last model state's letter. |
+| FND-003 | fixed | AC-10's `BadState` vector names its certificate exactly: the value-0 and value-1 obligation-free `"each-when"` states, with the condition false at 0 and 1 and undefined at 2. Its locus is the value-1 product state, whose expansion reads the undefined condition. FR-338 states the general locus rule, and TC-525 step 9 matches. |
+| FND-004 | fixed | FR-126-AC-16, FR-338-AC-10, TC-521 step 9 and TC-525 step 9 now name a test-built checked package that carries the guarded `temporal_clause` node in QSpec FR-370's shape. The same package serves as the engine's clause source and as the request's recompiled package, so the root resolves without S4 emission. |
+| FND-005 | fixed | FR-338 derives the `acceptance` member by the membership rule (unbounded F/U on every subject, finite F/U on protocol subjects too). It limits `[[[],[],[],[]]]` to formulas with no past occurrence and no such occurrence, such as AC-10's formulas on `Counter`. |
+| FND-006 | fixed | FR-126 now says the refusal is the outcome of every V1 run of such a clause. It records that the cause is the one ADR-017 maps to `unsupported` (ADR-017:446, Q-6), so the catalogued `not-yet-implemented` spelling is explained, not status. |
