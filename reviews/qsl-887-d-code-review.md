@@ -79,3 +79,10 @@ The new `quad` fixture uses plain `Integer` where QSpec FR-432-AC-14 uses `Int[0
 | --- | --- | --- | --- |
 | FND-003 | medium | The `effect`, `commit` and `receive` records are untested. The `Rec` fixture declares no `effect` or `commit` node, and its only `receive` row is `rx(_)`, which is admitted with or without a record. Removing `Effect`, `Commit` or `Receive` from the match in `ProtocolClasses::of` leaves every `refinement_protocol` test green (measured; `event`, `finish`, `send` and the record-field expansion are each killed). Add an `effect` and a `commit` node to `rec()` with a count refusal each, and `rx(true, true)` refused 1/2. | qsl-semantics/src/check/refinement/internal_list.rs:479-488 |
 | FND-004 | low | The type-mismatch rows over `Rec` assert the position and locus but not `expected`/`actual` (`ev(true, true)` should retain the integer field type and `Boolean`), so a wrong field type with the same mismatch would pass. | qsl-semantics/tests/it/refinement_protocol.rs:1281 |
+
+## Dispositions (new findings, pass 1)
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-003 | fixed: effect and commit nodes added to the `Rec` fixture with admitted rows and a count refusal each; `rx(true, true)` refused 1/2. Removing Effect, Commit or Receive from `ProtocolClasses::of` now fails tests | 6d8cfde20 |
+| FND-004 | fixed: the mismatch rows assert the retained expected and actual types | 6d8cfde20 |
