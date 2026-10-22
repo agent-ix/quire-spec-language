@@ -549,7 +549,7 @@ fn refused_plugin_results_carry_pl7_diagnostics() {
         .diagnostic(2, "replay-parity");
     assert_eq!(unknown_cause.code(), "invalid_result");
     assert_eq!(unknown_cause.cause(), Some("unknown-cause"));
-    assert!(unknown_cause.message().contains("`cause`"));
+    assert!(unknown_cause.message().contains("/cause/type"));
     assert!(unknown_cause.message().contains("replay-parity"));
     assert!(unknown_cause.message().contains('2'));
 
@@ -557,15 +557,18 @@ fn refused_plugin_results_carry_pl7_diagnostics() {
         qsl_replay::PluginResultRefusal::CoreOnlyBasis.diagnostic(0, "zone-certified");
     assert_eq!(unknown_basis.code(), "invalid_result");
     assert_eq!(unknown_basis.cause(), Some("unknown-cause"));
-    assert!(unknown_basis.message().contains("`basis`"));
+    assert!(unknown_basis.message().contains("/basis/type"));
     assert!(unknown_basis.message().contains("zone-certified"));
 
-    let missing = qsl_replay::PluginResultRefusal::MissingCounterexample.diagnostic(1, "");
+    let no_counterexample = qsl_replay::PluginResultRefusal::MissingCounterexample {
+        pointer: "/counterexample".to_owned(),
+        cause: qsl_replay::ValueFault::MissingMember,
+    };
+    let missing = no_counterexample.diagnostic(1, "");
     assert_eq!(missing.code(), "invalid_result");
     assert_eq!(missing.cause(), Some("missing-member"));
-    assert!(missing.message().contains("`counterexample`"));
-    let record = qsl_replay::PluginResultRefusal::MissingCounterexample
-        .record(RequestIndex::new(1), BackendId::new("acme-prover"));
+    assert!(missing.message().contains("/counterexample"));
+    let record = no_counterexample.record(RequestIndex::new(1), BackendId::new("acme-prover"));
     assert_eq!(record.value(), &TerminalValue::Failed);
 }
 
