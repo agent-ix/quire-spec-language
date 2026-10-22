@@ -57,6 +57,7 @@ pub struct StatisticalVerdict {
     pub decision: Decision,                 // FR-189
     pub estimate: Option<Rational>,         // the least favourable test's (FR-189); None when it has none
     pub interval: Option<(Rational, Rational)>,
+    pub quantile: Option<MeasureValue>,     // the least favourable test's (FR-189); a quantile claim's nearest-rank quantile; None for every other form
     pub basis: StatisticalBasis,
     pub provenance: StatisticalProvenance,  // FR-191
     pub tests: Vec<TestResult>,             // FR-189
@@ -116,12 +117,15 @@ pub enum Coverage { FiniteSample, Asymptotic }
 - The record SHALL carry no FR-242 truth value and no FR-243 settlement
   basis for any of these rows.
 - `estimate` SHALL be absent when the least favourable test has none, and otherwise `p̂` for a probability bound, `Pr(M <= c | activated)`
-  for a quantile claim with the empirical nearest-rank quantile of the
-  counted samples beside it, the sample mean for a mean of a fraction, and
+  for a quantile claim, the sample mean for a mean of a fraction, and
   the ratio estimate for a long-run fraction; for several tests it is the
   least favourable test's (FR-189). `interval` SHALL be present for Okamoto and the
   regenerative method and absent for SPRT. `coverage` SHALL be
   `Asymptotic` for the regenerative method and `FiniteSample` otherwise.
+- `quantile` SHALL be the least favourable test's `quantile` (FR-189): the
+  empirical nearest-rank quantile of a quantile claim's counted samples, or
+  `Censored` when its rank lies among the censored samples, and absent for
+  every other claim form.
 - `TerminalValue::category` SHALL map `Measured{Accepted}` to success,
   `Measured{Rejected}` to violation and `Measured{Undecided}` to
   inconclusive.
@@ -139,6 +143,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | FR-192-AC-3 | A request with `P95` accepted and the `2 ms` claim rejected fails the pipeline gate with the same status as a request holding one O-16 violation; the same request without the rejected item passes. Its proof summary counts 0 proved items. | Test (TC-627) |
 | FR-192-AC-4 | EN-4's manifest lists exactly (`probabilistic-satisfaction`, `statistical`). EN-4's gate given a checked claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |
 | FR-192-AC-5 | FR-189-AC-6's result settles `measured`, `rejected`, category violation, with the test's `UndefinedEvaluation` in the record, and fails the pipeline gate as a violation does. | Test (TC-640) |
+| FR-192-AC-6 | A quantile claim's verdict over two tests whose least favourable test (FR-189-AC-10) has `quantile` `Value(2)` carries `Value(2)`, and one whose least favourable test has `Censored` carries `Censored`. The verdicts of `P95`, a mean of a fraction and `LongRun` carry no `quantile`. | Test (TC-627) |
 
 ## Dependencies
 

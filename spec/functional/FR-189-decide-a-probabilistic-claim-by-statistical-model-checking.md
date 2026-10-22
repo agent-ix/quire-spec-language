@@ -81,8 +81,10 @@ pub enum StatisticalStop {                          // FR-191; ADR-024 SV-4
 }
 pub struct TestResult { pub index: u32, pub initial: u32, pub binding: Option<Binding>,
     pub decision: Decision, pub estimate: Option<Rational>, pub interval: Option<(Rational, Rational)>,
+    pub quantile: Option<MeasureValue>,         // a quantile claim's nearest-rank quantile of the counted samples
     pub samples: u64, pub draws: u64,
     pub undefined: Option<UndefinedEvaluation> }   // ADR-024 SV-11; `where` names the sample
+pub enum MeasureValue { Value(Rational), Censored }  // a quantity's Rational carries M's unit
 pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
 pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 ```
@@ -112,6 +114,11 @@ the claim's form does not admit (FR-190, SPRT below).
   the workload and every random parameter's distribution are invariant under
   its group, EN-4 SHALL run one test per orbit of (initial state, binding)
   pairs, on the least pair in key order, and `m` SHALL count orbits.
+  Workload weights are per operation, and a random parameter's support
+  values are literals or integers, never references (FR-185), so a workload
+  or a distribution cannot treat one object of a type differently from another:
+  both conditions hold for every declaration EN-4 admits, and it runs one test
+  per orbit.
 - Sample `i` of test `j` SHALL use trace index `i · m + j` and start at test
   `j`'s initial state.
 
@@ -143,6 +150,13 @@ the claim's form does not admit (FR-190, SPRT below).
   as `Pr(M <= c | activated) >= q`, and `quantile q of M >= c` as the strict bound
   `Pr(M < c | activated) < q`. The tests SHALL decide the strict bound as
   `<= q`, whose boundary lies inside the indifference region.
+- For a quantile claim, a test that has an estimate SHALL also set `quantile`
+  to the empirical nearest-rank quantile of its counted samples: the
+  `⌈q · n⌉`-th smallest of the `n` counted samples, a censored sample
+  ordered after every finite value. When that rank lies among the censored
+  samples, `quantile` SHALL be `Censored`. A test of any other claim form, and
+  a quantile test with no estimate, SHALL have `quantile` absent. The
+  quantile never decides the test.
 
 - If the event, the measure or its comparison evaluates `Undefined` on a
   sample, then EN-4 SHALL decide that test Rejected at once, stop the
@@ -185,7 +199,7 @@ the claim's form does not admit (FR-190, SPRT below).
 - The **least favourable test** of a verdict SHALL be the test with the worst
   decision (Rejected, then Undecided, then Accepted), the smallest margin
   among tests of that decision, and the lowest index among equal margins.
-  FR-192 reports its `estimate` and `interval`.
+  FR-192 reports its `estimate`, `interval` and `quantile`.
 - If the subject has no (initial state, binding) pair, then EN-4 SHALL refuse
   with `StatisticalRefusal::NoTest`, and FR-192 settles it `inconclusive` with
   the cause `no-initial-state`, so an empty product is never Accepted.
@@ -220,7 +234,7 @@ the claim's form does not admit (FR-190, SPRT below).
 |----|----------|--------------|
 | FR-189-AC-1 | `P95` (ADR-024 §7.2) with Okamoto runs one test of `N = 23,026` samples, each of at most 11 positions, and settles `Completed` Accepted with an interval of half-width `1/100` whose lower end is at least `19/20`; the same claim at `<= 2 ms` settles Rejected with an interval whose upper end is below `19/20`. With SPRT, at `5 ms` it settles Accepted and at `2 ms` Rejected, each with a sample count below 23,026. | Test (TC-624) |
 | FR-189-AC-2 | The Okamoto sample count is computed exactly with conservative rounding: `N = 23,026` for `α = β = 1/100`, `ι = 1/100`, `m = 1`, and `N = 26,492` for `m = 2`. The SPRT thresholds for `α' = β' = 1/100` are rationals `T+ >= ln 100` and `T- <= -ln 100` within QSpec's stated precision of them. Two runs with the same request give equal outcomes. | Test (TC-624) |
-| FR-189-AC-3 | A two-initial-state variant of `Service` runs `m = 2` tests, each with `α' = β' = 1/200`, sample `i` of test `j` at trace index `2i + j`. A variant with two symmetric servers under an admitted symmetry declaration and an invariant workload runs `m = 1`; with a workload that weights one server's operations differently it runs `m = 2`. | Test (TC-624) |
+| FR-189-AC-3 | A two-initial-state variant of `Service` runs `m = 2` tests, each with `α' = β' = 1/200`, sample `i` of test `j` at trace index `2i + j`. A variant with two symmetric servers under an admitted symmetry declaration runs `m = 1`, with a workload that weights each of its operations equally and with one whose operation weights differ from one another. | Test (TC-624) |
 | FR-189-AC-4 | A quantile claim over a variant of `Service` whose `request` sets `phase = Busy` with probability `1/2` (a random parameter) and otherwise stays `Idle` counts only activated samples: with Okamoto the result has `samples = 23,026` and `draws > samples`. A censored sample (no `Done` within the window) counts as exceeding the threshold. `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) reduces to the event `M < 3` with the strict bound `< 1/2`; over a variant where `M` is 1 or 3 with probability 1/2 each, `Pr(M < 3) = 1/2`, so the reduced bound is false, as the claim is (its 1/2-quantile is 1). | Test (TC-624) |
 | FR-189-AC-5 | The ADR-024 §7.1 `NoFault` claim with Okamoto at `indifference 0.0005` computes `N = 9,210,341`. A `Health` variant with a non-unique post-state returns `Unsupported` with cause `NotMarkov`; a variant with an undecided contract conjunction settles that test Undecided, `UndecidedSuccessor`; a `mean of` claim with SPRT is refused `NotStatistical`. | Test (TC-624) |
 | FR-189-AC-6 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0, in a population `coins` bounded to 1; operation `drop(b: Int[0, 1])` with `random Coin::drop(b) ~ { 0: 1, 1: 1 };` and postcondition `count(o in M::coins where true) = b`, so that `drop` with `b = 0` deletes the coin; workload weight `drop` 1) and the claim `probability >= 0.5 [ always[0,3] holds(c.v = 0) ]` over `(c: M::Coin)` with `alpha 0.01, beta 0.01, indifference 0.1`, Okamoto and seed 7, the test decides Rejected at the first sample in trace-index order whose path takes `drop` with `b = 0`, draws no further sample, and carries `UndefinedEvaluation` naming that sample's test index 0, its trace index and the first position after a `drop` with `b = 0`, cause `absent-key`; the claim settles `Completed` Rejected. | Test (TC-640) |
@@ -232,6 +246,7 @@ the claim's form does not admit (FR-190, SPRT below).
 | FR-189-AC-12 | The activation variant of FR-189-AC-4 with the activation probability 0 and `max_draws` 1,000 stops `MaxDraws` with 0 samples counted and no decision. | Test (TC-624) |
 | FR-189-AC-13 | A sampler stub that returns event samples for a mean-of-fraction claim with Okamoto, `θ = 1/2`, `α = β = 1/3` and `ι = 2/5` and a non-strict bound (a strict `Below` bound on a mean of a fraction is refused `StrictBound`) (so `N = ⌈ln 3 / (2ι²)⌉ = ⌈3.43⌉ = 4`), 3 holding of the 4 counted, gives the estimate `3/4` and no refusal. | Test (TC-624) |
 | FR-189-AC-14 | A regenerative request over two tests with `max_draws` `u64::MAX` is not refused `TraceIndexRange`, and the same `max_draws` under Okamoto with two tests is. | Test (TC-624) |
+| FR-189-AC-15 | Through the `BehaviourSampler` seam, a quantile `<= 3` claim at `q = 1/2` over 4 counted samples with `M` values 1, 3, 2, 5 gives the test `quantile` `Value(2)`; at `q = 9/10` with the samples 1, 3, 2 and one censored sample, the rank `⌈36/10⌉ = 4` lies among the censored samples and `quantile` is `Censored`; at `q = 1/2` the same samples give `Value(2)`. A quantity-typed `M` gives a `Value` carrying `M`'s unit. A `P95` probability-bound test and a quantile test with no counted sample have `quantile` absent. | Test (TC-624) |
 
 ## Dependencies
 
