@@ -63,3 +63,26 @@ and both are majors. The new text attributes the 460,000-program script to the
 for (c) is overstated. The rest of each edit is accurate: "not proved", the
 absence of RMW and non-atomic accesses, and the 8-event bound all match the
 scripts. The two documents agree. FND-003 and FND-004 are minor.
+
+## Dispositions
+
+Disposition pass 1 covers QSL PR #1199 at
+`2c781b6a7050027c937936a51e6ea7bc5a5b78fc` and QSpec PR #352 at
+`8383e03fac644d778244ea098820e90d4e27e716`. Each fix is commit `0ca3a47b1`
+(QSL) or `baa0283` (QSpec), followed by a merge of `origin/main`. The figures
+were checked against the script outputs in rv-std239-d1/litmus/:
+
+- econ.py and eco3n.py tried 196,961 programs in total. Their filter keeps
+  programs of at most 8 events with at least two `seq_cst` fences, and no RMW
+  or non-atomic access. In 2 programs the `eco` part changes the RC11
+  outcomes, and `ra` admits none of those outcomes.
+- fuzz2.py ran 460,154 programs of at most 8 events.
+
+ADR-025 PSC-7 (c) and FR-437 (c) now say the same thing.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PSC-7 (c) now cites the targeted run with its real size and its 2 relevant programs, plus the two exhaustive families. The 460,000 figure now goes to the two claims it supports, and the text still says "not proved". After: That `S` carries it is not proved. It is checked by script over 196,961 random litmus programs of up to 8 events with at least two `seq_cst` fences and no RMW or non-atomic access, in which the `eco` part changes the RC11 outcomes of 2 programs and `ra` excluded the outcomes in both, and by exhaustive enumeration of two bounded families of programs with fences ... Both claims were checked over about 460,000 random litmus programs of up to 8 events, without RMW or non-atomic accesses, and are not proved. |
+| FND-002 | fixed | FR-437 (c) has the same fix, in step with ADR-025. After: That the join of `S` carries it is not proved. It is checked by script over 196,961 random litmus programs of up to 8 events with at least two `seq_cst` fences and no RMW or non-atomic access, in which the `eco` part changes the RC11 outcomes of 2 programs and `ra` excluded the outcomes in both, and by exhaustive enumeration of two bounded families ... both claims were checked over about 460,000 random litmus programs of up to 8 events without RMW or non-atomic accesses and are not proved. |
+| FND-003 | fixed | The repeated sentence is removed from ADR-025 PSC-7. After: ... so that a message choice completing the `eco` path is not offered. That `S` carries it is not proved. |
+| FND-004 | fixed | The repeated sentence is removed from FR-437 (c). After: ... by not offering the message choices that would complete it. That the join of `S` carries it is not proved. |
