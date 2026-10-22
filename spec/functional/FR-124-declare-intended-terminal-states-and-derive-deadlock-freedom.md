@@ -91,12 +91,12 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
   populations cover, not every declared object type) are exactly one object
   type `T` and exactly one population covers `T`, the checker SHALL type
   `self` in `P` as `Reference<M::T>`.
-- Where exactly one object type `T` is a member type of two or more
-  populations, the checker SHALL refuse `self` in `P` with
+- Where the model's populations cover exactly one object type `T` and `T` is
+  a member type of two or more populations, the checker SHALL refuse `self` in `P` with
   `ambiguous_declaration`/`ambiguous-name` at `self`, naming those populations
   in ascending `DeclarationKey` order, as FR-104 refuses a clause whose `on`
   type several populations cover.
-- Where those populations cover no object type or several, the checker SHALL
+- Where the model's populations cover no object type or several, the checker SHALL
   refuse `self` in `P` with `missing_declaration`/`missing-name` at `self`:
   no single type is the one `self` stands for, so `self` is not bound (the
   ambiguity is the declaration's, not a name resolving to several
@@ -167,7 +167,7 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
 | FR-124-AC-6 | In a model with two object types `Counter` (`value: Int[0, 3]`, population `counters`, universe `{c1}`) and `Gate` (`open: Boolean`, population `gates`, universe `{g1}`), operations `inc` on `Counter` (as `Counter` in AC-1) and `release` on `Gate` (precondition `not self.open`, postcondition `self.open`), `terminal Done using v on M when { forall(c in M::counters : c.value = 3) and forall(g in M::gates : g.open) };` checks to `When`; the terminal state with `c1.value = 3` and `g1.open` is intended, and no terminal state is reachable otherwise. | Test (TC-519) |
 | FR-124-AC-7 | In the AC-6 model, `terminal Done using v on M when { self.value = 3 };` refuses `missing_declaration`/`missing-name` at `self`; in a model whose populations cover no object type, `terminal Done using v on M when { self.value = 3 };` refuses the same way and `terminal Done using v on M when { true };` checks to `When`. | Test (TC-519) |
 | FR-124-AC-8 | In the AC-5 model with universe `{}`, the single state is terminal and intended under `terminal Done using v on M when { self.value = 3 };`; in the AC-5 model with universe `{c1}`, `terminal Done using v on M when { exists(c in M::counters : c.value = 3) };` is evaluated once at each terminal state: with universe `{c1}` and `c1.value = 3` the terminal state is intended, and with universe `{}` it is false there, so the state is deadlocked. | Test (TC-519) |
-| FR-124-AC-9 | In a model with one object type `Counter` covered by two populations, `counters` and `archive`, `terminal Done using v on M when { self.value = 3 };` refuses `ambiguous_declaration`/`ambiguous-name` at `self`, naming `archive` and `counters`; the same predicate written `forall(c in M::counters : c.value = 3)` checks to `When`. | Test (TC-519) |
+| FR-124-AC-9 | In a model with one object type `Counter` covered by two populations, `counters` and `archive`, `terminal Done using v on M when { self.value = 3 };` refuses `ambiguous_declaration`/`ambiguous-name` at `self`, naming `archive` and `counters`; the same predicate written `forall(c in M::counters : c.value = 3)` checks to `When`. In a model with `Counter` in `counters` and `archive` and `Gate` in `gates` (several object types), `self.value = 3` refuses `missing_declaration`/`missing-name` at `self`. | Test (TC-519) |
 | FR-124-AC-10 | In the AC-5 model with no operations and `terminal Done using v on M when { 2 / (2 - self.value) <= 1 };`, universe `{c1, c2}`: with `c1.value = 2` and `c2.value = 1` the terminal state is deadlocked (one object false, one `Undefined`); with `c1.value = 2` and `c2.value = 3` it is neither intended nor deadlocked and the deadlock-freedom item settles `refuted` with cause `UndefinedEvaluation`; with `c1.value = 0` and `c2.value = 3` it is intended. | Test (TC-519) |
 
 ## Dependencies

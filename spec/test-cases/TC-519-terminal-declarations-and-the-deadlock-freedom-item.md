@@ -43,7 +43,8 @@ exactly when every counter is at 3, and `terminal any`.
    with universe `{c1}` and with universe `{}`.
 8. Check `terminal Done using v on M when { self.value = 3 };` in a model
    whose one object type `Counter` is covered by populations `counters` and
-   `archive`, and the same predicate written as a quantifier over `counters`.
+   `archive`, the same predicate written as a quantifier over `counters`, and
+   the same predicate in a model that adds `Gate` in `gates`.
 9. In the one-type model with no operations, classify the terminal state under
    `terminal Done using v on M when { 2 / (2 - self.value) <= 1 };` for
    `c1.value`, `c2.value` of 2 and 1, 2 and 3, and 0 and 3.
@@ -72,6 +73,7 @@ Tag the tests `#[trace("TC-519", "FR-124-AC-n")]`.
   and `c1.value = 3` the state is intended; with universe `{}` it is false and
   the state is deadlocked.
 - Step 8: `ambiguous_declaration`/`ambiguous-name` at `self` naming `archive`
-  and `counters`; `When` for the quantifier.
+  and `counters`; `When` for the quantifier; `missing_declaration`/
+  `missing-name` at `self` in the model with `Gate`.
 - Step 9: deadlocked; neither intended nor deadlocked, item `refuted` with
   `UndefinedEvaluation`; intended.
