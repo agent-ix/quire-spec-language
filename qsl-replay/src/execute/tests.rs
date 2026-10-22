@@ -167,7 +167,7 @@ fn request(
             digest.hex(),
         )],
         dependencies: Vec::new(),
-        selected_function: function,
+        replay_target: crate::RequestTargetWire::function(function, crate::target::test_key()),
         source,
         obligation_identity: [2; 32],
         backend: "kani-backend-1".to_owned(),
@@ -239,6 +239,74 @@ fn tc_444_an_input_counterexample_replays_and_agrees() {
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(result.disagreement(), None);
     assert!(result.charges().work_units > 0);
+}
+
+/// FR-098-AC-21 (TC-444 step 9): `small`'s request with its replay target
+/// replaced by a `frame_operation` (or a `state_clause`) given to `replay`
+/// refuses `invalid_runtime_input`/`unknown-member` at that member's
+/// pointer naming the target, the entry `replay` and the member `function`,
+/// before the recompile (the same request whose source does not compile
+/// refuses the same way); with the source's byte-provision entry also
+/// removed it refuses by the byte-provision rule instead.
+#[trace("TC-444", "FR-098-AC-21")]
+#[test]
+fn tc_444_a_non_function_target_refuses_before_the_recompile() {
+    use crate::{FrameOperation, ReplayTarget, TargetMember};
+    let frame = ReplayTarget::FrameOperation(FrameOperation {
+        object: name(&["Config", "ConfigVersion"]),
+        operation: Identifier::new("attemptUpdate").unwrap(),
+    });
+    let clause = ReplayTarget::state_clause(name(&["VersionUnchanged"]));
+    for (target, pointer) in [
+        (frame, "/replay/frame_operation"),
+        (clause, "/replay/state_clause"),
+    ] {
+        let mut wire = small(7);
+        wire.replay_target = target.clone().into();
+        let refusal = replay(wire.clone(), ReplayLimits::default()).unwrap_err();
+        let ReplayRefusal::WrongReplayTarget {
+            target: named,
+            entry,
+            member,
+        } = &refusal
+        else {
+            panic!("expected the wrong-target refusal: {refusal:?}");
+        };
+        assert_eq!(**named, target);
+        assert_eq!(*entry, crate::ReplayEntry::Replay);
+        assert_eq!(*member, TargetMember::Function);
+        assert_eq!(named.member().pointer(), pointer);
+        assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+        assert_eq!(refusal.cause(), Some("unknown-member"));
+
+        // The same request with a source that does not compile.
+        let broken = b"this is not a QSL unit\n";
+        let mut uncompilable = request(
+            broken,
+            spine(&proved(), &BTreeMap::new()).emitted.package_id(),
+            name(&["small"]),
+            ReplaySource::Input(Vec::new()),
+        );
+        uncompilable.replay_target = target.clone().into();
+        let refusal = replay(uncompilable, ReplayLimits::default()).unwrap_err();
+        assert!(
+            matches!(refusal, ReplayRefusal::WrongReplayTarget { .. }),
+            "{refusal:?}"
+        );
+
+        // With the source's entry removed, decode's byte-provision rule
+        // refuses first.
+        wire.byte_provision.clear();
+        let refusal = replay(wire, ReplayLimits::default()).unwrap_err();
+        assert!(
+            matches!(
+                refusal,
+                ReplayRefusal::Request(ReplayRequestRefusal::IncompleteByteProvision { .. })
+            ),
+            "{refusal:?}"
+        );
+        assert_eq!(refusal.code(), Code::MissingImport);
+    }
 }
 
 /// FR-278-AC-3 (TC-759 step 3): the source provision of the `EmittedUnit`
@@ -628,7 +696,8 @@ fn tc_444_a_selection_naming_no_function_refuses() {
         name(&["module", "small"]),
     ] {
         let mut wire = small(7);
-        wire.selected_function = selection.clone();
+        wire.replay_target =
+            crate::RequestTargetWire::function(selection.clone(), crate::target::test_key());
         let refused = replay(wire, ReplayLimits::default()).unwrap_err();
         let ReplayRefusal::UnknownFunction {
             selection: named,
@@ -1488,7 +1557,8 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
         "{refusal:?}"
     );
     let mut wire = small(7);
-    wire.selected_function = name(&["large"]);
+    wire.replay_target =
+        crate::RequestTargetWire::function(name(&["large"]), crate::target::test_key());
     let replayed = replay(wire, ReplayLimits::default()).expect_err("large is not declared");
     assert_eq!(refusal.code(), Code::MissingDeclaration);
     assert_eq!(refusal.code(), replayed.code());
@@ -2260,6 +2330,60 @@ fn one_over(denominator: i64) -> ScalarOutcome {
     ))
 }
 
+/// FR-357-AC-20, FR-358-AC-9: a refusal that names `entry` as the entry that
+/// read the wrong replay target.
+fn assert_wrong_target(refusal: &ReplayRefusal, entry: crate::ReplayEntry, pointer: &str) {
+    let ReplayRefusal::WrongReplayTarget {
+        entry: named,
+        member,
+        ..
+    } = refusal
+    else {
+        panic!("expected the wrong-target refusal: {refusal:?}");
+    };
+    assert_eq!(*named, entry);
+    assert_eq!(*member, crate::TargetMember::Function);
+    assert_eq!(refusal.pointer(), Some(pointer));
+    assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+    assert_eq!(refusal.cause(), Some("unknown-member"));
+}
+
+/// The two non-function targets a parity entry must refuse, with their
+/// pointers.
+fn non_function_targets() -> [(crate::ReplayTarget, &'static str); 2] {
+    [
+        (
+            crate::ReplayTarget::FrameOperation(crate::FrameOperation {
+                object: name(&["Config", "ConfigVersion"]),
+                operation: Identifier::new("attemptUpdate").unwrap(),
+            }),
+            "/replay/frame_operation",
+        ),
+        (
+            crate::ReplayTarget::state_clause(name(&["VersionUnchanged"])),
+            "/replay/state_clause",
+        ),
+    ]
+}
+
+/// FR-357-AC-20 (TC-904): `replay_value_parity` refuses a request whose
+/// replay target is not `function` as `replay` does, naming itself, before
+/// the recompile; the claim keeps no `function`.
+#[trace("TC-904", "FR-357-AC-20")]
+#[test]
+fn tc_904_the_value_entry_refuses_a_non_function_target() {
+    for (target, pointer) in non_function_targets() {
+        let mut wire = parity("inc", 3);
+        wire.replay_target = target.into();
+        let report = replay_value_parity(wire, integer(4), ReplayLimits::default());
+        let ValueParityResult::Refused(refusal) = report.result() else {
+            panic!("expected a refusal: {:?}", report.result());
+        };
+        assert_wrong_target(refusal, crate::ReplayEntry::ReplayValueParity, pointer);
+        assert_eq!(report.claim().function, None);
+    }
+}
+
 /// `replay.input_bytes` is the caller's on the value entry: an S1 limit above
 /// the default refuses `LimitAboveReader` under the default and settles once
 /// the caller raises the bound.
@@ -2744,6 +2868,24 @@ mod operator_arm {
         wire
     }
 
+    /// FR-357-AC-20 (TC-904): `replay_operator_parity` refuses a request whose
+    /// replay target is not `function` as `replay` does, naming itself.
+    #[trace("TC-904", "FR-357-AC-20")]
+    #[test]
+    fn tc_904_the_operator_entry_refuses_a_non_function_target() {
+        for (target, pointer) in super::non_function_targets() {
+            let claim = claim(add(41, 1), completed(42));
+            let (_, function) = site(&claim.operation);
+            let mut wire = wire_for(function, &claim);
+            wire.replay_target = target.into();
+            let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
+            let OperatorParityResult::Refused(refusal) = report.result() else {
+                panic!("expected a refusal: {:?}", report.result());
+            };
+            super::assert_wrong_target(refusal, crate::ReplayEntry::ReplayOperatorParity, pointer);
+        }
+    }
+
     /// Replay `claim` through the public entry, in its own function.
     fn replayed(claim: OperatorClaim) -> crate::OperatorParityReport {
         let (_, function) = site(&claim.operation);
@@ -3168,7 +3310,8 @@ mod operator_arm {
         }
 
         let mut unknown = parity("inc", 3);
-        unknown.selected_function = name(&["nope"]);
+        unknown.replay_target =
+            crate::RequestTargetWire::function(name(&["nope"]), crate::target::test_key());
         let (text, code, settled, report) = refusal_of(unknown, add_claim());
         assert!(text.contains("missing-name"), "{text}");
         assert_eq!(code, Code::MissingDeclaration);
