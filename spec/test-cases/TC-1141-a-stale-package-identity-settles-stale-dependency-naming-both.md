@@ -20,7 +20,7 @@ naming another package before any rule, and that a certificate mismatch or a
 stale replay request settles `Inconclusive(StaleDependency{requested,
 recompiled})` naming both identities.
 
-Scope: FR-169-AC-12, FR-127-AC-11, FR-282-AC-9.
+Scope: FR-169-AC-12, FR-127-AC-12, FR-282-AC-9.
 
 ## Test Procedure
 
@@ -49,7 +49,7 @@ Tag the tests `#[trace("TC-1141", "<AC>")]` with the AC each step backs.
 - Step 3 (FR-169-AC-12): replay refuses `PackageIdMismatch`; the item settles
   `Inconclusive(StaleDependency{requested, recompiled})` with `requested`
   the request's `package_id`, not `ReplayRefused`.
-- Step 4 (FR-127-AC-11): the item settles `inconclusive` with cause
+- Step 4 (FR-127-AC-12): the item settles `inconclusive` with cause
   `StaleDependency{requested, recompiled}`, written
   `{"type": "stale-dependency", "requested": …, "recompiled": …}` with both
   `PackageId`s.
