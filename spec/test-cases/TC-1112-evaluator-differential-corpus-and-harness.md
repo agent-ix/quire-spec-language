@@ -26,7 +26,9 @@ to FR-402-AC-10.
 2. Build the `fr402/count-3` `CaseRecord` with `compile_package`'s
    `package_id`, write `line()` as a one-line bundle, load it and admit it
    with QSL's std admission; admit it again with a changed
-   `source.identity.revision` (AC-2).
+   `source.identity.authority`, with a changed `source.identity.identity`
+   and with a changed `source.identity.revision`, each with the old
+   `package_id` (AC-2).
 3. Load and admit a case whose source imports a library given in
    `dependencies`; admit it without the entry; load a record with two
    entries out of `identity` order (AC-3).
@@ -42,10 +44,13 @@ to FR-402-AC-10.
    comparator two record sets differing in one `charges` entry's `sizes`,
    and two sets one of which lacks a `case_id` (AC-7).
 8. Load and admit the checked-in bundle and list its `case_id`s; generate
-   the generated cases twice for count 256, compare the bytes, load and
-   admit each; diff `Cargo.lock` for new random-number or property-testing
-   crates (AC-8).
-9. Run `make ci` in a tree that ships both implementations; run FR-262-AC-2,
+   the generated cases twice for count 256, compare the bytes and ids, load
+   and admit each; run with an external bundle reusing the `case_id`
+   `fr402/count-3`; diff `Cargo.lock` for new random-number or
+   property-testing crates (AC-8).
+9. Run `make ci` in a tree that ships both implementations and inspect each
+   build's records; feed the comparator a `no_std` record set lacking one
+   admitted case; run FR-262-AC-2,
    AC-3, AC-4, AC-6, AC-7 and AC-8's tests against each build; inspect the
    harness's command line, environment and configuration (AC-9).
 10. Run CG's `make evaluator-corpus`, then
@@ -56,8 +61,9 @@ to FR-402-AC-10.
 - Step 1: no QSL crate in any table, normal dependencies within the stated
   list, and `charge-log` enables only `quire-exact/test-support`.
 - Step 2: the line is the `quire-canonical` text plus `\n`, the loaded
-  record equals the written one and admits; the changed revision refuses
-  `package_mismatch`.
+  record equals the written one and admits; the changed authority and the
+  changed identity each refuse `package_mismatch`, and the changed revision
+  admits.
 - Step 3: the case loads and admits; without the entry admission refuses
   `compile_refused` carrying `missing_import`; the misordered record refuses
   `dependency_order`.
@@ -65,8 +71,8 @@ to FR-402-AC-10.
   line, `malformed_line` and `noncanonical_line` name line 1 and no
   pointer, member refusals name line 1 and AC-4's pointer, and the repeated
   line refuses `case_order` at line 2.
-- Step 5: each bundle refuses with AC-5's code, `case_id` and pointer, and
-  no case is evaluated.
+- Step 5: each bundle refuses with AC-5's code, bundle, `case_id` and
+  pointer, and no case is evaluated.
 - Step 6: `fr402/count-3` is `completed` with `{"integer": "3"}`, four
   `function.call` charges and ten decimal-string counters;
   `fr402/count-3-short` is `incomplete` with `limit_kind` `work_units` and
@@ -80,9 +86,13 @@ to FR-402-AC-10.
   `std/no_std` under `/charges` and names the missing case and the build
   that produced no record.
 - Step 8: the `case_id`s are exactly FR-402's list; the two generations are
-  byte-identical and every case loads and admits; `Cargo.lock` gains no
-  such crate.
-- Step 9: `make ci` runs both builds with zero divergences; each FR-262
+  byte-identical with ids `gen/000` to `gen/255`, and every case loads and
+  admits; the reused id runs and reports as a second case under bundle
+  `external`; `Cargo.lock` gains no such crate.
+- Step 9: `make ci` runs both test builds, the std build admits each case
+  once, the `no_std` build compiles nothing and records every admitted case,
+  both records for `fr402/count-3` carry non-null `charges`, and the run has
+  zero divergences; the lacking set is reported as a divergence; each FR-262
   test passes against both builds; no tolerance, skip or exclusion setting
   exists.
 - Step 10: every CG record loads and admits, the run reports zero

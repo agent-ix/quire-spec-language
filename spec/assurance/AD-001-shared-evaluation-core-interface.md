@@ -196,8 +196,11 @@ bundle), its case record, loader and compared record in the crate
 two separate std and `no_std` builds. The harness joins `make ci` in IR-590,
 the first slice with a second implementation, and stays until IR-593 retires
 or demotes the std path; the run over CG's bundle passes in IR-593's switch.
-CG records expected evaluations through `quire-eval` once it holds an
-implementation CG can run; until then CG's cases carry no expectation.
+CG records expected evaluations through `quire-eval` once an implementation
+of that interface exists that CG may depend on; until then CG's cases carry
+no expectation. Admission compiles each case once, on the std side; how an
+admitted case's checked input reaches the `no_std` build is part of IR-590's
+contract.
 
 ### RT and CG acceptance
 

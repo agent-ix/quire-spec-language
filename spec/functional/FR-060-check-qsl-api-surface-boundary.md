@@ -222,13 +222,14 @@ QSL output, calls this entry and never names `qsl_replay::spine`.
 
 ### T12-A and the evaluator differential corpus
 
-T12-A protects the `qsl-replay` facade, CG's one dependency on a crate of the
-QSL repository. A crate from its own repository is not a QSL crate for
-T12-A, even when QSL owns it: the evaluation leaf `quire-eval`, the
-evaluator corpus crate `quire-eval-corpus` and the checked-term leaf
-`quire-checked` (all in `agent-ix/quire-eval`), and `quire-exact`,
-`quire-semantic-value` and `quire-walk`. T12-A SHALL report no finding for a
-CG reference to any of them, from any module; FR-059 governs those edges.
+T12-A protects the `qsl-replay` facade, the QSL crate through which CG
+calls into QSL; its patterns match only `qsl_replay`. A crate from its own
+repository is not a QSL crate for T12-A, even when QSL owns it: the
+evaluation leaf `quire-eval`, the evaluator corpus crate
+`quire-eval-corpus` and the checked-term leaf `quire-checked` (all in
+`agent-ix/quire-eval`), and `quire-exact`, `quire-semantic-value` and
+`quire-walk`. CG's edges to those crates are outside T12-A, and FR-059
+governs them.
 
 CG's evaluator corpus producer
 ([FR-402](FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md))
@@ -257,7 +258,7 @@ each list can only shrink.
 | FR-060-AC-5 | `qsl_replay::compile_package` compiles FR-092's recursive `List` (`record List { next: List?; }`) and `Tree` (`record Tree { kids: Sequence<Tree>[0, 3]; }`) from source through the facade alone, and for each the package bytes and `package_id` equal those of the spine's parse, select, check and package run over the same source. | Test (TC-908) |
 | FR-060-AC-6 | `qsl_replay::compile_package` refuses as the spine does: a malformed source refuses `ReplayRefusal::Recompile` with the spine refusal's catalog code and stage; a library whose source has the unit's owner refuses `ReplayRefusal::DependencyInput`; an S1 `text_input_bytes` limit below the source's size refuses `stage_limit_exceeded`; and an S1 limit above the reader limit refuses `LimitAboveReader`. | Test (TC-908) |
 | FR-060-AC-7 | `qsl_replay::compile_package` takes the domain packages a unit's `model` selection names as I1's package input: a unit selecting a package compiles, with the package supplied, to the package bytes and `package_id` of the spine's run over the same source and packages, and without the package refuses `missing_import` at the intake stage as the spine does. | Test (TC-908) |
-| FR-060-AC-8 | Over a CG fixture tree with a QSL tree whose `qsl-replay/src/lib.rs` exists, `quire_eval::`, `quire_eval_corpus::` and `quire_checked::` references in `src/oracle/mod.rs` and in `src/replay/evaluator_corpus.rs`, together with a `qsl_replay::compile_package(..)` call in `src/replay/evaluator_corpus.rs`, leave T12-A passing; the same `qsl_replay::compile_package(..)` call moved to `src/oracle/mod.rs` fails T12-A, named with file, line and module. | Test (TC-1113) |
+| FR-060-AC-8 | Over a CG fixture tree with a QSL tree whose `qsl-replay/src/lib.rs` exists, a `qsl_replay::compile_package(..)` call in `src/replay/evaluator_corpus.rs` leaves T12-A passing; the same `qsl_replay::compile_package(..)` call moved to `src/oracle/mod.rs` fails T12-A, named with file, line and module. | Test (TC-1113) |
 
 ## Dependencies
 

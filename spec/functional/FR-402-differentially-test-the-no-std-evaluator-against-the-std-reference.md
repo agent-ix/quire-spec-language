@@ -134,8 +134,13 @@ is the compared record of one run of the case through a `quire-eval`
 implementation, with the bodies `generated_bodies` names registered and
 every other callable interpreted.
 
-The `package_id` binds the checked input: the four labels enter the emitted
-package, so a case admits only to the closure its writer compiled.
+The `package_id` binds the checked input. The emitted package's source
+references carry each source's `authority`, `identity` and the digest of its
+bytes, so a change to any of those, in `source` or in a dependency's source,
+changes `package_id`, and a case admits only to the closure its writer
+compiled. `revision_namespace` and `revision` do not enter the package and do
+not bind `package_id`; they identify the source for its writer and for
+`compile_package`'s input only.
 
 Version 1 carries no object environment and no domain package: a case runs
 over an environment with unresolved references, as a replay request without
@@ -174,9 +179,9 @@ A file holding only `\n` is non-empty and refuses `malformed_line` at line 1.
 ### Admission refusals
 
 A `CaseAdmission` implementation SHALL admit every loaded case before any
-case is evaluated, and SHALL refuse the whole bundle on the first case, in
-`case_id` order, that it cannot admit, naming the `case_id` and the member's
-JSON pointer:
+case is evaluated, and SHALL refuse the whole run on the first case, in key
+order ("The corpus"), that it cannot admit, naming the case's bundle,
+`case_id` and the member's JSON pointer:
 
 | Order | Code | Refused when |
 | --- | --- | --- |
@@ -194,6 +199,15 @@ packages and the published stage limits, and converting arguments by
 FR-098's `WitnessValue` conversion. A converted argument that call admission
 then refuses (arity, kind, domain) is not an admission refusal: it is the
 case's result, `CallFailure::Input`, compared like any other result.
+
+Admission happens once, in the std build. The `no_std` build compiles
+nothing: it evaluates exactly the cases the std admission admitted, each
+through the `no_std` implementation's own checked-input contract (FR-401:
+the checked input is a type the implementation supplies). How each admitted
+case's checked input reaches the `no_std` build is the contract of the slice
+that adds the `no_std` implementation (S6, IR-590). An admitted case that the
+`no_std` build cannot take as its checked input produces no `no_std` record,
+and is a divergence.
 
 ### The compared record
 
@@ -234,7 +248,10 @@ that case as failing.
 
 `<location>` SHALL be `{"origin": <origin>, "path": [...]}`: `origin` is
 `{"kind": <Origin variant in snake case>}` plus that variant's fields under
-their `quire-semantic-value` field names, and `path` is `Location::path()`.
+their `quire-semantic-value` field names (a `String` as a JSON string, a
+`usize` as a decimal string, and `ModelOperationClause`'s `kind`, an
+`OperationClauseKind`, as its variant in snake case: `requires` or
+`ensures`), and `path` is `Location::path()`.
 
 `<loss>` SHALL be `{"location": <location>, "kind": <ValueLoss variant in
 snake case>}` (`decimal`, `ieee_exact` or `ieee_flags`). Version 1 compares a
@@ -283,14 +300,16 @@ The QSL-owned corpus SHALL be:
      `count` program called with `3` at default limits, at one unit below
      its reference spend, and with the argument `WitnessValue::Boolean(true)`;
    - `tc069/01` to `tc069/14`: TC-069's fourteen signed `div`, `rem`, `+`,
-     `-`, `*` and negation vectors, in their listed order.
+     `-`, `*` and negation vectors, in the order
+     `tests/runtime_evaluation_cases/scalars.rs` lists them.
    A case joins the corpus by adding its record to this file, in `case_id`
    order.
 2. The generated cases, from QSL's own deterministic generator (no
    third-party random or property-testing dependency). The generator is
    SplitMix64; case `i` (0 to 255) draws from the stream seeded with
-   `0x5153_4C37 + i`. Each case is a unit of one to three functions `f0` to
-   `fn`; a function calls only higher-numbered functions, so calls are
+   `0x5153_4C37 + i`, and its `case_id` is `gen/` followed by `i` as three
+   decimal digits (`gen/000` to `gen/255`). Each case is a unit of one to
+   three functions, named `f0`, `f1` and `f2` in order; a function calls only higher-numbered functions, so calls are
    acyclic and need no `decreases` measure. Each function has one to three
    parameters, each `Int[-1000, 1000]` or `Boolean`, and a declared result
    `Integer` or `Boolean`. An `Integer` body combines parameters and literals
@@ -310,7 +329,14 @@ The QSL-owned corpus SHALL be:
    generator defect; it is not skipped.
 
 An external bundle named by `EVALUATOR_CORPUS_DIR` SHALL be loaded with
-`load`, admitted and run with the QSL-owned corpus. CG's generated-closure
+`load`, admitted and run with the QSL-owned corpus.
+
+One run holds up to three bundles, named `checked-in`, `generated` and
+`external`. A case's key in a run is the pair of its bundle name and its
+`case_id`; a `case_id` is unique within its bundle, and the same `case_id`
+in two bundles names two cases. The harness admits, runs, pairs and reports
+cases by key, in the order `checked-in`, `generated`, `external`, and by
+`case_id` within a bundle. CG's generated-closure
 bundle joins the corpus this way.
 
 FR-262-AC-2 (a 100,000-long `List` value), AC-3, AC-4, AC-6, AC-7 and AC-8
@@ -326,13 +352,13 @@ and charge sequence.
 
 The std reference and the `no_std` implementation SHALL run as two separate
 builds of the harness's runner, because one Cargo build unifies features and
-cannot hold both. Each build admits every case, evaluates every case on a
-thread with a 512 KiB stack, with a fresh meter at the case's limits and
-every callable interpreted, and writes one compared record per `case_id`.
-Both builds are test builds of the runner with `charge-log` enabled, so each
-keeps the kernel charge log. The comparator then pairs the records by
-`case_id`. How the runner is built twice is the `no_std` implementation's
-concern.
+cannot hold both. Each build evaluates every admitted case on a thread with
+a 512 KiB stack, with a fresh meter at the case's limits and every callable
+interpreted, and writes one compared record per key. The runner is a Cargo
+test target, so each build is a test build in which the dev-dependency on
+`quire-eval-corpus` enables `charge-log`, and each keeps the kernel charge
+log. The comparator then pairs the records by key. How the runner is built
+twice is the `no_std` implementation's concern.
 
 A case diverges when its two records differ, when either build produced no
 record for it, or when its `expected` is not `null` and the std record
@@ -341,7 +367,7 @@ differs from it in `result` or `consumed`, or in `charges` when neither is
 `unencodable_value` in either build produces no record for that case.
 
 The harness SHALL run every case even after a divergence, and SHALL report
-each divergent case on one line: its `case_id`, its bundle, which pair
+each divergent case on one line: its bundle and `case_id`, which pair
 differed (`std/no_std` or `expected/std`) and the first differing JSON
 pointer with both values, or the build that produced no record and why.
 
@@ -352,7 +378,9 @@ option, list or configuration that tolerates, skips or excludes a case.
 
 The harness SHALL be the `xtask` command `evaluator-differential`, run by
 `make evaluator-differential`, which passes `EVALUATOR_CORPUS_DIR` through
-when it is set.
+when it is set. The command evaluates no case itself: it runs the runner's
+two test builds, std and `no_std`, collects their compared records and runs
+the comparator.
 
 While QSL ships both the std reference and the `no_std` implementation,
 `make ci` SHALL run `evaluator-differential` over the QSL-owned corpus.
@@ -370,8 +398,8 @@ CG SHALL write its bundle with `quire-eval-corpus`: each case's source,
 source identity labels and library dependencies as it compiles them, the
 `package_id` that `qsl_replay::compile_package` returns for them (called
 from CG's `replay` module, FR-060 T12-A), and `expected` `null`, with
-`generated_bodies` empty. Once `quire-eval` holds an implementation that CG
-can run, CG MAY instead record a non-null `expected` from one run of the
+`generated_bodies` empty. Once an implementation of the `quire-eval`
+interface exists that CG may depend on, CG MAY instead record a non-null `expected` from one run of the
 case through that implementation, with its generated bodies registered and
 named in `generated_bodies`; the harness then checks that record against the
 std reference.
@@ -381,14 +409,14 @@ std reference.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-402-AC-1 | `quire-eval-corpus`'s manifest names no crate of the QSL repository in any dependency table, its normal dependencies are drawn only from the stated list, and its `charge-log` feature enables `quire-exact/test-support` and nothing else. | Inspection |
-| FR-402-AC-2 | A `CaseRecord` for `fr402/count-3` (FR-262-AC-1's `count`, argument `3`, default limits, no dependencies, `package_id` from `compile_package`) has a `line()` that is its `quire-canonical` text followed by `\n`, and `load` of a bundle holding that line returns the record unchanged. QSL's std admission admits it; the same record with a changed `source.identity.revision` and the old `package_id` refuses `package_mismatch`. | Test (TC-1112) |
+| FR-402-AC-2 | A `CaseRecord` for `fr402/count-3` (FR-262-AC-1's `count`, argument `3`, default limits, no dependencies, `package_id` from `compile_package`) has a `line()` that is its `quire-canonical` text followed by `\n`, and `load` of a bundle holding that line returns the record unchanged. QSL's std admission admits it; the same record with a changed `source.identity.authority`, or a changed `source.identity.identity`, and the old `package_id` refuses `package_mismatch`; the same record with a changed `source.identity.revision` and the old `package_id` admits. | Test (TC-1112) |
 | FR-402-AC-3 | A case whose `source` imports a library supplied in `dependencies`, with `compile_package`'s `package_id`, loads and admits; with the dependency entry removed, admission refuses `compile_refused` carrying `missing_import`; with two entries out of `identity` order, `load` refuses `dependency_order`. | Test (TC-1112) |
-| FR-402-AC-4 | Each bundle below makes `load` refuse the whole bundle with the stated code. Bundle refusals, naming no line: no `cases.jsonl` (`missing_bundle`); a zero-byte file (`empty_bundle`). Line refusals at line 1 with no pointer: a file holding only `\n`, and AC-2's line without its `\n` (`malformed_line`); AC-2's line with members reordered (`noncanonical_line`). Member refusals at line 1 naming the pointer, each one mutation of AC-2's record: `format` `quire.evaluator-case/v2` (`unknown_format`, `/format`); an extra member `note` (`member_set`, `/note`); `object_environment` `true` (`member_set`, `/object_environment`); `case_id` `A` (`invalid_case_id`, `/case_id`); `limits` `{"depth": "1"}` and `limits` `{"work_units": "-1"}` (`invalid_limit`, `/limits/depth` and `/limits/work_units`); `object_environment` `{}` (`unsupported_member`, `/object_environment`); `generated_bodies` `["b", "a"]` (`dependency_order`, `/generated_bodies`); `package_id` `"x"` (`invalid_package_id`, `/package_id`); `expected` `{}` (`malformed_expected`, `/expected`). A two-line bundle repeating AC-2's line refuses `case_order` at line 2. | Test (TC-1112) |
-| FR-402-AC-5 | QSL's std admission refuses each bundle below whole, before any case is evaluated, naming the `case_id` and pointer: a source that does not parse (`compile_refused`, `/source`, with the compile's catalog code); one changed digest byte of `package_id` (`package_mismatch`, `/package_id`); `function` `nope` (`unknown_function`, `/function`); `generated_bodies` `["nope"]` (`unknown_generated_body`, `/generated_bodies/0`); an argument `{"nope": 1}` (`malformed_argument`, `/arguments/0`). | Test (TC-1112) |
+| FR-402-AC-4 | Each bundle below makes `load` refuse the whole bundle with the stated code. Bundle refusals, naming no line: no `cases.jsonl` (`missing_bundle`); a zero-byte file (`empty_bundle`). Line refusals at line 1 with no pointer: a file holding only `\n`, and AC-2's line without its `\n` (`malformed_line`); AC-2's line with members reordered (`noncanonical_line`). Member refusals at line 1 naming the pointer, each one mutation of AC-2's record: `format` `quire.evaluator-case/v2` (`unknown_format`, `/format`); an extra member `note` (`member_set`, `/note`); `object_environment` `true` (`member_set`, `/object_environment`); `case_id` `A` (`invalid_case_id`, `/case_id`); `limits` `{"depth": "1"}` and `limits` `{"work_units": "-1"}` (`invalid_limit`, `/limits/depth` and `/limits/work_units`); `object_environment` `{}` (`unsupported_member`, `/object_environment`); `generated_bodies` `["b", "a"]` (`dependency_order`, `/generated_bodies`); `package_id` `{"algorithm": "sha256", "digest": "zz"}` (`invalid_package_id`, `/package_id`); `expected` `{}` (`malformed_expected`, `/expected`). A two-line bundle repeating AC-2's line refuses `case_order` at line 2. | Test (TC-1112) |
+| FR-402-AC-5 | QSL's std admission refuses each bundle below whole, before any case is evaluated, naming the bundle, `case_id` and pointer: a source that does not parse (`compile_refused`, `/source`, with the compile's catalog code); one changed digest byte of `package_id` (`package_mismatch`, `/package_id`); `function` `nope` (`unknown_function`, `/function`); `generated_bodies` `["nope"]` (`unknown_generated_body`, `/generated_bodies/0`); an argument `{"nope": 1}` (`malformed_argument`, `/arguments/0`). | Test (TC-1112) |
 | FR-402-AC-6 | The std build's compared record for `fr402/count-3` has `result.outcome` `completed` with `value` `{"integer": "3"}`, a `charges` list with exactly four entries whose `point` is `function.call`, and `consumed` with all ten counters as decimal strings. For `fr402/count-3-short` it has `outcome` `incomplete` with `limit_kind` `work_units` and no `charges` entry for the denied charge. For `fr402/count-3-boolean` it has `result.kind` `call_failure`, `arm` `input` and the `WrongValueKind` code. For `fr262/ac1/count-100000` it has `charges` `null` and value `{"integer": "100000"}`. A run completing with a `Value::Text` is refused `unencodable_value` naming the kind `text`. | Test (TC-1112) |
 | FR-402-AC-7 | A harness run over a bundle holding `fr402/count-3` with an `expected` whose `consumed.work_units` is one less than the std record's fails, reports that `case_id` with pair `expected/std` and pointer `/consumed/work_units`, and still runs and reports every other case; with the std build's own record as `expected` that case passes; with `expected` `null` it is compared `std/no_std` only. A comparator fed two record sets that differ only in one `charges` entry's `sizes` reports pair `std/no_std` and a pointer under `/charges`; a record set missing one `case_id` reports that case and the build that produced no record. | Test (TC-1112) |
-| FR-402-AC-8 | The checked-in bundle loads, admits and holds exactly the `case_id`s the corpus list names; the generator, run twice for count 256, produces byte-identical lines that all load and admit; and the QSL workspace's `Cargo.lock` gains no random-number or property-testing crate for the generator. | Test (TC-1112) |
-| FR-402-AC-9 | `make ci` runs `evaluator-differential` over the QSL-owned corpus as a separate std build and `no_std` build and reports zero divergences; FR-262-AC-2, AC-3, AC-4, AC-6, AC-7 and AC-8's tests pass against both builds; and the harness's command line, environment and configuration offer no setting that tolerates, skips or excludes a case. | Test (TC-1112) and Inspection |
+| FR-402-AC-8 | The checked-in bundle loads, admits and holds exactly the `case_id`s the corpus list names; the generator, run twice for count 256, produces byte-identical lines with `case_id`s `gen/000` to `gen/255` that all load and admit; a run whose external bundle reuses the `case_id` `fr402/count-3` runs, pairs and reports it as a second case, keyed by bundle `external`; and the QSL workspace's `Cargo.lock` gains no random-number or property-testing crate for the generator. | Test (TC-1112) |
+| FR-402-AC-9 | `make ci` runs `evaluator-differential` over the QSL-owned corpus; the command runs the runner's std and `no_std` test builds, the std build admits every case once and the `no_std` build compiles nothing and produces a record for every admitted case, both builds' records carry non-null `charges` for `fr402/count-3`, and the run reports zero divergences; a comparator fed a `no_std` record set that lacks an admitted case reports that case as a divergence; FR-262-AC-2, AC-3, AC-4, AC-6, AC-7 and AC-8's tests pass against both builds; and the harness's command line, environment and configuration offer no setting that tolerates, skips or excludes a case. | Test (TC-1112) and Inspection |
 | FR-402-AC-10 | Given a bundle that CG's `make evaluator-corpus` writes, `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>` loads and admits every record and reports zero divergences, and every record whose `expected` is non-null passes its `expected/std` check. | Test (TC-1112) |
 
 ## Dependencies
