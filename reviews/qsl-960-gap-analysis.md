@@ -59,7 +59,9 @@ verification and documentation gap, not missing behaviour.
 
 ## Dispositions
 
-| FND | Outcome | Sha |
+Round 1. The reviewer checked these rows at a6ae56f00 (fix 9ffbfbb16). They replace the rows the coder appended in ea8653593; the outcomes are the same.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 9ffbfbb16 |
-| FND-002 | fixed | 9ffbfbb16 |
+| FND-001 | fixed 9ffbfbb16 | The new test `a_source_of_declarations_needs_s1_tokens_and_s1_nodes_raised_as_well` builds more than 1 MiB of enum declarations and asserts refusals at `s1.input_bytes`, then `s1.tokens`, then `s1.nodes`, and admission with all four raised (more than 10000 enums). Mutation: dropping the `s1.nodes` raise makes it FAIL at line 137. All 6 TC-1093 tests pass at a6ae56f00. |
+| FND-002 | fixed 9ffbfbb16 | `the_default_admits_just_under_one_mebibyte_and_a_later_entry_replaces` admits a 1 MiB - 4 KiB source at the default. |

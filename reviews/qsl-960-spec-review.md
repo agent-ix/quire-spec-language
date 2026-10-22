@@ -32,7 +32,9 @@ Mergeable. There are no high findings.
 
 ## Dispositions
 
-| FND | Outcome | Sha |
+Round 1. The reviewer checked these rows at a6ae56f00 (fix 9ffbfbb16). They replace the rows the coder appended in ea8653593; the outcomes are the same.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 9ffbfbb16 |
-| FND-002 | fixed | 9ffbfbb16 |
+| FND-001 | fixed 9ffbfbb16 | FR-399 Behavior now says `s1.input_bytes` alone does not admit a large source, and names all four settings. The new AC-4 and TC-1093 step 4 cover a real-declaration source. `quire validate` passes. |
+| FND-002 | fixed 9ffbfbb16 | The old AC-2 is split into AC-2 (AboveReader) and AC-3 (compiles). The ACs are renumbered 1-6 and every one has a tagged test. |

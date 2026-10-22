@@ -49,7 +49,9 @@ Fix it in this PR if it is cheap.
 
 ## Dispositions
 
-| FND | Outcome | Sha |
+Round 1. The reviewer checked these rows at a6ae56f00 (fix 9ffbfbb16). They replace the rows the coder appended in ea8653593; the outcomes are the same.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 9ffbfbb16 |
-| FND-002 | fixed | 9ffbfbb16 |
+| FND-001 | fixed 9ffbfbb16 | `with_named` rustdoc (request.rs:96-103) now states the AboveReader pairing with `ReplayLimits::with_input_bytes` and that real sources reach `s1.tokens` (100000) and `s1.nodes` (50000) first. |
+| FND-002 | fixed 9ffbfbb16 | The tests now read the refusal through `fired()` and assert the setting named: `s1.input_bytes`, `s1.tokens`, `s1.nodes`, and `limit 4 reached`. |
