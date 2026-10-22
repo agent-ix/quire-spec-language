@@ -42,10 +42,11 @@ alias is `v`. The owner is authority `a`, identity `u`.
 4. Assemble each of FR-091-AC-35's five units.
 5. Assemble FR-091-AC-44's unit with `function f using v(d: Quantity<ms>): Boolean pure { true }`, then with `d: Quantity<Time>`, then with `d: Quantity<nothing>`. Then check the first unit with a further `function g using v(): Boolean pure { f(3 s) }`. Check the first unit with a further `function h using v(): Boolean pure { f(3 ms) }`, and lower it. Assemble a unit declaring a unit `ms` and a record `ms`, a unit declaring two units named `ms` (refused `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named), and a unit declaring `record Quantity`.
 6. Check and lower the first unit of step 5 with each further body of
-   FR-093-AC-33 (`f(0.5 ms)`, `f(rational(2, 4) ms)`, two `3 ms`, `k` and
-   `c`), and pass each checked package to IR's v2 reader. Check it with each
-   body of FR-093-AC-34 (`f(3 ghost)`, `f(3 Time)`, `f(rational(1, 0) ms)`,
-   `e` and `q`), and with `f(rational(1, 100000) ms)` under a rational-bits
+   FR-093-AC-33 (`h2`, `h3`, `h4` beside `h`, `n`, `k` and `c`, whose
+   body is `convert<Quantity<s>>(d) = 3 s`), and pass each checked package
+   to IR's v2 reader. Check it with each body of FR-093-AC-34 (`f(3 ghost)`,
+   `f(3 Time)`, `f(rational(1, 0) ms)`, `f(rational(1, 0) ghost)`, `e`,
+   `g2`, `m` and `q`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
 
 Tag the tests with the AC ids they back and `TC-483`.
@@ -68,15 +69,17 @@ Tag the tests with the AC ids they back and `TC-483`.
   declarations it concerns, and no `PackageDeclarations`. Its catalog code
   is the STD-112 cause.
 - Step 5: the first assembles with the type of `d` the node of `ms` and no new declaration; the second and third each refuse the unresolved name (`missing_declaration`/`missing-name`) at assembly; the check of `g` refuses `ill_typed`/`type-mismatch` at the argument `3 s`, raised by check, not by the assembler; the check of `h` admits it and lowers `3 ms` to one `value`/`literal` node of `value_kind` `quantity`, value `"3"`, whose `semantic_type` and `type` are the `ms` unit node, referenced by the call's argument (FR-093-AC-33); the record-and-unit unit assembles, the two-unit unit refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, naming each, and `record Quantity` refuses `invalid_syntax`.
-- Step 6: `f(0.5 ms)` and `f(rational(2, 4) ms)` share one literal node of
-  value `"1/2"`; two `3 ms` share one node; `k` lowers `quire.op.quantity.eq`
-  over `d` and a literal of value `"1/1000"` at the `s` node; `c` lowers
+- Step 6: `h2`'s and `h3`'s arguments share one literal node of value
+  `"1/2"`; `h4`'s `3 ms` is `h`'s node; `n` lowers a literal of value `"-3"`; `k` lowers `quire.op.quantity.eq`
+  over `d` and a literal of value `"1/1000"` at the `s` node; `c` (`convert<Quantity<s>>(d) = 3 s`) lowers
   `quire.op.quantity.convert` with mode `rounding` = `exact` and then
   `quire.op.quantity.eq` over the convert node and the `3 s` literal; no
   `rational` literal is emitted; IR's v2 reader admits each package. The
   refusals carry FR-093-AC-34's codes and emit no literal node:
   `missing_declaration`/`missing-name` naming `ghost` and `Time`,
-  `undefined_expression`/`unproved-nonzero` for the zero denominator and for
-  `q`'s division, `ill_typed`/`type-mismatch` at `e`'s comparison, and
+  `undefined_expression`/`unproved-nonzero` for both zero denominators
+  (`ghost` included) and for `q`'s division, `ill_typed`/`type-mismatch` at
+  `e`'s and `g2`'s comparisons, `ill_typed`/`operator-ineligible` at `m`'s
+  negation, and
   `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`
   and `16`.
