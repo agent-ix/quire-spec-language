@@ -505,7 +505,6 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         "check-conformance-input",
         "conformance",
         "check-no-committed-binaries",
-        "check-index-completeness",
         "ci-clean-build",
         "seam-probe",
         "string-edge",

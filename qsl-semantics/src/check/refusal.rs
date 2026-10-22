@@ -2024,6 +2024,9 @@ pub enum KeyFault {
     RecordSlotCount,
     /// An IEEE arithmetic node whose left operand is not an IEEE type.
     UntypedIeeeOperand,
+    /// The compiler-owned IEEE catalog row failed admission, retaining the
+    /// semantic-value owner's typed refusal.
+    IeeeProfileAdmission(quire_semantic_value::definition::PackageRefusal),
     /// Two admitted domain packages share this identity: a check selects
     /// one version of each (FR-094, ADR-013 O-01).
     DuplicateModelSelection(String),
@@ -2072,6 +2075,7 @@ impl KeyFault {
             Self::UnresolvedDraft => "draft-keyed-in-dependency-order",
             Self::RecordSlotCount => "record-slots-match-fields",
             Self::UntypedIeeeOperand => "ieee-operand-typed",
+            Self::IeeeProfileAdmission(_) => "catalog-ieee-profile-admitted",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
             Self::UncheckedLimit(_) => "family-limit-is-a-checking-limit",
