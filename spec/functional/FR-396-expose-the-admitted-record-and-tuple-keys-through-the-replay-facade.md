@@ -73,7 +73,7 @@ hashes or builds one.
 - The lookup refuses in this order: an id a package of the dependency
   closure, not this package, admitted as a record, tuple or union is `Foreign`,
   naming that dependency's `package_id`; an id that names another node of
-  this package's checked graph (an enum, a scalar type, a function or any other
+  this package's checked graph (an enum, a scalar type, a function, a declared unit or dimension (FR-398) or any other
   node) is `WrongKind`; any other id is `Unknown`.
 - The enum lookups of FR-394 keep their refusals: they never refuse
   `WrongKind`.
