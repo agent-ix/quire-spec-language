@@ -95,7 +95,17 @@ record and call failure is the same before and after the move.
 ### Where each interface type lives
 
 Each type the FR-262 interface names SHALL be defined in exactly one crate,
-at the path below, and SHALL leave no copy or re-export at a former path.
+at the path below, and SHALL leave no copy or re-export at a former path. A
+former path is the `qsl_foundation::`, `qsl_semantics::` or `qsl_eval::`
+path at which the type was defined or re-exported before the move.
+
+One re-export of a moved type is sanctioned. FR-060 rule T12-A makes the
+layer-6 `qsl-replay` facade CG's only QSL edge, so CG can name a type only
+through that facade. `qsl-replay` MAY therefore re-export, at its crate
+root, a moved type that appears in its own public signatures, by the type's
+new path (for example `pub use quire_semantic_value::catalog::Category;`).
+The re-export names the same type, not a copy. No other QSL crate SHALL
+re-export a moved type, at any path.
 
 | Type | Owner and path | Moved by |
 | --- | --- | --- |
@@ -176,11 +186,22 @@ supplies for one checked closure, and read the closure only through it:
 3. **Checked input and environment.** The checked-expression input and the
    admitted object environment are types the implementation supplies through
    the contract. The leaf moves them into a session and never inspects them.
+   The contract's call admission and expression admission take the
+   session's meter beside the input and environment, so the
+   implementation's supplied-value run polls the meter's installed handle
+   (FR-262 Begin).
 4. **Interpreted transitions.** The contract SHALL advance an interpreted
    application or expression by one finite transition, returning a
    continuation, a child request or a terminal `Evaluation` /
    `CallFailure`, so the leaf's scheduler drives interpreted and registered
-   bodies through one task stack.
+   bodies through one task stack. A call site whose callee identity has a
+   host body bound in the session's sealed registry SHALL dispatch to that
+   host body, wherever the call site is: the root application, a host
+   body's child request, or a source application inside an interpreted
+   body. An interpreted transition therefore returns each source
+   application to the scheduler as a child request and never evaluates the
+   callee's interpreted body itself. The reference adapter follows the same
+   rule; it has no exception.
 5. **One closure per registry.** A registry SHALL be created from exactly one
    checked closure and hold it. Begin takes the registry, not a separate
    closure, so no session pairs a registry with another closure.
@@ -243,6 +264,8 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 | FR-401-AC-4 | With no edit to any expected value, the `qsl-eval`, `qsl-replay` and `qsl-analyze` suites, `qsl-bench`'s build, the FR-262 tests, the FR-096 refusal-record tests and the QSL conformance run over the QSpec checked-package fixtures pass: every `Evaluation` outcome, location and loss list (including the located `incomplete` result of a charge a cancelled handle denies, which FR-262 keeps as an evaluation rather than `CallFailure::Cancelled`), every `CallFailure` arm and category, and every refusal record built through the `qsl-foundation` and `qsl-eval` functions that replace the two moved methods equal the values before the move. | Test |
 | FR-401-AC-5 | Through the reference adapter over a checked package with a function `f(x: Int[0, 9]): Boolean`, an FR-151 dispatched member call whose synthesized dispatch candidate is not callable by name, and a dependency package with a function `g(): Integer`, each registration into a fresh registry returns: for `f`'s `NodeKey` with signature `([Int[0, 9]], Boolean)`, `Accepted`; for `f`'s key with `([Int[0, 10]], Boolean)`, `SignatureMismatch`; for `g`'s key with `([], Integer)`, `Accepted`; for the synthesized candidate's key with its recorded signature, `CallableNotAdmitted`; for a `NodeKey` no function of the closure has, `CallableNotAdmitted`. | Test |
 | FR-401-AC-6 | The Begin operation takes the registry and no separate closure or `Cancel` argument, and `quire-eval`'s source names no item of a QSL crate, including `CheckedPackage`, `ObjectEnvironment` and FR-400's checker-side record. | Inspection |
+| FR-401-AC-8 | Through the reference adapter, over a checked package with `f(x: Int[0, 9]): Integer`, whose body is `x`, and an interpreted `g(x: Int[0, 9]): Integer` whose body is `f(x) + 1`, with a host body registered for `f`'s `NodeKey` that returns `7`: a session over `f(3)` returns `7`; a session over `g(3)` returns `8`; and a session over a second registered body that requests `f(3)` resumes that body with `7`. In each run the factory for `f` is invoked once per application of `f`, `f`'s interpreted body makes no charge, and each application of `f` makes one `function.call` charge. The test fails if any run evaluates `f`'s interpreted body. | Test |
+| FR-401-AC-9 | The QSL API-surface check finds, in every QSL crate, no `pub use` (or other re-export) of a type this requirement moves, except at `qsl-replay`'s crate root for a moved type that a public `qsl-replay` signature names. `qsl_replay::Category` and `quire_semantic_value::catalog::Category` name the same type: a value of one is accepted where the other is expected. A fixture `pub use quire_semantic_value::catalog::Category;` in `qsl-eval`, and one in `qsl-replay` for a moved type that no public `qsl-replay` signature names, each fail the check, reported with file and line. | Test |
 | FR-401-AC-7 | FR-059's direction check reports an RT resolved graph with a normal edge to `quire-eval` sourced from `agent-ix/quire-eval` as clean, and reports no FB-11 cycle through it. | Test |
 
 ## Dependencies
