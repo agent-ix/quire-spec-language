@@ -56,3 +56,12 @@ Checks:
 ## Verdict
 
 Not mergeable: FND-001 (major). Otherwise consistent with QSpec FR-323, QSpec #364 and CG #522.
+
+## Dispositions
+
+Round 1, reviewed QSL #1212 at 373ddf489.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fixed at 373ddf489 (FR-357, FR-358, FR-358-AC-3 and TC-907 name the function replay target) |
+| FND-002 | fixed | fixed at 373ddf489 (lead-in reworded; QSL-972 named for the third bullet) |
