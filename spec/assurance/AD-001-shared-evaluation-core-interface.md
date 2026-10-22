@@ -181,6 +181,14 @@ crates still use `unsafe_code = forbid`), and S9 switches the default and
 retire/demotes the std path. S7-S9 remain separately gated slices, not part of
 S6's claimed completion.
 
+FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, QSL's
+runtime evaluation vectors, fixed-seed generated cases and CG's exported
+generated-closure bundle), its case encoding and loader refusals in the
+facade module `qsl_replay::corpus`, the compared record (result, location,
+losses, ordered charges and meter counters), the zero-divergence pass
+criterion and the harness's place in `make ci` from S6 to S9. CG produces its
+bundle through that facade module only (FR-060 T12-A).
+
 ### RT and CG acceptance
 
 IR-583 can serve std consumers once the interface and QSL reference adapter

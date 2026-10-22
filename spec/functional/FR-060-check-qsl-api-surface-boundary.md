@@ -83,7 +83,7 @@ six rules:
 
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
-| T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module, and so is any reference to `qsl_replay::spine`, the spine compile `command` shares with the executor, which is not part of the facade: found by parsing, as a `use` tree leaf or a path through the crate or an alias of it, a glob import of the crate, or a `qsl_replay::spine` token run inside a macro | `qsl-replay/src/lib.rs` |
+| T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module, and CG's `evaluator_corpus` module, the one module that may also reference `qsl_replay::corpus` ("T12-A: the evaluator corpus producer"); a reference to any other QSL workspace crate is a violation from any module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module, and so is any reference to `qsl_replay::spine`, the spine compile `command` shares with the executor, which is not part of the facade: found by parsing, as a `use` tree leaf or a path through the crate or an alias of it, a glob import of the crate, or a `qsl_replay::spine` token run inside a macro | `qsl-replay/src/lib.rs` |
 | T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `check` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `qsl-semantics/src/model/population.rs` |
@@ -217,6 +217,44 @@ stage limits `replay` reads from a request (S1 `text_input_bytes`, S3
 checked-package bytes from source of its own, such as CG testing against real
 QSL output, calls this entry and never names `qsl_replay::spine`.
 
+### T12-A: the evaluator corpus producer
+
+CG exports its generated-closure cases as an
+[FR-402](FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md)
+corpus bundle, so that QSL's differential harness runs them through the std
+reference and the `no_std` evaluator. The producer reaches QSL only through
+the facade: it compiles each case with `qsl_replay::compile_package` and
+obtains each record, including the std reference's expected compared record,
+from `qsl_replay::corpus::reference_record`, and writes it with
+`CaseRecord::line()`. It names no evaluator, checker or package crate, and
+the facade's corpus module gives it records only, never a checked closure,
+an evaluator handle or a session. The rule therefore keeps its intent: CG's
+dependency on QSL stays the facade, and QSL stays the one place that
+encodes a checked input, evaluates it and encodes the result.
+
+T12-A SHALL hold these allowances and refusals over CG's `src/`:
+
+- A reference to `qsl_replay` other than `qsl_replay::corpus` and
+  `qsl_replay::spine` is allowed from CG's `replay` module and its
+  descendants and from CG's `evaluator_corpus` module and its descendants.
+- A reference to `qsl_replay::corpus`, found by parsing as T12-A finds
+  `qsl_replay::spine` (a `use` tree leaf, a path through the crate or an
+  alias of it, or a token run inside a macro), is allowed only from CG's
+  `evaluator_corpus` module and its descendants. From any other module,
+  including `replay`, it is a violation. A glob import of the crate is a
+  violation from any module, as for `spine`.
+- A reference whose first path segment is the Rust crate name of any QSL
+  workspace member other than `qsl-replay` is a violation from any module,
+  including `replay` and `evaluator_corpus`. The rule reads the member list
+  from the supplied QSL tree's workspace manifest, so a new QSL crate is
+  covered without a rule change.
+- A reference to a crate from its own repository, such as the shared leaf
+  crates of ADR-011 FB-05's class, is not a QSL reference and is outside
+  T12-A; FR-059 governs those edges.
+
+The producer lives in CG's `src/` so that T12-A scans it; CG generated or
+emitted code never references `qsl_replay::corpus`.
+
 ### Honest reporting of real findings
 
 Running the check against QSL's real source tree at any commit SHALL report
@@ -238,6 +276,8 @@ each list can only shrink.
 | FR-060-AC-5 | `qsl_replay::compile_package` compiles FR-092's recursive `List` (`record List { next: List?; }`) and `Tree` (`record Tree { kids: Sequence<Tree>[0, 3]; }`) from source through the facade alone, and for each the package bytes and `package_id` equal those of the spine's parse, select, check and package run over the same source. | Test (TC-908) |
 | FR-060-AC-6 | `qsl_replay::compile_package` refuses as the spine does: a malformed source refuses `ReplayRefusal::Recompile` with the spine refusal's catalog code and stage; a library whose source has the unit's owner refuses `ReplayRefusal::DependencyInput`; an S1 `text_input_bytes` limit below the source's size refuses `stage_limit_exceeded`; and an S1 limit above the reader limit refuses `LimitAboveReader`. | Test (TC-908) |
 | FR-060-AC-7 | `qsl_replay::compile_package` takes the domain packages a unit's `model` selection names as I1's package input: a unit selecting a package compiles, with the package supplied, to the package bytes and `package_id` of the spine's run over the same source and packages, and without the package refuses `missing_import` at the intake stage as the spine does. | Test (TC-908) |
+| FR-060-AC-8 | Over a CG fixture tree with a QSL tree whose `qsl-replay/src/lib.rs` exists: a `use qsl_replay::corpus::reference_record;` in `src/evaluator_corpus/mod.rs` and a `qsl_replay::compile_package(..)` call in `src/evaluator_corpus/mod.rs` leave T12-A passing; the same `qsl_replay::corpus` reference in `src/replay/mod.rs`, and a `qsl_replay::corpus::load` path in `src/oracle/mod.rs`, each fail T12-A, named with file, line and module. | Test (TC-1113) |
+| FR-060-AC-9 | Over the same fixture trees, a reference to `qsl_eval::`, `qsl_semantics::` or `qsl_package::` in `src/evaluator_corpus/mod.rs` or in `src/replay/mod.rs` fails T12-A, naming the crate, file, line and module; a QSL tree whose workspace manifest adds a member `qsl-extra` makes a `qsl_extra::` reference in `src/evaluator_corpus/mod.rs` fail with no rule change; a `quire_exact::` reference in `src/evaluator_corpus/mod.rs` is no T12-A finding. | Test (TC-1113) |
 
 ## Dependencies
 
