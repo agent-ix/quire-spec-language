@@ -25,9 +25,14 @@ Scope: FR-338-AC-9.
    expected arrays built from each population's declaration identity text.
 3. Check a closure certificate whose product state carries `P1`'s context
    against `P2`'s instance.
-4. Replace the instance array of a product state's key with the key
-   object's FR-181 reference value, then with the instance array plus an
-   object type member, and check the certificate.
+4. Replace `["instance", T, "a"]` in a product state's key with, in turn,
+   the key object's FR-181 reference value, `["instance", T, "a", O]` (`O`
+   the JSON string of `Counter`'s declaration identity text) and
+   `["instance", T, {"type":"text","value":"a"}]`, and check the
+   certificate.
+5. Over a subject with population `P1` of `Counter`, universe `["a"]`, and
+   two initial states holding under key `a` a `Counter` and a `Fast` (a
+   subtype of `Counter`), encode the instance's context in each.
 
 Tag the tests `#[trace("TC-1164", "FR-338-AC-9")]`.
 
@@ -36,3 +41,4 @@ Tag the tests `#[trace("TC-1164", "FR-338-AC-9")]`.
 - Step 2: two contexts whose octets differ exactly in the population text.
 - Step 3: the state is a foreign context and is not admitted.
 - Step 4: each certificate is rejected `ShapeMismatch` at `ProductState`.
+- Step 5: the two contexts' octets are equal.
