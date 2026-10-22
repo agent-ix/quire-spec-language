@@ -54,6 +54,7 @@ use crate::spine::{
     self, CompileRefusal, DependencyInput, DependencyInputRefusal, ParseRequest, SpineLimits,
     SuppliedLibrary,
 };
+use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{
     DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
 };
@@ -105,6 +106,20 @@ pub struct LimitAboveReader {
 
 fn hex(digest: &[u8; 32]) -> WireNodeId {
     WireNodeId::from_digest(*digest)
+}
+
+/// Why a `frame_operation` object is not the operation's declaring object
+/// (FR-116, QSpec FR-323).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum MalformedOperationReason {
+    /// The object names a declaration that cannot declare operations (a
+    /// value type, an enum, a record).
+    #[error("the object names a declaration that cannot declare operations")]
+    NotAnObjectType,
+    /// The object only inherits the operation; the target names the
+    /// declaring object.
+    #[error("the object only inherits the operation")]
+    OnlyInherited,
 }
 
 /// Why [`replay`] settled no verdict. Each variant is one ADR-013 O-26
@@ -278,11 +293,56 @@ pub enum ReplayRefusal {
     /// operand types hold more positions than the check stage allows.
     #[error("{0}")]
     ParityBound(Box<ParityBoundRefusal>),
-    /// FR-116: a frame counterexample's operation names no operation
-    /// frame of the recompiled package.
+    /// FR-098, FR-116, FR-122: the request's replay target is not the member
+    /// the entry reads (`invalid_runtime_input`/`unknown-member` at the
+    /// target member's `/replay/<member>` pointer). The code and pointer
+    /// tell it apart from QSpec FR-323's refusal of a request carrying two
+    /// targets (`invalid-value`).
+    #[error("invalid_runtime_input/unknown-member at {}: the request's target is {target}, but `{entry}` reads `{member}`", .target.member().pointer())]
+    WrongReplayTarget {
+        /// The request's replay target.
+        target: Box<ReplayTarget>,
+        /// The entry that refused it.
+        entry: ReplayEntry,
+        /// The member the entry reads.
+        member: TargetMember,
+    },
+    /// FR-116, FR-122: the envelope's replay target differs from the
+    /// request's (`stale_dependency`/`content-mismatch`), naming both.
+    #[error("stale_dependency/content-mismatch: the request's target is {request} but the envelope's is {envelope}")]
+    TargetMismatch {
+        /// The request's replay target.
+        request: Box<ReplayTarget>,
+        /// The envelope's replay target.
+        envelope: Box<ReplayTarget>,
+    },
+    /// FR-116: the request's `frame_operation` names no operation frame of
+    /// the recompiled package.
     #[error("missing_declaration/missing-name: package {} holds no operation frame {operation}", .package.hex())]
     UnknownOperation {
-        /// The payload's operation.
+        /// The request's operation.
+        operation: FrameOperation,
+        /// The recompiled package it was looked up in.
+        package: PackageId,
+    },
+    /// FR-116: the request's `frame_operation` names an object that cannot
+    /// be its operation's declaring object (`invalid_model_binding`/
+    /// `malformed-declaration`).
+    #[error("invalid_model_binding/malformed-declaration: package {} cannot select operation {operation}: {reason}", .package.hex())]
+    MalformedOperationTarget {
+        /// The request's operation.
+        operation: FrameOperation,
+        /// The recompiled package it was looked up in.
+        package: PackageId,
+        /// Why the object cannot be the declaring object.
+        reason: MalformedOperationReason,
+    },
+    /// FR-116: two supertypes of the request's `frame_operation` object
+    /// expose the operation's name (`ambiguous_declaration`/
+    /// `ambiguous-name`).
+    #[error("ambiguous_declaration/ambiguous-name: package {} exposes operation {operation} through two supertypes", .package.hex())]
+    AmbiguousOperation {
+        /// The request's operation.
         operation: FrameOperation,
         /// The recompiled package it was looked up in.
         package: PackageId,
@@ -293,12 +353,12 @@ pub enum ReplayRefusal {
     /// the payload's frame node or occurrence (refused before recompiling).
     #[error("stale_dependency/content-mismatch: {0}")]
     FrameIdentity(Box<FrameIdentityMismatch>),
-    /// FR-122: a state-clause counterexample's clause names no state clause
-    /// of the recompiled package.
-    #[error("missing_declaration/missing-name: package {} declares no state clause {}", .package.hex(), .clause.as_str())]
+    /// FR-122: the request's `state_clause` names no state clause of the
+    /// recompiled package (a function's name included).
+    #[error("missing_declaration/missing-name: package {} declares no state clause {clause}", .package.hex())]
     UnknownClause {
-        /// The payload's clause.
-        clause: Identifier,
+        /// The request's `state_clause`.
+        clause: QualifiedName,
         /// The recompiled package it was looked up in.
         package: PackageId,
     },
@@ -375,9 +435,13 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. } | Self::UnknownOperation { .. } => {
                 Code::MissingDeclaration
             }
-            Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
-                Code::StaleDependency
-            }
+            Self::WrongReplayTarget { .. } => Code::InvalidRuntimeInput,
+            Self::MalformedOperationTarget { .. } => Code::InvalidModelBinding,
+            Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
+            Self::FrameIdentity(_)
+            | Self::ClauseIdentity(_)
+            | Self::ScalarIdentity(_)
+            | Self::TargetMismatch { .. } => Code::StaleDependency,
             Self::UnknownClause { .. } => Code::MissingDeclaration,
             Self::UnusedObjectEnvironment => Code::InvalidRuntimeInput,
             Self::ForeignReference { .. } => Code::ForeignReference,
@@ -410,6 +474,7 @@ impl ReplayRefusal {
     /// or request check names one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::Request(refusal) => refusal.cause(),
             Self::Recompile(refusal) => refusal.cause(),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::DependencyInput(refusal) => refusal.cause(),
@@ -419,9 +484,13 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
-            Self::FrameIdentity(_) | Self::ClauseIdentity(_) | Self::ScalarIdentity(_) => {
-                Some("content-mismatch")
-            }
+            Self::FrameIdentity(_)
+            | Self::ClauseIdentity(_)
+            | Self::ScalarIdentity(_)
+            | Self::TargetMismatch { .. } => Some("content-mismatch"),
+            Self::WrongReplayTarget { .. } => Some("unknown-member"),
+            Self::MalformedOperationTarget { .. } => Some("malformed-declaration"),
+            Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::ModelTrace(refusal) => Some(refusal.cause()),
             Self::UnusedObjectEnvironment => Some("unknown-member"),
@@ -434,8 +503,7 @@ impl ReplayRefusal {
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => Some(record.cause),
-            Self::Request(_)
-            | Self::LimitAboveReader(_)
+            Self::LimitAboveReader(_)
             | Self::NotASource(_)
             | Self::SourceCount(_)
             | Self::Admission(AdmissionFailure::Fault(_))
@@ -449,6 +517,17 @@ impl ReplayRefusal {
             | Self::UnsupportedHelper(_)
             | Self::Cancelled(_)
             | Self::Fault(_) => None,
+        }
+    }
+
+    /// The RFC 6901 pointer of a refusal that names a request member: a
+    /// request-decode refusal's, or the `/replay/<member>` of
+    /// [`Self::WrongReplayTarget`]; `None` for every other refusal.
+    pub fn pointer(&self) -> Option<&'static str> {
+        match self {
+            Self::Request(refusal) => refusal.pointer(),
+            Self::WrongReplayTarget { target, .. } => Some(target.member().pointer()),
+            _ => None,
         }
     }
 
@@ -507,7 +586,7 @@ pub enum DependencySelectionsCause {
 /// declarations; a name that resolves to none refuses
 /// [`ReplayRefusal::UnknownFunction`]. No entry takes a bare `&str` in its
 /// place: this request, which differs from the one after it only in its
-/// `selected_function` line, does not compile.
+/// `replay_target` line, does not compile.
 ///
 /// ```compile_fail,E0308
 /// # use qsl_replay::*;
@@ -540,8 +619,12 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
+/// # let key = OccurrenceKey::new(
+/// #     WireNodeId::from_digest([0; 32]),
+/// #     Origin::new(Role::new("declaration"), 0),
+/// # );
 /// let wire = ReplayRequestWire {
-///     selected_function: "small",
+///     replay_target: RequestTargetWire::function("small", key),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
@@ -612,8 +695,12 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
+/// # let key = OccurrenceKey::new(
+/// #     WireNodeId::from_digest([0; 32]),
+/// #     Origin::new(Role::new("declaration"), 0),
+/// # );
 /// let wire = ReplayRequestWire {
-///     selected_function: small,
+///     replay_target: RequestTargetWire::function(small, key),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
@@ -677,6 +764,7 @@ pub fn replay_with_cancel(
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
+    let function = function_target(&request, ReplayEntry::Replay)?;
     let caller = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
@@ -684,7 +772,7 @@ pub fn replay_with_cancel(
     )?;
     let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
-    let call = select(&compiled, request.selected_function(), Claim::Predicate)?;
+    let call = select(&compiled, function, Claim::Predicate)?;
     let joined = arguments(
         package,
         &call,
@@ -1175,6 +1263,47 @@ pub(crate) fn callable_parameter_keys(
 /// The function `name` selects in the recompiled package, by name lookup in
 /// its declarations (OQ-5): its one segment and its callable. A name that
 /// resolves to none refuses [`ReplayRefusal::UnknownFunction`].
+/// QSpec FR-323 resolution, first step: the request's `function` replay
+/// target, or the `unknown-member` refusal of `entry` for any other target
+/// (FR-098, FR-357, FR-358), made after the request decodes and before it
+/// recompiles.
+pub(crate) fn function_target(
+    request: &ReplayRequest,
+    entry: ReplayEntry,
+) -> Result<&QualifiedName, ReplayRefusal> {
+    request
+        .replay_target()
+        .as_function()
+        .ok_or_else(|| wrong_target(request.replay_target(), entry, TargetMember::Function))
+}
+
+/// `entry` reads `member`, but the request's target is `target`.
+pub(crate) fn wrong_target(
+    target: &ReplayTarget,
+    entry: ReplayEntry,
+    member: TargetMember,
+) -> ReplayRefusal {
+    ReplayRefusal::WrongReplayTarget {
+        target: Box::new(target.clone()),
+        entry,
+        member,
+    }
+}
+
+/// FR-116, FR-122 check 2: the envelope's replay target is the request's.
+pub(crate) fn check_envelope_target(
+    request: &ReplayRequest,
+    envelope: &ReplayTarget,
+) -> Result<(), ReplayRefusal> {
+    if request.replay_target() == envelope {
+        return Ok(());
+    }
+    Err(ReplayRefusal::TargetMismatch {
+        request: Box::new(request.replay_target().clone()),
+        envelope: Box::new(envelope.clone()),
+    })
+}
+
 pub(crate) fn lookup<'a>(
     compiled: &'a Recompiled,
     name: &'a QualifiedName,

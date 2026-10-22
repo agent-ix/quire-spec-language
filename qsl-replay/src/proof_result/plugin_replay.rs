@@ -255,7 +255,10 @@ impl PluginReplayContext {
             ),
             source_digests: vec![self.source.to_wire()],
             dependencies,
-            selected_function,
+            replay_target: crate::RequestTargetWire::function(
+                selected_function,
+                occurrence.clone(),
+            ),
             source: ReplaySource::Input(assignments),
             obligation_identity: *obligation.as_bytes(),
             backend: plugin.as_str().to_owned(),
