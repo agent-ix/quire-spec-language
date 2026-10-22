@@ -38,6 +38,7 @@ mod native_literals;
 mod native_scalar_equality;
 mod property_automata;
 mod protocol_reference;
+mod quantity_literals;
 mod refinement_populations;
 mod relationship_navigation;
 mod relationship_reachability;

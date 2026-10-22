@@ -4432,8 +4432,8 @@ impl<'a> Lowering<'a> {
         Ok(LowerStep::Descend(step))
     }
 
-    /// A literal's node: `value`/`literal` for a Boolean, integer or
-    /// rational, the enum member's nominal node for an enum member.
+    /// A literal's node: `value`/`literal` for a Boolean, integer, rational
+    /// or quantity, the enum member's nominal node for an enum member.
     fn literal(&mut self, node: CheckedNode<'_>, value: &Value) -> Result<LeafTerm, CheckRefusal> {
         let literal = match value {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
@@ -4448,13 +4448,9 @@ impl<'a> Lowering<'a> {
                 self.record(key, OccurrenceRole::Expression, node.location().clone());
                 return Ok(LeafTerm::reference(key));
             }
-            // FR-185: a quantity literal types, and the checked package has
-            // no literal form to emit it as.
-            Value::Quantity(_) => {
-                return Err(super::probabilistic::quantity_literal(
-                    node.location().clone(),
-                ))
-            }
+            // FR-093-AC-33: a quantity literal is a `quantity` literal typed
+            // by its unit's node; the magnitude is already reduced.
+            Value::Quantity(quantity) => LiteralValue::Quantity(quantity.magnitude().clone()),
             Value::Decimal(_)
             | Value::Float(_)
             | Value::Text(_)
