@@ -75,9 +75,6 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 - A certificate checker shall return the same verdict for the same
   certificate bytes and byte provision whichever run or frontend calls it.
 
-Remaining work: the settlement of an FR-338 or FR-339 checker's package
-mismatch, to be filed by the lead.
-
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |

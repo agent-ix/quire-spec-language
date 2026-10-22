@@ -284,10 +284,10 @@ QSL-345.
   state-graph evidence replay (FR-169), a `PackageIdMismatch` of the proved
   package's own `package_id` settles
   `InconclusiveCause::StaleDependency{requested, recompiled}` (QSpec
-  FR-331). Every other replay refusal, a stale `package_id` in a call-site,
-  scalar-parity (FR-357, FR-358) or plugin replay (FR-289) and
-  `DependencyIdentityMismatch` included, settles `ReplayRefused` through
-  `from_replay_refusal`. A `Fault` of either,
+  FR-331). A stale dependency's own `package_id`
+  (`DependencyIdentityMismatch`), and a stale `package_id` in a call-site,
+  scalar-parity (FR-357, FR-358) or plugin replay (FR-289), settle
+  `ReplayRefused` through `from_replay_refusal`. A `Fault` of either,
   `CallSiteRefusal::Fault` or `ReplayRefusal::Fault` (and
   `ReplayRefusal::Admission` with `AdmissionFailure::Fault`), settles
   `failed` (`TerminalValue::Failed`).

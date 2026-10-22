@@ -77,3 +77,23 @@ mechanical fix in FR-290. FND-002 needs the same planner decision as QSpec
 #373's FND-001 (how far `stale-dependency` reaches), applied to both PRs
 together. The certificate `package_id`, the checker order, the one-cause
 mapping, the ACs, TC-1141 and the gate are clean. Merge after #373.
+
+## New findings (disposition pass 1)
+
+Pass at head 81df330. `QSPEC_DIR=<#373 head 6599e17> make check-spec-validation`
+exits 0. Its warnings on FR-121 (lines 142 and 232) come from main's call-site
+change, not from this PR. FR-127, FR-169 and TC-1141 are unchanged since 3735549.
+origin/main is an ancestor of the head.
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-004 | low | [minor] FR-121's new exception sentence says "Every other replay refusal ... settles `ReplayRefused` through `from_replay_refusal`". FR-127 settles a `Violated` replay that refuses `UnfairLasso` as `Inconclusive(ReplayParity)`, not through `from_replay_refusal`. The Fault sentence that follows covers faults, but not the unfair lasso. Name `UnfairLasso` (FR-127) as a second case the mapping does not settle, or reword as "a stale `package_id` in a call-site, scalar-parity or plugin replay, and `DependencyIdentityMismatch`, settle `ReplayRefused`". Mirror whatever wording QSpec #373 FND-004 settles on. | spec/functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md:282-290 | correct-requirement-no-evidence |
+| FND-005 | low | [major] FR-282 now ends its Behavior section with "Remaining work: the settlement of an FR-338 or FR-339 checker's package mismatch, to be filed by the lead." That is planning and status text, which this lane's specs exclude. The behaviour bullet just above already says the settlement "is not stated by this requirement". Delete the "Remaining work" paragraph and carry the deferral in Linear (the ticket the coordinator files). | spec/functional/FR-282-check-analyze-certificates-in-the-qualified-core.md:78-79 | correct-requirement-no-evidence |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-290 step 3 lists `stale-dependency` among the QSL-only causes. FR-290-AC-9 refuses `stale-dependency` with its valid `requested` and `recompiled` as `QslOnlyCause` at `/cause/type`, citing QSpec FR-331-AC-34. |
+| FND-002 | fixed | FR-121 states the one exception: a `PackageIdMismatch` of the proved package's own `package_id` in a model-check (FR-127) or state-graph evidence (FR-169) replay settles `StaleDependency`. Every other stale identity settles `ReplayRefused`, including call-site, scalar-parity (FR-357, FR-358) and plugin (FR-289) replays and `DependencyIdentityMismatch`. That matches the narrowed QSpec FR-331. |
+| FND-003 | deferred | FR-282 now says the FR-338 and FR-339 certificates carry no `package_id` of their own and that their mismatch settlement is not stated by this requirement. The coordinator files the follow-up ticket; it has no id yet. |
