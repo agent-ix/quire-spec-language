@@ -14,7 +14,7 @@ Verify the `terminal` declaration's forms and refusals, the classification of
 terminal states as intended or deadlocked, and the request writer's
 deadlock-freedom item with its per-model opt-out.
 
-Scope: FR-124-AC-1 to FR-124-AC-3 and FR-124-AC-5 to FR-124-AC-7.
+Scope: FR-124-AC-1 to FR-124-AC-3 and FR-124-AC-5 to FR-124-AC-8.
 
 ## Test Procedure
 
@@ -29,12 +29,18 @@ exactly when every counter is at 3, and `terminal any`.
    variant; read its items.
 3. Classify each reachable state under each variant; repeat with `fair weak
    inc` on one item.
-4. Check `terminal when { self.value = 3 }` in a one-object-type model with
-   two counters, and classify its terminal states.
-5. Check the quantified predicate of FR-124-AC-6 in a model with `Counter`
-   and `Gate`, and classify its terminal states.
-6. Check `terminal when { self.value = 3 }` in the two-type model and in a
-   model with no object type, and `terminal when { true }` in the latter.
+4. Check `terminal Done using v on M when { self.value = 3 };` in a
+   one-object-type model with universe `{c1, c2}`, and classify its terminal
+   states; repeat with universe `{}`.
+5. Check the quantified predicate of FR-124-AC-6 in the model with `Counter`
+   (universe `{c1}`, `inc`) and `Gate` (universe `{g1}`, `release`), and
+   classify its terminal states.
+6. Check `terminal Done using v on M when { self.value = 3 };` in the
+   two-type model and in a model whose populations cover no object type, and
+   `terminal Done using v on M when { true };` in the latter.
+7. In the one-type model, classify the terminal states under
+   `terminal Done using v on M when { exists(c in M::counters : c.value = 3) };`
+   with universe `{c1}` and with universe `{}`.
 
 Tag the tests `#[trace("TC-519", "FR-124-AC-n")]`.
 
@@ -49,9 +55,12 @@ Tag the tests `#[trace("TC-519", "FR-124-AC-n")]`.
 - Step 3: value 3 is terminal in every variant, deadlocked under `None`,
   intended under `When` and `Any`; values 0 to 2 are not terminal; fairness
   changes nothing.
-- Step 4: `When`; a terminal state is intended exactly when both counters
-  hold 3.
-- Step 5: `When`; intended exactly when every counter holds 3 and every gate
-  is open.
-- Step 6: `missing_declaration`/`missing-name` at `self` for both
-  `self` predicates; `When` for `{ true }`.
+- Step 4: `When`; with universe `{c1, c2}` a terminal state is intended
+  exactly when both counters hold 3; with universe `{}` the state is
+  terminal and intended.
+- Step 5: `When`; the terminal state with `c1.value = 3` and `g1.open` is
+  intended.
+- Step 6: `missing_declaration`/`missing-name` at `self` for both `self`
+  predicates; `When` for `{ true }`.
+- Step 7: `P` is evaluated once at each terminal state; with universe `{}` it
+  is false and the state is deadlocked.
