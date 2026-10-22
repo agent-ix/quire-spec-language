@@ -69,11 +69,9 @@ In `forms::terminal_declaration` (crate `qsl-forms`):
   no S2 refusal.
 - S3 resolves both aliases and checks the declaration (FR-124). A `terminal`
   declaration on an alias that names no `model` declaration refuses
-  `missing_declaration`/`missing-name` at that alias. No S4 emission writes a
-  checked `terminal` declaration yet, so a package that checks with one
-  refuses `unsupported_construct`/`not-yet-implemented` at the declaration's
-  span until S4 writes it, and the declaration never compiles as silently
-  ignored.
+  `missing_declaration`/`missing-name` at that alias. S4 emits a checked
+  `terminal` declaration as one QSpec FR-476 `temporal`/`terminal` node
+  (FR-411), so the declaration never compiles as silently ignored.
 - A well-formed CST adds no S2 refusal. A CST that carries an error or
   recovery node SHALL refuse as `FormsCause::RecoveringCst`, with no partial
   form. Building the same unit twice gives equal forms.
@@ -87,7 +85,7 @@ In `forms::terminal_declaration` (crate `qsl-forms`):
 | FR-382-AC-3 | A unit that writes `terminal First using t on Config any;`, a `temporal` clause, then `terminal Second using t on Config when { true };` builds three forms in that order: a `Terminal` form of kind `Any`, a `Temporal` form and a `Terminal` form of kind `When`. The two terminal forms name the same model alias and neither is merged or refused. | Test (TC-1059) |
 | FR-382-AC-4 | A `terminal` declaration that omits its closing `;`, or whose `when` is not followed by a block, has a recovering CST and refuses `FormsCause::RecoveringCst` with no form. | Test (TC-1059) |
 | FR-382-AC-5 | Building the same unit twice gives equal `TerminalDeclarationForm`s, for both a `When` and an `Any` declaration. | Test (TC-1059) |
-| FR-382-AC-6 | A unit that holds `terminal Done using v on M when { true };`, and a unit that holds `terminal Halt using v on M any;`, each assemble, with `M` naming no `model` declaration, to one refusal with code `missing_declaration`, cause `missing-name` and the span of `M`; with `M` naming a model, each checks and the package refuses `unsupported_construct`/`not-yet-implemented` at the span of the declaration until S4 writes it. | Test (TC-1059) |
+| FR-382-AC-6 | A unit that holds `terminal Done using v on M when { true };`, and a unit that holds `terminal Halt using v on M any;`, each assemble, with `M` naming no `model` declaration, to one refusal with code `missing_declaration`, cause `missing-name` and the span of `M`; with `M` naming a model, each checks and the package holds its `temporal`/`terminal` node (FR-411). | Test (TC-1059) |
 
 ## Dependencies
 
