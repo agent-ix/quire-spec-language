@@ -710,6 +710,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-405
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-406
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-263
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-264
@@ -1281,6 +1283,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-262](functional/FR-262-evaluate-values-and-calls-at-any-depth.md) | FR |
 | [FR-402](functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md) | FR |
 | [FR-405](functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md) | FR |
+| [FR-406](functional/FR-406-evaluate-clause-families-through-a-quire-eval-clause-entry.md) | FR |
 | [FR-263](functional/FR-263-replay-at-any-depth-under-the-request-limits.md) | FR |
 | [FR-264](functional/FR-264-emit-and-read-v2-packages-at-schema-fixed-depth.md) | FR |
 | [FR-356](functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md) | FR |
