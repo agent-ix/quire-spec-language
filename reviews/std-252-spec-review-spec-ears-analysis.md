@@ -39,3 +39,12 @@ Statements examined: the FR-189 symmetry bullet with its added sentences; the FR
 ## Verdict
 
 Mergeable on the EARS lens. Both findings are low and about wording and structure. The new statements have a clear subject, trigger and result, and the changed clauses are well formed.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@936786f97` (fix commit `936786f97`, on top of the merge `9b5a81088` of main at `afffa6959`). Each outcome was re-checked against the spec at that head, not taken from the commit message or the PR body. Gates at head: `make check-spec-validation` exit 0 with no warning on a touched file, `tools/check-index-completeness.sh` exit 0; the diff touches nothing under `docs/` and no test-parsed vector table. The head does not contain the current `origin/main` (`b51907381`): two later main commits (`b51907381`, `4bd6f6287`) touch code, `Cargo.lock` and `reviews/qsl-950-*` only, so nothing in this review overlaps them.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The SHALL bullet now ends at "`m` SHALL count orbits."; the derived consequence moved to a Note: "Note: workload weights are per operation, and a random parameter's support value is never a reference (FR-185 Random parameters, FR-185-AC-9), so a workload or a distribution cannot treat one object of a type differently from another; both conditions hold for every declaration EN-4 admits." |
+| FND-002 | fixed | The quantile bullet is split into four: the computation (with the unit sentence), "When the rank `⌈q · n⌉` lies among the censored samples, the test's `quantile` SHALL be `Censored`.", the absent case, and "The decision of a test SHALL NOT read `quantile`." |

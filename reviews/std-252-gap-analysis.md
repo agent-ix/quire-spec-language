@@ -52,3 +52,12 @@ No test in the tree is tagged with the new ACs yet. The field does not exist in 
 ## Verdict
 
 Not mergeable as written. FND-001 is medium: two branches of the new AC-15 have no TC row. FND-002 is low. FR-189-AC-3 and FR-192-AC-6 trace cleanly to their TC rows.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@936786f97` (fix commit `936786f97`, on top of the merge `9b5a81088` of main at `afffa6959`). Each outcome was re-checked against the spec at that head, not taken from the commit message or the PR body. Gates at head: `make check-spec-validation` exit 0 with no warning on a touched file, `tools/check-index-completeness.sh` exit 0; the diff touches nothing under `docs/` and no test-parsed vector table. The head does not contain the current `origin/main` (`b51907381`): two later main commits (`b51907381`, `4bd6f6287`) touch code, `Cargo.lock` and `reviews/qsl-950-*` only, so nothing in this review overlaps them.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-624 fixtures now list "`BehaviourSampler` stubs giving FR-189-AC-15's samples, a `Quantity<ms>` `M` variant of them and a quantile test whose stub returns no counted sample"; step 13 runs the `Quantity<ms>` samples against `3 ms` and the no-sample test; expected result 13 adds "`Value(2)` (the magnitude in `ms`); absent for the no-sample test". AC-15 now states the quantity case with a value (`Value(2)`, not `1/500`). Recomputed by script: sorted 1, 2, 3, 5 ms, rank 2, 2 ms, magnitude 2 in `ms` and 1/500 in `s`. |
+| FND-002 | fixed | AC-15 now says "(the stub ends the test after exactly 4 counted samples)", and TC-624 step 13 "from a stub that ends the test at exactly 4 counted samples", so no method or confidence parameter has to be chosen. |
