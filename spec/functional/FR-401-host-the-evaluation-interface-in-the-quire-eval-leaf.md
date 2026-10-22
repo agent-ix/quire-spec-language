@@ -96,16 +96,14 @@ record and call failure is the same before and after the move.
 
 Each type the FR-262 interface names SHALL be defined in exactly one crate,
 at the path below, and SHALL leave no copy or re-export at a former path. A
-former path is the `qsl_foundation::`, `qsl_semantics::` or `qsl_eval::`
-path at which the type was defined or re-exported before the move.
-
-One re-export of a moved type is sanctioned. FR-060 rule T12-A makes the
-layer-6 `qsl-replay` facade CG's only QSL edge, so CG can name a type only
-through that facade. `qsl-replay` MAY therefore re-export, at its crate
-root, a moved type that appears in its own public signatures, by the type's
-new path (for example `pub use quire_semantic_value::catalog::Category;`).
-The re-export names the same type, not a copy. No other QSL crate SHALL
-re-export a moved type, at any path.
+former path is any path of a QSL crate at which the type was defined or
+re-exported before the move, including the `qsl-replay` facade's
+`qsl_replay::Category`. No QSL crate SHALL re-export a moved type at a new
+path either. A consumer outside QSL, CG included, names a moved type at its
+new path: CG names `Category` as `quire_semantic_value::catalog::Category`.
+`quire-semantic-value` and `quire-eval` are shared leaves in their own
+repositories, not QSL crates for FR-059 or FR-060 T12-A, so CG's edge to
+them needs no facade.
 
 | Type | Owner and path | Moved by |
 | --- | --- | --- |
@@ -260,12 +258,11 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 | --- | --- | --- |
 | FR-401-AC-1 | `quire-eval`'s manifest names as normal dependencies only crates from `quire-checked`, `quire-semantic-value`, `quire-exact`, `quire-walk` and `thiserror`, each with default features off, and only those its source names an item of, and names no QSL crate in any table; its crate root is `#![no_std]`, its manifest forbids unsafe code, and it builds for `thumbv7em-none-eabi`. | Test |
 | FR-401-AC-2 | In QSL, TC-390's table check asserts that `qsl-eval` and `qsl-replay` name `quire-eval` in `[dependencies]` and that `qsl-foundation`, `qsl-cst`, `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package` and `qsl-route` name it in no table; a fixture manifest in which `qsl-semantics` depends on `quire-eval` fails the check, naming the crate and the table. | Test |
-| FR-401-AC-3 | `quire_eval::{Evaluation, CallFailure, FamilyOutcome, FamilyResult, EvalOutcome}`, `quire_semantic_value::catalog::{Category, CatalogCode, CatalogCoded, UndefinedCoded, UndefinedRecord, UndefinedReason, InternalFault}`, `quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedStop, UnsupportedHelperStop}` and `quire_semantic_value::call::WrongSnapshotCause` resolve; `qsl_eval::value::Evaluation`, `qsl_eval::value::CallFailure`, `qsl_semantics::family::FamilyOutcome`, `qsl_semantics::family::FamilyResult`, `qsl_semantics::family::EvalOutcome`, `qsl_foundation::diagnostic::InternalFault`, `qsl_foundation::InternalFault`, `qsl_semantics::value::supplied::SuppliedStop` and `qsl_semantics::check::WrongSnapshotCause` each fail to compile from another crate. | Test |
+| FR-401-AC-3 | `quire_eval::{Evaluation, CallFailure, FamilyOutcome, FamilyResult, EvalOutcome}`, `quire_semantic_value::catalog::{Category, CatalogCode, CatalogCoded, UndefinedCoded, UndefinedRecord, UndefinedReason, InternalFault}`, `quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedStop, UnsupportedHelperStop}` and `quire_semantic_value::call::WrongSnapshotCause` resolve; `qsl_eval::value::Evaluation`, `qsl_eval::value::CallFailure`, `qsl_semantics::family::FamilyOutcome`, `qsl_semantics::family::FamilyResult`, `qsl_semantics::family::EvalOutcome`, `qsl_foundation::diagnostic::InternalFault`, `qsl_foundation::InternalFault`, `qsl_semantics::value::supplied::SuppliedStop`, `qsl_semantics::check::WrongSnapshotCause` and `qsl_replay::Category` each fail to compile from another crate. | Test |
 | FR-401-AC-4 | With no edit to any expected value, the `qsl-eval`, `qsl-replay` and `qsl-analyze` suites, `qsl-bench`'s build, the FR-262 tests, the FR-096 refusal-record tests and the QSL conformance run over the QSpec checked-package fixtures pass: every `Evaluation` outcome, location and loss list (including the located `incomplete` result of a charge a cancelled handle denies, which FR-262 keeps as an evaluation rather than `CallFailure::Cancelled`), every `CallFailure` arm and category, and every refusal record built through the `qsl-foundation` and `qsl-eval` functions that replace the two moved methods equal the values before the move. | Test |
 | FR-401-AC-5 | Through the reference adapter over a checked package with a function `f(x: Int[0, 9]): Boolean`, an FR-151 dispatched member call whose synthesized dispatch candidate is not callable by name, and a dependency package with a function `g(): Integer`, each registration into a fresh registry returns: for `f`'s `NodeKey` with signature `([Int[0, 9]], Boolean)`, `Accepted`; for `f`'s key with `([Int[0, 10]], Boolean)`, `SignatureMismatch`; for `g`'s key with `([], Integer)`, `Accepted`; for the synthesized candidate's key with its recorded signature, `CallableNotAdmitted`; for a `NodeKey` no function of the closure has, `CallableNotAdmitted`. | Test |
 | FR-401-AC-6 | The Begin operation takes the registry and no separate closure or `Cancel` argument, and `quire-eval`'s source names no item of a QSL crate, including `CheckedPackage`, `ObjectEnvironment` and FR-400's checker-side record. | Inspection |
 | FR-401-AC-8 | Through the reference adapter, over a checked package with `f(x: Int[0, 9]): Integer`, whose body is `x`, and an interpreted `g(x: Int[0, 9]): Integer` whose body is `f(x) + 1`, with a host body registered for `f`'s `NodeKey` that returns `7`: a session over `f(3)` returns `7`; a session over `g(3)` returns `8`; and a session over a second registered body that requests `f(3)` resumes that body with `7`. In each run the factory for `f` is invoked once per application of `f`, `f`'s interpreted body makes no charge, and each application of `f` makes one `function.call` charge. The test fails if any run evaluates `f`'s interpreted body. | Test |
-| FR-401-AC-9 | The QSL API-surface check finds, in every QSL crate, no `pub use` (or other re-export) of a type this requirement moves, except at `qsl-replay`'s crate root for a moved type that a public `qsl-replay` signature names. `qsl_replay::Category` and `quire_semantic_value::catalog::Category` name the same type: a value of one is accepted where the other is expected. A fixture `pub use quire_semantic_value::catalog::Category;` in `qsl-eval`, and one in `qsl-replay` for a moved type that no public `qsl-replay` signature names, each fail the check, reported with file and line. | Test |
 | FR-401-AC-7 | FR-059's direction check reports an RT resolved graph with a normal edge to `quire-eval` sourced from `agent-ix/quire-eval` as clean, and reports no FB-11 cycle through it. | Test |
 
 ## Dependencies
