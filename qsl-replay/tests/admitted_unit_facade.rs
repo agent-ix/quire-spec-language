@@ -14,8 +14,13 @@ use qsl_replay::{
 };
 use std::collections::BTreeSet;
 
+use qsl_replay::AdmittedUnit;
 use qsl_semantics::check::{CheckedGraph, NominalNode};
-use quire_exact::{Cancel, UnitDomain, UnitId, ValueType};
+use quire_exact::{
+    Cancel, Integer, Meter, Outcome, Quantity, Rational, ScalarLimits, UnitDomain, UnitId,
+    ValueType,
+};
+use quire_semantic_value::quantity::{convert_quantity, ConvertedValue, QuantityTarget};
 
 const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
@@ -375,4 +380,155 @@ fn a_dependencys_unit_is_foreign() {
             assert_eq!(context.unit_declaration(wire(own.node())), Ok(own));
         }
     }
+}
+
+fn find_unit<'a>(admitted: &'a AdmittedCompilation, name: &str) -> &'a AdmittedUnit {
+    unit_named(admitted, name)
+}
+
+/// A declared unit the package never uses is not a node of the checked graph,
+/// yet it is listed and found, and every other kind's lookup refuses it
+/// `WrongKind` (the enum lookups, which never refuse `WrongKind`, say
+/// `Unknown`). A dimension no unit names is not listed.
+#[trace("TC-1092", "FR-398-AC-3")]
+#[test]
+fn an_unused_unit_is_found_and_a_dimension_no_unit_names_is_not_listed() {
+    let text = format!(
+        "{HEADER}dimension Length;\ndimension Spare;\n\
+         unit m : Length = rational(1, 1);\n\
+         unit unused : Length = rational(2, 1) * m;\n\
+         function f using v(a: Quantity<m>): Boolean pure {{ true }}\n"
+    );
+    let expected = with_spine_graph(&text, spine_expected);
+    let used: Vec<_> = expected
+        .units
+        .iter()
+        .map(|(_, name)| name.as_str())
+        .collect();
+    assert_eq!(used, ["m"], "the spine's graph holds only the used unit");
+
+    let admitted = admit(&text, &DependencyInput::default());
+    let context = admitted.context();
+    let unused = find_unit(&admitted, "unused");
+    assert!(expected
+        .units
+        .iter()
+        .all(|(node, _)| *node != unused.node()));
+    let id = wire(unused.node());
+    assert_eq!(context.unit_declaration(id), Ok(unused));
+    assert_eq!(context.units().count(), 2);
+    assert!(matches!(
+        context.composite_declaration(id),
+        Err(AdmittedLookupRefusal::WrongKind { .. })
+    ));
+    assert!(matches!(
+        context.dimension_declaration(id),
+        Err(AdmittedLookupRefusal::WrongKind { .. })
+    ));
+    assert!(matches!(
+        context.enum_declaration(id),
+        Err(AdmittedLookupRefusal::Unknown { .. })
+    ));
+    let names: Vec<_> = context
+        .dimensions()
+        .map(|dimension| dimension.qualified_name().last().expect("a name").as_str())
+        .collect();
+    assert_eq!(names, ["Length"], "Spare is named by no unit");
+}
+
+/// A derived dimension is listed with its parts, a chain of scales converts
+/// through the root, and an offset unit converts with its offset.
+#[trace("TC-1092", "FR-398-AC-2")]
+#[test]
+fn derived_dimensions_chains_and_offsets_convert() {
+    let text = format!(
+        "{HEADER}dimension Length;\ndimension Time;\ndimension Temperature;\n\
+         dimension Speed = Length / Time;\n\
+         unit m : Length = rational(1, 1);\n\
+         unit km : Length = rational(1000, 1) * m;\n\
+         unit mm : Length = rational(1, 1000) * m;\n\
+         unit s : Time = rational(1, 1);\n\
+         unit mps : Speed = rational(1, 1);\n\
+         unit K : Temperature = rational(1, 1);\n\
+         unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);\n\
+         function f using v(a: Quantity<km>, b: Quantity<mm>, c: Quantity<mps>, \
+         d: Quantity<C>, e: Quantity<K>, g: Quantity<s>): Boolean pure {{ true }}\n"
+    );
+    let admitted = admit(&text, &DependencyInput::default());
+    let context = admitted.context();
+
+    let dimension = |name: &str| {
+        context
+            .dimensions()
+            .find(|d| d.qualified_name().last().map(|n| n.as_str()) == Some(name))
+            .expect("the dimension is listed")
+    };
+    let speed = dimension("Speed");
+    assert!(!speed.is_base());
+    let parts: Vec<_> = speed
+        .terms()
+        .iter()
+        .map(|(node, exponent)| {
+            let base = context
+                .dimension_declaration(wire(*node))
+                .expect("a part is a listed dimension");
+            (
+                base.qualified_name()
+                    .last()
+                    .expect("a name")
+                    .as_str()
+                    .to_owned(),
+                exponent.to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parts.iter().collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            &("Length".to_owned(), "1".to_owned()),
+            &("Time".to_owned(), "-1".to_owned())
+        ]),
+    );
+    assert!(dimension("Length").is_base() && dimension("Length").terms().is_empty());
+    assert_eq!(context.dimensions().count(), 4);
+
+    let convert = |from: &str, magnitude: Rational, to: &str| {
+        let (from, to) = (find_unit(&admitted, from), find_unit(&admitted, to));
+        let quantity = Quantity::new(magnitude, from.id());
+        let source = context.unit_table().resolve(&quantity).expect("resolves");
+        let Outcome::Completed(done) = convert_quantity(
+            source,
+            to.quantity_unit(),
+            &QuantityTarget::Exact,
+            &mut meter(),
+        )
+        .expect("compatible") else {
+            panic!("completes");
+        };
+        done.value().clone()
+    };
+    let exact = |n: i64, d: i64| {
+        ConvertedValue::Exact(Rational::new(Integer::from(n), Integer::from(d)).unwrap())
+    };
+    let int = |n: i64| Rational::from_integer(Integer::from(n));
+    // km -> mm passes through the root m: 2 km = 2,000,000 mm.
+    assert_eq!(convert("km", int(2), "mm"), exact(2_000_000, 1));
+    // 0 C = 5463/20 K.
+    assert_eq!(convert("C", int(0), "K"), exact(5463, 20));
+    assert!(!find_unit(&admitted, "mps").converts_to(find_unit(&admitted, "m")));
+}
+
+fn meter() -> Meter {
+    Meter::new(ScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    })
 }

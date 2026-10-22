@@ -21,9 +21,9 @@ use qsl_semantics::check::{
     CheckedGraph, CheckedTypeNode, CompositeForm, NominalNode, SemanticGraph,
 };
 use qsl_semantics::library::PackageId;
-use quire_exact::{Identifier, NodeKey, UnitId};
+use quire_exact::{Identifier, Integer, NodeKey, UnitId};
 use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
-use quire_semantic_value::unit::NominalUnitForm;
+use quire_semantic_value::unit::{NominalUnitForm, NominalUnitNode};
 
 use crate::bounds::ReplayLimits;
 use crate::compile::{recompile_unit, CompiledPackage};
@@ -143,7 +143,7 @@ impl AdmittedComposite {
 pub struct AdmittedDimension {
     node: NodeKey,
     qualified_name: Vec<Identifier>,
-    base: bool,
+    terms: Vec<(NodeKey, Integer)>,
 }
 
 impl AdmittedDimension {
@@ -162,7 +162,14 @@ impl AdmittedDimension {
     /// Whether the dimension is a base dimension (`dimension Length;`)
     /// rather than one derived from base dimensions.
     pub fn is_base(&self) -> bool {
-        self.base
+        self.terms.is_empty()
+    }
+
+    /// The base dimensions a derived dimension is made of, each as its node
+    /// id and nonzero exponent, ascending by node id; empty for a base
+    /// dimension.
+    pub fn terms(&self) -> &[(NodeKey, Integer)] {
+        &self.terms
     }
 }
 
@@ -253,7 +260,9 @@ pub enum AdmittedLookupRefusal {
     /// enum, a union, a unit, ...; for a unit lookup a dimension, a record,
     /// ...). Only [`AdmittedContext::composite_declaration`],
     /// [`AdmittedContext::unit_declaration`] and
-    /// [`AdmittedContext::dimension_declaration`] refuse so.
+    /// [`AdmittedContext::dimension_declaration`] refuse so; the enum
+    /// lookups never do, so an id that is a unit is `Unknown` to
+    /// [`AdmittedContext::enum_declaration`].
     #[error("wrong_kind: node {declaration} is admitted by this package but is not a declaration of the looked-up kind")]
     WrongKind {
         /// The declaration id looked up.
@@ -641,11 +650,11 @@ fn context_of(package: &CheckedPackage, id: PackageId) -> Result<AdmittedContext
                 .entry(declaration)
                 .or_insert(dependency_id);
         }
-        let admitted = unit_tables(dependency.graph())?;
-        for declaration in admitted.units.into_keys() {
+        let (unit_keys, dimension_keys) = unit_keys(dependency.graph())?;
+        for declaration in unit_keys {
             foreign_units.entry(declaration).or_insert(dependency_id);
         }
-        for declaration in admitted.dimensions.into_keys() {
+        for declaration in dimension_keys {
             foreign_dimensions
                 .entry(declaration)
                 .or_insert(dependency_id);
@@ -685,41 +694,35 @@ fn qualified_name(segments: &[String]) -> Result<Vec<Identifier>, InternalFault>
         .collect()
 }
 
-/// Every declared unit of `graph` and the dimensions they name: the units
-/// from the unit table the checked type environment holds (the table the
-/// checker resolved `Quantity<u>` against, so each [`AdmittedUnit::id`] is the
-/// id the checked signatures carry), the dimensions by walking each unit's
-/// dimension node and its base dimensions through the table's nominal nodes.
-fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
-    let table = graph.scope().types().units().clone();
+/// The declared units of `table` and the dimensions they name, walked
+/// through the table's nominal nodes to their base dimensions: every unit
+/// node, and every dimension node with its nominal terms.
+fn declared_nodes(
+    table: &UnitTable,
+) -> Result<
+    (
+        Vec<&quire_semantic_value::unit::Unit>,
+        Vec<&NominalUnitNode>,
+    ),
+    InternalFault,
+> {
     let named = |key: NodeKey| {
         table
             .nominal_node(key.as_bytes())
             .ok_or_else(|| InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node"))
     };
-    let mut units = BTreeMap::new();
+    let mut units = Vec::new();
     let mut pending = Vec::new();
     for id in table.ids() {
-        let Some(QuantityUnit::Declared(unit)) = table.get(id) else {
-            continue;
-        };
-        pending.push(unit.dimension_node());
-        units.insert(
-            *unit.key().as_bytes(),
-            AdmittedUnit {
-                node: unit.key(),
-                id,
-                qualified_name: qualified_name(
-                    &named(unit.key())?.declaration.qualified_declaration,
-                )?,
-                dimension: unit.dimension_node(),
-                unit: QuantityUnit::Declared(unit.clone()),
-            },
-        );
+        if let Some(QuantityUnit::Declared(unit)) = table.get(id) {
+            pending.push(unit.dimension_node());
+            units.push(&**unit);
+        }
     }
-    let mut dimensions = BTreeMap::new();
+    let mut seen = BTreeSet::new();
+    let mut dimensions = Vec::new();
     while let Some(key) = pending.pop() {
-        if dimensions.contains_key(key.as_bytes()) {
+        if !seen.insert(*key.as_bytes()) {
             continue;
         }
         let nominal = named(key)?;
@@ -730,12 +733,61 @@ fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
             ));
         };
         pending.extend(terms.iter().map(|(base, _)| *base));
-        dimensions.insert(
-            *key.as_bytes(),
-            AdmittedDimension {
-                node: key,
+        dimensions.push(nominal);
+    }
+    Ok((units, dimensions))
+}
+
+/// The unit and dimension node ids of a graph.
+type DeclaredKeys = (Vec<[u8; 32]>, Vec<[u8; 32]>);
+
+/// The node ids of `graph`'s declared units and the dimensions they name,
+/// for a dependency's `Foreign` refusals: no names, no unit values.
+fn unit_keys(graph: &CheckedGraph) -> Result<DeclaredKeys, InternalFault> {
+    let (units, dimensions) = declared_nodes(graph.scope().types().units())?;
+    Ok((
+        units.iter().map(|unit| *unit.key().as_bytes()).collect(),
+        dimensions
+            .iter()
+            .map(|dimension| *dimension.key.as_bytes())
+            .collect(),
+    ))
+}
+
+/// Every declared unit of `graph` and the dimensions they name: the units
+/// from the unit table the checked type environment holds (the table the
+/// checker resolved `Quantity<u>` against, so each [`AdmittedUnit::id`] is the
+/// id the checked signatures carry).
+fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
+    let table = graph.scope().types().units().clone();
+    let (declared, named_dimensions) = declared_nodes(&table)?;
+    let mut units = BTreeMap::new();
+    for unit in declared {
+        let nominal = table.nominal_node(unit.key().as_bytes()).ok_or_else(|| {
+            InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node")
+        })?;
+        units.insert(
+            *unit.key().as_bytes(),
+            AdmittedUnit {
+                node: unit.key(),
+                id: unit.id(),
                 qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
-                base: terms.is_empty(),
+                dimension: unit.dimension_node(),
+                unit: QuantityUnit::Declared(Box::new(unit.clone())),
+            },
+        );
+    }
+    let mut dimensions = BTreeMap::new();
+    for nominal in named_dimensions {
+        let NominalUnitForm::Dimension { terms } = &nominal.form else {
+            continue;
+        };
+        dimensions.insert(
+            *nominal.key.as_bytes(),
+            AdmittedDimension {
+                node: nominal.key,
+                qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
+                terms: terms.clone(),
             },
         );
     }
