@@ -66,7 +66,7 @@ pub use call::{
     CallRefusal, CallValue, RunRefusal, DEFAULT_WORK_UNITS,
 };
 
-mod clause;
+pub(crate) mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
