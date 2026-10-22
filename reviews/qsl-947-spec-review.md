@@ -36,3 +36,11 @@ No major findings. One medium: FR-398's refusal bullet contradicts its own Outpu
 | FND-001 | medium | The Behavior refusal-order bullet lists "a declared unit or dimension the package does not use" among the ids that are `WrongKind`. That contradicts the Outputs bullet and the prior Behavior bullet ("the context lists every declared unit, used or not ... a consumer ... finds it"). It also contradicts the code: `unit_declaration` finds an unused unit (measured). A declared dimension that no unit names is not in `dimensions` and, by trace, not in `nodes`, so it refuses `Unknown`, not `WrongKind`. Two implementers would read this bullet differently. Restate it: an unused unit is found by `unit_declaration` and is `WrongKind` for every other kind's lookup, and a declared dimension that no admitted unit names is `Unknown`. Or list such dimensions too. | spec/functional/FR-398-expose-the-admitted-unit-table-through-the-replay-facade.md:86-93 |
 | FND-002 | low | "The lookups of FR-394 and FR-396 keep their refusals, except that a unit or dimension id looked up as a record or tuple is `WrongKind`, as every other node of the package is" reads as if every lookup now refuses foreign-kind nodes as `WrongKind`. FR-394's enum lookup still refuses a unit id `Unknown` (measured). Say so explicitly, so a consumer does not expect `WrongKind` from `enum_declaration`. | spec/functional/FR-398-expose-the-admitted-unit-table-through-the-replay-facade.md:94-98 |
 | FND-003 | low | FR-398 does not say that a package cannot name a dependency's unit in source. `Quantity<d.kg>` is a parse error, and `Quantity<d::kg>` is `UnresolvedTypeName`. So `Foreign` is reachable only for an id read from a dependency's own emitted package. One sentence would stop CG from assuming that cross-package quantity operands exist. | spec/functional/FR-398-expose-the-admitted-unit-table-through-the-replay-facade.md:86-93 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: FR-398 refusal order restated; unused unit found, dimension no unit names is Unknown; AC-3 and TC-1092 step 4 test it | 66a821ff2 |
+| FND-002 | fixed: FR-398 states the enum-lookup exception | 66a821ff2 |
+| FND-003 | fixed: FR-398 states a package cannot name a dependency's unit in source | 66a821ff2 |

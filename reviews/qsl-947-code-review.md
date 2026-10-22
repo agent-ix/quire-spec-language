@@ -37,3 +37,11 @@ No major findings. The table is the checker's own (`scope().types().units()`), i
 | FND-001 | low | The refusal class for a unit id depends on which lookup is asked. `composite_declaration` reads `nodes`, which now includes every declared unit and dimension, so it refuses a unit `WrongKind`. `enum_declaration` still refuses the same id `Unknown`, used or unused, because the enum path does not consult `nodes`. FR-398 says only that the record and tuple lookup changed, so the code matches the spec. But a consumer that branches on `WrongKind` versus `Unknown` gets different answers for the same id. Either route the enum lookup through `refusal()` as well, or state the asymmetry in the `WrongKind` rustdoc. | qsl-replay/src/admitted.rs:314, qsl-replay/src/admitted.rs:252-257 |
 | FND-002 | low | `context_of` calls `unit_tables(dependency.graph())` for each dependency in the closure. That clones the dependency's whole `UnitTable` and builds full `AdmittedUnit`/`AdmittedDimension` values (qualified names included), but only the keys are kept. It is wasted work that grows with closure size, and a malformed name in a dependency's table becomes an `InternalFault` for the importer. Collect the keys directly from `table.ids()` and the dimension walk. | qsl-replay/src/admitted.rs:644-652 |
 | FND-003 | low | `AdmittedDimension` exposes only `is_base()`, not a derived dimension's terms and exponents. A consumer can see that `Speed` is derived but cannot read `Length / Time` from the facade. It can only get that through `QuantityUnit`'s normalized dimension, and only for a dimension some unit names. This is acceptable if CG only needs `converts_to`. Otherwise expose the terms. | qsl-replay/src/admitted.rs:142-167 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: enum lookup keeps never refusing WrongKind by FR-394; asymmetry stated in the WrongKind rustdoc and FR-398 and tested (enum lookup of an unused unit is Unknown) | 66a821ff2 |
+| FND-002 | fixed: dependencies now collect only unit and dimension keys (unit_keys); no unit table clone or name building | 66a821ff2 |
+| FND-003 | fixed: AdmittedDimension::terms() exposes a derived dimension's parts and exponents; tested on Speed | 66a821ff2 |
