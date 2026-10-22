@@ -27,6 +27,6 @@ Verify FR-362-AC-1 to FR-362-AC-4, FR-362-AC-7 and FR-362-AC-8. Catches an imple
 - Step 2: `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at `version`; `build_unit` and the producer refuse `invalid_syntax`.
 - Step 3: both calls refuse with the cause naming the differing side, the selected reference and the differing reference.
 - Step 4: the rows are equal.
-- Step 5: the first and third reads are refused only as `NotEmitted` naming the `relation` or `hyper` clause at its span, with no graph and no type report; the second yields both; the fourth is refused with the hyper cause `BodyMissing` at the `nope` read (`missing_declaration`) and not `NotEmitted`; S2 refuses no read with `NoDispatchEntry` or `UnrepresentedConstruct`; no second parser runs.
+- Step 5: the first read yields both, its graph holding the `relation` clause's `claim`/`step_relation` node; the third read is refused only as `NotEmitted` naming the `hyper` clause at its span, with no graph and no type report; the second yields both; the fourth is refused with the hyper cause `BodyMissing` at the `nope` read (`missing_declaration`) and not `NotEmitted`; S2 refuses no read with `NoDispatchEntry` or `UnrepresentedConstruct`; no second parser runs.
 - Step 6: the refused unit is an error outcome of `check` with no inventory rows; each exhaustion stop yields an `Incomplete` inventory with its partial rows and the typed cause.
 - Assertions compare typed causes and references, never message text.
