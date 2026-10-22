@@ -15,6 +15,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-170
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-337
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-092
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-169
+    type: depends_on
 ---
 # FR-410: Emit a checked state-graph claim as a v2 claim node
 
@@ -47,11 +53,13 @@ identity the request named.
 ## Outputs
 
 - One v2 node per distinct checked claim, body as QSpec FR-475 states, with
-  `semantic_type` the package's `scalar_type`/`boolean` node, its
-  `declaration` the claim's qualified name, and every occurrence of role
-  `claim`.
-- One `expression` node per distinct predicate, its body the predicate's
-  Boolean term as FR-093 lowers it.
+  `semantic_type` the package's `scalar_type`/`boolean` node, no
+  `declaration` and no `owner`, and one occurrence of role `claim` per
+  declaration. The node is content-addressed: two declarations with equal
+  checked content share one node and differ by occurrence ordinal.
+- One predicate node per distinct predicate, as FR-093 lowers it: an
+  `expression` node for a predicate term, and the Boolean `value`/`literal`
+  node for a constant predicate such as `true`.
 - One identity triple `[node, "claim", ordinal]` per `claim` occurrence, as
   FR-337 states for a temporal clause.
 - From the I2 reader: the claim's form, its predicates and its `over` node,
@@ -65,12 +73,12 @@ identity the request named.
 - The emitter SHALL write `over` as a reference to the `over` parameter's
   `value`/`parameter` node when the claim's `over` is `Some`, and as the
   empty aggregate when it is `None`.
-- The emitter SHALL write `from` as a reference to the `expression` node of
+- The emitter SHALL write `from` as a reference to the predicate node of
   `AlwaysPossible.from` or `UniquePath.from`, and as the empty aggregate for
   `Possible`. An `always possible` claim without `from` carries the constant
   `true` predicate FR-165 checks it with, so it emits the node of the same
   claim written `from (true)`.
-- The emitter SHALL write `target` as a reference to the `expression` node
+- The emitter SHALL write `target` as a reference to the predicate node
   of `Possible.target`, `AlwaysPossible.target` or `UniquePath.to`.
 - The emitter SHALL key the node by FR-322's rules over its body, so the form
   and every predicate enter the node id (FR-165-AC-1).
@@ -78,20 +86,28 @@ identity the request named.
 - The I2 reader SHALL admit an emitted state-graph claim node and return its
   form, predicates and `over` node, and SHALL refuse a node that breaks an
   FR-475 rule with FR-475's code at FR-475's locus, in FR-475's reader order.
-- If a looked-up claim triple names a NodeId the package does not hold, a
-  node that is not a `claim`/`state_graph` node, or an occurrence whose role
-  or ordinal differs, then the I2 reader SHALL return the lookup refusal
-  `clause-root-unresolved` at the looked-up triple, as FR-337 does for a
-  temporal clause.
+- The I2 reader SHALL resolve a state-graph claim triple through its own
+  state-graph lookup, separate from FR-337's temporal clause lookup; each
+  lookup is told the node form it expects. If a triple given to the
+  state-graph lookup names a NodeId the package does not hold, a node that
+  is not a `claim`/`state_graph` node (a `temporal`/`temporal_clause` node
+  included), or an occurrence whose role or ordinal differs, then the lookup
+  SHALL return `clause-root-unresolved` at the looked-up triple. FR-337's
+  lookup returns the same refusal for a `claim`/`state_graph` node's triple.
+- When the state-graph claim triple of a request does not resolve, then
+  `check_state_graph` (FR-169) SHALL refuse the request with that
+  `clause-root-unresolved` and check no certificate: a state-graph
+  certificate holds no claim roots of its own, so the unresolved root is a
+  fault of the request, as FR-338 rules for EN-1.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-410-AC-1 | Compiling ADR-022 §7's units emits `ReachesTwo` as a `claim`/`state_graph` node with `kind` `possible`, `over` a reference to `c`'s parameter node, `from` the empty aggregate and `target` a reference to the `expression` node of `c.versionNumber = 2`; `CanStillWin` with `from (x.phase != Lost)` with `kind` `always-possible` and `from` that predicate's node; `InOneWay` with `kind` `unique-path`. Each node's occurrences have role `claim`, and the I2 reader admits each and returns its form, predicates and `over` node. No checked claim is refused as not emitted. | Test (TC-1140) |
-| FR-410-AC-2 | `possible P` and `always possible P` over one `P` emit different node ids and different `package_id`s; `CanStillWin` without `from` and with `from (true)` emit one node id; `possible Anything using v { true }` emits `over` as the empty aggregate. | Test (TC-1140) |
-| FR-410-AC-3 | The I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` the emitted NodeId, and resolving it in the recompiled package finds the claim; a triple with an unknown NodeId, with a `temporal`/`temporal_clause` node's NodeId, or with another ordinal returns `clause-root-unresolved` at that triple. | Test (TC-1140) |
-| FR-410-AC-4 | Fed to QSL's I2 reader, AC-1's `ReachesTwo` node with `kind` `eventually-possible` refuses `invalid_package`/`invalid-value`, and with `target` a reference to `c`'s parameter node refuses `ill_typed`/`operator-ineligible`, each at FR-475's locus. | Test (TC-1140) |
+| FR-410-AC-2 | `possible P` and `always possible P` over one `P` emit different node ids and different `package_id`s; `CanStillWin` without `from` and with `from (true)` emit one node id; `possible Anything using v { true }` emits `over` as the empty aggregate and `target` a reference to the `true` literal node; one unit that declares `ReachesTwo` twice under two names emits one node with two `claim` occurrences, ordinals 0 and 1, and no `declaration`. | Test (TC-1140) |
+| FR-410-AC-3 | The I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` the emitted NodeId, and resolving it in the recompiled package finds the claim; a triple with an unknown NodeId, with a `temporal`/`temporal_clause` node's NodeId, or with another ordinal returns `clause-root-unresolved` at that triple from the state-graph lookup, and `ReachesTwo`'s triple given to FR-337's temporal lookup returns `clause-root-unresolved`; `check_state_graph` given a request whose claim triple is unresolved refuses it with `clause-root-unresolved` and checks no certificate. | Test (TC-1140) |
+| FR-410-AC-4 | Fed to QSL's I2 reader, AC-1's `ReachesTwo` node with `kind` `eventually-possible` refuses `invalid_package`/`invalid-value`, and with `target` a reference to `c`'s parameter node and `dependencies` rewritten to the body's targets refuses `ill_typed`/`operator-ineligible`, each at FR-475's locus, with the node key and `package_id` recomputed after each edit. | Test (TC-1140) |
 
 ## Dependencies
 
