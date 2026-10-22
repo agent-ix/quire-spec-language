@@ -331,7 +331,6 @@ pub use refusal::{
     NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
     ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration,
     SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimeUnitCause, TimedConstruct,
-    WrongSnapshotCause,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -539,6 +538,9 @@ pub struct CheckedGraph {
     /// [`Self::resolve_operation`] resolves a `Frame` selection's alias and
     /// type in.
     model_objects: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    /// FR-116: each `model` alias's top-level declarations that are not object
+    /// types, by artifact id: the nodes that cannot declare operations.
+    model_non_objects: BTreeMap<String, std::collections::BTreeSet<Identifier>>,
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
     object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
@@ -1158,6 +1160,7 @@ impl PackageDeclarations {
             .pending_types
             .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
+        let model_non_objects = model_non_object_tables(&models);
         let model_names = abstraction::model_names(&models);
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
@@ -3377,6 +3380,7 @@ impl PackageDeclarations {
             probabilistic: probabilistic_model,
             operation_frames,
             model_objects,
+            model_non_objects,
             object_types,
             object_nodes,
             model_populations,
@@ -3440,6 +3444,27 @@ fn model_object_tables(
         }
     }
     (by_alias, identities)
+}
+
+/// FR-116: each `model` alias's top-level declarations that are not object
+/// types, by artifact id.
+fn model_non_object_tables(
+    models: &[AdmittedModel],
+) -> BTreeMap<String, std::collections::BTreeSet<Identifier>> {
+    models
+        .iter()
+        .filter_map(|model| {
+            let alias = model.alias()?;
+            let names = model
+                .non_object_declarations()
+                .filter_map(|key| {
+                    crate::model::intake::type_identity_segment(&key.package, &key.node)
+                        .and_then(|artifact| Identifier::new(artifact).ok())
+                })
+                .collect();
+            Some((alias.to_owned(), names))
+        })
+        .collect()
 }
 
 /// ADR-012 §15.7: each `model` alias's population declarations by artifact
@@ -3840,6 +3865,16 @@ impl CheckedGraph {
         })
     }
 
+    /// FR-116: whether `object` names a declaration of the `model` alias's
+    /// package that cannot declare operations (a value type, an enum, a
+    /// record, ...), as against naming nothing or an object type. QSpec
+    /// FR-323 refuses such a `frame_operation` `malformed-declaration`.
+    pub fn names_non_object_declaration(&self, model: &Identifier, object: &Identifier) -> bool {
+        self.model_non_objects
+            .get(model.as_str())
+            .is_some_and(|names| names.contains(object))
+    }
+
     /// FR-121: the object type `declaring` (the
     /// declaring type of a [`ClauseOperation`], found through the effective
     /// view's AD-006 original declaration) under its artifact id in the
@@ -3992,6 +4027,24 @@ impl CheckedGraph {
                     && frame.operation.declaration.name() == operation.name()
             })
             .map(|frame| (context, frame))
+    }
+
+    /// FR-116: whether the operation `selection` names resolves to no single
+    /// operation because two supertypes of its object type expose that name
+    /// and neither is more derived than the other (QSpec FR-342
+    /// `ambiguous_declaration`).
+    pub fn operation_is_ambiguous(&self, selection: &OperationSelection) -> bool {
+        let Some(context) = self.object_types.get(&selection.object) else {
+            return false;
+        };
+        matches!(
+            self.scope.operations().resolve(
+                self.scope.types(),
+                *context,
+                selection.operation.as_str(),
+            ),
+            crate::model::operation::OperationLookup::Ambiguous(_)
+        )
     }
 
     /// FR-115: the operation frame whose frame node identity is `frame`,
@@ -4610,3 +4663,24 @@ mod tests {
         ));
     }
 }
+
+/// FR-401-AC-3: `WrongSnapshotCause` lives in `quire-semantic-value`, and
+/// `check` leaves no name for it.
+///
+/// ```compile_fail,E0432
+/// use qsl_semantics::check::WrongSnapshotCause;
+/// ```
+///
+/// A positive control: the surviving `CheckCause` still imports cleanly, so
+/// the failure above is the removed name, not a broken module path.
+///
+/// ```
+/// use qsl_semantics::check::CheckCause;
+/// fn _use(_: Option<CheckCause>) {}
+/// ```
+#[cfg(doctest)]
+use ix_trace_rs::trace;
+
+#[cfg(doctest)]
+#[trace("FR-401-AC-3")]
+struct Fr401Ac3Doctests;

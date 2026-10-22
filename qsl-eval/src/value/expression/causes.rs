@@ -14,10 +14,10 @@ use qsl_foundation::diagnostic::{
 };
 use quire_exact::ObjectReference;
 
-use qsl_semantics::check::WrongSnapshotCause;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::observation::AdmissionRecord;
+use quire_semantic_value::call::WrongSnapshotCause;
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
 /// effective operation, the selected method's effective identity, the

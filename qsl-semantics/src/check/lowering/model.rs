@@ -558,6 +558,16 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// The declaration key of every top-level declaration of this package
+    /// that is not an object type (a value type, an enum, a record, ...):
+    /// the nodes that cannot declare operations.
+    pub(crate) fn non_object_declarations(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.records
+            .iter()
+            .filter(|(_, record)| !matches!(record, DomainPackageRecord::ObjectType(_)))
+            .map(|(key, _)| key)
+    }
+
     /// Every relationship declaration in this model package. Relationship
     /// nodes are model-owned graph roots even when no checked expression has
     /// a relationship-typed operand to name them.
