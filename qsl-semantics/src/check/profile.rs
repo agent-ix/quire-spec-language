@@ -27,7 +27,7 @@ const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 /// The `protocol_profile` definition a header profile `identity` selects, if
 /// it is one the `ProtocolClause` family's catalog holds (FR-110). The one
 /// place a header profile's spelling is read for that family.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn protocol_profile(identity: &str) -> Option<DefinitionReference> {
     (identity == PROTOCOL_PROFILE).then(|| DefinitionReference {
         authority: CLAUSE_PROFILE_AUTHORITY.to_owned(),
@@ -80,7 +80,7 @@ impl TemporalProfile {
     /// The profile a header identity selects, if the `TemporalTrace`
     /// family's catalog holds it (FR-110). The one place a header profile's
     /// spelling is read for that family.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn from_identity(identity: &str) -> Option<Self> {
         Self::ALL
             .into_iter()

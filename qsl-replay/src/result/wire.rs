@@ -12,7 +12,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use qsl_foundation::diagnostic::catalog_category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;

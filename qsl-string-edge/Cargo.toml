@@ -9,7 +9,7 @@ description = "FR-064: the standalone string-edge scanner -- reports a string co
 
 [dependencies]
 # The `#[string_edge]` marker the scanner's own marked functions carry.
-qsl-attrs = { path = "../qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151" }
 # `span-locations` is what gives `syn` a source line for each occurrence.
@@ -18,7 +18,6 @@ syn = { version = "2.0.119", features = ["full", "visit"] }
 thiserror = "2.0.20"
 
 [dev-dependencies]
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 tempfile = "3.27.0"
 
 [lints.rust]

@@ -256,7 +256,7 @@ impl Outcome {
 /// takes the catalog's category, and a code the catalog does not define is
 /// an internal failure: the system stopped for a reason the engine cannot
 /// classify. The only site that reads a stop cause's code spelling.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn stop_category(cause: &CatalogCode) -> Category {
     if cause.code() == "resource_exhausted" {
         return Category::Incomplete;

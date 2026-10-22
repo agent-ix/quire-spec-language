@@ -414,3 +414,56 @@ fn the_binary_and_the_library_report_the_same_item() {
     assert_eq!(stdout(&output), report.render());
     assert!(stdout(&output).contains("src/lib.rs:3 in T::kind (branch-gating)"));
 }
+
+/// FR-064-AC-12 and AC-15: through the command, the accepted marker paths are
+/// silent (exit 0) and a look-alike path is reported (exit 1).
+#[trace("TC-162", "FR-064-AC-12", "FR-064-AC-15")]
+#[test]
+fn the_command_accepts_the_marker_paths_and_reports_a_look_alike() {
+    let tree = Tree::new();
+    tree.write("rules.json", RULES);
+    tree.write(
+        "marked/src/lib.rs",
+        "use ix_trace_rs::string_edge;\n\
+         #[string_edge]\n\
+         pub fn imported(kind: &str) -> bool { kind == \"a\" }\n\
+         #[ix_trace_rs::string_edge]\n\
+         pub fn qualified(kind: &str) -> bool { kind == \"b\" }\n\
+         #[::ix_trace_rs::string_edge]\n\
+         pub fn rooted(kind: &str) -> bool { kind == \"c\" }\n",
+    );
+    tree.write(
+        "lookalike/src/lib.rs",
+        "#[my_macros::string_edge]\n\
+         pub fn other(kind: &str) -> bool { kind == \"a\" }\n",
+    );
+    let marked = run(
+        tree.path(),
+        &[
+            "--base-dir",
+            ".",
+            "--crate-root",
+            "marked/src",
+            "--rules",
+            "rules.json",
+        ],
+    );
+    assert_eq!(marked.status.code(), Some(0), "{}", stderr(&marked));
+    let lookalike = run(
+        tree.path(),
+        &[
+            "--base-dir",
+            ".",
+            "--crate-root",
+            "lookalike/src",
+            "--rules",
+            "rules.json",
+        ],
+    );
+    assert_eq!(lookalike.status.code(), Some(1));
+    assert!(
+        stdout(&lookalike).contains("lookalike/src/lib.rs:2 in other"),
+        "{}",
+        stdout(&lookalike)
+    );
+}

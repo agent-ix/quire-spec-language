@@ -2083,7 +2083,7 @@ fn typed_preimage<'a>(
 
 /// Whether `node` is a `value`/`union_value` node, which QSpec FR-440 keys by
 /// `quire.application-node/v1` whatever its body holds.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_union_value(node: &NodeInput<'_>) -> bool {
     node.node_tag == NodeTag::Value && node.semantic_form == UNION_VALUE_FORM
 }

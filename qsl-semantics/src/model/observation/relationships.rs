@@ -67,7 +67,7 @@ enum EntryMember {
 impl EntryMember {
     const ALL: [Self; 3] = [Self::Relationship, Self::Complete, Self::Instances];
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn read(name: &str) -> Option<Self> {
         match name {
             "relationship" => Some(Self::Relationship),
@@ -96,7 +96,7 @@ enum InstanceMember {
 impl InstanceMember {
     const ALL: [Self; 2] = [Self::Source, Self::Target];
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn read(name: &str) -> Option<Self> {
         match name {
             "source" => Some(Self::Source),
@@ -123,7 +123,7 @@ enum EndMember {
 impl EndMember {
     const ALL: [Self; 2] = [Self::Population, Self::Key];
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn read(name: &str) -> Option<Self> {
         match name {
             "population" => Some(Self::Population),

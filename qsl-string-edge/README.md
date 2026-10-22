@@ -30,11 +30,11 @@ As a library, in your `Cargo.toml`:
 qsl-string-edge = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 ```
 
-To mark an intake function you compile, depend on the marker the same way:
+To mark an intake function you compile, depend on `ix-trace-rs`, which owns the marker (`use ix_trace_rs::string_edge;` or `#[ix_trace_rs::string_edge]`):
 
 ```toml
 [dependencies]
-qsl-attrs = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 ```
 
 Neither route needs a copy of the scanner, a fork, or QSL's `xtask`.

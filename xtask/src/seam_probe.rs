@@ -60,7 +60,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 

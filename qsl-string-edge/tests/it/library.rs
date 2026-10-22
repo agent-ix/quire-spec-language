@@ -317,7 +317,7 @@ fn a_marked_branch_gating_item_still_refuses_an_allow_list_entry() {
     let tree = Tree::new();
     tree.write(
         "src/lib.rs",
-        "#[qsl_attrs::string_edge]\n\
+        "#[ix_trace_rs::string_edge]\n\
          pub fn intake(kind: &str) -> bool {\n\
          if kind == \"a\" { return true; }\n\
          false\n\
@@ -544,4 +544,54 @@ fn an_absolute_entry_may_use_the_base_as_given() {
         )],
     };
     assert!(scan(&request).expect("scan").is_clean());
+}
+
+/// FR-064-AC-12: the three accepted marker paths are silent through the
+/// public library and the unmarked function is reported.
+#[trace("TC-162", "FR-064-AC-12")]
+#[test]
+fn the_accepted_marker_paths_are_silent_and_the_unmarked_function_is_reported() {
+    let tree = Tree::new();
+    tree.write(
+        "src/lib.rs",
+        "use ix_trace_rs::string_edge;\n\
+         #[string_edge]\n\
+         pub fn imported(kind: &str) -> bool { kind == \"a\" }\n\
+         #[ix_trace_rs::string_edge]\n\
+         pub fn qualified(kind: &str) -> bool { kind == \"b\" }\n\
+         #[::ix_trace_rs::string_edge]\n\
+         pub fn rooted(kind: &str) -> bool { kind == \"c\" }\n\
+         pub fn plain(kind: &str) -> bool { kind == \"d\" }\n",
+    );
+    let report = scan(&request(tree.path(), &["src"])).expect("a completed scan");
+    assert_eq!(
+        report.occurrences,
+        [occurrence("src/lib.rs", 8, "plain", false)]
+    );
+}
+
+/// FR-064-AC-15: a look-alike path, a comment and a doc comment are no
+/// marker through the public library.
+#[trace("TC-162", "FR-064-AC-15")]
+#[test]
+fn look_alike_paths_and_comments_are_reported() {
+    let tree = Tree::new();
+    tree.write(
+        "src/lib.rs",
+        "#[my_macros::string_edge]\n\
+         pub fn other_crate(kind: &str) -> bool { kind == \"a\" }\n\
+         // string_edge\n\
+         pub fn comment(kind: &str) -> bool { kind == \"b\" }\n\
+         /// string_edge\n\
+         pub fn doc_comment(kind: &str) -> bool { kind == \"c\" }\n",
+    );
+    let report = scan(&request(tree.path(), &["src"])).expect("a completed scan");
+    assert_eq!(
+        report.occurrences,
+        [
+            occurrence("src/lib.rs", 2, "other_crate", false),
+            occurrence("src/lib.rs", 4, "comment", false),
+            occurrence("src/lib.rs", 6, "doc_comment", false),
+        ]
+    );
 }

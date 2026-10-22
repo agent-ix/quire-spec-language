@@ -20,8 +20,7 @@ use crate::error::{Error, Result};
 /// `qsl-replay` (ADR-011 §7.3 X-10 -- each extracted §6.1 layer crate adds its
 /// own entry here the same way), `qsl-analyze` (ADR-011 §7.3 X-12),
 /// `qsl-bench` (the benchmark harness) and `qsl-string-edge` (the scanner
-/// scans itself). `qsl-attrs` is excluded -- it is a proc-macro identity
-/// transform with no string dispatch of any kind (its own module doc).
+/// scans itself).
 fn crate_roots() -> Vec<PathBuf> {
     [
         "src",
@@ -87,10 +86,9 @@ mod tests {
     use ix_trace_rs::trace;
     use std::fs;
 
-    /// Workspace members `crate_roots` does not scan: `qsl-attrs` (see
-    /// `crate_roots`' own doc) and `tools/arch-lint`, which the scan has
-    /// never covered.
-    const UNSCANNED_MEMBERS: [&str; 2] = ["qsl-attrs", "tools/arch-lint"];
+    /// Workspace members `crate_roots` does not scan: `tools/arch-lint`,
+    /// which the scan has never covered.
+    const UNSCANNED_MEMBERS: [&str; 1] = ["tools/arch-lint"];
 
     fn workspace_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -279,6 +277,53 @@ mod tests {
         assert_eq!(
             summary,
             scan(&request(root)).expect("clean library scan").render()
+        );
+    }
+
+    /// FR-064-AC-12 and AC-15: the adapter accepts the three marker paths and
+    /// reports a look-alike path, a comment and a doc comment, as the library
+    /// does.
+    #[trace("TC-162", "FR-064-AC-12", "FR-064-AC-15")]
+    #[test]
+    fn the_adapter_accepts_the_marker_paths_and_reports_look_alikes() {
+        let dir = fixture_workspace();
+        let root = dir.path();
+        let fixture = root.join("src/string_edge_fixture.rs");
+
+        fs::write(
+            &fixture,
+            "use ix_trace_rs::string_edge;\n\
+             #[string_edge]\n\
+             fn imported(kind: &str) -> bool { kind == \"a\" }\n\
+             #[ix_trace_rs::string_edge]\n\
+             fn qualified(kind: &str) -> bool { kind == \"b\" }\n\
+             #[::ix_trace_rs::string_edge]\n\
+             fn rooted(kind: &str) -> bool { kind == \"c\" }\n",
+        )
+        .expect("write the marked fixture");
+        run(root).expect("every accepted marker path is silent");
+
+        fs::write(
+            &fixture,
+            "#[my_macros::string_edge]\n\
+             fn other_crate(kind: &str) -> bool { kind == \"a\" }\n\
+             // string_edge\n\
+             fn comment(kind: &str) -> bool { kind == \"b\" }\n\
+             /// string_edge\n\
+             fn doc_comment(kind: &str) -> bool { kind == \"c\" }\n",
+        )
+        .expect("write the look-alike fixture");
+        let error = run(root).expect_err("look-alikes are reported");
+        assert_eq!(
+            error.to_string(),
+            scan(&request(root)).expect("library scan").render()
+        );
+        assert_eq!(
+            error.to_string(),
+            "string-edge: 3 unmarked, unlisted occurrence(s):\n  \
+             src/string_edge_fixture.rs:2 in other_crate\n  \
+             src/string_edge_fixture.rs:4 in comment\n  \
+             src/string_edge_fixture.rs:6 in doc_comment\n"
         );
     }
 

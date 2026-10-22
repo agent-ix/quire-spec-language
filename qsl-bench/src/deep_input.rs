@@ -36,7 +36,7 @@ const HEADER_FIXTURE: &str = include_str!("../../tests/fixtures/spine-run.native
 ///
 /// `#[string_edge]`: picks the fixture's header lines by their leading
 /// keyword; it selects no family semantics.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn header() -> String {
     let mut header = String::new();
     for line in HEADER_FIXTURE.lines() {

@@ -536,7 +536,7 @@ struct Decimal<'t> {
 }
 
 impl<'t> Decimal<'t> {
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn of(text: &'t str) -> Self {
         let (negative, unsigned) = match text.strip_prefix('-') {
             Some(unsigned) => (true, unsigned),
@@ -982,7 +982,7 @@ fn view_refusal(fault: BuildFault<&str>) -> ModelRefusal {
 /// `sha256-jcs`: check 1 of the table below is exactly the question of
 /// whether the caller's offered digest domain is the one Intake accepts, so
 /// a parameter that already assumed the answer could not state that check.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn admit(
     offered: &DomainPackageRef,
     digest_domain: &str,
@@ -1287,7 +1287,7 @@ fn is_artifact_segment(text: &str) -> bool {
 
 /// The single segment past `ix://<package_identity>/`, when `identity` has
 /// exactly that form.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn type_identity_segment<'a>(
     package_identity: &str,
     identity: &'a str,
@@ -1398,7 +1398,7 @@ pub(crate) fn origin_locus(origin: &Value) -> (Option<String>, Option<LocatedSpa
 /// `<Name>` outside [`NativeValueType`]'s own closed set (QSpec's
 /// `type-ref`, R5's ruling -- narrower than FCD's) as
 /// `malformed-declaration`, a later, separate refusal from this one.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<ModelRefusal>> {
     let verdict = agent_ix_semantic_ir::decide(&document.bundle);
     let mut namespace_forms = std::collections::BTreeSet::new();
@@ -1479,7 +1479,7 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     }
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn process_subtype_identity_schema_diagnostic(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1599,7 +1599,7 @@ fn process_subtype_identity_schema_diagnostic(
     empty_identity || missing_identity
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn process_subtype_generalization_schema_diagnostic(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1660,7 +1660,7 @@ fn process_subtype_generalization_schema_diagnostic(
 /// selected member using QSL's typed refusal cause. Steps require a process
 /// owner, states and transitions a state machine, and a clause, field,
 /// operation, parameter or variant case is accepted on an owner of any meaning.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn duplicate_member_identity_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1752,7 +1752,7 @@ fn duplicate_member_identity_refusal(
 /// Translate only the reader's typed unresolved-reference codes, using its
 /// actual pointer and the selected document. Diagnostic prose never selects
 /// a cause or supplies a declaration identity.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn missing_reader_reference(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1879,7 +1879,7 @@ fn missing_reader_reference(
 /// Whether a validator diagnostic is a transition `from`/`to`/`trigger`/
 /// `guard` that names a state, operation or clause declared by some type of
 /// the document (FR-208: classified in phase 3, not at intake).
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn transition_names_another_machines_member(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1927,7 +1927,7 @@ fn transition_names_another_machines_member(
 }
 
 /// Whether any node of the document declares `identity`.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn document_declares(value: &Value, identity: &str) -> bool {
     match value {
         Value::Object(object) => object.iter().any(|(key, child)| {
@@ -1941,7 +1941,7 @@ fn document_declares(value: &Value, identity: &str) -> bool {
 
 /// Keep the source document's canonical member path in the diagnostic while
 /// retaining the reader's raw JSON pointer as evidence of where it refused.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 /// A pointer outside `types`/`populations`/`constructs` names its member
 /// under the package document (`$.package.identity`), never the bare root.
 fn semantic_member_path(pointer: &str) -> MemberPath {
@@ -1972,7 +1972,7 @@ fn semantic_member_path(pointer: &str) -> MemberPath {
     }
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn declared_node_for_pointer<'a>(
     document: &'a PackageDocument,
     pointer: &str,
@@ -2055,7 +2055,7 @@ fn declared_node_for_pointer<'a>(
 /// FR-208 Generalization / AC-12: the schema gate still refuses the document,
 /// but its generic cross-reference diagnostic must retain the business rule's
 /// actual typed cause. Namespace supertype entries are not checked further.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn business_generalization_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -2800,7 +2800,7 @@ fn read_contract_clauses(
 /// Reads a persistence-interface declaration and its ordinary operation
 /// members. The interface itself is original-only; its operations retain the
 /// normal operation records for signature checking.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn read_persistence_interface(
     package: &str,
     node: &str,
@@ -2953,7 +2953,7 @@ impl<'a> NodeCtx<'a> {
 /// `package` (the same Identity-row form `read_type_identity` already
 /// enforces for a declaration's own `identity`), and resolves to
 /// [`ValueTypeRef::Package`].
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_value_type_ref(
     package: &str,
     ctx: &NodeCtx<'_>,
@@ -2993,7 +2993,7 @@ fn read_value_type_ref(
     Ok(ValueTypeRef::Package(declaration_key(package, type_ref)))
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_field_member(
     package: &str,
     owner_identity: &str,
@@ -3241,7 +3241,7 @@ pub(super) fn read_clauses(
 }
 
 /// Namespace data is original-only: it never grants a type or frame role.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn read_namespace(
     package: &str,
     node: &str,
@@ -3360,7 +3360,7 @@ pub(super) fn read_namespace(
 /// irrelevant members -- only the members a value type could plausibly
 /// carry structure through (`operations`/`relationships`/`supertypes`) are
 /// checked so they are never silently dropped.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_value_type(
     package: &str,
     type_value: &Value,
@@ -3495,7 +3495,7 @@ fn read_value_type(
 /// `format` that is no text profile; a keyword given twice; no `format`; no
 /// `minLength`, then no `maxLength`; a profile outside the six; bounds outside
 /// `0 <= min <= max`.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_text_value_type(
     package: &str,
     node: &str,
@@ -3697,7 +3697,7 @@ fn read_endpoint(
     })
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_connection(
     package: &str,
     ctx: &NodeCtx<'_>,
@@ -3778,7 +3778,7 @@ fn read_connection(
 /// to `source-to-target`/`target-to-source`/`bidirectional` -- never
 /// `undirected`. This shape's own member is `direction`, not
 /// `flowDirection`; the two are never conflated.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_relationship(
     package: &str,
     owner_identity: &str,
@@ -3897,7 +3897,7 @@ fn read_allocation(
     })
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_population(
     package: &str,
     ctx: &NodeCtx<'_>,
@@ -4018,7 +4018,7 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
 /// (`variants[i]`), then its `identity`, `origin` and `payloadType`. Records
 /// are emitted in ascending case-name byte order, so the document's
 /// `variants` order changes no record.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn read_variant_type(
     package: &str,
     type_value: &Value,
@@ -4169,7 +4169,7 @@ fn shape_index(document: &Value) -> HashMap<(String, String), String> {
 /// by `kind.name`/`kind.module` directly. Checks report in FR-154's own
 /// order: the node's own identity form first (the object-id check), then
 /// its `kind`/meaning, then the meaning-specific shape.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_type_node(
     package: &str,
     meanings: &HashMap<(String, String), String>,

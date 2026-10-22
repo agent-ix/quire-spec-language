@@ -247,7 +247,7 @@ fn extract_selections(
         digest: Option<&'a Significant>,
     }
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn capture<'a>(
         production: Production,
         selected: &'a [Significant],
@@ -914,7 +914,7 @@ fn interval_bounds(source: &Source, cst: &LosslessCst) -> Vec<CompleteDiagnostic
     diagnostics
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn selection_code(tokens: &[Significant], position: usize) -> Option<CompleteCode> {
     match position {
         1 if tokens

@@ -687,7 +687,7 @@ impl ReplayRequest {
     /// checks happen before the byte provision or package reference is read
     /// at all: no package lookup or byte-provision access is observed
     /// before either refusal.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn decode(
         wire: ReplayRequestWire,
         limits: ReplayLimits,

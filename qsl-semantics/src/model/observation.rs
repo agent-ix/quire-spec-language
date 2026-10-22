@@ -961,7 +961,7 @@ impl PartialEq for SnapshotValue {
 
 /// The retained sequence of a Text payload under `declared`'s profile
 /// (FR-141): the payload itself, or its normalization.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn retained_text(declared: &quire_exact::TextType, payload: &str) -> String {
     match declared.profile().normalization() {
         Some(form) => form.apply(payload).collect(),
@@ -970,7 +970,7 @@ pub(super) fn retained_text(declared: &quire_exact::TextType, payload: &str) -> 
 }
 
 /// A Text object's `text` member, if it is a string.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn text_member(native: RawNative<'_>) -> Option<&str> {
     native
         .members()

@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use qsl_forms::{ActivationForm, ChannelDelivery, ProtocolDeclarationForm, ProtocolNodeKind};
 use qsl_foundation::MemoryModelName;
 use serde_json::Value;

@@ -394,7 +394,7 @@ fn supplied_positions(parameters: &[(String, ValueType)], call: &Call) -> Vec<us
 
 /// Check `occurrence` as FR-357's operator entry checks a claim's scalar
 /// node, in the order FR-367 Behavior 2 states.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn locate(
     checked: &CheckedPackage,
     call: &Call,

@@ -18,7 +18,7 @@ default = []
 quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
 
 [dependencies]
-qsl-attrs = { path = "../qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-cst = { path = "../qsl-cst" }
 qsl-eval = { path = "../qsl-eval" }
 qsl-forms = { path = "../qsl-forms" }
@@ -53,7 +53,6 @@ serde_json = { version = "1.0.151", features = ["raw_value"] }
 serde_path_to_error = "0.1.20"
 
 [dev-dependencies]
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `qsl-semantics`' test-only fixtures (`check::fixture_source`,
 # `PackageDeclarations`, `CheckMode::Kernel`'s `check_expression`) for
 # `spine::call`'s own tests (TC-452 step 5, FR-100-AC-10): a standalone

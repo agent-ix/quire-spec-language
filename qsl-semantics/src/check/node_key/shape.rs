@@ -113,7 +113,7 @@ impl Encode for Shape<'_> {
     /// out or nulls members by their wire names (`ordinal`, `owner`,
     /// `declaration`) from the node-identity preimage schema. No typed
     /// value exists at this edge to dispatch on instead.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn encode_into<S: Sink + ?Sized>(
         &self,
         writer: &mut Writer<'_, S>,

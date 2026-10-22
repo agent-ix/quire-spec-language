@@ -27,7 +27,7 @@ pub(super) struct MeaningBindingContext<'a, 'm> {
 /// Route the FR-208 meanings with dedicated binder modules. `None` leaves
 /// other meanings to the existing reader dispatch; every returned refusal
 /// retains the binder's typed intake result.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn bind(
     meaning_id: &str,
     context: &mut MeaningBindingContext<'_, '_>,
