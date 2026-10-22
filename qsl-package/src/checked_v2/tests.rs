@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use quire_contract_model::{
-    CheckedPackageEvidence, CheckedPackageRefusalCause, CheckedPackageRefusalCode,
-    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
+    CheckedPackageRefusalCause, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -1304,6 +1304,55 @@ fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: 
     }
 }
 
+/// Supplies, as extension definition evidence, every definition QSpec
+/// publishes in `extension-definitions.json` under `$QSPEC_DIR` for a
+/// `definition_selections` entry of `envelope`, except those in `withheld`
+/// (QSpec FR-469 "Published definitions"). A selection with no published
+/// definition (an `agent-ix` value or rule selection) is not held; an
+/// absent file holds nothing, so the reader refuses
+/// `unknown_required_capability` at the extension node.
+fn supply_qspec_extension_definitions(
+    evidence: &mut CheckedPackageEvidence,
+    envelope: &Value,
+    withheld: &[CheckedArtifactRef],
+) {
+    #[derive(serde::Deserialize)]
+    struct Published {
+        reference: CheckedArtifactRef,
+        definition: CheckedExtensionDefinition,
+    }
+    #[derive(serde::Deserialize)]
+    struct File {
+        definitions: Vec<Published>,
+    }
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/extension-definitions.json");
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => panic!("reading {}: {error}", path.display()),
+    };
+    let file: File = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    let Some(selections) = envelope["lock"]["definition_selections"].as_array() else {
+        return;
+    };
+    for published in file.definitions {
+        let selected = selections.iter().any(|row| {
+            row["authority"].as_str() == Some(&*published.reference.authority)
+                && row["identity"].as_str() == Some(&*published.reference.identity)
+        });
+        if selected && !withheld.contains(&published.reference) {
+            evidence
+                .insert_extension_definition(published.reference, published.definition)
+                .expect("a fresh extension definition key");
+        }
+    }
+}
+
 /// Supplies, as dependency package evidence, the admitted package of every
 /// `dependency_selections` entry of `envelope` (QSpec FR-322-AC-37: a
 /// `dependency_reference` callee is admitted when the dependency's admitted
@@ -1394,7 +1443,28 @@ fn fixture_wire_bytes(envelope: &Value) -> Vec<u8> {
 /// the fixture's required features as supported. The published fixture is
 /// pretty-printed; the wire is its canonical form.
 fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
+    read_fixture_wire_withholding(envelope, &[])
+}
+
+/// [`read_fixture_wire`] with the extension definitions named by
+/// `withheld` left out of the held evidence (QSpec FR-469 "Published
+/// definitions": the withheld-definition control).
+fn read_fixture_wire_withholding(
+    envelope: &Value,
+    withheld: &[CheckedArtifactRef],
+) -> (PackageId, Read) {
+    read_fixture_wire_holding(envelope, envelope, withheld)
+}
+
+/// [`read_fixture_wire_withholding`] holding the published definitions
+/// that `selecting`'s lock selects, rather than `envelope`'s own.
+fn read_fixture_wire_holding(
+    envelope: &Value,
+    selecting: &Value,
+    withheld: &[CheckedArtifactRef],
+) -> (PackageId, Read) {
     let mut evidence = CheckedPackageEvidence::new();
+    supply_qspec_extension_definitions(&mut evidence, selecting, withheld);
     for feature in envelope["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
@@ -2740,4 +2810,227 @@ fn a_dependency_closure_of_any_length_is_held_on_a_small_stack() {
             .expect("holding the closure must not overflow a 128 KiB stack")
     });
     assert_eq!(held, LINKS);
+}
+
+/// Runs one vector of `extension-definition-vectors.json`, asserting its
+/// `expected` result: admitted, or `unknown_required_capability` with the
+/// vector's code, no cause, `locus` and `document_pointer`.
+fn assert_extension_vector(directory: &std::path::Path, vector: &Value) {
+    let id = vector["id"].as_str().unwrap();
+    let envelope = read_fixture(&directory.join(vector["fixture"].as_str().unwrap()));
+    let withheld: Vec<CheckedArtifactRef> =
+        serde_json::from_value(vector["withheld"].clone()).expect("withheld refs");
+    let outcome = read_fixture_wire_withholding(&envelope, &withheld).1;
+    let expected = &vector["expected"];
+    match (expected["result"].as_str().unwrap(), outcome) {
+        ("admitted", Read::Verified { .. }) => {}
+        ("refused", Read::Refused(V2ReadRefusal::Envelope { refusal, locus })) => {
+            assert_eq!(
+                serde_json::to_value(&refusal.code).unwrap(),
+                expected["code"],
+                "{id}"
+            );
+            assert_eq!(refusal.cause, None, "{id}");
+            let node = refusal
+                .locus
+                .as_ref()
+                .unwrap_or_else(|| panic!("{id}: no locus"));
+            assert_eq!(
+                &*node.domain,
+                expected["locus"]["domain"].as_str().unwrap(),
+                "{id}"
+            );
+            assert_eq!(
+                &*node.digest,
+                expected["locus"]["digest"].as_str().unwrap(),
+                "{id}"
+            );
+            let pointer = expected["document_pointer"].as_str().unwrap();
+            assert_eq!(
+                refusal.document_pointer.as_ref().map(|p| p.as_str()),
+                Some(pointer),
+                "{id}"
+            );
+            assert!(
+                matches!(locus.as_deref(), Some(Locus::Artifact { pointer: at, .. })
+                    if at.as_str() == pointer),
+                "{id}: {locus:?}"
+            );
+        }
+        (_, other) => panic!("{id}: expected {expected}, got {other:?}"),
+    }
+}
+
+/// QSpec's `extension-definition-vectors.json` (XD-01..04, TC-951 X19):
+/// the published extension fixtures read with every published definition
+/// held are admitted, and read with the `retention` definition withheld
+/// refuse `unknown_required_capability` with no cause, at the vector's node
+/// `locus` and `document_pointer`. A refusal returns no package, so the
+/// lock, source map and node are unchanged by construction (X05).
+///
+/// Skipped (and passing) when `QSPEC_DIR` is unset.
+#[trace("FR-469-AC-10", "FR-469-AC-3", "TC-951")]
+#[test]
+fn extension_definition_vectors_xd_01_to_04() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let package_dir = directory.join("..");
+    let file = read_fixture(&package_dir.join("extension-definition-vectors.json"));
+    assert_eq!(
+        file["definitions"], "extension-definitions.json",
+        "the vectors name the definitions file the loader reads"
+    );
+    let vectors = file["vectors"].as_array().expect("vectors");
+    assert!(!vectors.is_empty());
+    for vector in vectors {
+        assert_extension_vector(&package_dir, vector);
+    }
+}
+
+/// TC-951 X06: with the `retention` entry removed from
+/// `lock.definition_selections`, a reader that holds the definition and one
+/// that does not both refuse `missing_declaration`/`missing-selection` at
+/// `/semantic_graph/nodes/{i}/body/definition`, before the held check.
+///
+/// Skipped (and passing) when `QSPEC_DIR` is unset.
+#[trace("FR-469-AC-3", "TC-951")]
+#[test]
+fn extension_definition_absent_from_selections_refuses_missing_selection() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let original = read_fixture(&directory.join("positive-extension-nodes.json"));
+    let mut mutated = original.clone();
+    for pointer in [
+        "/lock/definition_selections",
+        "/identity_preimage/definition_selections",
+    ] {
+        let rows = mutated
+            .pointer_mut(pointer)
+            .and_then(Value::as_array_mut)
+            .expect("definition_selections");
+        let before = rows.len();
+        rows.retain(|row| row["identity"] != "retention");
+        assert_eq!(rows.len(), before - 1, "the fixture selects retention once");
+    }
+    mutated["package_id"]["digest"] =
+        json!(PackageId::of_preimage(&jcs(&mutated["identity_preimage"])).hex());
+    let index = mutated["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|node| node["node_tag"] == "extension")
+        .expect("the fixture carries an extension node");
+    let held = CheckedArtifactRef {
+        authority: "example".into(),
+        identity: "retention".into(),
+    };
+    // The first reader holds `retention` (its selection source is the
+    // original lock); the second holds nothing of it.
+    for (holds, outcome) in [
+        (true, read_fixture_wire_holding(&mutated, &original, &[]).1),
+        (false, read_fixture_wire_withholding(&mutated, &[held]).1),
+    ] {
+        let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = outcome else {
+            panic!("holds={holds}: expected a refusal, got {outcome:?}");
+        };
+        assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
+        assert_eq!(
+            refusal.cause,
+            Some(CheckedPackageRefusalCause::MissingSelection),
+            "holds={holds}"
+        );
+        assert_eq!(
+            refusal.path.as_ref().map(|p| p.as_str().to_owned()),
+            Some(format!("/semantic_graph/nodes/{index}/body/definition")),
+            "holds={holds}"
+        );
+    }
+}
+
+/// TC-951 X18: `extension-definitions.json` meets its schema, holds one
+/// entry per reference in reference (UTF-8 byte) order, and pairs each
+/// grammar production with a typed-node entry of the same keyword whose
+/// clause names are the production's clauses.
+///
+/// Skipped (and passing) when `QSPEC_DIR` is unset.
+#[trace("FR-469-AC-9", "TC-951")]
+#[test]
+fn published_extension_definitions_conform_to_their_schema_and_pairing() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let package_dir = directory.join("..");
+    let file = read_fixture(&package_dir.join("extension-definitions.json"));
+    let schema = read_fixture(&package_dir.join("extension-definitions.schema.json"));
+    let compiled = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft202012)
+        .compile(&schema)
+        .expect("the schema compiles");
+    if let Err(errors) = compiled.validate(&file) {
+        let errors: Vec<_> = errors.map(|error| error.to_string()).collect();
+        panic!("extension-definitions.json violates its schema: {errors:?}");
+    }
+    let entries = file["definitions"].as_array().unwrap();
+    assert!(!entries.is_empty());
+    let references: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|entry| {
+            (
+                entry["reference"]["authority"].as_str().unwrap(),
+                entry["reference"]["identity"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert!(
+        references.windows(2).all(|pair| pair[0] < pair[1]),
+        "one entry per reference, in reference order: {references:?}"
+    );
+    for entry in entries {
+        let productions = entry["definition"]["grammar_schema"]["productions"]
+            .as_array()
+            .unwrap();
+        let nodes = entry["definition"]["typed_node_schema"]["nodes"]
+            .as_array()
+            .unwrap();
+        for production in productions {
+            let node = nodes
+                .iter()
+                .find(|node| node["keyword"] == production["keyword"])
+                .unwrap_or_else(|| panic!("no node entry for {}", production["keyword"]));
+            let names: Vec<_> = node["clauses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|clause| clause["name"].clone())
+                .collect();
+            assert_eq!(
+                &names,
+                production["clauses"].as_array().unwrap(),
+                "{}",
+                production["keyword"]
+            );
+        }
+    }
+}
+
+/// QSL's accepted V2 node tags are exactly IR's `CheckedNodeTag` wire
+/// spellings, so a tag IR adds cannot pass IR yet fail QSL's identity
+/// preimage check (the `InvalidPreimage{NodeTag}` QSL-978 hit for
+/// `extension`).
+#[trace("FR-469-AC-1")]
+#[test]
+fn node_tags_equal_irs_checked_node_tag_wire_spellings() {
+    let mut ir: Vec<&str> = quire_contract_model::CheckedNodeTag::ALL
+        .iter()
+        .map(|tag| tag.as_wire())
+        .collect();
+    let mut qsl: Vec<&str> = qsl_semantics::library::node_tags().to_vec();
+    ir.sort_unstable();
+    qsl.sort_unstable();
+    assert_eq!(qsl, ir);
 }
