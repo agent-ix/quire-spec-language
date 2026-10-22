@@ -43,7 +43,6 @@
 //! lasso and of a trap (FR-170, FR-181 Replay) and the settlement of the
 //! outcome (FR-169, FR-182).
 
-use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::fairness::{
@@ -340,30 +339,34 @@ impl<'a> Run<'_, 'a> {
         }
         let sampler = sampler()?;
         // A walk does not depend on the instance (only whether a candidate is a
-        // witness does), so each is drawn once and shared by the instances.
-        let mut drawn: BTreeMap<(usize, u64), Walked> = BTreeMap::new();
-        for binding in bindings {
-            let mut sampled = Sampled {
+        // witness does), so each is drawn once and tested against every
+        // instance that has no witness yet for this initial state.
+        for _ in bindings {
+            all.push(Sampled {
                 witnesses: vec![None; count],
                 stopped: 0,
-            };
-            for initial in 0..count {
-                for walk in 0..samples {
-                    if let Some(halt) = cancelled(self.cancel) {
-                        return Ok(Err(halt));
+            });
+        }
+        for initial in 0..count {
+            for walk in 0..samples {
+                if let Some(halt) = cancelled(self.cancel) {
+                    return Ok(Err(halt));
+                }
+                let trace = trace_index(initial, samples, walk)?;
+                let walked = match self.walk(&sampler, initial, trace)? {
+                    Ok(walked) => walked,
+                    Err(halt) => return Ok(Err(halt)),
+                };
+                let mut pending = false;
+                for (binding, sampled) in bindings.iter().zip(all.iter_mut()) {
+                    if sampled.witnesses.get(initial).is_some_and(Option::is_some) {
+                        continue;
                     }
-                    let trace = trace_index(initial, samples, walk)?;
-                    let walked = match drawn.entry((initial, trace)) {
-                        Entry::Occupied(walked) => walked.into_mut(),
-                        Entry::Vacant(slot) => match self.walk(&sampler, initial, trace)? {
-                            Ok(walked) => slot.insert(walked),
-                            Err(halt) => return Ok(Err(halt)),
-                        },
-                    };
                     let Some(candidate) = &walked.candidate else {
                         if walked.budget_stopped {
                             sampled.stopped = sampled.stopped.saturating_add(1);
                         }
+                        pending = true;
                         continue;
                     };
                     match self.witness(binding, initial, candidate)? {
@@ -371,14 +374,15 @@ impl<'a> Run<'_, 'a> {
                             if let Some(slot) = sampled.witnesses.get_mut(initial) {
                                 *slot = Some(witness);
                             }
-                            break;
                         }
-                        Ok(None) => {}
+                        Ok(None) => pending = true,
                         Err(halt) => return Ok(Err(halt)),
                     }
                 }
+                if !pending {
+                    break;
+                }
             }
-            all.push(sampled);
         }
         Ok(Ok(all))
     }

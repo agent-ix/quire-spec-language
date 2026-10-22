@@ -81,3 +81,9 @@ Checked against f5468187b by measuring it. The coder's draft table is replaced b
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-003 | medium | The shared walk cache keeps every candidate phase 0 draws until `sample` returns, in every run. That includes a run with one instance, which shares nothing. A candidate holds up to `max_walk_steps` (4096 by default) `ModelSimState` values. A body false on the sampled walks keeps every revisiting walk: up to `initial states x witness_samples` candidates (x 64 by default) instead of one at a time. Draw each `(initial, trace)` walk once and test it against every instance still pending, as `state_graph/sample.rs` does with `pending`. Or cache only when `bindings.len() > 1`. Then nothing is kept after a walk is read. | qsl-analyze/src/model_check/hyper/single.rs:342-380 |
+
+## Dispositions of SR-12304 (disposition pass 1)
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | f-sha: `sample` draws each `(initial, trace)` walk once, tests it against every instance with no witness yet for that initial state, and drops it before the next walk; no candidate is kept. |
