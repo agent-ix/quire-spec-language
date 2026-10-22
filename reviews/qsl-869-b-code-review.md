@@ -45,3 +45,10 @@ What is sound:
 - **Removing the refusal.** No code path still assumes it. A grep for `PopulationReference` and `PopulationReferenceNotEmitted` over the workspace finds only two old review files. qsl-eval evaluates the checked tree (`NodeKind::AllInstances`/`NamedPopulation`), not the lowered leaf, so evaluation does not change. Replay recompiles through the same lowering. The kani tree names neither removed item.
 - **Public API.** The two loud breaks (`EmitRefusal::PopulationReferenceNotEmitted`, `LeafTerm::PopulationReference`) are named in the PR body. The variants are deleted outright, with no shim.
 - **Panic surface.** No `unwrap`, `expect` or indexing was added to production code. `population_reference_node` propagates `model_owner`'s typed `KeyFault` refusals.
+
+## Dispositions
+
+| FND | Outcome | Sha |
+| --- | --- | --- |
+| FND-001 | fixed | 50605a374 |
+| FND-002 | fixed: one `population_node_content` shared by lowering and the abstraction target | 50605a374 |

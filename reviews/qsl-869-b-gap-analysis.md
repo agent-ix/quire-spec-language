@@ -68,3 +68,11 @@ FR-391 / TC-1076 row 8 against the code:
 **The FR-391 slice is complete and correct. Mergeable from the gap side; no major findings.** Every FR-391 / FR-322 obligation for S4 emission is met in the code and was measured: key identity against P7/P8, sharing, N in `result_type`, `dependencies`, the domain form, `lookup`, and reader admission. FND-002 is a test gap only. FND-001 is a tracker fix. FND-003 is a spec wording fix outside the diff.
 
 The coder's account of the timing/monitor remainder is honest. None of that code exists in the repo, it is FR-251/FR-252's whole feature, and it already has its ticket, QSL-587, which is spec-ready and blocked by QSL-580.
+
+## Dispositions
+
+| FND | Outcome | Sha |
+| --- | --- | --- |
+| FND-001 | fixed: PR body now says Remaining work: QSL-587 | 50605a374 |
+| FND-002 | fixed: the AC-6 unit, the lookup+allInstances case, the domain form and the holds atom are read through the full reader; FR-391-AC-6's "same unit" FR-155-AC-2 clause is unsatisfiable (AC-4 ambiguity) and now says a unit without archive | 50605a374 |
+| FND-003 | fixed: FR-094 now says the node carries the model owner (FR-322) | 50605a374 |
