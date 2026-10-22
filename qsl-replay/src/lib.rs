@@ -188,10 +188,11 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
-    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
-    MemoryBoundMember, ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
+    read_backend_provider_envelope, read_plugin_cause_kind, AppliedReduction,
+    BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet, IncompleteCause,
+    InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, PluginResultRefusal,
+    ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
+    ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
     StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
     TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
