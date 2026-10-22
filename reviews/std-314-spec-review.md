@@ -42,3 +42,11 @@ edit into #1269 before they merge; that is their scope, not this PR's.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The X-7 and X-8 rows say their `[dependencies]` "are exactly" a list that names `quire-checked` (C, from X-13), but neither manifest nor TC-390's sets name it on main, so after this PR the exactly-lists still differ from the code by that one crate. X-13 says the lists gain it when X-13 lands; the row would read accurately with "from X-13" turned into a condition (for example "and, once X-13 lands, `quire-checked`"), or the lead default stands as flagged. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1225,1226 |
+
+## Dispositions
+
+Round 1, checked against fix commit cb65d65a2. The X-7 and X-8 exactly-lists now equal `qsl-package/Cargo.toml` and `qsl-eval/Cargo.toml` on main, with `quire-checked` stated as X-13's addition. `make check-spec-validation` exits 0; main is an ancestor; no textual conflict with any current open PR. The sequencing note stands: #1233 (drops `serde`, makes four deps optional) and #1269 (adds `quire-eval`) must edit these rows when they land.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `quire-checked` is out of both exactly-lists; each row says "X-13 adds `quire-checked` ... to this list". |
