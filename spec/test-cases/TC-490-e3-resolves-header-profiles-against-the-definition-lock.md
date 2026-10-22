@@ -60,11 +60,13 @@ identity from the catalog, never from a literal.
     `quire.state.graph/v1` and `quire.model.complete/v1`, a unit holding
     `s = t` over `Sequence<Reference<Order>>` and `r = q` over a record with
     a `Reference<Order>` field (FR-110-AC-11).
-11. Build `complete::header_profile_catalog()` and compare its identities
-    with `DefinitionLock::pinned().layers()`. For each layer step 6 names,
-    run `complete::parse_with_catalog` with that catalog over the unit whose
-    one profile `v` names the layer; then over the unit with
-    `test:unknown-profile` (FR-110-AC-12).
+11. Build `complete::header_profile_catalog()`. Call `contains` with each
+    identity of `DefinitionLock::pinned().layers()`, with
+    `test:unknown-profile` and with each `qualification_catalog` row's
+    identity. For each layer step 6 names, run `complete::parse_with_catalog`
+    with that catalog over the unit whose one profile `v` names the layer;
+    then over the unit with `test:unknown-profile`, and over the unit with
+    the `ieee_profile` row's identity (FR-110-AC-12).
 
 Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-12", "TC-490")]` over the
 criteria each step backs.
@@ -99,4 +101,4 @@ criteria each step backs.
   their recorded outcomes (FR-110-AC-9).
 - Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
 - Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
-- Step 11: the catalog's identities equal the layer rows' identities in order; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit carries `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
+- Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every `qualification_catalog` identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
