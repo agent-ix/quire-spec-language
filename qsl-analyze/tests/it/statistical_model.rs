@@ -226,7 +226,7 @@ fn a_quantile_claim_reports_its_empirical_quantile() {
 #[trace("TC-624", "FR-189-AC-15")]
 #[test]
 fn a_quantity_reward_is_measured_by_its_magnitude_in_the_threshold_unit() {
-    let claims = "dimension Time;\nunit ms : Time = rational(1, 1);\n\
+    let claims = "dimension Time;\nunit s : Time = rational(1, 1);\nunit ms : Time = rational(1, 1000) * s;\n\
          reward latency on Server::attempt = 1 ms;\n\
          probabilistic Lat using ev on M over (s: M::Server) under Steady on origin \
          with alpha 0.01, beta 0.01, indifference 0.01 \

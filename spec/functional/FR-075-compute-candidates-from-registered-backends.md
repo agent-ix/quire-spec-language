@@ -43,9 +43,9 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   supplied when it advertises `probabilistic-satisfaction`. `mode` is
   `bounded` or `unbounded` (ADR-012 §7.1). `BackendId` is the backend
   identity alone (ADR-013 O-19); origin, pairs, domains and evidence kinds
-  are descriptor members, not identity components (FR-288-AC-5/6). Any
-  manifest digest carried for refusal reporting is not a descriptor-equality
-  input.
+  are descriptor members, not identity components (FR-288-AC-5/6). The
+  manifest digest is a descriptor member that counts in equality (QSpec
+  FR-290-AC-9, FR-290-AC-10), and keys the `duplicate-backend` refusals.
   The registry's
   uniqueness key is `BackendId` (FR-290 "Candidate set and negotiation": "a
   backend identity is unique within a registry"), so a second registration
@@ -245,9 +245,10 @@ candidate.
 ### A repeated identity is idempotent when identical, and conflicts otherwise
 
 If a registration names a `BackendId` the registry already holds, the
-registry SHALL compare identity, provider origin, advertised pairs, retained
-`domains`, and the evidence-kind set. A manifest digest is not part of this
-equality comparison. A different identity is a different registry key and is
+registry SHALL compare identity, provider origin, manifest digest, advertised
+pairs, retained `domains`, and the evidence-kind set. Two registrations that
+differ only in their manifest digest are unequal and conflict (QSpec
+FR-290-AC-10, TC-282). A different identity is a different registry key and is
 not a duplicate-registration conflict:
 
 - If the two are equal in every equality-compared member, the
@@ -303,7 +304,7 @@ were added.
 | FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry with an unequal descriptor, the identity is refused once with `invalid_capability`/`duplicate-backend`, keyed by the identity; the held registration is withdrawn, the identity is permanently unregistered (a later registration of it, even an identical one, is refused on arrival, and a request naming it receives the unknown-backend marker), and registrations of other identities are unaffected. | Test (TC-196, TC-447) |
 | FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
 | FR-075-AC-6 | A `backend` member written from a candidate and read back equals it, an identity with leading and trailing spaces is kept verbatim, and an empty identity refuses. | Test (TC-433) |
-| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with equal identity, provider origin, advertised pairs, retained `domains`, and evidence-kind set, the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. A repeat differing only in any of those compared members is unequal and follows FR-075-AC-4; manifest digest does not affect descriptor equality. A different identity is a different registry key. | Test (TC-447, TC-448, TC-982) |
+| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with equal identity, provider origin, manifest digest, advertised pairs, retained `domains`, and evidence-kind set, the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. A repeat differing only in any of those compared members is unequal and follows FR-075-AC-4, a difference in manifest digest alone included. A different identity is a different registry key. | Test (TC-447, TC-448, TC-982) |
 | FR-075-AC-8 | Given the checked package of FR-062's RR-5 (`function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }`) and a registry holding one backend advertising `value-validity` in `bounded` mode, and no named backend, the request builder returns exactly one `RequirementItem` per requirement record, in bytewise occurrence-key order with request indices 0, 1, 2: the two `+` records are two items with the same node and distinct occurrence keys, and every item is `value-validity`, classified `bounded`, with no unbounded domain, its record's result bound, and that one backend as its candidate set. With RR-6 (`n + 1` over `n: Integer`), the one item is classified `unbounded` with `finite_bound_available` true and carries one unbounded domain, `Integer` at `n`'s parameter node, and a bounded follow-up that supplies an `IntegerRange` for that key is a new request whose single item has request index 0, is classified `bounded` and carries the occurrence key passed to `bounded_item`, the original item's, and the follow-up request holds exactly one item for that occurrence key. With RR-16, the two `+` items carry result bounds `Int[0, 10]` and `Int[0, 20]`. With a registry advertising no `value-validity`, every item is still returned, each with an empty candidate set. With a named unregistered backend, every item carries the unknown-backend marker. A package with no records gives no items. | Test (TC-449) |
 | FR-075-AC-9 | For the checked function `function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }`, the two `x + 1` requirement records have the same application node and distinct occurrence keys, and the builder returns two items in occurrence-key order. Each item's `path_condition()` equals its own record's canonical path-condition sequence: both contain the `if p` guard occurrence, with `holds` true for the then occurrence and false for the else occurrence. Neither sequence is replaced by the other, flattened, or deduplicated. An unguarded record's item carries an empty path condition. | Test |
 | FR-075-AC-10 | A descriptor advertising `probabilistic-satisfaction` with evidence kinds `{statistical}`, `{exact}` or `{statistical, exact}` is admitted and retains exactly the supplied set on the descriptor. | Test |

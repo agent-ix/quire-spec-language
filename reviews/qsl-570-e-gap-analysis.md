@@ -91,3 +91,9 @@ Round 1, checked by the reviewer at 369bd13b1 (fix f4af7d95e). The new tests pas
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-007 | low | The new quantity-reward test declares `unit ms : Time = rational(1, 1)`, which makes `ms` the root unit. A magnitude in `ms` and a magnitude in the root unit are then the same number, so the doc's "the measure `1`, not `1/1000`" cannot fail. The test covers the `Value::Quantity` arm, but not the unit property. Declare `unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;` (the TIME_UNITS form in assemble/tests.rs) so that `1/1000` is a wrong answer the test can see. | qsl-analyze/tests/it/statistical_model.rs:221-242 |
+
+Round 2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | round-2 commit: the quantity test now declares s as the root unit and ms = rational(1, 1000) * s; with the magnitude conversion mutated by 1/1000 it fails (left 1/1000, right 1); restored |

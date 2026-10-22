@@ -64,3 +64,9 @@ Round 1, checked by the reviewer at 369bd13b1 (fix f4af7d95e). Each row replaces
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-004 | medium | Pre-existing, from #716; not introduced by this PR and not blocking it. FR-075 "A manifest digest is not part of this equality comparison" and FR-075-AC-7 ("manifest digest does not affect descriptor equality") contradict the code: `BackendDescriptor` derives `PartialEq` over `manifest_digest`, and the round-1 doc on `Registry::register` now says so. The code is right. QSpec FR-290-AC-9 and AC-10 key equality on equal manifests, and TC-282's tests require a digest-only difference to conflict. The PR body lists this as "Open" with no owner. Fix the FR-075 statement and AC-7 to say digest-inclusive equality (FR-075 is already edited in this PR), or file a ticket for it. | spec/functional/FR-075-compute-candidates-from-registered-backends.md:249,306; qsl-route/src/lib.rs:226,940-943 |
+
+Round 2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | round-2 commit: the spec was wrong, the code and QSpec FR-290-AC-9/10 are right: FR-075 (inputs, comparison section, AC-7) now counts the manifest digest in equality; no TC repeated the old text |
