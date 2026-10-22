@@ -86,7 +86,7 @@ protocol system only ever runs a protocol whose meaning is fixed.
   its two ends; each event node's `related by` clauses, in source order; the
   `requires temporal` requirements, each bound to the temporal clause it names
   by that clause's position among the unit's `temporal` clauses in declaration
-  order; the owner and visible facts of each `choice` and `repeat`;
+  order; the owner and visible facts of each `choice` and `repeat`; the owner of each `send` (its channel's `from` role) and each `receive` (its channel's `to` role);
   the compensation templates and the activation (FR-381); and the protocol's
   `terminal` and `scheduling` members (FR-211, FR-212).
 - A typed `CheckRefusal` with a span on refusal, and no checked clause.
@@ -357,7 +357,15 @@ none of its operands.
   all-branch join; a binder read outside its scope refuses as FR-113
   refuses an unresolved name.
 - For each replicated role with lifetime `scope`, S3 SHALL record the
-  smallest control holding every node `by` that role.
+  smallest control holding every node `by` that role. A `send` is owned by
+  its channel's `from` role and a `receive` by its channel's `to` role, and
+  the region counts those nodes as `by` that role.
+- S3 SHALL resolve the `pop` of `role r each T from pop` to a population
+  declared by the domain package that declares `T`. It SHALL refuse a name
+  that is no population of that package with `missing_declaration`/
+  `missing-name` at the name, and a population whose element type is not
+  `T` with `ill_typed`/`type-mismatch` at the name, each retaining `role`
+  and `population`. The checked role holds the resolved population.
 
 ### Protocol references
 
@@ -428,6 +436,8 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 | FR-218-AC-27 | The unit of TC-1056 with a second protocol `Billing` that also declares `channel Pay` with the same premises checks, and the checked clauses hold two channels: `Pipeline`'s `Pay` and `Billing`'s `Pay`. Each is recorded under its protocol's qualified identity and the handle `Pay`; the two have different qualified names and equal handles. | Test (TC-1056) |
+| FR-218-AC-28 | `role w each M::Worker from workers max 2 lifetime workflow` checks when `workers` is a population of `M::Worker` and the checked role holds that population; with `from absent` it refuses `missing_declaration`/`missing-name` at `absent`, and with `from jobs`, a population of `M::Job`, it refuses `ill_typed`/`type-mismatch` at `jobs`, each retaining `role` and `population`. | Test (TC-663) |
+| FR-218-AC-29 | In a protocol with channels `from w to c` and `from c to w`, the checked clause holds the owner `w` for the `send` on the first and `c` for its `receive`, and `c` for the `send` and `w` for the `receive` on the second; a lifetime `scope` region over `Work` nodes by `w` and a `send` from `w` includes the `send`. | Test (TC-663) |
 
 ## Dependencies
 

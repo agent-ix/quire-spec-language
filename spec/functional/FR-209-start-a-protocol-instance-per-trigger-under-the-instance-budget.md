@@ -118,7 +118,7 @@ is never mistaken for a proof over every instance count.
 | FR-209-AC-1 | An `on each (x: Tick) when {true}` protocol over a `Cell` (`v: Int[0, 1]`), whose body is one attempt `set` (postcondition `self.v = 1`, always enabled), and the TP-1 claim `always holds(k.v <= 1)`: with `max_live_instances` 1 the run settles V-6, `InstanceBoundReached{bound: max_live_instances 1, states}` with `states` at least 1, naming `max_live_instances` as the member that raises the bound; with 2 it settles V-6 with `bound: max_live_instances 2`; with the field unset the record states `max_live_instances` 3, reached. | Test (TC-654) |
 | FR-209-AC-2 | The same protocol with guard `{false}`: no `activate` step exists, the run settles V-1, and its record states `max_live_instances` 3, not reached. With the guard back at `{true}`, the claim `always holds(k.v = 0)` and `max_live_instances` 1, the run settles V-4 with a counterexample `activate(Tick)`, `attempt(set)`. | Test (TC-654) |
 | FR-209-AC-3 | With `max_live_instances` 2: after two `activate` steps the instances hold ordinals 0 and 1; once instance 0 finishes and is removed, the next `activate` creates ordinal 0. An instance-limited state is not reported as a deadlock by the deadlock-freedom item. | Test (TC-654) |
-| FR-209-AC-4 | A run where both a memory bound (ADR-025) and the instance bound limited a state, and no counterexample was found, settles `MemoryBoundReached`; a run where the instance bound limited a state and `BoundReached` (the completed `max_depth` search horizon) also applies settles `InstanceBoundReached`. Two requests that differ only in `max_live_instances` carry equal obligation identities. | Test (TC-654) |
+| FR-209-AC-4 | A run where both a memory bound (ADR-025) and the instance bound limited a state, and no counterexample was found, settles `MemoryBoundReached`; a run where the instance bound limited a state and `BoundReached` (the completed `max_depth` search horizon) also applies settles `InstanceBoundReached`. | Test (TC-654) |
 
 ## Dependencies
 
@@ -128,6 +128,9 @@ is never mistaken for a proof over every instance count.
   (`ModelCheckRequest`, outcomes),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
   (the V-6 row and the terminal record), FR-205, FR-206.
+- The bound is outside the obligation identity: two requests that differ only
+  in `max_live_instances` carry equal obligation identities, which QSpec
+  FR-428-AC-3 states and the request writer (ADR-013 O-09) computes.
 - QSpec owns activation on each, its instance identity and the bound with
   its default, V-6 cause and terminal-record statement (ADR-027 QS-11):
   QSpec FR-171, FR-331.

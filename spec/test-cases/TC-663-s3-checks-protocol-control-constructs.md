@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 checks every construct the protocol system runs, refuses malformed guards, choices, joins and cycles, and records binder readers and role regions.
 
-Scope: FR-218-AC-1 to FR-218-AC-7.
+Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28 and FR-218-AC-29.
 
 ## Test Procedure
 
@@ -30,6 +30,8 @@ Scope: FR-218-AC-1 to FR-218-AC-7.
    and its two-thread variant.
 7. Check FR-218-AC-7's `choice`-with-nested-`repeat` body, the `await`
    body and the `parallel` body.
+8. Check FR-218-AC-28's three `from` names, and FR-218-AC-29's two channels
+   between a replicated role and a static role.
 
 Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
 
@@ -49,3 +51,7 @@ Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
   two-thread variant checks.
 - Step 7: `unsupported_construct`/`declaration-form` at the outer
   `repeat`; the `await` and `parallel` bodies check.
+- Step 8: `from workers` checks and the checked role holds the population;
+  `absent` refuses `missing_declaration`/`missing-name`, `jobs` refuses
+  `ill_typed`/`type-mismatch`; the owners of each `send` and `receive` are the
+  channel roles of FR-218-AC-29.
