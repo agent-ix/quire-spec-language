@@ -24,22 +24,29 @@ Scope: FR-075-AC-18, FR-195-AC-6.
 1. Check a unit holding FR-186's `P95`, FR-195's `FairTerminates`, a
    `Reach` claim under a workload with confidence parameters, and one
    value function with a `value-validity` claim; read each probabilistic
-   claim's requirement record and its normal form.
+   claim's requirement record (key, kind, extent, result bound, conversion
+   context, path condition, evidence kind).
 2. Register an EN-4 manifest advertising `probabilistic-satisfaction` with
    `{statistical}` and an EN-5 manifest with `{exact}`.
-3. Build the request items with no evidence selection, with the selection
-   `exact`, and with both kinds; compute each item's candidates.
+3. Over the package whose records in key order are `P95`, `FairTerminates`
+   and the `value-validity` record, build the request items with no
+   evidence selection, with the selection `exact`, and with both kinds;
+   compute each item's candidates and `P95`'s obligation identity in each
+   request.
 
 Tag the tests `#[trace("TC-1163", "<criterion>")]`.
 
 ## Expected Results
 
-- Step 1: `FairTerminates` and the `Reach` claim record `exact`, `P95`
-  records `statistical`; the evidence kind is not part of the normal form.
-- Step 3: with no selection, `P95`'s item names `statistical` (candidate
-  EN-4) and `FairTerminates`'s names `exact` (candidate EN-5); with `exact`,
-  every probabilistic item names `exact`; with both, each probabilistic
-  claim gives an `exact` then a `statistical` item at consecutive request
-  indices with one occurrence key; the `value-validity` item carries no
-  evidence kind in every run; no item settles `absent-evidence-kind` or
+- Step 1: one record per probabilistic claim, keyed by its `claim`
+  occurrence, `probabilistic-satisfaction`, `Unbounded`, `Boolean` result
+  bound, no conversion context, empty path condition; `FairTerminates` and
+  the `Reach` claim record `exact`, `P95` records `statistical`.
+- Step 3: no selection: three items, `P95` `statistical` (EN-4 only),
+  `FairTerminates` `exact` (EN-5 only), `value-validity` at index 2 with no
+  evidence kind; `exact`: three items, both probabilistic items `exact`
+  with EN-5 only; both kinds: five items, indices 0 to 2 as with no
+  selection, index 3 `P95` `exact` (EN-5 only), index 4 `FairTerminates`
+  `statistical` (EN-4 only); `P95`'s obligation identity is equal in all
+  three requests; no item settles `absent-evidence-kind` or
   `unknown-evidence-kind`.
