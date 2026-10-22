@@ -57,6 +57,9 @@ warnings, none on a touched file.
 | FND-004 | fixed | FR-090 now calls the traits SV `catalog`'s. ADR-011's layer-3 row, §6.2 `family` row and E6 row are updated, and layers 5, 6 and A depend on E. ADR-014:95 names `quire_semantic_value::catalog::Category`. FR-262's Begin row takes the registry that holds its closure. New FND-008 covers §2.3, which this finding did not list. |
 | FND-005 | fixed | TC-390 step 1 scans every workspace member, and the `quire_eval::` resolution is left to FR-401-AC-3. |
 | FND-006 | fixed | #1225 merged first. FR-401 now lists FR-400 as `depends_on`, and FR-400 exists on main. |
+| FND-007 | fixed | FR-401 now says the first change that moves an F item into SV, S0's (X-14) or S2's (X-13), adds `qsl-foundation`'s SV dependency, and that neither waits for the other. X-14, X-2, NFR-015's row and AC-2, and TC-1110 all attribute the edge to "X-13 or X-14, whichever lands first" (57a293cc). |
+| FND-008 | fixed | §2.3 now calls `Evaluation<T>` and `FamilyOutcome` layer-E types, and the diagram adds `QEL --> QCK & QW`. |
+| FND-009 | fixed | TC-390 step 4 lists `qsl-package`'s and `qsl-eval`'s `[dependencies]` exactly as the manifests at 57a293cc and `family_outcome_layering.rs` name them. |
 
 ## New findings (disposition pass 1)
 
