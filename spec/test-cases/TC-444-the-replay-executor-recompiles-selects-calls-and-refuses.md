@@ -15,7 +15,7 @@ request's byte provision, requires its `package_id`, selects and calls the
 function, settles the verdict, and refuses each ADR-013 O-26 case with a
 typed variant and no partial result.
 
-Scope: FR-098-AC-1 to FR-098-AC-7, and FR-001-AC-6 for the recompile's
+Scope: FR-098-AC-1 to FR-098-AC-7, FR-098-AC-22 to FR-098-AC-26, and FR-001-AC-6 for the recompile's
 source labels.
 
 ## Test Procedure
@@ -30,7 +30,8 @@ of the other declared functions exercise -- the QSL-22 Layer 3 exemplar's
 own shape). Each request
 is built from the unit's spine compile: its `package_id`, its one source
 reference and its byte provision, with parameter node ids read from the
-compiled package.
+compiled package. Each request carries its function's `declaration`
+occurrence key unless a step names another occurrence.
 
 1. Replay `small` with an `Input` assignment `x = 7`; replay it with a
    `Witness` binding `x`'s node id to 8, then with a binding named `x`.
@@ -71,6 +72,12 @@ compiled package.
    `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`); again with
    its source edited so it does not compile; again with its source's
    byte-provision entry removed.
+
+10. Compile one unit declaring the functions of FR-098-AC-22 to FR-098-AC-25
+    (`p`, `q`, `r`, `s`, `b`, `u`, `inc`) and replay each request of
+    FR-098-AC-22 to FR-098-AC-26, with the occurrence key each names (an
+    application's key read from the compiled package's requirement records
+    at the site the AC names, never by ordinal alone).
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -134,3 +141,9 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `/replay/frame_operation` naming the target, `replay` and `function`,
   the first two times; `missing_import`/`missing-selection` the third
   (FR-098-AC-21).
+- Step 10: the settlements, values and refusals FR-098-AC-22 to
+  FR-098-AC-26 state, in AC-26's order. The requests that reproduce are
+  `p` at its `declaration` occurrence with `x = 0`, `r` with `x = 0`, `s` at
+  its right operand's occurrence with `x = 0`, `b` with `t = [3, 0]` and `u`
+  with only `x = 0` assigned; `s` at its `then` branch's occurrence with
+  `x = 0` settles `NoValue`.
