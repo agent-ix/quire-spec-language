@@ -3840,6 +3840,24 @@ impl CheckedGraph {
         })
     }
 
+    /// FR-121: the object type `declaring` (the
+    /// declaring type of a [`ClauseOperation`], found through the effective
+    /// view's AD-006 original declaration) under its artifact id in the
+    /// domain package the `model` alias binds. `None` when the alias binds no
+    /// package, or `declaring` is no object type of that package.
+    pub fn declaring_object(
+        &self,
+        model: &Identifier,
+        declaring: quire_exact::EffectiveId,
+    ) -> Option<&Identifier> {
+        self.model_objects
+            .get(model.as_str())?
+            .iter()
+            .find_map(|(artifact, declaration)| {
+                (self.object_types.get(declaration) == Some(&declaring)).then_some(artifact)
+            })
+    }
+
     /// ADR-012 §15.4: the domain key of the state field `field` of the
     /// object type `object` of the `model` alias -- the object type node
     /// that *declares* the field, and one path element, the field's ordinal

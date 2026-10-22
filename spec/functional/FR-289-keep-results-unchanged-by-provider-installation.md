@@ -69,6 +69,30 @@ Candidate sets (FR-075) and FR-331 terminal records.
   S6a replay result that reproduced its counterexample.
 - QSL's terminal record shall hold the value `proved` only together with the
   producing provider's `BackendId`.
+- A process provider's counterexample is canonical assignments (ADR-029
+  PL-7, "Counterexamples"). Its item settles `refuted`, naming the provider's
+  `BackendId`, only when the S6a replay of those assignments reproduces the
+  violation; a replay that does not reproduce it settles `inconclusive` with
+  cause `replay-parity`, and a replay refusal settles as
+  `TerminalValue::from_replay_refusal` does. A replay that reproduced
+  something other than a violation, and a witness-arm replay result, settle
+  `failed`.
+- A process provider's `proved` result settles `proved` with the certification
+  `trusted`, the provider's `BackendId` and the basis the provider reports
+  (ADR-029 PL-7, "Trusted proofs": `exhaustive`, `bounded-complete`, `inductive`, `reduced` and `bounded-solver`, each `trusted` whatever a first-party engine's label is), except the bases whose certificate or
+  evidence only the core establishes (ADR-018 §1, ADR-026, ADR-028; QSpec
+  FR-331 "Certification"): the Kani check count (`bounded-proof`), a
+  core-recomputed closed form (`closed-form`), a replayed witness
+  (`witnessed`), `exact-value`, `value-bounds` and `zone-certified`. QSL has no
+  `ProofBasis` variant for the last three today, so the code refuses the
+  first three, and a variant added later must be refused too.
+- The causes `replay-parity`, `replay-refused` and `kani_vacuous_proof` (the
+  plugin wire's spellings; QSpec FR-331 keeps the AD-016 underscore spelling
+  for the last, whereas QSL's outcome document writes `kani-vacuous-proof`) are
+  settled by QSL's own replay and Kani mapping (ADR-029 PL-7). A provider result that names one is refused, and
+  its item settles `failed`. The `failed` record carries no diagnostic: the
+  driver carries the refusal in the outcome document
+  (`OutcomeDiagnostic::new`).
 
 ## Acceptance Criteria
 
@@ -77,6 +101,17 @@ Candidate sets (FR-075) and FR-331 terminal records.
 | FR-289-AC-1 | Compiling `tests/fixtures/spine-compile.native` in a test that also builds an empty registry, and in one that builds a registry from three manifests, gives byte-equal `package` output and equal `check` outcomes. | Test (TC-773) |
 | FR-289-AC-2 | For a property-generated set of manifests and items, adding a manifest that advertises none of an item's matching requirements leaves that item's candidate set equal, and adding one that advertises the required capability adds exactly that backend to it; for a probabilistic item, the manifest must also advertise its exact evidence kind. | Test (TC-773) |
 | FR-289-AC-3 | A terminal record built with the value `refuted` and no reproducing replay result, or with the value `proved` and no `BackendId`, cannot be constructed through QSL's public API (`compile_fail` doctests with compiling controls); a record built from a reproducing replay result reads back `refuted` with that replay result. | Test (TC-773) |
+| FR-289-AC-4 | A process provider's counterexample whose replay as canonical assignments reproduces the violation settles `refuted` with the provider's `BackendId` and that replay result. | Test (TC-773) |
+| FR-289-AC-5 | A process provider's counterexample whose replay settles `inconclusive` settles `inconclusive` with cause `replay-parity` and keeps no replay result. | Test (TC-773) |
+| FR-289-AC-6 | A replay refusal of a process provider's counterexample settles as `TerminalValue::from_replay_refusal` does, a fault `failed`. | Test (TC-773) |
+| FR-289-AC-7 | A witness-arm replay result for a process provider's counterexample settles `failed`. | Test (TC-773) |
+| FR-289-AC-8 | An input-arm replay that reproduced something other than a violation settles `failed` with no replay result. | Test (TC-773) |
+| FR-289-AC-9 | A process provider's `proved` result settles `proved` with certification `trusted`, the provider's `BackendId` and the reported basis. | Test (TC-773) |
+| FR-289-AC-10 | A process provider's `proved` result reporting any of the six bases only the core establishes (`bounded-proof`, `closed-form`, `witnessed`, `exact-value`, `value-bounds`, `zone-certified`) is refused; for the three with a `ProofBasis` variant today the test checks each. | Test (TC-773) |
+| FR-289-AC-11 | A provider result naming the cause kind `replay-parity`, `replay-refused` or `kani_vacuous_proof` (QSpec FR-331 spellings) is refused by the cause-kind reader, and its item settles `failed`. | Test (TC-773) |
+| FR-289-AC-12 | A provider `inconclusive` result carrying the typed cause `ReplayParity` or `ReplayRefused` is refused, and its item settles `failed`. | Test (TC-773) |
+| FR-289-AC-13 | Every other `InconclusiveCause` kind, and the hyphenated `kani-vacuous-proof` that FR-331 lists for no plugin, is not refused by the cause-kind reader. | Test (TC-773) |
+| FR-289-AC-14 | A refused plugin result yields the diagnostic `invalid_result`/`unknown-cause` (member `cause` or `basis`, with the item index and the received spelling) or, for a `refuted` with nothing to replay, `invalid_result`/`missing-member` (member `counterexample`). | Test (TC-773) |
 
 ## Dependencies
 

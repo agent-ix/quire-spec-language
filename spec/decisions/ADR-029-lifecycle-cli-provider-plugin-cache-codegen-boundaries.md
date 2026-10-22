@@ -598,9 +598,14 @@ kills the process.
   The item settles `refuted` only when S6a replay reproduces it (PV-2
   item 4). Before replay the counterexample is the driver's FR-331
   `counterexamples` entry, the canonical assignments of a counterexample with
-  no transcript (ADR-013 QC-6). It is not a QSL type. The driver replays
-  those assignments through layer-6 `replay` as `ReplaySource::Input`
-  (ADR-013 O-25), and the replay alone settles the item:
+  no transcript (ADR-013 QC-6). It is not a QSL type. Predicate replay
+  decides only a function-contract item, the `declaration` occurrence of a
+  Boolean function (QSL FR-290). For any other item, the driver does not
+  replay the counterexample, and the item settles `inconclusive` with cause
+  `replay-refused` and code `unknown_required_feature` (FR-290
+  `NotReplayable`). For a function-contract item, the driver replays those
+  assignments through layer-6 `replay` as `ReplaySource::Input` (ADR-013
+  O-25), and the replay alone settles the item:
   - an `Input`-arm result that settles `reproduced-without-witness` with
     category violation settles `refuted`, naming the plugin's `BackendId` and
     keeping that replay result;
