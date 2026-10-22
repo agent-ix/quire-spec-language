@@ -73,8 +73,6 @@ record and call failure is the same before and after the move.
 2. The repository SHALL carry the AGPL-3.0-or-later licence, the CLA and the
    CONTENT_RIGHTS controls that `agent-ix/quire-walk` carries. Its licence,
    CLA and content-rights checks SHALL pass before it is made public.
-   Creating the repository is an owner action that precedes the first change
-   that adds `quire-eval`.
 3. `quire-eval` SHALL be `#![no_std]` with `alloc`, with no `std` feature,
    and SHALL forbid unsafe code. Its own gate SHALL build it for
    `thumbv7em-none-eabi`.

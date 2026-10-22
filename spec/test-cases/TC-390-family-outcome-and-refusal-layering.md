@@ -61,4 +61,16 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 - Step 2 finds no edge.
 - Step 3 finds no edge.
 - Step 4 finds that none of the five layer F to 4 manifests names
-  `quire-eval` in any table, and that `qsl-eval`'s `[dependencies]` name it.
+  `quire-eval` in any table. `qsl-foundation` may name `quire-exact` and
+  `quire-semantic-value`, and `qsl-cst` may name `qsl-foundation` and
+  `quire-exact` (ADR-011 §6.1). `qsl-package`'s `[dependencies]` name
+  `qsl-semantics` and no workspace crate outside `qsl-semantics`,
+  `qsl-foundation` and `quire-exact`, and `quire-contract-model` as their one
+  ecosystem crate outside the workspace, plus `quire-checked` once FR-400's
+  X-13 lands; its `[dev-dependencies]` may also name `qsl-forms`.
+  `qsl-eval`'s `[dependencies]` are exactly `qsl-foundation`, `qsl-package`,
+  `qsl-semantics`, `quire-canonical`, `quire-exact`, `serde` and `thiserror`
+  (ADR-011 X-8, FR-101), plus `quire-checked` once X-13 lands and
+  `quire-eval` once X-14 lands; it has no `[build-dependencies]`, and its
+  `[dev-dependencies]` may also name `qsl-forms` and `qsl-cst`, and no other
+  workspace crate.
