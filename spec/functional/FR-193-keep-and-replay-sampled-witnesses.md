@@ -13,6 +13,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-128
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-125
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-185
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-188
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-189
@@ -25,7 +29,9 @@ relationships:
 EN-4 SHALL keep, up to `max_witnesses`, the samples on the violating side
 of the claim's bound as **sampled witnesses** (ADR-024 SV-6), the first in trace-index order. The layer-6 replay facade SHALL
 replay a sampled witness through FR-128's model-trace replay plus two
-checks: each drawn value is in its support, and each draw recomputed from
+checks, over the checked subject the sampler ran over: a package that
+declares random parameters, workloads, rewards or probabilistic claims
+does not emit (FR-185), so there is no emitted package to recompile. The checks are that each drawn value is in its support, and that each draw recomputed from
 the seed selects the recorded choice (SV-8). A sampled witness never changes
 the item's `measured` value, and it SHALL replay as an ADR-018 counterexample
 for the qualitative claim "the event holds on every behaviour" (SV-7).
@@ -50,7 +56,8 @@ pub struct SampledWitness {
 }
 
 pub fn replay_sampled_witness(
-        request: &ReplayRequest,           // FR-098: package, provision, seed, sampler
+        subject: &ModelSubject<'_>,        // FR-125: the checked subject the sampler ran over
+        request: &ReplayRequest,           // FR-098: provision, seed, sampler; its package reference is not read
     provenance: &StatisticalProvenance, // FR-191: per test, initial state and binding
     witness: &SampledWitness,
 ) -> Result<ReplayOutcome, ReplayRefusal>;
@@ -80,8 +87,10 @@ pub fn replay_sampled_witness(
 
 ### Replay
 
-- `replay_sampled_witness` SHALL recompile the package (FR-098), re-admit
-  the initial state the provenance records for the witness's test from the
+- `replay_sampled_witness` SHALL recompile no package: it takes the checked
+  subject of the run, since S4 refuses a package that holds a random
+  parameter, a workload, a reward or a probabilistic claim (FR-185). It SHALL
+  re-admit the initial state the provenance records for the witness's test from the
   provision, and re-execute each step
   through FR-128's model-trace replay: enabledness, successor selection by
   post-state digest, and SM-1 evaluation of the event or measure over the
@@ -114,8 +123,9 @@ pub fn replay_sampled_witness(
   the TP-2 claim of its bound direction (ADR-024 SV-7): "`E` on every
   behaviour" for a `>= θ` bound, "not `E` on every behaviour" for a
   `<= θ` bound, the PF-4 event's form for a quantile, and the fraction
-  comparison on every behaviour for a mean of a fraction. FR-128 SHALL
-  replay it as one.
+  comparison on every behaviour for a mean of a fraction. FR-128's re-execution,
+  fairness and evaluation steps SHALL replay it as one over that same checked
+  subject, with no recompile and no `package_id` comparison.
 
 ## Acceptance Criteria
 
@@ -125,10 +135,11 @@ pub fn replay_sampled_witness(
 | FR-193-AC-2 | Each kept witness replays `Reproduced`. The same witness with `d` changed to `2 ms` (outside the support) refuses `invalid_runtime_input`/`invalid-value`; with the seed changed so a recomputed draw selects `1 ms` it settles `Inconclusive(ReplayParity)`; with its path probability changed it settles `Inconclusive(ReplayParity)`. The item's record stays `measured`, `rejected` in each case. | Test (TC-628) |
 | FR-193-AC-3 | A witness converted to a `TemporalCounterexample` for the TP-2 claim "`M <= 2 ms` on every activated behaviour" replays through FR-128 and settles that claim `refuted`. For `probability <= 0.01 [eventually[0,1000] holds(not n.healthy)]` with `alpha 0.01, beta 0.01, indifference 0.005` over `Health` under `Steady` (ADR-024 §7.1), a witness is a sample with a fault; it converts to a counterexample for "not `eventually[0,1000] holds(not n.healthy)` on every behaviour" and settles that claim `refuted`. `LongRun` keeps no witness. | Test (TC-628) |
 | FR-193-AC-4 | FR-189-AC-6's undefined sample is kept as a witness with value `Undefined(UndefinedEvaluation)` and replays `Reproduced`; the same witness with its cause changed to `precondition-false` settles `Inconclusive(ReplayParity)`. | Test (TC-640) |
+| FR-193-AC-5 | `Service` is refused at S4 (FR-185-AC-7), and the witnesses of AC-1 replay `Reproduced` over its checked subject and the converted counterexample of AC-3 settles `refuted` over it, each with no recompile and no S4 emission attempted. | Test (TC-628) |
 
 ## Dependencies
 
-- ADR-024 SV-6 to SV-8; ADR-018 CX-1 to CX-3.
+- ADR-024 SV-6 to SV-8; ADR-018 CX-1 to CX-3; FR-185 "Package emission".
 - [FR-098](FR-098-execute-a-replay-request.md),
   [FR-128](FR-128-replay-a-model-counterexample.md),
   [FR-188](FR-188-draw-weighted-choices-with-the-qspec-sampler.md),

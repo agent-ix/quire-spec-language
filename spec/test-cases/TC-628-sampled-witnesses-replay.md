@@ -12,7 +12,7 @@ relationships:
 
 Verify witness keeping, replay with support and draw checks, the refusal and parity outcomes, and conversion to a qualitative counterexample.
 
-Scope: FR-193-AC-1 to FR-193-AC-3.
+Scope: FR-193-AC-1 to FR-193-AC-3, FR-193-AC-5.
 
 ## Test Procedure
 
@@ -21,6 +21,7 @@ Fixtures: `Service` and the `2 ms` claim, seed 7, `max_witnesses` 3; `Health` wi
 1. Run the claim and read the witnesses.
 2. Replay each witness; replay altered copies (value outside the support, changed seed, changed path probability).
 3. Convert a witness to a `TemporalCounterexample` for the TP-2 claim and replay it; do the same for a witness of the `<= 1/100` fault claim; run `LongRun`.
+4. Refuse `Service` at S4, then run steps 2 and 3's `Service` replays over its checked subject.
 
 Tag the tests `#[trace("TC-628", "FR-193-AC-n")]`.
 
@@ -29,3 +30,4 @@ Tag the tests `#[trace("TC-628", "FR-193-AC-n")]`.
 - Step 1: three witnesses in trace order with latency above `2 ms` and exact path probabilities.
 - Step 2: `Reproduced`; `invalid_runtime_input`/`invalid-value`; `Inconclusive(ReplayParity)` twice; the item stays `measured`, `rejected`.
 - Step 3: the TP-2 claim settles `refuted`; the negated claim settles `refuted`; `LongRun` keeps no witness.
+- Step 4: the S4 refusal of FR-185-AC-7; the same outcomes as steps 2 and 3, with no recompile and no emission attempt.
