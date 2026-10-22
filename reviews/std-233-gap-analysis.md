@@ -50,3 +50,21 @@ qsl-analyze/tests/it/protocol_compensation.rs.
 Every new AC has a TC row in its own repo. The one changed AC whose TC row
 was not updated is FR-216-AC-4 (FND-001). The fixture defects in TC-650 step
 8 and PK-16 are recorded in SR-13990 FND-007.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@542a60c8b` (fix commit `2943e282e`) and `agent-ix/quire-specification@f655246` (fix commit `696e584`). I re-mapped every new or changed AC at these heads:
+
+- FR-205-AC-8 maps to TC-650 step 8.
+- FR-206-AC-10 maps to TC-651 step 10.
+- FR-207-AC-2 and the new FR-207-AC-5 map to TC-652 steps 4 and 5. The Scope is now AC-1 to AC-5.
+- FR-216-AC-4 and FR-216-AC-5 map to TC-661 steps 4 and 5.
+- The new FR-220-AC-15 maps to TC-665 step 14. The Scope is now AC-1 to AC-15.
+- QSpec FR-425-AC-12 maps to PK-16, FR-426-AC-16 to FL-10, FR-427-AC-6 to TC-380 CP-12 (CP-03 updated), and FR-435-AC-7 to TC-389 AC-12.
+
+Every one has a TC row in its own repo. The fixture and id defects found in this pass are in SR-13990 FND-010 to FND-019.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 2943e282e | TC-661 step 4 now runs the pre-state and the one-location-perturbed pre-state, compares enabledness, pairs successors by transition identity and values outside the location, and diffs against `W`. Its expected result asserts equal enabledness, successor pairs that differ at most at the perturbed location, and every location outside `W(s)` unchanged in both runs. |
+| FND-002 | deferred: code lane | Adding the `#[trace]` tags is a test-code change, which is outside this spec-only PR. Both PR bodies list the two tags under Remaining work for the code lane. No ticket id is given. |

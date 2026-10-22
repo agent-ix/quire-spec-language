@@ -40,7 +40,8 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
    `u` rests at `U1`, each `u`'s environment and `Ck` value, and the key's
    `observations`.
 8. Run FR-205-AC-8's protocol: activate the two registrations by the two
-   triggers in both orders, then step `Committed` and finish the instance;
+   triggers in both orders, take each compensation thread's `cattempt` and
+   `cend`, then step `Committed` and finish the instance;
    read the keys.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.

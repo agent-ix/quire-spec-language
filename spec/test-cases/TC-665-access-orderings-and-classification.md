@@ -41,7 +41,7 @@ EN-1 steps (not S3 results):
 13. Run the pre-check on an instantiated `release` load, an `acquire` store and
     an RMW with no ordering, under `tso` and under `ra` (FR-220-AC-14).
 14. Run the pre-check on FR-220-AC-15's `event` reader beside the storing
-    branch under `tso` and under `sc`, on the unshared `y.v` reader, and on the
+    branch under `tso` and under `sc`, on the `z.v` reader of the variant whose universe also holds an unaccessed `z`, and on the
     `finish` reader.
 
 Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.

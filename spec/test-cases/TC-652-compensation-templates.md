@@ -35,5 +35,5 @@ Tag the tests `#[trace("TC-652", "FR-207-AC-n")]`.
 - Step 3: the enabled steps FR-207-AC-3 states.
 - Step 4: closed at `Ok`; no activation, no compensation thread, no second
   registration.
-- Step 5: V-8 `unsupported`, cause `RecoveryView`, naming the predicate, with
+- Step 5: V-8 `unsupported`, cause `RecoveryView{predicate}`, with
   no state explored.

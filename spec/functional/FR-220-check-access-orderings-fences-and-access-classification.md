@@ -182,7 +182,7 @@ possible takes it.
 | FR-220-AC-12 | EN-1 classifies AC-7's two `relaxed` stores as two stores to one shared location. | Test (EN-1 sharing; TC-665 step 11) |
 | FR-220-AC-13 | EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. | Test (EN-1 sharing; TC-665 step 12) |
 | FR-220-AC-14 | The EN-1 pre-check settles V-8 `WeakAccessShape` for an instantiated load with `release`, a store with `acquire`, and an RMW with no ordering, under `tso` and under `ra`. | Test (EN-1 pre-check; TC-665 step 13) |
-| FR-220-AC-15 | In `SB`'s `parallel` under `tso`, a branch holding an `event` whose constraint reads `x.v` beside the branch whose attempt stores `x.v` settles V-8 `WeakAccessShape` with `MultiLocation` naming the event and `(x, v)`; under `sc`, and with the `event` reading a field `z.v` that no other branch accesses, the item is admitted. A `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
+| FR-220-AC-15 | In `SB`'s `parallel` under `tso`, a branch holding an `event` whose constraint reads `x.v` beside the branch whose attempt stores `x.v` settles V-8 `WeakAccessShape` with `MultiLocation` naming the event and `(x, v)`; under `sc`, and in a variant of `SB` whose universe also holds a `Cell` `z` that no attempt accesses, with the `event` reading `z.v`, the item is admitted. A `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
 
 ## Dependencies
 
