@@ -102,3 +102,26 @@ fn an_argument_is_one_error_and_the_item_is_retained() {
         "{stderr}"
     );
 }
+
+#[trace("TC-162", "FR-064-AC-13")]
+#[test]
+fn the_annotated_item_is_kept_so_its_own_errors_still_show() {
+    let tree = Tree::new();
+    let output = build_consumer(
+        &tree,
+        "check",
+        "#[ix_trace_rs::string_edge(anything)]\n\
+         fn marked() -> u8 { \"not a u8\" }\n\
+         fn main() { let _ = marked(); }\n",
+    );
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error: #[string_edge] takes no arguments"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("error[E0308]"),
+        "the marker dropped the item, so its body was never checked: {stderr}"
+    );
+}

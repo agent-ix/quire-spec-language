@@ -1602,7 +1602,7 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ";
 
-    const ATTRS_UNIT_SECTION: &str = "     Running unittests src/lib.rs (target/debug/deps/qsl_walk_grow-5c690327f0f96fda)\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
+    const EMPTY_UNIT_SECTION: &str = "     Running unittests src/lib.rs (target/debug/deps/qsl_walk_grow-5c690327f0f96fda)\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
     const ANALYZE_DOC_SECTION: &str = "   Doc-tests qsl_analyze\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
     const ANALYZE_UNIT: &str = "qsl-analyze/src/lib.rs";
     const ANALYZE_DOC: &str = "qsl-analyze/src/lib.rs (doctests)";
@@ -1703,7 +1703,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         EmptySuite {
             source: "qsl-walk-grow/src/lib.rs",
             kind: SuiteKind::Tests,
-            reason: "proc-macro crate",
+            reason: "no unit tests",
         },
         EmptySuite {
             source: "qsl-bench/src/bin/qsl-bench-probe.rs",
@@ -1804,7 +1804,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[test]
     #[trace("TC-950", "NFR-014-AC-8")]
     fn a_built_test_target_that_never_ran_fails() {
-        let log = PRODUCER_LOG.replace(ATTRS_UNIT_SECTION, "");
+        let log = PRODUCER_LOG.replace(EMPTY_UNIT_SECTION, "");
         assert_eq!(
             check(&lane(DECLARES_EMPTY), &log),
             vec![
@@ -1906,7 +1906,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         EmptySuite {
             source: "qsl-walk-grow/src/lib.rs",
             kind: SuiteKind::Tests,
-            reason: "proc-macro crate",
+            reason: "no unit tests",
         },
         EmptySuite {
             source: "qsl-bench/src/bin/qsl-bench-probe.rs",
@@ -2171,7 +2171,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             }
         }
         for (name, section) in [
-            ("ATTRS_UNIT_SECTION", ATTRS_UNIT_SECTION),
+            ("EMPTY_UNIT_SECTION", EMPTY_UNIT_SECTION),
             ("ANALYZE_DOC_SECTION", ANALYZE_DOC_SECTION),
         ] {
             assert!(

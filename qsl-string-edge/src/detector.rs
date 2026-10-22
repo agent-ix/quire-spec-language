@@ -85,10 +85,7 @@ fn has_string_edge_marker(attrs: &[syn::Attribute]) -> bool {
         let path = attr.path();
         let mut segments = path.segments.iter();
         let bare = |segment: Option<&syn::PathSegment>, name: &str| {
-            segment.is_some_and(|segment| {
-                matches!(segment.arguments, syn::PathArguments::None)
-                    && ident_is(&segment.ident, name)
-            })
+            segment.is_some_and(|segment| ident_is(&segment.ident, name))
         };
         match (path.leading_colon.is_some(), path.segments.len()) {
             (false, 1) => bare(segments.next(), MARKER_NAME),

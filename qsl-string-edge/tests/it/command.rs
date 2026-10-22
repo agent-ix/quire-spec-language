@@ -416,7 +416,7 @@ fn the_binary_and_the_library_report_the_same_item() {
 }
 
 /// FR-064-AC-12 and AC-15: through the command, the accepted marker paths are
-/// silent (exit 0) and a look-alike path is reported (exit 1).
+/// silent, the unmarked function beside them is reported (exit 1), and a look-alike path is reported (exit 1).
 #[trace("TC-162", "FR-064-AC-12", "FR-064-AC-15")]
 #[test]
 fn the_command_accepts_the_marker_paths_and_reports_a_look_alike() {
@@ -430,7 +430,8 @@ fn the_command_accepts_the_marker_paths_and_reports_a_look_alike() {
          #[ix_trace_rs::string_edge]\n\
          pub fn qualified(kind: &str) -> bool { kind == \"b\" }\n\
          #[::ix_trace_rs::string_edge]\n\
-         pub fn rooted(kind: &str) -> bool { kind == \"c\" }\n",
+         pub fn rooted(kind: &str) -> bool { kind == \"c\" }\n\
+         pub fn plain(kind: &str) -> bool { kind == \"d\" }\n",
     );
     tree.write(
         "lookalike/src/lib.rs",
@@ -448,7 +449,18 @@ fn the_command_accepts_the_marker_paths_and_reports_a_look_alike() {
             "rules.json",
         ],
     );
-    assert_eq!(marked.status.code(), Some(0), "{}", stderr(&marked));
+    assert_eq!(marked.status.code(), Some(1), "{}", stderr(&marked));
+    assert!(
+        stdout(&marked).contains("marked/src/lib.rs:8 in plain"),
+        "{}",
+        stdout(&marked)
+    );
+    assert_eq!(
+        stdout(&marked).matches(" in ").count(),
+        1,
+        "only the unmarked function is reported: {}",
+        stdout(&marked)
+    );
     let lookalike = run(
         tree.path(),
         &[

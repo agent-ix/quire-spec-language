@@ -298,10 +298,16 @@ mod tests {
              #[ix_trace_rs::string_edge]\n\
              fn qualified(kind: &str) -> bool { kind == \"b\" }\n\
              #[::ix_trace_rs::string_edge]\n\
-             fn rooted(kind: &str) -> bool { kind == \"c\" }\n",
+             fn rooted(kind: &str) -> bool { kind == \"c\" }\n\
+             fn plain(kind: &str) -> bool { kind == \"d\" }\n",
         )
         .expect("write the marked fixture");
-        run(root).expect("every accepted marker path is silent");
+        let error = run(root).expect_err("only the unmarked function is reported");
+        assert_eq!(
+            error.to_string(),
+            "string-edge: 1 unmarked, unlisted occurrence(s):\n  \
+             src/string_edge_fixture.rs:8 in plain\n"
+        );
 
         fs::write(
             &fixture,
