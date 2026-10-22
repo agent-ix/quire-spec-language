@@ -147,10 +147,10 @@ inputs.
 Readiness, state, owners and blocker edges live in Linear and are not copied
 here. The ordering rationale is as follows.
 
-- IR-583 delivers the interface, leaf-crate contract and std reference adapter.
-- IR-585 (S1) moves the evaluation refusal/call-plan vocabulary into
-  `quire-semantic-value`, rebases the object environment on `ObjectClosure`
-  and removes the obsolete consumer fields. It follows IR-583 and IR-269.
+- IR-583 delivers the interface in `quire-eval`, the vocabulary moves its
+  signature needs, and the std reference adapter (FR-401).
+- IR-585 (S1) moves `WrongSnapshotCause` into `quire-semantic-value`
+  (FR-401). It follows IR-583 and IR-269.
 - IR-586 (S2) separates checked IR from the checker, preserving checking
   authority, source locations and identities.
 - IR-587 (S3) makes `qsl-foundation` no_std + alloc capable with `std` on by
