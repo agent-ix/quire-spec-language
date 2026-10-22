@@ -7,6 +7,7 @@ mod format_outcome_facade;
 mod outcome_facade;
 mod parse_outcome_facade;
 mod quantity_type_source;
+mod rational_mvp_source;
 #[path = "../../../tests/support/refinement_aux.rs"]
 mod refinement_aux;
 #[path = "../../../tests/support/refinement_cas.rs"]
