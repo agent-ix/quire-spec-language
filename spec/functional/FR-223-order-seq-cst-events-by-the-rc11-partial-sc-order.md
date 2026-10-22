@@ -64,9 +64,10 @@ verdict holds under RC11.
 - `Ra` SHALL record a `seq_cst` fence in the frontier of its thread's current
   view, of `S` and of its release views as the fence becomes an SC event.
 - `Ra` SHALL build no edge for the `eco` part of RC11's fence clause.
-- `Ra` SHALL NOT build the edges ADR-025 PSC-7 omits: the
-  `po|≠loc ; hb ; po|≠loc` edge from an SC access, and the `mo` and `rb` edges
-  between an SC fence and an SC access that pass through a non-SC access.
+- `Ra` SHALL NOT build the edges ADR-025 PSC-7 (a) and (b) omit: the
+  `po|≠loc ; hb ; po|≠loc` edge from an SC access, and the `psc_base` edges
+  with an SC fence at one end whose `scb` step is an `mo` or `rb` step with a
+  non-SC access at its fence-side end.
 - `Ra` SHALL enable a `seq_cst` access or fence with a given message or
   slot choice only when QSpec FR-437's acyclicity check on the resulting
   `P` passes, and SHALL give no step for a pruned choice.
