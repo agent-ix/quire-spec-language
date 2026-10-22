@@ -33,7 +33,7 @@ fields, never a rendered message.
 | 3 | `terminal First ... any;`, a `temporal` clause, `terminal Second ... when { true };` | three forms in source order: `Terminal` (`Any`), `Temporal`, `Terminal` (`When`); both terminal forms name `Config` |
 | 4 | a `terminal` declaration missing its `;`, and one whose `when` has no block | each refuses `FormsCause::RecoveringCst`; no form |
 | 5 | rows 1 and 2, each built twice | equal forms |
-| 6 | rows 1 and 2, each assembled with `M` naming no `model` declaration | one refusal, `missing_declaration`/`missing-name`, at `M`; with `M` a model, the package refuses `unsupported_construct`/`not-yet-implemented` at the declaration |
+| 6 | rows 1 and 2, each assembled with `M` naming no `model` declaration | one refusal, `missing_declaration`/`missing-name`, at `M`; with `M` a model, the package holds the declaration's `temporal`/`terminal` node (FR-411) |
 
 ## Expected Results
 

@@ -770,6 +770,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-401
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-404
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-430
@@ -1101,6 +1103,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-128](functional/FR-128-replay-a-model-counterexample.md) | FR |
 | [FR-337](functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md) | FR |
 | [FR-410](functional/FR-410-emit-a-checked-state-graph-claim-as-a-v2-claim-node.md) | FR |
+| [FR-411](functional/FR-411-emit-a-checked-model-terminal-declaration-as-a-v2-terminal-node.md) | FR |
 | [FR-325](functional/FR-325-parse-temporal-operators-with-an-optional-interval.md) | FR |
 | [FR-326](functional/FR-326-admit-temporal-operators-by-the-unit-s-temporal-profile.md) | FR |
 | [FR-327](functional/FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md) | FR |
@@ -1308,6 +1311,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-398](functional/FR-398-expose-the-admitted-unit-table-through-the-replay-facade.md) | FR |
 | [FR-399](functional/FR-399-set-a-named-stage-limit-through-the-replay-root.md) | FR |
 | [FR-401](functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md) | FR |
+| [FR-404](functional/FR-404-carry-the-call-s-plugin-replay-context-through-the-replay-facade.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |
