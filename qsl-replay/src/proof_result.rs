@@ -32,7 +32,14 @@ use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
 
 mod plugin;
+mod plugin_read;
+mod plugin_replay;
 pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause};
+pub use plugin_read::{
+    read_plugin_assignments, read_plugin_basis, read_plugin_certification,
+    read_plugin_inconclusive_cause,
+};
+pub use plugin_replay::{PluginReplayContext, PluginReplayRefusal};
 
 /// The wire spelling of `replay-parity`, one definition for the cause's own
 /// spelling and the plugin reader's refusal of it.
@@ -2661,3 +2668,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod plugin_tests;

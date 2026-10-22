@@ -48,44 +48,107 @@ impl QslOnlyCause {
     }
 }
 
-/// A plugin result QSL refuses; the item settles `failed` (ADR-029 PL-7).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+/// A plugin result QSL refuses; the item settles `failed` (ADR-029 PL-7,
+/// FR-290). Every pointer is an RFC 6901 JSON pointer: relative to the result
+/// entry for a `basis`, `certification` or `cause`, and to the
+/// `counterexamples` entry for assignments.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PluginResultRefusal {
     /// The result claims a cause only QSL settles.
     #[error("a plugin result claims the QSL-only cause {}", .0.as_str())]
     QslOnlyCause(QslOnlyCause),
     /// The `proved` result reports a basis only the core establishes: the
     /// Kani check count (`bounded-proof`), a core-recomputed closed form or
-    /// a replayed witness. `exact-value`, `value-bounds` and `zone-certified`
-    /// are core-checked too but have no `ProofBasis` variant yet; one added
-    /// later is refused here.
+    /// a replayed witness, or a core-checked `exact-value`, `value-bounds` or
+    /// `zone-certified`.
     #[error("a plugin proof reports a basis only the core establishes")]
     CoreOnlyBasis,
     /// A `refuted` result with nothing to replay as canonical assignments.
     #[error("a plugin `refuted` result has no counterexample to replay")]
     MissingCounterexample,
+    /// The `type` is no spelling FR-331 lists for the member.
+    #[error("the plugin result spells a `type` FR-331 does not list at {pointer}")]
+    UnknownSpelling {
+        /// The pointer of the `type`.
+        pointer: String,
+    },
+    /// A required member is absent.
+    #[error("the plugin result lacks the member at {pointer}")]
+    MissingMember {
+        /// The pointer of the absent member.
+        pointer: String,
+    },
+    /// A member FR-331 does not define for this spelling is present.
+    #[error("the plugin result holds the undefined member at {pointer}")]
+    UnknownMember {
+        /// The pointer of the member.
+        pointer: String,
+    },
+    /// A member is outside its FR-331 domain: a wrong JSON kind, an
+    /// out-of-range number or a value its reader refuses.
+    #[error("the plugin result holds a malformed value at {pointer}")]
+    Malformed {
+        /// The pointer of the value.
+        pointer: String,
+    },
+    /// A valid FR-331 value that QSL's type cannot hold for a plugin.
+    #[error("QSL cannot hold the plugin result feature `{feature}` at {pointer}")]
+    Unsupported {
+        /// The pointer of the value.
+        pointer: String,
+        /// The received spelling.
+        feature: String,
+    },
+    /// A `certification` other than `trusted`: only the core and first-party
+    /// engines may claim `certified` and `uncertified`.
+    #[error("a plugin proof claims the certification `{received}`, not `trusted`")]
+    CertificationNotTrusted {
+        /// The received string.
+        received: String,
+    },
 }
 
 impl PluginResultRefusal {
-    /// The outcome-document diagnostic for this refusal (ADR-029 PL-7,
-    /// "Refused plugin results"): `invalid_result`/`unknown-cause` for a
-    /// QSL-only cause (member `cause`) or a core-only basis (member `basis`),
-    /// `invalid_result`/`missing-member` for a `refuted` with nothing to
-    /// replay (member `counterexample`). `item_index` is the result item's
-    /// index and `received` the spelling the plugin sent, which the driver
-    /// holds as wire text.
+    /// The outcome-document diagnostic for this refusal (FR-290
+    /// "Diagnostics", ADR-029 CB-4), with the FR-272 code the table gives:
+    /// `invalid_result`/`unknown-cause` for a QSL-only cause, a core-only
+    /// basis or an unknown spelling, `invalid_result`/`missing-member` for a
+    /// missing member or counterexample, `unknown_member`, `malformed_wire`
+    /// and `unknown_required_feature`/`unsupported-feature`. `item_index` is
+    /// the result item's index and `received` the spelling or JSON kind the
+    /// plugin sent, which the driver holds as wire text.
     pub fn diagnostic(&self, item_index: usize, received: &str) -> OutcomeDiagnostic {
-        let (cause, member) = match self {
-            Self::QslOnlyCause(_) => ("unknown-cause", "cause"),
-            Self::CoreOnlyBasis => ("unknown-cause", "basis"),
-            Self::MissingCounterexample => ("missing-member", "counterexample"),
+        let at = |member: &str| {
+            format!("result item {item_index}: member `{member}`, received `{received}`")
         };
-        OutcomeDiagnostic::new(
-            Some(cause),
-            "invalid_result",
-            None,
-            format!("result item {item_index}: member `{member}`, received `{received}`"),
-        )
+        match self {
+            Self::QslOnlyCause(_) => invalid_result("unknown-cause", at("cause")),
+            Self::CoreOnlyBasis => invalid_result("unknown-cause", at("basis")),
+            Self::UnknownSpelling { pointer } => invalid_result("unknown-cause", at(pointer)),
+            Self::MissingMember { pointer } => invalid_result("missing-member", at(pointer)),
+            Self::MissingCounterexample => invalid_result("missing-member", at("counterexample")),
+            Self::UnknownMember { pointer } => {
+                OutcomeDiagnostic::new(None, "unknown_member", None, at(pointer))
+            }
+            Self::Malformed { pointer } => {
+                OutcomeDiagnostic::new(None, "malformed_wire", None, at(pointer))
+            }
+            Self::CertificationNotTrusted { received } => OutcomeDiagnostic::new(
+                None,
+                "malformed_wire",
+                None,
+                format!("result item {item_index}: member `/certification`, received `{received}`"),
+            ),
+            Self::Unsupported { pointer, feature } => OutcomeDiagnostic::new(
+                Some("unsupported-feature"),
+                "unknown_required_feature",
+                None,
+                format!(
+                    "result item {item_index}: member `{pointer}`, feature `{feature}` is not \
+                     held by plugin settlement"
+                ),
+            ),
+        }
     }
 
     /// The item's terminal record: `failed`, naming the plugin. The record
@@ -94,6 +157,10 @@ impl PluginResultRefusal {
     pub fn record(self, request_index: RequestIndex, plugin: BackendId) -> TerminalRecord {
         TerminalRecord::failed(request_index, plugin)
     }
+}
+
+fn invalid_result(cause: &'static str, message: String) -> OutcomeDiagnostic {
+    OutcomeDiagnostic::new(Some(cause), "invalid_result", None, message)
 }
 
 /// Read the cause kind a plugin's `inconclusive` result names: a QSL-only

@@ -309,10 +309,10 @@ builds the `ReplayRequestWire` for one counterexample. It takes:
 
 | `ReplayRequestWire` member | Value | Source |
 | --- | --- | --- |
-| `profile_selections` | the semantic profile selections of the checked package's lock | ADR-013 O-25, FR-071 |
+| `profile_selections` | empty: the checked package's lock `profile_selections` rows are clause-profile laws (a role and a definition), not FR-071 semantic profile selections, so the context carries none | ADR-013 O-25, FR-071 |
 | `package_id` | the emitted package's `package_id`, in `quire.package.semantic/v2` | FR-071, FR-098 |
 | `source_digests` | the unit's own source reference, the one source the recompile reads | FR-071, FR-098 |
-| `dependencies` | one entry per `dependency_selections` entry of the lock, in order: its `identity`, its `package_id`, and as `sources` the reference of the library source that `check` resolved for it (`CheckedUnit::libraries`) | FR-071, ADR-015 D-4 |
+| `dependencies` | one entry per resolved library selection of the checked package (the lock's direct `dependency_selections` and the libraries they import in turn, which the replay's recompile also needs), in ascending identity order: its `identity`, its `package_id`, and as `sources` the reference of the library source that `check` resolved for it (`CheckedUnit::libraries`) | FR-071, ADR-015 D-4 |
 | `selected_function` | the qualified name of the function whose `declaration` occurrence the item names | ADR-013 O-09, FR-098, FR-121 |
 | `source` | `ReplaySource::Input(assignments)` | ADR-029 PL-7, ADR-013 O-25 |
 | `obligation_identity` | the `process-provider` obligation identity below | ADR-013 O-09 |
@@ -378,6 +378,10 @@ names the plugin's `BackendId`:
 - Every other refusal settles `failed`. Its diagnostic goes in the outcome
   document, built by `PluginReplayRefusal::diagnostic(item_index)`, as for
   `PluginResultRefusal`.
+
+The preimage encoder cannot refuse for consistent inputs, because every
+other member is a decimal string or a `u32`; if it does, `request` refuses
+`Encoding`, and the item settles `failed`.
 
 `request` does not decode or verify the request it builds. `replay` reads it
 through `ReplayRequest::decode` (FR-071). Every later FR-071 and FR-098
