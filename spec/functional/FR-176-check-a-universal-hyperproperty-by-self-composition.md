@@ -141,7 +141,8 @@ public outputs differ.
   [FR-175](FR-175-evaluate-a-body-over-a-tuple-of-behaviours.md),
   [FR-184](FR-184-bound-hyper-runs-with-caller-budgets.md).
 - EN-2 refutation and EN-3 induction of HP-2 are the SMT backend's on the
-  IR side (ADR-023 HC-6, HC-7, DS-3); FR-182 settles their outcomes.
+  IR side (ADR-023 HC-6, HC-7, DS-3); EN-3's base and step queries over
+  this product are FR-315's hyper queries; FR-182 settles their outcomes.
 - QSpec owns the `μ_U`/`μ_E` relativisation and vacuity (ADR-023 QS-2).
 
 ## References
