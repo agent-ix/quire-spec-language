@@ -36,3 +36,19 @@ Units examined:
 | FND-001 | high | [major] `total_of(b: Reference<Order>)` has body `value(b).total.amount_minor`, but `value(e)` is the guarded unwrap of an `Option` (FR-093-AC-15 types it over `o: Option<Int[0, 9]>`; step 9 applies it to the optional `buddy`). `b` is not optional, so the body refuses at typing (`ill_typed`) before the object-read check runs, and the one-level and two-level vectors cannot produce the stated `unsupported_construct`/`expression-form` at `TypeDefinition.clauses[0]`. A correct implementation fails AC-10. Write the body as `b.total.amount_minor`, in step 9's read-through-reference form after the unwrap, or type the parameter `Option<Reference<Order>>` and pass `self.buddy`. | spec/functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md:235 |
 | FND-002 | medium | [minor] AC-10 does not say where `total_of`, `checked` and `linked` are declared, and FR-366 does not say how a type-level invariant (clause text in the domain package's `TypeDefinition.clauses[k]`) resolves a call. The package has no function declarations, so the callees must come from the compiling QSL unit (or a library). Two implementers could put them in different places, and the invariant's meaning would then depend on the unit. State the fixture (for example, the functions declared `pure` in the K2 unit beside the model declaration), and say in FR-366 that 'the checked call graph' is the compiling unit's. | spec/functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md:108-116,235 |
 | FND-003 | low | [minor] Two cases have no vector. The admitted list names `present`, identity comparison and pass-through to a non-reading callee, but AC-10 tests only `present`. And the rule says 'function' while named predicates are also callable Boolean functions (QSpec FR-033). Add `same(a: Reference<Order>, b: Reference<Order>): Boolean` with body `a = b`, and a pass-through `wrap(b) = linked(b)`, both compiling. Say 'function or predicate', or say that predicates are excluded. | spec/functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md:108-116 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | [minor] AC-10 does not state the profile of the unit that declares the `pure` functions, and the profile decides `same`. A function declaration is admitted only under `quire.value.complete/v1` or `quire.model.complete/v1` (LAYER_ROWS `FunctionDeclaration`), or in a unit with no profile. Under value.complete, `same`'s body `a = b` is a reference equality, and #1247's FR-110 rule (AC-10) refuses it naming `quire.state.graph/v1`. State the unit: no header profile, or `quire.model.complete/v1`. | spec/functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md:237 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 153ceca82: `total_of`'s body is `b.total.amount_minor`, a field read through a reference as FR-104-AC-10 types `self.n` over `Reference<Config::Flow>`; it type-checks, so the object-read check is reached. |
+| FND-002 | fixed | 153ceca82: the call graph is 'the checked call graph of the compiling unit (the functions and named predicates the unit declares or imports; a domain package declares none)', and AC-10 says the unit declares the `pure` functions. |
+| FND-003 | fixed | 153ceca82: AC-10 adds `same` (identity comparison) and `wrap` (pass-through), both compiling, and the named predicate `positive` under `quire.state.queries/v1`, refusing. The rule says 'function or named predicate'. |
+
+Disposition pass 1 verdict (head 153ceca82): **NOT MERGEABLE until FND-004 is fixed or accepted (minor).**

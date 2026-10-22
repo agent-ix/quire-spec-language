@@ -49,7 +49,8 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
 9. K2 with a record value type `Pair` given an optional `Reference<Order>`
    field `buddy` and the invariant `Peer`
    (`present(self.buddy) implies value(self.buddy).total.amount_minor >= 0`).
-10. Step 9's `Pair`, compiled in a unit that also declares the `pure`
+10. Step 9's `Pair`, compiled in a unit whose header profile selects
+    `quire.model.complete/v1` and that also declares the `pure`
     functions `total_of`, `checked`, `linked`, `same` and `wrap` of
     FR-366-AC-10, with `Peer` reading through each of them in turn; then, in
     a unit selecting `quire.state.queries/v1`, through the named predicate
