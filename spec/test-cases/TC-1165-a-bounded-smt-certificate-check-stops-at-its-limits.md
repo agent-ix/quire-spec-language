@@ -23,11 +23,13 @@ Scope: FR-314-AC-5.
 
 1. Check TC-893's AC-1 bounded certificate with `max_certificate_bytes` 1;
    with `max_certificate_edges` one below its proof's command count plus
-   its premise and discharge entries; with both limits at their defaults;
+   its premise and discharge entries; with it exactly equal to that count;
+   with both limits at their defaults;
    and with a `Cancel` handle cancelled before the call. Settle each
    through FR-127's map.
 2. Check TC-893's `QueryMismatch` certificate with `max_certificate_bytes`
-   equal to its carried bytes plus the printed bytes of its expected query.
+   equal to its carried query's bytes plus the printed bytes of its expected
+   query, leaving out its proof's bytes.
 3. Check TC-893's `CasRefinesCounter` certificate through
    `check_refinement_smt_proof` with `max_certificate_bytes` 1.
 4. Repeat each check under the same limits.
@@ -36,10 +38,10 @@ Tag the tests `#[trace("TC-1165", "FR-314-AC-5")]`.
 
 ## Expected Results
 
-- Step 1: `Stopped` naming `max_certificate_bytes`, 1 and
+- Step 1: `Stopped` naming `MaxCertificateBytes`, 1 and
   `certificate_check.max_certificate_bytes`, settling `incomplete`,
   `resource-incomplete`, `unavailable`; `Stopped` naming
-  `max_certificate_edges`; `Verified`; `Stopped(Cancelled{Requested})`,
+  `MaxCertificateEdges`; `Verified` at the exact count; `Verified`; `Stopped(Cancelled{Requested})`,
   settling `incomplete`, `cancelled{requested}`.
 - Step 2: `QueryMismatch`, not `Stopped`.
 - Step 3: `Stopped` naming `max_certificate_bytes`.
