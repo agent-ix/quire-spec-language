@@ -1199,6 +1199,8 @@ fn rec() -> String {
      event eb by w as (b: Boolean) { true };\n\
      send tx via ch as (m1: Boolean) { true };\n\
      receive rx via ch of Main::tx as (m2: Boolean) { true };\n\
+     effect fx of a1 as (f: Boolean) { true };\n\
+     commit cm by w as (k: Spec::Evt) { true };\n\
      }\n\
      finish Done as (d: Boolean) { true };\n\
      }\n"
@@ -1228,6 +1230,8 @@ fn the_binder_record_has_a_field_per_parameter_result_and_record_field() {
         ("node Spec::Rec::tx(true)", 1),
         ("node Spec::Rec::rx(_)", 1),
         ("node Spec::Rec::Done(true)", 1),
+        ("node Spec::Rec::fx(true)", 1),
+        ("node Spec::Rec::cm(true, 3)", 2),
     ] {
         let graph = checked(&rec_row(target), None);
         let arguments: Vec<_> = the_refinement(&graph)
@@ -1254,6 +1258,9 @@ fn the_argument_count_is_the_field_count_of_every_node_kind() {
         ("node Spec::Rec::eb(true, false)", 1, 2),
         ("node Spec::Rec::tx(true, true)", 1, 2),
         ("node Spec::Rec::Done(true, true)", 1, 2),
+        ("node Spec::Rec::rx(true, true)", 1, 2),
+        ("node Spec::Rec::fx(true, true)", 1, 2),
+        ("node Spec::Rec::cm(true)", 2, 1),
     ] {
         let found = refused(&rec_row(target), None, RefinementSupport::BUILD);
         let count = only(&found);
@@ -1279,10 +1286,27 @@ fn the_argument_count_is_the_field_count_of_every_node_kind() {
 #[trace("TC-552", "FR-147-AC-14")]
 #[test]
 fn an_argument_of_the_wrong_type_is_refused_at_its_field() {
-    for (target, at, position) in [
-        ("node Spec::Rec::ev(true, true)", "true", 1),
-        ("node Spec::Rec::a2(self, true, _)", "true", 1),
-        ("node Spec::Rec::eb(1)", "1", 0),
+    use quire_exact::ValueType;
+    for (target, at, position, field) in [
+        (
+            "node Spec::Rec::ev(true, true)",
+            "true",
+            1,
+            ValueType::Integer,
+        ),
+        (
+            "node Spec::Rec::a2(self, true, _)",
+            "true",
+            1,
+            ValueType::Integer,
+        ),
+        (
+            "node Spec::Rec::cm(true, true)",
+            "true",
+            1,
+            ValueType::Integer,
+        ),
+        ("node Spec::Rec::fx(3)", "3", 0, ValueType::Boolean),
     ] {
         let found = refused(&rec_row(target), None, RefinementSupport::BUILD);
         let mismatch = only(&found);
@@ -1298,13 +1322,26 @@ fn an_argument_of_the_wrong_type_is_refused_at_its_field() {
                 .is_some_and(|text| text.starts_with(at)),
             "{target}"
         );
+        let RefinementCause::NodeArgumentType {
+            position: p,
+            expected,
+            actual,
+            ..
+        } = mismatch.refinement()
+        else {
+            panic!("{target}: {:?}", mismatch.refinement());
+        };
+        assert_eq!(*p, position, "{target}");
+        assert_eq!(**expected, field, "{target}");
+        // The argument is `true` (Boolean) or the literal `3`.
+        let boolean = at == "true";
         assert!(
-            matches!(
-                mismatch.refinement(),
-                RefinementCause::NodeArgumentType { position: p, .. } if *p == position
-            ),
-            "{target}: {:?}",
-            mismatch.refinement()
+            if boolean {
+                **actual == ValueType::Boolean
+            } else {
+                matches!(**actual, ValueType::Int(_) | ValueType::Integer)
+            },
+            "{target}: {actual:?}"
         );
     }
 }
