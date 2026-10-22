@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+function float_commutative using v(a: Float64[nearest-even], b: Float64[nearest-even]): Boolean pure {
+    convert<Rational[-100, 100; 1, 16]>(a + b) = convert<Rational[-100, 100; 1, 16]>(b + a)
+}
