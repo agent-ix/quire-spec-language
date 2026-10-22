@@ -66,3 +66,13 @@ The EN-4 manifest is the FR-280 data, owned by `qsl-analyze`, and it is converte
 | FND-001 | low | `candidates_for_evidence` accepts any `kind`, but it always passes empty fairness and memory-model sets to `compute`. For a `temporal-satisfaction` item, calling it silently skips FR-368's fairness filter and FR-439's memory-model filter, which `candidates_for_fairness` and `candidates_for_models` apply. The doc says "A kind other than `probabilistic-satisfaction` matches by kind alone", which states the behaviour but invites the misuse. Either take the probabilistic kind only (drop the `kind` parameter), or say in the doc that temporal items must use the fairness and model entry points. | qsl-route/src/lib.rs:1101-1110 |
 | FND-002 | low | The changelog leaves out a behaviour change. `Registry::candidates`, `candidates_for_fairness` and the memory-model entry now give an empty set for `probabilistic-satisfaction`, because they pass `ItemEvidence::Absent`. Before this PR they matched by kind alone. A probabilistic descriptor's equality, and so its duplicate-backend conflict, now also includes the evidence set. Add both to the changelog line, with `EvidenceKind::{ALL, to_wire, from_wire}` and `ItemEvidence::from_label`. | qsl-route/src/lib.rs:1057-1093,1161-1166 |
 | FND-003 | high | `make seam-probe`, a `make ci` gate, fails on this head. The new closed `match kind` in `BackendDescriptor::serves_evidence` fails to compile under `--cfg seam_probe`, as intended: it has no wildcard, so a new `Capability` variant breaks it. But `xtask/src/seam_probe.rs` `checked_in_locations()` does not list it, so the probe reports `unexpected-but-present: BackendDescriptor::serves_evidence` and exits 2. Two fixes work. Either add `SeamLocation { file: "qsl-route/src/lib.rs", item: "BackendDescriptor::serves_evidence" }` beside the `same_kind` entry, which keeps the forcing match. Or write the test as `matches!(kind, Capability::ProbabilisticSatisfaction)`, with no closed match. Then rerun `make seam-probe`. | qsl-route/src/lib.rs:494-516; xtask/src/seam_probe.rs:179-196 |
+
+## Dispositions
+
+Round 1, fixed in f4af7d95e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f4af7d95e: doc says temporal items use candidates_for_models; no filters applied here |
+| FND-002 | fixed | f4af7d95e: PR body changelog extended |
+| FND-003 | fixed | f4af7d95e: serves_evidence is now a matches!, no closed match; make seam-probe green |

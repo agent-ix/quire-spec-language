@@ -61,3 +61,16 @@ The PR body's "Landed" list should match what is tested. Fix FND-001 to FND-004 
 | FND-004 | medium | The three rules this PR adds to FR-057 have no test. Each mutation of one survives `cargo test -p qsl-route`: (1) evidence labels supplied to a non-probabilistic backend are ignored, so the descriptor holds none (mutated to keep them: still green); (2) a repeated label is one member (mutated to refuse: still green); (3) evidence is judged after pairs, `domains` and `fairness_kinds` (mutated to judge it before `domains`: still green). Add one case for each, as routing.rs does for the `domains` ordering. | qsl-route/src/lib.rs:253-260,300-305,604-618; spec/functional/FR-057-admit-shared-capability-kinds.md:286-291 |
 | FND-005 | low | FR-057-AC-11 says a `probabilistic-satisfaction` or `schedulability` request on a current declaration is inapplicable, names the declaration family, and leaves the body reaching its family checker. Only the `families()` table is tested for the two new kinds. No request of either kind goes through the composed linker. The path is the same one the `finite-replay` case exercises, so the risk is low. | tests/it/composed_admission_stages.rs:542-568 |
 | FND-006 | low | FR-189-AC-15 says the no-sample quantile test runs "through the `BehaviourSampler` seam". The test instead builds it directly with `test_result(.., &Tally::new(), ..)`, so the run loop's no-sample path is not exercised for `quantile`. | qsl-analyze/src/statistical/tests.rs:2228-2239 |
+
+## Dispositions
+
+Round 1, fixed in f4af7d95e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f4af7d95e: guard deleted (unreachable, untested); test retagged to the ill-typed clause; reference-literal clause is QSL-971 |
+| FND-002 | fixed | f4af7d95e: tests for estimate 9/20, no-estimate, mean and LongRun; the no-estimate case checks least_favourable, not a full run |
+| FND-003 | fixed | f4af7d95e: blocker restated (FR-120 has no quantity parameter encoding, STD-113); magnitude arm covered by a constant quantity reward test |
+| FND-004 | fixed | f4af7d95e: a test each for ignored labels, repeat, and judge order; not mutation-run |
+| FND-005 | fixed | f4af7d95e: probabilistic and schedulability requests added to the linker admission test |
+| FND-006 | accepted-no-change | f4af7d95e: the no-sample case stays direct: a zero-sample test cannot complete through the seam |
