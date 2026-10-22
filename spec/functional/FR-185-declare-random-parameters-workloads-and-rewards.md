@@ -216,7 +216,8 @@ S4 SHALL refuse the package `unsupported_construct`/`not-yet-implemented`,
 naming the first such declaration in source order, its feature name
 (`random-parameter`, `workload`, `reward` or `probabilistic-claim`) and the selected profile
 identity (QSpec FR-272). S3's checked record is unaffected, and FR-187 reads
-it from the checked package, not from the emitted wire.
+it from the checked package, not from the emitted wire. Replay of a sampled
+witness (FR-193) takes that checked subject and recompiles nothing.
 
 ## Acceptance Criteria
 
