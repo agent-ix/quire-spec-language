@@ -66,7 +66,7 @@ pub use call::{
     CallRefusal, CallValue, RunRefusal, DEFAULT_WORK_UNITS,
 };
 
-mod clause;
+pub(crate) mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
@@ -92,9 +92,7 @@ pub use request::{
     ObservationLimitsWire, SuppliedObservation,
 };
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
-pub(crate) use clause::{
-    check_clause_admitted, check_frame, resolve_frame, ClauseCheck, CompiledRun, FrameCheck,
-};
+pub(crate) use clause::{check_clause_admitted, check_frame, ClauseCheck, CompiledRun, FrameCheck};
 // FR-268: the separation check settles a stopped evaluation through
 // FR-100's outcome mapping.
 pub(crate) use call::{convert_outcome, kernel_undefined_reason};

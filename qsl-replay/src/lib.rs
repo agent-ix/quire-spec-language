@@ -57,6 +57,7 @@ mod scalar;
 pub mod spine;
 pub mod statistical;
 mod supplied_limits;
+mod target;
 mod witness;
 
 pub use admitted::{
@@ -108,8 +109,9 @@ pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
     replay_value_parity, replay_with_cancel, settle_verified_shadow, BoundEntries,
     DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
-    IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
-    ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
+    IdentityEncodeError, LimitAboveReader, MalformedOperationReason, ParityArgument,
+    ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityReport,
+    ValueParityResult,
 };
 pub use hybrid::{
     NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
@@ -188,13 +190,15 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, read_plugin_cause_kind, AppliedReduction,
-    BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet, IncompleteCause,
-    InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, PluginResultRefusal,
-    ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
-    ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
-    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, read_plugin_assignments, read_plugin_basis,
+    read_plugin_cause_kind, read_plugin_certification, read_plugin_inconclusive_cause,
+    AppliedReduction, BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet,
+    IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember,
+    PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis, ProofRefusalCause,
+    ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind,
+    ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
+    StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
@@ -279,6 +283,11 @@ pub use result::{
     Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
+// QSpec FR-323: the replay target a packet, envelope and request each carry.
+pub use target::{
+    NamedKind, ReplayEntry, ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember,
+    TargetSelectionRefusal,
+};
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
@@ -372,7 +381,10 @@ mod redaction_tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            replay_target: crate::RequestTargetWire::function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                crate::target::test_key(),
+            ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),
@@ -414,7 +426,10 @@ mod redaction_tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            replay_target: crate::RequestTargetWire::function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                crate::target::test_key(),
+            ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),

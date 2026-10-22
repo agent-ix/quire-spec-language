@@ -708,6 +708,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-402
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-405
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-263
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-264
@@ -769,6 +771,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-401
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-430
     type: contains
 ---
 # Master Requirements Specification
@@ -1096,6 +1100,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-315](functional/FR-315-encode-the-smt-lib-transition-relation.md) | FR |
 | [FR-128](functional/FR-128-replay-a-model-counterexample.md) | FR |
 | [FR-337](functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md) | FR |
+| [FR-410](functional/FR-410-emit-a-checked-state-graph-claim-as-a-v2-claim-node.md) | FR |
 | [FR-325](functional/FR-325-parse-temporal-operators-with-an-optional-interval.md) | FR |
 | [FR-326](functional/FR-326-admit-temporal-operators-by-the-unit-s-temporal-profile.md) | FR |
 | [FR-327](functional/FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md) | FR |
@@ -1272,6 +1277,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-261](functional/FR-261-read-other-untrusted-json-at-any-depth.md) | FR |
 | [FR-262](functional/FR-262-evaluate-values-and-calls-at-any-depth.md) | FR |
 | [FR-402](functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md) | FR |
+| [FR-405](functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md) | FR |
 | [FR-263](functional/FR-263-replay-at-any-depth-under-the-request-limits.md) | FR |
 | [FR-264](functional/FR-264-emit-and-read-v2-packages-at-schema-fixed-depth.md) | FR |
 | [FR-356](functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md) | FR |
@@ -1357,4 +1363,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-296](functional/FR-296-select-the-execution-backend-in-the-request.md) | FR |
 | [FR-277](functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md) | FR |
 | [FR-284](functional/FR-284-keep-the-qualified-core-separable-by-crate.md) | FR |
+| [FR-430](functional/FR-430-check-refinement-reductions-and-strong-fairness-over-timed-subjects.md) | FR |
 | [ADR-030](decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md) | ADR |
