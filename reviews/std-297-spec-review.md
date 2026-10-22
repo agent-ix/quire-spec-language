@@ -53,9 +53,8 @@ Mergeable after these minor fixes and the majors in SR-15524 and SR-15525.
 ## Dispositions
 
 Round 1. Reviewed QSL #1225 at dc6e2b208 against origin/main a89136bfa, which includes #1224 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head.
-
-| FND | Outcome | Reason |
-| --- | --- | --- |
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+
+Round 2. Reviewed QSL #1225 at 998b4f0ef against origin/main 3fc22a165, which includes #1223 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head. Every finding in this artifact was already `fixed` in round 1, so this round has no rows.

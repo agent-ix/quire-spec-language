@@ -66,3 +66,11 @@ Round 1. Reviewed QSL #1225 at dc6e2b208 against origin/main a89136bfa, which in
 | FND-004 | fixed | - |
 | FND-005 | fixed | - |
 | FND-006 | fixed | - |
+
+Round 2. Reviewed QSL #1225 at 998b4f0ef against origin/main 3fc22a165, which includes #1223 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |
+| FND-009 | fixed | - |

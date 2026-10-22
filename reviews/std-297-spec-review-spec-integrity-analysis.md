@@ -55,6 +55,13 @@ SR-15524's majors.
 | FND-007 | medium | minor: some X-13 and AD-001 text was not updated by the fix round. <br>- X-13 still lists `SemanticGraph` among the moved identities, whereas FR-400 and §6.2 move a projection and keep the full graph. <br>- X-13 calls `construct`'s "only QSL caller is `check`", and AD-001 Risks says "T12-G limits their callers to `check`". `library` and `value::definition` are now callers too. <br>- X-13 names only TC-244 row 1's `compile_fail` checks, while FR-400 rule 5 lists more. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1185; spec/assurance/AD-001-shared-evaluation-core-interface.md:238-243 |
 | FND-008 | medium | minor: X-13 says `qsl-semantics`, `qsl-package`, `qsl-route` and `qsl-replay` add `quire-checked` to their `[dependencies]` (the X-6, X-7, X-9 and X-10 tables). Only X-8's row was amended. X-7 and X-10 state their sets "exactly", and TC-390 asserts the exact sets. Amend those rows as X-8 was amended. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1185 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | high | major: rule 2 moves `ByteDigest`, `WireNodeId`, `OccurrenceKey`, `IdentityLimits`, `DomainKey`/`DomainKind`, `TemporalInterval`, `TimedInterval`, `ProfileSelection` and `DefinitionRef` from F to SV, but F modules that stay in F still use them. Examples: `diagnostic.rs:549` (`ByteDigest`), `witness.rs:7` and `diagnostic/locus.rs` (`OccurrenceKey`), and the rest of `bound.rs`. So F gains a normal edge to SV. That contradicts three statements: <br>- ADR-011's F row ("Depends on: K"); <br>- main's NFR-015 `qsl-foundation` row and NFR-015-AC-2, which say F's `--depth 1` tree is exactly `quire-exact`, `serde`, `sha2`, `thiserror` and `ix-trace-rs`; <br>- X-11's SV `[dependencies]` (K, `quire-canonical`, `serde`, `thiserror`), because `ByteDigest::of` hashes with `sha2` (`digest.rs:5-15`). <br>Fix: state the F → SV edge (amend the F row and X-2, as #1227's X-14 also does), amend NFR-015's `qsl-foundation` row and AC-2 to add SV, and say that `ByteDigest`'s SHA-256 constructor stays an F function (or hashes through `quire-canonical`). Whichever of #1225 and #1227 lands first makes the F → SV amendment. | spec/functional/FR-400-separate-checked-terms-from-the-checker.md:170-183; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:727; spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:110, 214 |
+| FND-010 | medium | minor: a cross-PR follow-up for #1227 (2013cea1d); #1225 itself needs no change. <br>- #1227's FR-401 says `Evaluation::refusal_record` becomes "a `qsl-eval` function over the evaluation and that graph (after FR-400, the checker-side record)". FR-400 now specifies a region resolver, so that `qsl-eval` names no checker-side type (AC-2 and FB-14). #1227 must say "region resolver". <br>- #1227 adds E to FB-05's shared-leaf class, but its diff leaves the FB-05 row ("four members") unchanged. The row requires an amendment, which should make it five members. <br>- `git merge-tree` of the head and #1227 conflicts in ADR-011 and TC-390. <br>The `WrongSnapshotCause` rule is now consistent across both PRs. | spec/functional/FR-400-separate-checked-terms-from-the-checker.md:265-270; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:571 |
+
 ## Dispositions
 
 Round 1. Reviewed QSL #1225 at dc6e2b208 against origin/main a89136bfa, which includes #1224 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head. `git merge-tree` of the head with #1223 (8a42d6e84) is now clean, and with #1227 (2013cea1d) it conflicts in ADR-011.
@@ -66,3 +73,11 @@ Round 1. Reviewed QSL #1225 at dc6e2b208 against origin/main a89136bfa, which in
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
 | FND-005 | fixed | - |
+
+Round 2. Reviewed QSL #1225 at 998b4f0ef against origin/main 3fc22a165, which includes #1223 and is an ancestor of the head. `make check-spec-validation` exits 0 at the head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |

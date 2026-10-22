@@ -184,6 +184,12 @@ applied recursively to the types its fields hold:
    `AccessOrdering`, `ChannelCapacity`, `ChannelDelivery`, `ChannelOverflow`,
    `LossSelector`, `ProtocolNodeKind`, `TemporalOperator`, `TemporalNodeId`,
    `FairnessKind` and `FairnessGranularity` from layer 2.
+   `qsl-foundation` keeps using the values it gives up, so it gains a normal
+   dependency on SV (ADR-011 F row, X-2); SV depends on no QSL crate, so the
+   edge closes no cycle. `ByteDigest`'s SHA-256 constructor (`ByteDigest::of`
+   before the move) stays in `qsl-foundation` as a free function returning
+   SV's `ByteDigest`, which SV builds only from 32 given bytes, so SV takes
+   no hashing dependency.
 3. **Values from layer 3 move to C.** A type that a moved record carries
    and that `qsl-semantics` defines moves into `quire-checked`, as the lists
    above name. This includes `value::member::Member` (the
