@@ -598,6 +598,13 @@ kills the process.
     or `failed` for a fault;
   - an `Input`-arm result that reproduced something other than a violation,
     or a `Witness`-arm result, refutes nothing and settles `failed`.
+
+  A plugin `refuted` with nothing to replay as canonical assignments is
+  refused ("Refused plugin results"). That covers a `refuted` entry that
+  names no `counterexamples` entry, and an entry that names a transcript
+  `artifacts` entry. It also covers an entry that carries an FR-364
+  `TemporalCounterexample`, an FR-413 `ProbabilisticCounterexample`, graph
+  evidence or a hyperproperty counterexample.
 - **Trusted proofs.** A plugin's `proved` result cannot be replayed and has
   no in-core certificate checker. The
   terminal record keeps the result `proved`, names the plugin's `BackendId`,
@@ -606,21 +613,49 @@ kills the process.
   Trusted}` (ADR-013, as amended by ADR-018 §1 and ADR-028), with `basis`
   the `ProofBasis` the typed reader reads from the result's FR-331 `basis`.
   The driver never makes up a basis: a plugin proof never carries a
-  `Checks{success_checks}` count the plugin did not report. A plugin
-  `proved` whose basis only the core establishes is refused and its item
-  settles `failed`. Those bases are the Kani check count
-  (`bounded-proof{checks}`, which only CG's C-09 map settles), a closed form
-  whose evidence the core recomputes (`closed-form{analysis}`) and a replayed
-  witness (`witnessed{sources}`).
+  `Checks{success_checks}` count the plugin did not report. The bases a
+  plugin proof can carry are `exhaustive`, `bounded-complete{depth}`,
+  `inductive{depth}`, `reduced{reductions}` and
+  `bounded-solver{method, horizon, jumps}`.
+
+  A basis that only the core establishes is refused ("Refused plugin
+  results"). Each such basis is the record of a core check or a core prove
+  path. RU-4's `trusted` covers proofs the core runs no check of, so a plugin
+  cannot claim one of these bases:
+  - the Kani check count `bounded-proof{checks}`, which only CG's C-09 map
+    settles;
+  - `closed-form{analysis}`, whose evidence the core recomputes;
+  - `witnessed{sources}`, a replayed witness;
+  - `exact-value` and `value-bounds`, which are always `certified` (ADR-018
+    §1 as amended by ADR-028 XV-1, XV-4);
+  - `zone-certified`, a proof whose certificate the core checker accepted
+    (ADR-026 CF-4).
+
+  QSpec FR-331-AC-15 records each of these bases only after its checker
+  accepts the certificate.
 - **QSL-only causes.** The causes `replay-parity` and `replay-refused` come
   from QSL's own S6a replay, and the Kani vacuous-proof cause
   `kani_vacuous_proof` comes from CG's C-09 map (ADR-013 C-09). No provider
   settles them. The FR-331 wire spells only the cause kind; the typed
   payload, the `DisagreementCause` or the refusal's catalog code, exists only
-  on the QSL side. A plugin result that names one of these kinds is a tool
-  failure: the reader refuses it and the item settles `failed`, naming the
-  plugin's `BackendId`. A plugin result in which the reader finds one of
-  these typed causes is refused the same way.
+  on the QSL side. The typed reader matches the FR-331 wire spellings
+  exactly: `replay-parity`, `replay-refused` and `kani_vacuous_proof`.
+  `kani-vacuous-proof` is not a wire spelling. A plugin result that names one
+  of these kinds is refused ("Refused plugin results"). A plugin result in
+  which the reader finds one of these typed causes is refused the same way.
+- **Refused plugin results.** A plugin result that names a QSL-only cause,
+  that reports a core-only basis, or that is a `refuted` with nothing to
+  replay as canonical assignments settles its item `failed`, naming the
+  plugin's `BackendId`. `TerminalValue::Failed` carries no cause. The
+  refusal goes in the outcome document's `diagnostics` (CB-4), built with
+  `OutcomeDiagnostic::new`, not in the terminal record:
+  - a QSL-only cause or a core-only basis is
+    `invalid_result`/`unknown-cause` (QSpec FR-272). Its detail is the
+    result item index, the offending member (`cause` or `basis`) and the
+    received spelling: the spelling is outside the closed set a provider
+    may emit;
+  - a `refuted` with nothing to replay is `invalid_result`/`missing-member`,
+    with the result item index and the member `counterexample`.
 - **Refused request body.** A plugin that refuses a `request` body runs no
   item. It answers with one `result` that settles every routed item FR-331
   `failed`, with the refusal as the entry's `diagnostic` (QSpec
@@ -631,9 +666,7 @@ kills the process.
   record naming the plugin's `BackendId`; `TerminalValue::Failed` carries no
   cause. The plugin's diagnostic goes in the outcome document's
   `diagnostics` (CB-4), built with `OutcomeDiagnostic::new` from its code and
-  cause, not in the terminal record. A refused plugin result (QSL-only
-  cause or core-only basis) settles the same way, with the refusal in
-  `diagnostics`.
+  cause, not in the terminal record.
 
 ### 6. Cache
 
@@ -912,12 +945,14 @@ except the ADR-011 amendment, which is applied in place.
   CA-2. QSpec FR-305: the manifest binding follows PL-4 and PL-5, and its
   effects and rights members and rights-mismatch refusal are removed
   (RU-4).
-- ADR-013 O-25 and C-09: a `ReplaySource::Input` counterexample is a corpus
-  counterexample or a plugin's counterexample (PL-7). A reproduced corpus
-  counterexample is still no backend evidence. A plugin's counterexample
-  whose replay reproduces the violation settles `refuted` naming the plugin
-  (PL-7). It is not CG backend evidence, because CG has no terminal step for
-  a process provider (PV-4 ruling 3).
+- ADR-013 O-25, C-09, QC-8 and QC-20: a `ReplaySource::Input`
+  counterexample is a corpus counterexample or a plugin's counterexample
+  (PL-7). Each states its `Input`-sourced replay rule as: an `Input` replay
+  settles `reproduced-without-witness`; a reproduced corpus counterexample
+  never counts as backend evidence; a plugin's counterexample whose replay
+  reproduces the violation settles `refuted` naming the plugin (PL-7) and is
+  not CG backend evidence, because CG has no terminal step for a process
+  provider (PV-4 ruling 3).
 
 ## Alternatives Considered
 
