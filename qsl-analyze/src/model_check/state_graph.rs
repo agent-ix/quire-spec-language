@@ -32,6 +32,7 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateReading};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, NotSimulated};
 use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::{
     IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, OpenCause, ReachedLimit,
     RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, DEFAULT_WITNESS_SEED,
@@ -284,13 +285,13 @@ fn bounds_refusal(refusal: NotSimulated) -> ModelCheckRefusal {
 /// A stop that ended a run before its frontier emptied: a named limit, a
 /// cancellation, or a stop no named limit caused.
 #[derive(Clone, Copy, Debug)]
-struct Halt {
-    cause: IncompleteCause,
-    limit: Option<ReachedLimit>,
+pub(super) struct Halt {
+    pub(super) cause: IncompleteCause,
+    pub(super) limit: Option<ReachedLimit>,
 }
 
 impl Halt {
-    fn end(self) -> RunEnd {
+    pub(super) fn end(self) -> RunEnd {
         RunEnd::Stopped {
             cause: self.cause,
             limit: self.limit,
@@ -299,24 +300,71 @@ impl Halt {
 }
 
 /// The stop at the limit `limit`, set to `value`.
-fn stopped(limit: ModelCheckLimit, value: u64) -> Halt {
+pub(super) fn stopped(limit: ModelCheckLimit, value: u64) -> Halt {
     Halt {
         cause: IncompleteCause::ResourceExhausted,
         limit: Some(ReachedLimit { limit, value }),
     }
 }
 
+/// The one generator phase 0 samples with (FR-101).
+pub(super) fn sampler() -> Result<DefinitionRef, ModelCheckRefusal> {
+    DefinitionRef::new("quire", "quire.simulation.sampler/v1").map_err(|_| fault("sampler-ref"))
+}
+
+/// Whether the greatest trace index of phase 0, `(count - 1) × samples +
+/// samples - 1` for `count` initial states, fits `u64` (FR-166), computed
+/// with checked arithmetic.
+pub(super) fn trace_indices_fit(count: usize, samples: u64) -> bool {
+    u64::try_from(count.saturating_sub(1))
+        .ok()
+        .and_then(|initial| initial.checked_mul(samples))
+        .and_then(|base| base.checked_add(samples - 1))
+        .is_some()
+}
+
+/// The trace index of walk `walk` from initial state `initial`: `initial ×
+/// samples + walk` (FR-166). `trace_indices_fit` has held for the run.
+pub(super) fn trace_index(
+    initial: usize,
+    samples: u64,
+    walk: u64,
+) -> Result<u64, ModelCheckRefusal> {
+    u64::try_from(initial)
+        .ok()
+        .and_then(|initial| initial.checked_mul(samples))
+        .and_then(|base| base.checked_add(walk))
+        .ok_or_else(|| fault("trace-index-fits"))
+}
+
+/// The steps one phase 0 walk takes at most: the lesser of `max_walk_steps`
+/// and the horizon (FR-166).
+pub(super) fn step_ceiling(limits: &ModelCheckLimits, horizon: Option<usize>) -> usize {
+    let budget = usize::try_from(limits.max_walk_steps).unwrap_or(usize::MAX);
+    horizon.map_or(budget, |horizon| budget.min(horizon))
+}
+
+/// Whether `max_walk_steps`, not the horizon, is the walk's ceiling: only a
+/// walk it stopped is counted (FR-166).
+pub(super) fn budget_is_ceiling(limits: &ModelCheckLimits, horizon: Option<usize>) -> bool {
+    let budget = usize::try_from(limits.max_walk_steps).unwrap_or(usize::MAX);
+    horizon.is_none_or(|horizon| budget <= horizon)
+}
+
 /// The budgets the run's stops name.
 #[derive(Clone, Copy)]
-struct Budgets {
-    meter: u64,
-    max_candidates: u64,
+pub(super) struct Budgets {
+    pub(super) meter: u64,
+    pub(super) max_candidates: u64,
 }
 
 /// The stop for an expansion or predicate stop: a named budget stops the
 /// run naming the budget, a broken invariant refuses, any other stop stops
 /// it with no named limit.
-fn expansion_stop(stop: &ExpansionStop, budgets: Budgets) -> Result<Halt, ModelCheckRefusal> {
+pub(super) fn expansion_stop(
+    stop: &ExpansionStop,
+    budgets: Budgets,
+) -> Result<Halt, ModelCheckRefusal> {
     match stop.limit {
         Some(ExpansionLimit::EvaluationMeter) => {
             Ok(stopped(ModelCheckLimit::EvaluationMeter, budgets.meter))
@@ -334,7 +382,7 @@ fn expansion_stop(stop: &ExpansionStop, budgets: Budgets) -> Result<Halt, ModelC
 }
 
 /// The stop of a run `cancel` stopped, when it is cancelled.
-fn cancelled(cancel: &Cancel) -> Option<Halt> {
+pub(super) fn cancelled(cancel: &Cancel) -> Option<Halt> {
     if cancel.poll() {
         return cancel.cause().map(|source| Halt {
             cause: IncompleteCause::Cancelled { source },

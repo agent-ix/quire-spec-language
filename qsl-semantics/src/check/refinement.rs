@@ -250,6 +250,30 @@ pub enum RefinementCause {
         /// The population's universe size.
         size: u64,
     },
+    /// A node row's argument list whose length differs from the field count
+    /// of the node's binder record: `ill_typed`/`operator-ineligible` at the
+    /// node (FR-147 "Step rows and observations").
+    NodeArgumentCount {
+        /// The node, as written.
+        node: String,
+        /// The field count of the binder record.
+        expected: usize,
+        /// The number of arguments written.
+        actual: usize,
+    },
+    /// A node row's argument whose type is not its binder field's type:
+    /// `ill_typed`/`type-mismatch` at the argument (FR-147 "Step rows and
+    /// observations").
+    NodeArgumentType {
+        /// The node, as written.
+        node: String,
+        /// The argument's position, from 0.
+        position: usize,
+        /// The field's type.
+        expected: Box<ValueType>,
+        /// The argument's type.
+        actual: Box<ValueType>,
+    },
     /// A row's expression or type refused.
     Check(CheckCause),
 }
@@ -283,7 +307,9 @@ impl RefinementCause {
                 }
             },
             Self::Unsupported { .. } => Code::UnsupportedConstruct,
-            Self::PopulationBound { .. } => Code::IllTyped,
+            Self::PopulationBound { .. }
+            | Self::NodeArgumentCount { .. }
+            | Self::NodeArgumentType { .. } => Code::IllTyped,
             Self::Check(cause) => cause.code(),
         }
     }
@@ -304,7 +330,8 @@ impl RefinementCause {
             }),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
-            Self::PopulationBound { .. } => Some("type-mismatch"),
+            Self::PopulationBound { .. } | Self::NodeArgumentType { .. } => Some("type-mismatch"),
+            Self::NodeArgumentCount { .. } => Some("operator-ineligible"),
             Self::Check(cause) => cause.cause(),
         }
     }
@@ -1224,6 +1251,8 @@ pub(crate) struct RefinementEnv<'e> {
 pub(crate) struct ProtocolView<'e> {
     pub(crate) form: &'e qsl_forms::ProtocolDeclarationForm,
     pub(crate) checked: Option<&'e super::protocol_clause::CheckedProtocol>,
+    /// The attempts of the clause, as `protocol_clause::check` bound them.
+    pub(crate) attempts: &'e [super::protocol_clause::BoundAttempt],
 }
 
 /// How a refinement's abstract subject resolved, which decides what its
@@ -1280,7 +1309,12 @@ fn resolve_protocol(
         }
         return ListSubject::Unresolved;
     }
-    ListSubject::Protocol(Box::new(ProtocolClasses::of(view.form, checked)))
+    ListSubject::Protocol(Box::new(ProtocolClasses::of(
+        view.form,
+        checked,
+        view.attempts,
+        types,
+    )))
 }
 
 /// FR-147 "The refinement's internal list": the classes `form`'s list makes
@@ -2175,11 +2209,27 @@ impl<'c, 'a> Checker<'c, 'a> {
             self.findings.refuse(row_span, conflict);
             return None;
         }
+        let (protocol, member) = named.spelling().split_once("::")?;
+        // QSpec FR-432 "The binder record of an abstract node".
+        let record: Option<Vec<ValueType>> = classes.record(member).map(<[ValueType]>::to_vec);
+        if let Some(record) = &record {
+            if !arguments.is_empty() && arguments.len() != record.len() {
+                self.findings.refuse(
+                    node.span,
+                    RefinementCause::NodeArgumentCount {
+                        node: node.name.clone(),
+                        expected: record.len(),
+                        actual: arguments.len(),
+                    },
+                );
+                return None;
+            }
+        }
         let mut parameters = vec![("self".to_owned(), ValueType::Reference(object.id))];
         parameters.extend(concrete.parameters().iter().cloned());
         let mut checked = Vec::new();
         let mut complete = true;
-        for argument in arguments {
+        for (position, argument) in arguments.iter().enumerate() {
             match argument {
                 ArgumentForm::Open { .. } => checked.push(None),
                 ArgumentForm::Expression(expression) => {
@@ -2190,14 +2240,36 @@ impl<'c, 'a> Checker<'c, 'a> {
                         label: format!("step {}", concrete.name()),
                         range_agnostic: false,
                     };
-                    match self.check_row_as(expression, None, context, cx) {
-                        Some(row) => checked.push(Some(row)),
-                        None => complete = false,
+                    let Some(row) = self.check_row_as(expression, None, context, cx) else {
+                        complete = false;
+                        continue;
+                    };
+                    let field = record.as_ref().and_then(|record| record.get(position));
+                    if let Some(field) = field {
+                        let actual = row.body().value_type();
+                        if !conforms(self.types(), actual, &lift(&self.lifting, field)) {
+                            let cause = RefinementCause::NodeArgumentType {
+                                node: node.name.clone(),
+                                position,
+                                expected: Box::new(field.clone()),
+                                actual: Box::new(actual.clone()),
+                            };
+                            match expression.spans.at(&[]) {
+                                Some(span) => self.findings.refuse(span, cause),
+                                None => self.fault("row-expression-has-a-span"),
+                            }
+                            complete = false;
+                            continue;
+                        }
                     }
+                    checked.push(Some(row));
                 }
             }
         }
-        let (protocol, member) = named.spelling().split_once("::")?;
+        // A list left out leaves every field of the record open.
+        if arguments.is_empty() {
+            checked.resize_with(record.map_or(0, |record| record.len()), || None);
+        }
         complete.then(|| StepTarget::Node {
             protocol: protocol.to_owned(),
             node: member.to_owned(),
