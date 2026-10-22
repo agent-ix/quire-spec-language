@@ -56,11 +56,13 @@ Clean units:
 
 The braced `fair { ... }` text in FR-171-AC-2, FR-173-AC-2, FR-174-AC-1 and FR-177-AC-9 is outside this diff.
 
-## Dispositions of SR-12306 (spec-review at 62b9d71fd)
+## Dispositions of SR-12306 (disposition pass 1, at ea7e691b0)
+
+Checked against f5468187b; these rows replace the coder's draft table. FR-181, TC-606 and TC-615 pass `quire validate`.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | f5468187b: TC-606 scope names FR-181-AC-7, with a step 5 and its expected result. |
+| FND-001 | fixed | f5468187b: TC-606's scope reads "FR-181-AC-1 to FR-181-AC-4 and FR-181-AC-7". Step 5 covers two vaults with a `max_states` the first leaves too little of, and a start with no vault. Its expected result is one outcome per instance in canonical order, the second stopped, and no outcome with no instance. That matches `instances_share_the_runs_limits` and `no_instance_and_no_initial_state_decide_nothing`. |
 | FND-002 | fixed | f5468187b: TC-606 step 3 reads `fair weak V::Vault::reset;`. |
-| FND-003 | fixed | f5468187b: TC-615 step 1 expects `Undefined` in both runs and the sampled lasso only with the default `witness_samples`. |
-| FND-004 | fixed | f5468187b: FR-181 Check states that a cycle through an open node, and a phase 0 loop through a state with no contract value, do not count. |
+| FND-003 | fixed | f5468187b: TC-615 step 1 expects `Undefined` in both runs, with the sampled lasso only with the default `witness_samples` and none with 0. |
+| FND-004 | fixed | f5468187b: FR-181 Check states that a cycle through an open node does not count as a fair accepting cycle, and that a phase 0 loop through a state whose contract evaluation had no value does not count as a witness. The engine does both: the `within` of `Decision::analyses`, and `Run::witness`. |

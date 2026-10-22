@@ -64,9 +64,20 @@ Test cost: the brute-force oracle takes 114 s in debug on one thread. The `it` b
 | FND-004 | fixed | 2a81de08c: `Run::undecided(witnesses, end)` with an empty open set. |
 | FND-005 | fixed | 2a81de08c: mutants B (M05c), C (M08c), D (M17), E (M20) and F (M34) are killed by the new tests. |
 
-## Dispositions of SR-12304 (code-review at 62b9d71fd)
+## Dispositions of SR-12304 (disposition pass 1, at ea7e691b0)
+
+Checked against f5468187b by measuring it. The coder's draft table is replaced by these rows. At ea7e691b0:
+
+- `hyper_single`, 26 tests including the oracle, passes. Clippy with all features and fmt are clean.
+- 12 hand mutants were all killed: the 10 from the review pass plus two new ones. K drops the `in_part` filter (5 tests fail). L keys the shared walks by initial state alone (4 tests fail). Removing the open-state exclusion from the new `Decision::analyses` (mutant A) still fails `a_loop_through_an_undecided_state_is_not_a_witness` and `a_contract_with_no_value_leaves_its_state_open`.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | f5468187b: `sample` draws each walk once, keyed by initial state and trace index, and the instances share it; only `witness` runs per instance. |
-| FND-002 | fixed | f5468187b: `Decision::analyses` runs the fairness analysis once over the expanded, non-open states; `lasso` takes the first fair component that lies in its part (a part is closed under successors, so a component is in it or disjoint from it). |
+| FND-001 | fixed | f5468187b: `sample` keeps each `(initial, trace)` walk in `drawn` and the instances share it. Results are unchanged: `walk` reads only the system, the limits, the horizon, the seed and the cancel handle, none of which depends on the instance, and `budget_stopped` is counted per instance as before. Mutant L kills it. A new memory cost follows, raised as FND-003 below. |
+| FND-002 | fixed | f5468187b: `Decision::analyses` runs `analyze` once over the expanded, non-open states, and `lasso` keeps the components with a vertex in its part. The claim behind it holds. A part is closed under successors over every retained edge, and each analysis is strongly connected over a subset of those edges. So a component with one vertex in the part has all its vertices in it, and one with none is disjoint. That makes `in_part` exact, and the first-ranked choice is unchanged. Mutants K, C and D kill it. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The shared walk cache keeps every candidate phase 0 draws until `sample` returns, in every run. That includes a run with one instance, which shares nothing. A candidate holds up to `max_walk_steps` (4096 by default) `ModelSimState` values. A body false on the sampled walks keeps every revisiting walk: up to `initial states x witness_samples` candidates (x 64 by default) instead of one at a time. Draw each `(initial, trace)` walk once and test it against every instance still pending, as `state_graph/sample.rs` does with `pending`. Or cache only when `bindings.len() > 1`. Then nothing is kept after a walk is read. | qsl-analyze/src/model_check/hyper/single.rs:342-380 |

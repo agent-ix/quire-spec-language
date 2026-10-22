@@ -53,9 +53,11 @@ Each AC has a tagged test that can fail. AC-1: `the_secure_vault_is_witnessed_by
 | FND-005 | fixed | 2a81de08c: FR-181 Outcomes states the per-instance rule, and FR-181-AC-7 states it as a criterion. TC-606 does not cover AC-7 (SR-12306 FND-001). |
 | FND-006 | fixed | 2a81de08c: FR-181-AC-3 reads `fair weak V::Vault::reset;`. TC-606 step 3 still has the braced form (SR-12306 FND-002); FR-171, FR-173, FR-174 and FR-177 are left to their owners. |
 
-## Dispositions of SR-12305 (gap-analysis at 62b9d71fd)
+## Dispositions of SR-12305 (disposition pass 1, at ea7e691b0)
+
+Checked against f5468187b; these rows replace the coder's draft table.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | f5468187b: the PR body, FR-181 (Remaining work section), TC-606, and the `hyper_single.rs` module doc and AC-tagged test docs name QSL-964 for the replay, certificate and settlement halves. |
-| FND-002 | fixed | f5468187b: `a_loop_through_an_undecided_state_is_not_a_witness`, `a_cycle_through_a_partly_expanded_state_is_not_a_witness` and `an_unfinished_part_is_not_a_trap` carry TC-606 only. |
+| FND-001 | fixed | f5468187b: QSL-964 (Backlog) exists. It names the settlement records of AC-1 to AC-6, AC-4's refusal sentence, the FR-163 certificate and FR-181 Replay. FR-181's new "Remaining work" section, TC-606's scope, the module doc of `hyper_single.rs` and each AC-tagged test's doc cite it. |
+| FND-002 | fixed | f5468187b: `an_unfinished_part_is_not_a_trap`, `a_cycle_through_a_partly_expanded_state_is_not_a_witness` and `a_loop_through_an_undecided_state_is_not_a_witness` carry `#[trace("TC-606")]` alone. |
