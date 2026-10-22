@@ -2,6 +2,7 @@
 //! FR-260 Behavior 5: the byte limit a domain package document is read under.
 
 use crate::setting::{Setting, SettingLimits};
+use alloc::{vec, vec::Vec};
 
 /// The published default of `intake.input_bytes`: 64 MiB (FR-260 B5).
 pub const DEFAULT_INTAKE_INPUT_BYTES: u64 = 67_108_864;

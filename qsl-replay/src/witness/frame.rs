@@ -4,12 +4,13 @@
 //! counterexample carried on the FR-070 envelope as
 //! `WitnessEnvelope<FrameCounterexample>`.
 //!
-//! The payload names the operation, the checked identities of its
+//! The payload names the checked identities of the operation's
 //! `state`/`operation_anchor` and `state`/`frame` nodes and the frame's
 //! `generated` occurrence (FR-104, FR-105), the invocation whose pre and
 //! post snapshots the replay admits (FR-106), and the change the
-//! counterexample claims. The replay reads it in `crate::execute`
-//! (`replay_frame`).
+//! counterexample claims. The operation itself travels once, as the request's
+//! `frame_operation` replay target (ADR-017 PF-4, G-2). The replay reads the
+//! payload in `crate::execute` (`replay_frame`).
 //!
 //! CG builds this payload from the frame witness bindings over QSL's
 //! [`super::WitnessBinding`] (ADR-013 O-25) once
@@ -28,8 +29,8 @@ use qsl_semantics::model::observation::{
     DocumentRef, FrameChange, FrameWitness, LinkDifference, SelectedObject,
 };
 
-/// The operation a frame counterexample refutes: its declaring object
-/// type's [`QualifiedName`] (`M::T`, the model alias then the type) and the
+/// The operation a frame counterexample refutes, QSpec FR-323's
+/// `frame_operation` replay target: its declaring object type's [`QualifiedName`] (`M::T`, the model alias then the type) and the
 /// operation's name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameOperation {
@@ -159,8 +160,6 @@ impl ClaimedChange {
 /// (FR-070-AC-5). Every member is typed; none is a `String`-keyed map.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameCounterexample {
-    /// The operation whose frame the counterexample refutes.
-    pub operation: FrameOperation,
     /// The wire identity of the operation's `state`/`operation_anchor` node
     /// (FR-105).
     pub anchor: WireNodeId,

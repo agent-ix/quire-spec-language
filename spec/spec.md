@@ -1100,6 +1100,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-315](functional/FR-315-encode-the-smt-lib-transition-relation.md) | FR |
 | [FR-128](functional/FR-128-replay-a-model-counterexample.md) | FR |
 | [FR-337](functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md) | FR |
+| [FR-410](functional/FR-410-emit-a-checked-state-graph-claim-as-a-v2-claim-node.md) | FR |
 | [FR-325](functional/FR-325-parse-temporal-operators-with-an-optional-interval.md) | FR |
 | [FR-326](functional/FR-326-admit-temporal-operators-by-the-unit-s-temporal-profile.md) | FR |
 | [FR-327](functional/FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md) | FR |

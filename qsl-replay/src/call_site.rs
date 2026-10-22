@@ -810,7 +810,7 @@ mod tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: function,
+            replay_target: crate::RequestTargetWire::function(function, crate::target::test_key()),
             source: ReplaySource::Input(assignments),
             obligation_identity: [0; 32],
             backend: "kani-backend-1".to_owned(),

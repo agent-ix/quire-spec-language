@@ -326,6 +326,8 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
         "arch-lint-api-surface-qsl",
         "-o",
         "arch-lint-qualified-core",
+        "-o",
+        "build-no-std",
     ];
     run_ci_with(
         Path::new("make"),

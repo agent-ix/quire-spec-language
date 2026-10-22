@@ -13,6 +13,7 @@
 //! and nothing else. Every bound is used as given, with no ceiling.
 
 use crate::diagnostic::LimitKind;
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
 
 /// Declares [`Setting`] and its table from one list, so a name, its stage and
 /// its limit kind are written once.
@@ -116,8 +117,8 @@ impl Setting {
     }
 }
 
-impl std::fmt::Display for Setting {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Setting {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(self.name())
     }
 }
@@ -184,8 +185,8 @@ impl AccountingSetting {
     }
 }
 
-impl std::fmt::Display for AccountingSetting {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for AccountingSetting {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(self.name())
     }
 }
@@ -300,6 +301,7 @@ pub fn parse_operands<'a>(
 #[cfg(test)]
 mod tests {
     use super::{parse_operands, AccountingSetting, Setting, SettingName, UsageCause};
+    use alloc::vec;
 
     #[test]
     fn names_are_distinct_and_round_trip() {
