@@ -54,3 +54,11 @@ share), and TC-771's expected result with it.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | The exemption covers only `xtask` and `tools/`, but `cargo metadata --no-deps` on the PR head lists two more workspace members with bin targets: `qsl-string-edge` (`qsl-string-edge/src/main.rs`; FR-064: "The standalone package and binary SHALL be named `qsl-string-edge`") and `qsl-bench` (`qsl-bench/src/bin/qsl-bench-probe.rs`; MP-006 and the Makefile's `BENCH_PROBE` run it). FR-287's Behavior bullet and AC-1 therefore contradict FR-064 and fail on main for a reason LC7 does not remove. Add both packages to the exemption (and the dependency rule), or state the rule by a property all developer tools share, and update TC-771's expected result. | spec/functional/FR-287-reach-qsl-through-the-driver-cli.md:61-62,77; Cargo.toml workspace members; qsl-string-edge/src/main.rs; qsl-bench/src/bin/qsl-bench-probe.rs |
+
+## Dispositions
+
+Round 1, checked against fix commit 8b4dd4db9. `cargo metadata --no-deps --format-version 1 --offline` on the head: bin targets are in `xtask`, `arch-lint` (`tools/arch-lint`), `qsl-string-edge`, `qsl-bench` and the root `quire-spec-language` (`quire-spec`, `default_run` `quire-spec`); the only dependency on a developer-tool package is the root's dev dependency on `xtask`. So AC-1 now fails only on the root `quire-spec` bin, the target state LC7 delivers (ADR-029 CB-1), and no longer on FR-064's or MP-006's binaries. With #1273's fix round, FR-002 names no QSL binary, so the two PRs no longer contradict each other. `make check-spec-validation` exits 0; main is an ancestor; no textual conflict with any current open PR.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The developer-tool set is enumerated as `xtask`, `tools/*`, `qsl-string-edge` and `qsl-bench` in the Description, both Behavior bullets, AC-1 and TC-771; verified with cargo metadata on the head. |
