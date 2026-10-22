@@ -154,10 +154,8 @@ here. The ordering rationale is as follows.
   `quire-semantic-value`, rebases the object environment on `ObjectClosure`
   and removes the obsolete consumer fields. It follows IR-583 and IR-269.
 - IR-586 (S2) separates checked IR from the checker, preserving checking
-  authority, source locations and identities, under FR-400. Besides FR-400
-  it needs the repository `agent-ix/quire-eval`, whose creation with its
-  licence, CLA and content-rights checks is an owner action. It does not
-  wait for S1: when S1 has not moved `WrongSnapshotCause`, S2 moves it to
+  authority, source locations and identities, under FR-400, in the
+  repository `agent-ix/quire-eval`. It does not wait for S1: when S1 has not moved `WrongSnapshotCause`, S2 moves it to
   SV's `call` module (FR-400).
 - IR-587 (S3) makes `qsl-foundation` no_std + alloc capable with `std` on by
   default. NFR-015 gives its build contract, target and gate (closure tier,
@@ -253,9 +251,9 @@ evidence that the RT target accepts the later implementation.
 - FR-400 moves the F and layer-2 values a checked term carries to SV, and S1
   moves the evaluation vocabulary to SV. Whichever of S1 and S2 lands second
   rebases onto the other's moves rather than moving an item twice.
-- S2 cannot land before the repository `agent-ix/quire-eval` is created and
-  passes its licence, CLA and content-rights checks. The evaluation-core
-  crate in that repository, its layer and the placement of the S6a result
+- The licence, CLA and content-rights checks of `agent-ix/quire-eval`
+  precede making that repository public. The evaluation-core crate in that
+  repository, its layer and the placement of the S6a result
   vocabulary (`FamilyOutcome`, `FamilyResult`, `EvalOutcome`) belong to S0
   and must stay consistent with layer C.
 - RT AD-004 predates FR-262 and describes a fixed call-depth guard and a

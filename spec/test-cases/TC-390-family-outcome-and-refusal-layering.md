@@ -67,7 +67,7 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 - Step 3 finds no edge.
 - Step 4 finds that none of the three manifests names the crate that defines
   the three types, or any crate at layer 3 or above. `qsl-foundation` may name
-  `quire-exact`, and `qsl-cst` may name `qsl-foundation` and `quire-exact`
+  `quire-exact`, plus `quire-semantic-value` once FR-400's X-13 lands, and `qsl-cst` may name `qsl-foundation` and `quire-exact`
   (ADR-011 §6.1). `qsl-package`'s `[dependencies]` name `qsl-semantics` and
   no workspace crate outside `qsl-semantics`, `qsl-foundation` and
   `quire-exact`, and `quire-contract-model` as their one ecosystem crate

@@ -1052,6 +1052,7 @@ flowchart BT
   QSE & QPK & QEV --> SV
   SV --> QX
   QCK --> SV & QX
+  QFO --> SV
   QCK --> QW[quire-walk]
   QSE & QPK & QEV & QRO & QRP --> QCK
   RT --> QCK
