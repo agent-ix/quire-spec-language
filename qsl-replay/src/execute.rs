@@ -1258,10 +1258,10 @@ pub(crate) fn callable_parameter_keys(
 /// target, or the `unknown-member` refusal of `entry` for any other target
 /// (FR-098, FR-357, FR-358), made after the request decodes and before it
 /// recompiles.
-pub(crate) fn function_target<'r>(
-    request: &'r ReplayRequest,
+pub(crate) fn function_target(
+    request: &ReplayRequest,
     entry: ReplayEntry,
-) -> Result<&'r QualifiedName, ReplayRefusal> {
+) -> Result<&QualifiedName, ReplayRefusal> {
     match request.replay_target() {
         ReplayTarget::Function(name) => Ok(name),
         other @ (ReplayTarget::FrameOperation(_) | ReplayTarget::StateClause(_)) => {

@@ -796,9 +796,9 @@ fn tc_907_a_covering_harness_proves() {
     proved(&settle(&unit, "c", bounds, vec![], exhausted));
 }
 
-/// FR-358-AC-5 (TC-907 step 5): evidence short of covering the claim's
+/// FR-358-AC-9 (TC-907 step 5): evidence short of covering the claim's
 /// domain is `Tested`, never `Proved`.
-#[trace("TC-907", "FR-358-AC-5")]
+#[trace("TC-907", "FR-358-AC-9")]
 #[test]
 fn tc_907_anything_short_of_covering_is_tested() {
     let unit = unit();
@@ -1840,9 +1840,9 @@ fn tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it() {
     assert!(matches!(&preimage.arguments[1].domain, Domain::Bounds(_)));
 }
 
-/// FR-358-AC-5 (TC-907): `replay_composite_parity` refuses a request whose
+/// FR-358-AC-9 (TC-907): `replay_composite_parity` refuses a request whose
 /// replay target is not `function` as `replay` does, naming itself.
-#[trace("TC-907", "FR-358-AC-5")]
+#[trace("TC-907", "FR-358-AC-9")]
 #[test]
 fn tc_907_the_composite_entry_refuses_a_non_function_target() {
     let unit = unit();

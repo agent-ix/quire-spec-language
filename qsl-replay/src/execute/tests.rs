@@ -2328,7 +2328,7 @@ fn one_over(denominator: i64) -> ScalarOutcome {
     ))
 }
 
-/// FR-357-AC-16, FR-358-AC-5: a refusal that names `entry` as the entry that
+/// FR-357-AC-20, FR-358-AC-9: a refusal that names `entry` as the entry that
 /// read the wrong replay target.
 fn assert_wrong_target(refusal: &ReplayRefusal, entry: crate::ReplayEntry, pointer: &str) {
     let ReplayRefusal::WrongReplayTarget {
@@ -2364,10 +2364,10 @@ fn non_function_targets() -> [(crate::ReplayTarget, &'static str); 2] {
     ]
 }
 
-/// FR-357-AC-16 (TC-904): `replay_value_parity` refuses a request whose
+/// FR-357-AC-20 (TC-904): `replay_value_parity` refuses a request whose
 /// replay target is not `function` as `replay` does, naming itself, before
 /// the recompile; the claim keeps no `function`.
-#[trace("TC-904", "FR-357-AC-16")]
+#[trace("TC-904", "FR-357-AC-20")]
 #[test]
 fn tc_904_the_value_entry_refuses_a_non_function_target() {
     for (target, pointer) in non_function_targets() {
@@ -2866,9 +2866,9 @@ mod operator_arm {
         wire
     }
 
-    /// FR-357-AC-16 (TC-904): `replay_operator_parity` refuses a request whose
+    /// FR-357-AC-20 (TC-904): `replay_operator_parity` refuses a request whose
     /// replay target is not `function` as `replay` does, naming itself.
-    #[trace("TC-904", "FR-357-AC-16")]
+    #[trace("TC-904", "FR-357-AC-20")]
     #[test]
     fn tc_904_the_operator_entry_refuses_a_non_function_target() {
         for (target, pointer) in super::non_function_targets() {

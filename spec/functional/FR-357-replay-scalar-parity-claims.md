@@ -89,8 +89,8 @@ request the default refuses (TC-904).
   operator, the operands with their identities and ranges, the result range,
   the limits, the native outcome and the observation digest. The function identity
   is the obligation identity, the `package_id` as supplied, the `function`
-  replay target as the request sent it (absent when it carried another
-  target, which the entry refuses), the
+  replay target as the request's `function` member sent it (absent when the
+  request carries no `function` member), the
   `source` bindings as supplied, the request's effective accounting limits
   (its accounting limits overlaid by its `stage_limits` counter entries,
   FR-255 Behavior 10), never either member alone, and the generated
@@ -187,6 +187,7 @@ request the default refuses (TC-904).
 | FR-357-AC-17 | Operator level: each check of the preimage against the package refuses `ScalarIdentity` (`content-mismatch`) under a correctly minted identity, with its own cause: a node the package does not hold (`Node`) or an operator it does not apply (`Operator`); an occurrence key the node does not have (`Occurrence`); a `GraphChild` that is not the node's argument at its position (`OperandChild`); an `InlineLiteral` that is not an inline integer literal there (`NotInlineLiteral`) or whose value or singleton range is not the literal's (`LiteralValue`); a different number of operands (`OperandCount`). A claim of a graph child and an inline literal together passes. | Test (TC-904) |
 | FR-357-AC-18 | Operator level: a preimage the encoder refuses (an occurrence ordinal beyond 2^53) refuses `ScalarIdentity` with the cause `Encoding` for any claimed identity, the all-zero one included, and a zero identity over a preimage that encodes refuses `Obligation`. | Test (TC-904) |
 | FR-357-AC-19 | `parity_obligation`, the one preimage encoder both parity arms call, gives for ADR-013 O-09's worked example (a record with one `Sequence` field, bounds on the sequence and its element) the digest the ADR states, for the argument entry and for the whole preimage, and orders harness bounds by the bytes of each key's RFC 8785 encoding and refuses a repeated key. | Test (TC-904) |
+| FR-357-AC-20 | Function and operator level: `replay_value_parity` and `replay_operator_parity` each refuse a request whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) or `state_clause` (`VersionUnchanged`) `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` or `/replay/state_clause`, naming the target, the entry and the member `function`, before the recompile; the function claim holds no `function`. | Test (TC-904) |
 
 ## Dependencies
 
