@@ -53,11 +53,13 @@ step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
    incomplete-population's snapshot.
 6. Step 1's `VersionUnchanged` envelope twice.
 7. `VersionUnchanged` over invocations whose post-state holds `child.versionNumber` -1 (pre 0), `root.versionNumber` 1001 (pre 1000, `child` unchanged), and whose pre-state holds `child.versionNumber` 1001; and over changed-version.
-8. `VersionUnchanged` over changed-version with the request's replay
-   target `function` `sameIdentity`; with `frame_operation`
-   `Config::ConfigVersion::attemptUpdate`; with the request's
+8. `VersionUnchanged` over changed-version, the envelope's target
+   `state_clause` `VersionUnchanged`, with the request's replay target
+   `function` `sameIdentity`; with `frame_operation`
+   `{Config::ConfigVersion, attemptUpdate}`; with the request's
    `state_clause` `VersionUnchanged` and the envelope's `ParentOrder`; each
-   again with the request's source edited so it does not compile.
+   again with the request's source edited so it does not compile, and
+   again with the source's byte-provision entry removed.
 
 Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 
@@ -99,7 +101,9 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   naming `root`, `[0, 1000]` and 1001; `invalid_runtime_input`/
   `invalid-value` naming `child` and `versionNumber`; changed-version holds
   no range violation.
-- Step 8: `invalid_runtime_input`/`invalid-value` at `/replay/function`,
-  then at `/replay/frame_operation`, each naming the target;
-  `stale_dependency`/`content-mismatch` naming both targets; the same three
-  refusals with the source that does not compile.
+- Step 8: `invalid_runtime_input`/`unknown-member` at `/replay/function`,
+  then at `/replay/frame_operation`, each naming the target,
+  `replay_state_clause` and `state_clause`; `stale_dependency`/
+  `content-mismatch` naming both targets; the same three refusals with the
+  source that does not compile; `missing_import`/`missing-selection` for
+  each with the provision entry removed.

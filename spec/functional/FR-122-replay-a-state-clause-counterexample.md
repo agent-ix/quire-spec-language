@@ -121,15 +121,21 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
 
 ## Behavior
 
-- If the request's replay target is `function` or `frame_operation`, then
-  the executor SHALL refuse `invalid_runtime_input`/`invalid-value` at
-  `/replay/function` or `/replay/frame_operation` after the request decodes
-  and before it recompiles, naming the target and the state-clause payload:
-  a function or a frame target selects no state clause, and no target is
-  recovered from the payload.
-- If the envelope's replay target differs from the request's, then the
-  executor SHALL refuse `stale_dependency`/`content-mismatch` after the
-  request decodes and before it recompiles, naming both targets.
+- The executor SHALL apply the two envelope checks below after the request
+  decodes by FR-071 (QSpec FR-323 decode rule 1, then the byte-provision
+  rule) and before it recompiles, in the order listed, refusing with the
+  first that applies:
+  1. If the request's replay target is not `state_clause`, then the
+     executor SHALL refuse `invalid_runtime_input`/`unknown-member` at that
+     member's `/replay/<member>` pointer, naming the target, the entry
+     `replay_state_clause` and the member it reads (`state_clause`): a
+     function or a frame target selects no state clause, and no target is
+     recovered from the payload. The code and pointer tell it apart from
+     QSpec FR-323's refusal of a request carrying two targets
+     (`invalid-value`).
+  2. If the envelope's replay target differs from the request's, then the
+     executor SHALL refuse `stale_dependency`/`content-mismatch`, naming
+     both targets.
 - The executor SHALL recompile and check the package by FR-098's rules, in
   FR-098's order, before it resolves the request's `state_clause`.
 - If the recompiled `package_id` differs from the request's or the
@@ -224,7 +230,7 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
 | FR-122-AC-5 | Admission refusals settle no result: the `VersionUnchanged` envelope over the forbidden-parent-change invocation refuses with FR-106's `frame_violation`/`unauthorized-change` record naming `child` and `parent`; the changed-version envelope with its pre snapshot absent from the byte provision refuses with FR-106's `unavailable_observation` record; with its invocation bytes edited under the same digest it refuses `stale_dependency`/`content-mismatch`; the `ParentOrder` envelope over incomplete-population's snapshot (`complete: false`) refuses with FR-106's `Incomplete` `incomplete_population`/`incomplete-scope` record. | Test (TC-517) |
 | FR-122-AC-6 | Replaying one envelope twice gives equal results. `StateClauseCounterexample` implements `FamilyPayload`, the envelope carries it as its generic parameter with no string-keyed field, and its `observation` is a sum of the `PreCall`, `Invocation` and `Current` inputs, so a payload holds exactly one. The payload has no member naming the clause. | Test (TC-517) |
 | FR-122-AC-7 | Over FR-108's ConfigVersion unit (`versionNumber` is `Int[0, 1000]`), `VersionUnchanged` over an invocation taking `child.versionNumber` from 0 to a native post-state of -1 settles `reproduced-with-evaluated-witness`, holding the evaluated `false` (the clause ran over the exact -1; clamped to 0 it would hold) and one range violation naming `child`, `versionNumber`, `[0, 1000]` and -1. Over an invocation taking `root.versionNumber` from 1000 to 1001 with `child` unchanged it settles `reproduced-with-evaluated-witness` holding the evaluated `true` and one range violation naming `root`, `[0, 1000]` and 1001. An invocation whose pre-state holds `child.versionNumber` 1001 still refuses `invalid_runtime_input`/`invalid-value` naming `child` and `versionNumber`. Replayed with the request's evaluation budget at zero (on both arms), the wrapping debit still settles reproduced, holding no evaluated value and the one range violation. An in-range post-state reports no range violation and settles as FR-122-AC-1 and FR-122-AC-2 say. | Test (TC-517) |
-| FR-122-AC-8 | Replay target: the changed-version `VersionUnchanged` envelope submitted with a request whose replay target is `function` `sameIdentity` refuses `invalid_runtime_input`/`invalid-value` at `/replay/function`, and with `frame_operation` `Config::ConfigVersion::attemptUpdate` at `/replay/frame_operation`, each naming the target; with the request's `state_clause` `VersionUnchanged` and the envelope's `ParentOrder` it refuses `stale_dependency`/`content-mismatch` naming both targets. Each refuses before the recompile: the request's source edited so it does not compile changes none of these refusals. | Test (TC-517) |
+| FR-122-AC-8 | Replay target, over the changed-version `VersionUnchanged` envelope whose own target is `state_clause` `VersionUnchanged`: with the request's target `function` `sameIdentity` it refuses `invalid_runtime_input`/`unknown-member` at `/replay/function`, and with `frame_operation` `{Config::ConfigVersion, attemptUpdate}` at `/replay/frame_operation`, each naming the target, `replay_state_clause` and `state_clause` (check 1 precedes check 2, though each target also differs from the envelope's). With the request's `state_clause` `VersionUnchanged` and the envelope's `ParentOrder` it refuses `stale_dependency`/`content-mismatch` naming both targets. Each of the three refusals is unchanged when the request's source does not compile, and each becomes the byte-provision refusal (`missing_import`/`missing-selection`) when the source's byte-provision entry is removed, which decode applies first. | Test (TC-517) |
 
 ## Dependencies
 
