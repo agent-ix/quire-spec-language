@@ -52,3 +52,10 @@ Each AC has a tagged test that can fail. AC-1: `the_secure_vault_is_witnessed_by
 | FND-004 | fixed | 2a81de08c: FR-181 Outcomes ranks a trap at the first product state of its part and gives a tie to `Undefined`, which is what the engine does. |
 | FND-005 | fixed | 2a81de08c: FR-181 Outcomes states the per-instance rule, and FR-181-AC-7 states it as a criterion. TC-606 does not cover AC-7 (SR-12306 FND-001). |
 | FND-006 | fixed | 2a81de08c: FR-181-AC-3 reads `fair weak V::Vault::reset;`. TC-606 step 3 still has the braced form (SR-12306 FND-002); FR-171, FR-173, FR-174 and FR-177 are left to their owners. |
+
+## Dispositions of SR-12305 (gap-analysis at 62b9d71fd)
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f5468187b: the PR body, FR-181 (Remaining work section), TC-606, and the `hyper_single.rs` module doc and AC-tagged test docs name QSL-964 for the replay, certificate and settlement halves. |
+| FND-002 | fixed | f5468187b: `a_loop_through_an_undecided_state_is_not_a_witness`, `a_cycle_through_a_partly_expanded_state_is_not_a_witness` and `an_unfinished_part_is_not_a_trap` carry TC-606 only. |

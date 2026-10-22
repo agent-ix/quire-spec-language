@@ -63,3 +63,10 @@ Test cost: the brute-force oracle takes 114 s in debug on one thread. The `it` b
 | FND-003 | fixed | 2a81de08c: `ModelLasso { path, loop_entry }`, the stutter derived from `loop_entry == path.steps.len()`. |
 | FND-004 | fixed | 2a81de08c: `Run::undecided(witnesses, end)` with an empty open set. |
 | FND-005 | fixed | 2a81de08c: mutants B (M05c), C (M08c), D (M17), E (M20) and F (M34) are killed by the new tests. |
+
+## Dispositions of SR-12304 (code-review at 62b9d71fd)
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f5468187b: `sample` draws each walk once, keyed by initial state and trace index, and the instances share it; only `witness` runs per instance. |
+| FND-002 | fixed | f5468187b: `Decision::analyses` runs the fairness analysis once over the expanded, non-open states; `lasso` takes the first fair component that lies in its part (a part is closed under successors, so a component is in it or disjoint from it). |

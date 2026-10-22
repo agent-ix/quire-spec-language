@@ -55,3 +55,12 @@ Clean units:
 - AC-7 is atomic enough, observable, and can fail. The mutant that gives each instance the full budget fails its test.
 
 The braced `fair { ... }` text in FR-171-AC-2, FR-173-AC-2, FR-174-AC-1 and FR-177-AC-9 is outside this diff.
+
+## Dispositions of SR-12306 (spec-review at 62b9d71fd)
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f5468187b: TC-606 scope names FR-181-AC-7, with a step 5 and its expected result. |
+| FND-002 | fixed | f5468187b: TC-606 step 3 reads `fair weak V::Vault::reset;`. |
+| FND-003 | fixed | f5468187b: TC-615 step 1 expects `Undefined` in both runs and the sampled lasso only with the default `witness_samples`. |
+| FND-004 | fixed | f5468187b: FR-181 Check states that a cycle through an open node, and a phase 0 loop through a state with no contract value, do not count. |
