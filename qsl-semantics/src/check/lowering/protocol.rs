@@ -8,8 +8,8 @@
 //! the package's selected `protocol_profile` law and a `profile_operator`
 //! member naming the `run` tree's root control. It is keyed by
 //! `quire.application-node/v1` with the declaration's qualified name and no
-//! owner. The protocol's roles, `run` tree and `finish` have no node of their
-//! own (FR-113). A reference binds the node's key and is itself a
+//! owner. The nodes of its roles, channels, `run` tree, `finish` and templates
+//! (FR-113, FR-383) are not minted yet. A reference binds the node's key and is itself a
 //! `{term: "reference", target}` leaf keyed by `quire.structural-node/v1`.
 
 use quire_exact::{Identifier, NodeKey, ValueType};
@@ -171,7 +171,11 @@ impl Lowering<'_> {
     /// The node key of the `protocol`-th declaration, or the refusal that
     /// the package selected no protocol profile for it to carry, or that its
     /// root names no operator.
-    fn protocol_key(&self, protocol: usize, location: &Location) -> Result<NodeKey, CheckRefusal> {
+    pub(crate) fn protocol_key(
+        &self,
+        protocol: usize,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
         match self.protocol_keys.get(protocol) {
             Some(ProtocolKey::Keyed(key)) => Ok(*key),
             Some(ProtocolKey::UnsupportedRoot(root)) => Err(unsupported_root(root, location)),

@@ -164,6 +164,7 @@ fn check_with(
     )
     .map_err(|refusal| match refusal {
         SubjectRefusal::Admission(failure) => ModelCheckRefusal::Admission(failure),
+        SubjectRefusal::ProtocolSubject => ModelCheckRefusal::ProtocolRefinement,
         SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
             fault("the-subjects-of-a-refinement-open")
         }
