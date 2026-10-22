@@ -45,3 +45,12 @@ TC-620 and TC-1078 were checked.
 
 No gap blocks the spec PR. FND-001 is a hand-off condition for the code half, and FND-002 is a
 scope clarification.
+
+## Dispositions
+
+Round 1, reviewed QSL #1214 at 3fd9a7398 (fix commit over b155d3ea3); code facts re-verified in the QSL tree at that head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | code half of QSL-974 (terra) rewrites assemble/tests.rs:2294-2336 and adds the AC-33/AC-34 tests; the PR body's "Code half must land back to back" section records the landing order |
+| FND-002 | fixed | the paragraph is now "Positions outside a value expression" and lists time declarations and timed intervals (FR-393, TC-1078) |
