@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use quire_contract_model::{
-    CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence, CheckedPackageRefusalCause, CheckedPackageRefusalCode,
-    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
+    CheckedPackageRefusalCause, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -2803,7 +2803,11 @@ fn extension_definition_vectors_xd_01_to_04() {
     assert_eq!(vectors.len(), 4);
     for vector in vectors {
         let id = vector["id"].as_str().unwrap();
-        let envelope = read_fixture(&directory.join("..").join(vector["fixture"].as_str().unwrap()));
+        let envelope = read_fixture(
+            &directory
+                .join("..")
+                .join(vector["fixture"].as_str().unwrap()),
+        );
         let withheld: Vec<CheckedArtifactRef> =
             serde_json::from_value(vector["withheld"].clone()).expect("withheld refs");
         let outcome = read_fixture_wire_withholding(&envelope, &withheld).1;
