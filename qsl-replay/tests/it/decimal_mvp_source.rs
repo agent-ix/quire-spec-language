@@ -55,5 +55,5 @@ fn decimal_commutativity_and_wrong_addend_mutant_admit_strictly() {
             );
         }
     }
-    assert_eq!(VERIFY.replace("= b + a", "= a + a"), MUTANT);
+    assert_eq!(VERIFY.replace("= add(b, a)", "= add(a, a)"), MUTANT);
 }

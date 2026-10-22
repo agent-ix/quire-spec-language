@@ -1,5 +1,8 @@
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
+function add using v(a: Decimal[-99, 99; 2, 2; nearest-even], b: Decimal[-99, 99; 2, 2; nearest-even]): Decimal[-198, 198; 2, 2; nearest-even] pure {
+    a + b
+}
 function decimal_commutative using v(a: Decimal[-99, 99; 2, 2; nearest-even], b: Decimal[-99, 99; 2, 2; nearest-even]): Boolean pure {
-    a + b = b + a
+    add(a, b) = add(b, a)
 }
