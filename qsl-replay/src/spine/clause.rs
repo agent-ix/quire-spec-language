@@ -1345,4 +1345,4 @@ fn run_function(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
