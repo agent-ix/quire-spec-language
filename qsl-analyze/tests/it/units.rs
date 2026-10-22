@@ -309,7 +309,30 @@ pub(crate) fn unread() -> Reads {
     Ok(std::collections::BTreeSet::new())
 }
 
+/// The two guard methods of a letters seam for a run whose clauses are all
+/// unguarded: the engine reads `activation` and `activation_reads` only for
+/// a clause with a `when` condition, so reaching either is a defect.
+macro_rules! unguarded {
+    () => {
+        fn activation(
+            &self,
+            _instance: &qsl_eval::model_subject::ModelInstance,
+            _state: &qsl_eval::simulation::model::ModelSimState,
+            _meter: &mut quire_exact::Meter,
+        ) -> Result<qsl_eval::temporal::AtomReading, quire_exact::Incomplete> {
+            unreachable!("an unguarded clause has no activation condition")
+        }
+
+        fn activation_reads(&self) -> $crate::units::Reads {
+            unreachable!("an unguarded clause has no activation condition")
+        }
+    };
+}
+pub(crate) use unguarded;
+
 impl ModelLetters for Atoms<'_> {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }

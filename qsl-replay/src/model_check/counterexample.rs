@@ -58,6 +58,9 @@ pub struct ModelStep<T = ModelTransition> {
 pub enum UndefinedLocus {
     /// A `holds` atom of the authored clause.
     Atom(FormulaNodeId),
+    /// The `when` condition of the authored clause's guarded `on each`
+    /// activation.
+    Activation,
     /// A `pre` or `post` clause of an application's contract conjunction,
     /// by its name.
     Contract(String),

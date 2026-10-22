@@ -97,6 +97,32 @@ pub trait ModelLetters {
         meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete>;
 
+    /// The `when` condition of the clause's guarded `on each` activation for
+    /// `instance` at `state`, charging `meter`: true where the position
+    /// activates the clause, false where it does not, undefined where the
+    /// condition has no value. The engine calls it only for a clause whose
+    /// activation has a condition, at each position the clause's monitor
+    /// reads. An exhausted meter is `Err(Incomplete)`, never a reading. The
+    /// reading is as invariant under a symmetry of the subject as a `holds`
+    /// atom's (FR-151).
+    fn activation(
+        &self,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete>;
+
+    /// FR-156 "Atom footprints" for the guarded activation's condition: the
+    /// locations it reads, with the clause's `over` parameter as the
+    /// receiver. A model check under partial-order reduction reads them for
+    /// a guarded clause alone.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintRefusal`] when the condition reads through a form QSpec
+    /// FR-383 gives no footprint rule.
+    fn activation_reads(&self) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal>;
+
     /// FR-156 "Atom footprints": the locations `atom` reads, with the
     /// clause's `over` parameter as the receiver. A model
     /// check under partial-order reduction instantiates them per instance;
