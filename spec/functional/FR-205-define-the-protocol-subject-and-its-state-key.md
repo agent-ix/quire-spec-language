@@ -78,8 +78,10 @@ has already seen instead of a new one.
 - When the request names a protocol that is not a protocol clause of the
   package, the subject builder SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the protocol.
-- When a static role has no binding, or a binding names a model the role
-  does not admit, the subject builder SHALL refuse
+- A static role on a model alias SHALL be bound to the model subject itself
+  (QSpec FR-425's static role binding), and needs no request binding.
+- When a static role on any other model has no binding, or a binding names a
+  model the role does not admit, the subject builder SHALL refuse
   `invalid_runtime_input`/`wrong-role-mapping`, naming the role.
 - When the `over` object is not an object of its declared type's population
   universe, the subject builder SHALL refuse `invalid_runtime_input`/
