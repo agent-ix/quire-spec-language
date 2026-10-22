@@ -57,6 +57,7 @@ mod scalar;
 pub mod spine;
 pub mod statistical;
 mod supplied_limits;
+mod target;
 mod witness;
 
 pub use admitted::{
@@ -278,6 +279,10 @@ pub use result::{
     Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
+// QSpec FR-323: the replay target a packet, envelope and request each carry.
+pub use target::{
+    ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember, TargetSelectionRefusal,
+};
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
@@ -371,7 +376,9 @@ mod redaction_tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            replay_target: crate::RequestTargetWire::function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),
@@ -413,7 +420,9 @@ mod redaction_tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            replay_target: crate::RequestTargetWire::function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),

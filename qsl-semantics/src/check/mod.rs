@@ -3976,6 +3976,24 @@ impl CheckedGraph {
             .map(|frame| (context, frame))
     }
 
+    /// FR-116: whether the operation `selection` names resolves to no single
+    /// operation because two supertypes of its object type expose that name
+    /// and neither is more derived than the other (QSpec FR-342
+    /// `ambiguous_declaration`).
+    pub fn operation_is_ambiguous(&self, selection: &OperationSelection) -> bool {
+        let Some(context) = self.object_types.get(&selection.object) else {
+            return false;
+        };
+        matches!(
+            self.scope.operations().resolve(
+                self.scope.types(),
+                *context,
+                selection.operation.as_str(),
+            ),
+            crate::model::operation::OperationLookup::Ambiguous(_)
+        )
+    }
+
     /// FR-115: the operation frame whose frame node identity is `frame`,
     /// the lookup the S6a `ProtocolClause` frame arm resolves its key by.
     /// Two operations share a frame node only when the node's content --

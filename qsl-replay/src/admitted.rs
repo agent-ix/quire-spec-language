@@ -625,6 +625,10 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::ScalarIdentity(_)
             | ReplayRefusal::ParityBound(_)
             | ReplayRefusal::UnknownOperation { .. }
+            | ReplayRefusal::WrongReplayTarget { .. }
+            | ReplayRefusal::TargetMismatch { .. }
+            | ReplayRefusal::InheritedOperation { .. }
+            | ReplayRefusal::AmbiguousOperation { .. }
             | ReplayRefusal::FrameIdentity(_)
             | ReplayRefusal::UnknownClause { .. }
             | ReplayRefusal::ClauseIdentity(_)

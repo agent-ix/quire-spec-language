@@ -12,8 +12,8 @@ use crate::spine::OperationName;
 use crate::{
     replay_frame, ClaimedChange, DisagreementCause, FamilyPayload, FrameCounterexample,
     FrameIdentityMismatch, FrameOperation, FrameReplayResult, ProfileSelection, ReplayRefusal,
-    ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, StateEnvironment, Verdict,
-    Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
+    ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, ReplayTarget,
+    StateEnvironment, Verdict, Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
 };
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
@@ -123,6 +123,11 @@ fn emitted_node(unit: &Unit, form: &str) -> String {
         .to_owned()
 }
 
+/// The `frame_operation` replay target for `Config::ConfigVersion::attemptUpdate`.
+pub(super) fn frame_target() -> ReplayTarget {
+    ReplayTarget::FrameOperation(operation("attemptUpdate"))
+}
+
 fn operation(name: &str) -> FrameOperation {
     FrameOperation {
         object: crate::QualifiedName::new(vec![
@@ -158,13 +163,36 @@ fn invocation(
     post_objects: &[serde_json::Value],
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> Invocation {
-    let model_digest_hex = config_version_model_digest_hex();
-    let (pre, pre_bytes) =
-        document_ref_and_bytes("replay-pre", |label| snapshot(label, "pre", pre_objects));
-    let (post, post_bytes) =
-        document_ref_and_bytes("replay-post", |label| snapshot(label, "post", post_objects));
+    invocation_over(
+        &config_version_model_digest_hex(),
+        pre_objects,
+        post_objects,
+        edit,
+    )
+}
+
+/// [`invocation`] over the domain package whose `sha256-jcs` digest is
+/// `model_digest_hex`.
+fn invocation_over(
+    model_digest_hex: &str,
+    pre_objects: &[serde_json::Value],
+    post_objects: &[serde_json::Value],
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> Invocation {
+    let over_model = |bytes: Vec<u8>| {
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("the fixture is JSON");
+        document["model"]["digest"] = json!(format!("sha256-jcs:{model_digest_hex}"));
+        document.to_string().into_bytes()
+    };
+    let (pre, pre_bytes) = document_ref_and_bytes("replay-pre", |label| {
+        over_model(snapshot(label, "pre", pre_objects))
+    });
+    let (post, post_bytes) = document_ref_and_bytes("replay-post", |label| {
+        over_model(snapshot(label, "post", post_objects))
+    });
     let (invocation, invocation_bytes) = document_ref_and_bytes("replay-invocation", |label| {
-        let bytes = config_version_invocation_bytes(label, &model_digest_hex, &pre, &post, "child");
+        let bytes = config_version_invocation_bytes(label, model_digest_hex, &pre, &post, "child");
         let mut document: serde_json::Value =
             serde_json::from_slice(&bytes).expect("the fixture is JSON");
         edit(&mut document);
@@ -223,6 +251,7 @@ pub(super) fn request(
     domain_document: &[u8],
     package_id: DigestRecord,
     documents: &[(DocumentRef, Vec<u8>)],
+    target: ReplayTarget,
 ) -> ReplayRequestWire {
     let source = source_digest(source_bytes);
     let jcs = qsl_semantics::model::intake::PackageDocument::parse(
@@ -267,10 +296,7 @@ pub(super) fn request(
             source.hex(),
         )],
         dependencies: Vec::new(),
-        selected_function: crate::QualifiedName::new(vec![
-            Identifier::new("attemptUpdate").unwrap()
-        ])
-        .unwrap(),
+        replay_target: target.into(),
         source: witness_source(),
         obligation_identity: [2; 32],
         backend: "kani-backend-1".to_owned(),
@@ -313,6 +339,7 @@ fn envelope_with(
         clause_node,
         occurrence,
         payload,
+        frame_target(),
     );
     adjust(&mut packet);
     WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default())
@@ -328,14 +355,13 @@ pub(super) fn packet<P: FamilyPayload>(
     clause_node: WireNodeId,
     occurrence_key: OccurrenceKey,
     payload: P,
+    target: ReplayTarget,
 ) -> WitnessPacket<P> {
     WitnessPacket {
         obligation_identity: Some([1; 32]),
         occurrence_key: Some(occurrence_key),
         clause_node: Some(clause_node),
-        selected_function: Some(
-            crate::QualifiedName::new(vec![Identifier::new("attemptUpdate").unwrap()]).unwrap(),
-        ),
+        replay_target: target.into(),
         package_id: Some((
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
@@ -380,11 +406,39 @@ fn case_with(
     change: ClaimedChange,
     adjust: impl FnOnce(&mut ReplayRequestWire, &mut FrameCounterexample),
 ) -> Case {
-    let unit = config_version_unit();
+    case_targeting(input, change, frame_target(), frame_target(), adjust)
+}
+
+/// [`case_with`] over `unit`, the request's replay target and the
+/// envelope's given.
+fn case_targeting(
+    input: Invocation,
+    change: ClaimedChange,
+    request_target: ReplayTarget,
+    envelope_target: ReplayTarget,
+    adjust: impl FnOnce(&mut ReplayRequestWire, &mut FrameCounterexample),
+) -> Case {
+    case_in(
+        config_version_unit(),
+        input,
+        change,
+        request_target,
+        envelope_target,
+        adjust,
+    )
+}
+
+fn case_in(
+    unit: Unit,
+    input: Invocation,
+    change: ClaimedChange,
+    request_target: ReplayTarget,
+    envelope_target: ReplayTarget,
+    adjust: impl FnOnce(&mut ReplayRequestWire, &mut FrameCounterexample),
+) -> Case {
     let (anchor, frame, occurrence) = identities(&unit);
     let package_id = package_digest(unit.compiled.emitted.package_id());
     let mut payload = FrameCounterexample {
-        operation: operation("attemptUpdate"),
         anchor,
         frame,
         occurrence,
@@ -396,9 +450,16 @@ fn case_with(
         &unit.domain_document,
         package_id,
         &input.documents,
+        request_target,
     );
     adjust(&mut wire, &mut payload);
-    let envelope = envelope(&unit.bytes, package_id, witness_source(), payload);
+    let envelope = envelope_with(
+        &unit.bytes,
+        package_id,
+        witness_source(),
+        payload,
+        |packet| packet.replay_target = envelope_target.into(),
+    );
     Case {
         unit,
         input,
@@ -463,7 +524,7 @@ fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
     assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.package_id(), package_id);
-    assert_eq!(result.operation(), &payload.operation);
+    assert_eq!(result.operation(), &operation("attemptUpdate"));
     assert_eq!(result.anchor(), payload.anchor);
     assert_eq!(result.frame(), payload.frame);
     assert_eq!(result.occurrence(), &payload.occurrence);
@@ -648,7 +709,6 @@ fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
     let input = forbidden_parent_change();
     let (anchor, frame, occurrence) = identities(&unit);
     let payload = FrameCounterexample {
-        operation: operation("attemptUpdate"),
         anchor,
         frame,
         occurrence,
@@ -657,7 +717,13 @@ fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
     };
     let package_id = package_digest(unit.compiled.emitted.package_id());
     let broken = b"this is not a QSL unit\n".to_vec();
-    let wire = request(&broken, &unit.domain_document, package_id, &input.documents);
+    let wire = request(
+        &broken,
+        &unit.domain_document,
+        package_id,
+        &input.documents,
+        frame_target(),
+    );
     (unit, wire, payload)
 }
 
@@ -766,14 +832,19 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
     );
     let (anchor, frame, occurrence) = identities(&unit);
     let payload = FrameCounterexample {
-        operation: operation("attemptUpdate"),
         anchor,
         frame,
         occurrence,
         invocation: input.invocation.clone(),
         change: child_change("parent"),
     };
-    let wire = request(&edited, &unit.domain_document, original, &input.documents);
+    let wire = request(
+        &edited,
+        &unit.domain_document,
+        original,
+        &input.documents,
+        frame_target(),
+    );
     let envelope = envelope(&edited, original, witness_source(), payload);
     let refusal = replay_frame(wire, &envelope, crate::ReplayLimits::default()).unwrap_err();
     assert!(
@@ -816,10 +887,13 @@ fn a_stale_envelope_package_id_refuses_by_the_stale_package_rule() {
 #[trace("TC-515", "FR-116-AC-3")]
 #[test]
 fn a_missing_operation_refuses_missing_name() {
-    let refusal = replay(case_with(
+    let missing = ReplayTarget::FrameOperation(operation("missing"));
+    let refusal = replay(case_targeting(
         forbidden_parent_change(),
         child_change("parent"),
-        |_, payload| payload.operation = operation("missing"),
+        missing.clone(),
+        missing,
+        |_, _| {},
     ))
     .unwrap_err();
     assert!(
@@ -834,6 +908,190 @@ fn a_missing_operation_refuses_missing_name() {
     assert!(refusal
         .to_string()
         .starts_with("missing_declaration/missing-name"));
+}
+
+/// TC-515 step 6 (FR-116-AC-8): over a package where `Sub` specializes
+/// `ConfigVersion` and inherits `attemptUpdate`, the target `call_site`
+/// returns (`{Config::ConfigVersion, attemptUpdate}`) settles reproduced and
+/// `{Config::Sub, attemptUpdate}`, which only inherits it, refuses
+/// `invalid_model_binding`/`malformed-declaration`.
+#[trace("TC-515", "FR-116-AC-8")]
+#[test]
+fn an_inherited_operation_is_selected_by_its_declaring_object() {
+    let sub_unit = || {
+        let document = config_version_domain_document_with_sub();
+        let (unit, _) = config_version_unit_and_packages_for(document.clone());
+        unit_for(unit, document)
+    };
+    let model_hex = |unit: &Unit| {
+        qsl_semantics::model::intake::PackageDocument::parse(
+            &unit.domain_document,
+            qsl_foundation::IntakeLimits::default(),
+        )
+        .expect("the domain package parses")
+        .jcs_digest()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+    };
+    let input = || {
+        invocation_over(
+            &model_hex(&sub_unit()),
+            &[object("root", 1, None), object("child", 2, Some("root"))],
+            &[object("root", 1, None), object("child", 2, None)],
+            |_| {},
+        )
+    };
+    let target = |object: &str| {
+        ReplayTarget::FrameOperation(FrameOperation {
+            object: crate::QualifiedName::new(vec![
+                Identifier::new("Config").unwrap(),
+                Identifier::new(object).unwrap(),
+            ])
+            .unwrap(),
+            operation: Identifier::new("attemptUpdate").unwrap(),
+        })
+    };
+    let declaring = target("ConfigVersion");
+    let result = replay(case_in(
+        sub_unit(),
+        input(),
+        child_change("parent"),
+        declaring.clone(),
+        declaring,
+        |_, _| {},
+    ))
+    .expect("the declaring object's target replays");
+    assert_eq!(
+        witness_arm(&result).settlement(),
+        WitnessSettlement::ReproducedWithEvaluatedWitness
+    );
+
+    let inheriting = target("Sub");
+    let refusal = replay(case_in(
+        sub_unit(),
+        input(),
+        child_change("parent"),
+        inheriting.clone(),
+        inheriting,
+        |_, _| {},
+    ))
+    .unwrap_err();
+    assert!(
+        matches!(
+            &refusal,
+            ReplayRefusal::InheritedOperation { operation, .. }
+                if operation.to_string() == "Config::Sub::attemptUpdate"
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusal.cause(), Some("malformed-declaration"));
+}
+
+/// TC-515 step 6 (FR-116-AC-8): a request target that is a function refuses
+/// `invalid_runtime_input`/`unknown-member` at `/replay/function` naming
+/// `replay_frame` and `frame_operation` (check 1 precedes check 2), and a
+/// frame request against an envelope for another operation refuses
+/// `stale_dependency`/`content-mismatch` naming both targets, also with the
+/// envelope's `clause_node` replaced (check 2 precedes check 3). Each is
+/// unchanged when the request's source does not compile, and becomes the
+/// byte-provision refusal when the source's entry is removed.
+#[trace("TC-515", "FR-116-AC-8")]
+#[test]
+fn a_frame_replay_refuses_other_targets_before_the_recompile() {
+    #[derive(Clone, Copy)]
+    enum Source {
+        Compiles,
+        DoesNotCompile,
+        EntryRemoved,
+    }
+    let probe = ReplayTarget::FrameOperation(operation("probe"));
+    let function = ReplayTarget::Function(
+        crate::QualifiedName::new(vec![Identifier::new("sameIdentity").unwrap()]).unwrap(),
+    );
+    for (request_target, envelope_target, replace_node) in [
+        (function, frame_target(), false),
+        (frame_target(), probe.clone(), false),
+        (frame_target(), probe, true),
+    ] {
+        for source in [
+            Source::Compiles,
+            Source::DoesNotCompile,
+            Source::EntryRemoved,
+        ] {
+            let unit = config_version_unit();
+            let package_id = package_digest(unit.compiled.emitted.package_id());
+            let domain_document = unit.domain_document.clone();
+            let input = forbidden_parent_change();
+            let documents = input.documents.clone();
+            let target = request_target.clone();
+            let mut case = case_in(
+                unit,
+                input,
+                child_change("parent"),
+                request_target.clone(),
+                envelope_target.clone(),
+                |wire, _| match source {
+                    Source::Compiles => {}
+                    Source::DoesNotCompile => {
+                        *wire = request(
+                            b"this is not a QSL unit\n",
+                            &domain_document,
+                            package_id,
+                            &documents,
+                            target,
+                        );
+                    }
+                    Source::EntryRemoved => wire.byte_provision.retain(|(domain, _, _)| {
+                        domain.as_deref() != Some(DigestDomain::SourceBytesV1.as_str())
+                    }),
+                },
+            );
+            if replace_node {
+                let mut packet = case.envelope.to_packet();
+                packet.clause_node = Some(WireNodeId::from_digest([9; 32]));
+                case.envelope =
+                    WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default()).unwrap();
+            }
+            let refusal = replay(case).unwrap_err();
+            match (&request_target, source, &refusal) {
+                (
+                    _,
+                    Source::EntryRemoved,
+                    ReplayRefusal::Request(ReplayRequestRefusal::IncompleteByteProvision {
+                        ..
+                    }),
+                ) => assert_eq!(refusal.code(), qsl_foundation::Code::MissingImport),
+                (
+                    ReplayTarget::Function(_),
+                    Source::Compiles | Source::DoesNotCompile,
+                    ReplayRefusal::WrongReplayTarget {
+                        target,
+                        entry,
+                        member,
+                    },
+                ) => {
+                    assert_eq!(**target, request_target);
+                    assert_eq!(*entry, "replay_frame");
+                    assert_eq!(*member, crate::TargetMember::FrameOperation);
+                    assert_eq!(target.member().pointer(), "/replay/function");
+                    assert_eq!(refusal.cause(), Some("unknown-member"));
+                }
+                (
+                    ReplayTarget::FrameOperation(_),
+                    Source::Compiles | Source::DoesNotCompile,
+                    ReplayRefusal::TargetMismatch { request, envelope },
+                ) => {
+                    assert_eq!(**request, request_target);
+                    assert_eq!(**envelope, envelope_target);
+                    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
+                    assert_eq!(refusal.cause(), Some("content-mismatch"));
+                }
+                _ => panic!("unexpected refusal for {request_target:?}: {refusal:?}"),
+            }
+        }
+    }
 }
 
 /// TC-515 step 4 (FR-116-AC-4): the pre snapshot absent from the byte

@@ -88,7 +88,9 @@ request the default refuses (TC-904).
   identity, the scalar node and its occurrence key, the obligation kind, the
   operator, the operands with their identities and ranges, the result range,
   the limits, the native outcome and the observation digest. The function identity
-  is the obligation identity, the `package_id` as supplied, the function, the
+  is the obligation identity, the `package_id` as supplied, the `function`
+  replay target as the request sent it (absent when it carried another
+  target, which the entry refuses), the
   `source` bindings as supplied, the request's effective accounting limits
   (its accounting limits overlaid by its `stage_limits` counter entries,
   FR-255 Behavior 10), never either member alone, and the generated

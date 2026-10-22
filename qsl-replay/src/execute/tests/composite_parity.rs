@@ -262,7 +262,7 @@ impl Unit {
         let compiled = recompile(&decoded, &limits).unwrap();
         let site = locate(
             &compiled,
-            decoded.selected_function(),
+            crate::execute::function_target(&decoded, "replay").unwrap(),
             claim.node,
             &claim.occurrence,
             claim.operator,
@@ -638,7 +638,7 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
     }));
 
     let mut undeclared = unit.wire("f", &claim(), vec![]);
-    undeclared.selected_function = name(&["nope"]);
+    undeclared.replay_target = crate::RequestTargetWire::function(name(&["nope"]));
     cases.push(("an undeclared function", undeclared, claim(), |refusal| {
         matches!(refusal, ReplayRefusal::UnknownFunction { .. })
     }));
@@ -1304,7 +1304,7 @@ fn prepared(
     let compiled = recompile(&request, &limits).unwrap();
     let site = locate(
         &compiled,
-        request.selected_function(),
+        crate::execute::function_target(&request, "replay").unwrap(),
         claim.node,
         &claim.occurrence,
         claim.operator,

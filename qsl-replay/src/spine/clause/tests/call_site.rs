@@ -546,6 +546,10 @@ fn call_site_refusal_codes_for_operations_clauses_and_intake() {
             [4; 32],
         ),
         &[],
+        crate::ReplayTarget::Function(
+            crate::QualifiedName::new(vec![quire_exact::Identifier::new("attemptUpdate").unwrap()])
+                .unwrap(),
+        ),
     );
     wire.byte_provision.retain(|(domain, _, _)| {
         domain.as_deref() != Some(qsl_foundation::digest::DigestDomain::Sha256Jcs.as_str())

@@ -32,7 +32,7 @@ use super::parity_identity::{
     parity_obligation, BoundEntries, Domain, ParityArgument, ParityPreimage,
 };
 use super::scalar_site::operand_identities;
-use super::{consumed, recompile, request_limits, Recompiled, ReplayRefusal};
+use super::{consumed, function_target, recompile, request_limits, Recompiled, ReplayRefusal};
 use crate::bounds::ReplayLimits;
 use crate::composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
@@ -62,6 +62,7 @@ fn prepare(
     replay_limits: ReplayLimits,
 ) -> Result<Prepared, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
+    let function = function_target(&request, "replay_composite_parity")?;
     let limits = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
@@ -70,7 +71,7 @@ fn prepare(
     let compiled = recompile(&request, &limits)?;
     let site = locate(
         &compiled,
-        request.selected_function(),
+        function,
         claim.node,
         &claim.occurrence,
         claim.operator,
@@ -219,7 +220,7 @@ pub(super) fn parity_preimage(
 ///
 /// `wire` is the original proving context: its `package_id`, package
 /// reference, dependencies and byte provision, the enclosing function of the
-/// claimed node as `selected_function`, the `obligation_identity` CG minted
+/// claimed node as the `function` replay target, the `obligation_identity` CG minted
 /// and the proving run's declared domains; its `source` is not read. `claim`
 /// names the equality node and the harness bounds, and `falsified` carries
 /// the operands CG decoded from the falsifying draw with the retained shadow

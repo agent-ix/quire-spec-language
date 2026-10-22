@@ -19,7 +19,7 @@ use super::parity_identity::{
     parity_obligation, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
 };
 use super::scalar_site::{applies, check_node_operands, in_body};
-use super::{lookup, recompile, request_limits, ReplayRefusal};
+use super::{function_target, lookup, recompile, request_limits, ReplayRefusal};
 use crate::bounds::ReplayLimits;
 use crate::identity::{ObligationIdentity, QualifiedName};
 use crate::request::{ReplayRequest, ReplayRequestWire};
@@ -234,6 +234,7 @@ fn settle(
     claim: &OperatorIdentity,
     replay_limits: ReplayLimits,
 ) -> Result<OperatorParityResult, ReplayRefusal> {
+    let function_name = function_target(request, "replay_operator_parity")?;
     let limits = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
@@ -262,12 +263,12 @@ fn settle(
             },
         )));
     }
-    let (_, function) = lookup(&compiled, request.selected_function())?;
+    let (_, function) = lookup(&compiled, function_name)?;
     if !in_body(graph, function.identity, node.key()) {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Function {
                 node: claim.node,
-                function: request.selected_function().clone(),
+                function: function_name.clone(),
                 package,
             },
         )));

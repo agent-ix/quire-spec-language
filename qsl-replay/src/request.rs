@@ -16,11 +16,11 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
-    SourceDigestWire,
+    DeclaredDomain, ObligationIdentity, ProfileSelection, RawSourceRef, SourceDigestWire,
 };
 use crate::limits::CallerLimits;
 use crate::object_environment::ObjectEnvironmentRef;
+use crate::target::{ReplayTarget, RequestTargetWire, TargetMember, TargetSelectionRefusal};
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
@@ -249,7 +249,7 @@ pub struct ReplayRequest {
     package_id: DigestRecord,
     source_digests: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
-    selected_function: QualifiedName,
+    replay_target: ReplayTarget,
     source: ReplaySource,
     profile_selections: Vec<ProfileSelection>,
     obligation_identity: ObligationIdentity,
@@ -277,12 +277,14 @@ impl ReplayRequest {
     pub fn dependencies(&self) -> &[DependencyEntry] {
         &self.dependencies
     }
-    /// The selected function. Always a typed [`QualifiedName`]; no
+    /// The replay target (QSpec FR-323): exactly one of a function, a
+    /// frame operation or a state clause, held as typed names only. No
     /// constructor or decoder on this type ever accepts a bare `&str` or
-    /// `String` here (FR-071-AC-3), and no `impl From<&str>`/`impl
-    /// From<String>` exists that could satisfy this position implicitly.
-    pub fn selected_function(&self) -> &QualifiedName {
-        &self.selected_function
+    /// `String` in a target position (FR-071-AC-3), and no `impl
+    /// From<&str>`/`impl From<String>` exists that could satisfy one
+    /// implicitly.
+    pub fn replay_target(&self) -> &ReplayTarget {
+        &self.replay_target
     }
     /// The witness or input replay source.
     pub fn source(&self) -> &ReplaySource {
@@ -381,8 +383,9 @@ pub struct ReplayRequestWire {
     /// The package reference's `dependencies`, one per entry of the proved
     /// package's `dependency_selections`.
     pub dependencies: Vec<DependencyEntryWire>,
-    /// The selected function.
-    pub selected_function: QualifiedName,
+    /// The replay target: the QSpec FR-323 target members, exactly one of
+    /// which a decodable request carries.
+    pub replay_target: RequestTargetWire,
     /// The witness or input replay source.
     pub source: ReplaySource,
     /// The obligation this request replays: the ADR-013 O-09 obligation
@@ -552,9 +555,74 @@ pub enum ReplayRequestRefusal {
         /// The entry's name as the request wrote it.
         name: String,
     },
+    /// QSpec FR-323 decode rule 1: the request carries none of the three
+    /// replay target members
+    /// (`invalid_runtime_input`/`missing-member` at `/replay`).
+    #[error(
+        "invalid_runtime_input/missing-member at /replay: the request carries no replay target"
+    )]
+    MissingReplayTarget,
+    /// QSpec FR-323 decode rule 1: the request carries more than one replay
+    /// target member, named in FR-323's order
+    /// (`invalid_runtime_input`/`invalid-value` at the last one's pointer).
+    #[error("invalid_runtime_input/invalid-value at {}: the request carries more than one replay target ({})", .members.last().map_or("/replay", |member| member.pointer()), join_members(.members))]
+    ConflictingReplayTarget {
+        /// The members present, in FR-323's order.
+        members: Vec<TargetMember>,
+    },
+    /// QSpec FR-323 decode rule 1: a frame or state-clause request carries
+    /// `arguments` (`invalid_runtime_input`/`unknown-member` at
+    /// `/replay/arguments`).
+    #[error("invalid_runtime_input/unknown-member at /replay/arguments: a {target} request carries no arguments")]
+    UnexpectedArguments {
+        /// The request's target member.
+        target: TargetMember,
+    },
+    /// QSpec FR-323 decode rule 1: a frame or state-clause request carries
+    /// an occurrence key (`invalid_runtime_input`/`unknown-member` at
+    /// `/replay/occurrence_key`).
+    #[error("invalid_runtime_input/unknown-member at /replay/occurrence_key: a {target} request carries no occurrence key")]
+    UnexpectedOccurrenceKey {
+        /// The request's target member.
+        target: TargetMember,
+    },
     /// The encoded request exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
+}
+
+fn join_members(members: &[TargetMember]) -> String {
+    members
+        .iter()
+        .map(|member| member.name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// QSpec FR-323 decode rule 1 over a request's target: exactly one target
+/// member, and `arguments` or an occurrence key only on a function request.
+fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestRefusal> {
+    let RequestTargetWire {
+        members,
+        arguments,
+        occurrence_key,
+    } = wire;
+    let target = members.select().map_err(|refusal| match refusal {
+        TargetSelectionRefusal::Missing => ReplayRequestRefusal::MissingReplayTarget,
+        TargetSelectionRefusal::Conflicting { members } => {
+            ReplayRequestRefusal::ConflictingReplayTarget { members }
+        }
+    })?;
+    let member = target.member();
+    if member != TargetMember::Function {
+        if arguments {
+            return Err(ReplayRequestRefusal::UnexpectedArguments { target: member });
+        }
+        if occurrence_key {
+            return Err(ReplayRequestRefusal::UnexpectedOccurrenceKey { target: member });
+        }
+    }
+    Ok(target)
 }
 
 /// `bytes`' digest under `domain`: SHA-256 of the raw bytes for a
@@ -635,8 +703,39 @@ impl ReplayRequestRefusal {
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
                 Code::InvalidIdentifier
             }
-            Self::StageLimitEntry { .. } => Code::InvalidRuntimeInput,
+            Self::StageLimitEntry { .. }
+            | Self::MissingReplayTarget
+            | Self::ConflictingReplayTarget { .. }
+            | Self::UnexpectedArguments { .. }
+            | Self::UnexpectedOccurrenceKey { .. } => Code::InvalidRuntimeInput,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
+        }
+    }
+
+    /// The catalog cause tag of a replay-target refusal (QSpec FR-323 decode
+    /// rule 1); `None` for every other refusal, whose text names its own.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::MissingReplayTarget => Some("missing-member"),
+            Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
+            Self::UnexpectedArguments { .. } | Self::UnexpectedOccurrenceKey { .. } => {
+                Some("unknown-member")
+            }
+            _ => None,
+        }
+    }
+
+    /// The RFC 6901 pointer of a replay-target refusal; `None` for every
+    /// other refusal.
+    pub fn pointer(&self) -> Option<&'static str> {
+        match self {
+            Self::MissingReplayTarget => Some("/replay"),
+            Self::ConflictingReplayTarget { members } => {
+                Some(members.last().map_or("/replay", |member| member.pointer()))
+            }
+            Self::UnexpectedArguments { .. } => Some("/replay/arguments"),
+            Self::UnexpectedOccurrenceKey { .. } => Some("/replay/occurrence_key"),
+            _ => None,
         }
     }
 }
@@ -686,7 +785,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
                         .sum::<usize>()
             })
             .sum::<usize>()
-        + wire.selected_function.to_string().len()
+        + wire.replay_target.members.measured_bytes()
         + wire.backend.len()
         + wire
             .state_environment
@@ -722,10 +821,12 @@ impl ReplayRequest {
     /// before either refusal.
     #[ix_trace_rs::string_edge]
     pub fn decode(
-        wire: ReplayRequestWire,
+        mut wire: ReplayRequestWire,
         limits: ReplayLimits,
     ) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire), limits)?;
+        // QSpec FR-323 decode rule 1: before any byte-provision rule.
+        let replay_target = decode_target(std::mem::take(&mut wire.replay_target))?;
         for selection in &wire.profile_selections {
             if !KNOWN_SEMANTIC_PROFILES.contains(&selection.profile()) {
                 return Err(ReplayRequestRefusal::UnknownSemanticProfile {
@@ -847,7 +948,7 @@ impl ReplayRequest {
             package_id,
             source_digests,
             dependencies,
-            selected_function: wire.selected_function,
+            replay_target,
             source: wire.source,
             profile_selections: wire.profile_selections,
             obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
@@ -889,7 +990,7 @@ impl ReplayRequest {
                     sources: entry.sources.iter().map(RawSourceRef::to_wire).collect(),
                 })
                 .collect(),
-            selected_function: self.selected_function.clone(),
+            replay_target: self.replay_target.clone().into(),
             source: self.source.clone(),
             obligation_identity: *self.obligation_identity.as_bytes(),
             backend: self.backend.as_str().to_owned(),
@@ -919,6 +1020,8 @@ impl ReplayRequest {
 mod tests {
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
+    use crate::identity::QualifiedName;
+    use crate::target::ReplayTargetMembers;
     use ix_trace_rs::trace;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
     use quire_exact::Identifier;
@@ -970,11 +1073,13 @@ mod tests {
                 DigestRecord::mint(DigestDomain::SourceBytesV1, source_digest).hex(),
             )],
             dependencies: Vec::new(),
-            selected_function: QualifiedName::new(vec![
-                Identifier::new("module").unwrap(),
-                Identifier::new("f").unwrap(),
-            ])
-            .unwrap(),
+            replay_target: RequestTargetWire::function(
+                QualifiedName::new(vec![
+                    Identifier::new("module").unwrap(),
+                    Identifier::new("f").unwrap(),
+                ])
+                .unwrap(),
+            ),
             source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: crate::witness::WitnessValue::Integer(42),
@@ -1359,13 +1464,13 @@ mod tests {
         assert_eq!(request.backend().as_str(), " kani ");
     }
 
-    /// FR-071-AC-3 (TC-187): the selected-function accessor and wire field
-    /// are both typed `QualifiedName`; a multi-segment name round-trips its
-    /// full segment sequence. (The "fails to compile" half of TC-187 -- no
-    /// `&str`/`String` entry point exists at all -- is a structural fact
-    /// about this module's public API, checked by inspection: `decode` and
-    /// `ReplayRequestWire::selected_function` are the only two entry points
-    /// that set this member, and both are typed `QualifiedName`.)
+    /// FR-071-AC-3 (TC-187): the replay target holds typed names only; a
+    /// multi-segment function name round-trips its full segment sequence.
+    /// (The "fails to compile" half of TC-187 -- no `&str`/`String` entry
+    /// point exists at all -- is a structural fact about this module's
+    /// public API, checked by inspection: `decode` and
+    /// `ReplayRequestWire::replay_target` are the only two entry points that
+    /// set this member, and both are typed.)
     ///
     /// N1: no `#[trace]` tag -- this test cannot fail on TC-187/FR-071-AC-3's
     /// full claim (that no bare-string entry point exists at all), only on
@@ -1373,13 +1478,135 @@ mod tests {
     #[test]
     fn tc_187_selection_is_always_a_typed_qualified_name() {
         let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();
-        assert_eq!(request.selected_function().segments().len(), 2);
+        let ReplayTarget::Function(function) = request.replay_target() else {
+            panic!("the wire's target is a function");
+        };
+        assert_eq!(function.segments().len(), 2);
         let round_tripped =
             ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
-        assert_eq!(
-            round_tripped.selected_function().segments(),
-            request.selected_function().segments()
-        );
+        assert_eq!(round_tripped.replay_target(), request.replay_target());
+    }
+
+    fn frame_target() -> crate::witness::FrameOperation {
+        crate::witness::FrameOperation {
+            object: QualifiedName::new(vec![
+                Identifier::new("Config").unwrap(),
+                Identifier::new("ConfigVersion").unwrap(),
+            ])
+            .unwrap(),
+            operation: Identifier::new("attemptUpdate").unwrap(),
+        }
+    }
+
+    fn clause_name() -> QualifiedName {
+        QualifiedName::new(vec![Identifier::new("VersionUnchanged").unwrap()]).unwrap()
+    }
+
+    fn refusal_of(wire: ReplayRequestWire) -> ReplayRequestRefusal {
+        ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap_err()
+    }
+
+    /// FR-071-AC-14 (TC-185 step 6): a function, a frame-operation and a
+    /// state-clause request each round-trip with that one target.
+    #[trace("TC-185", "FR-071-AC-14")]
+    #[test]
+    fn tc_185_each_replay_target_round_trips() {
+        let targets = [
+            ReplayTarget::Function(
+                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            ),
+            ReplayTarget::FrameOperation(frame_target()),
+            ReplayTarget::StateClause(clause_name()),
+        ];
+        for target in targets {
+            let mut wire = wire(1);
+            wire.replay_target = target.clone().into();
+            let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
+            assert_eq!(request.replay_target(), &target);
+            let again =
+                ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
+            assert_eq!(again.replay_target(), &target);
+        }
+    }
+
+    /// FR-071-AC-14 (TC-185 step 6): the reader refuses none, two and a
+    /// frame or state-clause request carrying `arguments` or an occurrence
+    /// key, with FR-323's codes and pointers, and a removed byte-provision
+    /// entry changes none of them.
+    #[trace("TC-185", "FR-071-AC-14")]
+    #[test]
+    fn tc_185_replay_target_refusals_precede_the_byte_provision_rule() {
+        let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+        let cases: [(RequestTargetWire, ReplayRequestRefusal, &str, &str); 5] = [
+            (
+                RequestTargetWire::default(),
+                ReplayRequestRefusal::MissingReplayTarget,
+                "missing-member",
+                "/replay",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: Some(function.clone()),
+                    frame_operation: Some(frame_target()),
+                    state_clause: None,
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![TargetMember::Function, TargetMember::FrameOperation],
+                },
+                "invalid-value",
+                "/replay/frame_operation",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: Some(function.clone()),
+                    frame_operation: None,
+                    state_clause: Some(clause_name()),
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![TargetMember::Function, TargetMember::StateClause],
+                },
+                "invalid-value",
+                "/replay/state_clause",
+            ),
+            (
+                RequestTargetWire {
+                    arguments: true,
+                    ..RequestTargetWire::frame_operation(frame_target())
+                },
+                ReplayRequestRefusal::UnexpectedArguments {
+                    target: TargetMember::FrameOperation,
+                },
+                "unknown-member",
+                "/replay/arguments",
+            ),
+            (
+                RequestTargetWire {
+                    occurrence_key: true,
+                    ..RequestTargetWire::state_clause(clause_name())
+                },
+                ReplayRequestRefusal::UnexpectedOccurrenceKey {
+                    target: TargetMember::StateClause,
+                },
+                "unknown-member",
+                "/replay/occurrence_key",
+            ),
+        ];
+        for (target, expected, cause, pointer) in cases {
+            for strip_provision in [false, true] {
+                let mut wire = wire(1);
+                wire.replay_target = target.clone();
+                if strip_provision {
+                    wire.byte_provision.clear();
+                }
+                let refusal = refusal_of(wire);
+                assert_eq!(refusal, expected);
+                assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+                assert_eq!(refusal.cause(), Some(cause));
+                assert_eq!(refusal.pointer(), Some(pointer));
+            }
+        }
     }
 
     /// A `sha256-jcs` byte-provision entry that intake's read refuses keeps
