@@ -37,3 +37,12 @@ Units examined:
 | --- | --- | --- | --- |
 | FND-001 | medium | [minor] AC-9 and TC-462 step 6 name the fixture `state_clause_operation_and_population_variants`, which exists nowhere on main or on any open branch of the repo. The name comes from the QSL-676 report, quoted in STD-279. A test author cannot build it from the spec, so this part of the AC rests on an unpublished artifact. Describe the fixture's content (which clauses, operations and populations it holds), or drop that sentence: the ConfigVersion and R vectors already cover the rule. | spec/functional/FR-105-emit-state-nodes.md:162 |
 | FND-002 | low | [minor] 'A `generated` frame occurrence with no region still refuses' is change-relative wording. Write 'refuses `UnlocatedOccurrence` (FR-062)'. | spec/functional/FR-105-emit-state-nodes.md:162 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | bc79a8af6: FR-105-AC-9 and TC-462 step 6 drop the unpublished fixture; the ConfigVersion and R vectors remain. |
+| FND-002 | fixed | bc79a8af6: 'A `generated` frame occurrence with no region refuses `UnlocatedOccurrence` (FR-062).' |
+
+Disposition pass 1 verdict (head bc79a8af6): **MERGEABLE.**
