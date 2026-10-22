@@ -13,8 +13,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-185
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-250
+  - target: ix://agent-ix/quire-spec-language/FR-259
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-250
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-280
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-193
@@ -30,11 +32,12 @@ relationships:
 
 ## Description
 
-When a unit holds a `hybrid-decl` (QSpec FR-193 "Source form and the clock
-line"), S2 (`qsl-forms`) SHALL build one declaration form for it, S3 SHALL
-check it into a checked hybrid model on the checked package, and the request
-writer SHALL lower each claim over that model to an FR-331 request item that
-negotiation (FR-075) routes to a hybrid provider. The checked hybrid model
+This requirement covers a unit that holds a `hybrid-decl` (QSpec FR-193
+"Source form and the clock line"). S2 (`qsl-forms`) builds one declaration
+form for it. S3 checks that form into a checked hybrid model on the checked
+package. The request writer lowers each claim over that model to an FR-331
+request item that negotiation (FR-075) routes to a hybrid provider. The
+Behavior section states each stage's rules. The checked hybrid model
 records each mode's rate of each continuous variable and classifies each
 variable as a clock or as hybrid dynamics, which is ADR-026 HY-1's line
 between EN-6 and an external solver. QSpec FR-193 owns the production and its
@@ -44,27 +47,30 @@ FR-250 maps the provider's result to a verdict.
 
 ## Use case
 
-A robotics engineer models a braking vehicle: in mode `Moving` the speed `v`
-falls at the deceleration `a` and a timer `t` runs, and the vehicle jumps to
-`Stopped` when `v` reaches 0. They claim that `v` stays below 30 for the
-first 10 s.
+A robotics engineer models a braking vehicle: in mode `Moving` the speed `v`,
+at most 20, falls at the deceleration `a`, between 1 and 2, and a timer `t`
+runs, and the vehicle jumps to `Stopped` when `v` reaches 0. They claim that
+`v` stays below 30 for the first 10 s.
 
 ```
 hybrid Braking using p {
-  mode Moving invariant { v >= 0 }
+  mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 }
     flow { v' = -a; a' = 0; t' = 1; }
     transition to Stopped when { v = 0 } reset { v = 0 };
   mode Stopped invariant { v = 0 }
     flow { v' = 0; a' = 0; t' = 1; }
 }
 temporal SlowEnough using p over (h: Braking) clock "model-time" on origin {
-  always [0, 10] h.v < 30
+  always [0, 10] holds(h.v < 30)
 }
 ```
 
-S3 records `v` and `a` as hybrid and `t` as a clock, and the claim routes to
-the registered hybrid provider. Writing `transition to Halted` names no mode,
-and S3 refuses it with a span.
+`p` selects `quire.temporal.infinite-trace/v1`, so a claim may also write an
+operator with no interval (FR-123). Every initial state has `v` at most 20,
+and `v` only falls, so the claim holds. S3 records `v` and `a` as hybrid and
+`t` as a clock, and the claim routes to the registered hybrid provider.
+Writing `transition to Halted` names no mode, and S3 refuses it with a
+span.
 
 ## Inputs
 
@@ -129,9 +135,19 @@ pub enum HybridTerm {
 }
 pub struct CheckedHybridClaim {
     pub model: HybridModelIndex,
-    pub formula: HybridFormula,               // the temporal expression, atoms as HybridTerm
-    pub horizon: Option<ExactRational>,       // seconds; None for an unbounded claim
+    pub formula: HybridFormula,
+    pub horizon: Option<u64>,                 // whole seconds; None for an unbounded claim
 }
+pub enum HybridFormula {
+    Holds(HybridTerm),                        // holds(e), and true and false
+    Not(Box<HybridFormula>),
+    Logic(LogicOp, Box<HybridFormula>, Box<HybridFormula>),       // and or implies
+    Always(Option<HybridInterval>, Box<HybridFormula>),
+    Eventually(Option<HybridInterval>, Box<HybridFormula>),
+    Until(Option<HybridInterval>, Box<HybridFormula>, Box<HybridFormula>),
+    Release(Option<HybridInterval>, Box<HybridFormula>, Box<HybridFormula>),
+}
+pub struct HybridInterval { pub lower: u64, pub upper: Option<u64> } // seconds; None for `*`
 ```
 
 `CheckedPackage::hybrid_models: Vec<CheckedHybridModel>` and
@@ -183,9 +199,11 @@ order. A typed `CheckRefusal` with a span on refusal.
 
 ### The clock line
 
-- S3 SHALL classify a continuous variable as `Clock` when its rate is a
-  numeric literal of exact value 1 in every mode, and every other
-  continuous variable as `Hybrid` (ADR-026 HY-1).
+- S3 SHALL classify a continuous variable as `Clock` when its rate is the
+  numeric literal `1` in every mode, and every other continuous variable as
+  `Hybrid` (ADR-026 HY-1; QSpec FR-193 "Source form and the clock line").
+  S3 folds no constant: a rate written `2 - 1` or `rational(2, 2)` is not
+  the literal `1`, so its variable is `Hybrid`.
 - If every continuous variable of a declaration is a `Clock`, then S3 SHALL
   refuse the declaration `invalid_timed_model`/`rate-one-hybrid` at its
   name's span, naming the timed model form (`time dense` with `Clock`
@@ -229,19 +247,41 @@ order. A typed `CheckRefusal` with a span on refusal.
   refuse `unsupported_construct`/`declaration-form` at its span.
 - In a hybrid claim's body, `h.x`, with `h` the `over` parameter, SHALL read
   the continuous variable `x`; a member that is no continuous variable SHALL
-  refuse `missing_declaration`/`missing-name` at its span. Every atom SHALL
-  take the expression forms of the previous section and lower to a
-  `HybridTerm`.
-- A hybrid claim SHALL have the horizon `Some(n)`, `n` the greatest upper
-  bound of its intervals, when every temporal operator of its body carries
-  an interval with a finite upper bound, and `None` otherwise.
+  refuse `missing_declaration`/`missing-name` at its span. The expression of
+  each `holds(...)` SHALL take the expression forms of the previous section
+  and lower to a `HybridTerm`; `true` and `false` lower to
+  `Holds(Boolean(..))`.
+- S3 SHALL lower a hybrid claim's body to a `HybridFormula`: `not`, `and`,
+  `or` and `implies`, and the future operators `always`, `eventually`,
+  `until` and `release`, each with its interval when it writes one. The past
+  operators `once`, `historically`, `since` and `triggered`, and any
+  `holds(...)` over a hyper expression, SHALL refuse
+  `unsupported_construct`/`expression-form` at the operator's span, naming
+  the operator.
+- An operator with no interval is admitted only where the unit's profile
+  admits it (FR-123), and its subformula is unbounded.
+- S3 SHALL compute the claim's horizon as the reach `r` of its formula,
+  the latest time in seconds whose state the formula reads:
+  `r(Holds(_))` is 0; `r(Not(f))` is `r(f)`; `r(Logic(_, f, g))` is the
+  greater of `r(f)` and `r(g)`; `r(Always(i, f))` and `r(Eventually(i, f))`
+  are `u + r(f)`; and `r(Until(i, f, g))` and `r(Release(i, f, g))` are
+  `u` plus the greater of `r(f)` and `r(g)`, where `u` is `i`'s upper bound.
+  The reach is unbounded when any operator on the way has no interval or
+  the upper bound `*`, or any operand's reach is unbounded. The horizon SHALL
+  be `Some(r)` when the reach is bounded and `None` otherwise. So
+  `always [0, 10] eventually [0, 5] holds(h.v < 30)` has horizon 15.
 
 ### The checked record
 
 - S3 SHALL record each checked hybrid model and each checked hybrid claim on
-  the checked package, so two packages that differ in a mode, a rate, a
-  guard, a reset, a classification or a claim have different package
-  identities.
+  the checked package, and the checked package identity (FR-003, FR-259)
+  SHALL take them into its preimage: each `CheckedHybridModel`, then each
+  `CheckedHybridClaim`, in source order, as one quire-canonical (FR-259) JSON
+  object of its members in the order this requirement declares them, each
+  enum value an object whose `type` member is the variant name in
+  kebab-case and whose other members are its fields. So two packages that
+  differ in a mode, a rate, a guard, a reset, a classification or a claim
+  have different checked package identities.
 - The `CheckedHybridModel` SHALL be the one form the request writer and a
   hybrid provider read; neither re-reads source.
 
@@ -276,9 +316,9 @@ order. A typed `CheckRefusal` with a span on refusal.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-447-AC-1 | The use case's `Braking` builds one `HybridForm` with modes `Moving` and `Stopped` in that order, `Moving` holding three equations and one transition to `Stopped`, each with its span; S3 checks it to a `CheckedHybridModel` whose variables are `v`, `a` and `t` in that order, classified `Hybrid`, `Hybrid` and `Clock`, whose `Moving` rates are `Negate(Variable(1))`, `Constant(0)` and `Constant(1)`, whose initial mode is `Moving`, and whose transition's reset is `[(0, Constant(0))]`. | Test (TC-1187) |
-| FR-447-AC-2 | Each mutation of `Braking` refuses at its span with the cause given: a second mode `Moving`, `conflicting_declaration`/`duplicate-declaration`; `transition to Halted`, `missing_declaration`/`missing-name`; `Stopped` without `t' = 1;`, `invalid_model_binding`/`malformed-declaration` naming `Stopped` and `t`; a second `v' = 0;` in `Moving`, `conflicting_declaration`/`duplicate-declaration`; `P::v' = 0;`, `invalid_model_binding`/`malformed-declaration`; an invariant `{ v }`, `ill_typed`/`non-boolean-root`; a reset `{ v > 0 }`, `invalid_model_binding`/`malformed-declaration`; a reset `{ v = 0 and v = 1 }`, `conflicting_declaration`/`duplicate-declaration`; a guard reading `w`, `missing_declaration`/`missing-name`; a flow `v' = f(v)`, `unsupported_construct`/`expression-form`; and a declaration whose only equations are `t' = 1;` in each mode, `invalid_timed_model`/`rate-one-hybrid`. | Test (TC-1187) |
-| FR-447-AC-3 | `SlowEnough` checks to a `CheckedHybridClaim` over `Braking` with horizon 10 and the atom `Compare(Lt, Variable(0), Constant(30))`; the same claim with `always h.v < 30` has horizon `None`. `clock "model-steps"`, `on each`, a `fair` clause and a capture are each refused `unsupported_construct`/`declaration-form`, and `h.w` is refused `missing_declaration`/`missing-name`. | Test (TC-1187) |
-| FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, and with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different package identities. | Test (TC-1187) |
+| FR-447-AC-2 | Each mutation of `Braking` refuses at its span with the cause given: a second mode `Moving`, `conflicting_declaration`/`duplicate-declaration`; `transition to Halted`, `missing_declaration`/`missing-name`; `Stopped` without `t' = 1;`, `invalid_model_binding`/`malformed-declaration` naming `Stopped` and `t`; a second `v' = 0;` in `Moving`, `conflicting_declaration`/`duplicate-declaration`; `P::v' = 0;`, `invalid_model_binding`/`malformed-declaration`; an invariant `{ v }`, `ill_typed`/`non-boolean-root`; a reset `{ v > 0 }`, `invalid_model_binding`/`malformed-declaration`; a reset `{ v = 0 and v = 1 }`, `conflicting_declaration`/`duplicate-declaration`; a guard reading `w`, `missing_declaration`/`missing-name`; a guard `when { v + 1 }`, `ill_typed`/`non-boolean-root`; a flow `v' = true;`, `ill_typed`/`type-mismatch`; a flow `v' = f(v)`, `unsupported_construct`/`expression-form`; and a declaration whose only equations are `t' = 1;` in each mode, `invalid_timed_model`/`rate-one-hybrid`. | Test (TC-1187) |
+| FR-447-AC-3 | `SlowEnough` checks to a `CheckedHybridClaim` over `Braking` with the formula `Always(Some([0, 10]), Holds(Compare(Lt, Variable(0), Constant(30))))` and horizon 10; with the body `always [0, 10] eventually [0, 5] holds(h.v < 30)` the horizon is 15, with `holds(h.v < 30) until [0, 4] holds(h.v = 0)` it is 4, and with `always holds(h.v < 30)` or `always [0, *] holds(h.v < 30)` it is `None`. `once [0, 2] holds(h.v = 0)` is refused `unsupported_construct`/`expression-form`; `clock "model-steps"`, `on each`, a `fair` clause and a capture are each refused `unsupported_construct`/`declaration-form`; and `h.w` is refused `missing_declaration`/`missing-name`. | Test (TC-1187) |
+| FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, and with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different checked package identities. | Test (TC-1187) |
 | FR-447-AC-5 | S4 refuses the package holding `Braking` `unsupported_construct`/`not-yet-implemented` naming `Braking` and the feature `hybrid-model`, while the checked package remains and serves AC-4's in-process provider; the same item routed to a process provider settles `unsupported` with a diagnostic. | Test (TC-1187) |
 
 ## Dependencies

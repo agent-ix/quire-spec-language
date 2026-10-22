@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-447
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-290
+    type: references
   - target: ix://agent-ix/quire-specification/FR-193
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
@@ -80,11 +82,9 @@ The FR-331 terminal record of the claim.
 
 ## Behavior
 
-- S3 SHALL classify a continuous variable as a clock when its rate is the
-  literal 1 in every mode, and every other continuous variable as hybrid
-  dynamics, and SHALL record the class on the checked hybrid model (FR-447
-  "The clock line"). The request writer SHALL read the class from the
-  checked model and SHALL NOT classify again.
+- The request writer SHALL read each continuous variable's class, clock or
+  hybrid dynamics, from the checked hybrid model, where S3 records it by
+  FR-447 "The clock line", and SHALL NOT classify again.
 - The request writer SHALL give a claim whose subject has hybrid dynamics
   the requirement QSpec FR-193 names, for negotiation (FR-075) to route to a
   registered provider.
@@ -173,7 +173,7 @@ The FR-331 terminal record of the claim.
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
 | FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `max_solver_steps` stop settles `incomplete`, `LimitReached{limit: max_solver_steps, ...}`; a `max_solver_time` stop and a provider `deadline_ms` overrun each settle `incomplete`, `TimedOut`; a frontend deadline settles `incomplete`, `Cancelled{source: deadline}`. No fixture result settles `refuted`. | Test (TC-705) |
 | FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled{source: deadline}` raised on a run whose frontend FR-276 deadline fires; a wire `max_solver_time` of 1.5, a zero budget, an unknown `hybrid.limits` member, an empty `hybrid` and a `hybrid` with an empty `limits` are each refused by the hybrid provider before consumption; a request that sets no budget omits both members; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes, a `TimedOut` result of the shorter one being stored by neither. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: max_solver_steps, value: 1000, setting: hybrid.max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
-| FR-250-AC-4 | A fixture `EnclosureMeetsUnsafe` over FR-447's `Braking` carrying a trace that starts in `Moving` and takes transition 0 to `Stopped` settles `inconclusive`, `SolverInconclusive{trace: Some(..)}`, the trace equal to the fixture's, with no `counterexamples` entry and no replay run; a `DeltaSat` carrying none settles `SolverInconclusive{trace: None}`; that trace with transition 1, with an enclosure missing `t`, and with a time interval whose lower bound is 3 and upper bound 2, is each refused `invalid_result`/`invalid-value` at the member. | Test (TC-705) |
+| FR-250-AC-4 | A fixture `EnclosureMeetsUnsafe` over FR-447's `Braking` carrying a trace that starts in `Moving` and takes transition 0 to `Stopped` settles `inconclusive`, `SolverInconclusive{trace: Some(..)}`, the trace equal to the fixture's, with no `counterexamples` entry and no replay run; a `DeltaSat` carrying none settles `SolverInconclusive{trace: None}`; that trace with transition 1, with an enclosure missing `t`, and with a time interval whose lower bound is 3 and upper bound 2, is each refused `invalid_result`/`invalid-value` at the member. Through the plugin reader (FR-290), a `solver-inconclusive` entry carrying that trace in QSpec FR-193's wire form on the `Braking` claim reads `SolverInconclusive{trace: Some(..)}` with the same trace, and the same entry on an FR-468 refinement item is `Malformed` at `/cause/trace`. | Test (TC-705) |
 
 ## Dependencies
 
