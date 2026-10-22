@@ -883,6 +883,19 @@ Rules that close the ADR-010 OBS-016 cycles:
 - **`route` is not S3.** The checker never reads the registry (ADR-012 §6).
   `route` reads the S4 capability report and computes candidate sets. It
   negotiates nothing per item. CG's per-item negotiation at E7 stays in CG.
+- **Evaluator-path crates are `no_std`-capable behind `std`.** A QSL crate
+  that an AD-001 slice converts declares a default-on `std` feature and
+  builds with `core` and `alloc` only when it is off (NFR-015). With `std`
+  off, F's external crates are `serde`, `sha2` and `thiserror`, each without
+  `std`, and the `ix-trace-rs` proc macro; layer 4 names
+  `quire-contract-model` only under `std`, so its v2 emitter and I2 reader
+  are `std` items while the checked package itself is not. NFR-015's
+  per-crate table records each crate's class (closure or crate tier).
+  `make build-no-std` runs each row's tier command, one package at a time:
+  a `thumbv7em-none-eabi` build for the closure tier, a host check for the
+  crate tier. No `std` feature changes a layer edge: the "Depends on" column
+  holds in both configurations, so a layer crate reaches the closure tier
+  only when the lower layers it depends on are `no_std`-capable.
 - **Families are modules, not crates.** Every family (ADR-012 §1) is a set of
   modules inside its layers' crates: a form builder under `forms` in
   `qsl-forms`, a checker under `check` in `qsl-semantics`, an emission arm
