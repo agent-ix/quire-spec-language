@@ -29,7 +29,8 @@ no bad state, and its checker-owned non-progress check below finds no
 admitted violating lasso, recomputing every successor with the core's own code
 (ADR-018 PC-3, PC-5, LA-3). A proof whose certificate it accepts settles
 `proved`, `Certified` (FR-127); one it rejects settles `inconclusive`,
-`CertificateRejected`.
+`CertificateRejected`; one whose certificate names a `package_id` other than
+the recompiled package's settles `inconclusive`, `StaleDependency` (FR-282).
 
 ## Use case
 
@@ -51,7 +52,10 @@ pub struct ProductStateRef {
     pub model_state: DigestRecord,          // quire.simulation.state-key/v1
     pub automaton_state: AutomatonStateKey, // the translation's canonical key
 }
-pub struct ClosureCertificate { pub states: Vec<ProductStateRef> }
+pub struct ClosureCertificate {
+    pub package_id: PackageId,              // the package EN-1 explored
+    pub states: Vec<ProductStateRef>,
+}
 
 pub enum CertificateRule {
     InitialMissing, SuccessorMissing, BadState, NotPartition, BackwardEdge,
@@ -70,6 +74,7 @@ pub enum TemporalCertificateCheck {
     Accepted,
     Rejected(CertificateRejection),
     Stopped(IncompleteCause), // existing LimitReached{limit,value,setting} or Cancelled{source}
+    PackageMismatch { certificate: PackageId, recompiled: PackageId },  // FR-282
 }
 
 pub fn check_closure(
@@ -79,6 +84,10 @@ pub fn check_closure(
     cancel: &Cancel,           // FR-276
 ) -> TemporalCertificateCheck;
 ```
+
+EN-1 SHALL set a `ClosureCertificate`'s `package_id` to the `package_id` of
+the package it explored (FR-126); `PackageId` is the type FR-169's
+state-graph certificate and FR-127's `StaleDependency` carry.
 
 `AutomatonStateKey` is the property-automaton translation's canonical
 encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
@@ -660,9 +669,20 @@ different materialization orders SHALL produce identical full octets.
   actual charged value and request setting, or cancellation source, before
   completion. A stop is neither acceptance nor bad-certificate rejection;
   FR-127 settles it `Incomplete` with those same fields.
+- `PackageMismatch{certificate, recompiled}` naming the certificate's and
+  the recompiled package's `package_id` when they differ, with no rule
+  evaluated; FR-127 settles it `Inconclusive(StaleDependency{requested,
+  recompiled})` with `requested` the certificate's `package_id`.
 
 ## Behavior
 
+- The checker SHALL compare the recompiled package's `package_id` with the
+  certificate's `package_id` first, before it resolves the request's clause
+  root, admits any key or evaluates any rule.
+- When the two `package_id`s differ, the checker SHALL return
+  `PackageMismatch{certificate, recompiled}` naming both, evaluating nothing
+  else (FR-282); a stale certificate is never `Rejected`, `Stopped` or
+  `Accepted`.
 - The checker SHALL rebuild the item's property automaton with
   `qsl-eval`'s translation, and SHALL read nothing from the engine but the
   certificate.
@@ -678,7 +698,8 @@ different materialization orders SHALL produce identical full octets.
   least refused `ProductStateRef`, ordered by the `model_state` digest
   octets and then the `automaton_state` octets, ascending unsigned
   lexicographic, so the locus does not depend on the order of `states`.
-- If the request's own clause root does not resolve in the recompiled
+- If the certificate's `package_id` equals the recompiled one and the
+  request's own clause root does not resolve in the recompiled
   package (FR-337's `clause-root-unresolved`), then the checker SHALL refuse
   the request without running the check, because that is a fault in the
   request, not in the certificate; FR-127 settles it `Failed`. A key whose
@@ -717,9 +738,10 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
 | FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
-| FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
+| FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve, with a certificate whose `package_id` equals the recompiled one, is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
 | FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]`, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has two instances, and each instance's `context` is `[root, profile, "infinite", [[N, ["instance", T, "a"]]]]` with `N` the `over` parameter's NodeId and `T` the JSON string of `P1`'s, respectively `P2`'s, declaration identity text; the two contexts' octets differ exactly in `T`, and a certificate state carrying `P1`'s context is not admitted under `P2`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", T, "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the four-element `["instance", T, "a", O]` with `O` the JSON string of `Counter`'s declaration identity text; and `["instance", T, {"type":"text","value":"a"}]`. Over a subject with population `P1` of `Counter`, universe `["a"]`, and two initial states, one holding a `Counter` under key `a` and one holding a `Fast` (a subtype of `Counter`) under key `a`, the instance's context octets are equal in both. | Test (TC-1164) |
 | FR-338-AC-10 | Fixture: the `Counter` subject (no `terminal` declaration) and a checked package of its unit that carries the guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation aggregate `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's Boolean guard term), built by the test because S4 refuses an `on each` clause `NotEmitted` (FR-337, QSL-926); the same package supplies the engine's clause and stands as the request's recompiled package, and each `when` condition is read by the test's own letters as in FR-126-AC-16. `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value = 7` returns `Holds` whose certificate holds values 0 to 3, each with activation `"each-when"` and state body `["safety",[[[],[],[],[]]]]`, and `check_closure` accepts it, so FR-127 settles `proved`. `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with the condition `c.value >= 2` returns `Holds` whose certificate `check_closure` accepts, its value-0 and value-1 states having body `["bounded",["each"],[[[],[],[],[]]]]` and its value-2 state body `["bounded",["each"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; that certificate with the value-2 state's body replaced by `["bounded",["each"],[[[],[],[],[]]]]` (the condition misread as false) is rejected `SuccessorMissing` at the value-2 product state with the deadline body; the same certificate with the misread value-2 state added beside the deadline one is accepted; the accepted certificate with every key's activation replaced by `"each"` is rejected `ShapeMismatch` at the least refused `ProductStateRef` (AC-8's order). With the condition false at values 0 and 1 and undefined at value 2, the certificate holding exactly the value-0 and value-1 states, each with activation `"each-when"` and body `["bounded",["each"],[[[],[],[],[]]]]`, is rejected `BadState` at the value-1 product state, whose expansion reads the undefined condition at value 2. | Test (TC-525) |
+| FR-338-AC-11 | Package identity. AC-1's certificate carries the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by that of the same unit with the claim's bound edited to `1001` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with its initial product state also removed (AC-2's `InitialMissing` defect) still returns `PackageMismatch`, because no rule is evaluated. A request whose clause root is the edited unit's clause node, which does not resolve in AC-1's recompiled package, with a certificate naming the edited unit's `package_id`, returns `PackageMismatch` and settles `Inconclusive(StaleDependency{requested, recompiled})`, not `Failed`, because the package comparison precedes the clause-root resolution. | Test (TC-1141) |
 
 ## Dependencies
 
