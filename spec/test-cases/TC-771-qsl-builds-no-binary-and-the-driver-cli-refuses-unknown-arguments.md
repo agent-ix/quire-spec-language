@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify QSL's side of the CLI boundary: the workspace's only executable targets are the developer tools in `xtask` and under `tools/`, and `command` returns typed outcomes without touching the process streams.
+Verify QSL's side of the CLI boundary: the workspace's only executable targets are in the developer-tool packages (`xtask`, `tools/*`, `qsl-string-edge`, `qsl-bench`), and `command` returns typed outcomes without touching the process streams.
 
 Scope: FR-287-AC-1, FR-287-AC-2.
 
@@ -23,5 +23,5 @@ Tag the tests `#[trace("TC-771", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: every `bin` target belongs to `xtask` or to a package whose manifest directory starts with `tools/`; `quire-spec-language` has no `bin` target and a null `default_run`; no package outside `xtask` and `tools/` has a normal or build dependency (`kind` null or `build`) naming `xtask` or a `tools/` package.
+- Step 1: every `bin` target belongs to `xtask`, `qsl-string-edge`, `qsl-bench` or a package whose manifest directory starts with `tools/`; `quire-spec-language` has no `bin` target and a null `default_run`; no package outside those has a normal or build dependency (`kind` null or `build`) naming one of them.
 - Step 2: the first outcome is success, exit 0; the second is incomplete, exit 22; the captured streams are empty.

@@ -27,9 +27,13 @@ relationships:
 ## Description
 
 The user binary is `quire`, built from the driver repository (ADR-029 CB-1).
-QSL builds no user binary. Its only executable targets are developer tools
-that run against the repository itself and that no QSL library's build
-depends on: the `xtask` package and the packages under `tools/`. The request
+QSL builds no user binary. Its only executable targets are the developer
+tools, the packages that run against source trees and measurements rather
+than serve a user and that no QSL library's build depends on: `xtask`, the
+packages whose manifest directory is under `tools/`, `qsl-string-edge` (the
+standalone string-edge scanner FR-064 requires as a binary) and `qsl-bench`
+(whose `qsl-bench-probe` binary MP-006's probe and the Makefile's
+`BENCH_PROBE` run). The request
 handling FR-027 and FR-100 specify is a QSL library operation, `command`,
 which the driver reaches.
 
@@ -58,14 +62,14 @@ FR-298) and takes FR-285's exit code.
 
 ## Behavior
 
-- The QSL workspace shall build no executable target outside the `xtask`
-  package and the packages whose manifest directory is under `tools/`.
+- The QSL workspace shall build no executable target outside the
+  developer-tool packages: `xtask`, the packages whose manifest directory is
+  under `tools/`, `qsl-string-edge` and `qsl-bench`.
 - The QSL root package shall declare no `[[bin]]` target and no
   `default-run`.
-- No QSL workspace member other than `xtask` and the packages under
-  `tools/` shall take a normal or build dependency on `xtask` or on a
-  package under `tools/`; a dev dependency, which reaches only that
-  member's tests, is allowed.
+- No QSL workspace member other than a developer-tool package shall take a
+  normal or build dependency on a developer-tool package; a dev dependency,
+  which reaches only that member's tests, is allowed.
 - QSL `command` shall be a library operation that takes a typed request and
   returns a typed outcome whose exit code is FR-285's code of its category.
 - QSL `command` shall write nothing to the process streams.
@@ -74,7 +78,7 @@ FR-298) and takes FR-285's exit code.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-287-AC-1 | `cargo metadata --no-deps --format-version 1` in the QSL repository lists a `bin` target only in the `xtask` package and in packages whose manifest directory is under `tools/`; the root package `quire-spec-language` has no `bin` target and no `default_run`; and no workspace member outside `xtask` and `tools/` lists `xtask` or a package under `tools/` as a normal or build dependency. | Test (TC-771) |
+| FR-287-AC-1 | `cargo metadata --no-deps --format-version 1` in the QSL repository lists a `bin` target only in the developer-tool packages (`xtask`, the packages whose manifest directory is under `tools/`, `qsl-string-edge` and `qsl-bench`); the root package `quire-spec-language` has no `bin` target and no `default_run`; and no workspace member outside those packages lists one of them as a normal or build dependency. | Test (TC-771) |
 | FR-287-AC-2 | `command` called in process with FR-027's compile request over `tests/fixtures/spine-compile.native` returns a typed success outcome whose FR-285 exit code is 0, and with FR-100-AC-6's `call.accounting` `{"work_units": 0}` run request a typed incomplete outcome whose exit code is 22; neither call writes a byte to stdout or stderr. | Test (TC-771) |
 
 ## Dependencies
