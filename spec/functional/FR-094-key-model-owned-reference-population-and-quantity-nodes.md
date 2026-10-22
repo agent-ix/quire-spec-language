@@ -313,9 +313,11 @@ Quantity parameters and the existing quantity operations use these unit type
 nodes. Quantity literals in value expressions are outside V1 scope under
 [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals-are-outside-v1-scope):
 they retain `unsupported_construct`/`not-yet-implemented` and introduce no
-literal node or second quantity type. Any future literal representation must
-follow FR-093's shared-owner, spec-first reopen path; these unit key rules do
-not themselves admit one.
+literal node or second quantity type. QSpec FR-322-AC-79 and STD-113 already
+define the quantity literal representation; the Contract IR reader does not
+yet admit it. The IR/CG V1 scope decision and the spec-first IR reader change
+coordinated with IR-853 follow FR-093's reopen path; the unit key rules do
+not themselves admit a literal.
 
 ### Refusals
 
