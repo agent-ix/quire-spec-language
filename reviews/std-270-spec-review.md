@@ -78,6 +78,12 @@ Owner and planner decisions:
 | FND-011 | low | minor: FR-330-AC-7 now names the clause twice: "a `Counter` clause `always[0,1] holds(...)` under event-position false-extension, `always[0,1] holds(InUnit(c.value))` with `function InUnit ...`". It reads as two clauses, one of them a placeholder. <br>Fix: drop the `holds(...)` placeholder and keep only `always[0,1] holds(InUnit(c.value))`. | spec/functional/FR-330-run-a-temporal-clause-through-the-spine.md:128 |
 | FND-012 | low | minor: FR-267-AC-15's window vectors cite FR-194-AC-3, a monitor vector. Its second case stops as the monitor's `Incomplete(LimitReached{…})`, not as FR-330's `WindowLimitReached`, so it does not show which temporal clause the run selects. The `absent-key` vector names no clause or atom. <br>Fix: name the TC-629 window clause that FR-330 runs for both cases, and give the `absent-key` case a concrete atom (a stub atom as in FR-327-AC-6, or a source lookup on a missing key). | spec/functional/FR-267-write-run-results-as-native-run-result-2.md:399 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | medium | minor: FR-267-AC-15's window-limit case runs the clause "through FR-330 ... with `max_window_values` 2", but no requirement gives the FR-330 entry that input. `ClauseRunRequest` (FR-109, FR-312) carries `accounting` and no window limit. The entry evaluates with the evaluator's built-in limit, `DEFAULT_MAX_WINDOW_VALUES` = 2^20 (`qsl-eval/src/temporal/window.rs:39`), and `run_temporal` passes no limit. As written, the case can only be set up by adding a request member that no spec defines. <br>Fix: build that case as a writer/reader vector from a report holding `WindowLimitReached{limit: max_window_values, value: 2, setting: monitor.max_window_values}` (the AC checks the wire, not the run), or specify where the run reads `max_window_values` (a `ClauseRunRequest` member with an FR-312 wire name). | spec/functional/FR-267-write-run-results-as-native-run-result-2.md:399 |
+
 ## Dispositions
 
 Round 1, reviewed at 62f5b4811323d20c2b034d9fcbc6ad6ba60a913e.
@@ -94,3 +100,10 @@ Round 1, reviewed at 62f5b4811323d20c2b034d9fcbc6ad6ba60a913e.
 | FND-008 | fixed | FR-330-AC-7 is grounded with `InUnit(x: Int[0, 1])`, a Coerce refusing `integer_out_of_domain`/`outside-domain`, `expected` `Int[0, 1]` (FR-096-AC-8, TC-428). Wording is in FND-011. |
 | FND-009 | fixed | FR-327: the evaluator returns `CheckedInvariant` as a refused condition, not `TemporalRefusal::Fault`, and FR-330 reports internal-failure. AC-6 asserts this. |
 | FND-010 | fixed | FR-312-AC-7 introduces `s2` (2). TC-1160 cites TC-848 for `Fair`. |
+
+Round 2, reviewed at 7cdb0c76b5fbec7a9c46451872118ce258ca8b7d.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-011 | fixed | FR-330-AC-7 names one clause: "the `Counter` clause `always[0,1] holds(InUnit(c.value))`". |
+| FND-012 | fixed | FR-267-AC-15 names the clause `Windowed` run through FR-330 (TC-629's count form, `past[0, 9]`, `min_count 5` gives `insufficient-data` at position 0 with count 1) and the `absent-key` atom `lookup<Counters::Counter>(cs, c) absent undefined = c` (FR-090-AC-12). The window-limit input is FND-013. |

@@ -41,7 +41,8 @@ snapshots with `c.value` 0, 1, 2.
    FR-267-AC-13 and their RFC 8785 re-encoding; wrap its `counterexample`
    in an FR-070 envelope naming `Reaches` and replay it through FR-331.
    Write FR-330-AC-1's `Bounded` violation and read its `interval`.
-3. Write and read back each report FR-267-AC-14 and FR-267-AC-15 list,
+3. Write and read back each report FR-267-AC-14 and FR-267-AC-15 list
+   (the window-limit report is constructed, not run),
    checking each `basis` against FR-266-AC-4; apply each edit those ACs
    list to the documents and read them.
 4. Evaluate FR-327-AC-6's clause with a stub `holds` atom over the finite
