@@ -81,13 +81,11 @@ know whether the claim survives a scheduler that starves a thread, they add
 - The model checker SHALL compute each constraint's class over protocol
   transition identities as QSpec FR-430 states for operations, attempt
   nodes, branches, the root and compensation templates, with channel steps,
-  `activate`, `spawn`, `retire` and memory steps in no class.
+  `activate`, `spawn`, `retire` and memory steps in no class, at an
+  instance-limited state (FR-209) as anywhere else.
 - FR-126's filter, ADR-018 FA-3's weak fairness and FA-4's SCC test SHALL
   read these classes, a class being enabled when one of its steps is
   enabled (FR-206 to FR-209) and taken by a step that belongs to it.
-- An `activate` step is in no class, so no constraint is violated by an
-  `activate` that stays enabled and is never taken, at an instance-limited
-  state (FR-209) as anywhere else.
 
 ### Scheduler constraints
 
