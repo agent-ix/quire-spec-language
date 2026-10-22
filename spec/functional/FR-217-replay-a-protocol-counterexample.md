@@ -94,6 +94,11 @@ causes, and the report counts as a refutation only then.
   `ProtocolSystem` at every loop state, and refuse an unfair lasso with
   `invalid_runtime_input`/`invalid-value`; it SHALL then evaluate the
   formula by FR-125 with FR-213's positions and distances.
+- When the clause is under a bounded profile and the lasso is fair but its
+  loop has a counted step, the executor SHALL settle `inconclusive` with cause
+  `NoValue`, because the evaluator reads no such lasso (FR-329); an unfair
+  lasso of that kind SHALL refuse `invalid_runtime_input`/`invalid-value` as
+  unfair, as above.
 - For `kind: UndefinedEvaluation`, the executor SHALL evaluate the
   claim's letters along the replayed prefix and settle by ADR-018 UE-5
   (ADR-027 PB-5).
@@ -120,6 +125,7 @@ causes, and the report counts as a refutation only then.
 | FR-217-AC-4 | The adversarial lasso of FR-212-AC-2 replays against the adversarial `Chatter` package and settles `reproduced-with-evaluated-witness`. The same lasso with the scheduler constraints added to its fairness set, replayed against the default `Chatter` package, refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled at every loop state and takes no step. | Test (TC-662) |
 | FR-217-AC-5 | A counterexample whose prefix holds a `send` step of FR-206-AC-7's `overflow loss head` channel carries that step's `send_record` `{channel, payload, outcome, displaced}`, and no other step carries one; it replays, and the state key and the transition identity hold no send record. Changing the recorded `outcome` refuses `stale_dependency`/`content-mismatch`, naming the step and both records. | Test (TC-662) |
 | FR-217-AC-6 | The same counterexample with the `send` step's `send_record` removed, and with a `send_record` added to an `attempt` step, each refuses `invalid_runtime_input`/`invalid-value` before replay as a wire-shape defect and runs no step. | Test (TC-662) |
+| FR-217-AC-7 | Under a bounded profile, a fair protocol lasso whose loop has one counted step replays to `inconclusive` with cause `NoValue`, and the same lasso made unfair for a scheduler constraint refuses `invalid_runtime_input`/`invalid-value` as unfair. | Test (TC-662) |
 
 ## Dependencies
 
