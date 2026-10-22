@@ -3,6 +3,7 @@
 
 mod category_facade;
 mod compile_protocol_profile;
+mod declaration_name_collisions;
 mod format_outcome_facade;
 mod outcome_facade;
 mod parse_outcome_facade;

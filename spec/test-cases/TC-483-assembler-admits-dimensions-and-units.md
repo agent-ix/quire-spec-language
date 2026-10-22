@@ -38,7 +38,7 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `function f using v(x: m): Boolean pure { true }`.
 3. Assemble FR-091-AC-34's unit.
 4. Assemble each of FR-091-AC-35's five units.
-5. Assemble FR-091-AC-44's unit with `function f using v(d: Quantity<ms>): Boolean pure { true }`, then with `d: Quantity<Time>`, then with `d: Quantity<nothing>`. Then check the first unit with a further `function g using v(): Boolean pure { f(3 s) }`. Assemble a unit declaring a unit `ms` and a record `ms`, a unit declaring two units named `ms` (refused `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named), and a unit declaring `record Quantity`.
+5. Assemble FR-091-AC-44's unit with `function f using v(d: Quantity<ms>): Boolean pure { true }`, then with `d: Quantity<Time>`, then with `d: Quantity<nothing>`. Then check the first unit with a further `function g using v(): Boolean pure { f(3 s) }`. Compile a unit declaring a unit `ms` beside a record or dimension `ms`, unused and with each declaration order; inspect the typed refusal and candidate name spans. Compile a unit and record with distinct names through `compile_admitted` and the strict V2 reader. Assemble a unit declaring two units named `ms` and a unit declaring `record Quantity`.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -59,4 +59,4 @@ Tag the tests with the AC ids they back and `TC-483`.
 - Step 4: each unit refuses with exactly one unit-graph topology error naming the
   declarations it concerns, and no `PackageDeclarations`. Its catalog code
   is the STD-112 cause.
-- Step 5: the first assembles with the type of `d` the node of `ms` and no new declaration; the second and third each refuse the unresolved name (`missing_declaration`/`missing-name`) at assembly; the check of `g` refuses `ill_typed`/`type-mismatch` at the argument `3 s`, raised by check, not by the assembler; the record-and-unit unit assembles, the two-unit unit refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, naming each, and `record Quantity` refuses `invalid_syntax`.
+- Step 5: the first assembles with the type of `d` the node of `ms` and no new declaration; the second and third each refuse the unresolved name (`missing_declaration`/`missing-name`) at assembly; the check of `g` refuses `ill_typed`/`type-mismatch` at the argument `3 s`, raised by check, not by the assembler. A unit/record or unit/dimension collision refuses at E3 with `AmbiguousTypeName`, code `ambiguous_declaration`, cause `ambiguous-name`, the common name and the original candidate name spans; no emitted package is returned. The distinct-name control compiles and is admitted by the strict V2 reader. The two-unit unit refuses `ambiguous_declaration`/`ambiguous-name` at the declarations, naming each, and `record Quantity` refuses `invalid_syntax`.

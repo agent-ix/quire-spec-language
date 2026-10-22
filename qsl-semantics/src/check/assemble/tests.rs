@@ -2341,24 +2341,22 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
     );
 }
 
-/// FR-091-AC-44: the unit namespace is its own: a unit and a record both
-/// named `ms` check, and two units named `ms` refuse at both declarations.
-/// The strict checked-package reader refuses the emitted package of a unit
-/// and a record that share a name (`AmbiguousDeclaration`); that is
-/// Remaining work: QSL-950, so this test asserts `check` only.
+/// FR-091-AC-44: a unit and a record with one name refuse before emission,
+/// and two units named `ms` refuse at both declarations.
 #[trace("FR-091-AC-44", "TC-483")]
 #[test]
-fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
+fn unit_record_collisions_and_duplicate_units_are_typed_refusals() {
     let both = format!(
         "{TIME_UNITS}record ms {{ x: Boolean; }}\n\
          function f using v(a: Quantity<ms>, r: ms): Boolean pure {{ r.x }}"
     );
-    let package = assemble(&both)
+    let refusal = assemble(&both)
         .1
-        .expect("a unit and a record named ms assemble");
-    package
-        .check(CheckingLimits::default())
-        .expect("Quantity<ms> means the unit and ms the record");
+        .expect_err("one emitted declaration per name");
+    assert!(matches!(refusal.errors.as_slice(), [AssemblyError {
+        cause: AssemblyCause::AmbiguousTypeName { name, candidates, native: false },
+        ..
+    }] if name == "ms" && candidates.len() == 2));
 
     let (text, found) = errors(
         "dimension Time;\n\
