@@ -19,7 +19,7 @@ relationships:
 ## Description
 
 The complete-V1 lossless CST parser, `qsl_cst::parse`, which the `parse`
-operation and `quire-spec parse` run (FR-002), SHALL lex and parse source of
+operation runs (FR-002), SHALL lex and parse source of
 any bracket nesting and any chain length, bounded by S1's resource limits:
 source bytes, tokens, syntax nodes and parser work (ADR-030 D-4.1, NFR-001).
 
@@ -51,7 +51,7 @@ source bytes, tokens, syntax nodes and parser work (ADR-030 D-4.1, NFR-001).
 | FR-256-AC-1 | On a thread with a 512 KiB stack, the complete-V1 parser parses each of: brackets nested 100,000 deep around a literal, a `not` chain of 100,000, a `+` chain of 100,000 terms, an `else if` chain of 100,000 and a `let … in` chain of 100,000, each under `s1.input_bytes`, `s1.tokens`, `s1.nodes` and `s1.work_units` raised to fit it. | Test (TC-722) |
 | FR-256-AC-2 | At the default S1 limits, each chain of AC-1 built to the longest length the defaults admit parses, and the same chain one element longer stops with `stage_limit_exceeded` naming `s1.tokens`, `s1.nodes` or `s1.work_units`, with its configured value and the count reached, and parses once that setting is raised through FR-255's settings operation, which the driver CLI exposes as `--limit` (ADR-029 CB-1). With `s1.nodes` at 200000 and every other S1 limit at its default, brackets nested to the depth the default token limit admits parse, and one pair deeper stops with `stage_limit_exceeded` naming `s1.tokens`, bound 100000 and the count reached. | Test (TC-723) |
 | FR-256-AC-3 | `qsl_cst::Limits` holds source bytes, tokens, nodes and parser work, each set through its builder method, and no S1 outcome names a nesting depth. A parse of brackets nested 10,000 deep within the default byte, token and node limits succeeds. | Test (TC-723) |
-| FR-256-AC-5 | `quire-spec parse` takes S1 limits only as `--limit s1.<name>=<n>` operands (FR-002), each used as given with no ceiling above it; with none given it parses under the FR-255 defaults. A source nested 100,000 deep parses through it, exit 0, with `--limit s1.input_bytes`, `--limit s1.tokens`, `--limit s1.nodes` and `--limit s1.work_units` raised to fit, and without them is refused `stage_limit_exceeded` naming the reached `s1.*` limit, its configured value, the count reached and its setting, exit 22. | Test (TC-750) |
+| FR-256-AC-5 | The `parse` operation takes its S1 limits as the `qsl_cst::Limits` its caller gives it, each used as given with no ceiling above it; FR-255's settings operation given no operand returns the FR-255 defaults. A source nested 100,000 deep parses through the operation under the limits the settings operation returns for `s1.input_bytes`, `s1.tokens`, `s1.nodes` and `s1.work_units` raised to fit, its document's exit code 0, and under the defaults is refused `stage_limit_exceeded` naming the reached `s1.*` limit, its configured value, the count reached and its setting, its document's exit code 22. | Test (TC-750) |
 
 ## Dependencies
 
