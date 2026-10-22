@@ -1,51 +1,36 @@
 ---
 id: TC-1113
-title: "Allow CG's evaluator corpus producer the facade's corpus module and refuse every other QSL crate"
+title: "T12-A leaves the quire-eval repository's crates outside the rule and keeps compile_package in CG's replay module"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-060
     type: verifies
 ---
-# TC-1113: Allow CG's evaluator corpus producer the facade's corpus module and refuse every other QSL crate
+# TC-1113: T12-A leaves the quire-eval repository's crates outside the rule and keeps compile_package in CG's replay module
 
 ## Description
 
-Verify FR-060 T12-A's allowances for CG's evaluator corpus producer:
-`qsl_replay::corpus` is reachable only from CG's `evaluator_corpus` module,
-a reference to any other QSL workspace crate fails from every CG module, and
-a crate from its own repository is outside the rule. Scope: FR-060-AC-8 and
-FR-060-AC-9.
+Verify FR-060's "T12-A and the evaluator differential corpus": CG
+references to `quire-eval`, `quire-eval-corpus` and `quire-checked` are no
+T12-A finding from any module, and CG's corpus producer's
+`compile_package` call passes only inside CG's `replay` module. Scope:
+FR-060-AC-8.
 
 ## Test Procedure
 
 1. Run `arch-lint api-surface` with a QSL fixture tree whose
    `qsl-replay/src/lib.rs` exists and a CG fixture tree holding
-   `use qsl_replay::corpus::encode;` and a
-   `qsl_replay::compile_package(..)` call in `src/evaluator_corpus/mod.rs`.
-2. Add a `qsl_replay::corpus` reference to `src/replay/mod.rs`, then
-   separately a `qsl_replay::corpus::load` path to `src/oracle/mod.rs`, and
-   rerun.
-3. Separately add a `qsl_eval::`, a `qsl_semantics::`, a `qsl_package::`
-   and a `quire_spec_language::` reference and a `use qsl_eval as e;`
-   alias, each once in `src/evaluator_corpus/mod.rs` and once in
-   `src/replay/mod.rs`, and rerun.
-4. Add the member path `crates/extra` to the QSL fixture's workspace
-   manifest, with its own `Cargo.toml` naming the package `qsl-extra`, and
-   a `qsl_extra::` reference to `src/evaluator_corpus/mod.rs`, and rerun.
-5. Add `qsl_eval::` inside a comment and inside a string literal, and a
-   `quire_exact::` reference, to `src/evaluator_corpus/mod.rs`, and rerun.
+   `quire_eval::`, `quire_eval_corpus::` and `quire_checked::` references in
+   `src/oracle/mod.rs` and in `src/replay/evaluator_corpus.rs`, and a
+   `qsl_replay::compile_package(..)` call in
+   `src/replay/evaluator_corpus.rs`.
+2. Move the `qsl_replay::compile_package(..)` call to `src/oracle/mod.rs`
+   and rerun.
 
 ## Expected Results
 
 - Step 1: T12-A passes.
-- Step 2: each run fails T12-A, naming the file, line and module of the
-  `qsl_replay::corpus` reference.
-- Step 3: each run fails T12-A, naming the crate, file, line and module;
-  `quire_spec_language` is derived from the root member `.`.
-- Step 4: the run fails T12-A on `qsl_extra::` with no change to the rule
-  data.
-- Step 5: T12-A reports no finding for the comment, the string literal or
-  the `quire_exact::` reference.
+- Step 2: T12-A fails, naming the call's file, line and module.
 
 ## Metadata
 

@@ -190,14 +190,14 @@ S6's claimed completion.
 
 FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, TC-069's
 vectors, deterministic generated cases and CG's exported generated-closure
-bundle), its case encoding and loader refusals in the facade module
-`qsl_replay::corpus`, the compared record (result, location, losses, meter
-counters and, where the test build keeps it, the charge log), the
-zero-divergence pass criterion and the two separate std and `no_std`
-builds. The harness joins `make ci` in IR-590, the first slice with a second
-implementation, and stays until IR-593 retires or demotes the std path; the
-run over CG's bundle passes in IR-593's switch. CG only encodes its cases
-through that facade module, with no expected evaluation (FR-060 T12-A).
+bundle), its case record, loader and compared record in the crate
+`quire-eval-corpus` beside `quire-eval`, QSL's case admission through
+`qsl_replay::compile_package`, the zero-divergence pass criterion and the
+two separate std and `no_std` builds. The harness joins `make ci` in IR-590,
+the first slice with a second implementation, and stays until IR-593 retires
+or demotes the std path; the run over CG's bundle passes in IR-593's switch.
+CG records expected evaluations through `quire-eval` once it holds an
+implementation CG can run; until then CG's cases carry no expectation.
 
 ### RT and CG acceptance
 
