@@ -1366,14 +1366,15 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
 /// nodes and never from a shipped copy.
 fn with_derived_projection(envelope: &Value) -> Value {
     let mut wire = envelope.clone();
-    let projection = envelope["semantic_graph"]["nodes"]
-        .as_array()
-        .map(|nodes| projection_of(nodes));
-    if let (Some(projection), Some(preimage)) =
-        (projection, wire["identity_preimage"].as_object_mut())
-    {
-        preimage.insert("identity_projection".to_owned(), Value::Array(projection));
-    }
+    let projection = projection_of(
+        envelope["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("semantic_graph.nodes is an array"),
+    );
+    wire["identity_preimage"]
+        .as_object_mut()
+        .expect("identity_preimage is an object")
+        .insert("identity_projection".to_owned(), Value::Array(projection));
     wire
 }
 
@@ -1564,7 +1565,7 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
 
 /// QSL's whole I2 read (`read_checked_package_v2`) admits every
 /// published positive `quire.checked-package/v2` fixture under the
-/// `package_id` its own identity preimage recomputes to. Three of the five
+/// `package_id` its own identity preimage recomputes to. 11 of the 12
 /// fixtures list their nodes in an order that is not ascending by
 /// node id (QSpec FR-322-AC-14 makes graph order part of the id through the
 /// identity projection the reader derives). Each published structural mutation of `positive-all-families.json`
