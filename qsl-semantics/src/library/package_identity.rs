@@ -286,7 +286,7 @@ fn wire_node_id(value: NodeRef<'_>) -> Option<WireNodeId> {
 }
 
 /// The node tags of the V2 semantic graph.
-const NODE_TAGS: [&str; 13] = [
+const NODE_TAGS: [&str; 14] = [
     "scalar_type",
     "composite_type",
     "bounded_domain",
@@ -300,6 +300,7 @@ const NODE_TAGS: [&str; 13] = [
     "protocol",
     "claim",
     "correspondence",
+    "extension",
 ];
 
 fn qualified(segments: Vec<String>) -> Result<String, NodeDefect> {
