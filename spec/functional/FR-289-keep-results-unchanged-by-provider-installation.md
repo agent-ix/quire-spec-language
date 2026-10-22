@@ -111,7 +111,7 @@ Candidate sets (FR-075) and FR-331 terminal records.
 | FR-289-AC-11 | A provider result naming the cause kind `replay-parity`, `replay-refused` or `kani_vacuous_proof` (QSpec FR-331 spellings) is refused by the cause-kind reader, and its item settles `failed`. | Test (TC-773) |
 | FR-289-AC-12 | A provider `inconclusive` result carrying the typed cause `ReplayParity` or `ReplayRefused` is refused, and its item settles `failed`. | Test (TC-773) |
 | FR-289-AC-13 | Every other `InconclusiveCause` kind, and the hyphenated `kani-vacuous-proof` that FR-331 lists for no plugin, is not refused by the cause-kind reader. | Test (TC-773) |
-| FR-289-AC-14 | A refused plugin result yields the diagnostic `invalid_result`/`unknown-cause` (member `cause` or `basis`, with the item index and the received spelling) or, for a `refuted` with nothing to replay, `invalid_result`/`missing-member` (member `counterexample`). | Test (TC-773) |
+| FR-289-AC-14 | A refused plugin result yields the diagnostic `invalid_result`/`unknown-cause` (member `cause` or `basis`, with the item index and the received spelling) or, for a `refuted` whose `counterexamples` entry has no `counterexample`, `invalid_result`/`missing-member` (member `counterexample`); FR-290 gives the cause of every other refused counterexample. | Test (TC-773) |
 
 ## Dependencies
 
