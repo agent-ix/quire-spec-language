@@ -19,3 +19,4 @@ mod refinement_step;
 mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
+mod text_mvp_source;

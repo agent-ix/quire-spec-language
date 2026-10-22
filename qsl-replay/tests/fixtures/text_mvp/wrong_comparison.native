@@ -1,0 +1,5 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+function text_symmetric using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure {
+    (a = b) = (a = a)
+}
