@@ -43,13 +43,19 @@ measures invocation at the aggregate boundary; it does not qualify compilation.
 Run the default full scoped validation over the actual repository separately
 from the deliberately invalid owned fixtures.
 
-During stabilization, checks run locally. Every hosted CI workflow shall expose
-only `workflow_dispatch`; push, pull-request, schedule and other automatic
-triggers are disabled. A later return to automatic CI requires the owner's
-direction and specification review. Manual availability does not authorize an
-agent to dispatch a hosted run. Inspect all workflow event declarations and
-record local commands, revisions and outcomes; absence of a hosted run is not a
-passing check.
+During stabilization, build, test and qualification checks run locally. The
+native compiler CI workflow shall expose only `workflow_dispatch`; push,
+pull-request, schedule and other automatic qualification triggers are disabled.
+The automatic containment check `.github/workflows/language-boundary.yml` may
+run on `pull_request_target` solely to invoke the trusted Rust language-boundary
+checker and publish a status on the pull request head. The existing CLA workflow
+is separate. The containment status establishes only the
+language-boundary result; it is not evidence that the local build, tests or
+qualification checks passed. A later return to automatic native compiler CI
+requires the owner's direction and specification review. Manual availability
+does not authorize an agent to dispatch a hosted run. Inspect workflow event
+declarations and record local commands, revisions and outcomes; absence of a
+hosted qualification run is not a passing check.
 
 ## Acceptance Criteria
 
