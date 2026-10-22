@@ -357,9 +357,9 @@ none of its operands.
   all-branch join; a binder read outside its scope refuses as FR-113
   refuses an unresolved name.
 - For each replicated role with lifetime `scope`, S3 SHALL record the
-  smallest control holding every node `by` that role. A `send` is owned by
-  its channel's `from` role and a `receive` by its channel's `to` role, and
-  the region counts those nodes as `by` that role.
+  smallest control holding every node `by` that role, counting a `send` as a
+  node `by` its channel's `from` role and a `receive` as a node `by` its
+  channel's `to` role.
 - S3 SHALL resolve the `pop` of `role r each T from pop` to a population
   declared by the domain package that declares `T`. It SHALL refuse a name
   that is no population of that package with `missing_declaration`/
@@ -437,7 +437,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 | FR-218-AC-27 | The unit of TC-1056 with a second protocol `Billing` that also declares `channel Pay` with the same premises checks, and the checked clauses hold two channels: `Pipeline`'s `Pay` and `Billing`'s `Pay`. Each is recorded under its protocol's qualified identity and the handle `Pay`; the two have different qualified names and equal handles. | Test (TC-1056) |
 | FR-218-AC-28 | `role w each M::Worker from workers max 2 lifetime workflow` checks when `workers` is a population of `M::Worker` and the checked role holds that population; with `from absent` it refuses `missing_declaration`/`missing-name` at `absent`, and with `from jobs`, a population of `M::Job`, it refuses `ill_typed`/`type-mismatch` at `jobs`, each retaining `role` and `population`. | Test (TC-663) |
-| FR-218-AC-29 | In a protocol with channels `from w to c` and `from c to w`, the checked clause holds the owner `w` for the `send` on the first and `c` for its `receive`, and `c` for the `send` and `w` for the `receive` on the second; a lifetime `scope` region over `Work` nodes by `w` and a `send` from `w` includes the `send`. | Test (TC-663) |
+| FR-218-AC-29 | In a protocol with channels `from w to c` and `from c to w`, the checked clause holds the owner `w` for the `send` on the first and `c` for its `receive`, and `c` for the `send` and `w` for the `receive` on the second; a lifetime `scope` role `w` with its `Work` nodes inside `sequence S` and a `send` from `w` after `S` has the region that holds `S` and the `send`, which is `S`'s parent control and not `S`. | Test (TC-663) |
 
 ## Dependencies
 

@@ -38,6 +38,7 @@ Tag the tests `#[trace("TC-653", "FR-208-AC-n")]`.
   folded into the step that ends the region's reachability, and no
   `retire` step.
 - Step 4: the two protocol instances' `spawn` identities differ in the
-  instance ordinal, and so do their `retire` identities.
+  instance ordinal, and so do their `retire` identities; none holds a
+  `thread` member.
 - Step 5: two `send` steps and two `receive` steps, naming the acting
   instances; with an empty universe the thread waits with `NoRoleInstance{r}`.

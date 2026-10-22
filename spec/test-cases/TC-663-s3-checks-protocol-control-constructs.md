@@ -54,4 +54,5 @@ Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
 - Step 8: `from workers` checks and the checked role holds the population;
   `absent` refuses `missing_declaration`/`missing-name`, `jobs` refuses
   `ill_typed`/`type-mismatch`; the owners of each `send` and `receive` are the
-  channel roles of FR-218-AC-29.
+  channel roles of FR-218-AC-29, and the `scope` region of `w` is the parent
+  control of `S`, not `S`.

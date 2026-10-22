@@ -87,7 +87,8 @@ is never mistaken for a proof over every instance count.
 ### The bound
 
 - `max_live_instances` SHALL be a method bound with no ceiling, outside
-  the subject and its obligation identity. A request that leaves it unset
+  the subject; its obligation identity excludes it, as QSpec FR-428-AC-3
+  states. A request that leaves it unset
   SHALL run with 3.
 - At a state with `max_live_instances` live instances, the model checker
   SHALL leave each enabled `activate` step unexpanded and SHALL record the

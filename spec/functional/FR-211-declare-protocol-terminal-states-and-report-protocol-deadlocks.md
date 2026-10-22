@@ -124,7 +124,7 @@ opts out.
   live instance and no enabled `spawn`.
 - The model checker SHALL order the causes of a thread at an `attempt`,
   `event`, `send` or `receive` node, or a compensation attempt, owned by a
-  replicated role (`by r`) with `NoRoleInstance` first, when `r` has no live
+  replicated role (`by r`, or its channel's `from` or `to` role for a `send` or `receive`) with `NoRoleInstance` first, when `r` has no live
   instance and no `spawn` is enabled; of a thread at a compensation attempt
   (`cattempt`) as `CommitClosed`, `Precondition`, `NoPostState`,
   `Constraint`; and of a thread at `finish` as `FinishWaiting`, else
