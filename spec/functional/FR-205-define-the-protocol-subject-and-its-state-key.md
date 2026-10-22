@@ -98,8 +98,11 @@ has already seen instead of a new one.
   under `Sc`. The key SHALL also hold, as FR-425 states: for each
   compensation thread, the registration it compensates; for each protocol
   instance in which a step of a template's commit node has occurred, that
-  node; and, for each compensation thread, its attempt record exactly while
-  a later `cattempt` of the thread can read it (ADR-027 PS-8, ST-11).
+  node; and, for each compensation thread, its attempt record in a state if
+  and only if the thread rests at its retry point, its attempt count is below
+  the template's `attempts n`, the template's retry relation reads its
+  `earlier` binder, and no step of the template's commit node has occurred in
+  its instance (ADR-027 PS-8, ST-11).
 - Thread, instance, registration and nesting counts SHALL have no ceiling
   of their own; the run's method bounds and resource limits (FR-209, FR-215) are
   the only bounds.
