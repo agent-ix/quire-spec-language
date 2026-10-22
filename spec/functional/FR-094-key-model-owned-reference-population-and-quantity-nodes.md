@@ -309,6 +309,14 @@ holds no quotient unit. FR-094-AC-6 keys the quotient units U2 to U4 from
 the units `value::quantity::result_unit` forms, which is the forming `check`
 does while it types a quantity division.
 
+The proposed quantity-literal encoding in
+[FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literal-wire-boundary-proposed-gated-qsl-949)
+uses this same declared-unit type node for both its `semantic_type` and body
+`type`. It introduces no second quantity type node and does not substitute a
+rational scalar type for the unit. That literal kind is not yet part of the
+shared QSpec/Contract IR wire contract; this paragraph does not assert current
+strict-reader admission or change the unit key rules above.
+
 ### Refusals
 
 `check` SHALL treat each of these as an internal fault (ADR-013 T-4), and
