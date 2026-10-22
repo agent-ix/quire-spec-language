@@ -34,7 +34,7 @@ use qsl_semantics::check::CheckedExpression;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
 use quire_eval::{CheckedClosure, Evaluation, Signature, Transition};
-use quire_exact::{Cancel, Meter, NodeKey, Value};
+use quire_exact::{Cancel, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 
@@ -110,7 +110,7 @@ where
 
     fn admit(
         &self,
-        parameters: &[(String, quire_exact::ValueType)],
+        parameters: &[(String, ValueType)],
         arguments: &[Value],
         environment: &ObjectEnvironment,
     ) -> Result<(), CallFailure> {
@@ -189,6 +189,35 @@ where
             .callable_by_identity(*callable)
             .ok_or_else(|| InputRefusal::UnknownFunction(identity_spelling(callable)))?;
         self.admit(function.parameters, arguments, environment)
+    }
+
+    fn admits_request(
+        &self,
+        callable: &NodeKey,
+        arguments: &[Value],
+        environment: &ObjectEnvironment,
+    ) -> bool {
+        let Some(package) = self.declaring(*callable) else {
+            return false;
+        };
+        let Some(function) = package.graph().callable_by_identity(*callable) else {
+            return false;
+        };
+        let types = package.graph().scope().types();
+        function.parameters.len() == arguments.len()
+            && function
+                .parameters
+                .iter()
+                .zip(arguments)
+                .all(|((_, value_type), argument)| match (value_type, argument) {
+                    // `Population<T>[N]` is admitted by its resolved binding's
+                    // declared maximum (FR-089-AC-5), as `admit_arguments` does.
+                    (ValueType::Population(maximum), Value::Population(id)) => environment
+                        .resolve_population(*id)
+                        .is_some_and(|binding| binding.declared_maximum() == *maximum),
+                    // A refused reservation decides nothing, so it admits nothing.
+                    _ => types.admits(value_type, argument).unwrap_or(false),
+                })
     }
 
     fn admit_expression(
