@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "qsl-walk-grow", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench", "qsl-string-edge"]
+members = [".", "xtask", "tools/arch-lint", "qsl-walk-grow", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench", "qsl-string-edge"]
 resolver = "2"
 # A cargo-fuzz crate with its own workspace; fuzz/Cargo.toml says why.
 exclude = ["fuzz"]
@@ -91,7 +91,7 @@ unicode-normalization = "0.1.25"
 # so an identical spec in every dependent unifies to one lockfile entry
 # instead of pinning independently per repo.
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
-qsl-attrs = { path = "qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
 # `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
@@ -111,7 +111,6 @@ qsl-route = { path = "qsl-route" }
 tempfile = "3.27.0"
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # TC-257 (FR-088-AC-1) reuses `xtask::definition_scan::scan_crate`'s existing
 # whole-crate `syn` scanner instead of a second, byte-identical copy; a
 # workspace path dependency, dev-only, so it adds no edge to any shipped

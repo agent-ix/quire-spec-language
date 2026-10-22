@@ -66,7 +66,7 @@ pub struct UnsupportedCanonicalizationDomain;
 impl FromStr for CanonicalizationDomain {
     type Err = UnsupportedCanonicalizationDomain;
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         match text {
             "filament-canonical-json-1" => Ok(Self::FilamentCanonicalJson1),
@@ -108,7 +108,7 @@ impl AdapterArtifact {
 impl TryFrom<wire::ArtifactRef> for AdapterArtifact {
     type Error = InvalidAdapterArtifact;
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn try_from(value: wire::ArtifactRef) -> Result<Self, Self::Error> {
         let admitted = value.ref_version == "ix.artifact-ref/3-draft"
             && value.kind == wire::ArtifactKind::Binding

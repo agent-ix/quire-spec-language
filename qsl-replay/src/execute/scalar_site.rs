@@ -18,7 +18,7 @@ use quire_semantic_value::declaration::EqualityOperator;
 /// Whether `target` is `function`'s node or one its body reaches. The walk
 /// follows every node reference of a node's preimage, and stops at another
 /// function's node: a call to another function is not that function's body.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn in_body(graph: &SemanticGraph, function: NodeKey, target: NodeKey) -> bool {
     let keys: std::collections::BTreeMap<String, NodeKey> = graph
         .nodes()
@@ -55,7 +55,7 @@ pub(crate) fn in_body(graph: &SemanticGraph, function: NodeKey, target: NodeKey)
 }
 
 /// Every `digest` string of a preimage's node ids (`{domain, digest}`).
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn node_digests(value: &serde_json::Value, out: &mut Vec<String>) {
     let mut pending = vec![value];
     while let Some(value) = pending.pop() {
@@ -77,7 +77,7 @@ fn node_digests(value: &serde_json::Value, out: &mut Vec<String>) {
 
 /// Whether `node` is an application of `operator`: its body's operation
 /// identity is the operator's catalog identity.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn applies(node: &SemanticNode, operator: ScalarOperator) -> bool {
     serde_json::from_slice::<serde_json::Value>(node.preimage())
         .ok()
@@ -108,7 +108,7 @@ pub(super) fn check_node_operands(
 /// arguments; for a `GraphChild` the argument is a reference to that node;
 /// for an `InlineLiteral` the argument is an inline integer literal, whose
 /// value is the operand's value and whose singleton range is the operand's.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn check_operands(
     preimage: &serde_json::Value,
     application: WireNodeId,
@@ -168,7 +168,7 @@ pub(crate) fn check_operands(
 /// The equality operator `node` applies, when its body's operation is a
 /// catalog `quire.op.<family>.eq` or `quire.op.<family>.ne` (QSpec FR-149's
 /// `=` and `!=`).
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator> {
     let preimage = serde_json::from_slice::<serde_json::Value>(node.preimage()).ok()?;
     let identity = preimage["body"]["operation"]["identity"].as_str()?;
@@ -183,7 +183,7 @@ pub(crate) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator>
 /// FR-358: the identity of each argument of the application `node`, in
 /// position order: a reference is a `GraphChild`, an inline integer literal
 /// an `InlineLiteral`. The composite arm names exactly two operands.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn operand_identities(
     node: &SemanticNode,
     application: WireNodeId,

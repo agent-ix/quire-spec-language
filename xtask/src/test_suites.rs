@@ -52,7 +52,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 
 use crate::error::{Error, Result};
 use crate::feature_scope::{
@@ -185,12 +185,6 @@ const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 /// new head is what checks this list against the tree.
 const WORKSPACE_EMPTY: &[EmptySuite] = &[
     EmptySuite {
-        source: "qsl-attrs/src/lib.rs",
-        kind: SuiteKind::Tests,
-        reason:
-            "proc-macro crate with no unit tests; its tests are the compile_fail integration target",
-    },
-    EmptySuite {
         source: "qsl-bench/src/bin/qsl-bench-probe.rs",
         kind: SuiteKind::Tests,
         reason: "benchmark probe binary; no #[test] item in it",
@@ -227,11 +221,6 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
     },
     EmptySuite {
         source: "qsl-analyze/src/lib.rs",
-        kind: SuiteKind::Doctests,
-        reason: NO_DOC_EXAMPLE,
-    },
-    EmptySuite {
-        source: "qsl-attrs/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
     },
@@ -1588,7 +1577,7 @@ test zone_check::scale::tests::tc_693_constants_scale_by_the_lcm_of_their_denomi
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s
 
-     Running unittests src/lib.rs (target/debug/deps/qsl_attrs-5c690327f0f96fda)
+     Running unittests src/lib.rs (target/debug/deps/qsl_walk_grow-5c690327f0f96fda)
 
 running 0 tests
 
@@ -1606,19 +1595,19 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Doc-tests qsl_attrs
+   Doc-tests qsl_walk_grow
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ";
 
-    const ATTRS_UNIT_SECTION: &str = "     Running unittests src/lib.rs (target/debug/deps/qsl_attrs-5c690327f0f96fda)\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
+    const EMPTY_UNIT_SECTION: &str = "     Running unittests src/lib.rs (target/debug/deps/qsl_walk_grow-5c690327f0f96fda)\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
     const ANALYZE_DOC_SECTION: &str = "   Doc-tests qsl_analyze\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
     const ANALYZE_UNIT: &str = "qsl-analyze/src/lib.rs";
     const ANALYZE_DOC: &str = "qsl-analyze/src/lib.rs (doctests)";
-    const EMPTY_UNIT: &str = "qsl-attrs/src/lib.rs";
-    const EMPTY_DOC: &str = "qsl-attrs/src/lib.rs (doctests)";
+    const EMPTY_UNIT: &str = "qsl-walk-grow/src/lib.rs";
+    const EMPTY_DOC: &str = "qsl-walk-grow/src/lib.rs (doctests)";
     const PROBE: &str = "qsl-bench/src/bin/qsl-bench-probe.rs";
 
     /// One `compiler-artifact` message as cargo prints it, with every field
@@ -1677,11 +1666,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 "qsl-analyze",
             ),
             workspace_artifact(
-                Some("target/debug/deps/qsl_attrs-5c690327f0f96fda"),
+                Some("target/debug/deps/qsl_walk_grow-5c690327f0f96fda"),
                 EMPTY_UNIT,
-                "qsl_attrs",
+                "qsl_walk_grow",
                 true,
-                "qsl-attrs",
+                "qsl-walk-grow",
             ),
             workspace_artifact(
                 Some("target/debug/deps/qsl_bench_probe-6b51de41aa582e2f"),
@@ -1712,9 +1701,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
     const DECLARES_EMPTY: &[EmptySuite] = &[
         EmptySuite {
-            source: "qsl-attrs/src/lib.rs",
+            source: "qsl-walk-grow/src/lib.rs",
             kind: SuiteKind::Tests,
-            reason: "proc-macro crate",
+            reason: "no unit tests",
         },
         EmptySuite {
             source: "qsl-bench/src/bin/qsl-bench-probe.rs",
@@ -1727,7 +1716,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             reason: "no doc example",
         },
         EmptySuite {
-            source: "qsl-attrs/src/lib.rs",
+            source: "qsl-walk-grow/src/lib.rs",
             kind: SuiteKind::Doctests,
             reason: "no doc example",
         },
@@ -1741,7 +1730,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     /// sections [`PRODUCER_LOG`] holds.
     fn doc_packages() -> Option<BTreeSet<PathBuf>> {
         Some(
-            ["qsl-analyze", "qsl-attrs", "qsl-bench"]
+            ["qsl-analyze", "qsl-walk-grow", "qsl-bench"]
                 .into_iter()
                 .map(manifest_of)
                 .collect(),
@@ -1815,7 +1804,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[test]
     #[trace("TC-950", "NFR-014-AC-8")]
     fn a_built_test_target_that_never_ran_fails() {
-        let log = PRODUCER_LOG.replace(ATTRS_UNIT_SECTION, "");
+        let log = PRODUCER_LOG.replace(EMPTY_UNIT_SECTION, "");
         assert_eq!(
             check(&lane(DECLARES_EMPTY), &log),
             vec![
@@ -1915,9 +1904,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
     const DECLARES_NO_ANALYZE_DOC: &[EmptySuite] = &[
         EmptySuite {
-            source: "qsl-attrs/src/lib.rs",
+            source: "qsl-walk-grow/src/lib.rs",
             kind: SuiteKind::Tests,
-            reason: "proc-macro crate",
+            reason: "no unit tests",
         },
         EmptySuite {
             source: "qsl-bench/src/bin/qsl-bench-probe.rs",
@@ -1925,7 +1914,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             reason: "probe binary",
         },
         EmptySuite {
-            source: "qsl-attrs/src/lib.rs",
+            source: "qsl-walk-grow/src/lib.rs",
             kind: SuiteKind::Doctests,
             reason: "no doc example",
         },
@@ -1977,7 +1966,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         let ids: Vec<String> = expected.iter().map(ToString::to_string).collect();
         assert_eq!(
             ids,
-            [ANALYZE_UNIT, ANALYZE_DOC, EMPTY_UNIT, EMPTY_DOC, PROBE],
+            [ANALYZE_UNIT, ANALYZE_DOC, PROBE, EMPTY_UNIT, EMPTY_DOC],
             "neither qsl-cst nor the registry crate is a suite of this run"
         );
     }
@@ -2002,7 +1991,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[test]
     #[trace("TC-950", "NFR-014-AC-3")]
     fn a_doc_test_header_naming_no_library_fails() {
-        let log = PRODUCER_LOG.replace("Doc-tests qsl_attrs", "Doc-tests qsl_unknown");
+        let log = PRODUCER_LOG.replace("Doc-tests qsl_walk_grow", "Doc-tests qsl_unknown");
         assert!(check(&lane(DECLARES_EMPTY), &log)
             .iter()
             .any(|finding| finding.starts_with("unrecognised suite header")));
@@ -2182,7 +2171,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             }
         }
         for (name, section) in [
-            ("ATTRS_UNIT_SECTION", ATTRS_UNIT_SECTION),
+            ("EMPTY_UNIT_SECTION", EMPTY_UNIT_SECTION),
             ("ANALYZE_DOC_SECTION", ANALYZE_DOC_SECTION),
         ] {
             assert!(
@@ -2371,7 +2360,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         assert!(outside_only.executables.is_empty() && outside_only.doc_libraries.is_empty());
         let artifacts = artifacts();
         let libraries: Vec<&str> = artifacts.doc_libraries.keys().map(String::as_str).collect();
-        assert_eq!(libraries, ["qsl_analyze", "qsl_attrs", "qsl_cst"]);
+        assert_eq!(libraries, ["qsl_analyze", "qsl_cst", "qsl_walk_grow"]);
         assert_eq!(artifacts.executables.len(), 3);
     }
 

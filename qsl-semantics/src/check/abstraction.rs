@@ -21,7 +21,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use qsl_forms::{AbstractionBindingForm, NameForm};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, InternalFault, Span};

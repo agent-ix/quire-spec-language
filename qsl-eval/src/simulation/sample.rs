@@ -189,7 +189,7 @@ pub(crate) fn sample<S: TransitionSystem>(
 /// Whether `sampler` is the one `quire.simulation.sampler/v1` generator
 /// (FR-101), by identity. The only site that compares a sampler's identity
 /// string.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
     sampler.identity() == SAMPLER_IDENTITY
 }

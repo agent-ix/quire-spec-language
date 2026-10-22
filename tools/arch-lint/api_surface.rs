@@ -1253,8 +1253,6 @@ pub(crate) fn evaluate(
 /// repository and are not scanned: `quire-exact` is the kernel these rules'
 /// constructors are defined *in*, never a caller of them, and
 /// `quire-semantic-value` resolves node ids by lookup among admitted keys.
-/// `qsl-attrs` is excluded too: a proc-macro crate with no dependency on
-/// `quire-exact` at all.
 pub(crate) fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],

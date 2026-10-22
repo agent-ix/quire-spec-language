@@ -13,7 +13,7 @@ pub struct NativeLanguage;
 
 impl NativeLanguage {
     /// `Some` exactly for the tag `ix:native`.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn of(tag: &str) -> Option<Self> {
         (tag == "ix:native").then_some(Self)
     }

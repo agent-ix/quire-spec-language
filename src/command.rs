@@ -573,7 +573,7 @@ enum Edition {
 /// Whether a request's selected model declares the one supported domain-package
 /// format (ADR-012 section 9): the one reader of a model selection's wire
 /// `format` field.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_domain_package(model: &wire::Model) -> bool {
     model.format == DOMAIN_PACKAGE_PROFILE
 }
@@ -581,7 +581,7 @@ fn is_domain_package(model: &wire::Model) -> bool {
 impl Edition {
     /// Read `source`'s header once. A declared edition neither compiler
     /// reads refuses as `unknown_edition` at its literal.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn of(source: &Source) -> Result<Self> {
         let Some(declared) = qsl_cst::declared_edition(source.text()) else {
             return Ok(Self::Native);

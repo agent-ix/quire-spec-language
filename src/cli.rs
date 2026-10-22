@@ -51,7 +51,7 @@ pub(super) enum UsageError<'a> {
 impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
     type Error = UsageError<'a>;
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn try_from(arguments: &'a [OsString]) -> Result<Self, Self::Error> {
         let (command, operands) = arguments.split_first().ok_or(UsageError::MissingCommand)?;
         let command = command
@@ -128,7 +128,7 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
 }
 
 /// FR-026's two caller-controlled `run` byte ceilings.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn run_limit_options(options: &[OsString]) -> Option<Result<RunLimits, UsageError<'_>>> {
     let mut limits = RunLimits::default();
     let mut seen_request = false;
@@ -157,7 +157,7 @@ fn run_limit_options(options: &[OsString]) -> Option<Result<RunLimits, UsageErro
 
 /// `--source-bytes`, `--tokens` and `--nodes`, each followed by its count;
 /// an option left out keeps its default. `None` is a malformed option list.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn limit_options(options: &[OsString]) -> Option<Result<Limits, UsageError<'_>>> {
     let mut limits = Limits::default();
     for pair in options.chunks(2) {

@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 
 use crate::detector::has_cfg_test;
 use crate::error::{Error, Result};

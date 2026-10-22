@@ -109,7 +109,7 @@ impl ClockNames {
 /// admission reads the typed `temporal_bindings.clock_name` field instead
 /// ([`ClockNames::of_v2`]) and uses this only to emit that field and to
 /// verify it agrees with the legacy spelling.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
     binding.name.strip_prefix("clock:")
 }
