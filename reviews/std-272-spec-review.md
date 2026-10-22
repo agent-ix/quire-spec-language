@@ -54,3 +54,4 @@ Checked and found correct: the refusal codes and causes match QSpec FR-323 and F
 | FND-006 | fixed | A new bullet requires the rendered message of both variants to lead with `<code>/<cause>`, as `UnknownOperation`'s does. AC-27 and TC-1162 assert the code and the message prefix. |
 | FND-007 | fixed | The clauses rule now reads "(declaring object, operation)". The field selection resolves "an object type (not a process or a state machine) among the package's object types". |
 | FND-008 | fixed | AC-25 now reads "its unit with `P`, `Q` and `I`". |
+| FND-009 | fixed | FR-121 now states the divergence on purpose: FR-104 and FR-115 report `missing_declaration`/`missing-name` for an owner that is not an object type, a process or a state machine, while `call_site` builds the FR-323 replay target and so mirrors FR-323's `invalid_model_binding` refusal of such an `object` (round 2, c63718200). |
