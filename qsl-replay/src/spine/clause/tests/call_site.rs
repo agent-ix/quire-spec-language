@@ -1041,3 +1041,53 @@ fn call_site_names_the_redefining_type_for_a_redefined_operation() {
     );
     assert_ne!(redefined.site.frame, base.site.frame);
 }
+
+/// [`config_version_domain_document_with_sub`] plus `SubSub`, a subtype of
+/// `Sub`, so `ConfigVersion` is two supertype steps above `SubSub`.
+fn two_level_document() -> Vec<u8> {
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&config_version_domain_document_with_sub())
+            .expect("the document is JSON");
+    let identity = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/SubSub");
+    envelope["types"]
+        .as_array_mut()
+        .expect("types is an array")
+        .push(json!({
+            "identity": identity,
+            "displayName": identity,
+            "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
+            "roles": [],
+            "origin": {"generated": {
+                "generatorIdentity": identity,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [identity],
+            }},
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+            "supertypes": [format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub")],
+            "fields": [],
+            "operations": [],
+        }));
+    envelope.to_string().into_bytes()
+}
+
+/// FR-121-AC-23, two levels: `SubSub` extends `Sub` extends `ConfigVersion`,
+/// and only `ConfigVersion` declares `attemptUpdate`, so the `SubSub`
+/// selection's `frame_operation` names `ConfigVersion`, not `Sub`.
+#[trace("TC-516", "FR-121-AC-23")]
+#[test]
+fn call_site_names_the_declaring_object_of_an_operation_inherited_two_levels() {
+    let document = two_level_document();
+    let (unit, _) = config_version_unit_and_packages_for(document.clone());
+    let site = locate(
+        &unit,
+        &document,
+        &operation("Config", "SubSub", "attemptUpdate"),
+    )
+    .expect("attemptUpdate is named by VersionUnchanged");
+    assert_eq!(
+        site.site.frame_operation,
+        frame_operation("Config", "ConfigVersion", "attemptUpdate")
+    );
+}

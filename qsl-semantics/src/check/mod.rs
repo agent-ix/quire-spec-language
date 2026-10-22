@@ -3840,11 +3840,11 @@ impl CheckedGraph {
         })
     }
 
-    /// FR-121: the object type, process or state machine `declaring` (the
+    /// FR-121: the object type `declaring` (the
     /// declaring type of a [`ClauseOperation`], found through the effective
     /// view's AD-006 original declaration) under its artifact id in the
     /// domain package the `model` alias binds. `None` when the alias binds no
-    /// package, or `declaring` is no declaration of that package.
+    /// package, or `declaring` is no object type of that package.
     pub fn declaring_object(
         &self,
         model: &Identifier,
