@@ -49,8 +49,8 @@ used as given. The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`),
 NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
-FR-003 (`format.*`), and FR-101 (`explore.*`). A limit of an operation QSL has not yet
-ported takes its row, with its limits type, when that operation lands.
+FR-003 (`format.*`), and FR-101 (`explore.*`). The analysis engines' limits
+have their own table (Engine limit setting names).
 
 | Setting | Stage | Limit kind | Library field | Default |
 | --- | --- | --- | --- | --- |
@@ -108,6 +108,61 @@ FR-251 under the setting name `monitor.max_event_rate`: it is a member of the
 monitor target and not a table row, because every table row is an unsigned
 integer.
 
+## Engine limit setting names
+
+Every member of an analysis engine's limits type is a limit (QSpec FR-461
+Behavior 5). Its limit name is the member name, which matches the
+backend-provider `LimitName` pattern `^[a-z][a-z0-9_]*$`; its setting name
+is the engine's name, a dot and the member name, which matches the
+`SettingName` pattern `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`. The table
+lists every engine limit. The FR-101 `Limits` that `ModelCheckLimits`
+embeds as `limits` are model-checker limits there: their settings are
+`model_check.max_states` and `model_check.max_transitions` wherever
+`ModelCheckLimits` is read (EN-1, the refinement checks of FR-141, FR-142
+and FR-149, and EN-5's product through `ExactProbLimits.model`, which
+keeps the `model_check.*` rows). `explore.states` and
+`explore.transitions` raise FR-101's exploration and simulation only.
+
+| Setting | Limit | Engine | Library field | Default | Owner |
+| --- | --- | --- | --- | --- | --- |
+| `model_check.max_states` | `max_states` | EN-1 model checker | `ModelCheckLimits.limits` max_states | 10000000 states | FR-126 |
+| `model_check.max_transitions` | `max_transitions` | EN-1 model checker | `ModelCheckLimits.limits` max_transitions | 100000000 transitions | FR-126 |
+| `model_check.max_automaton_states` | `max_automaton_states` | EN-1 model checker | `ModelCheckLimits` max_automaton_states | 1048576 states | FR-126 |
+| `model_check.witness_samples` | `witness_samples` | EN-1 phase 0 | `ModelCheckLimits` witness_samples | 64 walks | FR-166 |
+| `model_check.max_walk_steps` | `max_walk_steps` | EN-1 phase 0 | `ModelCheckLimits` max_walk_steps | 4096 steps | FR-166 |
+| `model_check.max_witness_set` | `max_witness_set` | EN-1 hyper runs | `ModelCheckLimits` max_witness_set | 65536 members | FR-184 |
+| `model_check.max_relation_tuples` | `max_relation_tuples` | EN-1 hyper runs | `ModelCheckLimits` max_relation_tuples | 16777216 tuples | FR-184 |
+| `expansion.max_candidates` | `max_candidates` | model-subject expansion | `ExpansionLimits` max_candidates | 1000000 candidates | FR-120 |
+| `exact_probabilistic.max_iterations` | `max_iterations` | EN-5 | `ExactProbLimits` max_iterations | 1000000 sweeps | FR-203 |
+| `exact_probabilistic.precision_bits` | `precision_bits` | EN-5 | `ExactProbLimits` precision_bits | 64 bits | FR-203 |
+| `exact_probabilistic.max_precision_bits` | `max_precision_bits` | EN-5 | `ExactProbLimits` max_precision_bits | 4096 bits | FR-203 |
+| `exact_probabilistic.max_rational_bits` | `max_rational_bits` | EN-5 | `ExactProbLimits` max_rational_bits | 65536 bits | FR-203 |
+| `exact_probabilistic.max_policy_iterations` | `max_policy_iterations` | EN-5 | `ExactProbLimits` max_policy_iterations | 10000 iterations | FR-203 |
+| `exact_probabilistic.max_witness_paths` | `max_witness_paths` | EN-5 | `ExactProbLimits` max_witness_paths | 1024 paths | FR-203 |
+| `statistical.max_samples` | `max_samples` | EN-4 | `StatisticalLimits` max_samples | 16777216 samples | FR-191 |
+| `statistical.max_draws` | `max_draws` | EN-4 | `StatisticalLimits` max_draws | 67108864 draws | FR-191 |
+| `statistical.max_cycle_steps` | `max_cycle_steps` | EN-4 | `StatisticalLimits` max_cycle_steps | 16777216 steps | FR-191 |
+| `statistical.max_sample_steps` | `max_sample_steps` | EN-4 timed sampling | `TimedSampling` max_sample_steps | 16777216 steps | FR-254 |
+| `zone_check.max_symbolic_states` | `max_symbolic_states` | EN-6 zone search | `ZoneCheckLimits` max_symbolic_states | 1048576 zones | FR-239 |
+| `zone_check.max_symbolic_transitions` | `max_symbolic_transitions` | EN-6 zone search | `ZoneCheckLimits` max_symbolic_transitions | 16777216 edges | FR-239 |
+| `zone_check.max_automaton_states` | `max_automaton_states` | EN-6 zone search | `ZoneCheckLimits` max_automaton_states | 1048576 states | FR-239 |
+| `zone_check.max_zone_bytes` | `max_zone_bytes` | EN-6 zone search | `ZoneCheckLimits` max_zone_bytes | 1073741824 bytes | FR-239 |
+| `certificate_check.max_certificate_edges` | `max_certificate_edges` | certificate checkers | `CertificateCheckLimits` max_certificate_edges | 16777216 edges | FR-245 |
+| `certificate_check.max_certificate_bytes` | `max_certificate_bytes` | certificate checkers | `CertificateCheckLimits` max_certificate_bytes | 1073741824 bytes | FR-245 |
+| `schedule.max_demand_points` | `max_demand_points` | schedulability analysis | `ScheduleLimits` max_demand_points | 1048576 points | FR-247 |
+| `monitor.max_window_values` | `max_window_values` | window aggregates | the monitor run's max_window_values | 1048576 values | FR-194 |
+| `hybrid.max_solver_steps` | `max_solver_steps` | hybrid provider | `hybrid.limits` max_solver_steps | 1000000 steps | FR-250 |
+| `hybrid.max_solver_time` | `max_solver_time` | hybrid provider | `hybrid.limits` max_solver_time | 60 seconds | FR-250 |
+
+These request members are not limits and take no row: the search horizon
+`max_depth` and the method bounds `max_live_instances` (FR-209),
+`max_store_buffer` and `max_messages` (FR-225), which settle V-5 or V-6
+and never `LimitReached`; the method settings `q` (FR-254), the seed,
+the statistical method, `min_cycles` and `max_witnesses` (FR-191), which
+stop no run; and the monitor target members `max_reading_gap` and
+`max_event_rate` (FR-251). The evaluation meter an engine reads is the
+call's accounting limits, whose setting names are the accounting table's.
+
 ## Accounting setting names
 
 The S6a evaluation of a call charges the ten counters of
@@ -160,6 +215,7 @@ these names through the same operand grammar as the stage settings
    | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes` |
    | the supplied-value limits type (pre-call phase budgets) | no catalog code: the phase-marked pre-call limit record of FR-277 (replay: `inconclusive`/`NoValue`), never a kernel charge point | FR-277's `supplied.admission_work_units` and `supplied.conversion_work_units`, which are not setting-table rows |
    | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
+   | an engine's limits type | no catalog code: the engine stops and the item settles `incomplete`, `LimitReached{limit, value, setting}` (FR-127 V-7, QSpec FR-461 Behavior 5) | the engine table's names |
 
    Each `stage_limit_exceeded` outcome carries `kind`, `bound`, `actual` and
    `setting`. So does `resource_exhausted`/`intake-limit-exceeded`, wherever
@@ -193,7 +249,7 @@ these names through the same operand grammar as the stage settings
    exposes the caller limits as `--limit <name>=<value>`, repeatable
    (ADR-029 CB-1). QSL SHALL provide the library settings operation that the
    driver CLI calls with those operands: given a list of `<name>=<value>`
-   operands, where `<name>` is a setting name from either table and `<value>` a
+   operands, where `<name>` is a setting name from any of the three tables and `<value>` a
    non-negative decimal integer, it SHALL return the caller limits with each
    named limit at that value. For `format.output_bytes`, the returned caller
    limits SHALL expose the resulting `FormatLimits` to the formatter. When
@@ -226,6 +282,13 @@ these names through the same operand grammar as the stage settings
    in place of the value the request's accounting limits give it; every
    counter with no such entry keeps the request's accounting-limits value.
 
+11. **Engine limit names.** When an engine item stops at a limit of its
+   limits type, its `LimitReached` SHALL name `limit` as the engine
+   table's limit name and `setting` as that row's setting name, never a
+   hyphenated or undotted spelling, and the settings operation and a
+   replay request's `stage_limits` SHALL raise that limit by that setting
+   name.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -241,6 +304,8 @@ these names through the same operand grammar as the stage settings
 | FR-255-AC-9 | The settings operation given `depth=1` and `accounting=1` each returns a usage refusal with cause unknown setting; given `work_units=ten`, `work_units=-1` and `work_units=18446744073709551616` each returns cause not an integer; given `work_units=5` and `work_units=6` together returns cause repeated naming `work_units=6`. Each refusal names its operand, and no stage runs. | Test (TC-921) |
 | FR-255-AC-10 | A replay request whose `stage_limits` holds the entry `work_units` at `B` decodes, and its call runs with `work_units` at `B` whatever the request's accounting limits give `work_units`, and with every other counter at the request's accounting-limits value. For FR-098-AC-9's counterexample, the entry `work_units` one below the argument's node count settles `inconclusive` with cause `NoValue`, naming `work_units`, and the entry raised to fit replays. | Test (TC-921) |
 | FR-255-AC-11 | Two replay requests that differ only in how they reach the same effective accounting limits, one carrying every counter in its accounting limits and no accounting entry in `stage_limits`, the other carrying `work_units` and `value_occurrences` only as `stage_limits` entries over accounting limits holding other values for them, give the same function-level value-parity claim identity (`claim()`, FR-357) on every outcome, settle the same, and charge the same. | Test (TC-921) |
+| FR-255-AC-12 | Every limit name of the engine table matches `^[a-z][a-z0-9_]*$`, every setting name of the setting and engine tables matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, and the setting names of the three tables are pairwise distinct. For each engine limits type, its mapping from member to (limit name, setting name) equals its engine-table rows, and every `LimitReached` its engine produces names a pair from that mapping. | Test (TC-1161) |
+| FR-255-AC-13 | FR-126-AC-8's run stopped by `max_states` 2 settles `incomplete`, `LimitReached{limit: max_states, value: 2, setting: model_check.max_states}`, and the settings operation given `model_check.max_states=3` raises it; FR-101-AC-15's exploration with `max_states` 2 returns `Outcome::Bounded` at `Limit::States` with value 2 under setting `explore.states`, and `explore.states=3` leaves a model check's `max_states` at its default. FR-126-AC-6's `max_automaton_states` 50 stop names `max_automaton_states` and `model_check.max_automaton_states`; FR-254-AC-3's `max_sample_steps` 1 stop names `statistical.max_sample_steps`. | Test (TC-1161) |
 
 ## Status
 
