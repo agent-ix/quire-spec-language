@@ -30,9 +30,7 @@ use crate::check::ir::{
     CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, IntegerRange, Node, NodeId,
     NodeKind, RecordSlot, Slot, Visit,
 };
-use crate::check::refusal::{
-    CheckCause, CheckRefusal, IdentityForm, IdentityNode, KeyFault, WrongSnapshotCause,
-};
+use crate::check::refusal::{CheckCause, CheckRefusal, IdentityForm, IdentityNode, KeyFault};
 use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
@@ -46,6 +44,7 @@ use quire_exact::{
     ArithmeticOperator, CollectionKind, CollectionType, IllTypedCause, Integer, IntegerInterval,
     NodeKey, OrderingOperator, Value, ValueType,
 };
+use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
 use quire_semantic_value::location::Location;
 

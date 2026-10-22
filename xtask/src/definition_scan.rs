@@ -296,6 +296,64 @@ mod tests {
             .to_path_buf()
     }
 
+    /// Whether `tree` names `leaf` (as itself or as the source of a rename).
+    fn use_tree_names(tree: &syn::UseTree, leaf: &str) -> bool {
+        match tree {
+            syn::UseTree::Path(path) => use_tree_names(&path.tree, leaf),
+            syn::UseTree::Name(name) => name.ident == leaf,
+            syn::UseTree::Rename(rename) => rename.ident == leaf,
+            syn::UseTree::Glob(_) => false,
+            syn::UseTree::Group(group) => group.items.iter().any(|item| use_tree_names(item, leaf)),
+        }
+    }
+
+    /// Collects the files whose `pub use` names a given leaf.
+    struct PubUseFinder<'a> {
+        leaf: &'a str,
+        found: bool,
+    }
+
+    impl<'ast> Visit<'ast> for PubUseFinder<'_> {
+        fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+            if !matches!(node.vis, syn::Visibility::Inherited)
+                && use_tree_names(&node.tree, self.leaf)
+            {
+                self.found = true;
+            }
+        }
+    }
+
+    /// FR-401-AC-3: `WrongSnapshotCause` lives in `quire-semantic-value`
+    /// alone. No QSL crate defines it or re-exports it through a `pub use`,
+    /// so no path of a QSL crate names it.
+    #[trace("FR-401-AC-3")]
+    #[test]
+    fn no_qsl_crate_reexports_wrong_snapshot_cause() {
+        let root = workspace_root();
+        let mut dirs = vec!["src".to_owned()];
+        for entry in fs::read_dir(&root).expect("workspace root lists") {
+            let name = entry.expect("entry reads").file_name();
+            let name = name.to_string_lossy().into_owned();
+            if name.starts_with("qsl-") && root.join(&name).join("src").is_dir() {
+                dirs.push(format!("{name}/src"));
+            }
+        }
+        let mut scanned = 0;
+        for dir in &dirs {
+            for file in source_files(&root, dir).expect("sources list") {
+                let parsed = parse_file(&root, &file).expect("source parses");
+                let mut finder = PubUseFinder {
+                    leaf: "WrongSnapshotCause",
+                    found: false,
+                };
+                finder.visit_file(&parsed);
+                assert!(!finder.found, "{file} re-exports WrongSnapshotCause");
+                scanned += 1;
+            }
+        }
+        assert!(scanned > 100, "the scan read {scanned} files");
+    }
+
     /// TC-170 step 2: `value::expression::mod.rs` declares none of `check`,
     /// `facts`, `ir`, `termination`; step 6's mod-declaration half (see this
     /// module's own doc): its *only* declarations are `evaluate`, `family`
@@ -439,7 +497,6 @@ mod tests {
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
             "ProvedInterval",
-            "WrongSnapshotCause",
             "CheckedExpression",
             "CheckedFunction",
             "PackageDeclarations",
@@ -456,6 +513,7 @@ mod tests {
             "DEFAULT_CHECKING_INPUT_BYTES",
             "DEFAULT_CHECKING_WORK_BUDGET",
             "CheckMode",
+            "WrongSnapshotCause",
         ] {
             let locations = definitions.items.get(symbol).cloned().unwrap_or_default();
             assert_not_defined_in_qsl(symbol, &locations);
@@ -480,7 +538,6 @@ mod tests {
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
             "ProvedInterval",
-            "WrongSnapshotCause",
         ];
         for name in names {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();

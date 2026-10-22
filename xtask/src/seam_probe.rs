@@ -115,7 +115,7 @@ pub struct SeamLocation {
 /// so it resolves unqualified.
 ///
 /// FR-090-AC-6 (TC-387): the `ProtocolClause` snapshot cause's
-/// `catalog_code()` match over `crate::check::WrongSnapshotCause`, whose
+/// `catalog_code()` match over `quire_semantic_value::call::WrongSnapshotCause`, whose
 /// `#[cfg(seam_probe)]` variant has an arm only in `WrongSnapshotCause::
 /// as_str`. **S4-shaped, not S4 itself (PR #434 review, LOW-4):** the match
 /// has the same shape S4 does (a `Cause` enum's `catalog_code()` arm), but
@@ -1523,8 +1523,13 @@ mod tests {
     /// variant through a forced `_` arm with no `E0004`, defeating the seam
     /// entirely).
     fn assert_enum_is_not_non_exhaustive(workspace_root: &Path, file: &str, name: &str) {
-        let path = workspace_root.join(file);
-        let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("{file}: {error}"));
+        assert_enum_file_is_not_non_exhaustive(&workspace_root.join(file), file, name);
+    }
+
+    /// [`assert_enum_is_not_non_exhaustive`] over an enum in the source file
+    /// at `path`, reported as `file`.
+    fn assert_enum_file_is_not_non_exhaustive(path: &Path, file: &str, name: &str) {
+        let source = fs::read_to_string(path).unwrap_or_else(|error| panic!("{file}: {error}"));
         let parsed = syn::parse_file(&source).unwrap_or_else(|error| panic!("{file}: {error}"));
         let item_enum = parsed
             .items
@@ -1549,7 +1554,7 @@ mod tests {
     /// enum (`ExprNode`), the checked node enum (`NodeKind`), `Value`'s
     /// function family's own `Cause` (`CheckCause`) or
     /// `WrongSnapshotCause` (`ProtocolClauseSnapshot`'s own S4-shaped, not
-    /// family-`Cause`, cause) carries `#[non_exhaustive]`.
+    /// family-`Cause`, cause; defined in `quire-semantic-value`) carries `#[non_exhaustive]`.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-7")]
     #[test]
     fn closed_enums_carry_no_non_exhaustive_attribute() {
@@ -1560,11 +1565,29 @@ mod tests {
             ("qsl-semantics/src/family/mod.rs", "FamilyKind"),
             ("qsl-forms/src/syntax.rs", "ExprNode"),
             ("qsl-semantics/src/check/ir.rs", "NodeKind"),
-            ("qsl-semantics/src/check/refusal.rs", "WrongSnapshotCause"),
             ("qsl-semantics/src/check/refusal.rs", "CheckCause"),
         ] {
             assert_enum_is_not_non_exhaustive(workspace_root, file, name);
         }
+        // `WrongSnapshotCause` is defined in `quire-semantic-value` (FR-401
+        // S1): read its source from the dependency `cargo metadata` resolves,
+        // as `canonical_types` reads the shared leaves.
+        let metadata =
+            crate::canonical_types::cargo_metadata(workspace_root).expect("cargo metadata runs");
+        let leaf = crate::canonical_types::packages(&metadata)
+            .expect("metadata reads")
+            .into_iter()
+            .find(|package| package.name == "quire-semantic-value")
+            .expect("quire-semantic-value is a resolved dependency");
+        let root = leaf
+            .roots
+            .first()
+            .expect("quire-semantic-value has a source root");
+        assert_enum_file_is_not_non_exhaustive(
+            &root.join("call.rs"),
+            "quire-semantic-value/src/call.rs",
+            "WrongSnapshotCause",
+        );
     }
 
     /// Whether `attrs` deny `clippy::wildcard_enum_match_arm` or

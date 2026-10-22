@@ -1534,6 +1534,20 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
 }
 
 #[test]
+#[trace("TC-918", "FR-096-AC-19", "FR-096-AC-21", "FR-090-AC-17")]
+fn native_integer_capacity_breach_becomes_a_typed_internal_fault() {
+    let cause = quire_exact::CheckedInvariantCause::NativeIntegerCapacityBreach;
+    assert!(qsl_semantics::check::received_kernel_causes().contains(&cause));
+    let refusal = Refusal::CheckedInvariant { cause };
+    assert_eq!(kernel_refusal_record(&refusal, None), None);
+    let fault = Machine::stopped(Stop::Refused(refusal), None).unwrap_err();
+    assert_eq!(fault.stage(), "S6a");
+    assert_eq!(fault.invariant(), "checked-program-invariant");
+    assert_eq!(fault.kernel_cause(), Some(cause));
+    assert_eq!(fault.catalog_code().code(), "runtime_invariant");
+}
+
+#[test]
 #[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
 fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
     let location = Location::root(Origin::Expression);

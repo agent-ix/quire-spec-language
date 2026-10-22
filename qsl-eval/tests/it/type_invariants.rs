@@ -325,7 +325,7 @@ fn an_invariant_is_checked_and_a_pre_read_refuses_at_its_clause() {
     assert!(matches!(
         refusal.type_invariant_cause(),
         Some(CheckCause::WrongSnapshot(
-            qsl_semantics::check::WrongSnapshotCause::ForbiddenPreRead
+            quire_semantic_value::call::WrongSnapshotCause::ForbiddenPreRead
         ))
     ));
     assert_refused(

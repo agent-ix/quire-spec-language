@@ -11,6 +11,7 @@ use qsl_foundation::Span;
 use quire_exact::Integer;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
+use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
@@ -1522,74 +1523,6 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::I2WorkUnits
             | Setting::ExploreStates
             | Setting::ExploreTransitions => Err(setting),
-        }
-    }
-}
-
-/// FR-272's closed `wrong_snapshot` cause list this crate decides for
-/// `pre(...)` (native-diagnostics.md: `wrong-observation`, `wrong-invocation`,
-/// `wrong-anchor` or `forbidden-pre-read`). Only the two causes `pre(...)`
-/// itself can name are represented; `wrong-observation` and
-/// `wrong-invocation` are catalogued for the native runtime's own
-/// snapshot-selection refusals (`src/runtime`), not this crate.
-///
-/// The two represented causes split by *layer*, not by clause: every
-/// checking-time refusal this crate's `Typer` decides over `pre(...)`'s own
-/// syntax -- wrong clause, ineligible operand, or a captured `let` alias
-/// (FR-208 applies FR-042 to invariants/preconditions and names this same
-/// cause explicitly) -- is [`Self::ForbiddenPreRead`]. [`Self::WrongAnchor`]
-/// is reserved for the one case the checker cannot see at all: a
-/// postcondition it did admit, evaluated at runtime
-/// (`evaluate.rs`'s `select_anchor`) over a population value with no
-/// attached pre binding.
-///
-/// FR-104 adds a second checking-time `wrong_snapshot`/`wrong-anchor`
-/// refusal -- `result` named anywhere but an admitting postcondition -- but
-/// it is not a third variant of this enum: [`super::refusal::CheckCause`]'s
-/// own [`super::refusal::CheckCause::UnanchoredResult`] carries the payload
-/// FR-104-AC-2 needs (the clause kind and the operation), which this type
-/// cannot hold without widening every runtime consumer of the FR-090
-/// evaluation-cause contract. The two share one catalog cause
-/// (`wrong-anchor`) and nothing else: `UnanchoredResult` is `check`'s own
-/// checking-time path to it, [`Self::WrongAnchor`] stays the runtime-only
-/// path, and this enum's two-cause closure is otherwise unchanged.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum WrongSnapshotCause {
-    /// A postcondition's `pre(...)` evaluated over a `Value::Population`
-    /// with no attached pre anchor -- the caller supplied a population
-    /// admitted through `admit_binding` directly rather than through
-    /// `admit_invocation` (the only constructor that attaches one). A
-    /// runtime-only cause: the checker has no way to see, at checking time,
-    /// which admission path a caller's runtime argument will take.
-    WrongAnchor,
-    /// `pre(...)` written where the checked declaration does not admit it
-    /// at all (anywhere but an operation's postcondition -- shared-
-    /// grammar.md's "self, result and pre(...) are caller-side anchor
-    /// operations, unavailable as implicit ambient state inside a reusable
-    /// predicate"), or admitted but refused over its own operand: a bare
-    /// `Name`, literal, or a value already captured/computed outside this
-    /// `pre(...)`'s own operand (FR-042's Behavior clause: "Pre is refused
-    /// ... on bare parameters/constants/captures"; FR-042-AC-3's `let s =
-    /// self in pre(s.version)` analogue for a `let`-aliased state root) --
-    /// re-anchoring any of these would silently do nothing rather than
-    /// replay a real read under the pre observation.
-    ForbiddenPreRead,
-    /// FR-063, TC-387: exists only so `--cfg seam_probe` makes the
-    /// `ProtocolClause` snapshot cause's `catalog_code()` match
-    /// non-exhaustive. Never constructed outside the probe build.
-    #[cfg(seam_probe)]
-    __SeamProbe,
-}
-
-impl WrongSnapshotCause {
-    /// The closed FR-272 cause tag. Not a seam-probe location: it owns the
-    /// probe variant's own arm.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::WrongAnchor => "wrong-anchor",
-            Self::ForbiddenPreRead => "forbidden-pre-read",
-            #[cfg(seam_probe)]
-            Self::__SeamProbe => "__seam_probe__",
         }
     }
 }

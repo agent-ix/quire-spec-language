@@ -1892,6 +1892,7 @@ pub mod fixtures {
     pub fn received_kernel_causes() -> Vec<quire_exact::CheckedInvariantCause> {
         use quire_exact::{CheckedInvariantCause as C, IllTypedCause};
         let mut cases = vec![
+            C::NativeIntegerCapacityBreach,
             C::CollectionElementNotAdmitted,
             C::DeferredResultNotAdmitted,
             C::CanonicalKeyUnavailable,
@@ -1934,7 +1935,8 @@ pub mod fixtures {
         // The actual dependency enum is closed: adding a cause requires a fixture.
         for cause in &cases {
             match cause {
-                C::CollectionElementNotAdmitted
+                C::NativeIntegerCapacityBreach
+                | C::CollectionElementNotAdmitted
                 | C::DeferredResultNotAdmitted
                 | C::CanonicalKeyUnavailable
                 | C::BoundedDivisionExpected

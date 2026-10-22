@@ -172,7 +172,7 @@ pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
 }
 
 /// `cargo metadata` for the workspace at `workspace_root`.
-fn cargo_metadata(workspace_root: &Path) -> Result<serde_json::Value> {
+pub(crate) fn cargo_metadata(workspace_root: &Path) -> Result<serde_json::Value> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let output = Command::new(cargo)
         .args(["metadata", "--format-version", "1"])
