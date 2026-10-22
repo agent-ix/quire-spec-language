@@ -39,3 +39,13 @@ is sound.
 
 Mergeable on failure-domain grounds. All three are minor, and FND-001 is the one most likely to
 surprise an author.
+
+## Dispositions
+
+Round 1, reviewed QSL #1214 at 3fd9a7398 (fix commit over b155d3ea3); code facts re-verified in the QSL tree at that head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | negative literal is written `rational(-3, 1) ms` (vector n, value "-3"); `-3 ms` refuses `operator-ineligible` at the negation (vector m); matches check.rs negate (Quantity arm -> ineligible) and contextual() not treating a quantity negation as contextual |
+| FND-002 | fixed | bullet widened to "another unit or no quantity"; vector g2 (`x = 3 ms`, `x: Integer`) refuses `type-mismatch` at the comparison: a quantity literal is not contextual, so it is inferred, and check_equality_in (quire-semantic-value ac0e137) falls to its TypeMismatch arm, raised at the equality's location |
+| FND-003 | fixed | order stated as ceiling, zero denominator, unit name, position type, with vector `f(rational(1, 0) ghost)`; matches exact::value (bits, then Rational::new) before scope.unit_named in typing.rs |
