@@ -69,8 +69,8 @@ Round 1, head 4d558634d (fix commit 4d558634d on top of a merge of main). Focuse
 | FND-004 | accepted-no-change | The test is kept, with its doc stating that it cannot fail today. The guarantee is structural, and the test holds the spec in place for when a bound reaches the writer. Low, so it is not worth a round. |
 | FND-005 | fixed | 4d558634d |
 
-Round 2.
+Round 2, head 2236f590d (fix commit 406c08a38, then a merge of main). Measured by mutation, then restored.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-006 | fixed | See PR head. `a_commit_by_a_scope_role_counts_in_its_region` puts a `commit` by the scope role after `S`; the region is `Main`. With the `declaration.role` branch of the region filter disabled it fails (1 failed, 8 passed); restored. |
+| FND-006 | fixed | 406c08a38. `a_commit_by_a_scope_role_counts_in_its_region` puts a `commit` by the scope role after `S` and expects the region `Main`. With the `declaration.role` branch of the region filter disabled, it fails (1 failed, 8 passed). |

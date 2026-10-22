@@ -34,8 +34,8 @@ No SHALL statement or AC changed. Both files pass `quire validate`. A `Remaining
 
 ## Dispositions
 
-Round 2.
+Round 2, head 2236f590d (fix commit 406c08a38).
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | See PR head. The FR-209 Remaining-work note says the tests use the `Int` range trigger `Level` until QSL-968 lands, and that the ACs, written over the record type `Tick`, are unchanged. |
+| FND-001 | fixed | 406c08a38. The note says the tests of these ACs use the `Int` range trigger `Level` until QSL-968 lands, and that the ACs, written over the record type `Tick`, are unchanged. |
