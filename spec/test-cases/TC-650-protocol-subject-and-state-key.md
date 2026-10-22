@@ -12,7 +12,7 @@ relationships:
 
 Verify the protocol subject's construction and refusals, the thread paths and ordinals, binder removal and the canonical state key.
 
-Scope: FR-205-AC-1 to FR-205-AC-7.
+Scope: FR-205-AC-1 to FR-205-AC-8.
 
 ## Test Procedure
 
@@ -39,6 +39,15 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
    read the ordinals the second forks of `P` and `Q` take while the first
    `u` rests at `U1`, each `u`'s environment and `Ck` value, and the key's
    `observations`.
+8. Run FR-205-AC-8's protocol: activate the two registrations by the two
+   triggers in both orders, take each compensation thread's `cattempt` and
+   `cend`, then step `Committed` and finish the instance;
+   read the keys. Run its `attempts 2` variant with the retry relation
+   `not e.ok`: take thread `(0, Refund, 0)`'s first `cattempt` with each
+   record, then its retry `cattempt` and `cend`, and, on a separate path,
+   step `Committed` while the thread rests at its retry point; read the
+   `observations` member and the enabled steps of that thread after each
+   step. Repeat with the retry relation `l.ok`.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 
@@ -63,3 +72,12 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 - Step 7: `P` forks at ordinal 0 again and `Q` at ordinal 1; each `u` reads its
   own iteration's `a` (true, then false) and no state refuses; `observations`
   holds no `a` under a completed `u`.
+- Step 8: distinct keys for the two activation orders, each thread's entry
+  naming its registration; the commit entry from the commit step until the
+  instance finishes. In the `not e.ok` variant, the thread's attempt record
+  with the first attempt's `ok` value after its first `cattempt`, a retry
+  `cattempt` enabled after `ok` false and only `cend` after `ok` true,
+  distinct keys for the two records, and no attempt record after the second
+  `cattempt`, after `cend` or after the step of `Committed`. In the `l.ok`
+  variant, no attempt record in any state, and one state after the two first
+  `cattempt` steps.

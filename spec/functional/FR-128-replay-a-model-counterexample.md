@@ -41,7 +41,11 @@ re-executes each step through FR-120's `ModelSystem` with FR-101 `replay`,
 checks the lasso against the fairness set, and evaluates the formula over
 the replayed trace by FR-125, or for a deadlock counterexample checks the
 final state (ADR-018 CX-3, DL-5). It settles an FR-072 replay result.
-Replay needs no model checker and no solver.
+Replay needs no model checker and no solver. A sampled-witness counterexample
+over a package that S4 does not emit (FR-185) takes the checked subject
+instead of a package: FR-193's `replay_sampled_witness` applies these same
+re-execution, fairness and evaluation steps to that subject, recompiles
+nothing and compares no `package_id`.
 
 ## Use case
 

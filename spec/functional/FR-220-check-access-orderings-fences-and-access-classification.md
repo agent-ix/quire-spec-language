@@ -72,6 +72,11 @@ weak model corresponds to real accesses.
   footprints of attempts in two or more of its branches contain it and at
   least one writes it.
 - Every location an attempt touches that is not shared SHALL be branch-local.
+- An `event`, `effect`, `commit`, `send` or `receive` node inside a branch of a
+  weak `parallel` whose constraint reads a model location SHALL be a reader of
+  that location (ADR-025 MA-1): the location SHALL count toward sharing as an
+  attempt's read does. A `finish` and a node outside every weak `parallel`
+  SHALL NOT be readers.
 - EN-1 SHALL classify each instantiated attempt in a weak `parallel` as MA-2
   defines: a load reads its one shared location only; a store writes it with no
   pre-state read; an RMW reads it in the pre-state and writes it; a local
@@ -152,6 +157,11 @@ possible takes it.
   attempt whose shared footprint holds two or more locations, an any-object
   location or a population membership, the pre-check SHALL return the item's V-8
   outcome, `WeakAccessShape{site, transition, shape: MultiLocation{locations}}`.
+- When the resolved model is weak and a reader reads a location that is
+  shared, the pre-check SHALL return the item's V-8 outcome,
+  `WeakAccessShape{site, transition, shape: MultiLocation{locations}}`, naming
+  the reader and the shared locations it reads. Under `sc` the reader SHALL be
+  admitted.
 - Under `sc`, every attempt SHALL be admitted whatever its shape.
 
 ## Acceptance Criteria
@@ -172,6 +182,7 @@ possible takes it.
 | FR-220-AC-12 | EN-1 classifies AC-7's two `relaxed` stores as two stores to one shared location. | Test (EN-1 sharing; TC-665 step 11) |
 | FR-220-AC-13 | EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. | Test (EN-1 sharing; TC-665 step 12) |
 | FR-220-AC-14 | The EN-1 pre-check settles V-8 `WeakAccessShape` for an instantiated load with `release`, a store with `acquire`, and an RMW with no ordering, under `tso` and under `ra`. | Test (EN-1 pre-check; TC-665 step 13) |
+| FR-220-AC-15 | In `SB`'s `parallel` under `tso`, a branch holding an `event` whose constraint reads `x.v` beside the branch whose attempt stores `x.v` settles V-8 `WeakAccessShape` with `MultiLocation` naming the event and `(x, v)`; under `sc`, and in a variant of `SB` whose universe also holds a `Cell` `z` that no attempt accesses, with the `event` reading `z.v`, the item is admitted. A `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
 
 ## Dependencies
 
