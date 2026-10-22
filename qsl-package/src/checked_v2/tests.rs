@@ -1304,6 +1304,68 @@ fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: 
     }
 }
 
+/// Supplies, as dependency package evidence, the admitted package of every
+/// `dependency_selections` entry of `envelope` (QSpec FR-322-AC-37: a
+/// `dependency_reference` callee is admitted when the dependency's admitted
+/// package is supplied under its identity). The package is the published
+/// `positive-*.json` fixture whose recomputed `package_id` the selection
+/// names, itself read with its own dependencies supplied first.
+fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envelope: &Value) {
+    let Some((_, fixtures)) = qspec_v2_fixtures() else {
+        return;
+    };
+    let Some(selections) = envelope["lock"]["dependency_selections"].as_array() else {
+        return;
+    };
+    for selection in selections {
+        // A malformed entry (the selection vectors' shape defects) supplies
+        // nothing; the reader refuses it by its shape.
+        let (Some(identity_text), Some(digest)) = (
+            selection["identity"].as_str(),
+            selection["package_id"]["digest"].as_str(),
+        ) else {
+            continue;
+        };
+        // A selection naming a package no published fixture holds (the
+        // selection vectors' placeholder ids) supplies nothing: the reader
+        // then refuses it `missing_import`, which those vectors expect.
+        let Some(library) = fixtures
+            .iter()
+            .map(|path| read_fixture(path))
+            .find(|candidate| {
+                format!(
+                    "{:x}",
+                    Sha256::digest(&jcs(&candidate["identity_preimage"])[..])
+                ) == digest
+            })
+        else {
+            continue;
+        };
+        let mut inner = CheckedPackageEvidence::new();
+        for feature in library["lock"]["required_features"].as_array().unwrap() {
+            inner.support_feature(feature.as_str().unwrap());
+        }
+        supply_qspec_domain_package(&mut inner, &library);
+        supply_qspec_dependency_packages(&mut inner, &library);
+        let admitted = read_checked_package_v2(
+            &jcs(&library),
+            identity(identity_text),
+            V2ReadLimits::default(),
+            &inner,
+            &pin_library(
+                identity_text,
+                PackageId::of_preimage(&jcs(&library["identity_preimage"])),
+            ),
+        )
+        .unwrap_or_else(|_| panic!("dependency {identity_text} is admitted"))
+        .into_value()
+        .admitted;
+        evidence
+            .insert_dependency_package(identity_text, admitted)
+            .expect("a fresh evidence key");
+    }
+}
+
 /// QSL's whole I2 read of the fixture `envelope`, pinned at the
 /// `package_id` its own identity preimage recomputes to. Evidence treats
 /// the fixture's required features as supported. The published fixture is
@@ -1314,6 +1376,7 @@ fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
         evidence.support_feature(feature.as_str().unwrap());
     }
     supply_qspec_domain_package(&mut evidence, envelope);
+    supply_qspec_dependency_packages(&mut evidence, envelope);
     let package_id = PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
     let outcome = read_v2(
         &jcs(envelope),
