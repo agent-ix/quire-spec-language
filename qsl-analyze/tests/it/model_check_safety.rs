@@ -7,18 +7,28 @@
 //! read back by re-executing the counterexample's steps. A clause's `holds`
 //! atoms are read through the test's own letters (S3 checks no `holds`
 //! condition yet, as `crate::model_check` notes), each atom by a predicate
-//! that computes the condition its source text spells.
+//! that computes the condition its source text spells. A guarded `on each`
+//! clause is the exception: S3 does not type its `when` condition, so the
+//! source writes the placeholder `when (true)` and the guard's reading is the
+//! test's own (FR-126-AC-16), given to the engine directly.
 //!
 //! Not covered here: FR-126-AC-1, AC-3 to AC-5, AC-7 and AC-8 rest on TP-4
-//! claims (QSL-530); AC-6's refused-contract and `test/tallies` rows and
-//! AC-9's TP-4 row have no fixture in this module.
+//! claims (QSL-530); AC-9's TP-4 row has no fixture in this module. AC-6's
+//! refused-contract row has none in this crate: every kernel refusal a
+//! contract can raise is proved away by S3, a family refusal needs a named
+//! population (`PopulationReferenceNotEmitted`) or a dispatch-family fixture
+//! whose `family_steps` or `ancestor_steps` ceiling refuses a dispatched
+//! call, and the dispatch fixtures live in `qsl-eval`'s tests (Remaining
+//! work: QSL-898). Replay's reading of a guarded condition
+//! (`ReplayedLetters::activation`) is untested too: replay recompiles the
+//! unit, and S4 emits no `on each` clause (Remaining work: QSL-898).
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::{
     CounterexampleKind, IncompleteCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
-    ModelCheckOutcome, ReachedLimit, TemporalCounterexample,
+    ModelCheckOutcome, ReachedLimit, TemporalCounterexample, UndefinedLocus,
 };
 use quire_exact::Cancel;
 use serde_json::json;
@@ -46,15 +56,24 @@ fn run(
     atoms: Vec<Atom>,
     limits: ModelCheckLimits,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+    let letters = Letters::new(&world.clauses[index], atoms);
+    run_letters(world, index, keys, &letters, limits)
+}
+
+/// The run of the world's clause `index` over the universe `keys`, read
+/// through `letters`.
+fn run_letters(
+    world: &World,
+    index: usize,
+    keys: &[&str],
+    letters: &Letters,
+    limits: ModelCheckLimits,
+) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     let clause = &world.clauses[index];
-    let letters = Letters::new(clause, atoms);
     check_model(
         ModelCheckRequest {
             subject: world.subject(keys, UNLIMITED),
-            item: ModelCheckItem::Clause {
-                clause,
-                letters: &letters,
-            },
+            item: ModelCheckItem::Clause { clause, letters },
             max_depth: None,
             limits,
             reductions: Default::default(),
@@ -436,9 +455,10 @@ fn a_decided_bounded_claim_still_reads_every_atom_up_to_its_horizon() {
 }
 
 /// A TP-4 clause is decided by the liveness engine (here its proof waits for
-/// FR-339's component certificate) and an `on each` activation with a `when`
-/// condition has no letter seam, so it is refused before any state is
-/// explored.
+/// FR-339's component certificate), but the liveness engine does not read an
+/// `on each` activation's `when` condition, so a guarded TP-4 clause is
+/// refused before any state is explored (FR-126 "Unsupported liveness
+/// clauses").
 #[test]
 fn a_liveness_clause_is_decided_and_a_guarded_activation_is_refused() {
     let guarded = format!("{} when (true)", each("Counter"));
@@ -469,9 +489,214 @@ fn a_liveness_clause_is_decided_and_a_guarded_activation_is_refused() {
         ),
         "{refusal:?}"
     );
-    let refusal = refused(BOUNDED, &guarded, "eventually[0,1] holds(c.value = 3)");
+    let refusal = refused(INFINITE, &guarded, "always eventually holds(c.value = 3)");
     assert!(
         matches!(refusal, ModelCheckRefusal::GuardedActivation),
+        "{refusal:?}"
+    );
+}
+
+/// FR-126-AC-6's empty-prefix row: from an initial state whose `pre`
+/// evaluates undefined, `always holds(true)` is violated by the empty prefix
+/// at that state, with `kind: UndefinedEvaluation` at position 0. Over the
+/// Counter subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from
+/// value 2, the modulus is undefined (`DivisionByZero`) in the initial
+/// state's own expansion. FR-120-AC-9's `test/tallies` subject, whose
+/// `sum<Low>` would be undefined (`SumOutOfDomain`), is not constructible:
+/// QSpec FR-145's range proof refuses at S3 a `sum<N>` it cannot prove within
+/// `N`, and `SumOutOfDomain` is raised only by a `sum` checked under
+/// `CheckMode::Kernel`, so no linked package reaches it.
+#[trace("TC-521", "FR-126-AC-6")]
+#[test]
+fn an_undefined_precondition_at_the_initial_state_is_an_empty_prefix_violation() {
+    let world = World::new(
+        model_world::counter(),
+        "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n\
+         post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n",
+        INFINITE,
+        &[Clause {
+            activation: ORIGIN,
+            formula: "always holds(true)",
+        }],
+        &[("c", json!({"value": {"integer": "2"}}))],
+    );
+    let outcome = checked(&world, 0, &["c"], vec![Box::new(|_, _| Some(true))]);
+    let counterexample = violated(&outcome);
+    assert!(counterexample.prefix.is_empty(), "{counterexample:?}");
+    assert_eq!(counterexample.lasso, None);
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {counterexample:?}");
+    };
+    assert_eq!(evaluation.site.position, 0);
+    assert_eq!(
+        evaluation.cause,
+        UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
+    );
+    assert_eq!(values(&world, &["c"], counterexample, "c", "value"), [2]);
+}
+
+/// A guarded world: the Counter subject with the one `on each` clause
+/// `activation` over `profile` and `formula`.
+fn guarded_world(profile: &str, formula: &str) -> World {
+    let activation = format!("{} when (true)", each("Counter"));
+    counter_world(
+        profile,
+        &[Clause {
+            activation: &activation,
+            formula,
+        }],
+    )
+}
+
+/// The run of the guarded world's one clause, its `holds` atoms read by
+/// `atoms` and its `when` condition by `guard`.
+fn guarded_run(
+    world: &World,
+    atoms: Vec<Atom>,
+    guard: fn(i64) -> Option<bool>,
+) -> ModelCheckOutcome {
+    let letters =
+        Letters::new(&world.clauses[0], atoms).guarded(value(guard), crate::units::unread());
+    run_letters(world, 0, &["c"], &letters, ModelCheckLimits::default()).expect("checked")
+}
+
+/// FR-126-AC-16 for TP-2: a guarded `on each` clause activates at the
+/// positions where its `when` condition is true. Over the Counter subject,
+/// `eventually[0,1] holds(c.value = 3)` is violated unguarded by the prefix
+/// `0 -inc-> 1`; guarded by `c.value = 1` it activates at position 1 alone
+/// and is violated by the prefix `0 -inc-> 1 -inc-> 2`; guarded by
+/// `c.value >= 2` it activates at values 2 and 3, each of which reaches value 3 within
+/// its window, and holds.
+#[trace("TC-521", "FR-126-AC-16")]
+#[test]
+fn a_guarded_bounded_clause_activates_where_its_condition_holds() {
+    let world = guarded_world(BOUNDED, "eventually[0,1] holds(c.value = 3)");
+    let outcome = guarded_run(&world, vec![value(|v| Some(v == 3))], |v| Some(v == 1));
+    let counterexample = violated(&outcome);
+    assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+    assert_eq!(
+        values(&world, &["c"], counterexample, "c", "value"),
+        [0, 1, 2]
+    );
+    let outcome = guarded_run(&world, vec![value(|v| Some(v == 3))], |v| Some(v >= 2));
+    holds(&outcome);
+}
+
+/// FR-126-AC-16 for TP-1: `always holds(c.value <= 1)` `on each`, guarded by
+/// `c.value >= 3`, is violated at the guarded position 3 by the prefix `0
+/// -inc-> 1 -inc-> 2 -inc-> 3`, where the unguarded clause is violated at
+/// value 2; guarded by `c.value = 7`, a condition no position meets, it
+/// holds. A guarded proof carries no closure certificate.
+#[trace("TC-521", "FR-126-AC-16")]
+#[test]
+fn a_guarded_invariant_clause_is_read_from_its_activating_positions() {
+    let activation = format!("{} when (true)", each("Counter"));
+    let world = counter_world(
+        INFINITE,
+        &[Clause {
+            activation: &activation,
+            formula: "always holds(c.value <= 1)",
+        }],
+    );
+    let outcome = guarded_run(&world, vec![value(|v| Some(v <= 1))], |v| Some(v >= 3));
+    let counterexample = violated(&outcome);
+    assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+    assert_eq!(
+        values(&world, &["c"], counterexample, "c", "value"),
+        [0, 1, 2, 3]
+    );
+    let outcome = guarded_run(&world, vec![value(|v| Some(v <= 1))], |v| Some(v == 7));
+    let ModelCheckOutcome::Holds { certificate, .. } = &outcome else {
+        panic!("expected Holds, got {outcome:?}");
+    };
+    assert!(certificate.states.is_empty(), "{certificate:?}");
+}
+
+/// FR-126-AC-16: a `when` condition with no value at a position the monitor
+/// reads ends the run with `UndefinedEvaluation` located at the activation,
+/// not read as false. `eventually[0,3] holds(c.value = 3)` `on each`, its
+/// condition undefined at value 2, is violated at position 2 with the prefix
+/// `0 -inc-> 1 -inc-> 2`.
+#[trace("TC-521", "FR-126-AC-16")]
+#[test]
+fn an_undefined_activation_condition_is_an_undefined_evaluation() {
+    let world = guarded_world(BOUNDED, "eventually[0,3] holds(c.value = 3)");
+    let outcome = guarded_run(&world, vec![value(|v| Some(v == 3))], |v| {
+        (v != 2).then_some(true)
+    });
+    let counterexample = violated(&outcome);
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {counterexample:?}");
+    };
+    assert_eq!(evaluation.site.locus, UndefinedLocus::Activation);
+    assert_eq!(evaluation.site.position, 2);
+    assert_eq!(
+        evaluation.cause,
+        UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
+    );
+    assert_eq!(
+        values(&world, &["c"], counterexample, "c", "value"),
+        [0, 1, 2]
+    );
+}
+
+/// FR-126-AC-16 under partial-order reduction (FR-156): a partial-order run
+/// of a guarded clause asks the letter seam for the guard's footprint, and a
+/// guard whose footprint has no rule refuses the run `Footprint` before any
+/// state is explored; the unreduced run reads no footprint. A guard that
+/// reads nothing leaves the reduced and the unreduced run both violating the
+/// clause. Which transitions the footprint makes visible is
+/// `crate::partial_order`'s test of the same name.
+#[trace("TC-521", "FR-126-AC-16")]
+#[test]
+fn a_partial_order_run_reads_the_guards_footprint() {
+    let activation = format!("{} when (true)", each("Counter"));
+    let world = counter_world(
+        INFINITE,
+        &[Clause {
+            activation: &activation,
+            formula: "always holds(c.value = 9)",
+        }],
+    );
+    let run = |partial_order: bool, reads: crate::units::Reads| {
+        let letters = Letters::new(&world.clauses[0], vec![Box::new(|_, _| Some(false))])
+            .guarded(value(|v| Some(v >= 1)), reads);
+        check_model(
+            ModelCheckRequest {
+                subject: world.subject(&["c"], UNLIMITED),
+                item: ModelCheckItem::Clause {
+                    clause: &world.clauses[0],
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: qsl_analyze::model_check::Reductions {
+                    partial_order,
+                    ..Default::default()
+                },
+            },
+            &Cancel::new(),
+        )
+    };
+    let no_rule = || {
+        Err(
+            qsl_semantics::check::footprint::FootprintRefusal::UnsupportedForm {
+                clause: "C0".to_owned(),
+                form: "when",
+            },
+        )
+    };
+    for (partial_order, reads) in [
+        (false, crate::units::unread()),
+        (true, crate::units::unread()),
+        (false, no_rule()),
+    ] {
+        let outcome = run(partial_order, reads).expect("checked");
+        assert_eq!(violated(&outcome).kind, CounterexampleKind::Formula);
+    }
+    let refusal = run(true, no_rule()).expect_err("the footprint has no rule");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::Footprint(_)),
         "{refusal:?}"
     );
 }

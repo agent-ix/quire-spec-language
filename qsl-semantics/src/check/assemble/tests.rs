@@ -2291,7 +2291,7 @@ fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
 
 /// FR-091-AC-44: `f(3 s)` where `f` takes `Quantity<ms>` refuses
 /// `ill_typed`/`type-mismatch`.
-#[trace("FR-091-AC-44", "TC-483")]
+#[trace("FR-091-AC-44", "FR-093-AC-33", "TC-483")]
 #[test]
 fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
     let source = format!(
@@ -2318,10 +2318,8 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
                 .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
         "the mismatch is located at the argument: {refusals:?}"
     );
-    // A `3 ms` argument has the right type; the checked package has no
-    // literal form to emit a quantity as (`ProbabilisticCause::QuantityLiteral`),
-    // so the only refusal left is that named gap (Remaining work: QSL-949),
-    // not a type mismatch.
+    // FR-093-AC-33: `3 ms` has the right type but retains the V1
+    // quantity-literal refusal until the IR reader admits QSpec's kind.
     let ok = format!(
         "{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}\n\
          function g using v(): Boolean pure {{ f(3 ms) }}"
@@ -2330,7 +2328,7 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
         .1
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-        .expect_err("a quantity literal has no emitted form yet");
+        .expect_err("quantity literals are outside V1 scope");
     assert!(
         matches!(
             refusals.as_slice(),

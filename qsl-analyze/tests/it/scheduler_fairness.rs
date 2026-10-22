@@ -94,6 +94,8 @@ fn chatter_body(members: &str, claim: &str) -> String {
 struct AtV(fn(i64) -> bool);
 
 impl ModelLetters for AtV {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }

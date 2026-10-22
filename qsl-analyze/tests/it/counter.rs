@@ -439,6 +439,8 @@ pub(crate) struct Letters {
 }
 
 impl ModelLetters for Letters {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }

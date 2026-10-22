@@ -294,6 +294,8 @@ impl World {
 struct Constant(bool);
 
 impl ModelLetters for Constant {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }
