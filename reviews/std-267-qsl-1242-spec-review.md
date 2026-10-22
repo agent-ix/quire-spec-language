@@ -84,3 +84,9 @@ Round 1, reviewed at agent-ix/quire-spec-language@783910e6 (fix commit 4e3d151f 
 | FND-004 | fixed | 4e3d151f |
 | FND-005 | fixed | 4e3d151f |
 | FND-006 | fixed | 4e3d151f |
+
+Round 2, reviewed at agent-ix/quire-spec-language@6e472651 (fix commit 3b0a0c8b plus merges of main). Gate: `QSPEC_DIR=<#370 head f326f663> make check-spec-validation` exits 0, with no warning on FR-410 or TC-1140. origin/main (59ba945, #1240) is one commit ahead, and the merge is clean. No new findings.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | 3b0a0c8b |
