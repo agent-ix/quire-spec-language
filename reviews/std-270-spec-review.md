@@ -107,3 +107,9 @@ Round 2, reviewed at 7cdb0c76b5fbec7a9c46451872118ce258ca8b7d.
 | --- | --- | --- |
 | FND-011 | fixed | FR-330-AC-7 names one clause: "the `Counter` clause `always[0,1] holds(InUnit(c.value))`". |
 | FND-012 | fixed | FR-267-AC-15 names the clause `Windowed` run through FR-330 (TC-629's count form, `past[0, 9]`, `min_count 5` gives `insufficient-data` at position 0 with count 1) and the `absent-key` atom `lookup<Counters::Counter>(cs, c) absent undefined = c` (FR-090-AC-12). The window-limit input is FND-013. |
+
+Round 3, reviewed at 3c1d59dc0e594aa5c8c32f35fbdcb25fb079a971.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-013 | fixed | FR-267-AC-15's window-limit case is now a wire vector: a `Windowed` report built to hold `WindowLimitReached{max_window_values, 2, monitor.max_window_values}` is written and read back, and nothing is run. TC-1160 step 3 says the report is constructed. |
