@@ -74,3 +74,20 @@ Round 1, fixed in f4af7d95e.
 | FND-004 | fixed | f4af7d95e: a test each for ignored labels, repeat, and judge order; not mutation-run |
 | FND-005 | fixed | f4af7d95e: probabilistic and schedulability requests added to the linker admission test |
 | FND-006 | accepted-no-change | f4af7d95e: the no-sample case stays direct: a zero-sample test cannot complete through the seam |
+
+Round 1, checked by the reviewer at 369bd13b1 (fix f4af7d95e). The new tests pass (20 run). The mutants were re-run, and each row replaces the coder's claim above.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f4af7d95e: the unreachable guard is deleted; the test is now tagged `TC-620` only and says it covers only the ill-typed clause; the reference-literal clause is ticketed as QSL-971 (Backlog), which holds the refusal and its test |
+| FND-002 | fixed | f4af7d95e: the four missing clauses are now tested: `>= 3` gives estimate 9/20 over a two-test run; mean and `LongRun` carry no `quantile`; no-estimate is checked at `least_favourable`, whose `quantile` the verdict copies |
+| FND-003 | fixed | f4af7d95e: the blocker is restated in the PR body (FR-120 has no encoding for a quantity-typed parameter value, STD-113; the stub seam carries no unit); the `Value::Quantity` arm of `magnitude` is now covered, and mutating it to `Err` fails `a_quantity_reward_is_measured_by_its_magnitude_in_the_threshold_unit` (see FND-007) |
+| FND-004 | fixed | f4af7d95e: each mutant now fails a test: repeat refused (`a_repeated_evidence_label_is_one_member`), evidence judged before `domains` (`evidence_is_judged_after_pairs_domains_and_fairness`), and valid labels kept on a non-probabilistic backend (`another_backends_evidence_labels_are_ignored`); the round-0 mutant that drops a defective set survives only because the test's set begins with `bogus` |
+| FND-005 | fixed | f4af7d95e: the linker test now sends a `probabilistic-satisfaction` request on a state declaration and a `schedulability` request on a temporal one; both are `InapplicableCapability` naming the family |
+| FND-006 | accepted-no-change | f4af7d95e: a test that counts no sample cannot complete through the seam (the run ends `Stopped`), so building it directly is the only way; low |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The new quantity-reward test declares `unit ms : Time = rational(1, 1)`, which makes `ms` the root unit. A magnitude in `ms` and a magnitude in the root unit are then the same number, so the doc's "the measure `1`, not `1/1000`" cannot fail. The test covers the `Value::Quantity` arm, but not the unit property. Declare `unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;` (the TIME_UNITS form in assemble/tests.rs) so that `1/1000` is a wrong answer the test can see. | qsl-analyze/tests/it/statistical_model.rs:221-242 |

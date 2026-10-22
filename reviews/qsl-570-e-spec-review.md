@@ -50,3 +50,17 @@ Round 1, fixed in f4af7d95e.
 | FND-001 | fixed | f4af7d95e: stale name replaced in FR-075, FR-280, FR-288, FR-057-AC-14, ADR-013 C-28, TC-447, TC-973, TC-974, TC-976; no alias |
 | FND-002 | fixed | f4af7d95e: rules moved into FR-075 (section and AC-11) with the conversion as subject; FR-057 paragraph removed |
 | FND-003 | fixed | f4af7d95e: FR-075 states the reason: FR-290 states the evidence kinds as a set |
+
+Round 1, checked by the reviewer at 369bd13b1 (fix f4af7d95e). Each row replaces the coder's claim above.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f4af7d95e: `grep -rn 'BackendDescriptor::admit' spec docs` finds nothing, and neither does `new` or `admit`; every listed occurrence now names `descriptor_from_manifest` or `BackendDescriptor::new`, with no alias |
+| FND-002 | fixed | f4af7d95e: the FR-057 paragraph is removed; FR-075 "Probabilistic evidence kinds are checked at descriptor admission" and FR-075-AC-11 now state judge-last, ignored-for-others and repeat-is-one-member, with `descriptor_from_manifest` as the subject; each rule is tested and caught by a mutant (SR-12318 FND-004) |
+| FND-003 | fixed | f4af7d95e: FR-075 gives the reason ("QSpec FR-290 states the evidence kinds as a set") and names the difference from `domains` and `fairness_kinds` |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | Pre-existing, from #716; not introduced by this PR and not blocking it. FR-075 "A manifest digest is not part of this equality comparison" and FR-075-AC-7 ("manifest digest does not affect descriptor equality") contradict the code: `BackendDescriptor` derives `PartialEq` over `manifest_digest`, and the round-1 doc on `Registry::register` now says so. The code is right. QSpec FR-290-AC-9 and AC-10 key equality on equal manifests, and TC-282's tests require a digest-only difference to conflict. The PR body lists this as "Open" with no owner. Fix the FR-075 statement and AC-7 to say digest-inclusive equality (FR-075 is already edited in this PR), or file a ticket for it. | spec/functional/FR-075-compute-candidates-from-registered-backends.md:249,306; qsl-route/src/lib.rs:226,940-943 |

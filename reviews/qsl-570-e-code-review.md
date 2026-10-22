@@ -76,3 +76,11 @@ Round 1, fixed in f4af7d95e.
 | FND-001 | fixed | f4af7d95e: doc says temporal items use candidates_for_models; no filters applied here |
 | FND-002 | fixed | f4af7d95e: PR body changelog extended |
 | FND-003 | fixed | f4af7d95e: serves_evidence is now a matches!, no closed match; make seam-probe green |
+
+Round 1, checked by the reviewer at 369bd13b1 (fix f4af7d95e). Each row was measured against the code and replaces the coder's claim above.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f4af7d95e: the `candidates_for_evidence` doc now says it applies no fairness or memory-model filter and sends a temporal item to `candidates_for_models` |
+| FND-002 | fixed | f4af7d95e: the PR body changelog now lists the empty-set behaviour of the three other entry points, evidence in descriptor equality, `EvidenceKind::{ALL,to_wire,from_wire}` and `ItemEvidence::from_label` |
+| FND-003 | fixed | f4af7d95e: `serves_evidence` now uses `matches!` with no closed match over `Capability`; the reviewer's own `make seam-probe` run at 369bd13b1 exits 0 |
