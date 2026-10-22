@@ -41,4 +41,6 @@ Tag the tests `#[trace("TC-720", "FR-255-AC-1")]`, `#[trace("TC-720", "FR-255-AC
   `--limit s3.nodes=<n>` or the request's `stage_limits` entry `s3.nodes`",
   with FR-096's locus of the node whose entry failed.
 - Step 3: each field maps to one name; the names are distinct; their union
-  equals the table; each builder call changes only its own field.
+  equals the table and the accounting table, and neither the supplied-value
+  ceilings of FR-277 nor the monitor target's `monitor.max_event_rate` is in
+  that union; each builder call changes only its own field.
