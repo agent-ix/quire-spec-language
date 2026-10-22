@@ -108,10 +108,27 @@ invariants by runtime value path (FR-366), a temporal, protocol or hyper
 clause, or a simulation step. Those entries stay in `qsl-eval` and run on
 the std reference evaluator.
 
-A `Value`-family evaluation reads one environment. The forms that select
-another observation (a `pre` or `post` anchor), the FR-391 named populations
-and the protocol-clause reads occur only in clause evaluation. When one of
-them reaches the `no_std` evaluator, it SHALL return `CallFailure::Fault`.
+The `no_std` evaluator SHALL accept only checked expressions that the
+checker's body entry produces (`check_expression`) and the bodies of
+admitted callables. It does not evaluate these forms:
+
+- a postcondition-checked expression (`check_postcondition_expression`),
+  whose `pre(...)` nodes (`NodeKind::Pre`) switch population reads to the
+  invocation's pre-state;
+- the refinement-row forms `NodeKind::History` (FR-138) and
+  `NodeKind::PopulationObjects` (FR-139), which only a refinement pass
+  builds;
+- the clause-only reads: the anchors of a clause's observation map, the
+  FR-391 named populations, and the protocol-clause reads.
+
+For each of them it has one defined result. Begin over a checked expression
+containing such a node SHALL return `CallFailure::Fault` with an
+`InternalFault` whose stage is `quire-eval` and whose invariant is
+`outside-value-family`, with no charge and no body invocation. Evaluation
+that reaches such a node in a callable's body returns the same fault. That
+cannot occur for a body the checker admitted. The reference evaluates these
+forms, so FR-402 and this requirement compare the two evaluators only on
+`Value`-family inputs.
 
 The separation and stop-report vocabulary that clause evaluation builds
 stays where it is: `qsl_foundation::witness`'s `InvocationBinding`,
@@ -187,9 +204,11 @@ A failure is a pre-charge Begin failure: `CallFailure::Input`,
 `CallFailure::Cancelled`, `CallFailure::Supplied`,
 `CallFailure::UnsupportedHelper` or `CallFailure::Fault`, from the run's
 `SuppliedFailure` conversion (FR-401), with no charge and no body
-invocation. A Begin with no supplied-value run uses a run at
-`SuppliedLimits::default()` and the session's `Cancel`, as the reference's
-`call` does.
+invocation. A Begin with no supplied-value run uses a run of its own at
+`SuppliedLimits::default()` with a fresh `Cancel` that nobody holds, as the
+reference's `call` and `evaluate` do. Argument admission therefore never
+observes the session's `Cancel`. The session's `Cancel` is polled from the
+application's first charge, as FR-262 states.
 
 The supplied-value run (`SuppliedRun`, `SuppliedLimits`, and the private
 event and storage helpers FR-401 places with them) SHALL move from
@@ -207,8 +226,8 @@ charges the same run before admission.
 `Value`-family evaluation and its argument admission make of the objects and
 populations they run over. Its answers are C, SV and K values or boxed
 `CatalogCoded` / `UndefinedCoded` causes (SV); it names no QSL type. The
-reads are the ten the std reference evaluator makes of `ObjectEnvironment`
-outside clause evaluation:
+reads are the nine the std reference evaluator makes of `ObjectEnvironment`
+for `Value`-family inputs:
 
 1. the SV `ObjectClosure`;
 2. whether the environment's references are unresolved;
@@ -225,8 +244,7 @@ outside clause evaluation:
    the session meter, with the members in ascending reference-key order;
 8. a `lookup` query over a recorded `PopulationId`, answered under the
    session meter;
-9. the FR-138 history value of a field of an object;
-10. a report of each field read and population-membership read, with the
+9. a report of each field read and population-membership read, with the
     object, owning effective type and attribute name, or the population's
     declaration key and the one object looked up.
 
@@ -239,8 +257,7 @@ contract.
 
 `quire-eval` SHALL provide one implementation of the contract over an SV
 `ObjectClosure` alone, with no population recorded, no relationship
-extents, no witnessed range, no population size, no history and no read
-report. For every read it SHALL give the answer `ObjectEnvironment::new`
+extents, no witnessed range, no population size and no read report. For every read it SHALL give the answer `ObjectEnvironment::new`
 over the same closure gives. A `Population` argument therefore refuses at
 argument admission as `CallFailure::Input(InputRefusal::WrongValueKind)`
 naming the parameter, as in the reference.
@@ -250,9 +267,12 @@ naming the parameter, as in the reference.
 `value::model_query` (`evaluate_lookup`, `evaluate_all_instances`) with the
 session meter, so their charges and their order are the reference's. A
 `ModelRefusal` they return reaches the leaf boxed as the `StateModel`
-model-query refusal `ModelQueryRefusal`, which stays in `qsl-eval`. Item 10 records an `ObservedRead`
-with `Observation::Current` in the environment's `ReadLog` when one is
-attached, as the reference records it.
+model-query refusal `ModelQueryRefusal`, which stays in `qsl-eval`. Item 9 records an `ObservedRead`
+in the environment's `ReadLog` when one is attached, under the observation
+the reference records for a `Value`-family evaluation:
+`Observation::Current` for a field read, and `Observation::Post` for a
+population-membership read. The evaluation's anchor starts at `Post`, and
+only a `pre(...)` node switches it.
 
 ### Which `qsl-semantics` code the evaluator needs (S4)
 
@@ -268,8 +288,8 @@ dispositions:
 | `value::definition::divide` and `value::definition::modulo`, which need only an `AdmittedIntegerDivision` (C), K's integers and the meter | Move to `quire-eval`. Both evaluators call them there |
 | `model::refusal::render_identity`, the rendering of member identity bytes | Moves to SV's `catalog` module. Its `qsl-semantics` callers (population lookup) and both evaluators call it there |
 | The `StateModel` catalog prefix (`"state-model"`, which `FamilyKind::StateModel.catalog_code_prefix()` returns) | The string moves to SV's `catalog` module as a constant. `FamilyKind`, which stays in `qsl-semantics` (FR-401), returns that constant for `StateModel`, and the causes in `quire-eval` prefix with it |
-| `qsl-eval`'s `Value`-family runtime causes: `PreconditionFailure`, `StateModelUndefined` (`PreconditionFalse`, `AbsentKey`, `IncompleteClosure`, `OnlyNotOne`), `NavigationRefusal`, `ReferenceUnresolved` and `HistoryUnresolved` | Move to `quire-eval`. Both evaluators raise them there, so each catalog code, prefix, field set and rendering has one definition |
-| `qsl-eval`'s clause causes: `NamedPopulationIncomplete`, `ProtocolClauseSnapshot`, `ProtocolClauseUnsupported`, `ProtocolReferenceUnsupported`, `ProtocolClauseFrameRefusal` (which carries `model::observation::AdmissionRecord`) and `ModelQueryRefusal` | Stay in `qsl-eval`, raised by clause evaluation or built by `qsl-eval`'s environment implementation |
+| `qsl-eval`'s `Value`-family runtime causes: `PreconditionFailure`, `StateModelUndefined` (`PreconditionFalse`, `AbsentKey`, `IncompleteClosure`, `OnlyNotOne`), `NavigationRefusal` and `ReferenceUnresolved` | Move to `quire-eval`. Both evaluators raise them there, so each catalog code, prefix, field set and rendering has one definition |
+| `qsl-eval`'s clause and refinement causes: `HistoryUnresolved`, `NamedPopulationIncomplete`, `ProtocolClauseSnapshot`, `ProtocolClauseUnsupported`, `ProtocolReferenceUnsupported`, `ProtocolClauseFrameRefusal` (which carries `model::observation::AdmissionRecord`) and `ModelQueryRefusal` | Stay in `qsl-eval`, raised by clause evaluation or built by `qsl-eval`'s environment implementation |
 | `ModelRefusal` (`model::normalize`) and `ModelRefusalCause` (`model::refusal`), including `ModelRefusal::type_mismatch` and `absent_key`, which the reference raises for FR-391 named-population lookups | Stay in `qsl-semantics`. Named populations are clause-only, and an item-7 or item-8 refusal reaches the leaf boxed |
 | `value::supplied`'s `SuppliedRun`, `SuppliedLimits` and their helpers | Move to SV's `supplied_stop` module (Argument admission) |
 | `model::object_environment` (`ObjectEnvironment`, `ObservedRead`, `ReadLog`), `model::population` (`PopulationBinding` and its queries), `value::model_query` and `model::observation`'s admitted-observation types | Stay in `qsl-semantics` with `std`. The leaf reaches them only through the environment contract that `qsl-eval` implements. `PopulationBinding` holds a domain package and a `ModelIndex`, which are not leaf vocabulary (FR-401) |
@@ -286,8 +306,9 @@ every run. It is admission code, which stays `std`.
 
 ### Results, refusals and accounting
 
-For every checked input, the `no_std` evaluator SHALL return the
-reference's results:
+For every `Value`-family checked input (an admitted callable's application,
+or a checked expression from the body entry), the `no_std` evaluator SHALL
+return the reference's results:
 
 1. **Evaluation.** The same `FamilyOutcome<Value>` arm and value, the same
    location and the same loss list in the same order. A family refusal or
@@ -368,8 +389,9 @@ repository, and nothing else.
 | FR-403-AC-8 | Admitting a population document whose three members are listed in two different orders, with a subsetting violation on two of them, refuses both times naming the violating member with the lowest reference key, on each of ten runs. | Test (TC-1121) |
 | FR-403-AC-9 | `qsl-eval`'s manifest declares no `std` feature. `CheckedPackageEvaluation::call` and `evaluate` run the reference evaluator. `qsl-eval` re-exports no `quire-eval` item and defines no argument admission of its own. `quire-eval`'s source contains no name resolution, FR-098 conversion phase, model admission, simulation, or clause, frame, separation or value-invariant entry. | Inspection (TC-1121) |
 | FR-403-AC-10 | On each of ten runs, the `no_std` evaluator's results equal the reference's in order: the members of AC-5's `allInstances` over a population recorded with its members in descending reference-key order, which both return ascending; and the loss list of FR-262-AC-8's kernel-loss case. | Test (TC-1121) |
-| FR-403-AC-11 | The `StateModel` undefined result of a `lookup<T>(p, r) absent undefined` with an absent key, raised by each evaluator, has the catalog code prefix `state-model` and the `binding` and `key` fields `render_identity` gives. `FamilyKind::StateModel.catalog_code_prefix()` returns SV's constant, and `qsl-eval`'s source defines no `StateModelUndefined`, `PreconditionFailure`, `NavigationRefusal`, `ReferenceUnresolved` or `HistoryUnresolved`. | Test (TC-1121) |
+| FR-403-AC-11 | The `StateModel` undefined result of a `lookup<T>(p, r) absent undefined` with an absent key, raised by each evaluator, has the catalog code prefix `state-model` and the `binding` and `key` fields `render_identity` gives. `FamilyKind::StateModel.catalog_code_prefix()` returns SV's constant, and `qsl-eval`'s source defines no `StateModelUndefined`, `PreconditionFailure`, `NavigationRefusal` or `ReferenceUnresolved`. | Test (TC-1121) |
 | FR-403-AC-12 | Through each evaluator, a checked expression `x + 1` with one parameter `x: Int[0, 9]`, given `10`, returns `CallFailure::Input` from argument admission with no charge; given `3`, it completes with `4` and no `function.call` among its admitted charges. A chain of three functions with no parameters, whose bodies call the next or, for the last, return a literal, admits exactly three `function.call` charges with `work_units` spend `3`; with `work_units` `2` it returns `Incomplete` naming `work_units` at the third `function.call`, with two calls in the counter and the log. | Test (TC-1121) |
+| FR-403-AC-13 | A checked expression built by `check_postcondition_expression` with a parameter `p: Population<T>[3]` and body `pre(allInstances<T>(p))`, begun on the `no_std` evaluator, returns `CallFailure::Fault` with stage `quire-eval` and invariant `outside-value-family`, with no charge and no body invocation. The same expression without `pre(...)`, built by `check_expression`, evaluates to the reference's result. | Test (TC-1121) |
 
 ## Dependencies
 
@@ -388,7 +410,6 @@ repository, and nothing else.
   the supplied-value run and its admission budget.
 - [FR-089](FR-089-carry-population-identity-across-the-kernel-boundary.md),
   [FR-106](FR-106-admit-snapshots-and-invocations.md),
-  [FR-138](FR-138-check-and-compute-history-fields.md),
   [FR-364](FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)
   and [FR-380](FR-380-bound-a-domain-package-population-and-link-a-reachability-to-its-node.md):
   the environment reads.

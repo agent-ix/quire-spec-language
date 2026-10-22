@@ -15,7 +15,7 @@ dependency set and reads checked terms without building them. It admits
 arguments itself and reads the environment only through its contract. It
 returns the std reference's results, refusal records, charges and orders,
 including FR-262-AC-1 to AC-8. Each moved item has one definition. Scope:
-FR-403-AC-1 to FR-403-AC-12.
+FR-403-AC-1 to FR-403-AC-13.
 
 ## Test Procedure
 
@@ -59,6 +59,10 @@ FR-403-AC-1 to FR-403-AC-12.
 12. Through each evaluator with the charge log: evaluate the checked
     expression `x + 1` (`x: Int[0, 9]`) with `10` and with `3`; run a chain
     of three calls at `work_units` `3` and at `2`.
+13. Build `pre(allInstances<T>(p))` with `p: Population<T>[3]` through
+    `check_postcondition_expression` and begin it on the `no_std`
+    evaluator; build `allInstances<T>(p)` through `check_expression` and
+    evaluate it through both evaluators.
 
 ## Expected Results
 
@@ -101,3 +105,6 @@ FR-403-AC-1 to FR-403-AC-12.
     charges; at `2` it is `Incomplete` naming `work_units` at the third
     `function.call`, with two calls in the counter and the log. Both
     evaluators agree on every item.
+13. The first is `CallFailure::Fault` with stage `quire-eval` and invariant
+    `outside-value-family`, with no charge; the second gives equal results
+    from both evaluators.

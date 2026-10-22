@@ -34,7 +34,7 @@ to FR-402-AC-10.
    entries out of `identity` order (AC-3).
 4. Load each bundle AC-4 lists (AC-4).
 5. Admit each bundle AC-5 lists, counting evaluator invocations (AC-5).
-6. Run the harness's std build over `fr402/count-3`,
+6. Run the harness's std implementation over `fr402/count-3`,
    `fr402/count-3-short`, `fr402/count-3-boolean` and
    `fr262/ac1/count-100000`, and build a compared record for a run that
    completes with a `Value::Text` (AC-6).
@@ -83,8 +83,8 @@ to FR-402-AC-10.
 - Step 7: the first run fails with pair `expected/std` and pointer
   `/consumed/work_units` and reports every other case; the second passes for
   that case; the third compares `std/no_std` only; the comparator reports
-  `std/no_std` under `/charges` and names the missing case and the build
-  that produced no record.
+  `std/no_std` under `/charges` and names the missing case and the
+  implementation that produced no record.
 - Step 8: the `case_id`s are exactly FR-402's list; the two generations are
   byte-identical with ids `gen/000` to `gen/255`, and every case loads and
   admits; the reused id runs and reports as a second case under bundle

@@ -95,3 +95,51 @@ Lead defaults (each is a lead default, not an owner answer):
    and `render_identity` in `quire-eval` (FND-006). That duplication is an owner decision.
 6. The reference stays the default until S9, behind a separate entry with no re-export. This is
    sound.
+
+## New findings (disposition pass 1)
+
+Head `8d26e5d8f` (fix commits 86932d9a6 and 8d26e5d8f), main 5a672d88a, which is an ancestor of the head.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | high | major: The new Value-family scope says a `pre` anchor "occur[s] only in clause evaluation" and that the `no_std` evaluator returns `CallFailure::Fault` when one reaches it. The reference contradicts this. `CheckedGraph::check_postcondition_expression` (a shipped `pub` method, check/mod.rs:3673) builds a `CheckedExpression` in which `pre(...)` is legal (FR-153's anchor table). `CheckedPackageEvaluation::evaluate`, a Value-family entry (mod.rs:1046-1067), evaluates that expression: `NodeKind::Pre` switches the anchor (evaluate.rs:1398-1405), and `allInstances` and `lookup` then read the binding's `pre_anchor()` (evaluate.rs:1147-1165). `qsl-eval/tests/it/model_reference_queries.rs` exercises this path through `evaluate`. FR-403 nevertheless says "For every checked input, the `no_std` evaluator SHALL return the reference's results", so FR-403 contradicts itself, and items 7 and 8 take no anchor. <br>Fix: choose one. (a) Restrict the `no_std` checked-expression input to expressions checked as a body (`check_expression`, `ClauseKind::Body`), and narrow the parity sentence and the Fault statement to match. (b) Give items 7, 8 and 10 the anchor (pre or post binding) and support `Pre`. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:111-114,289-290; qsl-semantics/src/check/mod.rs:3673; qsl-eval/src/value/expression/evaluate.rs:1147-1165,1398-1405 |
+| FND-014 | medium | Item 10 says `qsl-eval` records each read "with `Observation::Current` ... as the reference records it". That is true for field reads (evaluate.rs:2338-2341). Membership reads are recorded under the evaluation's anchor (evaluate.rs:2363-2367). The Value family starts with `Anchor::Post` (evaluate.rs:727), so its `allInstances` and `lookup` reads are logged `Observation::Post`, and `Observation::Pre` under `pre(...)`. AC-5 compares the `ReadLog` sets with the reference, so a contract implementation that follows this text would fail AC-5. <br>Fix: state the observation per read kind: `Current` for field reads, the anchor (`Post` by default) for membership reads. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:253-255; qsl-eval/src/value/expression/evaluate.rs:727,2338-2341,2363-2367 |
+| FND-015 | low | The FR-402 amendment still has two-build wording. FR-402-AC-6 says "The std build's compared record", and FR-402-AC-7 says "the std build's own record" and "the build that produced no record". TC-1112 step 6 says "Run the harness's std build". <br>Fix: say "the std record" and "the implementation that produced no record". | spec/functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md:424-425; spec/test-cases/TC-1112-evaluator-differential-corpus-and-harness.md:37 |
+| FND-016 | low | FR-403 says "A Begin with no supplied-value run uses a run at `SuppliedLimits::default()` and the session's `Cancel`, as the reference's `call` does". The reference's `call` and `evaluate` build their run over a fresh `Cancel::new()` that nobody cancels (mod.rs:995-996, 1053-1054). The two still give the same arm, because `From<SuppliedFailure>` maps a cancelled stop to `CallFailure::Cancelled` (mod.rs:334-340). The "as the reference does" claim is still wrong. <br>Fix: state the choice as quire-eval's own and drop the claim. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:190-192; qsl-eval/src/value/expression/mod.rs:334-340,995-996,1053-1054 |
+| FND-017 | low | Two node kinds are missing from the list of clause-only forms that return Fault. `NodeKind::History` (FR-138) is built only in refinement passes (check.rs:3014 via `with_history`, refinement.rs:1914). `NodeKind::PopulationObjects` (FR-139) is built only for a refinement row's populations (typing.rs:2694-2720). Neither is in that list. Contract item 9 (history) and the move of `HistoryUnresolved` to `quire-eval` serve a node the Value family never reaches. <br>Fix: add `History` and `PopulationObjects` to the clause-only list. Then either drop item 9 and keep `HistoryUnresolved` in `qsl-eval`, or say why they move. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:111-114,228,271; qsl-semantics/src/check/refinement.rs:1914; qsl-semantics/src/check/check/typing.rs:2694-2720 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-402 now uses one runner test build. It admits each case once and evaluates both implementations in process; the feature-unification premise and "compiles nothing" are gone, and AC-9 is reworded. AD-001's S7 paragraph matches. Leftover wording is FND-015. |
+| FND-002 | fixed | The contract lists ten reads: population size (item 5), PopulationId binding and declared maximum (item 6), and history (item 9) are added. |
+| FND-003 | fixed | An Argument admission section in quire-eval states arity, population pairing, membership through SuppliedRun, references and cancellation. SuppliedRun and SuppliedLimits move to SV supplied_stop, and AC-4 exercises quire-eval's admission. |
+| FND-004 | fixed | AC-6 now expects CallFailure::Input(WrongValueKind) naming parameter 0 with no charge, as the reference returns. |
+| FND-005 | fixed | Scope is the Value family only. The witness vocabulary and DocumentRef stay, and the state-clause half of AC-5 is removed. The new FND-013 covers pre in Value-family checked expressions. |
+| FND-006 | fixed | The S4 table now places render_identity and the state-model prefix in SV, moves the Value-family causes to E, keeps the clause causes and ModelRefusal, and gives ModelRefusalCause's location correctly. |
+| FND-007 | fixed | NFR-015 and AD-001 S5 state that qsl-package stays crate tier and that no slice makes layers 3, 2 and 1 no_std. The stale Rationale clause is rewritten. |
+| FND-008 | fixed | FR-403 states the in-process handoff, that RT and CG need no wire form of a checked graph, and the evaluator's RT and CG scope (luna's D5 answer). |
+| FND-009 | fixed | The tautological clause is removed from AC-1, and AC-10 tests ordering over ten runs. |
+| FND-010 | fixed | AC-2 compares against quire_exact::divide and modulo called directly. |
+| FND-011 | fixed | FR-403 states that the QSL runs are host builds with unified dependency features and that FR-401-AC-1 is the only no_std evidence. |
+| FND-012 | fixed | FR-402, FR-089, FR-106, FR-364 and FR-277 edges were added, and the Dependencies entries are linked. |
+
+## Verdict (disposition pass 1)
+
+Not mergeable. FND-001 to FND-012 are all fixed at `8d26e5d8f`, but the new scope paragraph adds
+one major, FND-013: Value-family `evaluate` accepts postcondition-checked expressions containing
+`pre(...)`, and FR-403 both promises parity for every checked input and requires Fault for `pre`.
+FND-014 (the medium) and FND-015 to FND-017 (the lows) can be fixed in the same round.
+
+These items were checked and are clean:
+
+- SuppliedRun names only SV, K and InternalFault (moving to SV), so it fits in SV `supplied_stop`.
+  SV has no `[features]` today, so its `test-support` feature is new; FR-403 states that.
+- The moved causes name only CatalogCode, DeclarationKey (C), ObjectReference (K) and
+  render_identity (SV).
+- X-16 is consistent with X-13, X-14, FB-05 and the layer map.
+- FR-401's list of items that stay names the S6 move.
+- In AC-12, literals carry no charge and `function.call` is the only `work_units` charge on that
+  path (evaluate.rs:363-366, 1317-1320), so three calls cost 3 and the third is denied at 2.
+  `x + 1` with 10 is refused by membership admission.
