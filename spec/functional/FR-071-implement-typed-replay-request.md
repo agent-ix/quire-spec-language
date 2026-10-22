@@ -171,8 +171,8 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   package.
 - If a `function` request carries no `occurrence_key`, then the reader SHALL
   refuse it `invalid_runtime_input`/`missing-member` at
-  `/replay/occurrence_key`, after FR-323's decode rule 1 and before any
-  byte-provision rule.
+  `/replay/occurrence_key`, as QSpec FR-323's decode rule 1 states
+  (FR-323-AC-22), before any byte-provision rule.
 
 ## Acceptance Criteria
 

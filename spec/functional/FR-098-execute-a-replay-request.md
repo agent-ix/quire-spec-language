@@ -163,10 +163,9 @@ list.
   target replays through its own entry (FR-116, FR-122).
 - The executor SHALL resolve the `function` replay target by name lookup in the recompiled
   package's declarations (OQ-5), and then select the claim as "The claim a
-  function request decides" states. It SHALL refuse a predicate claim whose
-  function's declared result is not `Boolean` before any call (FR-357's
-  value-parity entry replays a non-`Boolean` function). An application
-  claim's function is not refused for its result type. It SHALL convert each argument's
+  function request decides" states, which also states the `NotAPredicate`
+  refusal (FR-357's value-parity entry replays a non-`Boolean` function).
+  It SHALL convert each argument's
   `WireNodeId` to a `NodeKey` only by lookup in the recompiled package, and
   order the arguments by the function's declared parameter positions.
   `Input` assignments, and the `WitnessBinding` list the executor builds,
@@ -431,58 +430,102 @@ the first paragraph of the Description states.
 ### The claim a function request decides
 
 A `function` request carries the occurrence key of the counterexample's
-failing node (ADR-013 O-25, QSpec FR-323 `occurrence_key`). The executor
-SHALL select the claim by that key after it resolves the `function` replay
-target and before the argument join. It converts the key's node, a
+failing node (ADR-013 O-25, QSpec FR-323 `occurrence_key`, FR-071). The
+executor SHALL select the claim by that key after it resolves the `function`
+replay target and before the argument join. It converts the key's node, a
 `WireNodeId`, to a `NodeKey` only by lookup in the recompiled package
-(ADR-013 O-04), and then:
+(ADR-013 O-04), compares the whole key (node, role and ordinal), and applies
+the first of these that holds:
 
-1. **Predicate claim.** If the key is the resolved function's `declaration`
-   occurrence (its node, role `declaration`, ordinal 0), then the claim is
-   the predicate claim, and the executor SHALL refuse a function whose
-   declared result is not `Boolean` as `NotAPredicate` before any call.
-2. **Application claim.** If the key is an `expression` occurrence that
-   holds a `value-validity` record of the recompiled package's requirement
-   records (`CheckedPackage::graph().requirements()`, FR-062) and that
-   record's owner is the resolved function, then the claim is that record's
-   application claim. The record supplies the result bound; the executor
-   reads no bound from the request.
+1. **Predicate claim.** The key is the resolved function's `declaration`
+   occurrence (its node, role `declaration`, ordinal 0). The claim is the
+   predicate claim. If the function's declared result is not `Boolean`, then
+   the executor SHALL refuse `NotAPredicate` before any call.
+2. **Application claim.** The key is the key of a `value-validity` record of
+   the recompiled package's requirement records
+   (`CheckedPackage::graph().requirements()`, FR-062) whose owner is the
+   resolved function. The claim is that record's application claim. Its
+   claim site is the `Location` that `check` paired with that key (FR-062
+   "Key"). The record supplies the result bound; the executor reads no bound
+   from the request. The function may declare any result type.
 3. **Otherwise** the executor SHALL refuse `ReplayRefusal::ClaimOccurrence`
-   (`stale_dependency`/`content-mismatch`), naming the request's occurrence
+   (`missing_declaration`/`missing-name`), naming the request's occurrence
    key and the resolved function, before any call and with no charge. That
    covers a key whose node the recompiled package does not hold, another
    function's `declaration` occurrence, an occurrence that holds no record,
-   a record of another kind, and a record another function owns.
+   a record of another kind, and a record another function owns. The
+   `package_id` already matched, so the key names a claim the package does
+   not declare for this function; FR-290's `request` gives the same code to
+   a key that names no declaration and no record (`UnknownOccurrence`).
 
 This selection runs after every refusal that precedes the resolution: the
 decode refusals (FR-071, QSpec FR-323 decode rule 1, which refuses an
-occurrence key on a frame or a state-clause request), the replay-target
-refusal, the dependency checks, the stale `package_id` and the unresolved
-function. A frame or a state-clause request never reaches it: `replay`
-refuses its target before the recompile, and its own entry (FR-116,
-FR-122) applies its envelope checks before the recompile and reads no
-`function` request occurrence key. FR-357's two entries decode the
-occurrence key with the request and do not read it.
+occurrence key on a frame or a state-clause request and a `function` request
+without one), the replay-target refusal, the dependency checks, the stale
+`package_id` and the unresolved function. It runs before the argument join,
+so a request whose key selects no claim refuses `ClaimOccurrence` whatever
+its arguments. A frame or a state-clause request never reaches it: `replay`
+refuses its target before the recompile, and its own entry (FR-116, FR-122)
+applies its envelope checks before the recompile and reads no `function`
+request occurrence key.
+
+An FR-357 request carries the occurrence key of the packet it is built from,
+as ADR-013 C-12 copies it: the scalar node's occurrence for an operator
+claim, and the function's `declaration` occurrence for a value-parity claim.
+Neither FR-357 entry reads it; each takes its claim from its own inputs.
+
+The executor SHALL carry the request's `obligation_identity` unchanged and
+SHALL NOT check it against the selected claim. The identity is provenance:
+a decode refusal names it (FR-070), and its preimage form is its producer's
+(ADR-013 O-09's function-contract or application form, or FR-290's
+`process-provider` form), which the request does not carry. The occurrence
+key, not the identity, selects the claim.
 
 **Predicate claim.** The call settles by the Boolean the function
 completes: `false` reproduces the violation.
 
-**Application claim.** The executor SHALL call the resolved function
-through S6a as for a predicate claim (the same join, conversion, admission,
-object environment and limits) and SHALL observe each evaluation of the
-record's application at the record's occurrence in the call's own body.
-An evaluation of that occurrence inside a nested call, a recursive call of
-the same function included, is a different assignment of the claim's
-extent roots and is not observed. S6a evaluates an occurrence only on the
-path its guards select (left-to-right short circuit and the selected
-conditional branch, FR-016), so every observed evaluation is one under
-which the record's path condition holds.
+**Application claim: unread parameters.** An owner parameter that is no
+extent root of the record (FR-062 "Extent": the application's argument
+subtrees, the `let` values they read and the guards of its path condition
+read it nowhere) need not be bound by the replay source. The executor
+SHALL bind such a parameter of type `Boolean` to `false`, and one of an
+integer type to the value of its declared range nearest 0 (0 when the range
+holds it, the lower of two equally near values otherwise). The claim's
+operands and guards read no such parameter, so the value cannot change the
+claim's Boolean at an observed evaluation; a stop elsewhere that it causes
+settles `NoValue`, never a reproduction. An unbound parameter of any other
+type, an unbound extent root, an assignment naming a node that is not a
+parameter (a binder root included) and a parameter bound twice refuse as for
+a predicate claim (`UnboundParameter`, `UnknownParameter`,
+`DuplicateArgument`).
+
+**Application claim: the call.** The executor SHALL call the resolved
+function through S6a as for a predicate claim, with the same join,
+conversion, admission, object environment and limits.
+
+**Application claim: the observation.** The executor SHALL observe each
+evaluation, in the call's own body, of the application whose evaluation
+location is the record's claim site `Location`. It SHALL match an evaluation
+to the claim by that `Location` and never by the application's node alone:
+one node can have several `expression` occurrences in one body, each a claim
+of its own with its own path condition (FR-062 RR-5, RR-15, RR-16). An
+evaluation inside a nested call, a recursive call of the same function
+included, is a different assignment of the claim's extent roots and is not
+observed. Each evaluation of a binder body is observed. S6a evaluates an
+occurrence only on the path its guards select (left-to-right short circuit
+and the selected conditional branch, FR-016), so every observed evaluation is
+one under which the record's path condition holds.
 
 - When an observed evaluation of the application step is undefined at its
-  operands, or completes a value outside the record's result bound, the
-  claim fails there. The claim's Boolean is `false`, the replayed category
-  is `violation`, and the evaluation stops at that step. A stop inside an
-  operand is not the application step's own and is no observation.
+  operands (a division by zero, as in FR-141-AC-7), the claim fails there.
+  The claim's Boolean is `false`, the replayed category is `violation`, and
+  the evaluation stops at that step. A stop inside an operand is not the
+  application step's own and is no observation.
+- When an observed evaluation completes a value outside the record's result
+  bound, the claim fails the same way. This arm is defensive: `check` proves
+  every narrow it admits (FR-093's `Coerce` range obligation), and an
+  application whose result bound is its own result type completes a value of
+  that type, so no checked package reaches it.
 - When the call completes a value and no observed evaluation failed, the
   claim's Boolean is `true` and the replayed category is `success`. That
   includes a call that evaluated the occurrence on no path.
@@ -547,9 +590,11 @@ predicate claim (ADR-031 SW-7).
 | FR-098-AC-19 | Against a complete population, a reference argument whose object the environment does not list refuses `dangling_reference`/`absent-target-in-complete-population` naming position 0 and the reference, and so does one whose `object_type` is another type's, within the same universe, from the held object of the same identity (a different universe refuses earlier, at conversion, as `foreign-universe`); against a population not marked `complete`, such a reference refuses `incomplete_population`/`incomplete-scope`. In a sequence of references the first one that is not present is named, and a present reference before it is not. | Test (TC-1042) |
 | FR-098-AC-20 | A request for a proved package whose refinement `CasTwice` has the internal list `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` carries it at `/package/refinement_internals` and recompiles to the proved `package_id`; the same request with the member removed refuses with `PackageIdMismatch` naming both identities; a request carrying a spelling that resolves to no class (`Spec::Twice::zz` at index 0) refuses `Recompile` with `missing_declaration`/`missing-name` located at `/package/refinement_internals/0/internal/0`, and the value `{}` refuses `invalid_model_binding`/`malformed-declaration` located at `/package/refinement_internals`; a defective value on `dependencies` entry 1 is located at `/package/dependencies/1/refinement_internals/<pointer>`; and a value on a `dependencies` entry applies to that dependency's refinements only. | Test (TC-444) |
 | FR-098-AC-21 | TC-444's `small` request with its replay target replaced by `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) given to `replay` refuses `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` naming the target, the entry `replay` and the member `function`, before the recompile: the same request with its source edited so it does not compile refuses the same way. With its source's byte-provision entry also removed it refuses by the byte-provision rule instead (`missing_import`/`missing-selection`), which decode applies first. | Test (TC-444) |
-| FR-098-AC-22 | Over a unit declaring `function p using v(x: Int[0, 9]): Boolean pure { x > 3 }`, `function q using v(x: Int[0, 9]): Integer pure { x + 1 }` and `function r using v(x: Int[0, 9]): Int[0, 9] pure { x + 1 }`, each request carrying an `Input` assignment: `p` at its `declaration` occurrence with `x = 0` settles `reproduced-without-witness` with value `false` (the predicate claim); `p` at the `expression` occurrence of its `x > 3` application with `x = 0` completes the application (`false`, inside its result bound `Boolean`) and settles `inconclusive` with cause `Verdicts` (`violation`/`success`) and value `true`; `r` at its `x + 1` occurrence with `x = 9` settles `reproduced-without-witness` with value `false`, the application completing `10` outside its result bound `Int[0, 9]`, and the same request from a `Witness` entry binding `x` to 9 settles `reproduced-with-evaluated-witness`; `r` there with `x = 3` (`4`, inside the bound) and `q` at its `x + 1` occurrence with `x = 9` (`10`, inside its result bound `Integer`) each settle `inconclusive` with cause `Verdicts` and value `true`. None carries a QSpec FR-351 record. | Test (TC-444) |
-| FR-098-AC-23 | Each of these refuses `ClaimOccurrence` (`stale_dependency`/`content-mismatch`) naming the request's occurrence key and the selected function, before any call and with no charge: `p` with the occurrence of `r`'s `x + 1` (a record `r` owns); `p` with `r`'s `declaration` occurrence; `r` with the `expression` occurrence of the narrow that wraps its `x + 1` (no record); and `p` with an occurrence key whose node is 64 `1` hex digits (no node of the package). `r` at its `declaration` occurrence refuses `NotAPredicate`, and `r` at its `x + 1` occurrence with `x = 12` refuses `WrongValueKind` naming position 0. | Test (TC-444) |
-| FR-098-AC-24 | Refusal order: the AC-23 request of `p` with `r`'s occurrence refuses `PackageIdMismatch` when its `package_id` is stale, and `UnknownFunction` when its `function` names no declaration, rather than `ClaimOccurrence`; AC-21's `frame_operation` request refuses at its target before the recompile and reads no occurrence key. | Test (TC-444) |
+| FR-098-AC-22 | Over a unit declaring `function p using v(x: Int[0, 9]): Boolean pure { x > 3 }`, `function q using v(x: Int[0, 9]): Integer pure { x + 1 }` and `function r using v(x: Int[0, 9]): Integer pure { 10 mod x }`, each request carrying an `Input` assignment and an occurrence key read from the compiled package: `p` at its `declaration` occurrence with `x = 0` settles `reproduced-without-witness` with value `false` (the predicate claim); `p` at its `x > 3` record's occurrence with `x = 0` completes the application (`false`, a `Boolean`) and settles `inconclusive` with cause `Verdicts` (`violation`/`success`) and value `true`; `r` at its `10 mod x` record's occurrence with `x = 0` settles `reproduced-without-witness` with value `false`, the application being undefined there, and the same request from a `Witness` entry binding `x` to 0 settles `reproduced-with-evaluated-witness`; `r` there with `x = 3` (`1`) and `q` at its `x + 1` record's occurrence with `x = 9` (`10`, inside its result bound `Integer`) each settle `inconclusive` with cause `Verdicts` and value `true`. None carries a QSpec FR-351 record. A request for `p`'s `x > 3` claim whose `obligation_identity` was minted for `p`'s function contract settles the same way and carries that identity unchanged. | Test (TC-444) |
+| FR-098-AC-23 | Over `function s using v(x: Int[0, 9]): Integer pure { (if x > 0 then 10 mod x else 0) + 10 mod x }`, whose two `10 mod x` occurrences are two records of one node: the request at the `then` branch's occurrence with `x = 0` settles `inconclusive` with cause `NoValue`, because that occurrence is not evaluated and the call stops undefined at the other one; the request at the right operand's occurrence with `x = 0` settles `reproduced-without-witness` with value `false`; the request at the `then` branch's occurrence with `x = 3` settles `inconclusive` with cause `Verdicts`. | Test (TC-444) |
+| FR-098-AC-24 | Over `function b using v(t: Sequence<Int[0, 9]>[0, 3]): Boolean pure { forall(v in t: 10 mod v > 0) }` and `function u using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { 10 mod x }`: `b` at its `10 mod v` record's occurrence with `t = [3, 0]` settles `reproduced-without-witness`, the second evaluation of the binder body being undefined, and with `t = [3]` settles `inconclusive` with cause `Verdicts`; the same `b` request with an assignment naming `v`'s binder node refuses `UnknownParameter`. `u` at its `10 mod x` record's occurrence with only `x = 0` assigned binds `y` to `0` and settles `reproduced-without-witness`; with only `y = 1` assigned it refuses `UnboundParameter` naming `x`, an extent root. | Test (TC-444) |
+| FR-098-AC-25 | Over AC-22's unit with `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }` added, each of these refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming the request's occurrence key and the selected function, before any call and with no charge: `p` with the occurrence of `r`'s `10 mod x` record (a record `r` owns); `p` with `r`'s `declaration` occurrence; `inc` with the `expression` occurrence of the narrow that wraps its `x + 1` (no record); and `p` with an occurrence key whose node is 64 `1` hex digits (no node of the package). `r` at its `declaration` occurrence refuses `NotAPredicate`, and `r` at its `10 mod x` record's occurrence with `x = 12` refuses `WrongValueKind` naming position 0. | Test (TC-444) |
+| FR-098-AC-26 | Refusal order: AC-25's request of `p` with `r`'s occurrence refuses `PackageIdMismatch` when its `package_id` is stale and `UnknownFunction` when its `function` names no declaration, rather than `ClaimOccurrence`; with an assignment naming a node that is no parameter of `p` added, it still refuses `ClaimOccurrence`, not `UnknownParameter`; AC-21's `frame_operation` request refuses at its target before the recompile and reads no occurrence key. | Test (TC-444) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
