@@ -61,8 +61,13 @@ beside it as a separate item.
 
 - A requirement record (`temporal-satisfaction`, `Unbounded{domains}`)
   with `PropertyForm::Refinement{liveness: bool}` (TP-5), where `liveness`
-  is `true` exactly when `F_A` is non-empty. FR-123's `PropertyForm` gains
-  this variant.
+  is `true` exactly when `F_A` is non-empty. The variant is
+  `quire_semantic_value::fairness::PropertyForm::Refinement { liveness }`,
+  a fifth variant of QSV FR-121's `PropertyForm` (the type FR-123
+  records), encoded as the JSON object `{"refinement":{"liveness":<bool>}}`
+  and ordered after `Liveness`, `liveness: false` before `true`.
+  `RefinementFailure` (ADR-020 RC-1, FR-141) stays a QSL type: only the
+  property form crosses the semantic-value seam.
 - `InconclusiveCause::MappingUndetermined` beside FR-127's causes, written
   on the wire as cause `mapping-undetermined` (QSpec FR-379).
 - One FR-331 terminal record per refinement item, carrying the item's
@@ -141,6 +146,7 @@ beside it as a separate item.
 | FR-144-AC-5 | Two `CasRefinesCounter` requests that differ only in the abstract subject's initial snapshots (`value` 0 and `value` 1) have different obligation identities; the second settles `refuted` with `InitialNotAbstract`. | Test (TC-549) |
 | FR-144-AC-6 | FR-140-AC-5's incomplete `items` row settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)` (wire cause `mapping-undetermined`), never `refuted`; FR-141-AC-7's undefined argument settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. | Test (TC-555) |
 | FR-144-AC-7 | `CasRefinesCounter` with its `ensure` row removed settles `proved`, `closed-scope`, `Certified`, after FR-149 accepts the certificate; with its `ensure` row it settles `proved`, `Uncertified`; with the certificate's `Taken` for the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter`, it settles `inconclusive`, `CertificateRejected`. | Test (TC-556) |
+| FR-144-AC-8 | `quire_canonical::to_vec` of `CasRefinesCounter`'s record property form gives the bytes `{"refinement":{"liveness":true}}`, and with its `ensure` row removed `{"refinement":{"liveness":false}}`; `PropertyForm::Liveness < Refinement{liveness: false} < Refinement{liveness: true}`; the record's `RefinementFailure` values are `qsl-replay` types and no `quire_semantic_value` item names them. | Test (TC-1167) |
 
 ## Dependencies
 
