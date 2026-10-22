@@ -46,7 +46,7 @@ Mergeable. There are no high findings. Every path to `Refuted` requires a QSL-si
 
 | FND | outcome | sha |
 | --- | --- | --- |
-| FND-001 | fixed: tests reproduced_non_violation_settles_failed cover both arms; removing the category guard fails it | HEAD |
-| FND-002 | fixed: TerminalRecord::from_plugin_inconclusive refuses ReplayParity/ReplayRefused by type; the kind reader refuses the three spellings, kani-vacuous-proof having no InconclusiveCause value | HEAD |
-| FND-003 | fixed: one set of spelling constants shared by InconclusiveCause::as_str, ReportedInconclusiveCause::as_str and the reader | HEAD |
-| FND-004 | accepted-no-change: whichever of #1181 and this PR lands second updates the marker | HEAD |
+| FND-001 | fixed: tests reproduced_non_violation_settles_failed cover both arms; removing the category guard fails it | 5acdfbc3d |
+| FND-002 | fixed: TerminalRecord::from_plugin_inconclusive refuses ReplayParity/ReplayRefused by type; the kind reader refuses the three spellings, kani-vacuous-proof having no InconclusiveCause value | 5acdfbc3d |
+| FND-003 | fixed: one set of spelling constants shared by InconclusiveCause::as_str, ReportedInconclusiveCause::as_str and the reader | 5acdfbc3d |
+| FND-004 | accepted-no-change: whichever of #1181 and this PR lands second updates the marker | 5acdfbc3d |

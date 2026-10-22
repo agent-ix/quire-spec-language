@@ -41,6 +41,6 @@ The spec edits are sound and match the code and the ADR. There are no high or me
 
 | FND | outcome | sha |
 | --- | --- | --- |
-| FND-001 | fixed: FR-289 states witness-arm and reproduced non-violation settle failed (AC-7, AC-8) | HEAD |
-| FND-002 | fixed: bullets cite ADR-029 PL-7 by name; draco text lands later | HEAD |
-| FND-003 | fixed: AC-4 split into AC-4 to AC-8 and AC-9 to AC-11, TC-773 renumbered | HEAD |
+| FND-001 | fixed: FR-289 states witness-arm and reproduced non-violation settle failed (AC-7, AC-8) | 5acdfbc3d |
+| FND-002 | fixed: bullets cite ADR-029 PL-7 by name; draco text lands later | 5acdfbc3d |
+| FND-003 | fixed: AC-4 split into AC-4 to AC-8 and AC-9 to AC-11, TC-773 renumbered | 5acdfbc3d |

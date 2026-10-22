@@ -50,7 +50,7 @@ The ticket's items 1, 2 and 4 are met, and item 3 is met in code. Its ADR prose 
 
 | FND | outcome | sha |
 | --- | --- | --- |
-| FND-001 | fixed: reproduced_non_violation_settles_failed (FR-289-AC-8) | HEAD |
-| FND-002 | fixed: from_plugin_proof refuses Checks, ClosedForm and Witness (CoreOnlyBasis); FR-289-AC-10 | HEAD |
-| FND-003 | fixed: test iterates ten other InconclusiveCause spellings (FR-289-AC-11) | HEAD |
-| FND-004 | fixed in spec: FR-289 states the driver carries the cause in the outcome document; PluginResultRefusal::record documents it | HEAD |
+| FND-001 | fixed: reproduced_non_violation_settles_failed (FR-289-AC-8) | 5acdfbc3d |
+| FND-002 | fixed: from_plugin_proof refuses Checks, ClosedForm and Witness (CoreOnlyBasis); FR-289-AC-10 | 5acdfbc3d |
+| FND-003 | fixed: test iterates ten other InconclusiveCause spellings (FR-289-AC-11) | 5acdfbc3d |
+| FND-004 | fixed in spec: FR-289 states the driver carries the cause in the outcome document; PluginResultRefusal::record documents it | 5acdfbc3d |
