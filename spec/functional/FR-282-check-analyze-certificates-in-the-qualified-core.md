@@ -61,12 +61,13 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   certificate names.
 - If the recompiled `package_id` differs from the certificate's, then the
   checker shall reject the certificate with a cause naming both identities.
-  A state-graph certificate carries its own `package_id` (FR-169), and the
-  state-graph checker's rejection `PackageMismatch{certificate, recompiled}`
-  settles `Inconclusive(StaleDependency{requested, recompiled})` (FR-127).
-  The FR-338 and FR-339 certificates carry no `package_id` of their own and
-  are bound through their `CertificateRequest`; the settlement of a package
-  mismatch in those checkers is not stated by this requirement.
+  A state-graph certificate (FR-169) and an EN-1 closure certificate
+  (FR-338) each carry their own `package_id`, and an EN-1 component
+  certificate (FR-339) carries it once, as its closure's. Each of these
+  checkers compares it with the recompiled `package_id` before any other
+  rule, and its rejection `PackageMismatch{certificate, recompiled}` settles
+  `Inconclusive(StaleDependency{requested, recompiled})` with `requested`
+  the certificate's `package_id` (FR-127).
 - Each certificate checker shall decide the certificate using the
   recompiled package and the certificate document only.
 - If the certificate does not establish the claim under the checker's rules,
@@ -88,6 +89,7 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 | FR-282-AC-7 | The simulation-relation certificate of a refinement that holds is accepted by the simulation-relation checker; the same certificate with one pair removed from the relation is rejected with a cause naming the concrete step left without a matching abstract step. | Test (TC-764) |
 | FR-282-AC-8 | The product-closure certificate of a two-copy hyperproperty proved over a finite model is accepted by the product-closure checker; the same certificate with one product-state key removed is rejected with a cause naming the successor it no longer contains. | Test (TC-764) |
 | FR-282-AC-9 | A state-graph certificate for ADR-022 §7.1's `ReachesTwo` whose `package_id` is another package's is rejected by `check_state_graph` with `PackageMismatch` naming the certificate's and the recompiled `package_id`, before any closure or rank rule. | Test (TC-1141) |
+| FR-282-AC-10 | FR-338-AC-11's closure certificate and FR-339-AC-4's component certificate, each with its `package_id` replaced by another package's, are rejected by `check_closure` and `check_components` with `PackageMismatch` naming the certificate's and the recompiled `package_id`, before any closure, partition, edge or witness rule. | Test (TC-1141) |
 
 ## Dependencies
 
