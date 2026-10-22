@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-245
+    type: depends_on
 ---
 # FR-314: Check an SMT proof certificate
 
@@ -51,6 +53,8 @@ solver's own proof objects against the queries the core itself encodes.
 - FR-338's `CertificateRequest` for the item, and the result's basis and
   `depth`.
 - An `SmtProofCertificate`.
+- The request's FR-245 `CertificateCheckLimits` and FR-276's `Cancel`
+  handle.
 
 ```rust
 pub enum ProofFormat { Alethe }              // cvc5's Alethe proof format
@@ -78,6 +82,8 @@ pub fn check_smt_proof(
     request: &CertificateRequest<'_>,
     basis: &ProofBasis,                       // BoundedComplete or Inductive, with depth
     certificate: &SmtProofCertificate,
+    limits: &CertificateCheckLimits,          // FR-245
+    cancel: &Cancel,                          // FR-276
 ) -> Result<SmtProofCheck, CertificateRejection>;
 
 /// The refinement item's request: the recompiled package, the refinement node,
@@ -93,12 +99,15 @@ pub struct RefinementCertificateRequest<'a> {
 pub fn check_refinement_smt_proof(
     request: &RefinementCertificateRequest<'_>,
     certificate: &RefinementSmtCertificate,
+    limits: &CertificateCheckLimits,          // FR-245
+    cancel: &Cancel,                          // FR-276
 ) -> Result<SmtProofCheck, CertificateRejection>;
 
 pub enum SmtProofCheck {
     Verified,
     Unverifiable { part: QueryPart, step: u64 },  // first command with an unchecked rule
     Unencodable { part: QueryPart },              // refinement only: FR-315 refuses the row's query
+    Stopped(IncompleteCause),                     // LimitReached{limit, value, setting} or Cancelled{source}
 }
 ```
 
@@ -163,6 +172,31 @@ spelling QSL writes.
   for `Inductive`.
 - The checker SHALL read nothing from the solver but the certificate.
 
+### Limits and cancellation
+
+- The checker SHALL charge `max_certificate_bytes` one unit per byte of
+  each carried query and proof as it reads them, and one unit per byte of
+  each expected query as FR-315 prints it; FR-315's encoding work is
+  charged to this counter and to no other.
+- The checker SHALL charge `max_certificate_edges` one unit per Alethe
+  command it reads and one unit per entry of a command's `:premises` and
+  `:discharge` lists.
+- Each charge SHALL be made before the work it pays for, in the order the
+  checker applies the rules above. When a charge would exceed its limit,
+  the checker SHALL stop and return `Stopped(IncompleteCause::LimitReached
+  {limit, value, setting})`, naming the limit (`max_certificate_bytes` or
+  `max_certificate_edges`), its configured value and its setting
+  (`certificate_check.max_certificate_bytes` or
+  `certificate_check.max_certificate_edges`, FR-255), and SHALL apply no
+  later rule. A rejection, `Unverifiable` or `Unencodable` that an earlier
+  rule finds before the denied charge is returned instead.
+- The checker SHALL poll the `Cancel` handle at each charge; when it is
+  cancelled, the checker SHALL return `Stopped(IncompleteCause::Cancelled
+  {source})` with the handle's actual Requested or Deadline source.
+- A `Stopped` result is neither a rejection nor `Unverifiable`: it shows
+  the certificate neither wrong nor unverifiable, and the item settles by
+  FR-127's stop rule.
+
 ### Refinement certificates
 
 `check_refinement_smt_proof` is the entry for a refinement item whose safety
@@ -221,6 +255,7 @@ command. Every other rule is unchecked.
 | FR-314-AC-2 | Rejected vectors: AC-1's bounded certificate with its query encoded at depth 2 is rejected `QueryMismatch` at `Unrolling`; with one step's premise replaced by a later step, `ProofStepInvalid` at that step; with its last step removed so the proof ends short of the empty clause, `NotRefutation`. AC-1's inductive certificate with an invalid step proof is rejected `ProofStepInvalid` at that `Step` step, and a `BoundedComplete` certificate offered for the `Inductive` basis is rejected `ShapeMismatch`. Each settles `inconclusive`, `CertificateRejected`. Unverifiable vector: AC-1's bounded certificate with one step's rule replaced by `hole`, or by `lia_generic`, and no other defect returns `Unverifiable` at that step and settles `proved`, `Uncertified`, the same as the bounded result with no certificate. | Test (TC-893) |
 | FR-314-AC-3 | Command numbers, over AC-1's bounded certificate with its proof replaced, `A` being the term of the first `assert` of its query. The proof `(assume a0 A)` `(anchor :step t2)` `(assume t2.a0 A)` `(step t2.t1 (cl) :rule resolution :premises (t2.t2))` `(step t2.t2 (cl A) :rule hole)` `(step t2 (cl (not A)) :rule subproof :discharge (t2.a0))` is rejected `ProofStepInvalid` at `ProofStep { part: Unrolling, index: 3 }`, and at the same locus with its `:id`s renamed `a0` to `t9`, `t2` to `t0`, `t2.a0` to `t0.t8`, `t2.t1` to `t0.t7` and `t2.t2` to `t0.t1`. The proof `(assume a0 A)` `(anchor :step t2)` `(assume t2.a0 A)` `(step t2.t1 (cl A) :rule hole)` `(step t2 (cl (not A) A) :rule subproof :discharge (t2.a0))` is rejected `NotRefutation` at `ProofStep { part: Unrolling, index: 4 }`. The proof `(assume a0 A)` `(anchor :step t2)` `(assume t2.a0 A)` `(step t2.t1 (cl) :rule hole)` `(step t2 (cl (not A)) :rule subproof :discharge (t2.a0))` `(step t3 (cl) :rule resolution :premises (a0 t2))` returns `Unverifiable { part: Unrolling, step: 3 }` and settles `proved`, `Uncertified`. A proof of no bytes is rejected `NotRefutation` at `Query { part: Unrolling }`. The proofs `(assume a0 A`, `(assume a0 A)` `(assume a0 A)`, `(assume a0 A)` `(anchor :step t2)` `(assume t2.a0 A)`, and the single byte `0xff` are each rejected `Malformed` at `Query { part: Unrolling }`. AC-1's inductive certificate with a base proof of no bytes is rejected `NotRefutation` at `Query { part: Base }`, and with the step proof `(assume a0 A` `Malformed` at `Query { part: Step }`. Each rejection settles `inconclusive`, `CertificateRejected`. | Test (TC-893) |
 | FR-314-AC-4 | Refinement certificates, over `CasRefinesCounter` (seven step rows): the certificate with a base part and seven step parts, each refuting its FR-315 refinement query with checked rules, is `Verified`; with six step parts it is rejected `ShapeMismatch` at `Step { row: Some(6) }`, with eight at `Step { row: Some(7) }`; with a step part in the `base` position and the base part in a step position it is rejected `QueryMismatch` at `Base`; with the third step part's query replaced by the fourth's it is rejected `QueryMismatch` at `Step { row: Some(2) }`; with the fifth step part's proof (at least four commands) having its command 3 made not to follow from its premises it is rejected `ProofStepInvalid` at `ProofStep { part: Step { row: Some(4) }, index: 3 }`; with command 3 of the base proof using `hole` it returns `Unverifiable { part: Base, step: 3 }`; over `CasRefinesCounterAdd` (FR-315-AC-6), whose `bump` row has a `_` argument so FR-315 refuses its query, with a base part and eight step parts, valid for the seven rows other than `bump` and a present part at the `bump` row's position (neither compared nor checked), it returns `Unencodable { part: Step { row: Some(r) } }`, `r` the position of the `bump` row in the `steps` order. | Test (TC-893) |
+| FR-314-AC-5 | AC-1's bounded certificate, checked with `max_certificate_bytes` 1 and the default `max_certificate_edges`, returns `Stopped(LimitReached{limit: max_certificate_bytes, value: 1, setting: certificate_check.max_certificate_bytes})` and settles `incomplete`, execution `resource-incomplete`, basis `unavailable`, never `proved`; with `max_certificate_edges` one below the proof's command count plus its premise and discharge entries it returns `Stopped` naming `max_certificate_edges` and `certificate_check.max_certificate_edges`; with both at their FR-245 defaults it returns `Verified`. AC-1's bounded certificate checked with a `Cancel` handle cancelled before the call returns `Stopped(Cancelled{source: Requested})` and settles `incomplete`, `cancelled{requested}`. AC-2's `QueryMismatch` certificate, whose query differs at its first byte, checked with `max_certificate_bytes` equal to its carried bytes plus the printed bytes of its expected query, is rejected `QueryMismatch`, not `Stopped`. AC-4's `CasRefinesCounter` certificate checked by `check_refinement_smt_proof` with `max_certificate_bytes` 1 returns `Stopped` naming `max_certificate_bytes`. Checking each certificate twice under the same limits gives equal results. | Test (TC-1165) |
 
 ## Dependencies
 
@@ -232,7 +267,11 @@ command. Every other rule is unchecked.
   [FR-163](FR-163-check-a-hyper-item-s-product-closure-certificate.md)
   (the `Malformed` rule),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
-  (the settlement map that runs the check).
+  (the settlement map that runs the check),
+  [FR-245](FR-245-check-a-zone-certificate-in-the-qualified-core.md)
+  (`CertificateCheckLimits`), FR-276 (the `Cancel` handle) and
+  [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) (the
+  limits' setting names).
 
 ## References
 
