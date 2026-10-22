@@ -52,7 +52,9 @@ loop is never reported as a violation.
 ## Inputs
 
 - A `CheckedTemporalClause` under infinite-trace (FR-326, FR-123), with its
-  fairness set.
+  fairness set; or one under a bounded profile, read only over a zero-counted
+  protocol lasso (Behavior, "Bounded-profile clause over a zero-counted
+  loop").
 - A lasso, one of:
   - `Lasso::Observed{prefix: Vec<Observation>, loop: Vec<Observation>}`:
     FR-106-admitted observations;
@@ -146,11 +148,12 @@ loop is never reported as a violation.
   step kind, so its steps are all counted), every `Lasso::Model` over a model
   subject (every step of which is counted, ADR-027 PB-3), and every
   `Lasso::Model` over a protocol subject whose loop has a counted step.
-- Under a bounded profile, FR-217's replay of a protocol lasso whose loop has
-  a counted step SHALL settle with no truth value.
+- FR-217 states the replay of a protocol lasso under a bounded profile whose
+  loop has a counted step (the evaluator's refusal above settles it with no
+  truth value there).
 - A protocol-subject `Lasso::Model` is the lasso of FR-217: the evaluator
   SHALL rebuild each position by re-executing its step through
-  `ProtocolSystem` (ADR-027 CX-3) with FR-101 `replay` from the named initial
+  `ProtocolSystem` (ADR-027 TS-1, PX-2) with FR-101 `replay` from the named initial
   state, steps being protocol transition identities with post-state digests,
   and SHALL refuse `invalid_runtime_input`/`invalid-value` when the loop's
   last post-state is not its entry state or a step is not enabled. A caller
@@ -189,7 +192,7 @@ loop is never reported as a violation.
 | FR-329-AC-6 | On the observed `Counter` lasso with an empty prefix and loop `c.value` 0, 1, 2, `always eventually holds(2 / (2 - c.value) = 2)` returns `Undefined{where: 2, cause: division-by-zero}`, category violation. | Test (TC-847) |
 | FR-329-AC-7 | The same clause with `fair weak attemptUpdate` over the lasso as `Lasso::Observed` returns `MissingFairnessPremise` naming `fair weak whole attemptUpdate`, O-16 unsupported, and evaluates no position; with an empty fairness set over the same observed lasso it is `Completed(false)` at position 0. | Test (TC-848) |
 | FR-329-AC-8 | Over a fair protocol-subject lasso (a `repeat` around a `parallel` whose loop is only `fork` and `join` steps), entered at interval distance 0, built through FR-217's replay, under a bounded profile: with `p` false at every position, `eventually[1,1] holds(p)` `on origin` is `Completed(false)` at position 0; with `p` true at position 0, `eventually[0,1] holds(p)` is `Completed(true)`; with `p` true only at a loop position, at distance 0, `eventually[0,1] holds(p)` is `Completed(true)`. | Test (TC-839) |
-| FR-329-AC-9 | Under a bounded profile, a `Lasso::Observed`, a `Lasso::Model` over a model subject, and a protocol-subject `Lasso::Model` whose loop has one counted step each refuse `unsupported_construct`/`expression-form` and return no truth value; FR-217's replay of the last settles with no truth value. | Test (TC-839) |
+| FR-329-AC-9 | Under a bounded profile, a `Lasso::Observed`, a `Lasso::Model` over a model subject, and a protocol-subject `Lasso::Model` whose loop has one counted step each refuse `unsupported_construct`/`expression-form` and return no truth value; FR-217-AC-7 states the replay of the last. | Test (TC-839) |
 | FR-329-AC-10 | Under a bounded profile, a zero-counted protocol-subject lasso that is unfair for a scheduler constraint refuses `invalid_runtime_input`/`invalid-value` naming the constraint and returns no truth value; the same lasso under `scheduling adversarial` is fair and `eventually[1,1] holds(p)` is `Completed(false)` at position 0. | Test (TC-839) |
 
 ## Dependencies

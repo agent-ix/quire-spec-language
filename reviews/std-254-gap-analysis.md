@@ -50,3 +50,21 @@ No test is tagged `FR-329-AC-8`, `-AC-9` or `-AC-10`. The behaviour from QSL #11
 ## Verdict
 
 Not clean. Every new AC has a TC-839 row, the trace tags on the existing tests are correct for the ACs they name, and AC-8's semantics are already exercised. The tests for AC-8 to AC-10 as stated still have to be written, and AC-9's refusal code disagrees with the evaluator (SR-13770 FND-001), so the TC-839 step 7 test would fail against the current code.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@9eb06cde9` (fix commit `9eb06cde9`). I checked each outcome against the spec at that head. The PR changes no test.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred: spec-only PR | No test is tagged FR-329-AC-8, AC-9 or AC-10 and TC-839 steps 6 to 8 are still unimplemented at 9eb06cde9. This PR is spec-only by its gate scope, so the tests belong to the implementation work; no follow-up ticket for them is named on STD-254 yet, and the lead should name or file one before STD-254 closes. |
+| FND-002 | fixed 9eb06cde9 | AC-8 adds "with `p` true only at a loop position, at distance 0, `eventually[0,1] holds(p)` is `Completed(true)`", and TC-839 step 6 and its expected result ("`false` at 0; `true`; `true`") carry it. The review-pass probe returned `Holds` for this case. |
+| FND-003 | fixed 9eb06cde9 | AC-9 now names "a `Lasso::Observed`, a `Lasso::Model` over a model subject, and a protocol-subject `Lasso::Model` whose loop has one counted step", and TC-839 step 7 evaluates each. |
+
+## New findings (disposition pass 1)
+
+These were found at `9eb06cde9`. They are new, not dispositions of the rows above.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | TC-839 step 8 says "evaluate the step 6 lasso when it is unfair for a scheduler constraint", but step 6 defines that lasso as fair (a `repeat` around a `parallel` whose loop is only `fork` and `join` steps), so step 8 names a lasso that cannot be unfair. AC-10 asks for any zero-counted lasso that is unfair. Fix: name an unfair zero-counted lasso for step 8, for example the duplicate/lose cycle of FR-338-AC-6 replayed against the default package, which the review-pass probe refused `UnfairProtocolLasso{Root}`. | spec/test-cases/TC-839-s6a-evaluates-an-infinite-trace-clause-over-a-lasso.md:40-41,56-57; spec/functional/FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md:193 |

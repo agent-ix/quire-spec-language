@@ -36,3 +36,22 @@ Ticket: STD-254. PR: quire-spec-language#1182, head 7d7a924b7. Method: spec-revi
 ## Verdict
 
 Not clean, all low. The criteria AC-8 to AC-10 are direct, measurable assertions with named outcomes, and the new text has no changelog, status or review language. The four findings are actor and atomicity issues in the new Behavior prose. None of them changes what the evaluator must do.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@9eb06cde9` (fix commit `9eb06cde9`). I checked each outcome against the spec at that head. `make check-spec-validation` exits 0 with no `ears:` warning on FR-329.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 9eb06cde9 | The Description sentence now reads "Under a bounded profile, the evaluator SHALL read a lasso in one case only: a `Lasso::Model` over a protocol subject whose loop has no counted step (ADR-027 PB-3), ... and SHALL refuse every other lasso." |
+| FND-002 | fixed 9eb06cde9 | Bullet 1 now reads "Under a bounded profile, the evaluator SHALL read a lasso only when ..." and the refusal is its own bullet with the evaluator as subject. |
+| FND-003 | fixed 9eb06cde9 | The constant-distance sentence stays as the stated fact, and a separate bullet says "the evaluator SHALL evaluate the clause false, because no position lies at a distance in `[a, b]`". |
+| FND-004 | fixed 9eb06cde9 | The fairness bullet is split: reading a scheduler constraint as taken and enabled (PA-2), refusing an unfair zero-counted lasso, and returning `Completed(false)` for a fair unmet lasso are three bullets, each with its own SHALL. |
+
+## New findings (disposition pass 1)
+
+These were found at `9eb06cde9`. They are new, not dispositions of the rows above.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The new bullet "Under a bounded profile, FR-217's replay of a protocol lasso whose loop has a counted step SHALL settle with no truth value" makes FR-217's replay the subject of a SHALL in FR-329, the evaluator's requirement. The obligation belongs to FR-217 and should be stated there, with FR-329 pointing to it, or rewritten as what the evaluator returns that makes the replay settle so. | spec/functional/FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md:149-150 |
