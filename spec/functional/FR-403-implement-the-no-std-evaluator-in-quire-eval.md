@@ -44,9 +44,9 @@ The crate `quire-eval` SHALL hold the `no_std` evaluator. It evaluates the
 expression, over C's checked terms. It admits call arguments itself, reads
 the object environment only through an environment contract that
 `quire-eval` defines, and is driven by the FR-262 scheduler that
-`quire-eval` already holds. `qsl-eval` consumes it. `qsl-eval` keeps the std
-reference evaluator, the std reference adapter, the clause and model
-engines and an implementation of the environment contract over
+`quire-eval` already holds. `qsl-eval` consumes it. Until FR-405's switch,
+`qsl-eval` keeps the std reference evaluator and the std reference adapter;
+it keeps the clause and model engines and an implementation of the environment contract over
 `qsl-semantics`' `ObjectEnvironment`, and stays a `std` crate. The two
 implementations agree on every result, refusal, location, loss and charge,
 which [FR-402](FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md)'s
@@ -67,7 +67,8 @@ the environment contract.
   `quire_checked::CheckedExpression` with completed parameter values.
 - An environment: a value of a type that implements the environment
   contract.
-- One `quire_exact::Meter`, one `quire_exact::Cancel`, and optionally a
+- One `quire_exact::Meter`, whose installed `quire_exact::Cancel` handle,
+  if it has one, is the session's handle (FR-262), and optionally a
   supplied-value run (`SuppliedRun`) carrying FR-277's budgets.
 - For a registered generated body, the FR-262 body factory.
 
@@ -105,8 +106,11 @@ application of an admitted callable and a checked expression with its
 parameters. It has no entry that evaluates a state clause, a clause set, an
 operation frame, a separating `forall` witness (ADR-031), a model type's
 invariants by runtime value path (FR-366), a temporal, protocol or hyper
-clause, or a simulation step. Those entries stay in `qsl-eval` and run on
-the std reference evaluator.
+clause, or a simulation step. Until FR-405's switch, those entries stay in
+`qsl-eval` and run on the std reference evaluator; the switch moves their
+evaluation onto a `quire-eval` clause entry
+([FR-405](FR-405-retire-the-std-reference-evaluator-for-quire-eval.md)
+"Clause evaluation"), and this section then scopes the `Value`-family entry.
 
 The checker's body entry (`check_expression`) and a function body admit
 every `NodeKind` except five, which only other checker passes build:
@@ -186,7 +190,8 @@ argument planning before any charge (RT's `plan_call` and
 frames (RT's `Frame` and `Body`, FR-262's session, body contract and child
 request), and the `work_units` charge sequence with its ordered admitted
 charges. RT and CG evaluate no state clause, operation frame or other
-clause, so no clause entry is part of `quire-eval`.
+clause, so they use only the `Value`-family entry; until FR-405's switch no
+clause entry is part of `quire-eval`.
 
 ### Argument admission
 
@@ -219,7 +224,7 @@ A failure is a pre-charge Begin failure: `CallFailure::Input`,
 invocation. A Begin with no supplied-value run uses a run of its own at
 `SuppliedLimits::default()` with a fresh `Cancel` that nobody holds, as the
 reference's `call` and `evaluate` do. Argument admission therefore never
-observes the session's `Cancel`. The session's `Cancel` is polled from the
+observes the session's handle. The meter polls its installed handle from the
 application's first charge, as FR-262 states.
 
 The supplied-value run (`SuppliedRun`, `SuppliedLimits`, and the private
@@ -337,15 +342,16 @@ return the reference's results:
    admitted charges (`Meter::admitted_charges` under `quire-exact`'s
    `test-support` feature), and, for a denied charge, the same
    `Incomplete` at the same charge point with the denied charge unrecorded.
-   Cancellation is polled at every charge and before each scheduler
-   transition, as FR-262 states.
+   Cancellation is observed only at a charge, and a charge the handle denies
+   gives that charge's located `Incomplete`, as FR-262 states.
 5. **Depth.** No depth setting, depth refusal or native recursion whose
    depth grows with the input (FR-262 Behavior 1, ADR-030).
 
 ### What `qsl-eval` keeps
 
 `qsl-eval` SHALL stay a `std` crate with no `std` feature of its own and no
-NFR-015 row. It keeps:
+NFR-015 row. Until FR-405's switch, it keeps the items below; FR-405
+"The state after the switch" states what it keeps after it:
 
 - the std reference evaluator (`value::expression`'s `Machine`), which
   `CheckedPackageEvaluation`'s `call` and `evaluate` use by default while
@@ -353,13 +359,13 @@ NFR-015 row. It keeps:
 - the clause, clause-set, frame, separation and value-invariant entries,
   the S6a family seam over the `qsl-semantics` family marker types, and
   the simulation, automaton, hyper, temporal, fairness and model-subject
-  engines, all on the reference evaluator;
-- the std reference adapter of FR-401, and the environment contract
+  engines, all on the reference evaluator until FR-405's switch;
+- until FR-405's switch, the std reference adapter of FR-401; and the environment contract
   implementation over `ObjectEnvironment`;
 - name resolution (`QualifiedName`), the FR-098 conversion phase before
   `call_supplied`'s admission, and the refusal-record function.
 
-`qsl-eval` SHALL expose an entry that runs a checked package's call or
+Until FR-405's switch, `qsl-eval` SHALL expose an entry that runs a checked package's call or
 expression through the `quire-eval` evaluator, with the package's checked
 graph as the closure and its `ObjectEnvironment` as the environment. The
 FR-402 differential runs and this requirement's FR-262 runs use that entry.
@@ -372,7 +378,7 @@ implementations.
 
 ### FR-262 with `std` off
 
-In QSL, FR-262-AC-1 to FR-262-AC-8 SHALL each also run with the `no_std`
+In QSL, FR-262-AC-1 to FR-262-AC-8, AC-10 and AC-11 SHALL each also run with the `no_std`
 evaluator as the implementation. QSL's checker admits the source and
 `qsl-package` links the checked package with `std`, then the `quire-eval`
 evaluator evaluates its checked graph. Each run SHALL meet that criterion's
@@ -389,17 +395,25 @@ repository, and nothing else.
 
 ## Acceptance Criteria
 
+Each criterion below that compares the `no_std` evaluator with the
+reference (AC-2 to AC-7 and AC-10 to AC-14) holds as written until FR-405's
+switch. After the switch it holds in this form: the test runs once, on
+`quire-eval`, and the reference's results are its recorded expected
+values. AC-3's and AC-6's reference-side registration and call, and AC-7's
+second pass, become that single run. AC-9's reference clause is bounded by
+the switch, and FR-405-AC-4 states what holds after it.
+
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-403-AC-1 | `quire-eval`'s manifest names only `quire-checked`, `quire-semantic-value`, `quire-exact`, `quire-walk` and `thiserror` as normal dependencies, with default features off, and `cargo tree -p quire-eval -e features -i quire-checked` in `agent-ix/quire-eval`'s gate shows no `construct` feature. It declares no feature that adds or removes the evaluator. | Test (TC-1121) |
 | FR-403-AC-2 | `qsl_semantics::value::divide`, `qsl_semantics::value::modulo`, `qsl_semantics::model::refusal::render_identity` and `qsl_semantics::value::supplied::SuppliedRun` fail to compile from another crate, and each resolves at its new path. With a package's admitted integer division law, `-7 div 2` and `-7 mod 2` evaluated through each evaluator return the value and admitted charges that `quire_exact::divide` and `quire_exact::modulo`, called directly with that law's profile and a fresh meter, return. | Test (TC-1121) |
 | FR-403-AC-3 | Over FR-401-AC-5's fixture (a package with `f(x: Int[0, 9]): Boolean`, an FR-151 dispatched member call, and a dependency with `g(): Integer`), a registry the `no_std` evaluator creates from the package's checked graph returns `Accepted`, `SignatureMismatch`, `Accepted`, `CallableNotAdmitted` and `CallableNotAdmitted` for the five registrations FR-401-AC-5 lists, equal to the reference adapter's results. | Test (TC-1121) |
-| FR-403-AC-4 | For each vector, the `no_std` evaluator and the reference return equal results, equal FR-096 refusal records, equal consumed counters and equal ordered admitted charges. `count(3)` completes with `3`, with four `function.call` charges among its admitted charges. `function d(x: Int[0, 9]): Integer pure { 10 div x }` called with `0` returns the reference's non-completed outcome, located at the `div` node. `f` called with `10` returns `CallFailure::Input` from `quire-eval`'s argument admission, with no charge. `f` called with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, with no charge. A call begun with an already-cancelled `Cancel` returns `CallFailure::Cancelled`, with no charge. `count(3)` with `work_units` one below its measured spend returns `Incomplete` naming `work_units` at the reference's denied charge point, with that charge unrecorded and the earlier spend kept. | Test (TC-1121) |
+| FR-403-AC-4 | For each vector, the `no_std` evaluator and the reference return equal results, equal FR-096 refusal records, equal consumed counters and equal ordered admitted charges. `count(3)` completes with `3`, with four `function.call` charges among its admitted charges. `function d(x: Int[0, 9]): Integer pure { 10 div x }` called with `0` returns the reference's non-completed outcome, located at the `div` node. `f` called with `10` returns `CallFailure::Input` from `quire-eval`'s argument admission, with no charge. `f` called with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, with no charge. `f` called with `3` over a meter whose installed handle is already cancelled returns the located `Incomplete` at its `function.call` charge, with `limit_kind` `work_units`, `limit` equal to `consumed` and no admitted charge; called with a supplied-value run whose handle is already cancelled, it returns `CallFailure::Cancelled` from argument admission, with no charge. `count(3)` with `work_units` one below its measured spend returns `Incomplete` naming `work_units` at the reference's denied charge point, with that charge unrecorded and the earlier spend kept. | Test (TC-1121) |
 | FR-403-AC-5 | Over an `ObjectEnvironment` with one population of three recorded members and an attached `ReadLog`, a function whose body is an `allInstances` over its `Population` parameter, evaluated through the `no_std` evaluator with `qsl-eval`'s environment implementation, returns the members in the reference's order, with the reference's charges, and leaves the same `ObservedRead` set in the `ReadLog`. | Test (TC-1121) |
 | FR-403-AC-6 | Over `quire-eval`'s closure-only environment, a call of a function with a `Population` parameter, given a `Population` value whose `PopulationId` is not recorded, returns `CallFailure::Input(InputRefusal::WrongValueKind)` naming parameter `0`, with no charge. The reference over `ObjectEnvironment::new` of the same closure returns the same result. | Test (TC-1121) |
-| FR-403-AC-7 | FR-262-AC-1 to FR-262-AC-8 each pass a second time with the `no_std` evaluator as the implementation, through `qsl-eval`'s `quire-eval` entry, with the reference's expected values. The AC-1 and AC-2 runs use a thread with a 512 KiB stack and observe no depth refusal and no stack overflow. | Test (TC-1121) |
+| FR-403-AC-7 | FR-262-AC-1 to FR-262-AC-8, AC-10 and AC-11 each pass a second time with the `no_std` evaluator as the implementation, through `qsl-eval`'s `quire-eval` entry, with the reference's expected values. The AC-1 and AC-2 runs use a thread with a 512 KiB stack and observe no depth refusal and no stack overflow. | Test (TC-1121) |
 | FR-403-AC-8 | Admitting a population document whose three members are listed in two different orders, with a subsetting violation on two of them, refuses both times naming the violating member with the lowest reference key, on each of ten runs. | Test (TC-1121) |
-| FR-403-AC-9 | `qsl-eval`'s manifest declares no `std` feature. `CheckedPackageEvaluation::call` and `evaluate` run the reference evaluator. `qsl-eval` re-exports no `quire-eval` item and defines no argument admission of its own. `quire-eval`'s source contains no name resolution, FR-098 conversion phase, model admission, simulation, or clause, frame, separation or value-invariant entry. | Inspection (TC-1121) |
+| FR-403-AC-9 | `qsl-eval`'s manifest declares no `std` feature. Until FR-405's switch, `CheckedPackageEvaluation::call` and `evaluate` run the reference evaluator. `qsl-eval` re-exports no `quire-eval` item and defines no argument admission of its own. `quire-eval`'s source contains no name resolution, FR-098 conversion phase, model admission or simulation, and, until FR-405's switch, no clause, frame, separation or value-invariant entry. | Inspection (TC-1121) |
 | FR-403-AC-10 | On each of ten runs, the `no_std` evaluator's results equal the reference's in order: the members of AC-5's `allInstances` over a population recorded with its members in descending reference-key order, which both return ascending; and the loss list of FR-262-AC-8's kernel-loss case. | Test (TC-1121) |
 | FR-403-AC-11 | The `StateModel` undefined result of a `lookup<T>(p, r) absent undefined` with an absent key, raised by each evaluator, has the catalog code prefix `state-model` and the `binding` and `key` fields `render_identity` gives. `FamilyKind::StateModel.catalog_code_prefix()` returns SV's constant, and `qsl-eval`'s source defines no `StateModelUndefined`, `PreconditionFailure`, `NavigationRefusal`, `ReferenceUnresolved` or `ProtocolReferenceUnsupported`. | Test (TC-1121) |
 | FR-403-AC-12 | Through each evaluator, a checked expression `x + 1` with one parameter `x: Int[0, 9]`, given `10`, returns `CallFailure::Input` from argument admission with no charge; given `3`, it completes with `4` and no `function.call` among its admitted charges. A chain of three functions with no parameters, whose bodies call the next or, for the last, return a literal, admits exactly three `function.call` charges with `work_units` spend `3`; with `work_units` `2` it returns `Incomplete` naming `work_units` at the third `function.call`, with two calls in the counter and the log. | Test (TC-1121) |
@@ -409,7 +423,7 @@ repository, and nothing else.
 ## Dependencies
 
 - [FR-262](FR-262-evaluate-values-and-calls-at-any-depth.md): the interface,
-  fuel and depth behaviour the implementation meets, and AC-1 to AC-8.
+  fuel and depth behaviour the implementation meets, and AC-1 to AC-8, AC-10 and AC-11.
 - [FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md):
   the leaf, its dependency set, its closure contract and the reference
   adapter.
