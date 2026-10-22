@@ -60,6 +60,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-013
     type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-015
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-043
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-044
@@ -1297,6 +1299,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-401](functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
+| [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR |
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR |

@@ -16,6 +16,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: references
+  - target: ix://agent-ix/quire-spec-language/NFR-015
+    type: references
 ---
 # AD-001: Shared evaluation-core interface and staged evaluator replacement
 
@@ -154,13 +156,19 @@ here. The ordering rationale is as follows.
 - IR-586 (S2) separates checked IR from the checker, preserving checking
   authority, source locations and identities.
 - IR-587 (S3) makes `qsl-foundation` no_std + alloc capable with `std` on by
-  default.
+  default. NFR-015 gives its build contract, target and gate (closure tier,
+  `thumbv7em-none-eabi`, `make build-no-std`). The foundation items the leaf
+  itself uses move with S1, not S3.
 - IR-588 (S4) converts only the evaluator-needed semantics and replaces
   nondeterministic `HashMap` traversal in `model/population.rs` with
   `BTreeMap`. It follows S2.
 - IR-589 (S5) makes `qsl-package` no_std-capable and removes `serde_json` from
   the checked-IR path, verifying uncertain dependencies before choosing
-  replacements.
+  replacements. NFR-015 defines the checked-IR path (the in-memory checked
+  package, not the v2 wire), puts `quire-contract-model`, the v2 emitter,
+  the I2 reader and the dependency-bearing constructor behind `std`, and
+  sets the crate tier; the closure tier also needs S4 and `no_std` layers 2
+  and 1.
 - IR-590 (S6) converts `qsl-eval` to no_std + alloc behind the interface and
   keeps `std` on by default until S9. It follows the interface and S1-S5.
   IR-269 is reached through S1, not directly.
@@ -271,3 +279,22 @@ first moves `WrongSnapshotCause`.
   before claiming that the new interface completes the old port migration.
 - IR-269 precedes S1 and reaches S6 through S1. The Linear edges decide
   readiness.
+- The `no_std` dependency verdicts, measured on QSL `origin/main`: `serde`,
+  `sha2` and `thiserror` build without `std`. `quire-contract-model` does
+  not (it depends on `serde_json` with `std`, `jsonschema`,
+  `serde_path_to_error`, `serde_stacker` and `stacker`), so it stays behind
+  `qsl-package`'s `std` feature, and with `std` off the checked package reads
+  no `quire.checked-package/v2` JSON and recomputes no dependency
+  `package_id`. `logos` and `serde_json` are on the evaluator closure:
+  `qsl-semantics` has a normal edge to `qsl-forms` (layer 3 depends on
+  layer 2), `qsl-forms` to `qsl-cst`, and `qsl-cst` needs `logos` and
+  `serde_json`; `qsl-semantics` also depends on `serde_json`, `tempfile`
+  and the FCD crates (`agent-ix-extraction-frontend`,
+  `agent-ix-semantic-ir`). The closure tier of `qsl-package` therefore needs
+  `qsl-semantics`, `qsl-forms` and `qsl-cst` each `no_std`-capable with
+  those dependencies `no_std` or behind their `std` features; the layer 3 →
+  2 edge stays. A `no_std` constructor of a dependency-bearing checked
+  package recomputes each dependency's `package_id` by building and encoding
+  its identity preimage, so it needs IR's preimage types to build without
+  `std`; a `no_std` reader matters only for a dependency that arrives as
+  bytes. NFR-015 provides neither.
