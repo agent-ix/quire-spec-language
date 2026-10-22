@@ -152,7 +152,8 @@ here. The ordering rationale is as follows.
 - IR-583 delivers the interface in `quire-eval`, the vocabulary moves its
   signature needs, and the std reference adapter (FR-401).
 - IR-585 (S1) moves `WrongSnapshotCause` into `quire-semantic-value`
-  (FR-401). It follows IR-583 and IR-269.
+  (FR-401) unless S2 has moved it there (FR-400). It follows IR-583 and
+  IR-269.
 - IR-586 (S2) separates checked IR from the checker, preserving checking
   authority, source locations and identities.
 - IR-587 (S3) makes `qsl-foundation` no_std + alloc capable with `std` on by
@@ -216,34 +217,31 @@ evidence that the RT target accepts the later implementation.
 FR-401 fixes the leaf and where the interface's types live. The leaf is the
 crate `quire-eval`, ADR-011 layer E, in the repository `agent-ix/quire-eval`
 beside FR-400's `quire-checked` (layer C). It depends on C, SV, K, W and
-`thiserror` and on no QSL crate; before FR-400's X-13 it names only SV, K and
-`thiserror`.
+`thiserror` and on no QSL crate, declaring each only when it names one of
+its items.
 
 | Interface type | Owner |
 | --- | --- |
-| `Meter` and its accounting vocabulary, `Cancel`, `NodeKey`, `Value`, `ValueType`, `Outcome` | K `quire-exact`, already |
-| `InputRefusal`, `Location`, losses, `EnvironmentFailure`, `ObjectClosure` | SV, already |
+| `Meter` and its accounting vocabulary, `Cancel`, `NodeKey`, `Value`, `ValueType`, `Outcome` | K `quire-exact` |
+| `InputRefusal`, `Location`, losses, `EnvironmentFailure`, `ObjectClosure` | SV |
 | `InternalFault`, `Category`, `CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason` | SV `catalog`, from `qsl-foundation` (S0) |
 | `CallFailure`'s supplied-value stop payloads | SV `supplied_stop`, from `qsl-semantics` (S0) |
 | `Evaluation`, `CallFailure`, `FamilyOutcome`, `FamilyResult`, `EvalOutcome`, the registry, session and body contract | E `quire-eval` (S0) |
-| `WrongSnapshotCause` | SV `call`, from `check::refusal` (S1) |
-| checked closure, checked expression, object environment | opaque to E: types the implementation supplies through E's closure contract |
+| `WrongSnapshotCause` | SV `call`, from `check::refusal` (S1, or S2 when it lands first) |
+| checked closure, checked expression, object environment | types the implementation supplies through E's closure contract; E may name C's checked terms and names no QSL item |
 
-The leaf keeps the checked closure opaque. It identifies a callable by its
-kernel `NodeKey` and checks registration against the admitted signature (the
-parameter and result `ValueType`s) the closure contract returns. `qsl-eval`'s
-std reference adapter implements that contract over `CheckedPackage` and
-`ObjectEnvironment` until X-13, and the leaf may name C's checked terms
-after it. `ObjectEnvironment` already holds SV's `ObjectClosure`; it stays in
-layer-3 `model` because its populations map holds `PopulationBinding`.
+The leaf identifies a callable by its kernel `NodeKey` and checks
+registration against the admitted signature (the parameter and result
+`ValueType`s) the closure contract returns; only functions callable by name
+are admitted. `qsl-eval`'s std reference adapter implements that contract
+over `CheckedPackage` and `ObjectEnvironment`. `ObjectEnvironment` holds
+SV's `ObjectClosure` and stays in layer-3 `model` because its populations
+map holds `PopulationBinding`.
 
 S0 carries the vocabulary moves its signature needs, since the leaf can import
-neither `qsl-foundation` nor a QSL layer. S1 is the one remaining move,
-`WrongSnapshotCause`; the IR-585 names `EvaluationRefusal` and `CallPlan`
-have no counterpart in QSL, and the `IeeeItemRequirement` and
-`IntegerDivisionConsumer` fields are absent (FR-078). S0, S1 and S2 move
-disjoint sets of items to SV, each item once; whichever of S1 and S2 lands
-first moves `WrongSnapshotCause`.
+neither `qsl-foundation` nor a QSL layer. S1's item set is
+`WrongSnapshotCause` alone. S0's and S1's item sets are disjoint and each
+item moves once.
 
 ## Decisions
 

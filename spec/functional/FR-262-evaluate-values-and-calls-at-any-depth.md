@@ -139,7 +139,7 @@ belong to the interface implementation.
 | Operation | Inputs | Result and responsibility |
 | --- | --- | --- |
 | Register host body | Open or sealed checked-closure-bound registry; admitted callable identity and signature; resumable body factory | Typed internal admission result under the ordered policy above; accepted factory supplies fresh invocation state for each call |
-| Begin application | Selected checked closure and its registry; exact callable and completed arguments, or checked expression and parameters; admitted object environment; one `Meter`; `Cancel` | Pre-charge input failure, or one opaque session bound to these inputs and the sealed registry |
+| Begin application | The registry, which holds its one selected checked closure; exact callable and completed arguments, or checked expression and parameters; admitted object environment; one `Meter`; `Cancel` | Pre-charge input failure, or one opaque session bound to these inputs and the sealed registry |
 | Step session | Exclusive access to that live session | Still runnable, or terminal `Evaluation` / `CallFailure` under the existing S6a contract |
 | Resume body | Invocation state; initial arguments or the matching child's evaluation; scoped access to the session meter | Continue with saved state, request a child application, or return an evaluation |
 

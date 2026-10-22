@@ -35,9 +35,9 @@ type, which turns `FamilyResult` back into a shared cause list.
 
 ## Test Procedure
 
-1. Scan every `.rs` file under `src/`,
-   `qsl-foundation/src/`, `qsl-cst/src/`, `qsl-forms/src/`,
-   `qsl-semantics/src/`, `qsl-package/src/` and `qsl-eval/src/` for an item definition named `FamilyOutcome`,
+1. Scan every `.rs` file of every member of the QSL workspace (each
+   `members` entry of the root `Cargo.toml`, the root crate's `src/`
+   included) for an item definition named `FamilyOutcome`,
    `FamilyResult` or `EvalOutcome` (`enum`, `struct` or
    `type`). Use the `syn`-based definition scan the repository already has
    (`xtask/src/definition_scan.rs`).
@@ -56,8 +56,8 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 
 ## Expected Results
 
-- Step 1 finds no definition of any of the three types; each resolves at its
-  `quire_eval::` path.
+- Step 1 finds no definition of any of the three types in any workspace
+  member. (That each resolves at its `quire_eval::` path is FR-401-AC-3.)
 - Step 2 finds no edge.
 - Step 3 finds no edge.
 - Step 4 finds that none of the five layer F to 4 manifests names

@@ -7,6 +7,8 @@ relationships:
     type: implements
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-400
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-059
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-090
@@ -25,28 +27,29 @@ its own repository, with no dependency on QSL's checker, package, model
 intake, routing, replay or backend crates. The interface's inputs and results
 are QSL's existing evaluation vocabulary: the meter, the cancellation handle,
 the evaluation, the call failure and its arm payloads, the input refusal, the
-object environment, the callable identity and its admitted signature. Several
-of those types are defined today in crates the leaf may not depend on:
-`Evaluation` and `CallFailure` in `qsl-eval`, the S6a result types in
-`qsl-semantics`' `family`, the supplied-value stop records in
-`qsl-semantics`' `value::supplied`, and the catalog vocabulary
-`CallFailure` and the S6a result types carry (`InternalFault`,
-`CatalogCoded`, `UndefinedCoded`, `Category`) in `qsl-foundation`.
+object environment, the callable identity and its admitted signature. The
+leaf may not depend on the crates that define several of them: `qsl-eval`
+(`Evaluation`, `CallFailure`), `qsl-semantics`' `family` (the S6a result
+types) and `value::supplied` (the supplied-value stop records), and
+`qsl-foundation` (the catalog vocabulary `CallFailure` and the S6a result
+types carry: `InternalFault`, `CatalogCoded`, `UndefinedCoded`,
+`Category`).
 
 This requirement names the leaf crate, its repository, its
 [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
 §6.1 layer and its dependencies, and places every type the interface names in
-a crate the leaf may depend on. It fixes how the leaf reads a checked closure
-before the checked terms leave the checker
-([FR-400](FR-400-separate-checked-terms-from-the-checker.md), slice S2), and
+a crate the leaf may depend on. It depends on
+[FR-400](FR-400-separate-checked-terms-from-the-checker.md), which creates
+the repository's checked-term crate `quire-checked` at ADR-011 layer C, the
+layer directly below E. It fixes how the leaf reads a checked closure, and
 which moves belong to slice S0 (IR-583), slice S1 (IR-585) and slice S2
 (IR-586). Every moved type keeps its meaning, so every evaluation, refusal
 record and call failure is the same before and after the move.
 
 ## Inputs
 
-- The types FR-262's Operational interface names, at the paths QSL defines
-  them today.
+- The types FR-262's Operational interface names, at their QSL paths before
+  the move.
 - The dependency tables of the QSL workspace and of the backend repositories,
   read by TC-390's table check and FR-059's direction check.
 
@@ -75,11 +78,11 @@ record and call failure is the same before and after the move.
 3. `quire-eval` SHALL be `#![no_std]` with `alloc`, with no `std` feature,
    and SHALL forbid unsafe code. Its own gate SHALL build it for
    `thumbv7em-none-eabi`.
-4. `quire-eval`'s `[dependencies]` SHALL name only `quire-checked` (C),
-   `quire-semantic-value` (SV), `quire-exact` (K), `quire-walk` (W) and
-   `thiserror`, each without `std`. It SHALL NOT depend on any crate of the
-   QSL repository, in any dependency table. Until FR-400's X-13 lands, it
-   names no `quire-checked` item and does not declare that dependency.
+4. `quire-eval`'s `[dependencies]` SHALL be drawn only from
+   `quire-checked` (C), `quire-semantic-value` (SV), `quire-exact` (K),
+   `quire-walk` (W) and `thiserror`, each without `std`, and SHALL declare
+   each only when its source names an item of it. It SHALL NOT depend on any
+   crate of the QSL repository, in any dependency table.
 5. QSL SHALL take `quire-eval` as a git dependency at `branch = "main"`, as
    it takes `quire-walk`. The QSL crates whose shipped code names its items,
    `qsl-eval`, `qsl-replay` and `qsl-bench`, add it to their
@@ -98,7 +101,7 @@ at the path below, and SHALL leave no copy or re-export at a former path.
 
 | Type | Owner and path | Moved by |
 | --- | --- | --- |
-| `Meter`, `Charge`, `ChargePoint`, `Incomplete`, `ScalarLimits` (the `quire.value.accounting/v1` meter the evaluator charges) | K, `quire_exact` | none: already K. `qsl-semantics`' `model::accounting::Meter` is FR-150's normalization meter, not the evaluation meter, and is not part of the interface |
+| `Meter`, `Charge`, `ChargePoint`, `Incomplete`, `ScalarLimits` (the `quire.value.accounting/v1` meter the evaluator charges) | K, `quire_exact` | none. `qsl-semantics`' `model::accounting::Meter` is FR-150's normalization meter, not the evaluation meter, and is not part of the interface |
 | `Cancel`, `CancelCause` | K, `quire_exact` | none |
 | `Value`, `ValueType`, `Outcome`, `NodeKey` | K, `quire_exact` | none |
 | `InputRefusal` | SV, `quire_semantic_value::call` | none |
@@ -108,9 +111,9 @@ at the path below, and SHALL leave no copy or re-export at a former path.
 | `Category`, `CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason`, `InternalFault` | SV, `quire_semantic_value::catalog` | S0, from `qsl_foundation::diagnostic` |
 | The supplied-value stop records: `SuppliedFailure`, `SuppliedStop`, `SuppliedContext`, `SuppliedCause`, `SuppliedPhase`, `SuppliedEvent`, `SuppliedLocus`, `SuppliedLimit`, `SuppliedLimitKind`, `AttemptedCount`, `SuppliedNumericOperand`, `SuppliedStorage`, `SuppliedStorageUnit`, `UnsupportedHelperStop`, and the limit-field name constants `SuppliedLimitKind::field` returns | SV, `quire_semantic_value::supplied_stop` | S0, from `qsl_semantics::value::supplied` |
 | `FamilyOutcome`, `FamilyResult`, `EvalOutcome` (the S6a result vocabulary) | E, `quire_eval` | S0, from `qsl_semantics::family` |
-| `Evaluation`, `CallFailure` | E, `quire_eval` | S0, from `qsl_eval::value::expression` |
+| `Evaluation`, `CallFailure` | E, `quire_eval` | S0, from `qsl-eval`'s `value::expression`, public at `qsl_eval::value` |
 | The registry, its admission result (`Accepted`, `RegistrySealed`, `CallableNotAdmitted`, `SignatureMismatch`, `DuplicateBinding`), the admitted signature, the session, the step result, the body factory and invocation-state contract, and the child request | E, `quire_eval` | S0, new |
-| `WrongSnapshotCause` | SV, `quire_semantic_value::call` | S1, from `qsl_semantics::check::refusal` |
+| `WrongSnapshotCause` | SV, `quire_semantic_value::call` | S1, from `qsl_semantics::check::refusal`, unless FR-400's X-13 has moved it |
 
 These stay where they are and are not part of the leaf: `qsl-foundation`'s
 `Code`, `RefusalRecord`, `Locus`, `kernel_refusal_record`, `category_of`,
@@ -122,17 +125,23 @@ These stay where they are and are not part of the leaf: `qsl-foundation`'s
 and `qsl-eval`'s `QualifiedName`, `supplied_stop_code` and
 `supplied_stop_cause`.
 
-Two methods change owner because their types move and the method names a
-type that does not:
+These methods change owner because their types move and the method names a
+type, or is called from a crate, that does not:
 
 - `CatalogCoded`'s provided `refusal_record` method builds a
   `RefusalRecord` at a `Locus`, which stay in `qsl-foundation`. It SHALL
   become a `qsl-foundation` function over a `&dyn CatalogCoded` and a
   locus, returning the same record.
-- `Evaluation::refusal_record` resolves the evaluation's location through
-  the checked graph that ran it. It SHALL become a `qsl-eval` function over
-  the evaluation and that graph (after FR-400, the checker-side record),
-  returning the same FR-096 record.
+- `Evaluation::refusal_record` SHALL become a free function in `qsl-eval`
+  over the evaluation and a region resolver, a function from `Location` to
+  an optional `SourceRegion`, returning the same FR-096 record, as FR-400's
+  Source locations states. Its callers pass the checker-side record's
+  resolver, so `qsl-eval` names no checker-side type.
+- The private helpers `SuppliedEvent::of_membership`, `SuppliedEvent::of_part`,
+  `SuppliedStorage::of_request` and `SuppliedStorage::of_arena`, which the
+  staying `SuppliedRun` calls, SHALL become private free functions in
+  `qsl-semantics`' `value::supplied` with the same results; they add no SV
+  API.
 
 `CallFailure::category`, `CallFailure`'s `From<SuppliedFailure>` conversion
 and `FamilyOutcome`'s `From<EvalOutcome>` conversion move with their types
@@ -141,16 +150,17 @@ unchanged. A moved type keeps its
 `#[cfg(seam_probe)]` probe variant (`FamilyOutcome`'s and
 `WrongSnapshotCause`'s), and the receiving crate declares the `seam_probe`
 cfg, so FR-063's probe builds, whose `RUSTFLAGS` also reach git
-dependencies, still make every QSL match over the type non-exhaustive. `qsl-foundation` depends on SV for the moved catalog vocabulary,
-which its own diagnostics name; SV depends on no QSL crate, so the edge closes
-no cycle.
+dependencies, still make every QSL match over the type non-exhaustive. `qsl-foundation`
+names the moved catalog vocabulary over the F → SV dependency FR-400 states;
+SV depends on no QSL crate, so that edge closes no cycle.
 
 ### The checked closure the leaf reads
 
-`quire-eval` SHALL NOT name `CheckedPackage`, `CheckedGraph`,
-`CheckedExpression` or `ObjectEnvironment`. It SHALL define the contract an
-evaluator implementation supplies for one checked closure, and read the
-closure only through it:
+`quire-eval` MAY name C's checked terms, since layer E sits above C. It
+SHALL NOT name a QSL item: `CheckedPackage`, `ObjectEnvironment`, the
+checker-side record that FR-400 keeps in `qsl-semantics`, or any other type
+of a QSL crate. It SHALL define the contract an evaluator implementation
+supplies for one checked closure, and read the closure only through it:
 
 1. **Callable identity.** A callable is identified by the kernel `NodeKey`
    the checker minted for the function. The leaf compares identities by
@@ -178,15 +188,19 @@ closure only through it:
 The std reference adapter SHALL be in `qsl-eval`. It implements the contract
 over `qsl_package::CheckedPackage` and `qsl-semantics`' `ObjectEnvironment`.
 Its admitted callables are the functions of the package's checked graph and
-of its dependency closure, each identified by its `CallableFunction`
-identity, with the parameter and result `ValueType`s that `CallableFunction`
-records. `CheckedPackageEvaluation`'s `call` and `evaluate` resolve their
+of its dependency closure that are callable by name, each identified by its
+`CallableFunction` identity, with the parameter and result `ValueType`s that
+`CallableFunction` records. An FR-151 synthesized dispatch candidate body or
+precondition, which is not callable by name, is not admitted, so
+registration for its `NodeKey` returns `CallableNotAdmitted`, as `call`
+refuses it by name (TC-196 D07). `CheckedPackageEvaluation`'s `call` and `evaluate` resolve their
 `QualifiedName` or checked expression in the adapter and drive one session of
 the leaf to terminal, with their existing results and input refusals.
 
-When FR-400's X-13 lands, `quire-eval` MAY declare its `quire-checked`
-dependency and name C's checked terms; the representation the `no_std`
-evaluator reads (IR-590) is fixed by that slice, not here.
+Which of C's checked terms the leaf's contract names, and the
+representation the `no_std` evaluator reads, are fixed by S6 (IR-590), not
+here; until then the checked input stays a type the implementation
+supplies.
 
 ### Object environment
 
@@ -209,37 +223,34 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 - **S1 (IR-585)** SHALL move `WrongSnapshotCause` from `qsl-semantics`'
   `check::refusal` to SV's `call` module, so the checker's `CheckCause` and
   `qsl-eval`'s runtime snapshot cause both name it there. That is S1's
-  complete item set. No type named `EvaluationRefusal` or `CallPlan` exists
-  in QSL; the `IeeeItemRequirement` and `IntegerDivisionConsumer` fields are
-  absent ([FR-078](FR-078-remove-qsl-negotiate-copies.md), TC-201);
-  and `ObjectEnvironment` already holds SV's `ObjectClosure`.
-- **S1 and S2 (IR-586).** Each item SHALL move once, to the place this
-  requirement or FR-400 names. The sets are disjoint: S0 and S1 move the
-  catalog vocabulary, the stop records and `WrongSnapshotCause`; S2 moves
-  FR-400's F values and layer-2 premise enums. `WrongSnapshotCause` must
-  leave `check` before FR-400-AC-2 can pass, so whichever of S1 and S2 lands
-  first moves it to SV's `call` module, and the other moves nothing for it.
-  The first change that moves an F item into SV adds `qsl-foundation`'s SV
-  dependency; a later one reuses it.
+  complete item set, and S0 does not move it. When FR-400's X-13 has
+  already moved it to the same place, S1 moves nothing.
+- **Item sets.** Each item SHALL move once, to the place this requirement or
+  FR-400 names. S0's set (the catalog vocabulary, the stop records, the S6a
+  result vocabulary, `Evaluation` and `CallFailure`) and S1's set
+  (`WrongSnapshotCause`) are disjoint, and neither overlaps FR-400's F values
+  and layer-2 premise enums. Both build on FR-400's F → SV dependency.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-401-AC-1 | `quire-eval`'s manifest names only `quire-semantic-value`, `quire-exact` and `thiserror` as normal dependencies before X-13, and only those plus `quire-checked` and `quire-walk` after it, each with default features off, and names no QSL crate in any table; its crate root is `#![no_std]`, its manifest forbids unsafe code, and it builds for `thumbv7em-none-eabi`. | Test |
-| FR-401-AC-2 | In QSL, TC-390's table check asserts that `qsl-eval` and `qsl-replay` name `quire-eval` in `[dependencies]` and that `qsl-foundation`, `qsl-cst`, `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package` and `qsl-route` name it in no table; a fixture manifest in which `qsl-semantics` depends on `quire-eval` fails the check, naming the crate and the table. `qsl-foundation`'s `[dependencies]` include `quire-semantic-value`. | Test |
-| FR-401-AC-3 | `quire_eval::{Evaluation, CallFailure, FamilyOutcome, FamilyResult, EvalOutcome}`, `quire_semantic_value::catalog::{Category, CatalogCode, CatalogCoded, UndefinedCoded, UndefinedRecord, UndefinedReason, InternalFault}`, `quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedStop, UnsupportedHelperStop}` and `quire_semantic_value::call::WrongSnapshotCause` resolve; `qsl_eval::value::expression::Evaluation`, `qsl_eval::value::expression::CallFailure`, `qsl_semantics::family::FamilyOutcome`, `qsl_foundation::diagnostic::InternalFault`, `qsl_foundation::InternalFault`, `qsl_semantics::value::supplied::SuppliedStop` and `qsl_semantics::check::WrongSnapshotCause` each fail to compile from another crate. | Test |
+| FR-401-AC-1 | `quire-eval`'s manifest names as normal dependencies only crates from `quire-checked`, `quire-semantic-value`, `quire-exact`, `quire-walk` and `thiserror`, each with default features off, and only those its source names an item of, and names no QSL crate in any table; its crate root is `#![no_std]`, its manifest forbids unsafe code, and it builds for `thumbv7em-none-eabi`. | Test |
+| FR-401-AC-2 | In QSL, TC-390's table check asserts that `qsl-eval` and `qsl-replay` name `quire-eval` in `[dependencies]` and that `qsl-foundation`, `qsl-cst`, `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package` and `qsl-route` name it in no table; a fixture manifest in which `qsl-semantics` depends on `quire-eval` fails the check, naming the crate and the table. | Test |
+| FR-401-AC-3 | `quire_eval::{Evaluation, CallFailure, FamilyOutcome, FamilyResult, EvalOutcome}`, `quire_semantic_value::catalog::{Category, CatalogCode, CatalogCoded, UndefinedCoded, UndefinedRecord, UndefinedReason, InternalFault}`, `quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedStop, UnsupportedHelperStop}` and `quire_semantic_value::call::WrongSnapshotCause` resolve; `qsl_eval::value::Evaluation`, `qsl_eval::value::CallFailure`, `qsl_semantics::family::FamilyOutcome`, `qsl_semantics::family::FamilyResult`, `qsl_semantics::family::EvalOutcome`, `qsl_foundation::diagnostic::InternalFault`, `qsl_foundation::InternalFault`, `qsl_semantics::value::supplied::SuppliedStop` and `qsl_semantics::check::WrongSnapshotCause` each fail to compile from another crate. | Test |
 | FR-401-AC-4 | With no edit to any expected value, the `qsl-eval`, `qsl-replay` and `qsl-analyze` suites, `qsl-bench`'s build, the FR-262 tests, the FR-096 refusal-record tests and the QSL conformance run over the QSpec checked-package fixtures pass: every `Evaluation` outcome, location and loss list, every `CallFailure` arm and category, and every refusal record built through the `qsl-foundation` and `qsl-eval` functions that replace the two moved methods equal the values before the move. | Test |
-| FR-401-AC-5 | Through the reference adapter over a checked package with functions `f(x: Int[0, 9]): Boolean` and `g(): Integer`: registering a factory for `f`'s `NodeKey` with signature `([Int[0, 9]], Boolean)` returns `Accepted`; for `f`'s key with `([Int[0, 10]], Boolean)`, `SignatureMismatch`; for a `NodeKey` no function of the closure or its dependencies has, `CallableNotAdmitted`; and the same parameter types under another parameter name are `Accepted` for a fresh registry. | Test |
-| FR-401-AC-6 | The Begin operation takes the registry and no separate closure argument, and `quire-eval`'s source names no `CheckedPackage`, `CheckedGraph`, `CheckedExpression` or `ObjectEnvironment` item. | Inspection |
+| FR-401-AC-5 | Through the reference adapter over a checked package with a function `f(x: Int[0, 9]): Boolean`, an FR-151 dispatched member call whose synthesized dispatch candidate is not callable by name, and a dependency package with a function `g(): Integer`, each registration into a fresh registry returns: for `f`'s `NodeKey` with signature `([Int[0, 9]], Boolean)`, `Accepted`; for `f`'s key with `([Int[0, 10]], Boolean)`, `SignatureMismatch`; for `g`'s key with `([], Integer)`, `Accepted`; for the synthesized candidate's key with its recorded signature, `CallableNotAdmitted`; for a `NodeKey` no function of the closure has, `CallableNotAdmitted`. | Test |
+| FR-401-AC-6 | The Begin operation takes the registry and no separate closure argument, and `quire-eval`'s source names no item of a QSL crate, including `CheckedPackage`, `ObjectEnvironment` and FR-400's checker-side record. | Inspection |
 | FR-401-AC-7 | FR-059's direction check reports an RT resolved graph with a normal edge to `quire-eval` sourced from `agent-ix/quire-eval` as clean, and reports no FB-11 cycle through it. | Test |
 
 ## Dependencies
 
 - [FR-262](FR-262-evaluate-values-and-calls-at-any-depth.md): the interface
   behaviour this requirement places.
-- [FR-400](FR-400-separate-checked-terms-from-the-checker.md): the
-  checked-term crate in the same repository and its F-to-SV moves.
+- [FR-400](FR-400-separate-checked-terms-from-the-checker.md): layer C, the
+  checked-term crate in the same repository, its F-to-SV moves and the
+  region-resolver form of the FR-096 record; FR-400 lands before this
+  requirement.
 - [FR-059](FR-059-check-backend-dependency-direction.md): the backend
   direction check that classifies the edge.
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md) and

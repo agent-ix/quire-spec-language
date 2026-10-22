@@ -38,13 +38,16 @@ The shared evaluation-core leaf of FR-262 lives in its own repository and
 never depends on a QSL crate (ADR-011 FB-05). Its own `no_std` gate belongs
 to that repository and to RT's consumer acceptance, not to this requirement.
 The leaf therefore never reaches `qsl-foundation` through this contract. The
-foundation items the leaf uses (for example `Code`, `Category`,
-`CatalogCode`, `InternalFault`, the digest records and the setting limits)
-move to a `no_std` home below the leaf in the slice that moves the shared
-vocabulary (S1, IR-585), which decides that set. Callers name each moved
-item at its new path; `qsl-foundation` re-exports none of them (ADR-011
-§7.2, as X-11 applies it). Because `qsl-foundation` builds with `core` and
-`alloc` only, an item S1 moves needs no `std` rework to leave.
+foundation items the leaf names, the catalog vocabulary `Category`,
+`CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`,
+`UndefinedReason` and `InternalFault`, move to SV's `catalog` module in
+slice S0 (IR-583, ADR-011 X-14,
+[FR-401](../functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md)).
+`Code`, `RefusalRecord`, `Locus`, the digest records and the setting limits
+stay in `qsl-foundation`. Callers name each moved item at its new path;
+`qsl-foundation` re-exports none of them (ADR-011 §7.2, as X-11 applies
+it). Because `qsl-foundation` and SV both build with `core` and `alloc`
+only, the move needs no `std` rework and keeps the closure tier.
 
 ### Feature contract
 

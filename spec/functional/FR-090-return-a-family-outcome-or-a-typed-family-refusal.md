@@ -273,13 +273,13 @@ routing (#185) never retries.
 
 ### A family's evaluation-time result is family-owned
 
-`FamilyResult::Refused` holds a family-owned refusal cause behind F
-`diagnostic`'s `CatalogCoded` trait, whose methods are O-17's
+`FamilyResult::Refused` holds a family-owned refusal cause behind SV
+`catalog`'s `CatalogCoded` trait, whose methods are O-17's
 `fn catalog_code(&self) -> CatalogCode` and the catalog payload
 `catalog_fields` ([FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md));
 its category is `refusal`.
-`FamilyResult::Undefined` holds a family-owned undefined cause behind F
-`diagnostic`'s `UndefinedCoded` trait, whose one method is
+`FamilyResult::Undefined` holds a family-owned undefined cause behind SV
+`catalog`'s `UndefinedCoded` trait, whose one method is
 `fn undefined_record(&self) -> UndefinedRecord`; its category is `undefined`.
 `UndefinedRecord { reason, fields }` is an SV `catalog` type, the
 undefined-side counterpart of O-17's `RefusalRecord`. `reason` is an
@@ -628,8 +628,8 @@ undefined cause type.
   `WrongSnapshotCause` in `crate::check` (FR-068-AC-4, AC-8).
   [FR-089](FR-089-carry-population-identity-across-the-kernel-boundary.md)
   owns the population-identity admission checks FR-090-AC-10 routes through
-  `CallFailure::Input`. F `diagnostic`'s `CatalogCode`, `Category` and
-  `InternalFault` landed with ADR-013 §7 S-5a.
+  `CallFailure::Input`. `CatalogCode`, `Category` and `InternalFault` are
+  SV `catalog`'s (FR-401).
 - **Downstream:** none. The removal of `src/value/outcome.rs`'s kernel
   copy in favour of `quire_exact::{Outcome, Refusal, Undefined}` needs no
   FR-090-AC change. The kernel's variant set is
