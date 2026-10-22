@@ -1664,7 +1664,7 @@ impl<'a> Typer<'a> {
                 }
                 if matches!(typed.value_type, ValueType::Float(_)) {
                     let converted = self.convert(&target, typed, &location)?;
-                    return Ok(((converted, EqualityOperand::typed(target.clone())), target));
+                    return Ok((TypedOperand::typed(converted), target));
                 }
                 let source = typed.value_type.clone();
                 let operand = EqualityOperand::converted(source.clone(), target.clone());
