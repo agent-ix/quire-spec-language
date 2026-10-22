@@ -135,6 +135,9 @@ of probabilities start from.
   [`invalid-weight`], naming the parameter.
 - If a value is not of the parameter's type, S3 SHALL refuse the
   distribution [`value-outside-type`], naming the parameter.
+- If a value is a reference to an object, S3 SHALL refuse the distribution
+  [`value-outside-type`], naming the parameter, so a support value is never a
+  reference, whatever the parameter's declared type.
 - If a value is listed twice, S3 SHALL refuse the distribution
   [`repeated-support-value`], naming the parameter.
 - If an operation parameter has a second distribution, S3 SHALL refuse the
@@ -227,6 +230,7 @@ it from the checked package, not from the emitted wire.
 | FR-185-AC-6 | The distribution `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` (running-sum denominator of 65,536 bits) checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` (65,537 bits) is refused with the limit refusal naming the parameter; a check whose cancellation handle is tripped before it starts ends cancelled (FR-276), the handle reporting requested and the reported limit not being the 65,536-bit ceiling. | Test (TC-620) |
 | FR-185-AC-7 | `Service` (with `d` typed `Millis = Int[1, 12]`) checks at S3 and refuses at S4 with `unsupported_construct`/`not-yet-implemented` naming the first random parameter in source order, `random-parameter` and the selected profile, with the checked record intact. | Test (TC-620) |
 | FR-185-AC-8 | With the dimension `Time`, the unit `s` (root) and the unit `ms` (target `s`, scale `1/1000`), `Server::attempt` with `d: Quantity<ms>` records `d` with the supports `1 ms`, `3 ms` and `12 ms` and the probabilities of AC-1; the values `1 s` and `true` listed for `d` are each refused `value-outside-type` naming the parameter; a precondition reading `d` as `d < 5 ms` is refused `random-read-in-precondition`. | Test (TC-620) |
+| FR-185-AC-9 | A variant of `Service` whose random parameter is typed as a reference to `Server` and lists a reference literal naming the key of a `Server` object as a support value is refused at S3 `value-outside-type`, naming the parameter; the variant with the parameter typed `Int[1, 12]` and the integer support value `3` checks. | Test (TC-620) |
 
 ## Dependencies
 
