@@ -1,127 +1,119 @@
-<!-- reviewer repo=agent-ix/quire-spec-language visibility=public quoin=0.28.3 module=spec-artifacts-process@b82e42e893612b4b4ee94127714b4577ee893502 id=SR-13545 method=spec-review/base lang=spec pr=quire-spec-language#1098 model=claude-opus-5-5 run=9F8790A4-6653-4A89-BBBF-6C1FC5C1A890 -->
-
-SR file: `reviews/qsl-570-pr1098-spec-review-base.md` (SR-13545), head a53c86bc4
+<!-- reviewer repo=agent-ix/quire-spec-language visibility=public quoin=0.28.3 module=spec-artifacts-process@b82e42e893612b4b4ee94127714b4577ee893502 id=SR-13740 method=spec-review/base lang=spec pr=quire-spec-language#1175 model=claude-opus-5-5 run=29FAD705-13ED-41F1-8BE5-6D0653015F44 -->
 
 | FND | Severity | Check | Summary |
 | --- | --- | --- | --- |
-| FND-001 | medium | coverage | The two new FR-192 expansion-stop rows have no acceptance criterion and no TC-627 step |
-| FND-002 | medium | coverage | The event-as-0/1 reading for a mean-of-fraction claim has no acceptance criterion |
-| FND-003 | low | coverage | Regenerative max_draws and the TraceIndexRange exemption have no acceptance criterion |
+| FND-001 | medium | soundness | FR-064 says `ix-trace-rs` 'provides it beside `#[trace]` and `#[implements]`', but it does not yet |
+| FND-002 | medium | soundness | FR-064's Dependencies section still says 'this requirement builds the attribute and the scan tool that #141 and #86 invoke' |
+| FND-003 | medium | untestable-ac | AC-15 cannot be tested as written |
+| FND-004 | low | soundness | The scan accepts look-alike markers |
+| FND-005 | low | other | The owner's 'no comment form' ruling is not written down |
+| FND-006 | low | other | AC-14 names the crate being removed ('no `qsl_attrs` path and no workspace member `qsl-attrs`') |
+| FND-007 | low | other | The PR deletes the blank line before `## Expected Results`, so the heading now follows the paragraph 'These commands are the acceptance recipe ...' directly (TC-162 lines 147-149) |
 
-Verdict: Two medium findings and one low. What holds: every claim in the PR body matches the code on qsl-570-impl. TraceIndexRange is raised only for Okamoto and SPRT. An event sample counts as 1 or 0 for a mean of a fraction. max_draws counts walk steps for the regenerative method, matching FR-190's draws. The new behaviour has no acceptance criterion.
+SR file: reviews/qsl-951-pr1175-spec-review-base.md (SR-13740). Verdict: Not mergeable as it stands. FND-001 states as fact an ix-trace-rs attribute that does not exist yet and records no dependency on it. FND-002 is a contradiction inside FR-064. FND-003 is an AC that cannot be tested as written. FND-004 to FND-007 are low. All are text fixes in this PR. Follow-up for the code half (not a finding of this spec-only diff): README.md line 333 still lists `qsl-attrs`.
 
 +++ [reviewer data]
 
 ```yaml
 clean: false
 scope:
-- id: FR-189-mean-of-fraction-bullet
-  path: spec/functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md
-  role: examined
-  excerpt: EN-4 SHALL decide a mean of a fraction by the fixed-sample method over the sample mean of the fraction. A request
-    naming the sequential method for it SHALL be refused as `NotStatistical`, as FR-408 states. A sampler that returns an
-    event sample for a mean-of-fraction claim SHALL be read as the fraction 1 when the event holds and 0 when it does not,
-    and EN-4 SHALL not refuse it.
-- id: FR-189-refusals
-  path: spec/functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md
-  role: examined
-  excerpt: '`TraceIndexRange` when `max_draws · m` overflows the trace index of Okamoto or SPRT (the regenerative test `j`
-    uses trace index `j` alone, so the method never raises it), `ConfidenceBeyondPrecision` when `min(α'', β'')` has no normal-quantile
-    bound for the regenerative method, `FractionForEvent` for a fraction a Bernoulli test cannot take'
-- id: FR-191-limits-struct
-  path: spec/functional/FR-191-bound-and-reproduce-a-statistical-run.md
-  role: examined
-  excerpt: 'pub max_draws: u64,        // samples drawn, counted or not, per test (steps taken, for the regenerative method);
-    default 67_108_864 (2^26)'
-- id: FR-191-budget-bullet
-  path: spec/functional/FR-191-bound-and-reproduce-a-statistical-run.md
-  role: examined
-  excerpt: When a test has drawn `max_draws` samples (for the regenerative method, taken `max_draws` walk steps in total,
-    as FR-190 counts steps as draws), or taken `max_cycle_steps` steps in one cycle, it SHALL stop the same way before the
-    next draw or step.
-- id: FR-192-expansion-limit-row
-  path: spec/functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md
-  role: examined
-  excerpt: '| `Stopped` by a sample expansion (`Expansion(ExpansionStop)`) that names a limit (`EvaluationMeter` or `MaxCandidates`,
-    FR-126) | `incomplete` | `limit-reached{limit, value, setting}` with the stop''s limit, the value it was set to and the
-    request setting that raises it (FR-126''s setting for that limit) | none | `Incomplete(LimitReached{limit, value, setting})`
-    (ADR-018 V-7) | incomplete |'
-- id: FR-192-expansion-unnamed-row
-  path: spec/functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md
-  role: examined
-  excerpt: '| `Stopped` by a sample expansion that names no limit and is not an internal failure | `incomplete` | `resource-exhausted`
-    | none | `Incomplete(ResourceExhausted)` (ADR-018 V-7) | incomplete |'
-- id: FR-192-AC-1
-  path: spec/functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md
-  role: examined
-  excerpt: 'Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`)
-    `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with
-    setting `statistical.max_samples`; an `Unsupported` outcome with cause `NotMarkov`; a `NoTest` refusal settling `inconclusive`,
-    `no-initial-state`; an `Internal` refusal settling `failed`.'
-- id: FR-190-outputs
-  path: spec/functional/FR-190-measure-a-long-run-fraction-by-regeneration.md
-  role: context_only
-  excerpt: 'FR-189''s `StatisticalOutcome`, whose verdict basis records `Regenerative{min_cycles}`, the cycle count as `samples`,
-    the steps taken as `draws`, and `coverage: Asymptotic`.'
-- id: PR-1079-code
-  path: agent-ix/quire-spec-language@a9a693ac0 qsl-analyze/src/statistical.rs, qsl-eval/src/simulation/expansion.rs, qsl-analyze/src/model_check/state_graph.rs
-  role: context_only
-  excerpt: 'halted(): SampleHalt::Expansion(stop) => TestEnd::Stopped(StatisticalStop::Expansion(stop)); ExpansionStop { cause:
-    CatalogCode, limit: Option<ExpansionLimit> }'
+  - {id: "FR-064 owner statement", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "choose behaviour. The attribute `#[string_edge]` marks an edge function, and it is owned by the neutral crate `ix-trace-rs` (agent-ix/ix-trace-rs), which provides it beside `#[trace]` and `#[implements]`. QSL SHALL provide the scan that reports every string comparison or string `match` outside a marked function in the selected crates' non-test code, so this rule is enforced by a running check rather than by convention alone. QSL SHALL define no `string_edge` attribute of its own."}
+  - {id: "FR-064 marker applicable", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "It SHALL be applicable to a function."}
+  - {id: "FR-064 marker no argument", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "It SHALL take no argument; a call with any argument SHALL be a compile error that retains the annotated item, so the diagnostic is not followed by a stack of errors from the missing function."}
+  - {id: "FR-064 marker identity", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "It SHALL expand to the annotated item unchanged and carry no runtime behaviour: its presence or absence SHALL NOT change what the marked function compiles to."}
+  - {id: "FR-064 marker denotes", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "It SHALL denote the one total conversion at a permitted edge, and it is no exemption of a file or a crate."}
+  - {id: "FR-064 marker crate deps", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "`ix-trace-rs` SHALL have no normal dependency, no dependency on QSL, and no dependency on a model, IR or code-generation crate, so a consumer depends on it directly."}
+  - {id: "FR-064 import rule", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "QSL and every consumer SHALL import the attribute from `ix-trace-rs` (`use ix_trace_rs::string_edge;`) or write its qualified form `#[ix_trace_rs::string_edge]`. The QSL workspace SHALL hold no definition, re-export or alias of `string_edge`, and SHALL hold no crate whose only purpose is that marker; the scan recognises the attribute by its final path segment `string_edge` and by that name only."}
+  - {id: "FR-064 consumer marker", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "The marker is `#[string_edge]`, including its qualified form `#[ix_trace_rs::string_edge]`; consumers that compile marked functions SHALL obtain the `ix-trace-rs` crate by Cargo dependency on its repository (agent-ix/ix-trace-rs). A marker identifies the one total conversion at a permitted edge; it is not a consumer-defined exemption for an entire crate or file."}
+  - {id: "FR-064 inputs marker", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "The `#[string_edge]` attribute of `ix-trace-rs` applied to an edge function."}
+  - {id: "FR-064 Dependencies", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 run the same scan in their own repositories, over the same rule; this requirement builds the attribute and the scan tool that #141 and #86 invoke, not their own edge inventories."}
+  - {id: "FR-064-AC-12", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "FR-064-AC-12 | A fixture function marked `#[ix_trace_rs::string_edge]` and one marked with `#[string_edge]` imported by `use ix_trace_rs::string_edge;` each hold a string comparison that the library, the command and QSL's adapter do not report; an unmarked function in the same fixture is reported. | Test (TC-162)"}
+  - {id: "FR-064-AC-13", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "FR-064-AC-13 | A consumer crate that applies `#[string_edge]` from `ix-trace-rs` to a function compiles and runs the function with the behaviour of the unmarked function; `#[string_edge(anything)]` fails to compile with the one error \"`#[string_edge]` takes no arguments\" and no further error from the retained function. | Test (TC-162)"}
+  - {id: "FR-064-AC-14", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "FR-064-AC-14 | The QSL workspace holds no `proc_macro_attribute` definition named `string_edge`, no `pub use` or alias of it, no `qsl_attrs` path and no workspace member `qsl-attrs`; every `string_edge` marker in the workspace's production code resolves to `ix_trace_rs::string_edge`. | Test (TC-162)"}
+  - {id: "FR-064-AC-15", path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md", role: examined, excerpt: "FR-064-AC-15 | `cargo metadata` over the QSL workspace lists `ix-trace-rs` as the provider of `string_edge`, and `ix-trace-rs`'s own manifest lists no normal dependency and no QSL, model, IR or code-generation package; the layer table of ADR-011 and ADR-012 §9 names `ix-trace-rs` as the exempt marker crate. | Test (TC-162)"}
+  - {id: "ADR-012 section 9 marker", path: "spec/decisions/ADR-012-semantic-family-extension-contracts.md", role: examined, excerpt: "edge function carries the marker attribute `#[string_edge]`, a tool attribute owned by the neutral crate `ix-trace-rs` (agent-ix/ix-trace-rs) and imported from it; QSL defines no marker of its own. An `xtask string-edge` scan over the QSL crates reports every string comparison or string `match` outside a marked function in non-test code, and runs in the lint gate. Each allow-list entry names the user value it compares and selects no behaviour. #214 builds the scan; the attribute is `ix-trace-rs`'s."}
+  - {id: "ADR-012 work table #214", path: "spec/decisions/ADR-012-semantic-family-extension-contracts.md", role: examined, excerpt: "`FamilyKind`, `FamilyContract`, `ReferenceEvaluation`, seams S1–S4, the seam probe, the thin check seam for function application, the `xtask string-edge` scan (its `#[string_edge]` attribute is `ix-trace-rs`'s) | #214"}
+  - {id: "ADR-011 X-10", path: "spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md", role: examined, excerpt: "X-10 | Extract crate `qsl-replay`. **Extracted**: `bounds`, `call_site`, `execute`, `identity`, `proof_result`, `request`, `result`, `spine` and `witness` are in the crate `qsl-replay`. Its `[dependencies]` are exactly `qsl-cst` (1), `qsl-forms` (2), `qsl-semantics` (3), `qsl-package` (4), `qsl-eval` (5), `qsl-foundation` (F), `quire-semantic-value` (SV: the `InputRefusal` and `Location` the spine reports), `quire-exact` (K), the marker crate `ix-trace-rs` (ADR-012 section 9) and `thiserror`, and `qsl-source` (I3) under its feature `quire-extraction`; the facade re-exports items of `qsl-semant"}
+  - {id: "TC-162 scope", path: "spec/test-cases/TC-162-string-edge-scan-coverage.md", role: examined, excerpt: "source locations. Scope: FR-064-AC-1 through FR-064-AC-15."}
+  - {id: "TC-162 consumer toml", path: "spec/test-cases/TC-162-string-edge-scan-coverage.md", role: examined, excerpt: "A consumer compiling marked intake functions uses the marker crate by reference as well:  ```toml [dependencies] ix-trace-rs = { git = \"https://github.com/agent-ix/ix-trace-rs\", branch = \"main\" } ```  These commands are the acceptance recipe, not a claim that the standalone package has already been implemented or the installation run has passed."}
 findings:
-- fnd: FND-001
-  severity: medium
-  confidence: high
-  method: spec-review/base
-  check: coverage
-  artifact_id: FR-192-expansion-limit-row
-  related_ids:
-  - FR-192-expansion-unnamed-row
-  - FR-192-AC-1
-  path: spec/functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md
-  lines: 100-101
-  excerpt: '| `Stopped` by a sample expansion (`Expansion(ExpansionStop)`) that names a limit (`EvaluationMeter` or `MaxCandidates`,
-    FR-126) | `incomplete` | `limit-reached{limit, value, setting}` with the stop''s limit, the value it was set to and the
-    request setting that raises it (FR-126''s setting for that limit) | none | `Incomplete(LimitReached{limit, value, setting})`
-    (ADR-018 V-7) | incomplete |'
-  finding: 'The two new map rows have no acceptance criterion and no TC-627 step. FR-192-AC-1 lists the rows it tests, and
-    an expansion stop is not among them, so nothing checks that a meter or max_candidates stop settles limit-reached with
-    its limit, value and setting, or what an unnamed stop settles. Fix: extend FR-192-AC-1 (and TC-627) with an evaluation-meter
-    stop naming its limit, value and setting, and an unnamed non-internal stop, as FR-149-AC-10 does for the certificate checker.'
-- fnd: FND-002
-  severity: medium
-  confidence: high
-  method: spec-review/base
-  check: coverage
-  artifact_id: FR-189-mean-of-fraction-bullet
-  related_ids: []
-  path: spec/functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md
-  lines: 150-155
-  excerpt: EN-4 SHALL decide a mean of a fraction by the fixed-sample method over the sample mean of the fraction. A request
-    naming the sequential method for it SHALL be refused as `NotStatistical`, as FR-408 states. A sampler that returns an
-    event sample for a mean-of-fraction claim SHALL be read as the fraction 1 when the event holds and 0 when it does not,
-    and EN-4 SHALL not refuse it.
-  finding: 'The owner decision to read an event sample as fraction 1 or 0 for a mean-of-fraction claim, with no refusal, has
-    no acceptance criterion and no TC-624 step. The code does this (statistical.rs:403-427), but a later change to refuse
-    it, or to refuse FractionForEvent on the wrong side, would break no test. Fix: add an FR-189 AC (with a TC-624 step) where
-    a sampler stub returns Event samples for a mean-of-fraction claim and the estimate equals the share of samples that hold.'
-- fnd: FND-003
-  severity: low
-  confidence: high
-  method: spec-review/base
-  check: coverage
-  artifact_id: FR-191-budget-bullet
-  related_ids:
-  - FR-189-refusals
-  path: spec/functional/FR-191-bound-and-reproduce-a-statistical-run.md
-  lines: 75-77
-  excerpt: When a test has drawn `max_draws` samples (for the regenerative method, taken `max_draws` walk steps in total,
-    as FR-190 counts steps as draws), or taken `max_cycle_steps` steps in one cycle, it SHALL stop the same way before the
-    next draw or step.
-  finding: 'The regenerative reading of max_draws (walk steps per test), and the TraceIndexRange exemption for the regenerative
-    method in FR-189, have no acceptance criterion. FR-191-AC-2 tests max_draws only for the activation variant under Okamoto.
-    Fix: add to FR-191-AC-2 (TC-626 step 2) a regenerative run with max_draws below the steps one cycle needs that stops Limit{MaxDraws,
-    value}, and a regenerative request with m = 2 and max_draws = u64::MAX that is not refused TraceIndexRange.'
+  - fnd: FND-001
+    severity: medium
+    confidence: high
+    method: spec-review/base
+    check: soundness
+    artifact_id: "FR-064 owner statement"
+    related_ids: ["FR-064 Dependencies", "ADR-012 section 9 marker"]
+    path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md"
+    lines: "22-27"
+    excerpt: "choose behaviour. The attribute `#[string_edge]` marks an edge function, and it is owned by the neutral crate `ix-trace-rs` (agent-ix/ix-trace-rs), which provides it beside `#[trace]` and `#[implements]`. QSL SHALL provide the scan that reports every string comparison or string `match` outside a marked function in the selected crates' non-test code, so this rule is enforced by a running check rather than by convention alone. QSL SHALL define no `string_edge` attribute of its own."
+    finding: "FR-064 says `ix-trace-rs` 'provides it beside `#[trace]` and `#[implements]`', but it does not yet. On agent-ix/ix-trace-rs main (latest tag v0.1.1), src/lib.rs defines only `trace` and `implements`. No branch, PR or Linear ticket adds `string_edge`. The IR proposal (IR-212 comment 855ebf10) says outright that it is 'a proposal to its owner, not a claim the attribute exists today'. The PR never states that QSL depends on ix-trace-rs shipping the attribute, so a coder reading FR-064 would expect `use ix_trace_rs::string_edge;` to compile now. Add an FR-064 Dependencies entry: QSL needs ix-trace-rs to provide `#[string_edge]` with the contract in 'The marker attribute', tracked by a named ix-trace-rs ticket that must land before the code half. Then word the description as the contract ('ix-trace-rs provides ...') without implying it is already published."
+  - fnd: FND-002
+    severity: medium
+    confidence: high
+    method: spec-review/base
+    check: soundness
+    artifact_id: "FR-064 Dependencies"
+    related_ids: ["FR-064 owner statement"]
+    path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md"
+    lines: "251-254"
+    excerpt: "agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 run the same scan in their own repositories, over the same rule; this requirement builds the attribute and the scan tool that #141 and #86 invoke, not their own edge inventories."
+    finding: "FR-064's Dependencies section still says 'this requirement builds the attribute and the scan tool that #141 and #86 invoke'. That contradicts the new statement 'QSL SHALL define no `string_edge` attribute of its own' in the same FR. Change it to say that this requirement builds the scan tool, and that the attribute is ix-trace-rs's."
+  - fnd: FND-003
+    severity: medium
+    confidence: high
+    method: spec-review/base
+    check: untestable-ac
+    artifact_id: "FR-064-AC-15"
+    related_ids: ["TC-162 step 16", "TC-162 expected 16", "ADR-011 crate map", "ADR-011 X-10"]
+    path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md"
+    lines: "242"
+    excerpt: "FR-064-AC-15 | `cargo metadata` over the QSL workspace lists `ix-trace-rs` as the provider of `string_edge`, and `ix-trace-rs`'s own manifest lists no normal dependency and no QSL, model, IR or code-generation package; the layer table of ADR-011 and ADR-012 §9 names `ix-trace-rs` as the exempt marker crate. | Test (TC-162)"
+    finding: "AC-15 cannot be tested as written. (1) `cargo metadata` lists packages, targets and dependency edges. It does not say which package provides an attribute named `string_edge`, so 'lists `ix-trace-rs` as the provider of `string_edge`' is nothing metadata can show. (2) The PR's own ADR text contradicts the clause 'the layer table of ADR-011 and ADR-012 section 9 names `ix-trace-rs` as the exempt marker crate'. The ADR-011 layer table and crate map name neither `ix-trace-rs` nor `qsl-attrs`. Only the X-10 row lists it among qsl-replay's dependencies, and no ADR uses 'exempt'. (3) Checking ADR prose is Inspection, not Test. Restate AC-15 in terms metadata can show: every QSL package whose production code carries the marker names `ix-trace-rs` as a normal dependency, and ix-trace-rs's `[dependencies]` table is empty. Then either drop the ADR clause or add the 'exempt marker crate' text to ADR-011's layer rules."
+  - fnd: FND-004
+    severity: low
+    confidence: medium
+    method: spec-review/base
+    check: soundness
+    artifact_id: "FR-064 import rule"
+    related_ids: ["FR-064 consumer marker", "FR-064-AC-14"]
+    path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md"
+    lines: "76-81"
+    excerpt: "QSL and every consumer SHALL import the attribute from `ix-trace-rs` (`use ix_trace_rs::string_edge;`) or write its qualified form `#[ix_trace_rs::string_edge]`. The QSL workspace SHALL hold no definition, re-export or alias of `string_edge`, and SHALL hold no crate whose only purpose is that marker; the scan recognises the attribute by its final path segment `string_edge` and by that name only."
+    finding: "The scan accepts look-alike markers. 'the scan recognises the attribute by its final path segment `string_edge` and by that name only', and the detector does exactly that (qsl-string-edge/src/detector.rs has_attr_named, `segments.last()`). So `#[my_macros::string_edge]`, or a consumer's own local `string_edge` proc macro, suppresses a report just as ix-trace-rs's does. Inside QSL, AC-14 closes the gap, because no other definition may exist and the code must compile. In IR, CG and driver, nothing checks the 'every consumer SHALL import ... from ix-trace-rs' rule. A consumer could keep a copied marker, the copy the owner ruled out, and the scan would not notice. The marker is self-attested anyway, since the real attribute can go on any function, so this adds no new way past the scan. It is a low finding. Either have the scanner accept only the paths `string_edge` and `ix_trace_rs::string_edge` and report any other qualified `string_edge` path, or state the limitation in FR-064 beside the detector's other documented limitations."
+  - fnd: FND-005
+    severity: low
+    confidence: medium
+    method: spec-review/base
+    check: other
+    artifact_id: "FR-064 import rule"
+    related_ids: ["FR-064 inputs marker"]
+    path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md"
+    lines: "76-81"
+    excerpt: "QSL and every consumer SHALL import the attribute from `ix-trace-rs` (`use ix_trace_rs::string_edge;`) or write its qualified form `#[ix_trace_rs::string_edge]`. The QSL workspace SHALL hold no definition, re-export or alias of `string_edge`, and SHALL hold no crate whose only purpose is that marker; the scan recognises the attribute by its final path segment `string_edge` and by that name only."
+    finding: "The owner's 'no comment form' ruling is not written down. FR-064 recognises only an attribute, by its final path segment. It never says that a comment marker (`// string_edge`, `/// string_edge`) or a doc tag is not a marker, while ADR-032 shows QSL uses doc-comment tags (`/// quire:canonical`) for a similar purpose. Add one sentence: the marker is the attribute only, and the scan recognises no comment or doc-comment form."
+  - fnd: FND-006
+    severity: low
+    confidence: medium
+    method: spec-review/base
+    check: other
+    artifact_id: "FR-064-AC-14"
+    related_ids: ["FR-064 import rule"]
+    path: "spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md"
+    lines: "241"
+    excerpt: "FR-064-AC-14 | The QSL workspace holds no `proc_macro_attribute` definition named `string_edge`, no `pub use` or alias of it, no `qsl_attrs` path and no workspace member `qsl-attrs`; every `string_edge` marker in the workspace's production code resolves to `ix_trace_rs::string_edge`. | Test (TC-162)"
+    finding: "AC-14 names the crate being removed ('no `qsl_attrs` path and no workspace member `qsl-attrs`'). That is a migration check, not a property of the system. Once the code half lands, a future reader sees a ban on a name that exists nowhere. The general clauses ('no `proc_macro_attribute` definition named `string_edge`, no `pub use` or alias', with FR-064's 'no crate whose only purpose is that marker') already cover it. Keep the qsl-attrs check in the implementation ticket's acceptance and leave it out of the AC, or keep it with the general rule first."
+  - fnd: FND-007
+    severity: low
+    confidence: high
+    method: spec-review/base
+    check: other
+    artifact_id: "TC-162 consumer toml"
+    related_ids: []
+    path: "spec/test-cases/TC-162-string-edge-scan-coverage.md"
+    lines: "139-148"
+    excerpt: "A consumer compiling marked intake functions uses the marker crate by reference as well:  ```toml [dependencies] ix-trace-rs = { git = \"https://github.com/agent-ix/ix-trace-rs\", branch = \"main\" } ```  These commands are the acceptance recipe, not a claim that the standalone package has already been implemented or the installation run has passed."
+    finding: "The PR deletes the blank line before `## Expected Results`, so the heading now follows the paragraph 'These commands are the acceptance recipe ...' directly (TC-162 lines 147-149). It still parses (`make check-spec-validation` passes) but no other heading in the file is laid out this way. Restore the blank line."
 bindings: []
 ```
 

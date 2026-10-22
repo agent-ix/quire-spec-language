@@ -60,7 +60,7 @@ dataflow retain the limitations stated by FR-064.
    absolute paths. Add a named string constant in reader and a same-named
    numeric constant and numeric comparison in emitter to check crate scope.
 9. Exercise the fixtures from steps 1–5 through the public library and binary
-   with consumer rules. Add qualified `#[ix_trace_rs::string_edge]` coverage and the imported form.
+   with consumer rules.
    Submit a branch-gating allow-list entry both before and after marking its
    function. Compare occurrence fields and errors with the QSL adapter.
 10. Submit each invalid case independently: no roots; missing, non-directory,
@@ -86,12 +86,15 @@ dataflow retain the limitations stated by FR-064.
     imported from `ix-trace-rs`; scan with the library, the command and the
     adapter (FR-064-AC-12).
 14. Compile a consumer crate with a marked function and run it; compile a
-    second with `#[string_edge(anything)]` (FR-064-AC-13).
-15. Search the QSL workspace's manifests and production source for a
-    `string_edge` definition, re-export or alias, a `qsl_attrs` path and a
-    `qsl-attrs` member, and resolve each marker (FR-064-AC-14).
-16. Read `cargo metadata` for the QSL workspace and `ix-trace-rs`'s manifest
-    (FR-064-AC-15).
+    second with `#[string_edge(anything)]` and read the compiler's errors
+    (FR-064-AC-13).
+15. Search the QSL workspace's manifests and production source for any item
+    named `string_edge`, any re-export or alias of it and any crate whose only
+    purpose is the marker, and run `cargo check` over every package so each
+    marker's resolution is the compiler's (FR-064-AC-14).
+16. Scan a fixture with a function marked `#[my_macros::string_edge]` and
+    functions whose only mark is `// string_edge` or `/// string_edge`; read
+    `cargo metadata` for the QSL workspace (FR-064-AC-15).
 
 ### Worked external consumer acceptance
 
@@ -146,6 +149,7 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 
 These commands are the acceptance recipe, not a claim that the standalone
 package has already been implemented or the installation run has passed.
+
 ## Expected Results
 
 - Steps 1 and 3: only the unmarked production occurrence is reported, with
@@ -180,9 +184,11 @@ package has already been implemented or the installation run has passed.
 - Step 13 (FR-064-AC-12): both marked comparisons are absent from every
   report and the unmarked one is present.
 - Step 14 (FR-064-AC-13): the marked function behaves as the unmarked one; the
-  argument case reports exactly the one error.
-- Step 15 (FR-064-AC-14): no definition, re-export, alias, path or member is
-  found, and each marker resolves to `ix_trace_rs::string_edge`.
-- Step 16 (FR-064-AC-15): `ix-trace-rs` provides `string_edge`, has no normal
-  dependency and no QSL, model, IR or code-generation package, and the
-  layer tables name it as the exempt marker crate.
+  argument case reports exactly one error with the message
+  `#[string_edge] takes no arguments`.
+- Step 15 (FR-064-AC-14): no such item, re-export, alias or crate is found,
+  `cargo check` passes for every package, and each marker resolves to
+  `ix_trace_rs::string_edge`.
+- Step 16 (FR-064-AC-15): the `my_macros::string_edge`, comment and doc-comment
+  fixtures are reported, and `ix-trace-rs` is a dependency of every package that
+  uses the marker.
