@@ -53,8 +53,7 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
     `quire.model.complete/v1` and that also declares the `pure`
     functions `total_of`, `checked`, `linked`, `same` and `wrap` of
     FR-366-AC-10, with `Peer` reading through each of them in turn; then, in
-    a unit selecting `quire.state.queries/v1`, through the named predicate
-    `positive` (FR-366-AC-10).
+    the same unit, through the named predicate `positive` (FR-366-AC-10).
 
 ## Expected Results
 
