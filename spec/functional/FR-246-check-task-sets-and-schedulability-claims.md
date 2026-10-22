@@ -67,17 +67,29 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 - Every time value SHALL be an exact rational time quantity converted to
   one unit per task set (QSpec FR-142); a value of another dimension SHALL
   refuse `ill_typed`/`type-mismatch` at its span.
-- The checker SHALL refuse, each with `invalid_model_binding`/
-  `malformed-declaration` at the span: a period or minimum inter-arrival
-  time that is not positive; a deadline that is not positive; a WCET that is
-  not positive; a `HI` task whose `C(LO)` exceeds `C(HI)`; a `LO` task with
-  dual budgets.
+- The checker SHALL refuse, each with `invalid_timed_model`/
+  `invalid-task-set` at the span, naming the task (the task set when it
+  declares none): a task set that declares
+  no task; a period or minimum inter-arrival time that is not positive; a
+  deadline that is not positive; a WCET that is not positive; a jitter or
+  blocking term that is negative; a `HI` task whose `C(LO)` exceeds `C(HI)`;
+  a `LO` task with dual budgets. QSpec FR-419 states the code and the
+  conditions on `T`, `D`, `C`, the budgets and the priorities; the empty
+  set, the negative terms and the two claim-dependent conditions below are
+  QSL's own, refused under the same code so that one invalid task set
+  refuses under one code.
 - Two tasks with one name SHALL refuse `conflicting_declaration`/
   `duplicate-declaration`.
-- A `fixed-priority` or `amc` claim over a task set where two tasks share a
-  priority, or a task has none, SHALL refuse `invalid_model_binding`/
-  `malformed-declaration`, naming the tasks. An `edf` claim SHALL ignore
-  priorities.
+- When a `fixed-priority`, `amc` or `response` claim is over a task set where
+  two tasks share a priority, the checker SHALL refuse `invalid_timed_model`/
+  `invalid-task-set`, naming both tasks; when a task has no priority, the
+  checker SHALL refuse the same way, naming that task. For an `edf` claim the
+  checker SHALL ignore priorities (QSpec FR-419).
+- When an `edf` claim is over a task with a jitter or blocking term other than
+  zero, or an `amc` claim is over a task whose deadline exceeds its period,
+  the checker SHALL refuse `invalid_timed_model`/`invalid-task-set`, naming
+  the task, because the analysis does not read the term or does not cover
+  that deadline.
 - A `response` claim SHALL name a task of the set, refusing
   `missing_declaration`/`missing-name` otherwise.
 - The task set, including every WCET, blocking term and jitter, SHALL be
@@ -91,7 +103,7 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-246-AC-1 | ADR-026 §12's `Ctl` (periodic, `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms, priorities by period) checks; `schedulable Ctl under fixed-priority` and `under edf` route to EN-7 under `schedulability`. The `Ctl` with the third WCET 6 gives a different obligation identity. | Test (TC-701) |
-| FR-246-AC-2 | Refusals at the span: a period of 0 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; two tasks named `a`; two tasks with priority 1 under `fixed-priority`; `response Ctl.zz <= 5 ms`; a deadline of `3 m`. The same priority clash under `edf` checks. | Test (TC-701) |
+| FR-246-AC-2 | Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task (the task set for the empty one), and both tasks for a clash: a task set with no task; a period of 0 ms; a deadline of 0 ms; a WCET of 0 ms; a jitter of -1 ms; a blocking term of -1 ms; a sporadic task with minimum inter-arrival time 0 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; a `LO` task with dual budgets; a task with no priority under `fixed-priority`; two tasks with priority 1 under `fixed-priority`; a task with blocking 1 ms under `edf`; a task with jitter 1 ms under `edf`; a task with no priority and two tasks with priority 1 under `amc`; a task with no priority under `response Ctl.c <= 12 ms`; two tasks with priority 1 under `response Ctl.c <= 12 ms`; a task with deadline above its period under `amc`. Two tasks named `a` refuse `conflicting_declaration`/`duplicate-declaration`; `response Ctl.zz <= 5 ms` refuses `missing_declaration`/`missing-name`; a deadline of `3 m` refuses `ill_typed`/`type-mismatch`. The same priority clash and a task with no priority under `edf` check. | Test (TC-701) |
 
 ## Dependencies
 

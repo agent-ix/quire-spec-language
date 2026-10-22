@@ -32,7 +32,8 @@ The layer-5 TemporalTrace evaluator SHALL evaluate a checked temporal clause
 (FR-326) over a trace of observations, addressing positions by
 `TemporalPosition` (ADR-014 TR-2) and charging work on the caller's meter
 (TR-5). Under a bounded profile it SHALL evaluate a closed finite trace with
-the profile's own meaning and closed-boundary rule (ADR-018 SM-1). The
+the profile's own meaning and closed-boundary rule (ADR-018 SM-1), and a
+protocol lasso whose loop has no counted step as FR-329 states. The
 infinite-trace profile's readings of a finite prefix and of a lasso are
 FR-328 and FR-329. This evaluator is the one definition of a temporal
 formula's truth on a trace that replay, monitors and the model checker use

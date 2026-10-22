@@ -36,7 +36,8 @@ steps (ADR-027 PA-2). Unless the protocol clause declares `scheduling
 adversarial`, the checker SHALL add to every infinite-trace clause over a
 protocol subject one derived `fair weak whole` **scheduler constraint** per
 `parallel` branch, the root and each compensation template, with a
-`scheduler` origin (ADR-027 PA-3).
+`scheduler` origin (ADR-027 PA-3). The scheduler constraints also apply to a
+bounded clause read over a zero-counted protocol lasso (FR-329, FR-338).
 
 ## Use case
 
