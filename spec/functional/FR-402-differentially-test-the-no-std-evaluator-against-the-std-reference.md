@@ -233,7 +233,10 @@ payload for it, as stated.
   carries `code` and `cause`, the `InputRefusal`'s catalog code and cause
   strings; `fault` carries `stage` and `invariant`, the `InternalFault`'s;
   `storage` carries `parameter`; `cancelled`, `supplied` and
-  `unsupported_helper` carry no payload member.
+  `unsupported_helper` carry no payload member. `cancelled` is only a
+  pre-charge Begin failure. A charge that a cancelled handle denies is
+  recorded as the evaluation it returns, the `incomplete` outcome at that
+  charge (FR-262).
 
 `<outcome>` SHALL be one of:
 
@@ -344,9 +347,9 @@ cases by key, in the order `checked-in`, `generated`, `external`, and by
 `case_id` within a bundle. CG's generated-closure
 bundle joins the corpus this way.
 
-FR-262-AC-2 (a 100,000-long `List` value), AC-3, AC-4, AC-6, AC-7 and AC-8
-(registry results, registered generated bodies, stepping, cancellation and
-resumption) cannot be written as a version-1 case, because a case's result
+FR-262-AC-2 (a 100,000-long `List` value), AC-3, AC-4, AC-6, AC-7, AC-8,
+AC-10 and AC-11 (registry results, registered generated bodies, stepping,
+cancellation, resumption and child-request validation) cannot be written as a version-1 case, because a case's result
 must be `Boolean` or `Integer`, and a case registers no QSL-side body and
 cancels nothing. The suite compares them by running those criteria's tests
 against both implementations: each test SHALL pass against the std reference and
@@ -399,6 +402,32 @@ FB-11). A run over CG's bundle uses a bundle that CG's
 crate's loader, refusals and compared-record forms need no second
 implementation; their criteria run in `quire-eval-corpus`'s own tests and
 the admission criteria in QSL's `cargo test --workspace`.
+
+### After the switch
+
+This suite's zero-divergence result is the switch criterion of
+[FR-405](FR-405-retire-the-std-reference-evaluator-for-quire-eval.md), and
+the switch deletes the std reference. Until the switch, every criterion
+below holds as written. After it, the corpus, its loader, admission and
+compared record stay, the harness runs one implementation as
+`evaluator-regression` (FR-405 "The corpus after the switch"), and the
+criteria that name the std implementation hold in this form:
+
+- AC-6: the records are `quire-eval`'s, each equal to the case's recorded
+  `expected`, with the same values.
+- AC-7: the pair is `expected/quire-eval`, and a case with `expected`
+  `null` reports `missing_expected`. A comparator fed expectations and a
+  `quire-eval` record set that differ only in one `charges` entry's `sizes`
+  reports pair `expected/quire-eval` and a pointer under `/charges`; a
+  record set missing one `case_id` reports that case and that `quire-eval`
+  produced no record (FR-405-AC-8).
+- AC-9: `make ci` runs `evaluator-regression` over the QSL-owned corpus with
+  zero divergences; a comparator fed a `quire-eval` record set that lacks
+  an admitted case reports that case as a divergence; and FR-262-AC-2,
+  AC-3, AC-4, AC-6, AC-7 and AC-8's tests run once, on `quire-eval`
+  (FR-405-AC-8).
+- AC-10: `make evaluator-regression EVALUATOR_CORPUS_DIR=<dir>` runs CG's
+  bundle, and every record needs a non-null `expected` (FR-405-AC-9).
 
 ### What CG writes
 
