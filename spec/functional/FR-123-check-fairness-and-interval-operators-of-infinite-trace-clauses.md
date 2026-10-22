@@ -90,7 +90,9 @@ ADR-018 §6 and are illustrative.
   at the operation's span.
 - If a fairness constraint sits on a clause whose unit selects a bounded
   profile, then the checker SHALL refuse
-  `unsupported_construct`/`expression-form` at the constraint's span.
+  `unsupported_construct`/`expression-form` at the constraint's span. The
+  derived scheduler constraints of a protocol subject are not authored
+  constraints and are not refused (FR-212, FR-329).
 - The checker SHALL hold each constraint once in the checked fairness set,
   in source order of first occurrence, checking two constraints with equal
   resolved kind, operation pair and granularity as one.
