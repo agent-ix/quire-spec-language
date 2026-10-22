@@ -55,10 +55,12 @@ replayed pair of runs that the match accepts, reads `inconclusive`,
 
 ## Inputs
 
-- A `ModelCheckOutcome` from FR-176, FR-177, FR-178 or FR-179, or an SMT
-  outcome for HP-2 mapped by CG (ADR-023 HC-6, HC-7) into the same values.
-  CG hands an EN-3 induction result over as a `HyperSmtOutcome` to
-  `settle_hyper_smt` (Outputs).
+- A `ModelCheckOutcome` from FR-176, FR-177, FR-178 or FR-179, which
+  `settle_hyper_check` settles, or an SMT outcome for HP-2 from CG's EN-2 or
+  EN-3 (ADR-023 HC-6, HC-7), which CG hands over as a `HyperSmtOutcome` to
+  `settle_hyper_smt` (Outputs). Every SMT outcome for an HP-2 item goes
+  through `settle_hyper_smt`, and none through `settle_hyper_check`, so
+  each one passes the identity check below.
 - For `Holds` from EN-1: the `ProductClosureCheck` of its certificate
   (FR-163).
 - For `Violated`: the FR-072 replay result of its `HyperCounterexample`
@@ -88,9 +90,17 @@ replayed pair of runs that the match accepts, reads `inconclusive`,
 //                        // refused (FR-315 "Refusals and their order")
 pub enum ProductMember { Clause, Subjects, Instance }
 
+//   QueryKind,                                 // an `Unrolling` query was
+//                        // refused: an HP-2 item has none (FR-315)
+
 pub enum HyperSmtResult {
-    Inductive { depth: u64 },          // base and step both unsatisfiable
-    InductionNotClosed { depth: u64 }, // base unsatisfiable, step satisfiable
+    Inductive { depth: u64 },          // EN-3: base and step both unsatisfiable
+    InductionNotClosed { depth: u64 }, // EN-3: base unsatisfiable, step satisfiable
+    Violated { counterexample: Box<HyperCounterexample> }, // EN-2: a lasso, for FR-183 replay
+    BoundReached { depth: u64 },       // EN-2: searched to `depth`, no replayable lasso
+    Unknown { depth: u64 },            // a query at `depth` answered `unknown`, or the solver stopped
+    Cancelled { source: CancelCause }, // the run's cancellation handle tripped
+    EncodingRefused { refusal: SmtEncodingRefusal }, // `encode_hyper_query` refused
 }
 
 pub struct HyperSmtOutcome {
@@ -105,15 +115,16 @@ pub fn settle_hyper_smt(
     replay_limits: ReplayLimits,       // FR-183's limits for the witness check
     limits: &ModelCheckLimits,
     requested: &[ModelCheckLimit],
+    replay: impl FnOnce(&HyperCounterexample) -> Result<ModelTraceSettlement, ReplayRefusal>,
 ) -> Result<HyperRecord, HyperSettleRefusal>;
 ```
 
 `HyperSmtResult`, `HyperSmtOutcome` and `settle_hyper_smt` SHALL be types
 and an entry of the `qsl-replay` facade, beside `settle_hyper_check`, and
 CG calls `settle_hyper_smt` from its `replay` adapter module (FR-315
-"Product identity"). The entry settles only these two induction results. A
-satisfiable base, an unknown solver answer, an encoding refusal and a
-resource stop are no `HyperSmtResult`.
+"Product identity"). A satisfiable base query is no `HyperSmtResult` by
+itself: FR-315 "Reading the results" sends CG on to EN-2's search at that
+depth, whose result is `Violated` or `BoundReached`.
 
 and the FR-331 terminal record with its QSpec FR-360 label,
 FR-243 basis, O-16 category and method.
@@ -180,9 +191,30 @@ FR-243 basis, O-16 category and method.
   the rules below read. A witness checked over any other clause, subjects
   or instance is never an input, so the check is bound to the identity
   the outcome names.
-- `settle_hyper_smt` SHALL settle `InductionNotClosed{depth}` as V-6
-  `InductionNotClosed{depth}`, and `Inductive{depth}` by the rules below,
-  each with method `k-induction`.
+- `settle_hyper_smt` SHALL settle each `HyperSmtResult`, after the identity
+  check, as follows, with method `k-induction` for an EN-3 result and
+  `smt-unrolling` for an EN-2 result:
+  - `Inductive{depth}` by the rules below;
+  - `InductionNotClosed{depth}` as V-6 `InductionNotClosed{depth}`;
+  - `Violated` only through `replay` (FR-183), as `settle_hyper_check`
+    settles a `Violated`: reproduced is V-4 `refuted`, a disagreement is V-6
+    `ReplayParity`, a refusal is V-6 `ReplayRefused`, a replay a limit
+    stopped is V-7;
+  - `BoundReached{depth}` as V-5 `BoundReached{depth}`, stating the HP-2
+    reading of the bound;
+  - `Unknown{depth}` as V-6 `InductionNotClosed{depth}`: at that depth
+    neither did the induction close nor did the search complete. CG SHALL
+    report a solver resource stop as `Unknown{depth}`, because no
+    `ModelCheckLimit` names an SMT solver limit. IR-705 owns that resource
+    ceiling, and a solver stop settles V-7 `LimitReached` only through a
+    `ModelCheckLimit` that names its limit;
+  - `Cancelled{source}` as V-7 `Incomplete(Cancelled{source})`;
+  - `EncodingRefused`: `match-conjunct` as V-6 `MatchUndetermined`;
+    `hyper-body`, a field sort or an out-of-fragment construct as V-8
+    `Unsupported(unsupported-requested-capability)`; `query-kind` writes no
+    record and refuses `HyperSettleRefusal::QueryKind`. The other refusal
+    codes cannot reach this row, because `HyperProductIdentity::of(item)`
+    refuses them first (`ItemIdentity`).
 - An SMT `Inductive{depth: k}` outcome for HP-2 SHALL settle V-3 only when
   every subject has an initial state and either `μ_U` is empty or its
   `MatchWitnessCheck` is `Accepted` for a witness whose `instance` equals
@@ -214,6 +246,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-7 | §8.1's secure proof settles `proved`, certification `Certified`, after FR-163-AC-1's certificate is accepted; with FR-163-AC-2's member-removed certificate the item settles `inconclusive`, `CertificateRejected{Closure, …}`, never `proved`. An HP-2 `Inductive{depth: 1}` outcome from `k-induction`, with an empty `μ_U` or an `Accepted` `MatchWitnessCheck` (FR-182-AC-10), settles `proved`, `decisive-witness`, certification `Uncertified`. | Test (TC-607) |
 | FR-182-AC-10 | Over ADR-023 §8's secure vault, `NonInterference`'s `Inductive{depth: 1}` outcome with no `MatchWitnessCheck` settles `inconclusive`, `VacuousMatch`, never `proved`. With FR-183-AC-8's matched witness, whose check is `Accepted`, it settles `proved`, `decisive-witness`, `Uncertified`. With FR-183-AC-8's unmatched witness, whose check is `Refused`, it settles `inconclusive`, `VacuousMatch`. Over a vault whose `vaults` universe is `{v, w}`, the outcome for instance `w` with the matched witness for instance `v`, whose check is `Accepted`, settles `inconclusive`, `VacuousMatch`. The one-variable clause `forall trace a of V { always holds(v.l @ a <= 1) }`, whose `μ_U` is empty, settles its `Inductive{depth: 1}` outcome `proved`, `Uncertified`, with no witness. `NonInterference` over the secure vault with an empty initial list settles `inconclusive`, `NoInitialState`, never `proved`, with or without a witness. | Test (TC-607) |
 | FR-182-AC-11 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `settle_hyper_smt` for the `NonInterference` item at instance `v`, with an `Inductive{depth: 1}` outcome carrying FR-315's identity for that item, settles `proved`, `decisive-witness`, `Uncertified`, method `k-induction`, with FR-183-AC-8's matched witness for `v`, and `inconclusive`, `VacuousMatch` with its unmatched witness; an `InductionNotClosed{depth: 1}` outcome carrying the same identity settles `inconclusive`, `InductionNotClosed{depth: 1}`. Each of these writes no record and refuses `ProductMismatch` for the item at `v`: the outcome carrying the identity for instance `w`, naming `instance`; the outcome carrying the identity for a subject that differs only in a proof bound, naming `subjects`; the `Inductive` and the `InductionNotClosed` outcomes carrying the identity of the clause with `fair { weak V::Vault::step }` on `a`, naming `clause`; and the outcome carrying that fair clause's identity for instance `w`, which differs in both `clause` and `instance`, naming `clause`. The item with an empty `instance` refuses `ItemIdentity` carrying `instance-binding`. | Test (TC-1190) |
+| FR-182-AC-12 | Over ADR-023 §8's secure vault, `settle_hyper_smt` for the `NonInterference` item at instance `v`, each outcome carrying that item's identity, settles: `BoundReached{depth: 2}` as `inconclusive`, `BoundReached{depth: 2}`, method `smt-unrolling`, with a record stating the HP-2 bound reading; the leaky vault's `Violated` lasso as `refuted`, `decisive-counterexample` after `replay` reproduces it, and as `inconclusive`, `ReplayRefused` when `replay` refuses it; `Unknown{depth: 1}` as `inconclusive`, `InductionNotClosed{depth: 1}`, never `proved`; `Cancelled{source: Requested}` as `failed`, `Incomplete(Cancelled{Requested})`; `EncodingRefused` with `match-conjunct` as `inconclusive`, `MatchUndetermined`, and with `hyper-body` as `unsupported`, `unsupported-requested-capability`. `EncodingRefused` with `query-kind` writes no record and refuses `QueryKind`. Each of these outcomes carrying the identity for instance `w` refuses `ProductMismatch` naming `instance`. | Test (TC-1190) |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 | FR-182-AC-9 | ADR-023 §1's `NonInterference` over an empty `Vault` universe settles `inconclusive`, `NoInstance`, basis `unsettled`, before any state is explored, never `Proved` or `Refuted`; ADR-023 §1's `SavesPower` `(d: S::Device, e: N::Device)` with one empty universe and the other non-empty settles the same way, so the product is read over both parameters; the same clause over a population with no universe is `RequiresBound`, not `NoInstance`. | Test (TC-607) |
 

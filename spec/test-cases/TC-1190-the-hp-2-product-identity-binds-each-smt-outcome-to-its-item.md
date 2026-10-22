@@ -23,7 +23,7 @@ deserialize it, that its refusals come in their stated order, that
 `settle_hyper_smt` settles an HP-2 SMT outcome only for the item and
 instance its identity names, checking any witness itself.
 
-Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-336-AC-6.
+Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
 
 ## Test Procedure
 
@@ -66,9 +66,16 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-336-AC-6.
    outcomes carrying the identity for instance `w`, for the proof-bound
    subject, for the fair clause (both results) and for the fair clause at
    instance `w`. Then settle with the item's `instance` empty.
+7. With `settle_hyper_smt` for the same item, settle outcomes carrying its
+   identity: `BoundReached{depth: 2}`; the leaky vault's `Violated` lasso
+   with a `replay` that reproduces it, then one that refuses it;
+   `Unknown{depth: 1}`; `Cancelled{source: Requested}`; and
+   `EncodingRefused` with `match-conjunct`, `hyper-body` and `query-kind`.
+   Repeat each with the identity for instance `w`.
 
 Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
-`#[trace("TC-1190", "FR-182-AC-11")]` and
+`#[trace("TC-1190", "FR-182-AC-11")]`,
+`#[trace("TC-1190", "FR-182-AC-12")]` and
 `#[trace("TC-1190", "FR-336-AC-6")]`.
 
 ## Expected Results
@@ -97,3 +104,10 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   record and `ProductMismatch` naming `instance`, `subjects`, `clause`
   (both results) and `clause` for the fair clause at `w`; and
   `ItemIdentity` carrying `instance-binding` for the empty instance.
+- Step 7: `inconclusive`, `BoundReached{depth: 2}`, method `smt-unrolling`;
+  `refuted`, `decisive-counterexample`, then `inconclusive`,
+  `ReplayRefused`; `inconclusive`, `InductionNotClosed{depth: 1}`;
+  `failed`, `Incomplete(Cancelled{Requested})`; `inconclusive`,
+  `MatchUndetermined`; `unsupported`, `unsupported-requested-capability`;
+  no record and `QueryKind`. Every repeat with the instance-`w` identity
+  writes no record and refuses `ProductMismatch` naming `instance`.

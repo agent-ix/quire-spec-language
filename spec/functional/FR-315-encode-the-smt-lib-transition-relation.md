@@ -395,11 +395,13 @@ impl HyperProductIdentity {
   therefore give the same refusal whenever `of` refuses.
   `HyperProductIdentity::of` SHALL evaluate no `μ_U` conjunct and charge
   nothing to `meter`.
-- **Outcome handoff.** CG SHALL return each HP-2 induction result to QSL as
-  FR-182's `HyperSmtOutcome`, whose `product` is the `product` of the base
-  and step `HyperQuery` values it answers. Those two SHALL carry equal
-  identities and equal depths. `settle_hyper_smt` settles an outcome only
-  for the item and instance its identity names.
+- **Outcome handoff.** CG SHALL return every SMT result for an HP-2 item,
+  EN-3's and EN-2's alike, to QSL as FR-182's `HyperSmtOutcome`, whose
+  `product` is the `product` of the `HyperQuery` values it answers, or
+  `HyperProductIdentity::of` over the same request when
+  `encode_hyper_query` refused. The base and step queries of one induction
+  result SHALL carry equal identities and equal depths. `settle_hyper_smt`
+  settles an outcome only for the item and instance its identity names.
 
 ## Acceptance Criteria
 
