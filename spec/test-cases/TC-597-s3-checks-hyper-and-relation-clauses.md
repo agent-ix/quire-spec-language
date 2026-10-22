@@ -22,7 +22,7 @@ Fixtures: ADR-023 §1, §8.2 and §13's clauses over the vault and device models
 2. Check each FR-172-AC-2 variant.
 3. Check §13's clause and each FR-172-AC-3 variant.
 4. Check `Det`; compare node identities of `NonInterference`, its fairness-swapped variant and its variant with an extra `match` conjunct.
-5. Check `NonInterference` with each FR-172-AC-5 `match` block.
+5. In a unit declaring aliases `V` and `N`, check `NonInterference` with each FR-172-AC-5 `match` block, and evaluate the two `!=` blocks over the same joint steps.
 
 Tag the tests `#[trace("TC-597", "FR-172-AC-n")]`.
 
@@ -32,4 +32,4 @@ Tag the tests `#[trace("TC-597", "FR-172-AC-n")]`.
 - Step 2: each refuses with the code and span FR-172-AC-2 names.
 - Step 3: `align_skip` holding `mix`; each variant refuses `unsupported_construct`/`expression-form`.
 - Step 4: two model execution bindings; three distinct identities.
-- Step 5: the operation-constant match checks with both conjuncts in `mu_universal`, its mirror checks the same, and each variant refuses with the code at the qualified name FR-172-AC-5 names.
+- Step 5: the operation-constant match checks with both conjuncts in `mu_universal`; each `!=` block has its one conjunct in `mu_universal` and the two hold at the same joint steps; each variant, the field-naming `V::Vault::l` included, refuses with the code at the qualified name FR-172-AC-5 names.
