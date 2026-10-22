@@ -137,7 +137,9 @@ Yielding, saving a continuation, pushing or popping a frame, and delivering a
 child result add no charge. Existing kernel charge points and order remain
 unchanged. A denied charge produces the existing located `incomplete` result
 at that point, retains earlier spend, and does not record the denied charge.
-Cancellation is observed at each charge and before each scheduler transition.
+Cancellation is observed only at a charge: a charge a cancelled handle denies
+is that charge's located `incomplete` result, and the lifecycle operation
+holding the handle reports `Cancelled` from its `tripped()` cause.
 Terminal outcomes drop suspended continuations without executing them. These
 rules apply identically to the reference and no_std implementations.
 
