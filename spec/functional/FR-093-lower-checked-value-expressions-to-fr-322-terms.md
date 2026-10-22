@@ -150,22 +150,19 @@ typed `ProbabilisticCause::QuantityLiteral`. No checked-package literal node
 is emitted for that expression. The source typer can resolve its exact
 rational magnitude and declared unit; this does not admit its lowering.
 
-QSpec already defines `value_kind: quantity`, its canonical magnitude and
-unit-typed literal fit rule in FR-322-AC-79 and STD-113; both V2 schemas
-enumerate the kind. The Contract IR reader does not yet admit that literal
-kind. A `rational` literal typed at a unit violates the literal/type-family
-contract. QSL SHALL NOT substitute a rational scalar type or bypass strict
-reader admission to emit a quantity literal.
+QSpec defines `value_kind: quantity`, its canonical magnitude and its
+unit-typed literal fit rule in FR-322-AC-79, and both V2 schemas enumerate the
+kind. The Contract IR reader does not yet admit that literal kind. A `rational`
+literal typed at a unit violates the literal/type-family contract, so QSL
+SHALL NOT substitute a rational scalar type and SHALL NOT bypass strict reader
+admission to emit a quantity literal. Quantity parameters and the existing
+quantity comparison, arithmetic and exact unit-conversion operations are in
+scope.
 
-The IR/CG owners retain quantity literals outside V1 scope. Quantity
-parameters and the existing quantity comparison, arithmetic and exact
-unit-conversion operations remain in scope.
+Quantity literals are admitted in V1 bodies when an IR reader change admits
+FR-322-AC-79; QSL lowering follows that change, then CG.
 
-Reopening quantity literals is a post-V1, spec-first IR reader change to
-admit QSpec FR-322-AC-79, coordinated with the quantity evaluation leaf
-(IR-853). IR-955 tracks that admission work. The IR reader must validate
-the existing quantity kind's payload and type; QSL lowering and downstream
-CG then follow with genuine-source and strict-reader evidence.
+Remaining work: IR-955
 
 ### Application nodes
 
