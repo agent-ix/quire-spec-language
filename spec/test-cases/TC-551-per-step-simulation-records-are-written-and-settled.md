@@ -13,7 +13,7 @@ relationships:
 Verify which `operation-contract` records the refinement's `requirements`
 hook writes, their hypotheses, and how their backend outcomes settle.
 
-Scope: FR-146-AC-1 to FR-146-AC-9.
+Scope: FR-146-AC-1 to FR-146-AC-10.
 
 ## Test Procedure
 
@@ -41,6 +41,9 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
 9. Settle the eight records of `CasRefinesCounter` when `check_refinement_smt_proof` returns `Verified`; then for `CasRefinesCounterAdd` (FR-315-AC-6), whose `bump` row has a `_` argument (the checker returns `Unencodable` for its step part), and for that fixture with the base query also mismatched.
 
 10. Read the occurrence key of each of `CasRefinesCounter`'s eight records.
+11. Read `CheckedGraph::requirements()` for `CasRefinesCounter`, with and
+    without `bound CountersBound on Impl::counters [2]`, and for the
+    variant whose `peek` takes `n: Integer` (FR-146-AC-10).
 
 Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 
@@ -60,3 +63,4 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 8: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`, `hypotheses-not-established`; `Inconclusive(InductionNotClosed{depth: 1})`; `refuted` through replay (FR-146-AC-8).
 - Step 9: every record `Proved{Inductive{depth: 1}, Certified}`; with `CasRefinesCounterAdd` every record `Uncertified`; with the base mismatch the `Initial` record `Inconclusive(CertificateRejected{rule, at})` at `base` and the others `Uncertified` (FR-146-AC-4).
 - Step 10: each key is (the refinement node, `generated`, ordinal): 0 for `Initial` and `i + 1` for `Step { row: i }` (FR-146-AC-9).
+- Step 11: eight `operation-contract` records keyed by their occurrences, each `Unbounded` with the one `Impl::counters` population domain, boundable by `Cardinality`; each `Bounded` under `CountersBound`; in the `n: Integer` variant `peek`'s record also names the `Integer` domain of `n` and the other seven are unchanged (FR-146-AC-10).
