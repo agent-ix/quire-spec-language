@@ -132,8 +132,11 @@ fn float_to_rational_is_an_ieee_operation_with_the_selected_law() {
 #[trace("TC-1091", "FR-397-AC-4")]
 #[test]
 fn strict_ir_reader_admits_the_genuine_float_source_packages() {
-    for source in [ADD32, ADD64, TO_R] {
-        let compiled = compile(source).expect("source compiles");
+    for source in [ADD32, ADD64, TO_R].into_iter().map(str::to_owned).chain([
+        ADD32.replace("a + b", "a * b"),
+        ADD64.replace("a + b", "a * b"),
+    ]) {
+        let compiled = compile(&source).expect("source compiles");
         let wire: Value = serde_json::from_slice(compiled.package().bytes()).unwrap();
         let mut evidence = CheckedPackageEvidence::new();
         for feature in wire["lock"]["required_features"].as_array().unwrap() {
@@ -188,7 +191,9 @@ fn float_comparisons_and_mixed_width_arithmetic_refuse_at_checking() {
                 panic!("comparison refusal has a source region");
             };
             assert!(
-                source[region.start() as usize..region.end() as usize].contains(operator),
+                source[usize::try_from(region.start()).unwrap()
+                    ..usize::try_from(region.end()).unwrap()]
+                    .contains(operator),
                 "comparison refusal covers its operator",
             );
         }
@@ -244,6 +249,26 @@ fn rational_comparison_evaluates_float_conversion_as_a_separate_operation() {
     assert_ieee_law(&wire, operation(&wire, "quire.op.ieee.to_rational"));
 }
 
+#[trace("TC-1091", "FR-397-AC-8")]
+#[test]
+fn bit_level_float_constructors_remain_unrepresented_source_forms() {
+    for (width, bits) in [("32", "0x3f800000"), ("64", "0x3ff0000000000000")] {
+        let source = format!("{HEADER}function one using v(): Float{width}[nearest-even] pure {{ float{width}(bits: {bits}) }}");
+        let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
+            panic!("a float constant has no complete-V1 source route");
+        };
+        let qsl_replay::spine::CompileRefusal::Forms { failure, .. } = *refusal else {
+            panic!("the float constructor refuses at S2: {refusal:?}");
+        };
+        assert!(matches!(
+            failure.cause,
+            qsl_forms::FormsCause::UnrepresentedConstruct {
+                production: qsl_cst::grammar::Production::FloatValue,
+            }
+        ));
+    }
+}
+
 #[trace("TC-1091", "FR-397-AC-1", "FR-397-AC-3")]
 #[test]
 fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source_spine() {
@@ -267,7 +292,7 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
             // Multiplication has the exact rational result 3/4; the other
             // three results are integers, represented as rationals too.
             let expected = if operator == "*" {
-                Rational::new(Integer::from(3), Integer::from(4)).unwrap()
+                Rational::new(Integer::from(3_i64), Integer::from(4_i64)).unwrap()
             } else {
                 Rational::new(Integer::from(expected), Integer::one()).unwrap()
             };
