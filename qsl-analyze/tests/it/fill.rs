@@ -176,6 +176,9 @@ pub(crate) fn document() -> Vec<u8> {
                 ],
                 "relationships": [],
             })),
+            wire_type(&ident("Idle"), "object_type", json!({
+                "supertypes": [], "fields": [], "operations": [], "relationships": [],
+            })),
             wire_type(&attempt, "record_value_type", json!({
                 "supertypes": [],
                 "fields": [attempt_field],
@@ -186,6 +189,12 @@ pub(crate) fn document() -> Vec<u8> {
             "identity": population, "displayName": population,
             "kind": {"module": PACKAGE, "name": "population"},
             "members": [cell], "extent": "closed", "origin": origin(&population),
+        }, {
+            // A closed population of `Idle` objects with an empty universe,
+            // for a replicated role over an empty population.
+            "identity": ident("idles"), "displayName": ident("idles"),
+            "kind": {"module": PACKAGE, "name": "population"},
+            "members": [ident("Idle")], "extent": "closed", "origin": origin(&ident("idles")),
         }],
     })
     .to_string()
@@ -356,7 +365,8 @@ impl Documents {
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": ident("cells"), "complete": true,
-                "objects": objects}],
+                "objects": objects},
+                {"population": ident("idles"), "complete": true, "objects": []}],
         });
         let bytes = document.to_string().into_bytes();
         let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -382,12 +392,18 @@ pub(crate) fn instance(key: &str) -> ModelInstance {
     }
 }
 
-/// The universe `{keys}` of `cells`.
+/// The universe `{keys}` of `cells`, and the empty universe of `idles`.
 pub(crate) fn universe(keys: &[&str]) -> Vec<PopulationUniverse> {
-    vec![PopulationUniverse {
-        population: key("cells"),
-        keys: keys.iter().map(|key| (*key).to_owned()).collect(),
-    }]
+    vec![
+        PopulationUniverse {
+            population: key("cells"),
+            keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+        },
+        PopulationUniverse {
+            population: key("idles"),
+            keys: Vec::new(),
+        },
+    ]
 }
 
 /// The model subject over `package` from `initial` with universe `keys`.

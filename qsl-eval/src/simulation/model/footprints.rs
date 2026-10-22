@@ -564,8 +564,10 @@ impl<'a> ModelSystem<'a> {
     }
 
     /// ADR-027 FT-3: the model locations a protocol expression `body`, typed
-    /// over the binders `parameters` in slot order, reads: its field reads on
-    /// any object and its membership reads.
+    /// over the binders `parameters` in slot order, reads: for each field
+    /// read, the field of every object of the subject's universe whose type
+    /// declares it (the field on any object when none does), and its
+    /// membership reads.
     ///
     /// # Errors
     ///
@@ -587,6 +589,19 @@ impl<'a> ModelSystem<'a> {
         Ok(symbolic
             .iter()
             .filter_map(|location| lower(location, &|_| None))
+            .flat_map(|location| match location {
+                Location::AnyField { field } => match self.universe_declaring(&field) {
+                    Some(objects) => objects
+                        .into_iter()
+                        .map(|object| Location::Field {
+                            object,
+                            field: field.clone(),
+                        })
+                        .collect(),
+                    None => vec![Location::AnyField { field }],
+                },
+                other => vec![other],
+            })
             .collect())
     }
 
