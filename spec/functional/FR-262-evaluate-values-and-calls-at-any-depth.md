@@ -164,12 +164,19 @@ to the scheduler. The scheduler SHALL validate the request, charge the call
 and push the callee frame without native recursion. Validation checks that the
 callee is admitted in the session's checked closure, that the argument count
 equals its admitted signature's parameter count, and that each argument is a
-member of its parameter's `ValueType`. Membership is decided in the type
-environment of the session's checked closure, with no supplied-value run: it
-charges neither the meter nor a supplied-value budget, and polls no `Cancel`
-handle. Validation therefore never charges the meter and never observes
+member of its parameter's `ValueType`. For a `Population<T>[N]` parameter,
+membership is decided as Begin decides it: the environment contract resolves
+the argument's `PopulationId`, and the resolved binding's declared maximum
+must equal the parameter's
+([FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md) argument
+admission check 2). For every other parameter, membership is decided in the
+type environment of the session's checked closure. Neither check uses a
+supplied-value run: each charges neither the meter nor a supplied-value
+budget, and polls no `Cancel` handle. Validation therefore never charges the meter and never observes
 cancellation. A request that fails any of
-these checks is a broken invariant of the requesting body, not caller input:
+these checks, including a `Population` argument whose `PopulationId` the
+environment does not resolve or whose binding's declared maximum differs, is a
+broken invariant of the requesting body, not caller input:
 the session SHALL terminate with `CallFailure::Fault` carrying an
 `InternalFault` whose stage is `quire-eval` and whose invariant is
 `child-request-not-admitted`, category `internal failure`
@@ -179,7 +186,8 @@ does not resume the requesting body, and keeps earlier spend. Such a request
 SHALL NOT end the session with `CallFailure::Input`. A membership check that
 cannot decide for want of storage SHALL terminate the session with
 `CallFailure::Storage`, whose `parameter` is the index of the callee's
-parameter and whose failure is the type environment's storage failure, before
+parameter and whose failure is the storage failure of the type environment
+or of the environment read, before
 the child's `function.call` charge and keeping earlier spend. No other failure
 arises from validation. While the child is active,
 the caller SHALL remain suspended. When the child completes, the scheduler
@@ -258,7 +266,7 @@ and JIT preparation retain their existing contracts.
 | FR-262-AC-8 | A body performs charged work, saves a local, requests a child and continues with its returned value. Each body transition and child occurs exactly once across steps; prepared-entry execution matches the synchronous reference, including a kernel loss record, and unsupported preparation stays a pre-application disposition. | Test |
 | FR-262-AC-9 | An interface crate with only a std reference adapter does not satisfy RT's complete evaluator migration. That migration consumes the shared implementation with std disabled on RT's governed no_std target, supplies checked-input and generated-body evaluation through this interface, and leaves no RT-local evaluator copy or compatibility re-export. | Inspection |
 | FR-262-AC-10 | Begin takes no `Cancel` argument. With a meter whose installed handle is cancelled with `Deadline` at the first kernel charge a registered body makes, the session terminates with that charge's located incomplete result (`limit_kind: work_units`, `limit` equal to `consumed`), not `CallFailure::Cancelled`; `tripped()` returns `Deadline`. With the handle cancelled at a `function.call` charge, the result has the same form at that charge. When a caller cancels between two steps and the next transition makes no charge, that transition runs and the session terminates at the first charge after it. | Test |
-| FR-262-AC-11 | A registered body requests, in three runs: a `NodeKey` that no function of the closure has; the admitted `f(x: Int[0, 9]): Boolean` with two arguments; and `f` with the argument `10`. Each run terminates with `CallFailure::Fault` whose `InternalFault` has stage `quire-eval` and invariant `child-request-not-admitted`, category `internal failure`. The run makes no `function.call` charge for the child, invokes no callee body, does not resume the requesting body, and keeps the charges made before the request. Begin of `f` with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, and Begin of `f` with `10` returns `CallFailure::Input` from argument admission, each with no charge. | Test |
+| FR-262-AC-11 | A registered body requests, in three runs: a `NodeKey` that no function of the closure has; the admitted `f(x: Int[0, 9]): Boolean` with two arguments; `f` with the argument `10`; and a function `h(p: Population<T>[3]): Boolean` with a `Population` value whose `PopulationId` the environment does not resolve. Each run terminates with `CallFailure::Fault` whose `InternalFault` has stage `quire-eval` and invariant `child-request-not-admitted`, category `internal failure`. The run makes no `function.call` charge for the child, invokes no callee body, does not resume the requesting body, and keeps the charges made before the request. In a fifth run, `h` requested with a `Population` value the environment resolves to a binding of declared maximum `3` is applied, with one `function.call` charge for it. Begin of `f` with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, and Begin of `f` with `10` returns `CallFailure::Input` from argument admission, each with no charge. | Test |
 
 ## Dependencies
 
