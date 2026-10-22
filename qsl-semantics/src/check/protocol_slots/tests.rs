@@ -13,11 +13,13 @@ use crate::check::protocol_clause::ProtocolNodeId;
 use crate::check::refusal::{ProtocolAnchorCause, SlotKind};
 use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 
+// The fixture's plain constructor serves the other protocol tests.
+#[allow(dead_code)]
 mod fixture {
     use crate as semantics;
     include!("../../../tests/fixtures/protocol_obligations.rs");
 }
-use fixture::{obligation_model, HEADER};
+use fixture::{obligation_model_with, HEADER};
 
 /// ADR-027 §7's `Fill` over `k: M::Node`, activated `activation`, with
 /// `members` written before `run`.
@@ -40,6 +42,37 @@ fn fill(activation: &str, members: &str) -> String {
 
 const ORIGIN: &str = "on origin";
 const EACH: &str = "on each (opened: M::Tick) when (opened.ready)";
+
+/// Fixture R with the populations `nodes` of its `Node`s and `jobs` of a
+/// second object type `Job`.
+fn obligation_model() -> crate::model::intake::SelectedModel {
+    use crate::model::domain_package::{
+        DomainPackageRecord, Extent, ObjectTypeRecord, PopulationRecord,
+    };
+    use crate::model::key::DeclarationKey;
+    let key = |name: &str| DeclarationKey {
+        package: "example/protocol-obligations".to_owned(),
+        node: format!("ix://example/protocol-obligations/{name}"),
+    };
+    let population = |name: &str, member: &str| {
+        DomainPackageRecord::Population(PopulationRecord {
+            key: key(name),
+            member_types: vec![key(member)],
+            extent: Extent::Closed,
+            symmetric: false,
+        })
+    };
+    obligation_model_with(vec![
+        DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: key("Job"),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: Vec::new(),
+        }),
+        population("nodes", "Node"),
+        population("jobs", "Job"),
+    ])
+}
 
 fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let parsed = qsl_cst::parse(
@@ -231,8 +264,8 @@ fn a_replicated_role_records_its_population_maximum_and_lifetime() {
         panic!("one replicated role");
     };
     assert_eq!(
-        (role.role, role.population.as_str(), role.max),
-        (1, "nodes", 1)
+        (role.role, role.population.node.as_str(), role.max),
+        (1, "ix://example/protocol-obligations/nodes", 1)
     );
     let CheckedLifetime::Until(until) = &role.lifetime else {
         panic!("an until lifetime, got {:?}", role.lifetime);
@@ -324,6 +357,123 @@ fn readers_are_recorded_and_a_scope_role_records_its_region() {
     assert_eq!(
         graph.protocol("Workers").expect("checked").slots.roles[0].lifetime,
         CheckedLifetime::Scope(Some(node_id(&text, "Main")))
+    );
+}
+
+/// FR-218-AC-28 (TC-663): `role w each M::Worker from workers` checks when
+/// `workers` is a population of the role's type and the checked role holds
+/// that population; an undeclared name refuses `missing_declaration`/
+/// `missing-name` and a population of another type `ill_typed`/
+/// `type-mismatch`, each at the name and retaining the role and population.
+#[trace("TC-663", "FR-218-AC-28")]
+#[test]
+fn a_replicated_roles_population_resolves_in_the_package_of_its_type() {
+    let graph = checks(&workers("workflow"));
+    let [role] = graph
+        .protocol("Workers")
+        .expect("checked")
+        .slots
+        .roles
+        .as_slice()
+    else {
+        panic!("one replicated role");
+    };
+    assert_eq!(
+        role.population.node,
+        "ix://example/protocol-obligations/nodes"
+    );
+
+    for (name, pair, missing) in [
+        (
+            "ghosts",
+            ("missing_declaration", Some("missing-name")),
+            true,
+        ),
+        ("jobs", ("ill_typed", Some("type-mismatch")), false),
+    ] {
+        let text = workers("workflow").replacen("from nodes", &format!("from {name}"), 1);
+        let (cause, found, at) = only(&text);
+        assert_eq!(found, pair, "{name}");
+        assert_eq!(at, name);
+        let expected = if missing {
+            ProtocolAnchorCause::MissingRolePopulation {
+                role: "r".to_owned(),
+                population: name.to_owned(),
+                span: cause.span(),
+            }
+        } else {
+            ProtocolAnchorCause::RolePopulationType {
+                role: "r".to_owned(),
+                population: name.to_owned(),
+                span: cause.span(),
+            }
+        };
+        assert_eq!(cause, expected);
+    }
+}
+
+/// FR-218-AC-29 (TC-663): with channels `from w to c` and `from c to w` the
+/// checked clause holds the owner `w` for the `send` and `c` for the
+/// `receive` on the first, and `c` for the `send` and `w` for the `receive`
+/// on the second; a `scope` role `w` with its `Work` inside `sequence S` and
+/// a `send` from `w` after `S` has the region `Main`, `S`'s parent control,
+/// not `S`.
+#[trace("TC-663", "FR-218-AC-29")]
+#[test]
+fn send_and_receive_are_owned_by_their_channel_roles_and_count_in_the_region() {
+    let text = format!(
+        "{HEADER}protocol Duplex using v over (k: M::Node) on origin {{\n\
+         role c on M::Node;\n\
+         role w each M::Node from nodes max 1 lifetime workflow;\n\
+         channel out from w to c carries M::Flag ordering unordered delivery unknown \
+         capacity 2 overflow block;\n\
+         channel back from c to w carries M::Flag ordering unordered delivery unknown \
+         capacity 2 overflow block;\n\
+         terminal any;\n\
+         run sequence Main {{\n\
+         parallel Go {{\n\
+           branch a send Tx via out as (tx: M::Flag) {{ true }};\n\
+           branch b receive Rx via out of a::Tx as (rx: M::Flag) {{ true }};\n\
+         }} join all [a, b];\n\
+         parallel Return {{\n\
+           branch d send Ty via back as (ty: M::Flag) {{ true }};\n\
+           branch e receive Ry via back of d::Ty as (ry: M::Flag) {{ true }};\n\
+         }} join all [d, e];\n\
+         }}\n\
+         finish Done as (f: M::Receipt) {{ true }};\n\
+         }}\n"
+    );
+    let graph = checks(&text);
+    let protocol = graph.protocol("Duplex").expect("checked");
+    let owner = |node: &str| {
+        let node = node_id(&text, node);
+        protocol
+            .owners
+            .iter()
+            .find(|owner| owner.node == node)
+            .map(|owner| protocol.roles[owner.role].name.as_str())
+    };
+    assert_eq!(
+        [owner("Tx"), owner("Rx"), owner("Ty"), owner("Ry")],
+        [Some("w"), Some("c"), Some("c"), Some("w")]
+    );
+
+    let scoped = workers("scope")
+        .replacen(
+            "run sequence Main",
+            "channel ch from r to w carries M::Flag ordering unordered delivery unknown \
+             capacity 2 overflow block;\nrun sequence Main",
+            1,
+        )
+        .replacen(
+            "check After using v { true };",
+            "send Out via ch as (o: M::Flag) { true };",
+            1,
+        );
+    let graph = checks(&scoped);
+    assert_eq!(
+        graph.protocol("Workers").expect("checked").slots.roles[0].lifetime,
+        CheckedLifetime::Scope(Some(node_id(&scoped, "Main")))
     );
 }
 

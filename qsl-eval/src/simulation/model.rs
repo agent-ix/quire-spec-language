@@ -981,6 +981,28 @@ impl<'a> ModelSystem<'a> {
             .map_err(|_| InternalFault::new("model-simulation", "universe-key-references"))
     }
 
+    /// ADR-027 FT-3: every object of this subject's universe whose type
+    /// declares `field`, in canonical order. `None` when no object type
+    /// declares it or a population has no universe to list.
+    pub(crate) fn universe_declaring(
+        &self,
+        field: &DeclarationKey,
+    ) -> Option<Vec<ObjectReference>> {
+        let mut objects = Vec::new();
+        for (type_key, fields) in &self.fields {
+            if !fields.iter().any(|declared| &declared.key == field) {
+                continue;
+            }
+            let identity = self.model.type_identity(type_key)?;
+            for instance in self.instances(&ValueType::Reference(identity)).ok()? {
+                objects.push(self.bound_reference(identity, &instance).ok()?);
+            }
+        }
+        objects.sort();
+        objects.dedup();
+        (!objects.is_empty()).then_some(objects)
+    }
+
     /// The non-abstract object types `effect` creates (FR-013): each conforms
     /// to a `creates` entry.
     fn creatable_types(&self, effect: &OperationEffect) -> Vec<DeclarationKey> {

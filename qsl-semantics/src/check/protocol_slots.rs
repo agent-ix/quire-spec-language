@@ -34,7 +34,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ActivationForm, BinaryOperator, BinderKind, ExprNode, ExprRef, ExpressionForm,
-    ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind, RoleLifetime, TerminalForm,
+    ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind, ReplicatedRoleForm, RoleForm,
+    RoleLifetime, TerminalForm,
 };
 use qsl_foundation::Span;
 use quire_exact::ValueType;
@@ -42,7 +43,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::check::Scope;
 use super::ir::{CheckedBody, NodeKind};
-use super::protocol_clause::{record_binder, CheckedProtocol, ProtocolNodeId};
+use super::protocol_clause::{record_binder, written_owner, CheckedProtocol, ProtocolNodeId};
 use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, Goal};
 use super::refusal::{
     ArmFault, CheckCause, CheckRefusal, ObservationReason, ProtocolAnchorCause, RelatedEnd,
@@ -51,6 +52,7 @@ use super::refusal::{
 use super::state_clause::ClauseDeclarations;
 use super::type_form::resolve_form;
 use crate::family::CheckContext;
+use crate::model::key::DeclarationKey;
 
 /// One `case` of a checked `choice`.
 #[derive(Clone, Debug, PartialEq)]
@@ -134,8 +136,9 @@ pub struct CheckedReplicatedRole {
     /// The index of the role among the protocol's roles; its binder is
     /// named by the role and typed `Reference` to its object type.
     pub role: usize,
-    /// The population the instances are drawn from, as written.
-    pub population: String,
+    /// The population the instances are drawn from, resolved against the
+    /// domain package that declares the role's type (ADR-027 RR-1).
+    pub population: DeclarationKey,
     /// The authored limit on live instances at once, at least 1.
     pub max: u64,
     /// The lifetime of one instance.
@@ -1129,10 +1132,18 @@ pub(crate) fn check(
                 .map(CheckedLifetime::Until),
             RoleLifetime::Until(_) => None,
         };
-        if let (Some(lifetime), true) = (lifetime, replicated.max > 0) {
+        let population = match role_population(role, replicated, declarations) {
+            Ok(population) => Some(population),
+            Err(cause) => {
+                checker.refuse(cause);
+                None
+            }
+        };
+        if let (Some(lifetime), Some(population), true) = (lifetime, population, replicated.max > 0)
+        {
             slots.roles.push(CheckedReplicatedRole {
                 role: index,
-                population: replicated.population.name.clone(),
+                population,
                 max: replicated.max,
                 lifetime,
             });
@@ -1260,17 +1271,8 @@ fn region(
             parents.insert(*child, control.node);
         }
     }
-    let members = protocol
-        .declarations
-        .iter()
-        .enumerate()
-        .filter(|(_, declaration)| {
-            declaration
-                .role
-                .as_ref()
-                .is_some_and(|written| written.name == role)
-        })
-        .map(|(index, _)| index)
+    let members = (0..protocol.declarations.len())
+        .filter(|index| written_owner(protocol, *index) == Some(role))
         .chain(
             protocol
                 .choices
@@ -1313,6 +1315,41 @@ fn region(
         });
     }
     common?.last().copied()
+}
+
+/// ADR-027 RR-1: the population `role r each T from pop` is drawn from, the
+/// one the domain package that declares `T` declares under the name `pop`.
+fn role_population(
+    role: &RoleForm,
+    replicated: &ReplicatedRoleForm,
+    declarations: &ClauseDeclarations<'_>,
+) -> Result<DeclarationKey, ProtocolAnchorCause> {
+    let name = &replicated.population;
+    let missing = || ProtocolAnchorCause::MissingRolePopulation {
+        role: role.name.name.clone(),
+        population: name.name.clone(),
+        span: name.span,
+    };
+    let alias = role.context.name.split("::").next().unwrap_or_default();
+    let model = declarations
+        .models
+        .iter()
+        .find(|model| model.alias() == Some(alias))
+        .ok_or_else(missing)?;
+    let found = model
+        .named_populations()
+        .find(|record| record.name == name.name)
+        .ok_or_else(missing)?;
+    let element = declarations.scope.object_type_named(&role.context.name);
+    if element.is_some_and(|element| found.members.contains(&element)) {
+        Ok(found.key.clone())
+    } else {
+        Err(ProtocolAnchorCause::RolePopulationType {
+            role: role.name.name.clone(),
+            population: name.name.clone(),
+            span: name.span,
+        })
+    }
 }
 
 /// The index of the role `name` among `protocol`'s roles.
