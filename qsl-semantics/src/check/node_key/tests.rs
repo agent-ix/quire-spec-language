@@ -482,6 +482,32 @@ fn integer_and_rational_literals_are_spelled_as_strings() {
     assert_eq!(arguments[2]["value_kind"], json!("rational"));
 }
 
+/// QSpec FR-322 "Scalar literal values" (FR-322-AC-79): a quantity literal
+/// is the decimal integer at denominator 1 and otherwise `n/d` in lowest
+/// terms with the sign on the numerator, of `value_kind` `quantity`.
+#[trace("FR-093-AC-33", "FR-092-AC-4", "TC-483")]
+#[test]
+fn quantity_literals_are_spelled_as_qspec_scalar_literal_values() {
+    let spelled = |numerator: i64, denominator: i64| {
+        let body = add(vec![MemberTerm::Leaf(LeafTerm::literal(
+            key(5),
+            LiteralValue::Quantity(
+                Rational::new(Integer::from(numerator), Integer::from(denominator))
+                    .expect("nonzero"),
+            ),
+        ))]);
+        let literal = preimage_json(&node(&body))["body"]["arguments"][0].clone();
+        assert_eq!(literal["value_kind"], json!("quantity"));
+        literal["value"].clone()
+    };
+    assert_eq!(spelled(3, 1), json!("3"));
+    assert_eq!(spelled(0, 5), json!("0"));
+    assert_eq!(spelled(-5, 1), json!("-5"));
+    assert_eq!(spelled(1, 1000), json!("1/1000"));
+    assert_eq!(spelled(7, -2), json!("-7/2"));
+    assert_eq!(spelled(2, 4), json!("1/2"));
+}
+
 /// The key of the application `input` under `recursion`.
 fn keyed_in_group(input: &NodeInput<'_>, recursion: RecursionPreimage) -> KeyedPreimage {
     let (preimage, _) =
