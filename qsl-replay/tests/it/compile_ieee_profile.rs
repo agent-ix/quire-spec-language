@@ -97,7 +97,7 @@ fn declared_floats_select_the_profile_even_without_an_ieee_application() {
         "record Reading { sample: Float64[nearest-even]; }",
         "tuple Reading(Float32[nearest-even]);",
         "union Reading { Empty, Some(Float64[nearest-even]) }",
-        "type Reading = Float64[nearest-even];",
+        "type Reading = Float64[nearest-even]; function anchor using v(): Boolean pure { true }",
         "record Reading { values: Sequence<Float64[nearest-even]>[0, 2]; }",
     ] {
         let wire = wire(&format!("{HEADER}{declaration}"));
@@ -187,7 +187,10 @@ fn float_comparisons_and_mixed_width_arithmetic_refuse_at_checking() {
             else {
                 panic!("comparison refusal has a source region");
             };
-            assert!(region.start() < region.end());
+            assert!(
+                source[region.start() as usize..region.end() as usize].contains(operator),
+                "comparison refusal covers its operator",
+            );
         }
     }
     refusal(
@@ -239,4 +242,71 @@ fn rational_comparison_evaluates_float_conversion_as_a_separate_operation() {
     let source = format!("{HEADER}function compare using v(a: Float64[nearest-even], b: Rational[-100, 100; 1, 16]): Boolean pure {{ convert<Rational[-100, 100; 1, 16]>(a) = b }}");
     let wire = wire(&source);
     assert_ieee_law(&wire, operation(&wire, "quire.op.ieee.to_rational"));
+}
+
+#[trace("TC-1091", "FR-397-AC-1", "FR-397-AC-3")]
+#[test]
+fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source_spine() {
+    use qsl_replay::spine::{self, Call, CallArgument, CallOutcome, CallValue, SpineLimits};
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_exact::{Cancel, IeeeValue, Integer, Rational, Value as KernelValue};
+
+    for (width, left, right) in [
+        (
+            "Float32",
+            IeeeValue::binary32(1.5_f32.to_bits()),
+            IeeeValue::binary32(0.5_f32.to_bits()),
+        ),
+        (
+            "Float64",
+            IeeeValue::binary64(1.5_f64.to_bits()),
+            IeeeValue::binary64(0.5_f64.to_bits()),
+        ),
+    ] {
+        for (operator, expected) in [("+", 2_i64), ("-", 1), ("*", 0), ("/", 3)] {
+            // Multiplication has the exact rational result 3/4; the other
+            // three results are integers, represented as rationals too.
+            let expected = if operator == "*" {
+                Rational::new(Integer::from(3), Integer::from(4)).unwrap()
+            } else {
+                Rational::new(Integer::from(expected), Integer::one()).unwrap()
+            };
+            let text = format!("{HEADER}function agrees using v(a: {width}[nearest-even], b: {width}[nearest-even], expected: Rational[-100, 100; 1, 16]): Boolean pure {{ convert<Rational[-100, 100; 1, 16]>(a {operator} b) = expected }}");
+            let call = Call {
+                function: "agrees".to_owned(),
+                arguments: vec![
+                    CallArgument {
+                        parameter: "a".to_owned(),
+                        value: KernelValue::Float(left),
+                    },
+                    CallArgument {
+                        parameter: "b".to_owned(),
+                        value: KernelValue::Float(right),
+                    },
+                    CallArgument {
+                        parameter: "expected".to_owned(),
+                        value: KernelValue::Rational(expected),
+                    },
+                ],
+                accounting: spine::default_accounting(1_000_000),
+                supplied: Default::default(),
+            };
+            let (_, outcome) = spine::run(
+                SourceIdentity::new("a", "ieee", "git", "1"),
+                "ieee.native",
+                text.as_bytes(),
+                &Default::default(),
+                &DependencyInput::default(),
+                SpineLimits::default(),
+                &call,
+                &ObjectEnvironment::default(),
+                &Cancel::new(),
+            )
+            .expect("the genuine float source runs");
+            assert!(
+                matches!(outcome, CallOutcome::Completed(CallValue::Boolean(true))),
+                "{width} {operator}: {outcome:?}"
+            );
+        }
+    }
 }
