@@ -100,3 +100,32 @@ The fixes are:
 - state the release-view frontier of a `seq_cst` fence (FND-002);
 - state the view a load's edges are decided from (FND-003);
 - restate PSC-7 (b) by relation (FND-004).
+
+## Dispositions
+
+Disposition pass 1, against QSL PR #1192 head `985acb35d010c8b1c20f0e24cf2b9ff17412c80d` and QSpec PR #331 head `7e7a8e09af7a696cc0df776047fb8c7ba16648ec`. Both heads contain `origin/main`. Litmus cells and the soundness claims were recomputed by script (scratchpad rv-std239-d1/litmus/: lt2.py, fuzz2.py, econ.py, eco3n.py), with `ra` run by RA-1 to RA-6 and PSC-1 to PSC-3 as now worded.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | PSC-3 now builds the access-to-fence edge, with FR-437 and FR-223 in step. LT-18 (the first reproduction) is a new vector, recomputed forbidden under sc, tso, RC11 and ra; the fuzz case is now excluded. After: `e → x` for each live SC access `e` of another thread that happens before `b`'s current view, when `x` is a fence (RC11's `[Esc] ; scb ; hb? ; [Fsc]`, whose `scb` step is `po`, or `hb\|loc` when `e` itself releases) |
+| FND-002 | fixed | RA-5, FR-437 fence row and FR-223 bullet record the fence in its release views. LT-14 now uses the relaxed flag and is recomputed forbidden. After: As it becomes an SC event, the fence enters the frontier (PSC-2) of `cur_b`, of `S` and of every `rel_b(ℓ)`, so a view that later joins any of them covers the fence. |
+| FND-003 | fixed | Same wording in FR-437 and FR-223. The all-seq_cst probe is recomputed excluded. After: The happens-before edges are decided from the frontier (PSC-2) of `b`'s current view at `x`, taken after `x`'s own joins: a `seq_cst` load's view includes the message it reads (RA-2), and a `seq_cst` fence's view includes the joins of its acquire part and of `S` (RA-5). |
+| FND-004 | fixed | FR-437 "Omitted clauses" (b) states it the same way. FR-223's summary bullet is FND-009. After: (b) The edges of `psc_base` with an SC fence at one or both ends (`[Fsc] ; hb? ; scb ; [Esc]`, `[Esc] ; scb ; hb? ; [Fsc]` and `[Fsc] ; hb? ; scb ; hb? ; [Fsc]`) whose `scb` step is an `mo` or `rb` step with a non-SC access at an end on a fence's side, such as the `rb` step from a `relaxed` load in the fence's thread to an SC write: `P` holds SC events only. The `scb` steps `po` and `hb\|loc` are b ... |
+| FND-005 | fixed | The state-level clause is dropped; the AC is the outcome only, which holds whatever the mo order of P. QSL FR-223-AC-6 keeps the clause with the mo condition. After: \| FR-437-AC-9 \| TC-391 LT-14 and LT-18 do not reach their weak outcomes under `ra`. \| |
+| FND-006 | fixed | FR-437 Frontier bullet matches. After: the latest live SC event of that thread that happens before the view or that the join of `S` (RA-5) reaches. |
+| FND-007 | fixed | - After: so the partial SC order is used: it admits every RC11 execution and, beyond them, only those PSC-7 names \| §15, PSC-1 to PSC-7; |
+| FND-008 | fixed | The PR #1192 body now records that item 3 lands with STD-246. After: STD-239 item 3 (what a removed SC read's own edges to later writes need) is answered by STD-246 (#1193, PSC-4 (a)), not by this PR. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | FR-223's SHALL NOT bullet summarises PSC-7 (b) as "the `mo` and `rb` edges between an SC fence and an SC access that pass through a non-SC access". It leaves out (b)'s fence-to-fence form, and it is not stated by relation as ADR-025 PSC-7 and FR-437 now are: a psc edge is not itself an `mo` or `rb` edge, and "pass through a non-SC access" also describes LT-14's fence-to-access path, which runs through the relaxed flag store and PSC-3 builds. Restate it as PSC-7 (b): the `psc_base` edges with a fence end whose `scb` step is an `mo` or `rb` step with a non-SC access at its fence-side end, or just cite PSC-7 (a) to (c). | spec/functional/FR-223-order-seq-cst-events-by-the-rc11-partial-sc-order.md:67-69 |
+| FND-010 | low | PSC-7 (b) lists the fence-to-fence form `[Fsc] ; hb? ; scb ; hb? ; [Fsc]` among the edges `P` does not build "because neither the frontier nor the rest of the component decides them". But every `seq_cst` fence joins `S` and enters `S`'s frontier (RA-5, PSC-2), so a later fence always covers an earlier live one and PSC-3 builds the fence-to-fence edge in execution order: `P` orders every two live SC fences. SB with fences (LT-02) is excluded that way under `ra`, although its RC11 edge is the fence-to-fence `rb` form (b) names. Recomputed: LT-02 forbidden under `ra` with the new rules. Say that the fence-to-fence form is subsumed by `S` rather than omitted, or drop it from (b). | spec/decisions/ADR-025-weak-memory-models-for-parallel.md:594 |
+
+## Dispositions (pass 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-009 | fixed | FR-223's SHALL NOT bullet now cites PSC-7 (a) and (b) and states (b) by relation: the `psc_base` edges with an SC fence at one end whose `scb` step is an `mo` or `rb` step with a non-SC access at its fence-side end. |
+| FND-010 | fixed | ADR-025 PSC-7 (b) and QSpec FR-437 "Omitted clauses" list only the two one-fence forms; the fence-to-fence form is stated as covered by `S` (every `seq_cst` fence joins `S` and enters its frontier, so PSC-3 orders every two live SC fences). |
