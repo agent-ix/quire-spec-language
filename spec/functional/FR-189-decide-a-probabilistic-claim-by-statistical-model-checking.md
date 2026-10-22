@@ -21,6 +21,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-188
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-280
+    type: references
 ---
 # FR-189: Decide a probabilistic claim by statistical model checking (EN-4)
 
@@ -228,8 +230,8 @@ the claim's form does not admit (FR-190, SPRT below).
   request, so repeating the request reproduces it.
 - The outcome SHALL be a function of the subject, the claim, the method,
   `min_cycles`, the seed, the sampler and the limits.
-- The EN-4 provider manifest SHALL advertise (`probabilistic-satisfaction`,
-  evidence `statistical`) and register through FR-075.
+- The EN-4 provider manifest SHALL be the one FR-280 states, and EN-4 SHALL
+  register through FR-075.
 
 ## Acceptance Criteria
 
@@ -258,7 +260,9 @@ the claim's form does not admit (FR-190, SPRT below).
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-186](FR-186-check-probabilistic-claim-forms-at-s3.md),
   [FR-187](FR-187-give-model-transitions-step-probabilities-and-rewards.md),
-  [FR-188](FR-188-draw-weighted-choices-with-the-qspec-sampler.md).
+  [FR-188](FR-188-draw-weighted-choices-with-the-qspec-sampler.md),
+  [FR-280](FR-280-serve-the-driver-s-lower-generate-and-prove-operations.md)
+  (EN-4's provider manifest).
 - FR-190 adds the regenerative method, FR-191 the limits and
   reproducibility, FR-192 settlement, FR-193 sampled witnesses.
 

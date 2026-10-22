@@ -31,5 +31,5 @@ Tag the tests `#[trace("TC-627", "FR-192-AC-n")]`.
 - Step 1: each row as FR-192's table states, with no truth and no basis; the `ConfidenceBeyondPrecision` refusal settles `unsupported`, `confidence-beyond-precision`; the meter stop settles `incomplete`, `limit-reached` with limit `EvaluationMeter`, the configured value and setting `meter`, and the candidate stop with limit `MaxCandidates`, the configured value and setting `max_candidates`; the internal unnamed stop settles `failed`, `runtime_invariant`/`established-invariant-broken`; the non-internal unnamed stop settles `failed` carrying the stop's own `ExpansionStop.cause` (QSL FR-120) as its one diagnostic.
 - Step 2: the values of FR-192-AC-2.
 - Step 3: the gate fails as on one violation, then passes; 0 proved.
-- Step 4: exactly (`probabilistic-satisfaction`, `statistical`); `EveryScheduler`, `MissingConfidence`, `ExactOnlyForm`, each `unsupported` with no sample drawn.
+- Step 4: the manifest equals the one FR-280-AC-4 fixes; `EveryScheduler`, `MissingConfidence`, `ExactOnlyForm`, each `unsupported` with no sample drawn.
 - Step 5: the verdict `quantile` `Value(2)` and `Censored`; absent for the no-estimate quantile claim; absent for the other three; `estimate` `9/20` for the `>= 3` claim.
