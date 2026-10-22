@@ -30,7 +30,7 @@ fn compile(source: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
 #[trace("TC-483", "FR-091-AC-44")]
 #[test]
 fn unit_record_and_unit_dimension_collisions_are_typed_before_emission() {
-    for other in ["record m { sample: Boolean }", "dimension m;"] {
+    for other in ["record m { sample: Boolean; }", "dimension m;"] {
         for reverse in [false, true] {
             for used in [false, true] {
                 let unit = "unit m : Length = rational(1, 1);";
@@ -81,7 +81,7 @@ fn distinct_and_case_distinct_names_compile_and_pass_strict_ir_admission() {
     for name in ["Reading", "M"] {
         for reverse in [false, true] {
             let unit = "dimension Length;\nunit m : Length = rational(1, 1);";
-            let record = format!("record {name} {{ sample: Boolean }}");
+            let record = format!("record {name} {{ sample: Boolean; }}");
             let declarations = if reverse {
                 format!("{record}\n{unit}")
             } else {
