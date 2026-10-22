@@ -33,3 +33,19 @@ Examined:
 The split is right. A separate emission FR sits beside FR-337, FR-124 keeps the S3 check, and the FR-382 bullet, FR-382-AC-6 and TC-1059 row 6 now state the emitted node with no compatibility shim and no status wording. FR-411 defers body, identity and refusals to FR-476 and repeats only what QSL writes and reads. AC-1, AC-2 and AC-4 are testable and can fail. AC-4's refusals are a valid subset of FR-476's. The ids FR-411 and TC-1142 are unique on main and across the 45 other open PRs. `QSPEC_DIR=<#375 head> make check-spec-validation` exits 0, with no warning on FR-411, TC-1142, FR-382 or TC-1059.
 
 The test at qsl-semantics/tests/it/terminal_declarations.rs:167-187 is tagged FR-382-AC-6 and still asserts the old `not-yet-implemented` refusal. Once this merges, the follow-up code ticket must replace it. This PR is spec-only, so that is not a finding here. **Mergeable after #375 merges and FND-001 to FND-003 are fixed.**
+
+## Dispositions
+
+Round 1, reviewed at 0ad0f348b592ce17dfbb9fafbdacdbc65d2db1ed (fix commit c9113357f).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The behaviour bullet and FR-411-AC-1 now say `parameters` is an aggregate holding one reference to the level-0 `self` node. |
+| FND-002 | fixed | The bullet now binds the subject through `package_id` (QSpec FR-361, FR-476), with no separate request member. AC-2 says no other request member differs. |
+| FND-003 | fixed | AC-3 writes the declaration out as `terminal Done using v on Counter when { 6 / (3 - self.value) = 0 };`. The new `any` half of AC-3 is FND-004. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | The new second half of FR-411-AC-3 cannot settle as stated. It replays the `when` unit's counterexample "in a request for the unit with `terminal Halt ... any;`" and expects `inconclusive`, `Verdicts`. But the envelope carries the `when` unit's `package_id`, and FR-128 refuses on a recompiled `package_id` mismatch (FR-098's stale rule) before any evaluation. A unit with `terminal any` also has no deadlock-freedom item (FR-124-AC-2, QSpec FR-366), so the envelope's item resolves to nothing. And under FR-128's own Deadlock rule, an absent predicate settles `reproduced-with-evaluated-witness`, not `inconclusive`. Replace the half with an outcome FR-128 actually produces, such as the stale `package_id` refusal, or drop it and keep the bullet as a design constraint. | spec/functional/FR-411-emit-a-checked-model-terminal-declaration-as-a-v2-terminal-node.md:96 |

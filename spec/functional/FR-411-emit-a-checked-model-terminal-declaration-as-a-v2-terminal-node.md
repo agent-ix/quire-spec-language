@@ -50,7 +50,7 @@ identity changes when the declaration does.
   FR-476 states, with `semantic_type` the package's `scalar_type`/`boolean`
   node, no `declaration` (QSpec FR-476: the node is content-addressed and
   nested under its model by its `model` reference), and one occurrence of
-  role `declaration` at the declaration's span.
+  role `claim` at the declaration's span.
 - For `When(clause)`: the clause's `expression` node, its body the predicate's
   Boolean term as FR-093 lowers it, and the `self` parameter node when the
   predicate reads `self`.
@@ -91,9 +91,9 @@ identity changes when the declaration does.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-411-AC-1 | Compiling FR-126-AC-9's `Counter` unit with `terminal Done using v on Counter when { self.value = 3 };` emits one `temporal`/`terminal` node with `mode` `when`, `parameters` an aggregate holding one reference to the `self` parameter node, `condition` a reference to the `expression` node of `self.value = 3`, no `declaration` and one `declaration` occurrence at the declaration's span; with `terminal Halt using v on Counter any;` it emits `mode` `any` with empty `parameters` and `condition`; without a declaration it emits no terminal node. The I2 reader returns `When`, `Any` and `None` respectively. No checked declaration is refused as not emitted. | Test (TC-1142) |
+| FR-411-AC-1 | Compiling FR-126-AC-9's `Counter` unit with `terminal Done using v on Counter when { self.value = 3 };` emits one `temporal`/`terminal` node with `mode` `when`, `parameters` an aggregate holding one reference to the `self` parameter node, `condition` a reference to the `expression` node of `self.value = 3`, no `declaration` and one `claim` occurrence at the declaration's span; with `terminal Halt using v on Counter any;` it emits `mode` `any` with empty `parameters` and `condition`; without a declaration it emits no terminal node. The I2 reader returns `When`, `Any` and `None` respectively. No checked declaration is refused as not emitted. | Test (TC-1142) |
 | FR-411-AC-2 | AC-1's `when` and `any` units have different `package_id`s; renaming `Done` to `Stop` keeps the node id and `package_id`; the deadlock-freedom item over `Counter` with the `when` declaration and with none have different `package_id`s and so different obligation identities, with no other request member differing. | Test (TC-1142) |
-| FR-411-AC-3 | FR-128-AC-6's unit, with its declaration written `terminal Done using v on Counter when { 6 / (3 - self.value) = 0 };`, compiles to a package holding its terminal node, and replay of its deadlock-freedom counterexample settles as FR-128-AC-6 states. The same counterexample in a request for the unit with `terminal Halt using v on Counter any;` in its place settles `inconclusive`, `Verdicts`: the recompiled package's terminal node marks `value = 3` intended, so replay finds neither a deadlock nor an undefined predicate there. | Test (TC-1142) |
+| FR-411-AC-3 | FR-128-AC-6's unit, with its declaration written `terminal Done using v on Counter when { 6 / (3 - self.value) = 0 };`, compiles to a package holding its terminal node, and replay of its deadlock-freedom counterexample settles as FR-128-AC-6 states. The same counterexample, whose envelope names the `when` unit's `package_id`, in a request whose byte provision holds the unit with `terminal Halt using v on Counter any;` in its place is refused `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, naming both `package_id`s) before any step is re-executed (FR-098, FR-128): the terminal node is part of the recompiled package's identity. | Test (TC-1142) |
 | FR-411-AC-4 | Fed to QSL's I2 reader, with `dependencies` set to the body's targets, the node key, projection entry and `package_id` recomputed after each edit, AC-1's `when` node with `mode` `some` refuses `invalid_package`/`invalid-value`, and with `condition` the empty aggregate refuses `invalid_semantic_graph`, each at FR-476's locus. | Test (TC-1142) |
 
 ## Dependencies
