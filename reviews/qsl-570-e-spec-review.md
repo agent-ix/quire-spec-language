@@ -70,3 +70,9 @@ Round 2.
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-004 | fixed | round-2 commit: the spec was wrong, the code and QSpec FR-290-AC-9/10 are right: FR-075 (inputs, comparison section, AC-7) now counts the manifest digest in equality; no TC repeated the old text |
+
+Round 2, checked by the reviewer at 312fd89ec. This row replaces the coder's claim above.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 312fd89ec: FR-075's inputs paragraph, its comparison section and FR-075-AC-7 now count the manifest digest in equality, and say a difference in the digest alone conflicts (QSpec FR-290-AC-9/10, TC-282). A grep of spec/ and docs/ (outside spec/reviews) for manifest-digest equality wording finds only FR-075 and TC-447, which already lists the digest. TC-448, TC-982, FR-057 and FR-288 have no opposite text. |

@@ -97,3 +97,9 @@ Round 2.
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-007 | fixed | round-2 commit: the quantity test now declares s as the root unit and ms = rational(1, 1000) * s; with the magnitude conversion mutated by 1/1000 it fails (left 1/1000, right 1); restored |
+
+Round 2, checked by the reviewer at 312fd89ec. This row replaces the coder's claim above.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | 312fd89ec: the test now declares `unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;`. It passes at 312fd89ec. With `magnitude`'s `Value::Quantity` arm mutated to a root-unit answer (`divided_by_power_of_ten(3)`), it fails: left `1/1000`, right `1`. Restored. |
