@@ -412,8 +412,10 @@ so neither bound is reached and each verdict is exact (MB-4).
 
 **Counterexample under `tso`.** The reported counterexample is the first
 violation in FR-181's canonical breadth-first order, where attempts sort before
-flushes, an attempt with no argument (`Sx`, `Sy`) sorts before one with an
-argument (`Lx`, `Ly`), and `Lx` sorts before `Ly`. It is at depth 4:
+flushes; an attempt with no argument (`Sx`, `Sy`) sorts before one with an
+argument (`Lx`, `Ly`); attempts with equal arguments sort by their node,
+`left` before `right`, so `Sx` sorts before `Sy`; and `Lx` sorts before `Ly`.
+It is at depth 4:
 
 | Position | Step into it | Memory `x`, `y` | `left` buffer | `right` buffer | `c1.r`, `c2.r` |
 | --- | --- | --- | --- | --- | --- |
