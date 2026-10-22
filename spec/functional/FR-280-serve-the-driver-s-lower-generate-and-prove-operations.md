@@ -55,7 +55,12 @@ FR-331 results: one terminal record per routed item.
 
 - QSL shall publish one FR-331 provider manifest for each `analyze` engine,
   listing the (kind, mode) pairs, domains, options and bounds the engine
-  accepts.
+  accepts. Each manifest is data of the engine's own module in `qsl-analyze`;
+  `qsl-route` holds the registry and FR-288's conversion and no engine's
+  manifest. An engine that settles `probabilistic-satisfaction` items
+  lists the evidence kinds it settles (FR-057, FR-075), and EN-4's manifest
+  lists (`probabilistic-satisfaction`, `bounded`) with the evidence kind
+  `statistical` and no other.
 - When the driver passes an FR-331 provider request routed to a QSL engine,
   the QSL provider entry shall run the routed items through `analyze` and
   return one FR-331 terminal record per routed item.
@@ -71,6 +76,7 @@ FR-331 results: one terminal record per routed item.
 | --- | --- | --- |
 | FR-280-AC-1 | Each QSL engine's provider manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` whose advertised (kind, mode) pairs equal the claim kinds the engine settles in TC-762. | Test (TC-761) |
 | FR-280-AC-2 | For each TC-762 item, an FR-331 provider request that routes that item to its QSL engine, passed to the provider entry with the `EmittedPackage` of the same source, returns a terminal record equal to the one `analyze` returns for that item. | Test (TC-761) |
+| FR-280-AC-3 | EN-4's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `BackendDescriptor::admit` accepts, advertising exactly (`probabilistic-satisfaction`, `bounded`) with the evidence-kind set `{statistical}`. A registry holding it and a descriptor advertising the same pair with `{exact}` gives a `statistical` probabilistic item the EN-4 `BackendId` alone, and an `exact` item the other alone. | Test (TC-761) |
 | FR-280-AC-3 | The `cargo tree` of every QSL crate lists no CG, RT or driver crate; an IR crate ADR-011 §6.1 sanctions (`quire-contract-model`) is allowed (FR-284's direction check). | Test (TC-767) |
 
 ## Dependencies
