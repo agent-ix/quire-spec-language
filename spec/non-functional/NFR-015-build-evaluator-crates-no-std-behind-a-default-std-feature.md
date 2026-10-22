@@ -218,7 +218,7 @@ ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
 | NFR-015-AC-6 | With default features, the `quire.checked-package/v2` bytes and `package_id` that `qsl-package` emits match the QSpec FR-322 conformance vectors (`cargo test -p qsl-package --lib checked_v2` against `QSPEC_DIR`), and the FR-091 S1-to-S4 round trip passes. | Test (TC-1111) |
 | NFR-015-AC-7 | With `std` disabled, no shipped source of a crate in the per-crate table names `serde_json`, `HashMap` or `HashSet`, and the `arch-lint canonical-encoder` check passes. | Inspection (TC-1111) |
 | NFR-015-AC-8 | `make build-no-std` runs AC-1's build for each closure-tier row and AC-4's host check for each crate-tier row, each with `-p`, plus `cargo clippy --no-default-features -D warnings` per row, in its own `no-std` target directory, and `build-no-std` is listed in the Makefile's `CI_CHECKS`; a shipped `std::` path added to a closure-tier crate outside `#[cfg(feature = "std")]` makes the target fail. | Test (TC-1110) |
-| NFR-015-AC-9 | With default features, after `emit_checked` records an emission, `bind_abstraction` with valid bindings leaves `emitted_package_id` `None`, and `bind_abstraction_at` with valid bindings leaves it equal to the emitted `package_id`. | Test (TC-1111) |
+| NFR-015-AC-9 | With default features, after `emit_checked` records an emission, `bind_abstraction` with valid bindings leaves `emitted_package_id` `None`. | Test (TC-1111) |
 
 ## Verification
 

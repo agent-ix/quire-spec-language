@@ -44,8 +44,7 @@ NFR-015-AC-4 to NFR-015-AC-7 and NFR-015-AC-9.
    `#[cfg(feature = "std")]` items excluded, for `serde_json`, `HashMap` and
    `HashSet`; run `make arch-lint-canonical-encoder`.
 7. With default features, emit a package with `emit_checked`, call
-   `bind_abstraction` with valid bindings and read `emitted_package_id`;
-   repeat on a fresh package with `bind_abstraction_at`.
+   `bind_abstraction` with valid bindings and read `emitted_package_id`.
 
 ## Expected Results
 
@@ -60,5 +59,4 @@ NFR-015-AC-4 to NFR-015-AC-7 and NFR-015-AC-9.
    `dependency_selections`.
 5. Both pass: the emitted bytes and `package_id` match the FR-322 vectors.
 6. No match; the canonical-encoder check passes.
-7. After `bind_abstraction` it is `None`; after `bind_abstraction_at` it
-   equals the emitted `package_id`.
+7. It is `None`.

@@ -60,3 +60,4 @@ cleanly with this PR.
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | deferred | The AD-001 half is fixed: #1224 is on main and the merged head no longer has the "no S1-S5 slice can start" paragraph. The `quire-checked` half waits on #1225, which is still open. Whichever of #1223 and #1225 merges second adds `quire-checked` to NFR-015's `qsl-package` row and resolves the AD-001 conflict. |
+| FND-002 | deferred | By design and recorded on the PR: #1227 (STD-298) adds `quire-semantic-value` to NFR-015's `qsl-foundation` row, AC-2 and TC-1110 expected result 3 when it merges after #1223. #1223 and #1227 still merge without conflict. |

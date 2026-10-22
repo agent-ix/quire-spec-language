@@ -81,6 +81,14 @@ Round 1 reviewed QSL #1223 at c6e3c941e, with main a89136bfa merged in.
 | FND-006 | medium | minor: the surface section says "`bind_abstraction` and `bind_abstraction_at` keep their behaviour; with `std` enabled they also clear the remembered emission". On main only `bind_abstraction` resets `emission`. `bind_abstraction_at` (`qsl-package/src/checked.rs:473-482`) sets the relation and leaves the remembered emission in place. As written, the sentence either requires a behaviour change for `bind_abstraction_at` with `std` on, which contradicts "keep their behaviour" and the Scope's "behaves as it does with no `std` feature declared", or it is wrong. Say that only `bind_abstraction` clears it. If clearing it in `bind_abstraction_at` is the intended fix for a stale `emitted_package_id`, state that as its own behaviour with an AC. | spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:164-165 |
 | FND-007 | low | minor: NFR-015 lines 130-133 and AD-001's Risks bullet say a `no_std` constructor of a dependency-bearing package "needs a `no_std` reader of the `quire.checked-package-id/v2` identity preimage". To recompute a dependency's `package_id` from an in-memory `CheckedPackage`, it builds and encodes the preimage. It reads nothing. What it lacks is IR's preimage types without `std`, encoded through `quire-canonical`. A reader is only needed for a dependency that arrives as bytes. Name both, or name the preimage types. | spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:130-133, spec/assurance/AD-001-shared-evaluation-core-interface.md:257-259 |
 
+## New findings (disposition pass 2)
+
+Round 2 reviewed QSL #1223 at 70b6296de, delta `c6e3c941e..70b6296de`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | minor: NFR-015-AC-9's second clause makes it a requirement that `bind_abstraction_at` leaves `emitted_package_id` "equal to the emitted `package_id`" after it changes the abstraction relation. The emitter writes one `declaration` occurrence of the relation node at each site (`emit.rs:73`, `:1173`, QSpec FR-451), so after `bind_abstraction_at` that remembered id no longer identifies the package's content. On main it is a stale value, and the AC pins it. NFR-015 is a build contract, so drop the `bind_abstraction_at` half of AC-9 and TC-1111 step 7, and keep the prose stating today's behaviour. Then open a Linear ticket on whether `bind_abstraction_at` should clear the emission the way `bind_abstraction` does. | spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:221, spec/test-cases/TC-1111-qsl-package-gates-the-checked-package-wire-behind-std.md:46-48,63-64 |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -90,3 +98,5 @@ Round 1 reviewed QSL #1223 at c6e3c941e, with main a89136bfa merged in.
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
 | FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
