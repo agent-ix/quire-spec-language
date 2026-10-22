@@ -42,3 +42,22 @@ Ticket: STD-250. PR: quire-spec-language#1188, head 7eea6669d. The check covers 
 ## Verdict
 
 Ids, relationships and the TC trace are sound. Two statements that the new text overrides still say that replay recompiles: ADR-024 SV-7/SV-8 (through ADR-018 CX-3) and FR-128's Description. They need an amendment note (FND-001). AC-5 should say whether it covers the `Health` conversion of AC-3 (FND-002).
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@153ba1fee` (fix commit `2f4a4c525`, then a merge of origin/main). I checked each outcome against the spec at that head. A grep of spec/ (reviews/ excluded) for `replay_sampled_witness`, sampled witnesses and recompiling finds no other statement that contradicts the new text. Open PR #1186 edits other rows of ADR-024 (RX-1, SV-2) and adds FR-185-AC-9; neither overlaps this PR's text or ids.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 2f4a4c525 | ADR-024 SV-7 now reads "It replays as one by ADR-018 CX-3's steps applied to the checked subject, with no recompile (SV-8)", and SV-8 "A sampled witness replays by ADR-018 CX-3's steps, applied to the checked subject the sampler ran over, since S4 does not emit a package that holds a random parameter, a workload, a reward or a probabilistic claim (FR-185) and there is nothing to recompile". ADR-018 CX-3: "It recompiles the package (FR-098), except for a sampled-witness counterexample, which takes the checked subject of a package that S4 does not emit (ADR-024 SV-7, SV-8; FR-193)". FR-128 Description: "FR-193's `replay_sampled_witness` applies these same re-execution, fairness and evaluation steps to that subject, recompiles nothing and compares no `package_id`." The CX-3 and SV-8 wording has gaps of its own (new findings FND-003, FND-004). |
+| FND-002 | fixed 2f4a4c525 | FR-193-AC-5 now adds "and so does the converted counterexample of the `Health` fault claim of AC-3", and TC-628 step 4 reads "Refuse `Service` and `Health` at S4, then run steps 2 and 3's `Service` replays and step 3's `Health` replay over their checked subjects", with expected step 4 "the `refuted` outcome for the `Health` fault claim". AC-5's wording about `Health`'s refusal is a new finding (FND-005). |
+
+## New findings (disposition pass 1)
+
+These were found at `153ba1fee`. They are new, not dispositions of the rows above.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | ADR-018 CX-3 still opens "E9 replay of a model counterexample goes through the layer-6 facade entry `qsl_replay::replay_model_trace`", and the new exception covers only the recompile. Read alone, CX-3 says `replay_model_trace` serves a sampled-witness counterexample too, while FR-128 and FR-193 say `replay_sampled_witness` does. The amended sentence also runs on ("..., which takes the checked subject of a package that S4 does not emit (...), and re-admits ... and re-executes"), so the re-admission reads as part of the exception. The exception should name the entry and be its own sentence. | spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:342 |
+| FND-004 | low | In ADR-024 SV-8 the parenthetical "(re-execution through `ModelSystem`, post-state digests, SM-1 evaluation)" now follows "and there is nothing to recompile", so it reads as a description of the recompile and not of CX-3's steps, which it lists. It belongs after "ADR-018 CX-3's steps". | spec/decisions/ADR-024-statistical-and-probabilistic-properties.md:179 |
+| FND-005 | low | FR-193-AC-5 asserts only that "`Service` is refused at S4 (FR-185-AC-7)", then says the `Health` counterexample settles `refuted` "although `emit_checked` refuses the same package". `Health` is a different package, so "the same package" does not name its refusal, and AC-5 does not require `Health` to be refused, although TC-628 step 4 refuses both. AC-5 should state that `Health` is refused at S4 too. | spec/functional/FR-193-keep-and-replay-sampled-witnesses.md:149; spec/test-cases/TC-628-sampled-witnesses-replay.md:24 |

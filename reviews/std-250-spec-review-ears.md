@@ -37,3 +37,12 @@ Ticket: STD-250. PR: quire-spec-language#1188, head 7eea6669d. `make check-spec-
 ## Verdict
 
 The replay bullet and the FR-185 sentence are well-formed ubiquitous statements whose rationale is kept in a subordinate clause. One SHALL has no system subject (FND-001). AC-5 ends in an assertion that cannot be observed (FND-002). Both are wording fixes.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@153ba1fee` (fix commit `2f4a4c525`, then a merge of origin/main). `make check-spec-validation` exits 0 and reports no grammar warning on FR-193, FR-128, FR-185, TC-628, ADR-018 or ADR-024.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 2f4a4c525 | The statement now has the entry as its subject: "`replay_sampled_witness` SHALL replay that converted counterexample by applying FR-128's re-execution, fairness and evaluation steps to the checked subject the sampler ran over, with no recompile and no `package_id` comparison, and SHALL settle the TP-2 claim `refuted` when they agree." |
+| FND-002 | fixed 2f4a4c525 | FR-193-AC-5 now ends with observable results: "... settles `refuted` over it, and so does the converted counterexample of the `Health` fault claim of AC-3, although `emit_checked` refuses the same package; `replay_sampled_witness` takes only the checked subject, the provenance and the witness." TC-628 expected step 4 reads "... although `emit_checked` refuses the package; the replay call takes only the checked subject, the provenance and the witness." |

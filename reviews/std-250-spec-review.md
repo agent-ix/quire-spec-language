@@ -53,3 +53,22 @@ FR-280 consequence: FR-193's ACs run EN-4 through FR-189 `check_statistical` ove
 ## Verdict
 
 The PR's text follows the ticket's second reading, matches the implemented witness replay, and agrees with QSpec FR-410 and FR-364. The lead default leaves the conversion replay of FR-193-AC-3 and AC-5 without a specified entry or identity rules (FND-001). The PR body lists that replay as remaining code work, but the spec should name the entry before it is built. FND-002 and FND-003 are wording fixes. The FR-280 `prove` consequence does not block this PR.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@153ba1fee` (fix commit `2f4a4c525`, then a merge of origin/main). I checked each outcome against the spec at that head. origin/main has since gained two commits (#1180, #1177) that touch none of this PR's files; `git merge-tree` merges cleanly.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 2f4a4c525 | FR-193 now names the entry and the identity sources: "`replay_sampled_witness` SHALL replay that converted counterexample by applying FR-128's re-execution, fairness and evaluation steps to the checked subject the sampler ran over, with no recompile and no `package_id` comparison, and SHALL settle the TP-2 claim `refuted` when they agree. ... the clause identity is the derived claim's identity, that is the probabilistic claim's identity with the bound direction of this section; the fairness set is the one the checked subject declares; the `interval` is the claim event's interval. The counterexample carries the same three values, and the replay refuses `stale_dependency`/`content-mismatch` when they differ." FR-128's Description records the same exception. The entry's signature does not yet carry this replay (new finding FND-004). |
+| FND-002 | still-open: the parameter is now described with a member it does not have | `request: &ReplayRequest` is gone, but the provenance comment now reads "FR-191: seed, sampler, provision, and per test the initial state and binding". FR-191 defines `StatisticalProvenance{seed, sampler, tests}` (FR-191:56, 90-92) and the code's struct has the same three fields (qsl-replay/src/statistical.rs:371-378), so it carries no provision. The provision is the `ModelSubject`'s ("snapshot provision", FR-125:60). The comment should drop "provision", and the Replay bullet's "from the provision" should say it is the subject's. |
+| FND-003 | fixed 2f4a4c525 | FR-193 Description: "S4 refuses to emit a package that declares random parameters, workloads, rewards or probabilistic claims (FR-185), but its checked package remains, so the replay reads that checked package and has no emitted package to recompile." The Replay bullet says the same ("while its checked package remains"). |
+
+## New findings (disposition pass 1)
+
+These were found at `153ba1fee`. They are new, not dispositions of the rows above.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The new bullet says `replay_sampled_witness` "SHALL replay that converted counterexample" and "SHALL settle the TP-2 claim `refuted`", but the entry's signature takes only `subject`, `provenance` and `witness: &SampledWitness`, and Outputs lists only `ReplayOutcome::Reproduced`, `ReplayOutcome::Inconclusive(ReplayParity)` and `ReplayRefusal`. Nothing says whether one call replays both the witness and its converted counterexample, how a caller asks for the TP-2 replay, or how the `refuted` settlement (FR-128's FR-072 replay result, `reproduced-with-evaluated-witness`) is returned. A coder building FR-193-AC-3 and AC-5 has to choose. The Inputs and Outputs should state the TP-2 replay's input and result. | spec/functional/FR-193-keep-and-replay-sampled-witnesses.md:59-70,128-139 |
+| FND-005 | low | FR-193's relationships no longer match its text. The new bullet cites "the checked probabilistic claim (FR-186)", but FR-193 has no `depends_on` edge to FR-186. FR-193 keeps `depends_on` FR-098 and the FR-098 link under Dependencies, but no statement uses FR-098 any more now that the `ReplayRequest` parameter is gone. | spec/functional/FR-193-keep-and-replay-sampled-witnesses.md:12,134,154 |
