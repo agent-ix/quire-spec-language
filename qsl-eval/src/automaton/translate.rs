@@ -446,6 +446,33 @@ pub fn translate_negation(
     )
 }
 
+/// Translate a hyper clause's `body` to the generalized Büchi automaton of the
+/// body itself, whatever the body's fragment (ADR-023 SE-3): an infinite word
+/// has an accepting run in it exactly when it satisfies the body, so EN-1
+/// searches an HP-5 claim's product for a fair accepting cycle. The kind is
+/// [`AutomatonKind::Liveness`], as [`translate_negation`]'s is: the
+/// representation with acceptance sets. The body is read from the origin of
+/// the behaviour, which is a lasso.
+///
+/// # Errors
+///
+/// As [`translate`].
+pub fn translate_itself(
+    body: &CheckedFormula,
+    profile: TemporalProfile,
+    max_states: u64,
+) -> Result<PropertyAutomaton, AutomatonError> {
+    translate_formula(
+        body,
+        profile,
+        Activation::Origin,
+        Selection::Itself,
+        Counting::Every,
+        max_states,
+        None,
+    )
+}
+
 /// Translate a hyper clause's safety `body` to the automaton of the body
 /// itself (ADR-023 HC-2): for a body in the safety fragment an infinite word
 /// has a run in it exactly when it satisfies the body, so a witness set can
@@ -479,6 +506,8 @@ enum Selection {
     Clause,
     /// The automaton of the negation, whatever the fragment.
     Negation,
+    /// The automaton of the formula itself, whatever the fragment.
+    Itself,
 }
 
 fn translate_formula(
@@ -539,6 +568,8 @@ fn translate_formula(
     };
     let (kind, target) = if matches!(selection, Selection::Negation) {
         (AutomatonKind::Liveness, negation)
+    } else if matches!(selection, Selection::Itself) {
+        (AutomatonKind::Liveness, property)
     } else if bounded {
         (AutomatonKind::Bounded, property)
     } else if is_safety(&mut ir, property)? {
