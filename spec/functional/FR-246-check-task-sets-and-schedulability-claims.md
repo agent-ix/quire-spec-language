@@ -68,7 +68,8 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
   one unit per task set (QSpec FR-142); a value of another dimension SHALL
   refuse `ill_typed`/`type-mismatch` at its span.
 - The checker SHALL refuse, each with `invalid_timed_model`/
-  `invalid-task-set` at the span, naming the task: a task set that declares
+  `invalid-task-set` at the span, naming the task (the task set when it
+  declares none): a task set that declares
   no task; a period or minimum inter-arrival time that is not positive; a
   deadline that is not positive; a WCET that is not positive; a jitter or
   blocking term that is negative; a `HI` task whose `C(LO)` exceeds `C(HI)`;
@@ -102,7 +103,7 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-246-AC-1 | ADR-026 §12's `Ctl` (periodic, `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms, priorities by period) checks; `schedulable Ctl under fixed-priority` and `under edf` route to EN-7 under `schedulability`. The `Ctl` with the third WCET 6 gives a different obligation identity. | Test (TC-701) |
-| FR-246-AC-2 | Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task, and both tasks for the clash: a task set with no task; a period of 0 ms; a deadline of 0 ms; a WCET of 0 ms; a jitter of -1 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; a `LO` task with dual budgets; a task with no priority under `fixed-priority`; two tasks with priority 1 under `fixed-priority`; a task with blocking 1 ms under `edf`; a task with deadline above its period under `amc`. Two tasks named `a` refuse `conflicting_declaration`/`duplicate-declaration`; `response Ctl.zz <= 5 ms` refuses `missing_declaration`/`missing-name`; a deadline of `3 m` refuses `ill_typed`/`type-mismatch`. The same priority clash and a task with no priority under `edf` check. | Test (TC-701) |
+| FR-246-AC-2 | Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task (the task set for the empty one), and both tasks for a clash: a task set with no task; a period of 0 ms; a deadline of 0 ms; a WCET of 0 ms; a jitter of -1 ms; a blocking term of -1 ms; a sporadic task with minimum inter-arrival time 0 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; a `LO` task with dual budgets; a task with no priority under `fixed-priority`; two tasks with priority 1 under `fixed-priority`; a task with blocking 1 ms under `edf`; a task with jitter 1 ms under `edf`; a task with no priority and two tasks with priority 1 under `amc`; two tasks with priority 1 under `response Ctl.c <= 12 ms`; a task with deadline above its period under `amc`. Two tasks named `a` refuse `conflicting_declaration`/`duplicate-declaration`; `response Ctl.zz <= 5 ms` refuses `missing_declaration`/`missing-name`; a deadline of `3 m` refuses `ill_typed`/`type-mismatch`. The same priority clash and a task with no priority under `edf` check. | Test (TC-701) |
 
 ## Dependencies
 

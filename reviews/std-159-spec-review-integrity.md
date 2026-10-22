@@ -41,3 +41,18 @@ Gates (spec-only, per brief): `make check-spec-validation` exit 0 with no warnin
 ## Verdict
 
 Mergeable after the medium is fixed. Ids are unchanged and unique: no new ids are added, and AC-1 and AC-2 keep their numbers. The statement and AC-2 now agree on the code of every vector, and the old AC-2 ("Refusals at the span" with no codes) is now specific. The wording describes behaviour only, with no changelog, status or review language. The duplicate, response and dimension bullets are unchanged and consistent with AC-2 and the code.
+
+## Dispositions
+
+Disposition pass 1, against agent-ix/quire-spec-language@692abe7b425d15a1a7a696d2a6aa2d343769a2e0 (fix commit 692abe7b4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-246 now states all four conditions under `invalid_timed_model`/`invalid-task-set`, so every `TaskSetRefusal` variant (task_set.rs:148-229) has a specified code. After: "... a task set that declares no task; ... a jitter or blocking term that is negative; ..." and "When an `edf` claim is over a task with a jitter or blocking term other than zero, or an `amc` claim is over a task whose deadline exceeds its period, the checker SHALL refuse `invalid_timed_model`/`invalid-task-set`, naming the task, because the analysis does not read the term or does not cover that deadline." |
+| FND-002 | fixed | AC-2 and TC-701 step 2 now require both names for the clash. AC-2 after: "Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task, and both tasks for the clash: ..." TC-701 after: "each refuses at its span with its stated code, naming the task (both tasks for the clash)". |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The refusal bullet and FR-246-AC-2 both say each listed condition refuses "naming the task", and both lists include a task set that declares no task. An empty set has no task to name, and `TaskSetRefusal::Empty` carries no task. A test cannot satisfy the AC as written for that vector. Say that the empty-set refusal names the task set, for example "naming the task (the task set when it declares none)". | spec/functional/FR-246-check-task-sets-and-schedulability-claims.md:70-72; spec/functional/FR-246-check-task-sets-and-schedulability-claims.md:105; spec/test-cases/TC-701-task-sets-and-schedulability-claims-check.md:29; qsl-replay/src/certificate/closed_form/task_set.rs:149-151 |

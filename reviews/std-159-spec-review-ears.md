@@ -40,3 +40,11 @@ Gates (spec-only, per brief): `make check-spec-validation` exit 0 with no warnin
 ## Verdict
 
 Mergeable; one low. The main refusal bullet (lines 70-74) is a ubiquitous EARS statement with an explicit system subject, one SHALL, and an enumerated, testable list of conditions. `make check-spec-validation` reports no EARS or AC warning on FR-246 or TC-701.
+
+## Dispositions
+
+Disposition pass 1, against agent-ix/quire-spec-language@692abe7b425d15a1a7a696d2a6aa2d343769a2e0 (fix commit 692abe7b4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The priority bullet now uses the event pattern with the checker as subject, and so does the new claim-dependent bullet. After (FR-246:82-86): "When a `fixed-priority`, `amc` or `response` claim is over a task set where two tasks share a priority, the checker SHALL refuse `invalid_timed_model`/`invalid-task-set`, naming both tasks; when a task has no priority, the checker SHALL refuse the same way, naming that task. For an `edf` claim the checker SHALL ignore priorities (QSpec FR-419)." `make check-spec-validation` reports no EARS warning on FR-246. |
