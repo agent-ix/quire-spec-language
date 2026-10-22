@@ -693,6 +693,17 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .push(format!("not emitted: {reason}"));
     }
     let all = CheckedNodeKind::all();
+    // IR does not export `ExtensionForm`, so its kinds cannot be named in
+    // `NOT_EMITTED_BY_QSL`; QSL writes no extension node until QSL-978.
+    for kind in all
+        .iter()
+        .filter(|kind| matches!(kind, CheckedNodeKind::Extension(_)))
+    {
+        classified
+            .entry(*kind)
+            .or_default()
+            .push("not emitted: QSL writes no extension node yet (QSL-978)".to_owned());
+    }
     let unclassified: Vec<_> = all
         .iter()
         .filter(|kind| !classified.contains_key(kind))
