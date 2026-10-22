@@ -92,8 +92,8 @@ offers.
   - partial-order reduction: `true` for TP-1, for TP-3 and TP-4 with no
     interval operator under any fairness set, weak or strong, `whole` or
     `each`, and for the deadlock-freedom item; `false` for TP-2, for any
-    formula with an interval operator, for both halves of a refinement
-    item, and for every form or item over a timed subject (FR-430);
+    formula with an interval operator, and for both halves of a refinement
+    item;
   - state constraint: `true` for every form.
 - **Order.** After FR-126's root classification, the pre-check SHALL, in
   this order: (a) look up each selected reduction, symmetry, then

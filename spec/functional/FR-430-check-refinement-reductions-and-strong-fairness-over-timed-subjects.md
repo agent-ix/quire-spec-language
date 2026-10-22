@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-142
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-144
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-151
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-152
@@ -55,7 +57,7 @@ timed model treats an operation enabled only between positions as enabled.
 
 - A `CheckedRefinement` (FR-135) whose concrete model is timed (`time
   dense`, FR-231) and whose abstract model is untimed.
-- A `ModelCheckRequest`'s `Reductions` (FR-159) over a timed subject.
+- A `ModelCheckRequest`'s `Reductions` (FR-159) over a `time dense` subject.
 - A checked clause over a timed subject whose fairness set holds a
   `strong` constraint (FR-123, ADR-019).
 
@@ -63,9 +65,8 @@ timed model treats an operation enabled only between positions as enabled.
 
 - For a timed refinement: FR-142's `RefinementOutcome`, its counterexample
   a finite timed prefix with exact rational delays (FR-241).
-- For reductions: the admitted reductions, or
-  `ReductionNotPreserving{PartialOrder, form}`, or V-8
-  `unsupported-requested-capability`, as FR-159 settles them.
+- For reductions: the admitted symmetry, or V-8
+  `unsupported-requested-capability` at negotiation (FR-159 Capability).
 - For strong fairness: FR-240's liveness outcome.
 
 ## Behavior
@@ -83,6 +84,12 @@ timed model treats an operation enabled only between positions as enabled.
 - A delay of the concrete model SHALL map to no abstract step: `check_step`
   (FR-141) SHALL be called only for discrete steps, and the abstract state
   SHALL be unchanged across a delay.
+- Negotiation SHALL route the refinement's TP-5 record (FR-144) whose
+  concrete subject declares `time dense` to EN-6's provider, and EN-6's
+  provider manifest SHALL advertise (`temporal-satisfaction`, TP-5) for a
+  `time dense` concrete subject. A refinement record over an untimed or
+  `time tick` concrete subject keeps FR-144's route to the explicit-state
+  engine.
 - The safety half SHALL be decided by EN-6 on the symbolic product whose
   states are (discrete product state of FR-142, zone), with successors by
   FR-239's symbolic successor relation and `check_step` run on each
@@ -95,7 +102,11 @@ timed model treats an operation enabled only between positions as enabled.
   the product SHALL refute only when its loop has positive total delay
   (ADR-026 EZ-6).
 
-### Reductions over a timed subject
+### Reductions over a dense-time subject
+
+The rules of this section apply to a subject that declares `time dense`
+(EN-6's subjects); a `time tick` subject is an untimed subject read through
+digital time (ADR-026 TS-6) and keeps FR-159 unchanged.
 
 - A symmetry permutation SHALL permute each object of a declared class
   together with its clock fields: the zone's clock indices of object `k`
@@ -103,16 +114,17 @@ timed model treats an operation enabled only between positions as enabled.
 - EN-6 SHALL canonicalise a symbolic state by the FR-152 permutation of
   its discrete state, ties between objects with equal discrete state broken
   by the least permutation in key order, and apply the same permutation to
-  the zone. Coverage (FR-239) SHALL be tested on the canonicalised state.
-- FR-159's preservation table SHALL read `false` for partial-order
-  reduction and every form or item over a timed subject, so a request that
-  selects partial-order reduction over a timed subject settles
-  `ReductionNotPreserving{PartialOrder, form}` at pre-check step (a), with
-  no state expanded.
+  the zone. Coverage (FR-239) SHALL be tested on the canonicalised state. A
+  state and its image under a permutation canonicalise to equal states when
+  the discrete permutation is unique (no two objects of a class have equal
+  discrete state); otherwise they may stay distinct, which is sound and
+  only reduces less.
 - EN-6's provider manifest SHALL advertise `symmetry` and no other
-  reduction, so a request over a timed subject that selects a state
-  constraint settles V-8 `unsupported-requested-capability` naming the
-  constraint at FR-159 step (c).
+  reduction. So, by FR-159's Capability rule, negotiation SHALL settle an
+  item over a dense-time subject that selects partial-order reduction or a
+  state constraint V-8 `unsupported-requested-capability`, naming the first
+  such reduction in the order partial-order, constraint, with no candidate
+  run and no state expanded.
 - The symmetry declarations SHALL enter the obligation identity as FR-159
   states for an untimed subject.
 
@@ -133,10 +145,10 @@ timed model treats an operation enabled only between positions as enabled.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-430-AC-1 | An untimed abstract model `Req` (object `r` with `sent: Bool`; operation `send`, postcondition `self.sent = true`) refined by a timed model `TReq` (object `r` with `sent: Bool` and clock `x`; operation `send` with guard `x >= 1`, postcondition `self.sent = true`; step map `send -> send`; mapping `sent -> sent`) returns `Holds` for the safety half, with no `check_step` call for a delay. The variant whose mapping is `sent -> (x >= 1)` refuses `unsupported_construct`/`expression-form` at the read of `x`; a refinement whose abstract model is `TReq` refuses `unsupported_construct`/`declaration-form` at the abstract model reference. | Test (TC-1170) |
-| FR-430-AC-2 | `TReq` with a second operation `undo` (guard `x >= 2`, postcondition `self.sent = false`) and step map `undo -> _` returns `Violated` for the safety half with a counterexample of `send` after delay 1 and `undo` after delay 1, `RefinementFailure` at position 2, replaying through FR-241. With the time invariant `x <= 1` the `undo` edge has no admitted pre-state point and the half returns `Holds`. | Test (TC-1170) |
-| FR-430-AC-3 | A timed model with population `Timer` over universe `{t1, t2}` (each with `armed: Bool` and clock `x`; `arm` with precondition `not self.armed`, guard `x >= 1`, reset `x`; `disarm` with precondition `self.armed`, guard `x >= 1`, reset `x`): with symmetry `[[t1, t2]]`, the deadlock-freedom item returns `Holds` as with no reduction and stores fewer symbolic states, and `always holds(not (t1.armed and t2.armed))` returns `Violated` as with no reduction, its counterexample replaying; a symbolic state and its image under swapping `t1` and `t2` (discrete fields and clocks) canonicalise to equal states. The deadlock-freedom request selecting partial-order reduction settles `ReductionNotPreserving{PartialOrder, deadlock-freedom}` with no state expanded; selecting a state constraint settles V-8 `unsupported-requested-capability` naming the constraint. | Test (TC-1170) |
-| FR-430-AC-4 | A `Blink` model (`time dense`; object `b` with `fired: Bool` and clock `x`; `tick` with guard `x >= 1` and reset `x`; `fire` with guard `x > 0 and x < 1` and postcondition `self.fired = true`; initial `fired = false`) and `eventually holds(b.fired)` under infinite-trace: under `fair { weak Blink::fire }` it returns `Violated` with a lasso of `tick` steps of positive loop delay, because `fire` is never continuously enabled; under `fair { strong Blink::fire }` it returns `Holds` with a certificate, because `fire` is enabled at instants inside every delay of that lasso, though at no position of it. | Test (TC-1170) |
+| FR-430-AC-1 | An untimed abstract model `Req` (object `r` with `sent: Bool`, initial `sent = false`; operation `send`, postcondition `self.sent = true`) refined by a timed model `TReq` (`time dense`; object `r` with `sent: Bool` and clock `x`, initial `sent = false` and `x = 0`; operation `send` with guard `x >= 1`, postcondition `self.sent = true`; step map `send -> send`; mapping `sent -> sent`) returns `Holds` for the safety half, with no `check_step` call for a delay, and the request routes to EN-6. The variant whose mapping is `sent -> (x >= 1)` refuses `unsupported_construct`/`expression-form` at the read of `x`. A refinement whose abstract model is `TReq` and whose concrete model is a copy `TReq2` of `TReq` refuses `unsupported_construct`/`declaration-form` at the abstract model reference. | Test (TC-1170) |
+| FR-430-AC-2 | `TReq` extended with `trap: Bool` (initial `false`), `send` resetting `x`, an operation `enter` (precondition `self.sent`, guard `x >= 1`, reset `x`, postcondition `self.trap = true`) and an operation `undo` (precondition `self.trap and self.sent`, postcondition `self.sent = false`), with step map `send -> send`, `enter -> stutter`, `undo -> stutter`: the safety half returns `Violated` with the counterexample `send` after delay 1, `enter` after delay 1, `undo` after delay 0, `RefinementFailure` at position 3, replaying through FR-241. With the time invariant `when self.trap { x <= 0 }`, the only pre-state points of `undo` (trap set, `x = 0`) reach no time-divergent continuation, so the failing edge does not refute (ADR-026 TV-1) and the half returns `Holds`, while the time-lock-freedom item of that model is refuted. | Test (TC-1170) |
+| FR-430-AC-3 | A `time dense` model with population `Timer` over universe `{t1, t2}` (each with `armed: Bool` and clock `x`; `arm` with precondition `not self.armed`, guard `x >= 1`, reset `x`; `disarm` with precondition `self.armed`, guard `x >= 1`, reset `x`): with symmetry `[[t1, t2]]`, the deadlock-freedom item returns `Holds` as with no reduction and stores fewer symbolic states, and `always holds(not (t1.armed and t2.armed))` returns `Violated` as with no reduction, its counterexample replaying. The symbolic state with `t1` armed, `t2` unarmed and zone `Z`, and its image with `t1` unarmed, `t2` armed and `Z` with the clocks of `t1` and `t2` swapped, canonicalise to equal states. The deadlock-freedom item selecting partial-order reduction, and the same item selecting a state constraint, each settle V-8 `unsupported-requested-capability` at negotiation, naming the reduction, with no state expanded. | Test (TC-1170) |
+| FR-430-AC-4 | A `Blink` model (`time dense`; object `b` with `fired: Bool` and clock `x`; `tick` with guard `x >= 1` and reset `x`; `fire` with guard `x > 0 and x < 1` and postcondition `self.fired = true`; time invariant `when true { x <= 1 }`; initial `fired = false`, `x = 0`), in which `tick` fires exactly at `x = 1` and every delay between ticks is 1, and `eventually holds(b.fired)` under infinite-trace: under `fair { weak Blink::fire }` it returns `Violated` with a lasso of `tick` steps of loop delay 1, because `fire` is never continuously enabled; under `fair { strong Blink::fire }` it returns `Holds` with a certificate, because `fire` is enabled at instants inside every delay of that lasso, though at no position of it. | Test (TC-1170) |
 
 ## Dependencies
 

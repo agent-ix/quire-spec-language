@@ -80,7 +80,8 @@ beside it as a separate item.
   TP-5 form. No other capability kind SHALL be written for it.
 - Negotiation SHALL route the record by its kind and form to the
   explicit-state engine's provider (FR-075), whose manifest advertises
-  `temporal-satisfaction`.
+  `temporal-satisfaction`; a record whose concrete subject declares
+  `time dense` routes to EN-6's provider instead (FR-430).
 - The item's obligation identity SHALL bind the refinement node, the
   concrete subject and the abstract subject's initial snapshots (ADR-013
   O-09), so its verdict holds for exactly that concrete subject against
