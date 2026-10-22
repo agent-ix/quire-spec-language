@@ -180,7 +180,13 @@ may repair such a disagreement by inventing another evaluation rule.
   limit of the monitor.
 - **Overflow.** An event that would exceed a buffer SHALL never be dropped:
   the obligations it affects SHALL settle `Incomplete(LimitReached{limit, value, setting})`
-  naming the event-rate limit and its value.
+  with `limit` the monitor limit kind `EventBuffer`, written `event_buffer`,
+  `value` the buffer capacity (an unsigned count) the rate gave, and `setting`
+  the monitor setting `monitor.max_event_rate`, the monitor target member that
+  raises it (FR-255's setting table does not list it, as it is an exact
+  fraction). `EventBuffer` and `monitor.max_event_rate` extend FR-127's
+  `limit` and `setting` fields for a monitor run, which has no model-check
+  request.
 - **Counter width.** If `max_reading_gap` is at least `2^width_bits`, then
   the plan SHALL refuse with `MonitorPlanRefusal::GapExceedsWidth{
   max_reading_gap, width_bits}`, since wraparound could not be decided.
@@ -197,7 +203,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-251-AC-1 | For `always (holds(req) implies eventually[0 ms, 3 ms] holds(ack))` on a 20-bit 1 MHz counter with uncertainty 0: `req` at tick 0 and `ack` at tick 2998 decides true; `ack` first at tick 3001 decides false; `ack` first at tick 3000 stays indeterminate. With uncertainty 2 µs, `ack` at 2998 stays indeterminate. | Test (TC-706) |
-| FR-251-AC-2 | `once[0 ms, 10 ms] holds(p)` with `max_event_rate` 2 events per ms gets a buffer capacity of 21; a trace with 22 events inside one 10 ms window settles the affected obligation `Incomplete(LimitReached{limit, value, setting})` naming the event-rate limit and 2 per ms, and drops no event. | Test (TC-706) |
+| FR-251-AC-2 | `once[0 ms, 10 ms] holds(p)` with `max_event_rate` 2 events per ms gets a buffer capacity of 21; a trace with 22 events inside one 10 ms window settles the affected obligation `Incomplete(LimitReached{limit, value, setting})` with `limit` `event_buffer`, `value` 21 and `setting` `monitor.max_event_rate`, and drops no event. | Test (TC-706) |
 | FR-251-AC-3 | With a 16-bit counter and `max_reading_gap` 100: readings `65530` then `4` give a difference of 10 ticks; readings `65530` then `65500` give a modular difference of 65,506 and settle `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}`, with no verdict. A 16-bit target with `max_reading_gap` 65,536 refuses `GapExceedsWidth`. | Test (TC-706) |
 | FR-251-AC-4 | AC-1's admitted plan alone builds a monitor after the producer/preparation objects are dropped. Its closed program contains both atom bodies, the ordered implication/eventually/always topology, activation and capture bindings, state initializers and executable event/watermark transitions. No source parsing, clause argument, atom callback or RT temporal translation occurs. Removing a transition body refuses admission with no initialization or monitor. | Test (TC-1081) |
 | FR-251-AC-5 | Replace an atom, operand reference, transition body, state initializer, interval association, buffer owner, activation binding, uncertainty or maximum gap independently with one from a different selected clause/target while retaining the original selection: each candidate refuses admission without initialization. Matching numeric subformula IDs from two subjects do not alias. A correctly derived plan for the changed target is admitted as a distinct plan. | Test (TC-1081) |
