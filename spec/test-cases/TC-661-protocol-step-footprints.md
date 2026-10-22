@@ -12,7 +12,7 @@ relationships:
 
 Verify per-step read and write footprints, enabling footprints, independence and visibility over the protocol locations.
 
-Scope: FR-216-AC-1 to FR-216-AC-5.
+Scope: FR-216-AC-1 to FR-216-AC-6.
 
 ## Test Procedure
 
@@ -32,6 +32,10 @@ Scope: FR-216-AC-1 to FR-216-AC-5.
 5. Read the enabling footprints of FR-216-AC-5's `bump` attempt and of
    `duplicate(ch, Tx)`, the reference-type `event`'s membership read and
    the channel, template and role visibility cases.
+6. Read the footprint of a `retire` step and the enabling footprint of an
+   `activate` step with FR-216-AC-6's predicates, and test the dependence
+   with a writer of the field they read, and a `send` from the replicated
+   role against a `spawn` of it.
 
 Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
 
@@ -48,3 +52,6 @@ Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
   the step's `W`.
 - Step 5: exactly the enabling locations FR-216-AC-5 lists, as
   `Footprint` values with `Location::Protocol` for protocol locations.
+- Step 6: the read locations FR-216-AC-6 lists; the writer of a read field is
+  dependent with the `retire` step; a `send` from the replicated role reads
+  `role(w)` and is dependent with a `spawn` of that role.

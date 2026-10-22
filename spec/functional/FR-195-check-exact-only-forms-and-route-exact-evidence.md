@@ -25,8 +25,8 @@ relationships:
 S3 SHALL extend FR-186's probabilistic claim check with the forms that only
 exact evidence decides (ADR-028 XF-4, XF-5), with fairness sets on claims
 `under every scheduler` (FS-1), and with claims that state no confidence
-parameters (SP-4). EN-5's provider manifest SHALL advertise (`probabilistic-satisfaction`,
-`exact`), and S3 SHALL mark each exact-only claim so EN-4 refuses it
+parameters (SP-4). EN-5's provider manifest SHALL advertise `probabilistic-satisfaction` with the
+evidence kind `exact` (its mode is not yet fixed), and S3 SHALL mark each exact-only claim so EN-4 refuses it
 (ADR-024 SV-5, XF-7). Routing by evidence kind is QSpec FR-290's
 negotiation rule, which QSL does not restate.
 
@@ -119,8 +119,8 @@ written `rational(6, 5)` and a negative quantity cannot be written.
 
 ### Capability
 
-- The EN-5 provider manifest SHALL advertise (`probabilistic-satisfaction`,
-  `exact`) only, and register through FR-075.
+- The EN-5 provider manifest SHALL advertise `probabilistic-satisfaction` with
+  the evidence kind `exact` only (its mode is not yet fixed), and register through FR-075.
 - EN-4's negotiation gate takes the checked claim, because the reduced claim
   `check_statistical` takes carries neither the scheduler nor the form. When
   `exact_only` is true for the checked claim, the gate SHALL refuse it before
@@ -140,7 +140,7 @@ written `rational(6, 5)` and a negative quantity cannot be written.
 | FR-195-AC-2 | `expected accumulate cost until holds(m.delivered or m.attempts = 2) <= rational(6, 5)` over `Link` with a `cost` reward of 1 on both sends checks as `ExpectedReward` with threshold `6/5`; written `<= 6/5` it is refused, since the profile prohibits `/`. With an integer reward, `>= 3` checks with threshold 3, `<= 0` and `<= rational(-1, 2)` check, and `<= 5 ms` is refused `ill_typed`/`unit-mismatch`. With a quantity reward declared in `ms`, `<= 0.005 s` checks and records `5`; `<= 5 m` is refused `ill_typed`/`unit-mismatch`, and the bare `<= 3` is refused `ill_typed`/`type-mismatch`. A reward the model does not declare is refused `missing-name`. §15.5's `MeanTime` and any other `expected elapsed until …` are refused `unsupported_construct`/`not-yet-implemented`. | Test (TC-630) |
 | FR-195-AC-3 | `exact_only` is true for each claim of AC-1 and AC-2 that checks and for `P95` with no confidence parameters, and false for `P95` under `Steady` with its confidence parameters. | Test (TC-630) |
 | FR-195-AC-4 | EN-4's gate given the checked `FairTerminates` refuses `EveryScheduler`; given the `Link` expected-reward claim under a workload it refuses `ExactOnlyForm`; given a bounded event under a workload with no confidence parameters it refuses `MissingConfidence`; given `P95` under `Steady` with its confidence parameters it passes. Each refusal is returned before a `StatisticalClaim` is built and so before a sample is drawn, and for every claim of AC-1 to AC-3 that checks the gate refuses exactly when `exact_only` is true. | Test (TC-630) |
-| FR-195-AC-5 | EN-5's manifest lists exactly (`probabilistic-satisfaction`, `exact`). Each of the three refusals of AC-4 settles `unsupported` with its cause (`every-scheduler`, `exact-only-form`, `missing-confidence`) through FR-192's map. | Test (TC-630) |
+| FR-195-AC-5 | EN-5's manifest lists `probabilistic-satisfaction` with the evidence kind `exact` only. Each of the three refusals of AC-4 settles `unsupported` with its cause (`every-scheduler`, `exact-only-form`, `missing-confidence`) through FR-192's map. | Test (TC-630) |
 
 ## Dependencies
 
