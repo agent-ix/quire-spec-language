@@ -5,6 +5,8 @@ type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-356
+    type: references
 ---
 # FR-059: Check the backend dependency direction across QSL, Contract IR, Runtime and Codegen
 
@@ -32,7 +34,7 @@ violating FB-11, and passes only when neither set of findings is non-empty.
 ## Outputs
 
 - An FB-05 report: the list of edges into QSL that are not CG's normal
-  dependency on QSL.
+  dependency on `qsl-replay`.
 - An FB-11 report: the list of simple cycles over the combined normal+dev
   edge graph of the four repositories, each reported once regardless of which
   repository the cycle is discovered from.
@@ -57,7 +59,12 @@ The check SHALL treat a `build`-kind dependency as a normal edge for FB-05/
 FB-11 purposes, and a `dev`-kind dependency as a dev edge.
 
 The check SHALL treat CG's normal dependency on the QSL package
-`qsl-replay` as the one FB-05 exception.
+`qsl-replay` as the one FB-05 exception. This is the rule
+[FR-356](FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md)-AC-1
+states for the same direction check ("refuses one to any `qsl-*` crate
+other than CG's normal edge to `qsl-replay`"), which
+`tc_arch_lint_direction_004` (`tools/arch-lint/graph.rs`) tests; FR-059-AC-10
+and FR-059-AC-1 are read with it as one rule.
 
 The check SHALL report every other CG normal dependency on a package that
 classifies as QSL, such as `qsl-eval` or `qsl-semantics`, as an FB-05
@@ -89,7 +96,7 @@ all, not that the edge's caller code stays inside the layer-6 `replay` facade.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-059-AC-1 | A graph with only CG's normal dependency on QSL, and no cycle, reports both FB-05 and FB-11 clean. | Test (TC-156) |
+| FR-059-AC-1 | A graph with only CG's normal dependency on `qsl-replay`, and no cycle, reports both FB-05 and FB-11 clean. | Test (TC-156) |
 | FR-059-AC-2 | Any normal or dev edge from IR or RT into QSL is reported as an FB-05 violation. | Test (TC-156) |
 | FR-059-AC-3 | A *dev* edge from CG into QSL is reported as an FB-05 violation; the stated exception covers only CG's normal edge. | Test (TC-156) |
 | FR-059-AC-4 | A 2-repository or longer cycle over normal and/or dev edges among the four repositories is reported exactly once as an FB-11 violation, however many repositories the search starts from. | Test (TC-156) |
@@ -106,3 +113,5 @@ all, not that the edge's caller code stays inside the layer-6 `replay` facade.
   (`ix://agent-ix/quire-spec-language/ADR-011`).
 - [FR-060](FR-060-check-qsl-api-surface-boundary.md) checks the FB-05
   exception's call-site boundary.
+- [FR-356](FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md)-AC-1
+  states the same `qsl-replay`-only FB-05 exception for the direction check.

@@ -11,7 +11,8 @@ relationships:
 ## Description
 
 Verify that `arch-lint direction` classifies resolved packages by repository,
-reports every FB-05 edge into QSL other than CG's normal dependency, reports
+reports every FB-05 edge into QSL other than CG's normal dependency on
+`qsl-replay`, reports
 every FB-11 cycle over the combined normal+dev edge graph exactly once, and
 reports no IR → QSL edge and no QSL ⇄ IR cycle when run against
 quire-contract-ir's real current-head `cargo metadata` output, that resolving
@@ -23,7 +24,7 @@ through FR-059-AC-6 and FR-059-AC-8 through FR-059-AC-11.
 ## Test Procedure
 
 1. Build a synthetic four-repository graph with only CG's normal dependency on
-   QSL and no cycle. Run the check.
+   `qsl-replay` and no cycle. Run the check.
 2. Build a graph with a normal edge from IR into QSL, then a separate graph
    with a dev edge from RT into QSL. Run the check on each.
 3. Build a graph with a dev edge from CG into QSL (no normal edge). Run the
