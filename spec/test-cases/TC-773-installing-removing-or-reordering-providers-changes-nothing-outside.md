@@ -12,13 +12,14 @@ relationships:
 
 Verify FR-289's front-end, locality and meaning invariants. Order invariance is TC-194's.
 
-Scope: FR-289-AC-1 to FR-289-AC-3.
+Scope: FR-289-AC-1 to FR-289-AC-6.
 
 ## Test Procedure
 
 1. Compile `tests/fixtures/spine-compile.native` in one test that builds an empty registry and in one that builds a registry from three manifests.
 2. Property-test: for generated manifests and items, add a manifest advertising none of an item's capability kinds, then one advertising its kind, and compute the item's candidate set each time. Include probabilistic items with `statistical` and `exact` evidence and manifests that add only the other evidence kind.
 3. Compile the `compile_fail` doctests that build a `refuted` terminal record with no reproducing replay result and a `proved` record with no `BackendId`, beside compiling controls; build a `refuted` record from a reproducing replay result and read it back.
+4. Settle a process provider's counterexample from an input-arm replay that reproduces the violation, one that does not, a refusal and a fault; settle a plugin `proved` with an exhaustive basis and with the Kani check-count basis; read each QSL-only cause kind and one other kind.
 
 Tag the tests `#[trace("TC-773", "<AC id>")]`.
 
@@ -27,3 +28,4 @@ Tag the tests `#[trace("TC-773", "<AC id>")]`.
 - Step 1: the `package` bytes and `check` outcomes are equal.
 - Step 2: the first addition leaves the candidate set equal; the second adds exactly that backend. For probabilistic items, adding a manifest that advertises only the other evidence kind leaves the set equal; only a manifest advertising the item's exact evidence kind adds that backend.
 - Step 3: the doctests fail to compile and the controls compile; the record reads back `refuted` with that replay result.
+- Step 4: `refuted` naming the plugin; `replay-parity`; the refusal's own settlement; `failed`; `proved` with `trusted` and the plugin's identity; the check-count basis refused; each QSL-only kind refused with a `failed` record and the other kind not refused.

@@ -31,6 +31,9 @@ use quire_exact::{CancelCause, Integer};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
 
+mod plugin;
+pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause};
+
 /// FR-127: how a proof established its claim, independently of certification.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]

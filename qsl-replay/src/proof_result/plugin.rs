@@ -1,0 +1,132 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! ADR-029 PL-7 (FR-289-AC-4 to FR-289-AC-6): the terminal arms of a process
+//! provider. The driver reads a plugin's FR-331 result with the typed reader
+//! and settles it here: a counterexample through S6a replay, a `proved` as a
+//! `trusted` proof, and a result that claims a QSL-only cause as a tool
+//! failure. The pre-replay counterexample is the driver's wire record, not a
+//! QSL type; this module sees only its replay.
+
+use super::{Certification, InconclusiveCause, ProofBasis, TerminalRecord, TerminalValue};
+use crate::execute::ReplayRefusal;
+use crate::result::{InputSettlement, ReplayResult};
+use qsl_foundation::diagnostic::Category;
+use qsl_foundation::{BackendId, RequestIndex};
+
+/// A cause settled by QSL's own replay or Kani mapping, never by a provider
+/// (ADR-029 PL-7). The wire spells only the kind; the typed payload exists
+/// on the QSL side alone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QslOnlyCause {
+    /// `replay-parity`.
+    ReplayParity,
+    /// `replay-refused`.
+    ReplayRefused,
+    /// `kani-vacuous-proof`.
+    KaniVacuousProof,
+}
+
+impl QslOnlyCause {
+    /// The cause kind's wire spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ReplayParity => "replay-parity",
+            Self::ReplayRefused => "replay-refused",
+            Self::KaniVacuousProof => "kani-vacuous-proof",
+        }
+    }
+}
+
+/// A plugin result QSL refuses; the item settles `failed` (ADR-029 PL-7).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PluginResultRefusal {
+    /// The result claims a cause only QSL settles.
+    #[error("a plugin result claims the QSL-only cause {}", .0.as_str())]
+    QslOnlyCause(QslOnlyCause),
+    /// The `proved` result reports the Kani check-count basis, which is
+    /// Kani-only; a plugin has no SUCCESS checks to count.
+    #[error("a plugin proof reports the Kani-only check-count basis")]
+    KaniOnlyBasis,
+}
+
+impl PluginResultRefusal {
+    /// The item's terminal record: `failed`, naming the plugin.
+    pub fn record(self, request_index: RequestIndex, plugin: BackendId) -> TerminalRecord {
+        TerminalRecord::failed(request_index, plugin)
+    }
+}
+
+/// Read the cause kind a plugin's `inconclusive` result names: a QSL-only
+/// kind is refused, any other kind is the caller's to read.
+#[qsl_attrs::string_edge]
+pub fn read_plugin_cause_kind(kind: &str) -> Result<(), PluginResultRefusal> {
+    let claimed = match kind {
+        "replay-parity" => QslOnlyCause::ReplayParity,
+        "replay-refused" => QslOnlyCause::ReplayRefused,
+        "kani-vacuous-proof" => QslOnlyCause::KaniVacuousProof,
+        _ => return Ok(()),
+    };
+    Err(PluginResultRefusal::QslOnlyCause(claimed))
+}
+
+impl TerminalRecord {
+    /// A plugin counterexample settled by its S6a replay as canonical
+    /// assignments (`ReplaySource::Input`). A reproduced violation settles
+    /// `refuted`, naming `plugin` and keeping the replay result; a replay
+    /// that did not reproduce it settles `inconclusive` with `replay-parity`;
+    /// a refusal settles through [`TerminalValue::from_replay_refusal`]. A
+    /// witness-arm result is not a plugin counterexample's replay and
+    /// settles `failed`.
+    pub fn from_plugin_counterexample(
+        request_index: RequestIndex,
+        plugin: BackendId,
+        replay: &Result<ReplayResult, ReplayRefusal>,
+    ) -> Self {
+        let (value, evidence) = match replay {
+            Ok(ReplayResult::Input(arm))
+                if arm.settlement() == InputSettlement::ReproducedWithoutWitness
+                    && arm.category() == Category::Violation =>
+            {
+                (
+                    TerminalValue::Refuted,
+                    Some(ReplayResult::Input(arm.clone())),
+                )
+            }
+            Ok(ReplayResult::Input(arm)) => (
+                match arm.disagreement() {
+                    Some(cause) => {
+                        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(cause.clone()))
+                    }
+                    // Reproduced, yet not a violation: nothing was refuted.
+                    None => TerminalValue::Failed,
+                },
+                None,
+            ),
+            Ok(ReplayResult::Witness(_)) => (TerminalValue::Failed, None),
+            Err(refusal) => (TerminalValue::from_replay_refusal(refusal), None),
+        };
+        let mut record = Self::with_backend(request_index, plugin, value);
+        record.replay = evidence;
+        record
+    }
+
+    /// A plugin's `proved` result: `proved` with the basis the plugin
+    /// reports, the certification `trusted` and `plugin`'s identity
+    /// (ADR-029 PL-7, RU-4). The Kani check-count basis is refused.
+    pub fn from_plugin_proof(
+        request_index: RequestIndex,
+        plugin: BackendId,
+        basis: ProofBasis,
+    ) -> Result<Self, PluginResultRefusal> {
+        if matches!(basis, ProofBasis::Checks { .. }) {
+            return Err(PluginResultRefusal::KaniOnlyBasis);
+        }
+        Ok(Self::with_backend(
+            request_index,
+            plugin,
+            TerminalValue::Proved {
+                basis,
+                certification: Certification::Trusted,
+            },
+        ))
+    }
+}

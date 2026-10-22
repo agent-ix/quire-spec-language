@@ -275,3 +275,139 @@ fn a_call_site_fault_built_through_the_facade_settles_failed() {
     assert_eq!(settled, TerminalValue::Failed);
     assert_eq!(settled.category(), Category::InternalFailure);
 }
+
+fn input_replay(replayed: Category, value: Option<EvaluatedValue>) -> ReplayResult {
+    ReplayResult::Input(InputArmResult::settle(
+        Verdict::from_category(Category::Violation),
+        Verdict::from_category(replayed),
+        replayed,
+        value,
+        &WitnessCheck::Agrees(None),
+        Vec::new(),
+        qsl_replay::spine::default_accounting(0),
+    ))
+}
+
+/// FR-289-AC-4 / TC-773: a reproduced plugin counterexample settles
+/// `refuted`, names the plugin and keeps the replay result; a
+/// non-reproduction settles `replay-parity`; a refusal goes through
+/// `from_replay_refusal`; a fault is `failed`.
+#[trace("TC-773", "FR-289-AC-4")]
+#[test]
+fn plugin_counterexample_settles_by_its_replay() {
+    let plugin = || BackendId::new("acme-prover");
+    let index = RequestIndex::new(3);
+
+    let reproduced = Ok(input_replay(
+        Category::Violation,
+        Some(EvaluatedValue::Boolean(false)),
+    ));
+    let record = TerminalRecord::from_plugin_counterexample(index, plugin(), &reproduced);
+    assert_eq!(record.value(), &TerminalValue::Refuted);
+    assert_eq!(record.backend(), Some(&plugin()));
+    assert_eq!(record.replay_result(), reproduced.as_ref().ok());
+
+    for replayed in [
+        input_replay(Category::Success, Some(EvaluatedValue::Boolean(true))),
+        input_replay(Category::Violation, None),
+    ] {
+        let record = TerminalRecord::from_plugin_counterexample(index, plugin(), &Ok(replayed));
+        assert!(matches!(
+            record.value(),
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+        ));
+        assert_eq!(record.value().category(), Category::Inconclusive);
+        assert_eq!(record.replay_result(), None);
+    }
+
+    let refusal = ReplayRefusal::Fault(InternalFault::new("plugin-arm", "replay"));
+    let record = TerminalRecord::from_plugin_counterexample(index, plugin(), &Err(refusal));
+    assert_eq!(record.value(), &TerminalValue::Failed);
+
+    let witness = Ok(violating_replay());
+    let record = TerminalRecord::from_plugin_counterexample(index, plugin(), &witness);
+    assert_eq!(record.value(), &TerminalValue::Failed);
+}
+
+/// FR-289-AC-4 / TC-773: a non-fault replay refusal settles
+/// `inconclusive` `replay-refused`, like any counterexample's.
+#[trace("TC-773", "FR-289-AC-4")]
+#[test]
+fn plugin_counterexample_refusal_matches_from_replay_refusal() {
+    let refusal = || ReplayRefusal::Cancelled(qsl_replay::CancelCause::Requested);
+    let record = TerminalRecord::from_plugin_counterexample(
+        RequestIndex::new(0),
+        BackendId::new("acme-prover"),
+        &Err(refusal()),
+    );
+    assert_eq!(
+        record.value(),
+        &TerminalValue::from_replay_refusal(&refusal())
+    );
+}
+
+/// FR-289-AC-5 / TC-773: a plugin proof is `proved`, `trusted`, names the
+/// plugin and reads back through the envelope; the Kani check-count basis is
+/// refused.
+#[trace("TC-773", "FR-289-AC-5")]
+#[test]
+fn plugin_proof_is_trusted_and_names_the_plugin() {
+    let record = TerminalRecord::from_plugin_proof(
+        RequestIndex::new(1),
+        BackendId::new("acme-prover"),
+        qsl_replay::ProofBasis::Exhaustive,
+    )
+    .unwrap();
+    assert_eq!(
+        record.value(),
+        &TerminalValue::Proved {
+            basis: qsl_replay::ProofBasis::Exhaustive,
+            certification: qsl_replay::Certification::Trusted,
+        }
+    );
+    let envelopes = read_backend_provider_envelope(
+        &BackendProviderSource {
+            backend_identity: "acme-prover".to_owned(),
+            items: vec![record],
+        },
+        qsl_replay::ReplayLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(envelopes[0].category(), Category::Success);
+    assert_eq!(envelopes[0].backend().as_str(), "acme-prover");
+
+    assert_eq!(
+        TerminalRecord::from_plugin_proof(
+            RequestIndex::new(1),
+            BackendId::new("acme-prover"),
+            qsl_replay::ProofBasis::Checks { success_checks: 0 },
+        ),
+        Err(qsl_replay::PluginResultRefusal::KaniOnlyBasis)
+    );
+}
+
+/// FR-289-AC-6 / TC-773: a plugin result naming a QSL-only cause kind is
+/// refused and its item settles `failed`; any other kind is not refused.
+#[trace("TC-773", "FR-289-AC-6")]
+#[test]
+fn plugin_result_claiming_a_qsl_only_cause_fails() {
+    for (kind, cause) in [
+        ("replay-parity", qsl_replay::QslOnlyCause::ReplayParity),
+        ("replay-refused", qsl_replay::QslOnlyCause::ReplayRefused),
+        (
+            "kani-vacuous-proof",
+            qsl_replay::QslOnlyCause::KaniVacuousProof,
+        ),
+    ] {
+        let refusal = qsl_replay::read_plugin_cause_kind(kind).unwrap_err();
+        assert_eq!(
+            refusal,
+            qsl_replay::PluginResultRefusal::QslOnlyCause(cause)
+        );
+        assert_eq!(cause.as_str(), kind);
+        let record = refusal.record(RequestIndex::new(2), BackendId::new("acme-prover"));
+        assert_eq!(record.value(), &TerminalValue::Failed);
+        assert_eq!(record.value().category(), Category::InternalFailure);
+    }
+    assert_eq!(qsl_replay::read_plugin_cause_kind("bound-reached"), Ok(()));
+}
