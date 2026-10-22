@@ -46,7 +46,8 @@ supplied domain package documents and dependency input, under the default
 spine stage limits. It resolves a function by the same one-segment name
 lookup in the compiled package's declarations FR-098's selection uses
 (OQ-5), an operation by the same typed `OperationName` resolution
-FR-115's `Frame` selection uses, and a state clause by the declared name
+FR-115's `Frame` selection uses, which resolves the owner and the operation
+as FR-104 resolves a clause's context and operation, and a state clause by the declared name
 FR-106's `ClauseSelection` names it by. It derives each node id the same way
 `replay` and `replay_frame` do, so a request or counterexample keyed by
 `call_site`'s answer is keyed the way those entries actually accept. It
@@ -89,8 +90,9 @@ QSL-345.
 - `dependencies`: the `DependencyInput` of supplied libraries (ADR-015
   D-1), built by `DependencyInput::new`.
 - `selection`: a `QualifiedName` naming a function, an `OperationName`
-  naming an operation `M::T::op` as model alias, object type and operation
-  identifiers, or a `ClauseName` naming a state clause by its declared
+  naming an operation `M::T::op` as model alias, owner and operation
+  identifiers, the owner `T` an object type, a process or a state machine
+  of `M`'s domain package, or a `ClauseName` naming a state clause by its declared
   `Identifier`, or a `FieldName` naming a state field `M::T.f` as model
   alias, object type and field identifiers, or a `PopulationName` naming a
   population `M::P` as model alias and population artifact id. The
@@ -150,9 +152,15 @@ QSL-345.
   derived the same way `replay`'s own executor derives it (FR-098), so the
   same parameter always gets the same node id from either entry.
 - For an operation selection, `call_site` SHALL resolve the model alias
-  to its domain package, the object type in that package and the operation
-  in the object type's effective view, exactly as FR-115's `Frame`
-  selection resolves them, and SHALL return the operation's FR-105
+  to its domain package, the owner `T` among that package's object types,
+  processes and state machines, as FR-104 resolves a clause's context
+  `M::T`, and the operation in the owner's effective view (FR-103, FR-081,
+  QSpec FR-342): its own and its inherited operations, along its
+  supertypes of the same kind, for an object type, a process and a state
+  machine alike. This is the resolution FR-104 makes for a clause's `op`
+  and FR-115's `Frame` selection makes for its operation.
+- For an operation selection, `call_site` SHALL return the operation's
+  FR-105
   `operation_anchor` and `frame` node ids and the frame's `generated`
   occurrence key (FR-104-AC-5) -- the identities an FR-116 frame
   counterexample carries.
@@ -172,13 +180,43 @@ QSL-345.
   declaring object, and no `OperationSite` is returned without the pair. A
   declaring object that is no declaration of the selected model alias's
   domain package refuses `CallSiteRefusal::Fault`, never a partial site.
-  Limit: the declaring object is an object type today, because the
-  operation selection `M::T::op` names an object type `T`; QSpec FR-323
-  also allows a process or state machine as the declaring object, and
-  `call_site` cannot select their operations.
+  The declaring object is an object type, a process or a state machine,
+  the kinds QSpec FR-323's `frame_operation.object` allows; for an
+  operation the selected owner inherits it is the supertype of the same
+  kind that declares it (for a state machine, the declaring state machine). Because
+  `frame_operation` always names the declaring object, a replay request
+  built from it never meets FR-323's refusal of an operation its `object`
+  only inherits.
+- If the owner `T` names a declaration of the package other than an
+  object type, a process or a state machine (a record value type, an event
+  type, a persistence or systems interface, an enum, a variant, a scalar
+  type, a relationship or a population), then `call_site` SHALL refuse
+  `CallSiteRefusal::NotAnOperationOwner`, pairing
+  the `OperationName` with the compiled package's own `package_id`; its
+  code is `invalid_model_binding`, cause `malformed-declaration`, as QSpec
+  FR-323 refuses such an `object`. This differs on purpose from FR-104 and FR-115,
+  which report `missing_declaration`/`missing-name` for a clause or
+  `Frame` selection whose owner is not an object type, a process or a
+  state machine: `call_site` builds the FR-323 replay target, so it
+  mirrors FR-323's refusal of such an `object`.
+- If the operation name resolves in the owner's effective view to
+  declarations of two supertypes, neither hiding the other, then
+  `call_site` SHALL refuse `CallSiteRefusal::AmbiguousOperation`, pairing
+  the `OperationName` with the compiled package's own `package_id`; its
+  code is `ambiguous_declaration`, cause `ambiguous-name`, as QSpec FR-323
+  refuses such a name.
+- While it resolves the owner and the operation, before it looks for the
+  operation's frame, `call_site` SHALL decide `NotAnOperationOwner` and
+  `AmbiguousOperation`, so an ambiguous name is never reported as
+  `UnknownOperation` for want of a frame.
+- The rendered message of `NotAnOperationOwner` and of
+  `AmbiguousOperation` SHALL lead with the refusal's `<code>/<cause>` (`invalid_model_binding/
+  malformed-declaration`, `ambiguous_declaration/ambiguous-name`), as the
+  `UnknownOperation` message leads with `missing_declaration/missing-name`;
+  `CallSiteRefusal::code` gives the code.
 - For an operation selection, `call_site` SHALL return every `pre` and
   `post` clause of the unit whose operation resolves to the same
-  (declaring object type, operation) as the selected frame, in declaration
+  (declaring object, operation) as the selected frame, in declaration
   order, each with its declared name, its `state_clause` node id and its
   `claim` occurrence key (ADR-013 O-07).
 - For a clause selection, `call_site` SHALL resolve the name among the
@@ -189,7 +227,8 @@ QSL-345.
   clause SHALL refuse `CallSiteRefusal::UnknownClause`, pairing the
   `ClauseName` with the compiled package's own `package_id` (FR-088-AC-6).
 - For a field selection, `call_site` SHALL resolve the model alias and
-  object type as an operation selection does, and the field in the object
+  an object type (not a process or a state machine) among the package's
+  object types, and the field in the object
   type's effective attribute set, and SHALL return the field's ADR-012
   §15.4 domain key: `DomainKey::Node` with the `model`/`object_type` node
   of the type that declares the field, whether or not the package's own
@@ -208,8 +247,8 @@ QSL-345.
   use. A selection whose alias or population does not resolve SHALL refuse
   `CallSiteRefusal::UnknownPopulation`, pairing the `PopulationName` with
   the compiled package's own `package_id` (FR-088-AC-6).
-- An operation selection whose model alias or object type does not
-  resolve, whose operation resolves to no single operation, or that no
+- An operation selection whose model alias or owner does not
+  resolve to a declaration of the package, whose operation resolves to no operation, or that no
   clause or attempt of the unit names (FR-105 emits no frame for it) SHALL
   refuse `CallSiteRefusal::UnknownOperation`, pairing the `OperationName`
   with the compiled package's own `package_id` (FR-088-AC-6).
@@ -223,7 +262,9 @@ QSL-345.
   `Dependency` the code of the compile, intake, import-resolution or
   library refusal they carry, as `ReplayRefusal::Recompile` does;
   `DependencyInput` its `DependencyInputRefusal::code`; `UnknownFunction`,
-  `UnknownOperation` and `UnknownClause` `missing_declaration`; and `Fault`
+  `UnknownOperation` and `UnknownClause` `missing_declaration`;
+  `NotAnOperationOwner` `invalid_model_binding`; `AmbiguousOperation`
+  `ambiguous_declaration`; and `Fault`
   `runtime_invariant`. Each variant other than `Fault` carries the code of
   the refusal it was built from rather than only its rendered message.
 - The settlement of a refusal is keyed on timing, by the terminal mapping
@@ -231,7 +272,8 @@ QSL-345.
   refuses the obligation's own input before any backend run, so it settles
   `TerminalValue::Declined` with cause `ProofRefusalCause::InvalidInput` for
   every such variant (`Compile`, `ModelIntake`, `DependencyInput`, `Import`,
-  `Dependency`, `UnknownFunction`, `UnknownOperation`, `UnknownClause`) and
+  `Dependency`, `UnknownFunction`, `UnknownOperation`, `UnknownClause`,
+  `NotAnOperationOwner`, `AmbiguousOperation`) and
   its own code (`CallSiteRefusal::code`) as `DeclineCode::Qsl(code)`, which
   `TerminalValue::from_call_site_refusal` builds. `DeclineCode` carries a QSL catalog code (`DeclineCode::Qsl`) or a STD-001 registry code (`DeclineCode::Std001`, IR's `kani_*` codes among them); a code is never remapped from one registry onto the other, the `Std001` arm records no issuer, and it refuses no unregistered code (`Std001Code`'s own form check is all). A `ReplayRefusal` after a
   backend run (the replay of a refutation) is no refusal of the obligation's
@@ -280,6 +322,9 @@ QSL-345.
 | FR-121-AC-22 | `Config::nope`, `Nope::config_history` and `Config::ConfigVersion` (an object type, not a population) each refuse `CallSiteRefusal::UnknownPopulation` (code `missing_declaration`), pairing the `PopulationName` with the compiled package's own `package_id`. | Test (TC-516) |
 | FR-121-AC-23 | For FR-121-AC-18's domain package (`Sub` a subtype of `ConfigVersion` declaring no `attemptUpdate` of its own) and the ConfigVersion unit, the `Config::ConfigVersion::attemptUpdate` selection's `frame_operation` is `{Config::ConfigVersion, attemptUpdate}`, and the `Config::Sub::attemptUpdate` selection's is the same `{Config::ConfigVersion, attemptUpdate}`, not `Config::Sub`, with `anchor`, `frame` and `frame_occurrence` equal to the `ConfigVersion` selection's. | Test (TC-516) |
 | FR-121-AC-24 | Over FR-103-AC-10's domain package (`Sub.size` declares `redefines` `ConfigVersion/size`) and a unit with a postcondition on each of `Config::ConfigVersion::size` and `Config::Sub::size`, the `Config::Sub::size` selection's `frame_operation` is `{Config::Sub, size}`, not `{Config::ConfigVersion, size}`, and its `frame` differs from the `Config::ConfigVersion::size` selection's, whose `frame_operation` is `{Config::ConfigVersion, size}`. | Test (TC-516) |
+| FR-121-AC-25 | Over FR-104-AC-10's package (process `Flow` declaring `go`) and its unit with `P`, `Q` and `I`, the `Config::Flow::go` selection returns an `OperationSite` whose `frame_operation` is `{Config::Flow, go}`, whose `anchor` and `frame` are FR-105-AC-8's `operation_anchor` (context the `Flow` `model`/`process` node) and `frame` nodes, whose `frame_occurrence` is that frame's `generated` occurrence, and whose `clauses` are exactly `P` then `Q`. A `Config::Flow::stop` selection, naming no operation of `Flow`, refuses `CallSiteRefusal::UnknownOperation` (code `missing_declaration`). | Test (TC-1162) |
+| FR-121-AC-26 | Over TC-1045's package (TC-1040's state machine `OrderLifecycle` declaring `place`, and `ExpressLifecycle` specializing it) and TC-1040's unit, the `M::OrderLifecycle::place` selection returns an `OperationSite` whose `frame_operation` is `{M::OrderLifecycle, place}`, whose `anchor` is the `operation_anchor` node whose `context` is the `OrderLifecycle` `model`/`state_machine` node (not a `model`/`object_type` node), whose `frame` is that operation's `frame` node and `frame_occurrence` its `generated` occurrence, and whose `clauses` are exactly `PlaceRequires` then `FlagsPlaced`. The `M::ExpressLifecycle::place` selection, an inherited operation, returns `frame_operation` `{M::OrderLifecycle, place}` with the same `anchor`, `frame` and `frame_occurrence`. A domain package whose `OrderLifecycle` declares `place` that no clause or attempt of the unit names refuses `CallSiteRefusal::UnknownOperation`. | Test (TC-1162) |
+| FR-121-AC-27 | An operation selection whose owner names a record value type, an event type, an enum, a persistence interface or a population of the package refuses `CallSiteRefusal::NotAnOperationOwner` (code `invalid_model_binding`, message leading with `invalid_model_binding/malformed-declaration`); over a package where `C` specializes `A` and `B`, each declaring `touch` with a clause of the unit on each, the `M::C::touch` selection refuses `CallSiteRefusal::AmbiguousOperation` (code `ambiguous_declaration`, message leading with `ambiguous_declaration/ambiguous-name`), although `C` has no frame for `touch`; each pairs the `OperationName` with the compiled package's own `package_id` and maps by `TerminalValue::from_call_site_refusal` to `Declined` with `InvalidInput` and its code. | Test (TC-1162) |
 
 ## Dependencies
 
