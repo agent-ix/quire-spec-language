@@ -14,9 +14,9 @@ Verify the abstract protocol side: resolution of the protocol, node targets,
 the refinement's internal list (its shape, spellings, resolution, locus and refusal), the
 `refinement` requirement record and the unsupported liveness half.
 
-Scope: FR-147-AC-1 to FR-147-AC-13. Builds: **built** is a build whose
+Scope: FR-147-AC-1 to FR-147-AC-14. Builds: **built** is a build whose
 support set holds `protocol-abstract-side` and `refinement-internal-list`;
-**unbuilt** omits them; **any** is either. Steps 1 to 4 and 9 run against
+**unbuilt** omits them; **any** is either. Steps 1 to 4, 9 and 14 run against
 built, step 13 against built, steps 7 and 11 against unbuilt, steps 5, 6, 8 and 10 against any, and
 step 12 against a build that holds `refinement-internal-list`. A producer that
 has built a feature is checked by that feature's own criteria. The
@@ -55,6 +55,8 @@ Fixtures: `Twice`, `CasTwice`, `Full` and `Rich` (FR-147); `CasRefinesCounter`
     `CasRefinesCounter`.
 13. Check `CasTwice` with `Twice` declared before and after the refinement,
     and with `Twice` refused by its own checks.
+14. Check `CasTwice` with each step row of FR-147-AC-14 in place of
+    `commitA -> node Spec::Twice::a1(self)`.
 
 Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 
@@ -103,3 +105,8 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 - Step 13: the same `CheckedRefinement` in both orders; with `Twice` refused,
   `Twice`'s refusals alone for the clause, no `missing-name` for its name and
   no `CheckedRefinement`.
+- Step 14: the first three rows check; the argument lists of length 3 and 2
+  refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1
+  and `actual` 3 and 2, and `a1(true)` refuses `ill_typed`/`type-mismatch` at
+  the argument retaining `expected` the reference type of `Spec::Counter` and
+  `actual` `Boolean`.

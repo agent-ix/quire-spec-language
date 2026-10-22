@@ -2638,12 +2638,16 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
         cause(&package, &operation(BinaryOperator::Add, "f", "h")),
         ill(IllTypedCause::TypeMismatch)
     );
-    for operator in [BinaryOperator::Add, BinaryOperator::Less] {
-        assert_eq!(
-            cause(&package, &operation(operator, "f", "i")),
-            ill(IllTypedCause::TypeMismatch)
-        );
-    }
+    // FR-397-AC-6: arithmetic over a float and an exact type is a mismatch,
+    // while any comparison with a float operand is ineligible.
+    assert_eq!(
+        cause(&package, &operation(BinaryOperator::Add, "f", "i")),
+        ill(IllTypedCause::TypeMismatch)
+    );
+    assert_eq!(
+        cause(&package, &operation(BinaryOperator::Less, "f", "i")),
+        ill(IllTypedCause::OperatorIneligible)
+    );
     assert_eq!(
         cause(&plain_package(), &operation(BinaryOperator::Add, "f", "g")),
         CheckCause::IeeeProfileNotAdmitted

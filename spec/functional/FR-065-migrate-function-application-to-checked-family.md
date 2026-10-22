@@ -117,7 +117,10 @@ When the S3 typer checks a call `name(arguments)`:
   `Application` SHALL refuse the call as `missing-name` naming `name`.
 
 The S3 typer (`Typer`, `qsl-semantics/src/check/check/typing.rs`) SHALL
-check every `Expression::Call` it reaches through `Application`: in a
+check every `Expression::Call` it reaches through `Application`, except
+`elapsed_wall_time(h)` and `wcet(f)` as the left operand of a timing clause,
+which FR-252 recognises before name resolution and `Application` does not
+see: in a
 function declaration's body or `decreases` measure, which
 `PackageDeclarations::check` reaches through `ValueFunctionFamily::check`,
 and in a clause expression checked through
