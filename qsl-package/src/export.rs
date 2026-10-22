@@ -7,6 +7,10 @@
 //! on the checked package and that item, so a refused item never affects
 //! another.
 
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, InternalFault};
 use qsl_semantics::check::{AbstractionKey, CheckedBinding};
@@ -103,5 +107,8 @@ fn export_item(package: &CheckedPackage, item: &OccurrenceKey) -> Result<BoundIt
     }
 }
 
+// These tests build emitted and dependency-bearing packages, which need `std`;
+// `tests/checked_ir_surface.rs` covers `export_bindings` with `std` disabled.
 #[cfg(test)]
+#[cfg(feature = "std")]
 mod tests;
