@@ -45,3 +45,13 @@ Ticket: STD-243. PRs: quire-spec-language#1187 (head 949dcb17f) and quire-specif
 ## Verdict
 
 Mergeable on EARS grounds. All three findings are low wording issues and none changes behaviour. The other new statements are singular, name their subject (the protocol system, S3), and can be tested.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@5c5adee7a` (fix commit `5c5adee7a`). Each outcome was checked against the spec text at that head, not taken from the commit message. `make check-spec-validation` reports no EARS warning on a touched file.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 5c5adee7a | FR-208 after: "A `send` node SHALL be owned by the `from` role of its channel and a `receive` node by the `to` role of its channel." and, as a separate statement, "While the role that owns a `send` or `receive` node is replicated, the protocol system SHALL give the node once per live instance, naming the acting instance in its transition identity." |
+| FND-002 | fixed 5c5adee7a | FR-218 after: "For each replicated role with lifetime `scope`, S3 SHALL record the smallest control holding every node `by` that role, counting a `send` as a node `by` its channel's `from` role and a `receive` as a node `by` its channel's `to` role." The sentence with no SHALL is gone. |
+| FND-003 | fixed 5c5adee7a | FR-216 after: "for each model-state field read `x.f` in `p`, the location (`o`, `f`) of every object `o` in the subject's universe whose type declares `f` (a field read of a record binder reads no model location, ...)". The qualifier now leads, as in FT-1. |

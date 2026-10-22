@@ -54,3 +54,11 @@ Every changed AC has a TC row with procedure and expected result. FR-208-AC-4 an
 ## Verdict
 
 Mergeable on coverage grounds. Every new or changed AC in both halves has a TC row that asserts what the AC states. FND-001 is a low traceability point about a normative clause left without a QSL AC by the move. SR-13970 FND-001 (FR-218-AC-29's region clause cannot fail as written) and FND-006 (TC-382 RR-10 leaves `p` unstated) also affect what the TC rows can show.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@5c5adee7a` (fix commit `5c5adee7a`) and `agent-ix/quire-specification@f9683dd`. The outcome was checked against the spec text at that head, not taken from the commit message. The fix commits keep every changed AC bound to a TC row: FR-208-AC-4's added `thread` clause is in TC-653 step 4, FR-216-AC-6's added `send`/`spawn` dependence is in TC-661 step 6, and FR-218-AC-29's region placement is in TC-663 step 8.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 5c5adee7a | FR-209 after: "`max_live_instances` SHALL be a method bound with no ceiling, outside the subject; its obligation identity excludes it, as QSpec FR-428-AC-3 states." The identity half is now a reference to the QSpec AC that verifies it (TC-381), so QSL holds no SHALL on it without a QSL AC. ADR-027 AE-4 ("not part of the subject or its obligation identity") agrees. |
