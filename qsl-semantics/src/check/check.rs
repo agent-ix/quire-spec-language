@@ -789,6 +789,8 @@ pub struct Scope {
     /// The model object types' own declared operations (FR-103).
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The IEEE package-selection trigger recorded from resolved declarations.
+    ieee_operation: bool,
     pub(crate) integer_division: Option<AdmittedIntegerDivision>,
     pub(crate) complete_value: bool,
     /// The names of the concrete populations of the unit's models, which
@@ -1001,6 +1003,7 @@ impl Scope {
             variant_types: Vec::new(),
             operations,
             ieee_profile,
+            ieee_operation: false,
             integer_division: None,
             complete_value: false,
             known_populations: Vec::new(),
@@ -1424,15 +1427,18 @@ impl Scope {
         self.ieee_profile.as_ref()
     }
 
+    /// The admitted policy selected by this package's declared-float trigger.
+    /// An available policy alone does not select a row for a float-free package.
+    pub fn ieee_profile_selection(&self) -> Option<&AdmittedIeeeProfile> {
+        self.ieee_profile.as_ref().filter(|_| self.ieee_operation)
+    }
+
     /// Select the catalog's IEEE policy when a resolved declaration contains
     /// a float, including unused fields and nested option/collection types.
     pub(crate) fn select_declared_ieee_profile(
         &mut self,
         signatures: &[Signature],
     ) -> Result<(), CheckRefusal> {
-        if self.ieee_profile.is_some() {
-            return Ok(());
-        }
         let mut declared: Vec<&ValueType> = self.index.types.values().flatten().collect();
         for signature in signatures {
             declared.extend(signature.parameters.iter().map(|(_, ty)| ty));
@@ -1476,7 +1482,8 @@ impl Scope {
                 | ValueType::Population(_) => return false,
             }
         });
-        if has_float {
+        self.ieee_operation = has_float;
+        if has_float && self.ieee_profile.is_none() {
             use crate::value::definition::{CatalogRole, DefinitionLock};
             let lock = DefinitionLock::pinned();
             let definition = lock.entry(CatalogRole::IeeeProfile).reference();
