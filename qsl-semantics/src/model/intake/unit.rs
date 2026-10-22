@@ -207,7 +207,7 @@ impl SelectedModel {
     ///
     /// Marked `#[string_edge]`: a clause's `language` is the wire identifier
     /// of its authored language.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn with_parsed_type_invariants<E>(
         mut self,
         mut parse: impl FnMut(&str) -> Result<Expression, E>,
@@ -256,7 +256,7 @@ impl SelectedModel {
     ///
     /// Marked `#[string_edge]`: a clause's `language` is the wire identifier
     /// of its authored language, compared here to pick the `quire` clauses.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn with_parsed_operation_clauses<E>(
         mut self,
         mut parse: impl FnMut(&str) -> Result<Expression, E>,

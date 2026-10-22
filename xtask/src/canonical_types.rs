@@ -95,7 +95,7 @@ pub struct Package {
 
 /// The scanned packages, read from `cargo metadata --format-version 1`
 /// output: the workspace members and the ecosystem dependencies.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn packages(metadata: &serde_json::Value) -> Result<Vec<Package>> {
     let malformed = |what: &'static str| Error::CanonicalTypesMetadata { what };
     let members: BTreeSet<&str> = metadata["workspace_members"]
@@ -300,7 +300,7 @@ impl fmt::Display for Finding {
 }
 
 /// Whether `attrs` hold the tag as an outer doc line.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn tagged(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| {
         if !matches!(attr.style, syn::AttrStyle::Outer) || !attr.path().is_ident("doc") {
@@ -382,7 +382,7 @@ impl FileScan<'_> {
         }
     }
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn use_tree(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
         match tree {
             syn::UseTree::Path(path) => {

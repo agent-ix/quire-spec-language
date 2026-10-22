@@ -284,7 +284,8 @@ PF-3 requires a typed name. TK-1 fixes it (§6).
 `replay_frame` reads the payload's members and not the envelope's three.
 
 **G-2.** Two carriers of one identity, one unread, can disagree silently.
-Decision, with no wire change:
+Decision (the first two bullets change no wire; the third is QSpec FR-323's
+replay target, Q-4):
 
 - For a frame packet, the envelope's `clause_node` is the frame node, its
   `occurrence_key` is the frame's `generated` occurrence, and its
@@ -294,13 +295,14 @@ Decision, with no wire change:
 - If the envelope's `clause_node` differs from the payload's `frame`, or its
   `occurrence_key` from the payload's `occurrence`, `replay_frame` refuses
   `stale_dependency`/`content-mismatch` naming both, before it recompiles.
-- `replay_frame` reads no `selected_function`: the envelope constructor
-  still requires one, and its value is not interpreted for a frame packet.
-  A selection member that names a function or a frame operation is a change
-  to QSpec FR-323's `selection` and CG's packet members, so it is Q-4, not
-  QSL work.
+- The packet, the envelope and the request carry no `selected_function`.
+  Each carries the QSpec FR-323 replay target (Q-4): a frame packet's is
+  `frame_operation`, which `replay_frame` resolves, and the payload names
+  no operation (FR-070, FR-071, FR-116). A request target that differs from
+  the envelope's refuses `stale_dependency`/`content-mismatch` naming both,
+  before the recompile.
 
-TK-2 implements the first two bullets (§6).
+TK-2 implements the first two bullets (§6); QSL-972 implements the third.
 
 #### PF-5 Frame representations
 
@@ -791,7 +793,7 @@ These are proposed; the team lead files them.
 | Q-1 | Surface spelling of the QSpec FR-353 abstraction relation in the shared grammar. Decided: QSpec FR-450 (STD-116) | QSpec | QSpec |
 | Q-2 | `quire.checked-package/v2` node for the abstraction relation, carrying AR-2's keys and values. Decided: QSpec FR-451 (STD-116) | QSpec | QSpec |
 | Q-3 | QSpec FR-290 claim-form row: remove "(a relation-family refinement gate)"; re-trace V1-TOOL-011 and V1-TOOL-012 from QSpec FR-177 and TC-208 to the #191 and #192 gate tests | QSpec | QSpec |
-| Q-4 | QSpec FR-323 `selection` for a frame packet (a function or a frame operation), with CG's packet members (CG FR-024, agent-ix/quire-contract-codegen#50) | QSpec, CG | QSpec |
+| Q-4 | QSpec FR-323 `selection` for a frame packet (a function or a frame operation), with CG's packet members (CG FR-024, agent-ix/quire-contract-codegen#50). Decided: QSpec FR-323's replay target (STD-118), carried by FR-070, FR-071 and FR-116 and filled from FR-121's `OperationSite` (STD-245) | QSpec, CG | QSpec |
 | Q-5 | Which profile layering V1-TOOL-012 covers for a compiler whose selections are fixed by its catalog, and which QSpec AD-003 edges V1 requires. Answered by QSpec FR-453: every layer header-selectable, all five edges | QSpec | QSpec |
 | Q-6 | A catalog cause for an implementation-gap `unsupported_construct` refusal (QSL's `not-yet-implemented`) | QSpec | QSpec |
 | Q-7 | QSpec FR-353-AC-1: accept a frame binding keyed by the operation (declaring type key, operation identifier), with the frame and anchor identities derived from it, or amend AC-1. Decided: QSpec FR-353-AC-1 accepts the derived key (STD-121) | QSpec | QSpec |
@@ -878,9 +880,9 @@ Ticket-text corrections for the owner (all ticket text read as data):
 - **Carry the relation outside the checked package** (a side file for CG).
   Rejected. Kani and Verus would then have a second authority, which QSpec
   FR-353 and ARCH-G4 forbid.
-- **A `ReplaySelection` sum in QSL now.** Rejected. The selection is a QSpec
-  FR-323 member that CG copies; changing it is Q-4. TK-2's consistency check
-  removes the silent disagreement without a wire change.
+- **A `ReplaySelection` sum in QSL ahead of QSpec.** Rejected. The selection
+  is a QSpec FR-323 member that CG copies, so its shape is Q-4's; QSL types
+  it exactly as FR-323 does (FR-070, FR-071).
 - **Select a frame by the payload's `WireNodeId`s instead of its name.**
   Rejected. The name selects and the identities bind (PF-3), as ADR-013 OQ-5
   ruled for functions, so an inconsistent packet refuses naming both

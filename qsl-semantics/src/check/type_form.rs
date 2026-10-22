@@ -195,7 +195,7 @@ fn malformed(form: &TypeForm) -> TypeFormError {
 /// The native value type a spelling names (FR-091): `String`, `UUID` and
 /// `Timestamp` are unreserved names, so the native type is one candidate
 /// beside the declared forms of the same name.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn native_scalar_named(name: &str) -> Option<ValueType> {
     match name {
         "String" => Some(ValueType::String),
@@ -266,7 +266,7 @@ fn bound_u64(form: &TypeForm, index: usize) -> Result<u64, TypeFormError> {
 }
 
 /// A rounding mode as the grammar spells it (`qsl-cst` `RoundingMode`).
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(crate) fn parse_rounding_mode(text: &str) -> Option<RoundingMode> {
     match text {
         "exact" => Some(RoundingMode::Exact),
@@ -280,7 +280,7 @@ pub(crate) fn parse_rounding_mode(text: &str) -> Option<RoundingMode> {
 }
 
 /// A text profile as the grammar spells it (`qsl-cst` `TextProfile`).
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn parse_text_profile(text: &str) -> Option<TextProfile> {
     match text {
         "unicode-scalars" => Some(TextProfile::UnicodeScalars),

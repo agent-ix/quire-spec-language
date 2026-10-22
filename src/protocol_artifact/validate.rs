@@ -1403,7 +1403,7 @@ enum FamilyFeature {
 
 impl FamilyFeature {
     /// The feature a wire spelling names, decoded once.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn from_wire(wire: &str) -> Option<Self> {
         match wire {
             "declaration.predicate" => Some(Self::Predicate),
@@ -1427,7 +1427,7 @@ enum RequiredFeature {
 
 impl RequiredFeature {
     /// The required feature a wire spelling names, decoded once.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn from_wire(wire: &str) -> Option<Self> {
         match wire {
             "quire.protocol.bindings/1" => Some(Self::Bindings),

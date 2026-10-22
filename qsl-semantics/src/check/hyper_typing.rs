@@ -20,7 +20,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use qsl_forms::{BinaryOperator, ExprNode, Expression, ExpressionSpans, StepLabelForm};
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, UnitId, ValueType};

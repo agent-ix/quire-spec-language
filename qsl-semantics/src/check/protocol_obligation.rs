@@ -1271,7 +1271,7 @@ pub(super) fn type_body(
 /// qualifier. The expression tree carries a name only as its spelling
 /// (`ExprNode::Name`), so the qualifier is read from that spelling: a
 /// qualified name is a missing declaration, not a stage's unreadable name.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_qualified(name: &str) -> bool {
     name.contains("::")
 }

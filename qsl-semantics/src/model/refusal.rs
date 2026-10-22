@@ -147,7 +147,7 @@ impl MemberPath {
     /// (M08 run 6 spells `Operation.pre`, M10 run 12 `Operation.frame.creates`).
     /// Any other path is returned unchanged.
     #[must_use]
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn operation_contract(self) -> Self {
         match self.segments.as_slice() {
             [MemberSegment::Name(operations), MemberSegment::Index(_), MemberSegment::Name(contract), ..]
@@ -181,7 +181,7 @@ impl MemberPath {
     /// `types[n]`, `populations[n]` or `constructs[n]` prefix becomes the
     /// root, and the rest the segments.
     #[must_use]
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn from_document_location(location: &str) -> Self {
         let rest = location.strip_prefix('$').unwrap_or(location);
         let Some(mut tokens) = segments(rest) else {

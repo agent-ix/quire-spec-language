@@ -424,7 +424,7 @@ fn read_error(path: &Path, source: io::Error) -> PairDefect {
 /// The bytes of `path`, inside the pair directory or, after the `repo:`
 /// prefix, inside the repository. A path that is absolute, or that reaches
 /// outside its directory lexically or through a link, is refused.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_in(roots: &Roots, path: &str) -> Result<Vec<u8>, PairDefect> {
     let (root, relative) = match path.strip_prefix(REPOSITORY_PREFIX) {
         Some(relative) => (&roots.repository, relative),

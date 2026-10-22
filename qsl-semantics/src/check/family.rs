@@ -1354,7 +1354,7 @@ impl OccurrenceRole {
 
     /// The role a kernel role carries, or `None` for a spelling QSL never
     /// records. The one place a kernel role's spelling is read.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn of(role: &Role) -> Option<Self> {
         match role.as_str() {
             "anchor" => Some(Self::Anchor),

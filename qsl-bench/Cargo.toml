@@ -29,7 +29,7 @@ serde_json = "1.0.151"
 sha2 = "0.10.9"
 # FR-064: the probe's two command-line dispatch functions carry
 # `#[string_edge]`, since `xtask string-edge` scans this crate.
-qsl-attrs = { path = "../qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
 # Default features off: no rayon, no plotters. `cargo_bench_support` is the

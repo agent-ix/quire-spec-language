@@ -24,7 +24,7 @@ test-support = []
 # `model::intake` alone. The root crate's `tests/it/family_outcome_layering.rs`
 # (TC-390) asserts that this table names no other workspace crate.
 [dependencies]
-qsl-attrs = { path = "../qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-forms = { path = "../qsl-forms" }
 qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { workspace = true }
@@ -52,7 +52,6 @@ tempfile = "3.27.0"
 # against. Shipped code hashes through `quire-canonical` or
 # `qsl_foundation::ByteDigest`; TC-390 asserts sha2 stays here.
 sha2 = "0.10.9"
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
 num-bigint = "0.4.8"
 num-traits = "0.2.19"

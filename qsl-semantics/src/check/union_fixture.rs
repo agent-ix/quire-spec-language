@@ -45,7 +45,7 @@ pub fn union_type(union: &str) -> ValueType {
 
 /// The members of the fixture union `union` in declared order, each with its
 /// payload types.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn members(union: &str, object_type: EffectiveId) -> Vec<(&'static str, Vec<ValueType>)> {
     match union {
         "Shape" => vec![

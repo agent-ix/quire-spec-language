@@ -16,7 +16,7 @@ is inconclusive, a precondition replays over its pre state alone, a stale
 envelope identity refuses before admission, and an admission failure
 settles no result.
 
-Scope: FR-122-AC-1 to FR-122-AC-7.
+Scope: FR-122-AC-1 to FR-122-AC-8.
 
 ## Test Procedure
 
@@ -38,8 +38,8 @@ step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
    `clause_node` set to `ParentOrder`'s node; with its `occurrence_key` at
    ordinal 1; with both; each again with the invocation removed from the
    provision;
-   with a source edit that changes the `package_id`; with `clause` naming
-   `Absent`; with `clause` naming `sameIdentity`.
+   with a source edit that changes the `package_id`; with the request's
+   `state_clause` naming `Absent`; with it naming `sameIdentity`.
 4. `ReachesTarget` with `PreCall` over the chain's pre snapshot, `self`
    `a`, `target` `a`; with `self` `a`, `target` `c`. Form mismatches, each
    once with its documents in the provision and once without:
@@ -53,6 +53,13 @@ step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
    incomplete-population's snapshot.
 6. Step 1's `VersionUnchanged` envelope twice.
 7. `VersionUnchanged` over invocations whose post-state holds `child.versionNumber` -1 (pre 0), `root.versionNumber` 1001 (pre 1000, `child` unchanged), and whose pre-state holds `child.versionNumber` 1001; and over changed-version.
+8. `VersionUnchanged` over changed-version, the envelope's target
+   `state_clause` `VersionUnchanged`, with the request's replay target
+   `function` `sameIdentity`; with `frame_operation`
+   `{Config::ConfigVersion, attemptUpdate}`; with the request's
+   `state_clause` `VersionUnchanged` and the envelope's `ParentOrder`; each
+   again with the request's source edited so it does not compile, and
+   again with the source's byte-provision entry removed.
 
 Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 
@@ -62,7 +69,7 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   `reproduced-without-witness`, `reproduced-with-evaluated-witness`. No
   payload carries a `witness` and no result carries an QSpec FR-351 record; each
   result holds the evaluated `false`. Each
-  result holds the source digest, `package_id`, the payload's `clause`, the
+  result holds the source digest, `package_id`, the request's `state_clause`, the
   envelope's `clause_node` and `occurrence_key`, and the identities and digests of the
   invocation and both snapshots, or of the one current snapshot.
 - Step 2: `inconclusive`, `Verdicts` (`violation`, `success`) twice, each
@@ -73,7 +80,7 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   nodes again (the node goes first), each with no admission, and the same
   three refusals with the invocation removed;
   FR-098's stale `package_id` refusal; `missing_declaration`/`missing-name`
-  twice.
+  twice, each naming the target.
 - Step 4: `reproduced-with-evaluated-witness`, holding the one pre
   snapshot's identity and digest, no post snapshot, and `self` `a` and
   `target` `a`; `inconclusive`, `Verdicts` (`violation`, `success`); each
@@ -86,11 +93,17 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   `incomplete-scope`. None settles a result.
 - Step 6: equal results. `StateClauseCounterexample: FamilyPayload`
   compiles, the envelope has no string-keyed field, and a payload's
-  `observation` is one of `PreCall`, `Invocation` or `Current`.
+  `observation` is one of `PreCall`, `Invocation` or `Current`. The payload
+  has no member naming the clause.
 - Step 7: `reproduced-with-evaluated-witness` holding `false` and one range
   violation naming `child`, `versionNumber`, `[0, 1000]` and -1;
   `reproduced-with-evaluated-witness` holding `true` and one range violation
   naming `root`, `[0, 1000]` and 1001; `invalid_runtime_input`/
   `invalid-value` naming `child` and `versionNumber`; changed-version holds
   no range violation.
-
+- Step 8: `invalid_runtime_input`/`unknown-member` at `/replay/function`,
+  then at `/replay/frame_operation`, each naming the target,
+  `replay_state_clause` and `state_clause`; `stale_dependency`/
+  `content-mismatch` naming both targets; the same three refusals with the
+  source that does not compile; `missing_import`/`missing-selection` for
+  each with the provision entry removed.

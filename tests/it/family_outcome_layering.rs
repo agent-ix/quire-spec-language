@@ -239,7 +239,7 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// `[dependencies]`, `[dev-dependencies]` and `[build-dependencies]` alike
 /// (a build dependency on a higher layer or on this crate fails as a normal
 /// one does). `qsl-semantics`
-/// (layer 3) names exactly `qsl-attrs`, `qsl-forms` and `qsl-foundation` among
+/// (layer 3) names exactly `qsl-forms` and `qsl-foundation` among
 /// the workspace crates in `[dependencies]`, never `qsl-cst`; its `[dev-dependencies]` may name
 /// `qsl-cst` so the FR-091
 /// assembler's tests can run S1 (FR-091-AC-20), and only
@@ -299,12 +299,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         );
     }
     for (crate_name, allowed, dev_only) in [
-        ("qsl-foundation", &["qsl-attrs", "quire-exact"][..], &[][..]),
-        (
-            "qsl-cst",
-            &["qsl-attrs", "qsl-foundation", "quire-exact"][..],
-            &[][..],
-        ),
+        ("qsl-foundation", &["quire-exact"][..], &[][..]),
+        ("qsl-cst", &["qsl-foundation", "quire-exact"][..], &[][..]),
         (
             "qsl-forms",
             &["qsl-cst", "qsl-foundation", "quire-exact", "quire-walk"][..],
@@ -312,13 +308,12 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ),
         (
             "qsl-semantics",
-            &["qsl-attrs", "qsl-forms", "qsl-foundation"][..],
+            &["qsl-forms", "qsl-foundation"][..],
             &["qsl-cst"][..],
         ),
         (
             "qsl-package",
             &[
-                "qsl-attrs",
                 "qsl-foundation",
                 "qsl-semantics",
                 "quire-exact",
@@ -334,7 +329,6 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         (
             "qsl-eval",
             &[
-                "qsl-attrs",
                 "qsl-foundation",
                 "qsl-package",
                 "qsl-semantics",
@@ -405,9 +399,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
             // RFC 8785 encoder, for the `package_id` preimage),
             // `serde` (the emitter's wire envelope) and `thiserror`.
-            // `serde_json` and `sha2` are used by its tests only. `qsl-attrs`
-            // (ADR-012 section 9) is the `#[string_edge]` marker
-            // crate, exempt from the layer order below (FR-064): it is a
+            // `serde_json` and `sha2` are used by its tests only. `ix-trace-rs`
+            // (ADR-012 section 9) owns the `#[string_edge]` marker and is
+            // exempt from the layer order below (FR-064): it is a
             // zero-cost attribute `xtask string-edge` reads, not a semantic
             // dependency.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
@@ -415,7 +409,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             assert_eq!(
                 normal,
                 [
-                    "qsl-attrs",
+                    "ix-trace-rs",
                     "qsl-foundation",
                     "qsl-semantics",
                     "quire-canonical",
@@ -433,15 +427,15 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // fixed: the four layer crates, `thiserror` for its error types,
             // and `quire-canonical`/`serde` for the FR-101 simulation state
             // key and the pinned sampler's draw preimage (ADR-011
-            // X-8). `qsl-attrs` (ADR-012 section 9) is the
-            // `#[string_edge]` marker crate, exempt from the layer order
+            // X-8). `ix-trace-rs` (ADR-012 section 9) owns the
+            // `#[string_edge]` marker and is exempt from the layer order
             // below (FR-064).
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
                 normal,
                 [
-                    "qsl-attrs",
+                    "ix-trace-rs",
                     "qsl-foundation",
                     "qsl-package",
                     "qsl-semantics",
@@ -671,7 +665,6 @@ fn no_core_crate_depends_on_qsl_analyze() {
         "cargo metadata lists no qsl-analyze"
     );
     for core in [
-        "qsl-attrs",
         "qsl-foundation",
         "qsl-cst",
         "qsl-source",

@@ -58,7 +58,7 @@ impl HeaderLayer {
     }
 
     /// The layer a header identity names, if it names one.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn from_identity(identity: &str) -> Option<Self> {
         Self::ALL
             .into_iter()

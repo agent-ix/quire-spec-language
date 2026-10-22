@@ -689,12 +689,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glob"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
-
-[[package]]
 name = "globset"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -910,8 +904,8 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "ix-trace-rs"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/ix-trace-rs?branch=main#83c970b53196c3fe8161706e6925ac7bf57d12ec"
+version = "0.1.2"
+source = "git+https://github.com/agent-ix/ix-trace-rs?branch=main#e29cc07f70394ff018884d12406c1e150bded5f4"
 
 [[package]]
 name = "js-sys"
@@ -1383,18 +1377,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "qsl-attrs"
-version = "0.1.0"
-dependencies = [
- "trybuild",
-]
-
-[[package]]
 name = "qsl-bench"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "qsl-attrs",
+ "ix-trace-rs",
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
@@ -1415,7 +1402,6 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "logos",
- "qsl-attrs",
  "qsl-foundation",
  "quire-exact",
  "serde_json",
@@ -1426,7 +1412,6 @@ name = "qsl-eval"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-attrs",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
@@ -1459,7 +1444,6 @@ name = "qsl-foundation"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-attrs",
  "quire-exact",
  "serde",
  "sha2",
@@ -1471,7 +1455,6 @@ name = "qsl-package"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-attrs",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
@@ -1494,7 +1477,6 @@ dependencies = [
  "ix-trace-rs",
  "num-bigint",
  "num-integer",
- "qsl-attrs",
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
@@ -1535,7 +1517,6 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "proc-macro2",
- "qsl-attrs",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
@@ -1556,7 +1537,6 @@ name = "qsl-source"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-attrs",
  "qsl-foundation",
  "quire-rs",
  "serde",
@@ -1570,7 +1550,6 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "proc-macro2",
- "qsl-attrs",
  "serde",
  "serde_json",
  "syn 2.0.119",
@@ -1710,7 +1689,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "qsl-attrs",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
@@ -2045,15 +2023,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_spanned"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
 name = "serde_stacker"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2199,12 +2168,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "target-tuple"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "876fef147edbcbddc8ac5cbbba92c7b86519e314e86638596c09673b2ed01e7f"
-
-[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2215,15 +2178,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "termcolor"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
-dependencies = [
- "winapi-util",
 ]
 
 [[package]]
@@ -2319,45 +2273,6 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
-
-[[package]]
-name = "toml"
-version = "1.1.6+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "920602543f0911ab71da12c50d59701da54c196d1a2bf5cb4b75667f137a406a"
-dependencies = [
- "indexmap",
- "serde_core",
- "serde_spanned",
- "toml_datetime",
- "toml_parser",
- "toml_writer",
- "winnow",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "1.1.1+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
-name = "toml_parser"
-version = "1.1.3+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
-dependencies = [
- "winnow",
-]
-
-[[package]]
-name = "toml_writer"
-version = "1.1.2+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "tracing"
@@ -2456,21 +2371,6 @@ checksum = "6c5f76ed8d947a75cc446d5fccd8b602ebf0cde64ccf2ffa434d873d7a575eff"
 dependencies = [
  "cc",
  "tree-sitter-language",
-]
-
-[[package]]
-name = "trybuild"
-version = "1.0.121"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0cabaa10be1917331a313866bd94526343e03c77bcf69144b62b072ad35d47c"
-dependencies = [
- "glob",
- "serde",
- "serde_derive",
- "serde_json",
- "target-tuple",
- "termcolor",
- "toml",
 ]
 
 [[package]]
@@ -2737,12 +2637,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "winnow"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
-
-[[package]]
 name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2761,7 +2655,6 @@ dependencies = [
  "arch-lint",
  "ix-trace-rs",
  "proc-macro2",
- "qsl-attrs",
  "qsl-foundation",
  "qsl-replay",
  "qsl-semantics",
