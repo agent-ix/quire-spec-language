@@ -77,3 +77,18 @@ can be fixed in this PR. Merge order stays QSpec #384 first.
 | FND-008 | low | FR-447 says two packages that differ in a mode, rate or claim have different "package identities". AC-5 then has S4 refuse to emit any package that holds a hybrid model, so there is no v2 package identity to compare. The intended value is the checked package identity (FR-003, FR-259), and the clause does not say how the new records enter that identity's preimage. Say "checked package identity" in the clause, AC-4 and TC-1187 step 4, and state the preimage form. | spec/functional/FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md:241-244 |
 | FND-009 | low | Lead default 3 makes the initial states all valuations that satisfy the first mode's invariant. In the use case, `Moving`'s invariant `v >= 0` leaves `v`, `a` and `t` unbounded, so `v = 40` is an initial state and `SlowEnough` is false. The worked example cannot be proved by any solver. Either constrain the example's invariant (for example `v >= 0 and v <= 20 and a >= 1 and t = 0`, though `t = 0` then conflicts with the flow) or settle the owner question on an `initial` clause before QSL-900 builds on the default. | spec/functional/FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md:160-162 |
 | FND-010 | low | The Description holds three SHALLs in one statement (S2 builds, S3 checks, the writer lowers). quire flags it `ears:non-singular`, the only validator diagnostic on the touched files. Split it into one statement per stage, or make the description non-normative. | spec/functional/FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md:33-38 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Horizon is now the formula's reach: r(Always/Eventually) = u + r(f), Until/Release = u + max; AC-3 adds the nested case (horizon 15) and an until case (4). |
+| FND-002 | fixed | Use case and AC-3 now write holds(...); the use case states p selects quire.temporal.infinite-trace/v1 for the interval-free variant. |
+| FND-003 | fixed | HybridFormula and HybridInterval are defined; the future operators are admitted and the past operators are refused expression-form. |
+| FND-004 | fixed | FR-290 gains a solver-inconclusive{trace} row (trace read on hybrid claims, Malformed at /cause/trace otherwise); FR-235 lists SolverInconclusive { trace }; FR-250-AC-4 and TC-705 step 4 test the plugin path. |
+| FND-005 | fixed | FR-447 uses one wording (numeric literal `1`, no constant folding); FR-250 now defers to FR-447; QSpec #384 FR-193 and FR-193-AC-7 adopt the literal rule with the `2 - 1` example. |
+| FND-006 | fixed | FR-447 -> FR-250 is now `references`; the cycle is gone. |
+| FND-007 | fixed | AC-2 adds a guard `when { v + 1 }` (non-boolean-root) and a flow `v' = true;` (type-mismatch). |
+| FND-008 | fixed | The clause, AC-4 and TC-1187 now say checked package identity, and the clause states the quire-canonical preimage form. |
+| FND-009 | fixed | Moving's invariant now bounds v to [0, 20] and a to [1, 2], and the use case states the claim holds. |
+| FND-010 | fixed | The Description is non-normative prose; make check-spec-validation shows no diagnostic on FR-447. |
