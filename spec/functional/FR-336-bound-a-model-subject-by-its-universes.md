@@ -57,6 +57,19 @@ a bound and how to give one, instead of picking one.
 - `ModelCheckRefusal::RequiresBound` naming each unbounded root, or an
   explored run (FR-126).
 - The item's obligation identity, binding the subject.
+- The subject's identity projection, `SubjectIdentity`:
+
+```rust
+pub struct SubjectIdentity { /* private members */ } // Clone, Debug, Eq, Hash
+
+impl SubjectIdentity {
+    pub fn of(subject: &ModelSubject<'_>) -> Result<Self, SubjectIdentityRefusal>;
+}
+
+pub enum SubjectIdentityRefusal {
+    Package(EmitRefusal), // the subject's checked package has no emission
+}
+```
 
 ## Behavior
 
@@ -93,6 +106,20 @@ a bound and how to give one, instead of picking one.
   expansion limits, the evaluation meter, the observation and normalization
   limits and the snapshot provision decide whether a run finishes, not what a
   finished run holds, so they are no part of it.
+- The identity projection's type SHALL be `SubjectIdentity`, defined in the
+  `qsl-replay` facade crate at `qsl_replay::SubjectIdentity`, so that the
+  EN-1 request path in `qsl-analyze` and a caller that depends only on
+  `qsl-replay`, CG included (FR-059), name the one type.
+- The `qsl-analyze` crate SHALL use `SubjectIdentity` from `qsl-replay`,
+  with no definition or re-export of its own at another path.
+- The `SubjectIdentity` type SHALL compare member by member, with a hash
+  that agrees with that equality and does not depend on the order of the initial
+  states, of a universe's keys or of the proof bounds.
+- When the subject's checked package has no emission, and so no canonical
+  package identity, `SubjectIdentity::of` SHALL refuse
+  `SubjectIdentityRefusal::Package`. The EN-1 request path reports that
+  refusal as its own request refusal for a package with no emission, and
+  FR-315's hyper queries report it as `product-identity`.
 - The EN-1 request path SHALL write a clause's item from the clause and the
   model subject: the item's requirement record is the clause's own record in
   the subject's checked package, and its obligation identity is the subject's
@@ -108,9 +135,13 @@ a bound and how to give one, instead of picking one.
 | FR-336-AC-3 | A `Counter` variant whose operation `step(n: Integer)` takes an unranged parameter returns `RequiresBound` naming that parameter root, both with no `ProofBound` and with a `ProofBound{IntegerRange{0, 3}}` on the clause's domain; with `n: Int[0, 3]` declared in the model it explores. | Test (TC-846) |
 | FR-336-AC-4 | `ReachesTwo` under `fair weak each` over universe `{a, b}` and over `{a, b, c}` gives two obligation identities that differ only in the subject's universe, and each `proved` result joins only its own request index. | Test (TC-846) |
 | FR-336-AC-5 | A subject that differs from another only in a proof bound, only in an initial state, or only in its checked package (a changed `post` contract, with the same clause, domain package and initial document), has a different identity, and the two get two request indices; a provision carrying a package the model does not select leaves the identity unchanged; a clause the subject's package has no requirement record for is refused and no item is written. | Test (TC-846) |
+| FR-336-AC-6 | `qsl_replay::SubjectIdentity::of` over FR-336-AC-4's subject gives the identity `qsl-analyze`'s request path writes into the item, and the same subject with its initial states, its universe's keys and its proof bounds each listed in reverse order gives an equal identity with an equal hash. A subject whose checked package has no emission is refused `SubjectIdentityRefusal::Package`. | Test (TC-1190) |
 
 ## Dependencies
 
+- [FR-315](FR-315-encode-the-smt-lib-transition-relation.md) "Product
+  identity" (the HP-2 product identity that holds one `SubjectIdentity` per
+  alias).
 - ADR-018 §1 (Scope), §2 SM-2, §3 (EN-1 pre-check, amended in place with the
   proof-bound rule); ADR-016 §2 and EX-1; ADR-014 §1 B-4, §4, §8; ADR-013
   O-09.
