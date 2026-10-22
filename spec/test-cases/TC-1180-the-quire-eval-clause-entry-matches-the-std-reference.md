@@ -1,12 +1,12 @@
 ---
-id: TC-1173
+id: TC-1180
 title: "The quire-eval clause entry matches the std reference on every clause path"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-406
     type: verifies
 ---
-# TC-1173: The quire-eval clause entry matches the std reference on every clause path
+# TC-1180: The quire-eval clause entry matches the std reference on every clause path
 
 ## Description
 
