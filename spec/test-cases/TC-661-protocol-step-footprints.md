@@ -12,7 +12,7 @@ relationships:
 
 Verify per-step read and write footprints, enabling footprints, independence and visibility over the protocol locations.
 
-Scope: FR-216-AC-1 to FR-216-AC-6.
+Scope: FR-216-AC-1 to FR-216-AC-7.
 
 ## Test Procedure
 
@@ -41,6 +41,10 @@ Scope: FR-216-AC-1 to FR-216-AC-6.
    `activate` step with FR-216-AC-6's predicates, and test the dependence
    with a writer of the field they read, and a `send` from the replicated
    role against a `spawn` of it.
+7. Read the `cattempt(Refund, r)` and `Committed` footprints of FR-216-AC-7's
+   `attempts 2` variant, test the dependence of the commit step with the
+   thread's `cend` and `cattempt`, and read the footprint of a `cattempt`
+   whose attempt type holds a `Reference<Peer>`.
 
 Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
 
@@ -62,3 +66,6 @@ Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
 - Step 6: the read locations FR-216-AC-6 lists; the writer of a read field is
   dependent with the `retire` step; a `send` from the replicated role reads
   `role(w)` and is dependent with a `spawn` of that role.
+- Step 7: the locations FR-216-AC-7 lists; the commit step dependent with
+  the thread's `cend` and `cattempt`; the `Peer` membership in the
+  reference-typed `cattempt`'s read footprint.
