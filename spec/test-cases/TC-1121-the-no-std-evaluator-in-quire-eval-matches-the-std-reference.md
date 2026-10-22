@@ -14,7 +14,7 @@ Verify FR-403. The `no_std` evaluator lives in `quire-eval` with FR-401's
 dependency set and reads checked terms without building them. It admits
 arguments itself and reads the environment only through its contract. It
 returns the std reference's results, refusal records, charges and orders,
-including FR-262-AC-1 to AC-8. Each moved item has one definition. Scope:
+including FR-262-AC-1 to AC-8, AC-10 and AC-11. Each moved item has one definition. Scope:
 FR-403-AC-1 to FR-403-AC-14.
 
 ## Test Procedure
@@ -44,7 +44,7 @@ FR-403-AC-1 to FR-403-AC-14.
    `Population` parameter, passing an unrecorded `PopulationId`. Make the
    same call on the reference over `ObjectEnvironment::new` of the same
    closure.
-7. Run FR-262-AC-1 to FR-262-AC-8 through `qsl-eval`'s `quire-eval` entry,
+7. Run FR-262-AC-1 to FR-262-AC-8, AC-10 and AC-11 through `qsl-eval`'s `quire-eval` entry,
    with AC-1 and AC-2 on a thread with a 512 KiB stack.
 8. Admit a population document ten times in each of two member orders. It
    has three members, two of which violate a subsetting edge.
@@ -83,7 +83,12 @@ FR-403-AC-1 to FR-403-AC-14.
    - `d(0)` is located at the `div` node.
    - `f(10)` and the two-argument call of `f` are `CallFailure::Input`,
      the second one `Arity`, each with no charge.
-   - The cancelled call is `CallFailure::Cancelled`, with no charge.
+   - `f(3)` over a meter whose installed handle is already cancelled is
+     the located `Incomplete` at its `function.call` charge, naming
+     `work_units` with `limit` equal to `consumed`, with no admitted
+     charge, and the handle's `tripped()` returns its cause.
+   - `f(3)` with a supplied-value run whose handle is already cancelled is
+     `CallFailure::Cancelled` from argument admission, with no charge.
    - The `w - 1` run is `Incomplete` naming `work_units` at the same charge
      point, with that charge unrecorded.
 5. The members come back in the same order with the same charges, and the

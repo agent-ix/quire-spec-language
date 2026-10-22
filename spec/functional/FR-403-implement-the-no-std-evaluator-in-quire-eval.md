@@ -373,7 +373,7 @@ implementations.
 
 ### FR-262 with `std` off
 
-In QSL, FR-262-AC-1 to FR-262-AC-8 SHALL each also run with the `no_std`
+In QSL, FR-262-AC-1 to FR-262-AC-8, AC-10 and AC-11 SHALL each also run with the `no_std`
 evaluator as the implementation. QSL's checker admits the source and
 `qsl-package` links the checked package with `std`, then the `quire-eval`
 evaluator evaluates its checked graph. Each run SHALL meet that criterion's
@@ -398,7 +398,7 @@ repository, and nothing else.
 | FR-403-AC-4 | For each vector, the `no_std` evaluator and the reference return equal results, equal FR-096 refusal records, equal consumed counters and equal ordered admitted charges. `count(3)` completes with `3`, with four `function.call` charges among its admitted charges. `function d(x: Int[0, 9]): Integer pure { 10 div x }` called with `0` returns the reference's non-completed outcome, located at the `div` node. `f` called with `10` returns `CallFailure::Input` from `quire-eval`'s argument admission, with no charge. `f` called with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, with no charge. `f` called with `3` over a meter whose installed handle is already cancelled returns the located `Incomplete` at its `function.call` charge, with `limit_kind` `work_units`, `limit` equal to `consumed` and no admitted charge; called with a supplied-value run whose handle is already cancelled, it returns `CallFailure::Cancelled` from argument admission, with no charge. `count(3)` with `work_units` one below its measured spend returns `Incomplete` naming `work_units` at the reference's denied charge point, with that charge unrecorded and the earlier spend kept. | Test (TC-1121) |
 | FR-403-AC-5 | Over an `ObjectEnvironment` with one population of three recorded members and an attached `ReadLog`, a function whose body is an `allInstances` over its `Population` parameter, evaluated through the `no_std` evaluator with `qsl-eval`'s environment implementation, returns the members in the reference's order, with the reference's charges, and leaves the same `ObservedRead` set in the `ReadLog`. | Test (TC-1121) |
 | FR-403-AC-6 | Over `quire-eval`'s closure-only environment, a call of a function with a `Population` parameter, given a `Population` value whose `PopulationId` is not recorded, returns `CallFailure::Input(InputRefusal::WrongValueKind)` naming parameter `0`, with no charge. The reference over `ObjectEnvironment::new` of the same closure returns the same result. | Test (TC-1121) |
-| FR-403-AC-7 | FR-262-AC-1 to FR-262-AC-8 each pass a second time with the `no_std` evaluator as the implementation, through `qsl-eval`'s `quire-eval` entry, with the reference's expected values. The AC-1 and AC-2 runs use a thread with a 512 KiB stack and observe no depth refusal and no stack overflow. | Test (TC-1121) |
+| FR-403-AC-7 | FR-262-AC-1 to FR-262-AC-8, AC-10 and AC-11 each pass a second time with the `no_std` evaluator as the implementation, through `qsl-eval`'s `quire-eval` entry, with the reference's expected values. The AC-1 and AC-2 runs use a thread with a 512 KiB stack and observe no depth refusal and no stack overflow. | Test (TC-1121) |
 | FR-403-AC-8 | Admitting a population document whose three members are listed in two different orders, with a subsetting violation on two of them, refuses both times naming the violating member with the lowest reference key, on each of ten runs. | Test (TC-1121) |
 | FR-403-AC-9 | `qsl-eval`'s manifest declares no `std` feature. `CheckedPackageEvaluation::call` and `evaluate` run the reference evaluator. `qsl-eval` re-exports no `quire-eval` item and defines no argument admission of its own. `quire-eval`'s source contains no name resolution, FR-098 conversion phase, model admission, simulation, or clause, frame, separation or value-invariant entry. | Inspection (TC-1121) |
 | FR-403-AC-10 | On each of ten runs, the `no_std` evaluator's results equal the reference's in order: the members of AC-5's `allInstances` over a population recorded with its members in descending reference-key order, which both return ascending; and the loss list of FR-262-AC-8's kernel-loss case. | Test (TC-1121) |
@@ -410,7 +410,7 @@ repository, and nothing else.
 ## Dependencies
 
 - [FR-262](FR-262-evaluate-values-and-calls-at-any-depth.md): the interface,
-  fuel and depth behaviour the implementation meets, and AC-1 to AC-8.
+  fuel and depth behaviour the implementation meets, and AC-1 to AC-8, AC-10 and AC-11.
 - [FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md):
   the leaf, its dependency set, its closure contract and the reference
   adapter.

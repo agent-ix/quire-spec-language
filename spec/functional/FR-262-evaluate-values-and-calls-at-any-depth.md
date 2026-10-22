@@ -163,8 +163,12 @@ callee, completed arguments, call-site location and saved caller continuation
 to the scheduler. The scheduler SHALL validate the request, charge the call
 and push the callee frame without native recursion. Validation checks that the
 callee is admitted in the session's checked closure, that the argument count
-equals its admitted signature's parameter count, and that each argument is
-admitted against its parameter's `ValueType`. A request that fails any of
+equals its admitted signature's parameter count, and that each argument is a
+member of its parameter's `ValueType`. Membership is decided in the type
+environment of the session's checked closure, with no supplied-value run: it
+charges neither the meter nor a supplied-value budget, and polls no `Cancel`
+handle. Validation therefore never charges the meter and never observes
+cancellation. A request that fails any of
 these checks is a broken invariant of the requesting body, not caller input:
 the session SHALL terminate with `CallFailure::Fault` carrying an
 `InternalFault` whose stage is `quire-eval` and whose invariant is
@@ -172,9 +176,12 @@ the session SHALL terminate with `CallFailure::Fault` carrying an
 ([FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md)). It
 terminates before the child's `function.call` charge, invokes no callee body,
 does not resume the requesting body, and keeps earlier spend. Such a request
-SHALL NOT end the session with `CallFailure::Input`. A validation that cannot
-decide for want of storage keeps the `CallFailure::Storage` arm that admission
-reports. While the child is active,
+SHALL NOT end the session with `CallFailure::Input`. A membership check that
+cannot decide for want of storage SHALL terminate the session with
+`CallFailure::Storage`, whose `parameter` is the index of the callee's
+parameter and whose failure is the type environment's storage failure, before
+the child's `function.call` charge and keeping earlier spend. No other failure
+arises from validation. While the child is active,
 the caller SHALL remain suspended. When the child completes, the scheduler
 SHALL deliver its evaluation to the matching continuation exactly once.
 Non-completed outcomes SHALL propagate under existing expression rules without
@@ -223,7 +230,7 @@ a transition that makes no charge runs to its end. The core returns
 `CallFailure::Cancelled` only as a pre-charge Begin failure from the
 supplied-value run ([FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md)).
 When the session terminates with completion, refusal, undefinedness,
-incomplete or fault, the core SHALL release suspended frames without executing
+incomplete, fault or storage failure, the core SHALL release suspended frames without executing
 continuations.
 Locations, loss records and outcome propagation SHALL match the reference
 evaluator; a scheduling yield is never an evaluation result.
@@ -265,7 +272,7 @@ and JIT preparation retain their existing contracts.
   QSL crates on the evaluator path:
   [NFR-015](../non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md).
 - The `no_std` implementation in `quire-eval`, its environment contract and
-  its rerun of AC-1 to AC-8:
+  its rerun of AC-1 to AC-8, AC-10 and AC-11:
   [FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md).
 - [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
   D-4.7 and D-6.
