@@ -46,10 +46,8 @@ No major gaps. The acceptance criteria are covered by tests that fail under muta
 
 ## Dispositions
 
-Round 1, reviewed at 2c1c71756 (fix commit 66a821ff2). The coder's claimed rows were checked against the fix commit and replaced by these reviewer-checked rows.
-
-| FND | outcome | sha/reason |
+| FND | outcome | sha |
 | --- | --- | --- |
-| FND-001 | fixed 66a821ff2 | Reviewer-verified: an_unused_unit_is_found_and_a_dimension_no_unit_names_is_not_listed asserts the spine graph holds only m, unused is listed and found, record and dimension lookups WrongKind, enum Unknown, Spare unlisted. Passes. |
-| FND-002 | fixed 66a821ff2 | Reviewer-verified: derived_dimensions_chains_and_offsets_convert covers Speed terms, 2 km = 2000000 mm, 0 C = 5463/20 K, mps not to m. Passes. |
-| FND-003 | fixed 66a821ff2 | Reviewer-verified: execute::tests::composite::admitted_unit_ids_are_the_units_replay_converts_against passes; mutant using km id on the positive arm fails (composite.rs:190). |
+| FND-001 | fixed: test an_unused_unit_is_found_and_a_dimension_no_unit_names_is_not_listed | 66a821ff2 |
+| FND-002 | fixed: test derived_dimensions_chains_and_offsets_convert (derived parts, 2 km = 2,000,000 mm, 0 C = 5463/20 K) | 66a821ff2 |
+| FND-003 | fixed: replay test admitted_unit_ids_are_the_units_replay_converts_against (FR-398-AC-5) | 66a821ff2 |

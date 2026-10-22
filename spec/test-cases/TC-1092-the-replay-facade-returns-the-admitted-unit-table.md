@@ -12,7 +12,7 @@ relationships:
 
 Verify `qsl_replay::compile_admitted`'s context lists the admitted dimensions
 and declared units, finds them by wire node id, returns each unit's kernel id
-and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-3.
+and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-5.
 
 ## Test Procedure
 
