@@ -39,8 +39,9 @@ Scope: FR-329-AC-1 to FR-329-AC-5 and FR-329-AC-8 to FR-329-AC-10.
    whose loop has one counted step; replay the last through FR-217.
 8. Under a bounded profile, evaluate a zero-counted protocol lasso that is
    unfair for a scheduler constraint (FR-338-AC-6's duplicate/lose cycle,
-   replayed against the default package), and the step 6 lasso under
-   `scheduling adversarial`.
+   replayed against the default package), and the same cycle replayed
+   against the package that declares `scheduling adversarial`, with `p` false
+   at every position.
 
 Tag the tests `#[trace("TC-839", "FR-329-AC-n")]`.
 
@@ -56,4 +57,4 @@ Tag the tests `#[trace("TC-839", "FR-329-AC-n")]`.
 - Step 7: `unsupported_construct`/`expression-form` for each evaluation, with
   no truth value (the replay is FR-217-AC-7's).
 - Step 8: `invalid_runtime_input`/`invalid-value` naming the scheduler
-  constraint; `false` at 0 under `scheduling adversarial`.
+  constraint; `false` at 0 against the adversarial package.

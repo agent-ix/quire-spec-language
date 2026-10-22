@@ -47,6 +47,9 @@ Disposition pass 1 at `agent-ix/quire-spec-language@9eb06cde9` (fix commit `9eb0
 | FND-002 | fixed 9eb06cde9 | Bullet 1 now reads "Under a bounded profile, the evaluator SHALL read a lasso only when ..." and the refusal is its own bullet with the evaluator as subject. |
 | FND-003 | fixed 9eb06cde9 | The constant-distance sentence stays as the stated fact, and a separate bullet says "the evaluator SHALL evaluate the clause false, because no position lies at a distance in `[a, b]`". |
 | FND-004 | fixed 9eb06cde9 | The fairness bullet is split: reading a scheduler constraint as taken and enabled (PA-2), refusing an unfair zero-counted lasso, and returning `Completed(false)` for a fair unmet lasso are three bullets, each with its own SHALL. |
+| FND-005 | fixed f18e5c026 | FR-329 no longer states the obligation; it reads "FR-217 states the replay of a protocol lasso under a bounded profile whose loop has a counted step", and FR-217 states it with the executor as subject: "the executor SHALL settle `inconclusive` with cause `NoValue`". |
+
+Disposition pass 2 at `agent-ix/quire-spec-language@f18e5c026` (fix commit `f18e5c026`). The FND-005 row above is pass 2's. `make check-spec-validation` exits 0 with no `ears:` warning on FR-329 or FR-217.
 
 ## New findings (disposition pass 1)
 
