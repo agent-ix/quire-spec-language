@@ -53,3 +53,5 @@ Round 1, reviewed at f1df350ca (spec fix 5acdfbc3d). The rows were checked by th
 | FND-001 | fixed | 5acdfbc3d |
 | FND-002 | fixed | 5acdfbc3d |
 | FND-003 | fixed | 5acdfbc3d |
+| FND-004 | fixed | SHA |
+| FND-005 | fixed | SHA |

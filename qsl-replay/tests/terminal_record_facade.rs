@@ -388,6 +388,16 @@ fn plugin_proof_is_trusted_and_names_the_plugin() {
         TerminalRecord::from_plugin_proof(
             RequestIndex::new(1),
             BackendId::new("acme-prover"),
+            qsl_replay::ProofBasis::ClosedForm {
+                analysis: qsl_replay::ClosedFormAnalysis::FixedPriorityRta
+            },
+        ),
+        Err(qsl_replay::PluginResultRefusal::CoreOnlyBasis)
+    );
+    assert_eq!(
+        TerminalRecord::from_plugin_proof(
+            RequestIndex::new(1),
+            BackendId::new("acme-prover"),
             qsl_replay::ProofBasis::Witness {
                 sources: Vec::new()
             },
@@ -398,7 +408,7 @@ fn plugin_proof_is_trusted_and_names_the_plugin() {
 
 /// FR-289-AC-11 / TC-773: a plugin result naming a QSL-only cause kind is
 /// refused and its item settles `failed`; any other kind is not refused.
-#[trace("TC-773", "FR-289-AC-11")]
+#[trace("TC-773", "FR-289-AC-11", "FR-289-AC-13")]
 #[test]
 fn plugin_result_claiming_a_qsl_only_cause_fails() {
     for (kind, cause) in [
@@ -433,11 +443,26 @@ fn plugin_result_claiming_a_qsl_only_cause_fails() {
     ] {
         assert_eq!(qsl_replay::read_plugin_cause_kind(cause.as_str()), Ok(()));
     }
+    // The remaining `InconclusiveCause` kinds carry payloads built elsewhere;
+    // their spellings are listed so every kind but the three is covered.
+    for kind in [
+        "certificate-rejected",
+        "scalar-agrees",
+        "well-definedness-unchecked",
+        "reduction-not-preserving",
+        "symmetry-broken",
+        "constraint-reached",
+        "reduction-horizon",
+        "memory-bound-reached",
+        "instance-bound-reached",
+    ] {
+        assert_eq!(qsl_replay::read_plugin_cause_kind(kind), Ok(()));
+    }
 }
 
-/// FR-289-AC-11 / TC-773: the typed `inconclusive` constructor refuses the
+/// FR-289-AC-12 / TC-773: the typed `inconclusive` constructor refuses the
 /// QSL-only causes and keeps any other.
-#[trace("TC-773", "FR-289-AC-11")]
+#[trace("TC-773", "FR-289-AC-12")]
 #[test]
 fn plugin_inconclusive_refuses_qsl_only_causes() {
     let plugin = || BackendId::new("acme-prover");
