@@ -49,5 +49,9 @@ Units examined:
 | --- | --- | --- |
 | FND-001 | fixed | 9060cc9aa: the section now opens 'For a declaration whose `using` alias names a header profile resolved to a layer' and adds 'A declaration that selects no layer is not restricted by this section'; FR-110-AC-11 adds the no-profile vector. |
 | FND-002 | fixed | 9060cc9aa: families include every contained type at any depth, an equality is admitted only when every family is, and the refusal names the first layer of the first unadmitted row in table order. Checked by hand: under value.complete `Sequence<Reference<Order>>` first fails the reference row (state.graph); under state.graph it first fails the whole-value row (value.complete); model.complete admits both. AC-11 states exactly these. |
+| FND-003 | fixed | e148e3a3d: AC-10 now gives every operand type: a record with `Int[0, 9]` and `Boolean` fields, `Sequence<Int[0, 9]>`, `Option<Int[0, 9]>` and `Reference<Order>`. Checked by hand against the table in order. Under state core and state queries, the three whole values first fail the whole-value row, so they name value.complete; `a = b` fails the reference row and names state.graph. Under state.graph, `r != q` names value.complete. Under value.complete, `a = b` names state.graph. Under model.complete, all four compile. |
+| FND-004 | fixed | e148e3a3d: 'A reference's target type `T` is not a contained type, so `a = b` over `Reference<Order>` has the reference family alone, whatever `Order`'s fields are.' |
 
 Disposition pass 1 verdict (head 9060cc9aa): **NOT MERGEABLE until FND-003 and FND-004 are fixed or accepted (both minor).**
+
+Disposition pass 2 verdict (head e148e3a3d): **MERGEABLE.** Every finding's latest outcome is `fixed`.
