@@ -1289,7 +1289,7 @@ fn emit_package_inner(
     let (profile_selections, mut laws) = split_laws(&order);
     // The IEEE trigger includes a declared float with no IEEE application.
     // Keep the selected, admitted policy even when no node needs its law.
-    if let Some(profile) = graph.scope().ieee_profile() {
+    if let Some(profile) = graph.scope().ieee_profile_selection() {
         laws.push(profile.definition().clone());
     }
 
