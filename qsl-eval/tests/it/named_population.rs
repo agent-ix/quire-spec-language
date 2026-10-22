@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_package::CheckedPackage;
 use qsl_package::emit_checked;
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::footprint::{derive_footprint, SymbolicLocation};
 use qsl_semantics::check::{CheckedGraph, FormulaNode};
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};

@@ -798,6 +798,13 @@ pub(super) fn model_node_content(
     }
 }
 
+/// The content of a `relation`/`population` node (QSpec FR-322 "Population
+/// references"): the one definition lowering's population reference and an
+/// abstraction relation's population target both key.
+pub(super) fn population_node_content(owner: ModelOwner) -> NodeContent {
+    model_node_content(owner, NodeTag::Relation, "population")
+}
+
 /// The key of the model declaration node of `record`, or `None` for a record
 /// kind no checked node names. It is a function of the declaring package's
 /// identity and the record's node alone (FR-322 "Model-owned members"
@@ -963,10 +970,7 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let (owner, _) = self.model_owner(declaration, location)?;
-        self.insert_node(
-            location,
-            model_node_content(owner, NodeTag::Relation, "population"),
-        )
+        self.insert_node(location, population_node_content(owner))
     }
 
     /// The model declaration node of the variant type `variant` and one

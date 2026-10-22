@@ -18,7 +18,10 @@ fn two_populations() -> Vec<u8> {
     archive["displayName"] = json!("ix://acme/orders/archive");
     archive["origin"]["generated"]["generatorIdentity"] = json!("ix://acme/orders/archive");
     archive["origin"]["generated"]["inputIdentities"] = json!(["ix://acme/orders/archive"]);
-    document["populations"].as_array_mut().unwrap().push(archive);
+    document["populations"]
+        .as_array_mut()
+        .unwrap()
+        .push(archive);
     serde_json::to_vec(&document).unwrap()
 }
 
@@ -141,5 +144,87 @@ fn a_population_bound_leaves_the_reference_node_unchanged() {
         result_type(&bounded),
         "the maximum enters through the result type"
     );
-    assert!(bounded.verified, "IR's v2 reader admits the bounded package");
+    assert!(
+        bounded.verified,
+        "IR's v2 reader admits the bounded package"
+    );
+}
+
+#[path = "../../../../qsl-semantics/tests/support/named_population.rs"]
+#[allow(
+    clippy::duplicate_mod,
+    reason = "the qsl-eval and qsl-semantics tests load the same fixture"
+)]
+mod counter;
+
+const GROW_A: &str = "pre A using v on M::Widget::grow { \
+                      forall(o in allInstances<M::Counter>(M::counters) : true) }\n";
+const GROW_B: &str = "pre B using v on M::Widget::grow { \
+                      forall(o in allInstances<M::Counter>(M::archive) : true) }\n";
+const GROW_C: &str = "pre C using v on M::Widget::grow { \
+                      forall(o in allInstances<M::Counter>(M::counters) : true) }\n";
+
+/// The `test/counter` unit `declarations` emitted, with the `counters` and
+/// `archive` documents the reader needs, and the full I2 read of it.
+fn counter_unit(archive: bool, declarations: &str) -> (Emission, Read) {
+    let checked = counter::checked(archive, declarations);
+    let emission = emit_checked(&CheckedPackage::link(checked.graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let mut evidence = read_evidence(&emission);
+    for (digest, document) in &checked.packages {
+        evidence
+            .insert_domain_package_document(
+                qsl_semantics::model::key::hex(digest).as_str(),
+                document.as_slice(),
+            )
+            .expect("a fresh evidence key");
+    }
+    let read = read_with(&emission, &evidence);
+    (emission, read)
+}
+
+fn reference_owners(emission: &Emission) -> Vec<String> {
+    population_references(&wire(emission))
+        .into_iter()
+        .map(|(owner, _)| owner)
+        .collect()
+}
+
+/// FR-391-AC-6: the AC's own unit, `A`, `B` and `C`, is admitted by the full reader and holds one
+/// reference per declared population read.
+#[trace("TC-1076", "FR-391-AC-6")]
+#[test]
+fn the_ac_6_unit_is_admitted_by_the_full_reader() {
+    let (emission, read) = counter_unit(true, &format!("{GROW_A}{GROW_B}{GROW_C}"));
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+    assert_eq!(
+        reference_owners(&emission),
+        [counter::ident("archive"), counter::ident("counters")]
+    );
+}
+
+/// FR-391-AC-6: a `lookup` and an `allInstances` over one population share
+/// its one node, a population domain and a `holds` atom emit it too, and the
+/// reader admits each package.
+#[trace("TC-1076", "FR-391-AC-6")]
+#[test]
+fn lookup_domain_and_holds_forms_share_one_admitted_node() {
+    let units = [
+        "pre Found using m on M::Counter::bump { \
+         lookup<M::Counter>(M::counters, self) absent refused = self }\n\
+         pre Room using v on M::Counter::bump { \
+         forall(o in allInstances<M::Counter>(M::counters) : o.v < 2) }\n",
+        "post P using v on M::Counter::bump { forall(o in M::counters : o.v < 2) }\n",
+        "temporal C using t over (w: M::Watch) clock \"model-steps\" on origin { \
+         eventually holds(forall(x in M::counters : x.v < 2)) }\n",
+    ];
+    for unit in units {
+        let (emission, read) = counter_unit(false, unit);
+        assert!(matches!(read, Read::Verified { .. }), "{unit}: {read:?}");
+        assert_eq!(
+            reference_owners(&emission),
+            [counter::ident("counters")],
+            "{unit}"
+        );
+    }
 }
