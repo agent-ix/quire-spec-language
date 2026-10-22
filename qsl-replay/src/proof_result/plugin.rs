@@ -98,7 +98,7 @@ impl PluginResultRefusal {
 
 /// Read the cause kind a plugin's `inconclusive` result names: a QSL-only
 /// kind is refused, any other kind is the caller's to read.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn read_plugin_cause_kind(kind: &str) -> Result<(), PluginResultRefusal> {
     let claimed = match kind {
         REPLAY_PARITY_KIND => QslOnlyCause::ReplayParity,
