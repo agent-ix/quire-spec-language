@@ -26,6 +26,7 @@ fn temporal(id: &str, seed: u8, models: &[MemoryModelName]) -> BackendDescriptor
         ManifestDigest::from_digest([seed; 32]),
         [(Capability::TemporalSatisfaction, Mode::Unbounded)],
         None,
+        None,
     )
     .expect("a well-formed descriptor")
     .with_fairness_kinds([Weak])

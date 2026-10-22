@@ -85,6 +85,7 @@ fn front_end_package_is_independent_of_provider_registry() {
                     [(Some(capability), Some(mode))],
                     Some(&["collection"]),
                     None,
+                    None,
                 )
                 .unwrap(),
             )

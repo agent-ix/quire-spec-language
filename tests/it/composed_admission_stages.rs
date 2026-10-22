@@ -539,26 +539,31 @@ fn deleting_either_requested_entry_fails_the_requested_inventory_check() {
     );
 }
 
-/// FR-057 "Kind applicability": each of the ten kinds applies to exactly
-/// the one family the table gives it.
+/// FR-057 "Kind applicability": each of the twelve kinds applies to exactly
+/// the one family the table gives it, or to none where the table says `none`.
 #[test]
 #[trace("TC-115", "FR-057-AC-11")]
 fn each_kind_applies_to_exactly_its_tabled_family() {
     let expected = |kind: Capability| match kind {
-        Capability::ValueValidity => Family::Predicate,
-        Capability::OperationContract => Family::State,
-        Capability::TemporalSatisfaction => Family::Temporal,
+        Capability::ProbabilisticSatisfaction | Capability::Schedulability => None,
+        Capability::ValueValidity => Some(Family::Predicate),
+        Capability::OperationContract => Some(Family::State),
+        Capability::TemporalSatisfaction => Some(Family::Temporal),
         Capability::FiniteReplay
         | Capability::GlobalConformance
         | Capability::Monitorability
         | Capability::LocalProjection
         | Capability::Refinement
         | Capability::Realizability
-        | Capability::Composition => Family::Protocol,
+        | Capability::Composition => Some(Family::Protocol),
     };
-    assert_eq!(Capability::ALL.len(), 10);
+    assert_eq!(Capability::ALL.len(), 12);
     for &kind in Capability::ALL {
-        assert_eq!(requests::families(kind), &[expected(kind)], "{kind:?}");
+        assert_eq!(
+            requests::families(kind),
+            expected(kind).as_slice(),
+            "{kind:?}"
+        );
     }
 }
 
@@ -610,8 +615,27 @@ fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_a
                     capability: Capability::FiniteReplay,
                     required: false,
                 },
+                // The two kinds no current declaration form belongs to.
+                Request {
+                    declaration: healthy,
+                    capability: Capability::ProbabilisticSatisfaction,
+                    required: false,
+                },
+                Request {
+                    declaration: due,
+                    capability: Capability::Schedulability,
+                    required: false,
+                },
             ];
             let requests = requests::report(report, &assessment, &asked);
+            assert_eq!(
+                requests.disposition(healthy, Capability::ProbabilisticSatisfaction),
+                Some(Disposition::InapplicableCapability(Family::State))
+            );
+            assert_eq!(
+                requests.disposition(due, Capability::Schedulability),
+                Some(Disposition::InapplicableCapability(Family::Temporal))
+            );
 
             // Each kind applicable to its declaration's own family is
             // admitted; only the structurally inapplicable claim is refused.

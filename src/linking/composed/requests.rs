@@ -29,10 +29,11 @@
 //! ## One capability type (ADR-010 OBS-012)
 //!
 //! [`Request::capability`] carries [`qsl_semantics::check::Capability`], the
-//! canonical ten-label FR-290 type (ADR-013 O-19), not a local request-label
+//! canonical twelve-label FR-290 type (ADR-013 O-19), not a local request-label
 //! enum: OBS-012 records that "the QSL four-variant request label enum is
-//! replaced by the #213 type." [`families`] maps each of the ten kinds onto
-//! the QSL declaration [`Family`] it applies to, as FR-057's "Kind
+//! replaced by the #213 type." [`families`] maps each of the twelve kinds onto
+//! the QSL declaration [`Family`] it applies to (the `probabilistic-satisfaction`
+//! and `schedulability` kinds apply to none), as FR-057's "Kind
 //! applicability" table fixes.
 //!
 //! A request whose kind is not in the requested declaration's `families()`
@@ -97,6 +98,10 @@ pub fn families(capability: Capability) -> &'static [Family] {
         | Capability::Refinement
         | Capability::Realizability
         | Capability::Composition => &[Family::Protocol],
+        // FR-057 "Kind applicability": no current QSL declaration form
+        // belongs to the `probabilistic` or `real-time` family, so every
+        // request of these kinds is inapplicable.
+        Capability::ProbabilisticSatisfaction | Capability::Schedulability => &[],
     }
 }
 
