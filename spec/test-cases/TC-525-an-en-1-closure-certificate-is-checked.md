@@ -25,8 +25,8 @@ are prospective qualification procedures; this artifact claims no execution.
 3. Check a certificate holding every reachable `Counter` state for the
    deadlock-freedom item, with no `terminal` declaration; then the same states
    for `always holds(c.value <= 3)`.
-4. Check a certificate holding `t1` for `always holds(true)` over
-   `test/tallies`.
+4. Check a certificate holding values 0 to 2 for `always holds(true)` over
+   the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }`.
 5. Derive each FR-338 canonical-vector context from its actual checked
    formula/profile/activation/binding; compare the full UTF-8 JCS key
    octets and the stated exact state-body octets. Construct equivalent

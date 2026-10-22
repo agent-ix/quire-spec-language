@@ -243,6 +243,8 @@ impl Case {
 pub(crate) struct NoBothZero;
 
 impl ModelLetters for NoBothZero {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }
@@ -1234,6 +1236,8 @@ const NEVER_ONE: &str = "temporal NeverOne using t0 over (c: M::Cell) clock \"mo
 struct NeverOne;
 
 impl ModelLetters for NeverOne {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }
@@ -1261,6 +1265,8 @@ const R1_NEVER_ZERO: &str = "temporal R1NeverZero using t0 over (k: M::Core) clo
 struct R1NeverZero;
 
 impl ModelLetters for R1NeverZero {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }
@@ -1659,6 +1665,8 @@ fn a_memory_model_refuses_a_resolved_model_it_does_not_implement() {
 pub(crate) struct Forbid(pub(crate) fn(&ModelSimState, &str) -> bool);
 
 impl ModelLetters for Forbid {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }

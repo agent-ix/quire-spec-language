@@ -707,6 +707,8 @@ fn two_liveness_runs_give_equal_outcomes() {
 struct ByKey(fn(&str, i64) -> bool);
 
 impl ModelLetters for ByKey {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: qsl_semantics::check::FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }
