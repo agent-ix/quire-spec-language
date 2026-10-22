@@ -55,6 +55,12 @@ Disposition pass 2, against agent-ix/quire-spec-language@8432b364990bd1aa1c24583
 | --- | --- | --- |
 | FND-002 | fixed | AC-2 now carries a vector for each branch the finding named, including the `response` clash it asked for at least. Each matches `TaskSet::new`/`ScheduleSubject::new` in task_set.rs: `check_task` refuses the negative blocking (`Negative`) and the zero sporadic interval (`arrival.interval()`, `NotPositive`); the `edf` arm refuses nonzero jitter (`EdfIgnoresTerm`); `check_priorities` runs for `amc` and before `UnknownTask` for `response`, and `Ctl.c` is a task of `Ctl` (FR-247-AC-1). AC-2 after: "... a blocking term of -1 ms; a sporadic task with minimum inter-arrival time 0 ms; ... a task with jitter 1 ms under `edf`; a task with no priority and two tasks with priority 1 under `amc`; two tasks with priority 1 under `response Ctl.c <= 12 ms`; ..." The residual response missing-priority gap is FND-003. |
 
+Disposition pass 3, against agent-ix/quire-spec-language@71971c6de8256094f76d6686439d519d41e32cb7 (fix commit 71971c6de; the head contains origin/main). Gates: `make check-spec-validation` exit 0 with no warning on FR-246 or TC-701; `tools/check-index-completeness.sh` exit 0; SR-13790 to SR-13793 each occur once.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | AC-2 now lists the response missing-priority vector, so TC-701 step 2's "the missing priority and the priority clash under `amc` and under a `response` claim" names fixtures AC-2 defines. AC-2 after: "... a task with no priority and two tasks with priority 1 under `amc`; a task with no priority under `response Ctl.c <= 12 ms`; two tasks with priority 1 under `response Ctl.c <= 12 ms`; ..." This matches task_set.rs: the `ScheduleClaim::Response` arm calls `check_priorities` (line 391), which refuses `MissingPriority` (line 459). |
+
 ## New findings (disposition pass 1)
 
 | ID | Severity | Summary | Refs |
@@ -66,3 +72,9 @@ Disposition pass 2, against agent-ix/quire-spec-language@8432b364990bd1aa1c24583
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-003 | low | TC-701 step 2 checks "the missing priority and the priority clash under `amc` and under a `response` claim", but FR-246-AC-2 lists only the clash under `response` ("two tasks with priority 1 under `response Ctl.c <= 12 ms`") and no task with no priority under a `response` claim. TC-701 takes its fixtures from AC-2 ("the refusal fixtures of FR-246-AC-2"), so step 2 names a fixture that AC-2 does not define, and the response missing-priority rule that the priority bullet states has no criterion. Add "a task with no priority under `response Ctl.c <= 12 ms`" to AC-2, or drop the missing priority under `response` from TC-701 step 2. | spec/functional/FR-246-check-task-sets-and-schedulability-claims.md:82-86; spec/functional/FR-246-check-task-sets-and-schedulability-claims.md:106; spec/test-cases/TC-701-task-sets-and-schedulability-claims-check.md:22 |
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | TC-701 step 2 used to read "Check each refusal fixture, and the priority clash under `edf`" (origin/main). The PR rewrote it as "Check each refusal fixture of FR-246-AC-2:" followed by a list, and the list leaves out three AC-2 vectors: two tasks named `a` (`conflicting_declaration`/`duplicate-declaration`), `response Ctl.zz <= 5 ms` (`missing_declaration`/`missing-name`) and a deadline of `3 m` (`ill_typed`/`type-mismatch`). Read as the list after the colon, step 2 no longer checks them, and its expected result ("each refuses at its span with its stated code, naming the task") does not mention them. Fix: add the three vectors to the step 2 list. | spec/test-cases/TC-701-task-sets-and-schedulability-claims-check.md:22,28; spec/functional/FR-246-check-task-sets-and-schedulability-claims.md:106 |
