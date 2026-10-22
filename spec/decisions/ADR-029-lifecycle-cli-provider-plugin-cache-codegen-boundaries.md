@@ -319,7 +319,7 @@ below takes its request, its limits and `&Cancel`.
 | `analyze` | Decide claims over every behaviour with an in-process engine | QSL layer A | `&CheckedPackage`, claim items, subject binding, engine limits | `Staged<AnalyzeOutcome>` |
 | `lower` | Read the emitted package into target-neutral IR | Driver, with the IR reader (E5) | `EmittedPackage` and its expected `package_id` | IR nodes, or IR's typed refusal |
 | `generate` | Emit backend artifacts from IR | Driver, with CG and RT | IR nodes, the routed `BackendId` per item, the generation target (proof harness, AOT crate, runtime monitor) | FR-331 `artifacts` with source maps; an unsupported item emits nothing |
-| `prove` | Negotiate, generate, run, replay and settle | Driver | `EmittedPackage` from the same run's `check`, claim items, the registry value, provider limits | `Staged<ProveOutcome>`: one FR-331 terminal record per item |
+| `prove` | Negotiate, generate, run, replay and settle | Driver | the `CheckedPackage` from the same run's `check` and, when `package` emits it, the `EmittedPackage`; claim items, subject binding, the registry value, provider limits | `Staged<ProveOutcome>`: one FR-331 terminal record per item |
 | `replay` | Re-execute a counterexample | QSL layer 6 | `ReplayRequest` with its byte provision (ADR-013 O-26) | `Staged<ReplayResult>` (ADR-013 O-27) |
 | `inspect` | Build a typed view | QSL layer P | a package, outcome or graph, and a view selector | `Staged<View>` (§9) |
 | `render` | Turn an outcome or view into text or DOT | QSL layer P | an outcome or `View`, the source byte provision | bytes |
@@ -446,7 +446,9 @@ pub trait Provider {
     /// Run the routed items of one FR-331 request.
     fn run(
         &self,
-        package: &EmittedPackage,
+        package: &CheckedPackage,
+        emitted: Option<&EmittedPackage>,
+        binding: &SubjectBinding,
         request: &ProviderRequest,
         limits: &ProviderLimits,
         cancel: &Cancel,
@@ -457,6 +459,16 @@ pub trait Provider {
 The Kani backend reached through CG, the QSL engines of OP-2 and the plugin
 host's process adapter (§5) each implement it, so the driver handles every
 provider the same way after routing.
+
+`prove` always passes the run's `CheckedPackage` and passes the
+`EmittedPackage` only when `package` emitted one. S4 refuses to emit a package
+that holds a random parameter, a workload, a reward or a probabilistic claim
+(FR-185), while its checked package remains, so `emitted` is `None` for such a
+package. An in-process provider, such as a QSL engine of OP-2, reads `package`
+and ignores `emitted`, so EN-4 serves a probabilistic claim through `prove`.
+The process adapter needs the package bytes: given `None` it writes no
+request frame and returns `unsupported` for each routed item, naming the
+item's capability kind and backend (QSpec FR-300).
 
 **PV-4 Negotiation for a process provider.** ADR-012 §7.2 makes every
 settlement an arm of CG `negotiate_*` over a closed backend kind. A
@@ -850,6 +862,11 @@ except the ADR-011 amendment, which is applied in place.
   Its certificate checkers and its settlement map sit in layer 6
   `qsl-replay` (CB-2, OP-2); the engine owns no settlement map. Each engine
   entry takes FR-276's `&Cancel`, not a polling closure.
+- ADR-029 OP-1 and PV-3, amended after acceptance: `prove` takes the
+  `CheckedPackage` and the subject binding, with the `EmittedPackage` only
+  when `package` emitted one, and `Provider::run` takes `&CheckedPackage`,
+  `Option<&EmittedPackage>` and `&SubjectBinding` in place of
+  `&EmittedPackage` alone (QSL FR-280, QSpec FR-300 and FR-331).
 - ADR-013 T-4: `StageFailure::Cancelled(CancelCause)` and
   `CallFailure::Cancelled` (LC-3).
 - ADR-012 §7.2: CG's closed backend kind gains the process-provider variant,

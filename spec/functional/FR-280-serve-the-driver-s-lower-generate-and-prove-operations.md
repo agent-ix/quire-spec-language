@@ -65,9 +65,9 @@ since every package that holds a probabilistic claim is one S4 refuses.
 ## Inputs
 
 For the provider entry: the run's `CheckedPackage` from `check` (FR-278),
-the subject binding (FR-120), the FR-331 provider request items routed to one
-QSL engine with the request's `deadline_ms`, the provider limits and
-`&Cancel`. The entry takes no `EmittedPackage` and reads no `package`,
+the subject binding (FR-120), the FR-331 provider request's `manifest` and
+its items routed to one QSL engine with the request's `deadline_ms`, the
+provider limits and `&Cancel`. The entry takes no `EmittedPackage` and reads no `package`,
 `package_id`, `dependencies` or `provision` member: the checked package and
 its resolved dependencies are already in process (QSpec FR-331, "In-process
 providers").
@@ -98,9 +98,10 @@ FR-331 results: one terminal record per routed item.
   so it serves an item over a checked package that S4 refuses to emit
   (FR-185) as it serves an item over one that S4 emits.
 - When an EN-4 item settles `measured` through the provider entry, the
-  sampled witnesses its record keeps shall be the ones `analyze` keeps for
-  the same item, and each shall replay through `replay_sampled_witness`
-  over the checked subject the entry was given (FR-193).
+  provider entry shall keep in its record the sampled witnesses `analyze`
+  keeps for the same item.
+- The provider entry shall keep each sampled witness replayable through
+  `replay_sampled_witness` over the checked subject it was given (FR-193).
 - The terminal record the provider entry returns for an item shall equal the
   record `analyze` returns for the same item, checked package, subject
   binding and limits.
@@ -115,7 +116,7 @@ FR-331 results: one terminal record per routed item.
 | FR-280-AC-2 | For each TC-762 item, an FR-331 provider request that routes that item to its QSL engine, passed to the provider entry with the `CheckedPackage` of the same source, returns a terminal record equal to the one `analyze` returns for that item. | Test (TC-761) |
 | FR-280-AC-3 | The `cargo tree` of every QSL crate lists no CG, RT or driver crate; an IR crate ADR-011 §6.1 sanctions (`quire-contract-model`) is allowed (FR-284's direction check). | Test (TC-767) |
 | FR-280-AC-4 | EN-4's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `BackendDescriptor::admit` accepts, advertising exactly (`probabilistic-satisfaction`, `bounded`) with the evidence-kind set `{statistical}` and the `domains` `{population, integer}`. A registry holding it and a descriptor advertising the same pair with `{exact}` gives a `statistical` probabilistic item the EN-4 `BackendId` alone, and an `exact` item the other alone. | Test (TC-761) |
-| FR-280-AC-5 | `Service` (FR-185-AC-7), whose `emit_checked` refuses `unsupported_construct`/`not-yet-implemented`, is passed to the provider entry as its `CheckedPackage` with an FR-331 provider request routing ADR-024 §7.2's `2 ms` claim to EN-4 with evidence kind `statistical`, seed 7 and `max_witnesses` 3. The entry returns one record, `measured` with decision `rejected`, equal to the record `analyze` returns for that item over the same checked package, binding and limits; its three sampled witnesses equal `analyze`'s and each replays `Reproduced` through `replay_sampled_witness` over `Service`'s checked subject. No `EmittedPackage` of `Service` exists in the run. | Test (TC-761) |
+| FR-280-AC-5 | `Service` (FR-185-AC-7), whose `emit_checked` refuses `unsupported_construct`/`not-yet-implemented`, is passed to the provider entry as its `CheckedPackage`, with its subject binding and an FR-331 provider request routing the `2 ms` claim of ADR-024 §7.2 over `Service` (the claim of FR-193-AC-1 and FR-193-AC-5) to EN-4 with evidence kind `statistical`, the Okamoto method (FR-189-AC-1), seed 7 and `max_witnesses` 3. The entry returns one record, `measured` with decision `rejected`, equal to the record `analyze` returns for that item over the same checked package, binding and limits; its three sampled witnesses equal `analyze`'s and each replays `Reproduced` through `replay_sampled_witness` over `Service`'s checked subject. No `EmittedPackage` of `Service` exists in the run; `Service`'s `emit_checked` is refused before and after the entry runs. | Test (TC-761) |
 
 ## Dependencies
 
