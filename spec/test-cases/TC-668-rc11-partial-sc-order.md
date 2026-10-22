@@ -12,7 +12,7 @@ relationships:
 
 Verify the SC event graph's edges and pruning, its collection on garbage collection, and its place in the canonical key.
 
-Scope: FR-223-AC-1 to FR-223-AC-6.
+Scope: FR-223-AC-1 to FR-223-AC-8.
 
 ## Test Procedure
 
@@ -26,6 +26,8 @@ Scope: FR-223-AC-1 to FR-223-AC-6.
 6. Run ADR-025 §15's LT-14 under `ra` and list `w`'s load of `X` at the
    state after `u` has run, `v` has stored `P := 1` after reading `Y = 1`, and
    `w` has stored `P := 2` after it in modification order.
+7. Run ADR-025 §15's LT-15 and LT-16 under `ra`, and list the live SC events
+   and the `owed` sets at the state after the last load of `L`.
 
 Tag the tests `#[trace("TC-668", "FR-223-AC-n")]`.
 
@@ -38,3 +40,5 @@ Tag the tests `#[trace("TC-668", "FR-223-AC-n")]`.
 - Step 4: equal counts and byte-equal keys.
 - Step 5: both outcomes reachable under `ra` only.
 - Step 6: the outcome unreachable; the load enabled for `X = 1` only.
+- Step 7: both outcomes unreachable; the collected events absent from `P`, and
+  their predecessors present in `owed`.
