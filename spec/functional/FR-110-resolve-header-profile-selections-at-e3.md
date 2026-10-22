@@ -153,9 +153,12 @@ section "Header-selectable layers" cites): `quire.state.core/v1`,
 
 QSpec's layer definitions (`state-core.md`, `state-queries.md`,
 `state-graph.md` under QSpec `proposals/quire-v1/definitions/`) admit
-equality by what it compares, not by the operator. S3 SHALL classify each
-`=` and `!=` by its typed operand family (FR-149) and admit it under a
-declaration's selected layers only as this table states:
+equality by what it compares, not by the operator. For a declaration whose
+`using` alias names a header profile resolved to a layer (Layer selection),
+S3 SHALL classify each `=` and `!=` by its typed operand families (FR-149)
+and admit it under the declaration's selected layers only as this table
+states. A declaration that selects no layer is not restricted by this
+section.
 
 | Operand family | Layers that admit `=` and `!=`, first the one a refusal names |
 | --- | --- |
@@ -163,12 +166,17 @@ declaration's selected layers only as this table states:
 | `Reference<T>` and object identity | `quire.state.graph/v1`, `quire.model.complete/v1` |
 | record, tuple, union, `Option<T>`, `Sequence<T>`, `Set<T>`, `Bag<T>`, `OrderedSet<T>` (whole value) | `quire.value.complete/v1`, `quire.model.complete/v1` |
 
+- An operand type's families SHALL be the family of the type itself and of
+  every type it contains at any depth: `Sequence<Reference<T>>` and a record
+  with a `Reference<T>` field are both whole-value and reference.
 - A declaration's selected layers admit a family when the family's row names
-  one of them or a layer in one of their `requires` closures.
+  one of them or a layer in one of their `requires` closures, and admit an
+  equality only when they admit every family of its operand type.
 - When a declaration's selected layers do not admit the operand family of
   an `=` or `!=`, S3 SHALL refuse it with
   `unsupported_construct`/`expression-form` at the operator's span, naming
-  the selected layer and the first layer the family's row names.
+  the selected layer and the first layer named by the first row, in table
+  order, that the selected layers do not admit.
 - S3 SHALL run this check after the equality is typed. An equality whose
   typing refuses (`ill_typed`/`type-mismatch` or
   `ill_typed`/`operator-ineligible`, FR-149) SHALL report that refusal and no
@@ -220,6 +228,7 @@ edge therefore compile to distinct packages.
 | FR-110-AC-8 | A unit whose header profile names `quire.state.core/v1` and whose declaration calls a named predicate refuses `unsupported_construct`/`expression-form` at the call's span naming `quire.state.core/v1`; a unit naming `quire.state.core/v1` that declares a named predicate refuses `unsupported_construct`/`declaration-form` at the declaration's span; both units naming `quire.state.queries/v1` compile. | Test (TC-490) |
 | FR-110-AC-9 | Under `make conformance`, `DefinitionLock::pinned()`'s catalog rows (role, authority and identity, in order), its package-selection rules, its trigger vocabulary and its selection refusal codes equal QSpec's `complete-value-lock.json`, and QSpec's selection vectors give the outcomes the lock's rules compute. | Test (TC-490) |
 | FR-110-AC-10 | Under `quire.state.core/v1`, `x = y` over `Int[0, 9]`, over `Boolean` and over an enum compiles. Under `quire.state.core/v1` and under `quire.state.queries/v1`, each of a whole-record equality `r = q`, a sequence equality `s = t`, an option equality `o = p` and a reference equality `a = b` refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and, in order, `quire.value.complete/v1`, `quire.value.complete/v1`, `quire.value.complete/v1` and `quire.state.graph/v1`. Under `quire.state.graph/v1`, `a = b` compiles and `r != q` refuses naming `quire.value.complete/v1`. Under `quire.value.complete/v1`, `r = q`, `s = t` and `o = p` compile and `a = b` refuses naming `quire.state.graph/v1`; under `quire.model.complete/v1`, all four compile. Under `quire.state.core/v1`, `r = 1` with `r` a record refuses `ill_typed`/`type-mismatch` and no layer refusal. | Test (TC-490) |
+| FR-110-AC-11 | In a unit with no header profile, `r = q` over records and `x = y` over `Int[0, 9]` compile. Under `quire.value.complete/v1`, `s = t` over `Sequence<Reference<Order>>` and `r = q` over a record with a `Reference<Order>` field each refuse `unsupported_construct`/`expression-form` at the operator naming `quire.state.graph/v1`; under `quire.state.graph/v1` the same two refuse naming `quire.value.complete/v1`; under `quire.model.complete/v1` both compile. | Test (TC-490) |
 
 ## Dependencies
 
