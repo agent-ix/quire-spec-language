@@ -117,6 +117,19 @@ pub struct CheckedModelRelation {
 - S3 SHALL flatten `μ` into its top-level conjuncts and place each conjunct
   that reads only universal variables in `mu_universal` and every other
   conjunct in `mu_existential` (ADR-023 HM-3).
+- Inside `match`, S3 SHALL check a qualified name that resolves to an
+  operation `O` of the model alias bound to trace variable `t`, written as
+  an operand of `=` or `!=` whose other operand is `t.step.op`, as the label
+  constant `O` of `t.step.op`'s type, not as a state read. The comparison
+  holds at a step exactly when the step is an `O` step; it is false at the
+  terminal stutter step, which only `stutter` matches.
+- If such a qualified name names an operation of a model alias other than
+  the alias bound to the compared `t`, or appears anywhere other than as an
+  operand of an `=` or `!=` with a `t.step.op` label, then S3 SHALL refuse
+  `ill_typed`/`type-mismatch` at the qualified name.
+- A qualified name in `match` that resolves to no operation and no member
+  SHALL refuse `missing_declaration`/`missing-name` at the name; one that
+  resolves to a model member SHALL keep the state-read refusal above.
 
 ### Fairness and profile
 
@@ -164,6 +177,7 @@ pub struct CheckedModelRelation {
 | FR-172-AC-2 | Refusals at the named span: `forall trace a` with no `of` in a `behaviours` clause (`unsupported_construct`, the quantifier); `of V` in a finite trace domain clause (the quantifier); `of W` naming no model (`missing_declaration`, the alias); `v.l` with no trace variable and `d.used @ n` with `d: S::Device` (`ill_typed`, the read); a `match` conjunct reading `v.l @ a` (`unsupported_construct`/`expression-form`, the read); an object parameter `d: S::Device` in a clause that binds only `V` (`ill_typed`, the parameter); `fair weak N::Device::tick` on a variable of `S` (`missing_declaration`). | Test (TC-597) |
 | FR-172-AC-3 | §13's clause with `align skip { V::Vault::mix }` checks with `align_skip` holding `mix`; `align skip { }`, `align skip { V::Vault::mix, V::Vault::mix }`, `align skip { N::Device::tick }` in a clause over `V` alone, and `align skip` with `fair weak V::Vault::step` each refuse `unsupported_construct`/`expression-form`. | Test (TC-597) |
 | FR-172-AC-4 | FR-171-AC-3's `Det` checks with two model execution bindings to `step`. `NonInterference` and the same clause with its quantifiers' fairness sets swapped between `a` and `b` (one empty, one `weak step`) have different node identities, as do the clause and the same clause with an extra `match` conjunct. | Test (TC-597) |
+| FR-172-AC-5 | In `NonInterference` over alias `V`, `match { a.step.op = V::Vault::step and b.step.op = stutter }` checks with both conjuncts in `mu_universal`, and `V::Vault::step != a.step.op` checks the same as its mirror. Refusals at the qualified name: `a.step.op = N::Device::tick` with `a` of `V` (`ill_typed`/`type-mismatch`); `a.step.receiver = V::Vault::step` and a bare conjunct `V::Vault::step` (`ill_typed`/`type-mismatch`); `a.step.op = V::Vault::nope` (`missing_declaration`/`missing-name`). | Test (TC-597) |
 
 ## Dependencies
 

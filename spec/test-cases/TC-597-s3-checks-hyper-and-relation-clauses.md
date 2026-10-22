@@ -12,7 +12,7 @@ relationships:
 
 Verify S3's checks of hyper clauses over behaviours and relations over model executions: alias binding, object parameters, indexed atoms, the `μ` split, per-variable fairness, `align skip`, execution bindings, refusals at their spans, and identity.
 
-Scope: FR-172-AC-1 to FR-172-AC-4.
+Scope: FR-172-AC-1 to FR-172-AC-5.
 
 ## Test Procedure
 
@@ -22,6 +22,7 @@ Fixtures: ADR-023 §1, §8.2 and §13's clauses over the vault and device models
 2. Check each FR-172-AC-2 variant.
 3. Check §13's clause and each FR-172-AC-3 variant.
 4. Check `Det`; compare node identities of `NonInterference`, its fairness-swapped variant and its variant with an extra `match` conjunct.
+5. Check `NonInterference` with each FR-172-AC-5 `match` block.
 
 Tag the tests `#[trace("TC-597", "FR-172-AC-n")]`.
 
@@ -31,3 +32,4 @@ Tag the tests `#[trace("TC-597", "FR-172-AC-n")]`.
 - Step 2: each refuses with the code and span FR-172-AC-2 names.
 - Step 3: `align_skip` holding `mix`; each variant refuses `unsupported_construct`/`expression-form`.
 - Step 4: two model execution bindings; three distinct identities.
+- Step 5: the operation-constant match checks with both conjuncts in `mu_universal`, its mirror checks the same, and each variant refuses with the code at the qualified name FR-172-AC-5 names.
