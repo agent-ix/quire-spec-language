@@ -321,10 +321,9 @@ nodes. A quantity literal in a value expression is outside V1
 ([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals-are-outside-v1-scope)):
 it is refused `unsupported_construct`/`not-yet-implemented` and introduces no
 literal node and no second quantity type. QSpec FR-322-AC-79 defines the
-quantity literal representation; the Contract IR reader does not yet admit it,
-and the unit key rules do not themselves admit a literal.
-
-Remaining work: IR-955
+quantity literal representation. A quantity is an unbounded domain that no
+`FiniteBound` ranges over (ADR-014 extent rule, FR-097-AC-2), which CG answers
+`RequiresBound`, and the unit key rules do not themselves admit a literal.
 
 ### Refusals
 
