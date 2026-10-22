@@ -17,6 +17,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-301
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-330
+    type: depends_on
 ---
 # FR-312: Read a clause-run request and run it through run_clause
 
@@ -60,6 +62,15 @@ place of `call`. `clause` is a closed object:
     selection;
   - `{"function": {"name": N, "arguments": A, "snapshot": K}}`, FR-109's
     `Function` selection, with `A` as FR-109 states;
+  - `{"temporal": {"name": N, "trace": T, "over": R}}`, FR-330's
+    `Temporal` selection. `T` is exactly one of `{"finite": [K, ...]}`
+    (`TraceInput::Finite`) and `{"lasso": {"prefix": [K, ...], "loop":
+    [K, ...]}}` (`TraceInput::Lasso`), each `K` an `observations` key, in
+    position order. `R` is FR-330's `{"reference": {"population": P,
+    "key": K}}`, with `P` the population's declaration identity text and
+    `K` the object's key. The permitted member sets are exactly
+    `{name, trace, over}`, `{finite}` or `{lasso}` for `trace`, and
+    `{prefix, loop}` for `lasso`;
 - `observations`: an object mapping each key to the file of a
   `quire.state.snapshot/v1` or `quire.state.invocation/v1` document
   (FR-106);
@@ -115,6 +126,17 @@ package and dependency inputs.
   refuse `invalid-request` at stage `request`, naming `observation` for an
   unsupported document or role and the member for a member defect, before
   `run_clause`.
+- For a temporal selection, the reader SHALL construct FR-330's
+  `Temporal{name, trace, over}` with one FR-106 `DocumentRef` per trace
+  key, in the order the request lists the keys; a key listed twice names
+  the same document at both positions. Each key SHALL name a
+  `quire.state.snapshot/v1` document whose observation role is `current`;
+  an invocation document or another role refuses `invalid-request` at
+  stage `request`, naming `trace`. A `trace` variant other than `finite`
+  and `lasso` (a model trace, FR-330's `TraceInput::Model`, is built in
+  process only) refuses `invalid-request` at stage `request`, naming
+  `trace`. The reader checks no trace length: an empty `finite` array or
+  an empty `loop` reaches FR-330, which refuses it at stage `evaluate`.
 - The reader SHALL read each observation file once, under FR-100's
   `dependent_bytes` limit and relative to the request file's directory.
 - The reader SHALL pass every byte it read into the `ClauseRunRequest`;
@@ -138,6 +160,7 @@ package and dependency inputs.
 | FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test |
 | FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `parameters` and, for an object receiver, `self` constructs `PreCall`; a current or pre request without `self` constructs the selection with no `self`, and admission refuses it as `wrong-observation` at stage `admit` when the receiver is an object; a pre request without `self` for a state machine's precondition admits, and a state machine's invariant selected by `Current` is refused by FR-106-AC-46 (it is selected by `Context`); an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting `anchor` from a current request or `parameters` from a pre request, or adding a role-forbidden member, refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. Selecting a post snapshot or a document with an unrecognized format or observation role refuses `invalid-request` at stage `request`, naming `observation`. | Test |
 | FR-312-AC-6 | A clause request's `accounting` object accepts all ten counter names and passes their values unchanged to `ClauseRunRequest.accounting`; omitted `accounting` uses the FR-100 defaults. A direct `work_units` member of `clause` refuses `invalid-request` at stage `request`, exit 20, empty stdout. | Test (TC-891) |
+| FR-312-AC-7 | Through `run`, a request selecting `{"temporal": {"name": "Reaches", "trace": {"lasso": {"prefix": [], "loop": ["s0", "s1"]}}, "over": {"reference": {"population": P, "key": "c1"}}}}` over FR-330-AC-2's `Counter` snapshots `s0` (`c.value` 0) and `s1` (1) writes the `/2` document FR-267-AC-13 states, exit 10; with loop `["s0", "s1", "s2"]` it writes `success`, exit 0, byte-identical to the report of the same `ClauseRunRequest` built in process. A trace key naming an invocation document or a pre snapshot, a `trace` of `{"model": {}}`, a `trace` holding both `finite` and `lasso`, and an unknown member in `temporal` each refuse `invalid-request` at stage `request`, exit 20, empty stdout, naming `trace` or the member. A `finite` array of zero keys reaches FR-330 and reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1160) |
 
 The existing AC-1 through AC-5 test-case association remains TC-891;
 method-only Verification cells do not replace the existing trace tags.
@@ -151,6 +174,8 @@ method-only Verification cells do not replace the existing trace tags.
   `run` command.
 - [FR-106](FR-106-admit-snapshots-and-invocations.md): observation documents
   and `ObservationLimits`; FR-115 for the frame selection.
+- [FR-330](FR-330-run-a-temporal-clause-through-the-spine.md): the
+  `Temporal` selection, its trace input and `over` binding.
 - [FR-267](FR-267-write-run-results-as-native-run-result-2.md): the `/2`
   clause-run document and the command-error envelope.
 - QSpec FR-301 (exit codes).

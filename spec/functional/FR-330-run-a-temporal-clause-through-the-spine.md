@@ -83,6 +83,12 @@ and `unsupported` (a missing fairness premise), and its `disposition` for a
   `admit`, `invalid_runtime_input`/`invalid-value`: a bounded profile reads
   a closed finite trace here; the zero-counted protocol lasso FR-329
   reads under a bounded profile is not an input of this entry.
+- A refused `holds` condition (FR-327 "Refused condition") SHALL report
+  stage `evaluate` with FR-100's `refused` outcome for its evaluation (the
+  record's code, cause, fields and the atom's locus), its position, and
+  the category and exit of the record's code; its kernel
+  `Refusal::CheckedInvariant` reports `internal-failure`, as FR-100 maps
+  it. It is not reported as an internal fault or as `undefined`.
 - A refusal of FR-329 (malformed or unfair lasso) SHALL report stage
   `evaluate`, category `refusal`, with its record.
 - The entry SHALL map `Completed(true)` to `success` (exit 0);
@@ -106,6 +112,7 @@ and `unsupported` (a missing fairness premise), and its `disposition` for a
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |
 | FR-330-AC-5 | From source, FR-327-AC-5's first clause over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
 | FR-330-AC-6 | From source, a clause `Fair` (`always eventually holds(c.value = 2)` under `fair weak inc`) over `Lasso` with an empty prefix and loop 0, 1, 2 reports stage `evaluate`, `unsupported`, exit 21, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`. | Test (TC-848) |
+| FR-330-AC-7 | From source, a `Counter` clause `always[0,1] holds(...)` under event-position false-extension, whose `holds` condition completes for `c.value` 0 and refuses with kernel `integer_out_of_domain`/`outside-domain` for `c.value` 2, over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
 
 ## Dependencies
 

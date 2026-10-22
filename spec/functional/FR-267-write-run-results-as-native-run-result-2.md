@@ -23,6 +23,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-contract-codegen/FR-004
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-330
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-364
+    type: depends_on
 ---
 # FR-267: Write and read run results as native-run-result/2
 
@@ -133,6 +137,10 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
   `witness` equal to the report's, under QSpec FR-351 componentwise
   identity.
 
+- The writer SHALL write every report of FR-330's `Temporal` selection,
+  and the reader SHALL read it, under **Temporal disposition wire** below;
+  no temporal disposition is refused by the writer.
+
 ### Frame witness wire
 
 `frame_witness` is a closed object with exactly `code`, `cause`,
@@ -160,6 +168,60 @@ permission is inferred from the witness.
 The reader SHALL reject an unknown `kind` or `difference`, an absent required member, an
 extra member, `null` in place of a member, or a declaration key that is
 not the declared `{package, node}` form.
+
+### Temporal disposition wire
+
+A stage `evaluate` disposition of a `Temporal` selection (FR-330) carries
+`temporal`, a closed object whose `kind` is exactly one of the rows below,
+and no FR-351 top-level `witness`. A report of any other selection carries
+no `temporal`. A stage `compile`, `select` or `admit` disposition of a
+`Temporal` selection is written as for every other selection, with no
+`temporal`.
+
+| `kind` | Evaluator result (FR-330) | Members beside `kind` | `category`, `truth`, `basis` | Other disposition members |
+| --- | --- | --- | --- | --- |
+| `holds` | `Completed(true)` | none | `success`, `true`, `closed-scope` | none |
+| `violated` | `Completed(false)` | `position`, `counterexample` | `violation`, `false`, `closed-scope` | none |
+| `undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample` | `violation`, `false`, `closed-scope` | none |
+| `insufficient-data` | `Undefined` with `insufficient-data` | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | none |
+| `pending` | `Pending` | none | `inconclusive`, absent, `unavailable` | none |
+| `missing-fairness-premise` | `MissingFairnessPremise` | `constraint` | `unsupported`, absent, `unavailable` | `refusal` with `unsupported_projection`/`missing-fairness-premise` |
+| `incomplete` | `Incomplete` | none | `incomplete`, absent, `unavailable` | `outcome`, FR-100's `{"kind": "incomplete", "limit": ...}` |
+| `window-limit-reached` | `WindowLimitReached` | `limit`, `value`, `setting` | `incomplete`, absent, `unavailable` | none |
+| `condition-refused` | a `holds` condition refused (FR-327 "Refused condition") | `position` | the refused outcome's category, absent, `unavailable` | `outcome`, FR-100's `refused` form with the record's `code`, `cause`, `fields` and `locus` |
+
+- `position` is the zero-based trace position as an unsigned integer;
+  `count`, `min_count` and `value` are unsigned integers; `limit` and
+  `setting` are the limit's and its setting's names.
+- `constraint` is QSpec FR-364's fairness member form `{kind, operation,
+  granularity}`.
+- `counterexample` is QSpec FR-364's `TemporalCounterexample` on its
+  observed arm (`trace: "observed"`, `initial_state: null`, `over_binding:
+  null`), as FR-331 reads it. Its `fairness` is the clause's checked
+  fairness set and its `trace_position` is `position` in FR-327's
+  `TracePosition` spelling. For `violated`, `kind` is `formula`, `prefix`
+  and `loop` hold one `{document}` step per position of the supplied
+  `Finite` trace or `Lasso` prefix and loop, and `interval` is the clause's
+  first interval-carrying operator's interval in FR-364's form, or `null`.
+  For `undefined`, `kind` is FR-364's undefined-evaluation envelope whose
+  `where` carries `position`, `document` and `locus` and whose `cause` is
+  the undefined value's catalogued reason; `prefix` holds the steps of
+  positions 0 to `position` of the represented trace, `loop` is empty and
+  `interval` is `null`.
+- A `TemporalRefusal` disposition (FR-330: a malformed trace or an unread
+  profile) is written as stage `evaluate`, its catalog code's category,
+  `basis` `unavailable`, and `refusal` holding exactly its `code` and
+  `cause`, with no `temporal`. A `TemporalRefusal` that is an internal
+  fault is written as `internal_fault`.
+- The reader SHALL refuse, naming the member: a `temporal` on a
+  disposition that is not a `Temporal` selection's evaluate disposition;
+  an unknown `kind`; a member the row does not list, or one it lists
+  absent or `null`; a `category`, `truth` or `basis` other than the row's;
+  a top-level `witness`; and a `counterexample` that QSpec FR-364's
+  replayer refuses before replay or whose `trace_position` differs from
+  `position`.
+- Writing a temporal report and reading it back SHALL restore an equal
+  `ClauseDisposition`.
 
 ### Wire member cross-check
 
@@ -239,6 +301,13 @@ condition is false; the reader refuses `null` or a default in its place.
 | Change | `deletes` | FR-115 | Ordered declaration-key array on deletion | Restore checked grant |
 | Declaration key | `package` | FR-056, FR-115 | Package identity | Restore key package |
 | Declaration key | `node` | FR-056, FR-115 | IR node identity | Restore key node |
+| Disposition | `temporal` | FR-330, FR-267 | Closed temporal disposition, Temporal selection only | Restore typed temporal verdict |
+| Temporal | `kind` | FR-267 | One of the nine tags of the temporal table | Select verdict variant |
+| Temporal | `position` | FR-327 | Unsigned trace position | Restore position |
+| Temporal | `counterexample` | QSpec FR-364, FR-331 | Observed-arm `TemporalCounterexample` | Restore and check against FR-364 |
+| Temporal | `count`, `min_count` | FR-327 | Unsigned counts | Restore counts |
+| Temporal | `constraint` | QSpec FR-364 | Fairness member `{kind, operation, granularity}` | Restore constraint |
+| Temporal | `limit`, `value`, `setting` | FR-194 | Limit name, unsigned value, setting name | Restore limit |
 | Separating witness | `quantifier` | QSpec FR-352 | FR-351 occurrence key when assigned | Restore component |
 | Separating witness | `deciding_element` | QSpec FR-352 | Canonical typed value | Restore component |
 | Separating witness | `index` | QSpec FR-352 | Unsigned position when assigned | Restore component |
@@ -311,6 +380,8 @@ condition is false; the reader refuses `null` or a default in its place.
 | FR-267-AC-10 | Independently removing a required command-error member, adding a clause-run-only member, replacing the unavailable basis with a decisive basis, adding a witness, or violating FR-100's code-specific cause/details rules makes the strict reader refuse with a located diagnostic. Changing an otherwise valid command-error envelope to `/1` or another unsupported format refuses before variant selection. | Test |
 | FR-267-AC-11 | FR-115's forbidden-parent-change Frame report writes `disposition.refusal.frame_witness` with its invocation, pre, post, population and `field_write` change naming `child`, `parent` and the checked `modifies` grant; reading the `/2` document restores an equal FR-115 `FrameWitness`. A creation, deletion and retype each round-trip their tagged change. The document has `violation`, `truth: false`, `basis: closed-scope`, no `disposition.outcome` and no top-level `witness`. Independently dropping a frame-witness member or change member, adding an unknown member, mismatching its code or cause with the enclosing refusal, or adding `frame_witness` to a non-Frame disposition refuses with a located wire diagnostic. | Test |
 | FR-267-AC-12 | FR-115's link Frame report (TC-1037's invocation I under a frame that modifies no relationship) writes `frame_witness` with a `link` change naming `relationship`, `difference`, `source`, `target` and the checked `modifies`; reading the `/2` document restores an equal FR-115 `FrameWitness`, for `added` and for `removed`. Independently dropping each `link` member or a `source` or `target` member, adding an unknown member, setting `difference` to another value or `null`, and giving an end a bare key refuse with a located wire diagnostic. | Test (TC-1037) |
+| FR-267-AC-13 | FR-330-AC-2's `Reaches` over the `Lasso` with an empty prefix and loop 0, 1 writes stage `evaluate`, `violation`, `truth: false`, `basis: closed-scope`, no top-level `witness`, and `temporal` `{"kind": "violated", "position": 0, "counterexample": C}`, where `C` has `trace: "observed"`, `kind: "formula"`, `initial_state: null`, `prefix: []`, `loop` the two snapshots' `{document}` digests, `over_binding: null`, `fairness: []`, `interval: null` and `trace_position: "0"`; the bytes equal their RFC 8785 re-encoding. FR-331 replaying `C` under an FR-070 envelope naming `Reaches` settles `reproduced-with-evaluated-witness` (FR-331-AC-1). FR-330-AC-1's `Bounded` violation writes `interval` `{"lower": "0", "upper": "1"}`. | Test (TC-1160) |
+| FR-267-AC-14 | Each FR-330 temporal report writes its table row and reads back to an equal disposition: FR-330-AC-2's `inconclusive` (`pending`) and `success` (`holds`), FR-330-AC-4's `incomplete` (`outcome` limit `work_units`), FR-330-AC-5's `undefined` (`position` 2, envelope `cause` `division-by-zero`, `prefix` the three snapshots), FR-330-AC-6's `missing-fairness-premise` (`constraint` `{"kind": "weak", "operation": ..., "granularity": "whole"}`), FR-330-AC-3's empty-loop `refusal` (`refusal` `invalid_runtime_input`/`invalid-value`, no `temporal`) and FR-330-AC-7's `condition-refused`. Independently adding `temporal` to FR-267-AC-1's `forall` document, setting `kind` to `held`, dropping `counterexample` from AC-13's document, setting its `trace_position` to `"1"`, adding a top-level `witness`, and setting `basis` to `decisive-counterexample` each refuse with a located wire diagnostic. | Test (TC-1160) |
 
 ## Dependencies
 

@@ -117,6 +117,23 @@ with an incomplete result, never a guess, when the work budget runs out.
   O-16 category `undefined` with that cause, never `UndefinedEvaluation`
   and never violation (QSpec FR-414).
 
+### Refused condition
+
+- When the S6a evaluation of a `holds` condition at a position the clause
+  reads is a refusal (a kernel `Outcome::Refused` or a family
+  `FamilyResult::Refused`), the evaluator SHALL stop at that atom and
+  return the refused condition, its position and that evaluation, in
+  place of a truth value. The rule holds for every profile and trace shape
+  the evaluator reads, FR-328's prefix and FR-329's lasso included. An
+  activation that evaluates false, and an atom that evaluates undefined,
+  at an earlier position in the evaluation order SHALL be returned
+  instead.
+- A refused condition SHALL keep its refusal's FR-096 record (code, cause,
+  fields and the atom's locus) and its O-16 category: it is a refusal of
+  the run, neither an undefined evaluation nor an internal fault. The
+  kernel `Refusal::CheckedInvariant` is the exception: it is an internal
+  failure, as FR-100 maps it.
+
 ### Work
 
 - The evaluator SHALL charge `quire_exact::LimitKind::WorkUnits` once for
@@ -141,6 +158,7 @@ with an incomplete result, never a guess, when the work budget runs out.
 | FR-327-AC-3 | `TracePosition` `0` and `2` decode to positions 0 and 2; `02`, `-1`, the empty string and `18446744073709551616` refuse `invalid_runtime_input`/`invalid-value`; position `3` on the three-position trace refuses `invalid_runtime_input`/`invalid-value` at reconstruction. Position 12 encodes as `12`. | Test (TC-837) |
 | FR-327-AC-4 | Over AC-1's trace, `eventually[0,2] holds(c.value = 2)` `on origin` makes 4 visits: the `eventually` node at position 0 and the `holds` atom at positions 0, 1 and 2. With a meter of 3 work units it returns `Incomplete` at the `WorkUnits` charge point and no truth value; with a meter of 4 it returns `Completed(true)` and charges 4. | Test (TC-837) |
 | FR-327-AC-5 | Over the closed `Counter` trace with `c.value` 0, 1, 2 under event-position false-extension, `always[0,2] holds(2 / (2 - c.value) >= 1)` `on origin` returns `Undefined{where: 2, cause: division-by-zero}`, category violation; `eventually[0,1] holds(2 / (2 - c.value) = 2)` reads positions 0 and 1 only and returns `Completed(true)`. | Test (TC-847) |
+| FR-327-AC-6 | Over AC-1's trace with a `holds` atom whose S6a evaluation is `Completed(true)` at position 0 and a kernel `Outcome::Refused(IntegerOutOfDomain)` at position 1, `always[0,2] holds(...)` `on origin` returns the refused condition at position 1 with the record `integer_out_of_domain`/`outside-domain`, its `expected` field and the atom's locus, category refusal, and no truth value; with the refusal at position 1 and a false atom at position 0 it returns `Completed(false)` at position 0; with `Refusal::CheckedInvariant` at position 1 it is an internal failure. The same atom under infinite-trace over the prefix (FR-328) and over the lasso with an empty prefix and loop 0, 1 (FR-329) returns the refused condition at position 1. | Test (TC-1160) |
 
 ## Dependencies
 
