@@ -63,3 +63,10 @@ behaviour gaps.
 | --- | --- | --- | --- |
 | FND-001 | medium | Three structural clauses of FR-093-AC-33 and TC-483 step 6 are not asserted. (a) "the call's argument references that node", for `h`. (b) `k` lowers `quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`. (c) `c` lowers `quantity.convert` with mode `rounding` = `exact`, then `quantity.eq` over the convert node and the `3 s` literal. `a_converted_quantity_is_compared_with_a_quantity_literal` only checks that the two identities occur somewhere in the package. A lowering that compared `d` itself, dropped the mode, or inlined the literal would still pass. A probe dump shows the code is correct today (call and eq arguments are `reference` terms to the literal node). | qsl-package/src/emit/tests/admission_corpus.rs:965-985 |
 | FND-002 | medium | FR-093-AC-34 and TC-483 step 6 say the refusals name things. `missing-name` names `ghost` and `Time`, and `rational-bits-exceeded` names `s3.rational_bits` and `16`. `quantity_refusals` reduces each refusal to its catalog code and a location flag, so neither name is asserted. A probe shows the code is correct: `MissingName("ghost")`, `MissingName("Time")`, and `StageLimitCause { kind: RationalBits, limit: 16, actual: 17 }`. | qsl-semantics/src/check/assemble/tests.rs:2323-2349, 2379-2450 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 51483137f | `quantity_literal_nodes_are_referenced_by_their_operations` asserts the call argument, `k`'s `[ref(d), ref(literal)]`, and `c`'s convert (mode rounding exact, over `d`) under an eq with the `3 s` literal |
+| FND-002 | fixed 51483137f | `quantity_literal_refusals_name_the_name_and_the_limit` asserts `MissingName("ghost")`, `MissingName("Time")` and the `s3.rational_bits` limit 16 |

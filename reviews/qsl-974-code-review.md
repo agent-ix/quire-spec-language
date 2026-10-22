@@ -69,3 +69,10 @@ Mergeable. No high findings. The two lows below are about consistency only.
 | --- | --- | --- | --- |
 | FND-001 | low | The two magnitude refusals have different loci. The ceiling refusal is located at the whole literal (`rational(1, 100000) ms`, through the literal's `Location`). The zero-denominator refusal is located at the magnitude only (`rational(1, 0)`, through `ProbabilisticCause::ZeroDenominator { span }`). FR-093 "Refusals" states no locus for either, and the tests pin each as built. Pick one locus, or state both in FR-093, so a consumer does not have to learn two. | qsl-semantics/src/check/probabilistic.rs:668-676; qsl-semantics/src/check/assemble/tests.rs:2412-2430 |
 | FND-002 | low | A zero denominator in a value-expression quantity literal is still raised as `CheckCause::Probabilistic(ZeroDenominator)` with a root `Location::root(Origin::Expression)`. So a function-body refusal is attributed to the Probabilistic family, and it resolves only through its span. A plain `rational(1, 0)` in the same body refuses through FR-091's own cause. The catalog code is the same (`undefined_expression`/`unproved-nonzero`), so nothing is wrong on the wire. Only the family attribution and the replay message path differ. | qsl-semantics/src/check/check/typing.rs:944-948; qsl-semantics/src/check/probabilistic.rs:672 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed 51483137f | the zero denominator is located at the whole literal like the ceiling refusal; FR-093 "Refusals" states the locus; the tests pin both at the literal |
+| FND-002 | fixed 51483137f | the value expression raises `CheckCause::Unproved(Obligation::Nonzero)`, the cause a plain `rational(1, 0)` already uses, instead of `Probabilistic(ZeroDenominator)` |
