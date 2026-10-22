@@ -91,6 +91,7 @@ fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
         ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [advertises],
         Some(BTreeSet::from([DomainKind::Collection])),
+        None,
     )
     .expect("a well-formed descriptor")
 }

@@ -59,6 +59,7 @@ mod scheduler_fairness;
 mod state_graph;
 mod state_graph_certificate;
 mod state_graph_settle;
+mod statistical_manifest;
 mod statistical_model;
 mod statistical_witness_replay;
 mod strong_fairness;

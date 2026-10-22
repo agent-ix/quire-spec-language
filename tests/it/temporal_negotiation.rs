@@ -69,6 +69,7 @@ fn backend(id: &str, mode: Mode) -> BackendDescriptor {
             Mode::Bounded => Some(BTreeSet::from([DomainKind::Collection])),
             Mode::Unbounded => None,
         },
+        None,
     )
     .expect("a well-formed descriptor")
 }
