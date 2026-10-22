@@ -177,7 +177,7 @@ pub(super) fn visit_located(
 /// presence or control form) or one another requirement gates: FR-361 item 7
 /// leaves `allInstances` ungated and the protocol clause family owns a
 /// protocol reference.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> Option<LayerForm> {
     match node {
         ExprNode::Call { name, .. } => Some(if predicates.contains(name.as_str()) {

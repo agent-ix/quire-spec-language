@@ -77,7 +77,7 @@ impl Witness {
     /// bytes). A cover-playback block, zero blocks, more than one block, or
     /// extra surrounding bytes each refuse; none produces a
     /// partially-built `Witness`.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn parse(transcript: impl Into<String>) -> Result<Self, MalformedTranscript> {
         let transcript = transcript.into();
         let blocks = find_blocks(&transcript);
@@ -237,7 +237,7 @@ pub enum WitnessValueType {
 
 impl WitnessValueType {
     /// `text` as a value of this type, or the fault that makes it none.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn read(self, text: &str) -> Result<WitnessValue, EntryFault> {
         match self {
             Self::Boolean => match text {
@@ -350,7 +350,7 @@ fn find_blocks(text: &str) -> Vec<&str> {
     blocks
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn parse_block(block: &str) -> Option<BlockFields<'_>> {
     let inner = block.strip_prefix("<<<")?.strip_suffix(">>>")?;
     let mut parts = inner.splitn(4, '|');
@@ -947,7 +947,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// Reconstruct a positive envelope from `packet`. Refuses (with no
     /// partially-built envelope returned) if the encoded size is over the
     /// configured bound, if any O-25 member is absent, or if a digest names a domain outside the closed FR-201 set.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn reconstruct(
         packet: WitnessPacket<P>,
         limits: ReplayLimits,

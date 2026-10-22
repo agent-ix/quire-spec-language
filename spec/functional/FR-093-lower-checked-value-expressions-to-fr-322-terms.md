@@ -152,17 +152,14 @@ rational magnitude and declared unit; this does not admit its lowering.
 
 QSpec defines `value_kind: quantity`, its canonical magnitude and its
 unit-typed literal fit rule in FR-322-AC-79, and both V2 schemas enumerate the
-kind. The Contract IR reader does not yet admit that literal kind. A `rational`
-literal typed at a unit violates the literal/type-family contract, so QSL
-SHALL NOT substitute a rational scalar type and SHALL NOT bypass strict reader
-admission to emit a quantity literal. Quantity parameters and the existing
-quantity comparison, arithmetic and exact unit-conversion operations are in
-scope.
+kind. A `rational` literal typed at a unit violates the literal/type-family
+contract, so QSL SHALL NOT substitute a rational scalar type to emit a
+quantity literal. Quantity parameters and the existing quantity comparison,
+arithmetic and exact unit-conversion operations are in scope.
 
-Quantity literals are admitted in V1 bodies when an IR reader change admits
-FR-322-AC-79; QSL lowering follows that change, then CG.
-
-Remaining work: IR-955
+The refusal is QSL's own V1 lowering scope: QSL emits no `value_kind:
+quantity` literal, and `check` raises `ProbabilisticCause::QuantityLiteral` for
+a quantity literal in a value expression.
 
 ### Application nodes
 

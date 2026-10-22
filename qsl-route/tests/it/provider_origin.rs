@@ -25,6 +25,7 @@ fn kani(origin: ProviderOrigin) -> BackendDescriptor {
         manifest_digest(),
         [(Capability::OperationContract, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
+        None,
     )
     .expect("a well-formed descriptor")
 }
@@ -47,6 +48,7 @@ fn descriptor_holds_the_origin_it_was_built_with() {
         manifest_digest(),
         [(Some("value-validity"), Some("bounded"))],
         Some(&["collection"]),
+        None,
         None,
     )
     .expect("a well-formed manifest is admitted");

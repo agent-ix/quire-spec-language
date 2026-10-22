@@ -9,7 +9,7 @@
 
 use qsl_foundation::IdentityLimits;
 
-use super::model::model_node_content;
+use super::model::{model_node_content, population_node_content};
 use super::{NodeContent, SemanticNode};
 use crate::check::node_key::{
     abstraction_node_key, node_key, AbstractionTerm, BodyTerm, ModelOwner, NodeKeyRefusal, NodeTag,
@@ -59,11 +59,7 @@ pub(crate) fn population_node(
     let Ok(owner) = ModelOwner::new(declaration.package.clone(), declaration.node.clone()) else {
         return Ok(None);
     };
-    detached(
-        model_node_content(owner, NodeTag::Relation, "population"),
-        identity,
-    )
-    .map(Some)
+    detached(population_node_content(owner), identity).map(Some)
 }
 
 /// The `correspondence`/`abstraction_relation` node holding `term`, keyed by

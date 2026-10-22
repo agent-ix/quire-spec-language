@@ -25,7 +25,7 @@ test-support = []
 # ADR-012 section 9 / FR-064: the `#[string_edge]` marker attribute, exempt
 # from the layer table below (it is a zero-cost marker `xtask string-edge`
 # reads, not a semantic dependency).
-qsl-attrs = { path = "../qsl-attrs" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-semantics = { path = "../qsl-semantics" }
 # K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`
@@ -46,7 +46,6 @@ serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.20"
 
 [dev-dependencies]
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # The emitter's tests build a one-function `PackageDeclarations`, whose
 # declarations are layer-2 parsed forms. Layer 2 is below this crate, so the
 # edge closes no cycle; TC-390 admits it in this table only.

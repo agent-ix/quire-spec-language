@@ -428,7 +428,7 @@ impl SafetyTranslation {
 
     /// The safety state `body` encodes. `#[string_edge]`: reads an imported
     /// key's state tag by its wire spelling.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn state(&self, body: NodeRef<'_>) -> Result<SafetyState, KeyRefusal> {
         let Node::Array(mut items) = body.node() else {
             return Err(KeyRefusal::Members);
@@ -602,7 +602,7 @@ pub(super) fn ascending(previous: &mut Option<Vec<u8>>, next: Vec<u8>) -> Result
 /// A canonical unsigned decimal string in the u64 domain: `"0"` or
 /// `[1-9][0-9]*`, at most `"18446744073709551615"`. `#[string_edge]`: reads
 /// an imported key's decimal string.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn decimal(text: &str) -> Result<u64, KeyRefusal> {
     let refuse = || KeyRefusal::Decimal(text.to_owned());
     let canonical =

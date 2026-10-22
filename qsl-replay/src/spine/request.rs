@@ -35,7 +35,7 @@ impl SuppliedObservation {
     /// Read one FR-106 observation document from its exact bytes: its
     /// `sha256-jcs` digest, declared format, identity labels and role. `key`
     /// names the observation in a refusal's member path.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn from_document(key: &str, bytes: Vec<u8>) -> Result<Self, ClauseRequestReadError> {
         let parsed = quire_canonical::read(&bytes, u64::MAX)
             .map_err(|error| invalid(key, error.to_string()))?;
@@ -259,7 +259,7 @@ pub struct ObservationLimitsWire {
 
 impl ObservationLimitsWire {
     /// The default observation limits with each stated override applied.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn resolve(overrides: Option<&Self>) -> Result<ObservationLimits, ClauseRequestReadError> {
         let mut limits = ObservationLimits::default();
         if let Some(overrides) = overrides {
@@ -368,7 +368,7 @@ fn named<'a>(
         .ok_or_else(|| invalid(format!("observations.{key}"), "unbound observation key"))
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestReadError> {
     // SnapshotValue itself is arena-backed. Build it bottom-up on a heap
     // worklist so a supplied present/sequence tree has no native stack cap.
@@ -516,7 +516,7 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
         .ok_or_else(|| invalid("parameters", "missing value"))
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn selection(
     selected: ClauseSelectionPartsKind,
     observations: &BTreeMap<String, SuppliedObservation>,
@@ -677,7 +677,7 @@ fn selection(
 /// Reconstruct the FR-109 request from file-admitted, typed parts. The root
 /// command adapter owns paths, byte ceilings and selected-file reads; this
 /// function owns the FR-106 role and selection mapping and reads no path.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn read_clause_run_request(
     parts: ClauseRequestParts,
 ) -> Result<ClauseRunRequest, ClauseRequestReadError> {

@@ -102,7 +102,7 @@ enum OperationRole {
 /// is the one place these identity strings are compared to decide
 /// narrow/scalar status; it is called once per site, not resolved once for
 /// the whole checked graph.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn operation_role(identity: &str) -> OperationRole {
     if identity == NARROW {
         OperationRole::Narrow

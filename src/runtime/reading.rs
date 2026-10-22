@@ -152,7 +152,7 @@ pub(super) fn read<T: Body + DeserializeOwned>(
     })
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_selected<T: Body + DeserializeOwned>(
     expected: &RuntimeReference,
     bytes: &[u8],

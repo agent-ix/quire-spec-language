@@ -909,7 +909,7 @@ mod tests {
 
     /// A synthetic workspace with the core's real layering and no
     /// violation: every core crate, the root crate and `qsl-analyze` above
-    /// them, an IR crate and third-party leaves, and the `qsl-attrs` proc
+    /// them, an IR crate and third-party leaves, and the `ix-trace-rs` proc
     /// macro under `qsl-foundation`.
     struct Fixture {
         graph: DepGraph,
@@ -938,7 +938,12 @@ mod tests {
             }
             fixture.add("quire-spec-language", None, true, false);
             fixture.add("qsl-analyze", None, true, false);
-            fixture.add("qsl-attrs", None, true, true);
+            fixture.add(
+                "ix-trace-rs",
+                Some("git+https://github.com/agent-ix/ix-trace-rs?branch=main"),
+                false,
+                true,
+            );
             fixture.add(
                 "quire-contract-model",
                 Some("git+https://github.com/agent-ix/quire-contract-ir?branch=main#ea63488"),
@@ -954,7 +959,7 @@ mod tests {
             for (from, to) in [
                 ("quire-semantic-value", "quire-exact"),
                 ("qsl-foundation", "quire-exact"),
-                ("qsl-foundation", "qsl-attrs"),
+                ("qsl-foundation", "ix-trace-rs"),
                 ("qsl-cst", "qsl-foundation"),
                 ("qsl-forms", "qsl-cst"),
                 ("qsl-semantics", "qsl-forms"),
@@ -1151,7 +1156,7 @@ mod tests {
     fn tc_767_proc_macro_dependencies_are_not_walked() {
         let mut fixture = Fixture::clean();
         fixture.add("clap", None, false, false);
-        fixture.edge("qsl-attrs", "clap");
+        fixture.edge("ix-trace-rs", "clap");
         assert_eq!(fixture.pairs(), Vec::<(String, String)>::new());
     }
 

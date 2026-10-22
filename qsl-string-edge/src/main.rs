@@ -11,7 +11,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use qsl_string_edge::{scan, EdgeRules, Error, ScanRequest};
 
 const USAGE: &str = "usage: qsl-string-edge --base-dir <directory> --crate-root \

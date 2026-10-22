@@ -363,7 +363,7 @@ impl PreCheck {
     }
 
     /// The pre-check crate a path rooted at `first` belongs to.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn crate_named(first: &str) -> Option<&'static str> {
         PRE_CHECK_CRATES
             .iter()
@@ -373,7 +373,7 @@ impl PreCheck {
 
     /// Whether the resolved type path `segments` is a pre-check
     /// representation.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn is_representation(&self, segments: &[String]) -> bool {
         let (Some(first), Some(last)) = (segments.first(), segments.last()) else {
             return false;
@@ -386,7 +386,7 @@ impl PreCheck {
 
     /// Whether the resolved value path `segments` names a pre-check stage
     /// function.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn is_stage_function(&self, segments: &[String]) -> bool {
         let [.., owner, last] = segments else {
             return false;
@@ -417,7 +417,7 @@ struct UseTable {
 }
 
 impl UseTable {
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn add(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
         match tree {
             syn::UseTree::Path(path) => {
@@ -496,7 +496,7 @@ struct Resolver<'a> {
 type Reexports = BTreeMap<(String, String), Vec<Vec<String>>>;
 
 /// A name that roots a path in the current crate.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_local_root(first: &str) -> bool {
     matches!(first, "crate" | "self" | "super" | "Self")
 }
@@ -794,7 +794,7 @@ impl<'ast> Visit<'ast> for StageScanner<'_, '_> {
         syn::visit::visit_expr_path(self, node);
     }
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         if let Some(function) = &self.function {
             if node.method == S3_CONSTRUCTOR.name {
@@ -869,7 +869,7 @@ pub fn scan(root: &Path) -> Result<Vec<Finding>> {
 
 /// Whether a resolved path is rooted at a pre-check crate or at
 /// `quire-contract-model`.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_pre_check_rooted(path: &[String]) -> bool {
     path.first()
         .is_some_and(|first| first == CONTRACT_MODEL || PreCheck::crate_named(first).is_some())

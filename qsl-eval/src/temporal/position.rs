@@ -32,7 +32,7 @@ impl TemporalPosition {
     }
 
     /// The position a wire `descriptor` names (FR-327 "Positions").
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn decode(descriptor: &str) -> Result<Self, PositionRefusal> {
         let bytes = descriptor.as_bytes();
         if bytes.is_empty() || !bytes.iter().all(u8::is_ascii_digit) {

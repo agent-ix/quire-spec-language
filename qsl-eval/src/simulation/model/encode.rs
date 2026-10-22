@@ -135,7 +135,7 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
 /// The reference [`reference_enc`] wrote as `text`: its canonical text names
 /// the members in sorted order, so the text is matched member by member.
 /// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
     let rest = text.strip_prefix(r#"{"identity":""#)?;
     let (identity, rest) = rest.split_once(r#"","object_type":""#)?;
@@ -152,7 +152,7 @@ pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
 /// The reference a parameter's canonical text names: the text of a reference,
 /// or of an option holding one. `Some(None)` is an absent option.
 /// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn parse_optional_reference(text: &str) -> Option<Option<ObjectReference>> {
     if let Some(inner) = text
         .strip_prefix(r#"{"type":"option","value":"#)

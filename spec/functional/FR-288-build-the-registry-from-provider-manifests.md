@@ -61,7 +61,7 @@ FR-331 provider manifests.
 - Layer R and layer 6 shall name a backend by the one `qsl-foundation`
   `BackendId` type.
 - Layer R shall give every `BackendDescriptor` a `ProviderOrigin`, `Linked` or
-  `Process`, and shall hold the origin passed to `new` or `admit`; no
+  `Process`, and shall hold the origin passed to `BackendDescriptor::new` or `descriptor_from_manifest`; no
   manifest input reaches it. Assigning `Linked` to a compile-time
   provider's manifest and `Process` to a plugin `hello` frame's manifest
   belongs to the driver's registry builder, which tests it (ADR-029 PV-1).
@@ -81,7 +81,7 @@ FR-331 provider manifests.
 | FR-288-AC-2 | A descriptor's `BackendId` equals the manifest's backend identity, verbatim; changing any one other member of the manifest (an advertised kind, a domain, an option, a bound) changes the descriptor's advertised capabilities and leaves its `BackendId` unchanged. | Test (TC-772) |
 | FR-288-AC-3 | A manifest missing its advertised kinds is refused with the FR-331 reader's cause, and a registry built from it and one valid manifest holds only the valid one. | Test (TC-772) |
 | FR-288-AC-4 | For an item routed to a provider and settled with a replayed counterexample, the `BackendId` the registry's descriptor holds, the one the replay envelope records and the one the terminal record names are equal values; two manifests that differ only in a tool version member give the same `BackendId`. | Test (TC-772) |
-| FR-288-AC-5 | A descriptor holds the origin passed to `new` or `admit`, whichever of `Linked` or `Process` it is, and the `BackendId` is the same for both; no manifest input reaches the origin. | Test (TC-772) |
+| FR-288-AC-5 | A descriptor holds the origin passed to `BackendDescriptor::new` or `descriptor_from_manifest`, whichever of `Linked` or `Process` it is, and the `BackendId` is the same for both; no manifest input reaches the origin. | Test (TC-772) |
 | FR-288-AC-6 | Registering `Linked` and `Process` descriptors of one `BackendId` and manifest, in either order, withdraws both and records the conflicting manifest digest as `duplicate-backend`; a registration equal in every member, origin included, is idempotent. | Test (TC-772) |
 
 ## Dependencies

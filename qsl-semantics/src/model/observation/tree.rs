@@ -117,7 +117,7 @@ type Charge<'c, E> = &'c mut dyn FnMut() -> Result<(), E>;
 /// # Errors
 ///
 /// Whatever `charge` returns.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn read_raw_value<E>(
     json: Json<'_>,
     charge: Charge<'_, E>,

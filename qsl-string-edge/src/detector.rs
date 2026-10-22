@@ -69,12 +69,29 @@ pub struct Occurrence {
     pub branch_gating: bool,
 }
 
-fn has_attr_named(attrs: &[syn::Attribute], name: &str) -> bool {
+/// The crate that owns the marker and the marker's own name.
+const MARKER_CRATE: &str = "ix_trace_rs";
+const MARKER_NAME: &str = "string_edge";
+
+fn ident_is(ident: &syn::Ident, name: &str) -> bool {
+    ident == name
+}
+
+/// Whether `attrs` carry the `ix-trace-rs` marker: the path `string_edge`,
+/// `ix_trace_rs::string_edge` or `::ix_trace_rs::string_edge`. Any other path,
+/// a crate-qualified path of another crate included, is not a marker.
+fn has_string_edge_marker(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == name)
+        let path = attr.path();
+        let mut segments = path.segments.iter();
+        let bare = |segment: Option<&syn::PathSegment>, name: &str| {
+            segment.is_some_and(|segment| ident_is(&segment.ident, name))
+        };
+        match (path.leading_colon.is_some(), path.segments.len()) {
+            (false, 1) => bare(segments.next(), MARKER_NAME),
+            (_, 2) => bare(segments.next(), MARKER_CRATE) && bare(segments.next(), MARKER_NAME),
+            _ => false,
+        }
     })
 }
 
@@ -132,7 +149,7 @@ fn is_comparison_op(op: syn::BinOp) -> bool {
 /// this list -- all five feed the same `is_string_edge_method` check below.
 ///
 /// Named here as data, not as a literal at the comparison site itself (the
-/// same `has_attr_named`/`has_cfg_test` shape already used above in this
+/// same `has_string_edge_marker`/`has_cfg_test` shape already used above in this
 /// file): `is_string_edge_method` below compares `method.to_string()`
 /// against this array through `<[&str]>::contains`, not `method == "…"`
 /// directly, so the scanner's own AST walk over this file does not see a
@@ -274,7 +291,7 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
     }
 
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        let marked = has_attr_named(&node.attrs, "string_edge");
+        let marked = has_string_edge_marker(&node.attrs);
         if has_cfg_test(&node.attrs) {
             return;
         }
@@ -290,7 +307,7 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
     }
 
     fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
-        let marked = has_attr_named(&node.attrs, "string_edge");
+        let marked = has_string_edge_marker(&node.attrs);
         if has_cfg_test(&node.attrs) {
             return;
         }
@@ -503,22 +520,76 @@ mod tests {
         assert_eq!(marked, [occurrence(2, "edge", false)]);
     }
 
-    /// FR-064-AC-1 and AC-8: the qualified marker `#[qsl_attrs::string_edge]`
+    /// FR-064-AC-1 and AC-8: the qualified marker `#[ix_trace_rs::string_edge]`
     /// marks a free function and an `impl` method alike.
     #[trace("TC-162", "FR-064-AC-1", "FR-064-AC-8")]
     #[test]
     fn the_qualified_marker_silences_free_functions_and_methods() {
         let occurrences = scan_source(
-            "#[qsl_attrs::string_edge]\n\
+            "#[ix_trace_rs::string_edge]\n\
              fn edge(kind: &str) -> bool { kind == \"a\" }\n\
              struct T;\n\
              impl T {\n\
-             #[qsl_attrs::string_edge]\n\
+             #[ix_trace_rs::string_edge]\n\
              fn edge(kind: &str) -> bool { kind == \"b\" }\n\
              fn plain(kind: &str) -> bool { kind == \"c\" }\n\
              }\n",
         );
         assert_eq!(occurrences, [occurrence(7, "T::plain", false)]);
+    }
+
+    /// FR-064-AC-12: the three accepted marker paths each silence their
+    /// function, and the unmarked function beside them is reported.
+    #[trace("TC-162", "FR-064-AC-12")]
+    #[test]
+    fn the_three_accepted_marker_paths_silence_their_functions() {
+        let occurrences = scan_source(
+            "use ix_trace_rs::string_edge;\n\
+             #[string_edge]\n\
+             fn imported(kind: &str) -> bool { kind == \"a\" }\n\
+             #[ix_trace_rs::string_edge]\n\
+             fn qualified(kind: &str) -> bool { kind == \"b\" }\n\
+             #[::ix_trace_rs::string_edge]\n\
+             fn rooted(kind: &str) -> bool { kind == \"c\" }\n\
+             fn plain(kind: &str) -> bool { kind == \"d\" }\n",
+        );
+        assert_eq!(occurrences, [occurrence(8, "plain", false)]);
+    }
+
+    /// FR-064-AC-15: a look-alike path, a comment and a doc comment are not
+    /// markers, so each function they decorate is reported.
+    #[trace("TC-162", "FR-064-AC-15")]
+    #[test]
+    fn look_alike_paths_and_comments_are_not_markers() {
+        let occurrences = scan_source(
+            "#[my_macros::string_edge]\n\
+             fn other_crate(kind: &str) -> bool { kind == \"a\" }\n\
+             #[other::ix_trace_rs::string_edge]\n\
+             fn nested(kind: &str) -> bool { kind == \"b\" }\n\
+             #[::string_edge]\n\
+             fn rooted_bare(kind: &str) -> bool { kind == \"c\" }\n\
+             #[ix_trace_rs::other::string_edge]\n\
+             fn deeper(kind: &str) -> bool { kind == \"d\" }\n\
+             // string_edge\n\
+             fn comment(kind: &str) -> bool { kind == \"e\" }\n\
+             /// string_edge\n\
+             fn doc_comment(kind: &str) -> bool { kind == \"f\" }\n",
+        );
+        let items: Vec<_> = occurrences
+            .iter()
+            .map(|found| found.item.as_str())
+            .collect();
+        assert_eq!(
+            items,
+            [
+                "other_crate",
+                "nested",
+                "rooted_bare",
+                "deeper",
+                "comment",
+                "doc_comment"
+            ]
+        );
     }
 
     /// FR-064-AC-3: a `#[cfg(test)]` module, function and method is never

@@ -19,7 +19,7 @@ const BOUND: &str = "bound OrdersBound on M::orders [3]";
 
 /// Fixture R with the object types `Rush` (a subtype of `Order`) and
 /// `Person`, and the population `people` of `Person`.
-fn document() -> Vec<u8> {
+pub(super) fn document() -> Vec<u8> {
     let mut document: Value = serde_json::from_slice(&reachability_document()).unwrap();
     let order = document["types"][0].clone();
     let mut rush = order.clone();

@@ -37,7 +37,7 @@ pub struct TypeClauseRoles {
 
 impl TypeClauseRoles {
     /// The roles and effective invariants of `package`.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn of(package: &DomainPackage) -> Self {
         let mut guarded: BTreeSet<(&DeclarationKey, &str)> = BTreeSet::new();
         let mut supertypes: BTreeMap<&DeclarationKey, &[DeclarationKey]> = BTreeMap::new();

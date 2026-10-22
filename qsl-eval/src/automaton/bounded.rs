@@ -257,7 +257,7 @@ impl BoundedTranslation {
 
     /// The bounded state `body` encodes. `#[string_edge]`: reads an imported
     /// key's state tag by its wire spelling.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn state(&self, body: NodeRef<'_>) -> Result<BoundedState, KeyRefusal> {
         let Node::Array(mut items) = body.node() else {
             return Err(KeyRefusal::Members);
@@ -289,7 +289,7 @@ impl BoundedTranslation {
     /// `["origin", remaining]` and the one branch carrying the root's
     /// window with that same remaining distance. `#[string_edge]`: reads an
     /// imported key's clock and window spellings.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn open(&self, clock: NodeRef<'_>, branches: NodeRef<'_>) -> Result<BoundedState, KeyRefusal> {
         let Node::Array(clock) = clock.node() else {
             return Err(KeyRefusal::Members);
@@ -328,7 +328,7 @@ impl BoundedTranslation {
 
     /// One elementary configuration `[obligations, past, windows,
     /// acceptance]`: the root's one window and nothing else.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn configuration(&self, branch: NodeRef<'_>, remaining: u64) -> Result<(), KeyRefusal> {
         let Node::Array(members) = branch.node() else {
             return Err(KeyRefusal::Members);

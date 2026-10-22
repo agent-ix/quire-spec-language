@@ -959,7 +959,7 @@ struct PopulationDomainPackageRefWire<'a> {
 struct PopulationMemberTypeIdentityWire<'a>(&'a EffectiveId);
 
 impl PopulationMemberTypeIdentityWire<'_> {
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn wire_value(&self) -> String {
         hex(self.0.as_bytes())
     }

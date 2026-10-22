@@ -211,9 +211,9 @@ result for a population of maximum `N` is the `collection_bounds` node of
 
 A population the domain package declares and a state clause names as `M::P`
 (FR-391) is not a `Population<T>[N]` type node. Its reference is a separate
-node keyed by the population's declaration key alone, with no `N` and no
-owner: two populations of one member type are two nodes, and the same
-population read twice is one node. QSpec FR-322 ("Population references")
+node keyed by the population's declaration key alone, with no `N`, whose
+`owner` is the model owner of that key (QSpec FR-322): two populations of one
+member type are two nodes, and the same population read twice is one node. QSpec FR-322 ("Population references")
 defines that node, and FR-391 states how `check` emits it.
 
 ### Clause function nodes
@@ -321,10 +321,8 @@ nodes. A quantity literal in a value expression is outside V1
 ([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals-are-outside-v1-scope)):
 it is refused `unsupported_construct`/`not-yet-implemented` and introduces no
 literal node and no second quantity type. QSpec FR-322-AC-79 defines the
-quantity literal representation; the Contract IR reader does not yet admit it,
+quantity literal representation; the refusal is QSL's own V1 lowering scope,
 and the unit key rules do not themselves admit a literal.
-
-Remaining work: IR-955
 
 ### Refusals
 

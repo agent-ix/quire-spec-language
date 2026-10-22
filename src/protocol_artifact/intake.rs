@@ -39,7 +39,7 @@ pub(super) fn revision(value: &Revision) -> Result<(), Error> {
     name(&value.value)
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn reference(value: &ArtifactRef) -> Result<(), Error> {
     if value.ref_version != "ix.artifact-ref/3-draft" {
         return Err(Error::Unsupported(Unsupported::Wire));
@@ -232,7 +232,7 @@ pub(super) fn selected<'a>(
         .collect()
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn headers(package: &Package, expected: &Expected<'_>, work: &mut Work) -> Result<(), Error> {
     if package.wire != WIRE
         || package.media != MEDIA
@@ -416,7 +416,7 @@ fn definition_key(value: &Definition) -> (&str, &str, &str) {
     )
 }
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub(super) fn definitions(
     package: &Package,
     supplied: &[&SuppliedDependency<'_>],
