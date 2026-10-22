@@ -87,3 +87,14 @@ Mergeable. There is no major and no medium finding. All four findings are low.
 - FR-110-AC-3 still holds.
 - The test oracles fail without the change (mutations M1, M2, M4 and M5).
 - The spec (FR-397/TC-1091) landed in #1169, and the code matches it. No spec text is needed in this PR.
+
+## Dispositions
+
+Author fix round; the original review findings and verdict above are preserved.
+
+| Finding | Disposition | Evidence |
+| --- | --- | --- |
+| FND-001 | Fixed | The bit-constructor S2 control retains TC-1091 and drops FR-397-AC-8; it no longer claims conversion coverage. |
+| FND-002 | Fixed | The evaluation test additionally asserts one selected IEEE row, arithmetic and conversion laws, the arithmetic identity and rounding mode before evaluating each source. |
+| FND-003 | Fixed | `KeyFault::IeeeProfileAdmission` retains the owner's typed `PackageRefusal` and the existing invariant identifier. Catalog, location and fault imports are at module scope. |
+| FND-004 | Fixed | The trigger field and FR-397 Inputs document why declaration scanning covers all body float sources today and require any future source to extend the trigger. |

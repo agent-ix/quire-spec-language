@@ -59,11 +59,13 @@ use super::ir::{
 use super::navigation::Relationships;
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
-    IdentityObserving, Obligation, StageLimitCause,
+    IdentityObserving, KeyFault, Obligation, StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
-use crate::value::definition::{AdmittedIeeeProfile, AdmittedIntegerDivision};
+use crate::value::definition::{
+    AdmittedIeeeProfile, AdmittedIntegerDivision, CatalogRole, DefinitionLock,
+};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
@@ -88,7 +90,7 @@ use quire_semantic_value::declaration::{
     FieldDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumValue};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
@@ -790,6 +792,9 @@ pub struct Scope {
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     /// The IEEE package-selection trigger recorded from resolved declarations.
+    /// Every body float originates in a declaration: constants and conversion
+    /// into floats are unavailable, and model float intake is refused. Any new
+    /// source of floats must also extend this trigger before checking its body.
     ieee_operation: bool,
     pub(crate) integer_division: Option<AdmittedIntegerDivision>,
     pub(crate) complete_value: bool,
@@ -1484,20 +1489,14 @@ impl Scope {
         });
         self.ieee_operation = has_float;
         if has_float && self.ieee_profile.is_none() {
-            use crate::value::definition::{CatalogRole, DefinitionLock};
             let lock = DefinitionLock::pinned();
             let definition = lock.entry(CatalogRole::IeeeProfile).reference();
             self.ieee_profile = Some(lock.admit_ieee_profile(&[definition], &[]).map_err(
-                |_| CheckRefusal {
-                    location: Location::root(quire_semantic_value::location::Origin::Expression),
-                    cause: CheckCause::InternalFault(Box::new(
-                        super::refusal::KeyFault::StageFault(
-                            qsl_foundation::diagnostic::InternalFault::new(
-                                "S3",
-                                "catalog-ieee-profile-admitted",
-                            ),
-                        ),
-                    )),
+                |cause| CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::IeeeProfileAdmission(
+                        cause,
+                    ))),
                 },
             )?);
         }

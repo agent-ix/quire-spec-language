@@ -179,10 +179,19 @@ fn ieee_profile_is_not_header_selectable_with_or_without_float_functions() {
 
 #[trace("TC-1091", "FR-397-AC-6")]
 #[test]
-fn float_comparisons_and_mixed_width_arithmetic_refuse_at_checking() {
-    for width in ["Float32", "Float64"] {
+fn float_comparisons_refuse_before_mixed_operand_type_checks() {
+    for (left, right) in [
+        ("Float32[nearest-even]", "Float32[nearest-even]"),
+        ("Float64[nearest-even]", "Float64[nearest-even]"),
+        ("Float32[nearest-even]", "Float64[nearest-even]"),
+        ("Float64[nearest-even]", "Float32[nearest-even]"),
+        ("Float64[nearest-even]", "Int[0, 10]"),
+        ("Int[0, 10]", "Float64[nearest-even]"),
+        ("Float32[nearest-even]", "Rational[-100, 100; 1, 16]"),
+        ("Rational[-100, 100; 1, 16]", "Float32[nearest-even]"),
+    ] {
         for operator in ["=", "!=", "<", "<=", ">", ">="] {
-            let source = format!("{HEADER}function compare using v(a: {width}[nearest-even], b: {width}[nearest-even]): Boolean pure {{ a {operator} b }}");
+            let source = format!("{HEADER}function compare using v(a: {left}, b: {right}): Boolean pure {{ a {operator} b }}");
             let refusal = refusal(&source, Code::IllTyped, "operator-ineligible");
             let qsl_replay::spine::CompileRefusal::Check {
                 region: Some(region),
@@ -199,11 +208,32 @@ fn float_comparisons_and_mixed_width_arithmetic_refuse_at_checking() {
             );
         }
     }
-    refusal(
-        &ADD64.replace("b: Float64", "b: Float32"),
-        Code::IllTyped,
-        "type-mismatch",
-    );
+}
+
+#[trace("TC-1091", "FR-397-AC-6")]
+#[test]
+fn mixed_float_widths_and_exact_arithmetic_refuse_type_mismatch() {
+    for width in ["Float32[nearest-even]", "Float64[nearest-even]"] {
+        for other in [
+            "Float32[nearest-even]",
+            "Float64[nearest-even]",
+            "Int[0, 10]",
+            "Rational[-100, 100; 1, 16]",
+        ] {
+            if width == other {
+                continue;
+            }
+            for (left, right) in [(width, other), (other, width)] {
+                for operator in ["+", "-", "*", "/"] {
+                    refusal(
+                        &format!("{HEADER}function mixed using v(a: {left}, b: {right}): {width} pure {{ a {operator} b }}"),
+                        Code::IllTyped,
+                        "type-mismatch",
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[trace("TC-1091", "FR-397-AC-7")]
@@ -250,7 +280,8 @@ fn rational_comparison_evaluates_float_conversion_as_a_separate_operation() {
     assert_ieee_law(&wire, operation(&wire, "quire.op.ieee.to_rational"));
 }
 
-#[trace("TC-1091", "FR-397-AC-8")]
+// Supplemental S2 source-boundary control; this does not claim conversion AC-8.
+#[trace("TC-1091")]
 #[test]
 fn bit_level_float_constructors_remain_unrepresented_source_forms() {
     for (width, bits) in [("32", "0x3f800000"), ("64", "0x3ff0000000000000")] {
@@ -300,6 +331,24 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
                 Rational::new(Integer::from(expected), Integer::one()).unwrap()
             };
             let text = format!("{HEADER}function agrees using v(a: {width}[nearest-even], b: {width}[nearest-even], expected: Rational[-100, 100; 1, 16]): Boolean pure {{ convert<Rational[-100, 100; 1, 16]>(a {operator} b) = expected }}");
+            let emitted = wire(&text);
+            let arithmetic_name = match operator {
+                "+" => "add",
+                "-" => "sub",
+                "*" => "mul",
+                "/" => "div",
+                _ => unreachable!("the test enumerates four IEEE arithmetic operators"),
+            };
+            let arithmetic = operation(
+                &emitted,
+                &format!("quire.op.ieee.{}.{arithmetic_name}", width.to_lowercase()),
+            );
+            assert_ieee_law(&emitted, arithmetic);
+            assert_eq!(
+                arithmetic["body"]["operation"]["mode"],
+                json!({"kind": "rounding", "value": "nearest-even"}),
+            );
+            assert_ieee_law(&emitted, operation(&emitted, "quire.op.ieee.to_rational"));
             let source = SourceIdentity::new("a", "ieee", "git", "1");
             let limits = SpineLimits::default();
             let cancel = Cancel::new();

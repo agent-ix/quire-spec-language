@@ -60,3 +60,12 @@ Mergeable. There is no major finding. Every FR-397 AC is covered by a test that 
 The strict V2 reader admits the AC-4 packages. The header still cannot select the row (FR-110-AC-3, AC-5).
 
 Plan completion: not assessed.
+
+## Dispositions
+
+Author fix round; the original review findings and verdict above are preserved.
+
+| Finding | Disposition | Evidence |
+| --- | --- | --- |
+| FND-001 | Fixed | FR-397 Comparison explicitly applies `operator-ineligible` when either operand is a float, including unlike widths and exact types. A separate arithmetic clause specifies `type-mismatch`. AC-6 and TC-1091 describe both cases; comparison tests assert the refusal and operator region in both operand orders. |
+| FND-002 | Fixed | The AC-6 mixed-arithmetic test covers `+`, `-`, `*` and `/` for both float widths paired with `Int` and `Rational` in both operand orders, as well as unlike float widths. Every case must refuse `ill_typed`/`type-mismatch`. |
