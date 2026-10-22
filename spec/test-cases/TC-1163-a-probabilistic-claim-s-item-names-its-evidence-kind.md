@@ -39,7 +39,8 @@ Tag the tests `#[trace("TC-1163", "<criterion>")]`.
 ## Expected Results
 
 - Step 1: one record per probabilistic claim, keyed by its `claim`
-  occurrence, `probabilistic-satisfaction`, `Unbounded`, `Boolean` result
+  occurrence, `probabilistic-satisfaction`, `Unbounded` with `domains`
+  naming the claim (also on each probabilistic item, under every selection), `Boolean` result
   bound, no conversion context, empty path condition; `FairTerminates` and
   the `Reach` claim record `exact`, `P95` records `statistical`.
 - Step 3: no selection: three items, `P95` `statistical` (EN-4 only),

@@ -52,3 +52,21 @@ The `code-review` method was skipped, because the diff contains no code.
 Not mergeable as is. FND-001 is a contradiction with FR-395 and ADR-012 §13.5 that a test of FR-075-AC-17 would hit as soon as a package mixes probabilistic and value-validity records. Its fix needs a planner decision. FND-002 needs a planner decision on whether to add the record rule here or in a follow-up. FND-003 and FND-004 are small wording fixes. Main must also be merged into the branch (one commit behind; the merge is clean).
 
 The FR-195 default, the kind spellings, the both-kinds ordering and the candidate derivation are consistent with QSpec.
+
+## New findings (disposition pass 1)
+
+Head b3b484b7d (fix commit on top of a merge of main 5c4a1da99). Main has since moved to 423ac6aa0 (three commits, none touching the PR's files); a trial merge is clean. `make check-spec-validation` exits 0 with no diagnostics on the touched files.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | minor: The builder statement still lists its inputs as the records, the registry "and at most one `BackendId` the request names", with no evidence selection, although its next sentence and the Inputs section depend on one. <br>Fix: add "and optionally the request's evidence selection (one evidence kind, or both)" to that sentence. | spec/functional/FR-075-compute-candidates-from-registered-backends.md:126-128 |
+| FND-006 | low | minor: FR-195's new record rule writes `extent: Unbounded{domains}` without saying what `domains` holds. FR-165, which it says it mirrors, says "with `domains` naming the claim". The builder copies these domains onto the item, and FR-195-AC-6 and AC-18 check only "`Unbounded`", so two implementations could write different domains and both pass. <br>Fix: state the domains (for example "with `domains` naming the claim", as FR-165 does) and assert them in FR-195-AC-6. | spec/functional/FR-195-check-exact-only-forms-and-route-exact-evidence.md:119-125 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Record items keep indices 0..n-1 under every selection; second-kind items are appended at n + j in record key order. FR-395 members (value-validity records, indices = record positions) still name the same items, FR-075-AC-17 holds, FR-331's zero-based contiguous `request_index` holds, and ADR-012 §13.5's record order is unchanged (appended entries are items, not records). AC-18 pins the value-validity item at index 2. The input-list remnant is FND-005. |
+| FND-002 | fixed | FR-195 now states one record per checked probabilistic claim (claim occurrence key, `probabilistic-satisfaction`, `Unbounded`, `Boolean` result bound, no conversion context, empty path condition), matching FR-165's pattern and ADR-014 §6.1; FR-195-AC-6 tests it. The unstated `domains` is FND-006. |
+| FND-003 | fixed | FR-195-AC-6 drops the normal-form clause and asserts `P95`'s obligation identity is equal across the no-selection, `exact` and both-kinds requests (QSpec FR-407-AC-6). |
+| FND-004 | fixed | AC-18 and TC-1163 fix the record order and indices (0 `P95`, 1 `FairTerminates`, 2 value-validity), count 3/3/5 items, and give each item's candidates, including EN-5 only for both items under the `exact` selection. |
