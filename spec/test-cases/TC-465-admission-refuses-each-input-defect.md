@@ -41,7 +41,7 @@ mutated document except where the row says otherwise.
 | 14 | 5 | invocation `operation` `other` | `wrong_snapshot`/`wrong-invocation` |
 | 15 | 6.1 | population `ix://example/config-version/other` | `invalid_runtime_input`/`wrong-role-mapping` |
 | 16 | 6.3 | a second object keyed `root` | `invalid_runtime_input`/`conflicting-identity` at the second |
-| 17 | 6.2 | a package variant whose `ConfigVersion` has field `tags` typed a set of `ConfigVersion` | `unknown_required_feature`/`unsupported-feature` at `tags` |
+| 17 | 6.2 | a package variant whose `ConfigVersion` has field `tags` typed a set of `String` | `unknown_required_feature`/`unsupported-feature` at `tags` |
 | 18 | 6.5 | `versionNumber` `{"boolean": true}` | `invalid_runtime_input`/`wrong-value-kind` |
 | 19 | 6.5 | `root.versionNumber` `"01"` | `invalid_runtime_input`/`invalid-value` at `root`, `versionNumber` |
 | 20 | 6.5 | `root.versionNumber` `"-1"`; then `child.versionNumber` `"1001"` | `invalid_runtime_input`/`invalid-value`, naming `root` then `child` and `versionNumber` |
