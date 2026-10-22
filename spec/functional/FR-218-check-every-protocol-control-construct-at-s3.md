@@ -141,7 +141,8 @@ protocol system only ever runs a protocol whose meaning is fixed.
   variant.
 - `parallel`, `repeat`, `choice` and `sequence` SHALL nest with no ceiling
   of their own; only the caller's resource limits bound a declaration's
-  size.
+  size, and the partition proof of a `choice` charges `s3.work_units`
+  (Choice and repeat decisions).
 
 ### Admission for emission
 
@@ -168,6 +169,15 @@ reaches S4 (FR-383).
   record, an event type or a variant type with the same refusal at the type
   name. S3 SHALL NOT compare a `send` or `receive` binder, or a FIFO binder,
   with a refused `carries` type.
+
+### Role on a model alias
+
+S3 SHALL refuse `role w on M`, `M` a model alias, by the role rule above,
+with `invalid_model_binding`/`malformed-declaration` at `M`. S4 cannot emit
+such a role: QSpec FR-322 has no `model` node form for a whole model alias,
+and QSpec FR-465 reader step 1 admits a role only on an `object_type`,
+`process`, `state_machine`, `systems_interface` or `persistence_interface`
+node (Admission for emission).
 
 ### Channels
 
@@ -349,6 +359,23 @@ none of its operands.
   in place of a `union-decl`, the names of the cases involved and `failed`, the
   non-empty ordered subset of `missing-arm` (a valuation no guard covers) and
   `duplicate-arm` (a valuation two guards cover) that the valuations show.
+- The partition proof SHALL charge one unit of the S3 work meter
+  (`s3.work_units`, FR-255) for each valuation of the choice's `n` distinct
+  atoms it evaluates, `2^n` valuations in all, each charge made before that
+  valuation is evaluated. The proof SHALL run during the protocol family's
+  `check` of the declaration, after the declaration's own precheck charge
+  (FR-062-AC-12) and before any lowering charge of that declaration
+  (FR-096). Atoms SHALL be collected and compared once per guard term node,
+  so collecting and comparing them adds no charge beyond the guard terms'
+  node charges.
+- When a valuation's charge would exceed the work budget, S3 SHALL stop with
+  a `CheckRefusal`/`stage_limit_exceeded`, kind work budget and cause
+  `work-budget-exceeded`, at the choice's span, naming
+  the bound, the count the denied charge would reach and the setting
+  `s3.work_units`, and SHALL NOT report `unproved-exhaustiveness` for that
+  choice. The proof has no atom or valuation ceiling of its own (ADR-030):
+  the caller's `s3.work_units` is its only bound, raised by FR-255's
+  setting at every entry point.
 
 ### Scopes
 
@@ -432,12 +459,13 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
 | FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each fail at the parser with a syntax diagnostic and build no form; two cases and two branches check. | Test (TC-1065) |
 | FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
-| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
+| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`), `role w on M` refuses `invalid_model_binding`/`malformed-declaration` at `M` and the unit produces no package (Role on a model alias); a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 | FR-218-AC-27 | The unit of TC-1056 with a second protocol `Billing` that also declares `channel Pay` with the same premises checks, and the checked clauses hold two channels: `Pipeline`'s `Pay` and `Billing`'s `Pay`. Each is recorded under its protocol's qualified identity and the handle `Pay`; the two have different qualified names and equal handles. | Test (TC-1056) |
 | FR-218-AC-28 | `role w each M::Worker from workers max 2 lifetime workflow` checks when `workers` is a population of `M::Worker` and the checked role holds that population; with `from absent` it refuses `missing_declaration`/`missing-name` at `absent`, and with `from jobs`, a population of `M::Job`, it refuses `ill_typed`/`type-mismatch` at `jobs`, each retaining `role` and `population`. | Test (TC-663) |
 | FR-218-AC-29 | In a protocol with channels `from w to c` and `from c to w`, the checked clause holds the owner `w` for the `send` on the first and `c` for its `receive`, and `c` for the `send` and `w` for the `receive` on the second; a lifetime `scope` role `w` with its `Work` nodes inside `sequence S` and a `send` from `w` after `S` has the region that holds `S` and the `send`, which is `S`'s parent control and not `S`. | Test (TC-663) |
+| FR-218-AC-30 | Over three visible Boolean facts `a`, `b`, `c`: a two-case `choice` with guards `a and b and c` and `not (a and b and c)` checks, and its unit's measured `s3.work_units` spend exceeds that of the same unit with guards `a and a and a` and `not (a and a and a)` (one distinct atom, two valuations, the same guard nodes) by exactly 6, so the proof charges one unit per valuation and the atom comparison charges nothing beyond the node charges. A `choice` of the same shape over 24 distinct atoms (`2^24` valuations) stops under the default `s3.work_units` (16777216) with a `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, at the choice's span, naming bound 16777216 and setting `s3.work_units`, and no `unproved-exhaustiveness`; it checks with `s3.work_units` set to 33554432 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation. Guards `a and b and c` and `not a`, over the three atoms `a`, `b`, `c`, leave a valuation uncovered and refuse `unproved-exhaustiveness` with `failed` `[missing-arm]`. | Test (TC-1172) |
 
 ## Dependencies
 

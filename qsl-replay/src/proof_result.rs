@@ -32,7 +32,14 @@ use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
 
 mod plugin;
-pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause};
+mod plugin_read;
+mod plugin_replay;
+pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause, ValueFault};
+pub use plugin_read::{
+    read_plugin_assignments, read_plugin_basis, read_plugin_certification,
+    read_plugin_inconclusive_cause,
+};
+pub use plugin_replay::{PluginReplayContext, PluginReplayRefusal};
 
 /// The wire spelling of `replay-parity`, one definition for the cause's own
 /// spelling and the plugin reader's refusal of it.
@@ -1528,8 +1535,10 @@ mod tests {
         ScalarClaim::Function(Box::new(crate::ValueIdentity {
             obligation: crate::ObligationIdentity::from_digest([1; 32]),
             package_id: (None, String::new()),
-            function: crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
-                .unwrap(),
+            function: Some(
+                crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
+                    .unwrap(),
+            ),
             source: crate::ReplaySource::Input(assignments),
             limits: quire_exact::ScalarLimits {
                 integer_bits: 1,
@@ -2661,3 +2670,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod plugin_tests;

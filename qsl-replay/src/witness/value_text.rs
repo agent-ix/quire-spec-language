@@ -669,6 +669,20 @@ impl WitnessValue {
         })
     }
 
+    /// The value a plugin's FR-331 wire writes as the JSON value `value`
+    /// (FR-290 "Assignments"): the FR-070 decode of the value's RFC 8785
+    /// encoding. The wire frame need not be written in canonical form, so
+    /// the encoding is canonicalised here rather than compared.
+    pub(crate) fn from_wire_json(value: &serde_json::Value) -> Result<Self, EntryFault> {
+        let written = serde_json::to_vec(value).map_err(|_| EntryFault::Json)?;
+        let document = read(&written, u64::MAX).map_err(|_| EntryFault::Json)?;
+        let canonical =
+            to_vec(&document.root(), Limits::new(u64::MAX)).map_err(|_| EntryFault::Json)?;
+        let value = build(document.root())?;
+        check_collections(&canonical)?;
+        Ok(value)
+    }
+
     /// The value text `escaped`, read as one value (FR-070 "Decode").
     #[ix_trace_rs::string_edge]
     pub(crate) fn from_value_text(escaped: &str) -> Result<Self, EntryFault> {

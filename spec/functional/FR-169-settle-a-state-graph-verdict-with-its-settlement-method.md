@@ -84,6 +84,7 @@ pub enum WitnessSource {
 // TerminalValue::Proved carries FR-127's `certification` beside its basis.
 
 pub struct StateGraphCertificate {
+    pub package_id: PackageId,           // the package the engine explored
     pub closure: Vec<StateKey>,          // explored model states, sorted
     pub ranks: Vec<(u64, u32)>,          // `possible`, `always possible`: (state, d)
     pub counts: Vec<(u64, u8, u64)>,     // `unique path`: (state, count, order)
@@ -93,6 +94,7 @@ pub enum StateGraphCheck {
     Accepted,
     Rejected(CertificateRejection),          // FR-338's: rule and locus
     Stopped(ReachedLimit),                   // FR-126: the limit and its value
+    PackageMismatch { certificate: PackageId, recompiled: PackageId },  // FR-282
 }
 
 pub fn check_state_graph(request: &CertificateRequest<'_>, claim: &StateGraphItem,
@@ -123,9 +125,10 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | V-4 | `Undefined` whose replay reproduces the undefined value at `where` (FR-170) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-1 | `Holds{Exhaustive}` whose certificate the checker accepts; `Holds{Reduced{…}}` | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}`, or `Proved{basis: Reduced{…}, certification: Uncertified}` | success |
 | V-6 | `Witnessed` or `Holds{Exhaustive}` whose certificate the checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})` (ADR-018 PC-2) | inconclusive |
+| V-6 | `Witnessed` or `Holds{Exhaustive}` whose certificate the checker returns `PackageMismatch{certificate, recompiled}`; evidence whose replay refuses with `PackageIdMismatch{requested, recompiled}` (FR-170) | `inconclusive` | `unsettled` | `Inconclusive(StaleDependency{requested, recompiled})`, `requested` the certificate's or the request's `package_id` (FR-127) | inconclusive |
 | V-5 | `NoDecision` with `end` `Completed`, open causes only `MaxDepth`, and no partial-order reduction | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth: max_depth})` | inconclusive |
 | V-6 | `WitnessedUnchecked` whose witnesses each replay to `reproduced-with-evaluated-witness` | `inconclusive` | `unsettled` | `Inconclusive(WellDefinednessUnchecked{sources})` | inconclusive |
-| V-6 | `NoDecision` with `end` `Completed` and an `UndecidedSuccessor` open cause (`UndecidedSuccessor`), else a `ConstraintBoundary` one (`ConstraintReached`); `NoInitialState`; `NoInstance` (FR-125); `ReductionNotPreserving` (FR-167); evidence whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`), a trap replay a limit stopped included (FR-170) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | `NoDecision` with `end` `Completed` and an `UndecidedSuccessor` open cause (`UndecidedSuccessor`), else a `ConstraintBoundary` one (`ConstraintReached`); `NoInitialState`; `NoInstance` (FR-125); `ReductionNotPreserving` (FR-167); evidence whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses with a `ReplayRefusal` other than `PackageIdMismatch` (`ReplayRefused`), a trap replay a limit stopped included (FR-170) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | `NoDecision` with `end` `Stopped(cause, limit)`; `NoDecision` with `end` `Completed` and open causes only `MaxDepth` under partial-order reduction (ADR-021 RV-5); `Stopped(ResourceExhausted, WitnessSamples)` (FR-166); a certificate check a limit stopped; a trap replay a limit stopped (FR-170) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
 | V-8 | No candidate discharges the form | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
@@ -135,8 +138,8 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 ### State-graph certificate (ADR-022 GC-1 to GC-4)
 
 - **Production.** With `Witnessed` or `Holds` from an unreduced
-  exploration, the engine SHALL return a `StateGraphCertificate`: every
-  explored model state's `quire.simulation.state-key/v1` digest, sorted;
+  exploration, the engine SHALL return a `StateGraphCertificate`: the
+  `package_id` of the package it explored; every explored model state's `quire.simulation.state-key/v1` digest, sorted;
   for `possible` and `always possible`, each state's distance `d` to the
   nearest target node, for every state from which a target is reachable;
   for `unique path`, each node of `H`'s path count and its position in a
@@ -147,7 +150,13 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
   but the certificate. It SHALL return `Rejected` with FR-338's
   `CertificateRejection{rule, at}`, `at` the `ModelState` locus of
   the first failing state in certificate order, which settles
-  `CertificateRejected{rule, at}`. The checker SHALL evaluate the rules in
+  `CertificateRejected{rule, at}`. Before any rule, the checker SHALL
+  compare the recompiled package's `package_id` with the certificate's
+  `package_id`; when they differ it SHALL return
+  `PackageMismatch{certificate, recompiled}` naming both and evaluate no
+  rule (FR-282), which settles `Inconclusive(StaleDependency{requested,
+  recompiled})` with `requested` the certificate's `package_id`. The
+  checker SHALL evaluate the rules in
   the order listed here, each over every reached state, and reject with the
   first rule that fails (for `unique path`, `OrderBroken` before
   `CountBroken`):
@@ -228,6 +237,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | FR-169-AC-9 | Accepted certificates. `ReachesTwo` for `c = a` returns a certificate whose closure is §7.1's 9 states and whose ranks are `d = 0` at `va = 2`, 1 at `va = 1` and 2 at `va = 0`; `check_state_graph` accepts it and the item settles `Proved{Witness{…}, Certified}`. §7.2's `CanStillWin` `from (x.phase != Lost)` returns ranks `Won` 0, `Mid` 1, `Start` 2 and no rank for `Lost`, accepted, `Proved{Exhaustive, Certified}`. §7.3's sequenced `InOneWay` returns counts 1 at every node of `H` with a reverse topological order, accepted. The `possible` item of FR-167-AC-4 proved under partial-order reduction settles `Proved{Reduced{…}, Uncertified}` with no certificate. | Test (TC-643) |
 | FR-169-AC-10 | Rejected certificates, each settling `inconclusive`, `CertificateRejected{rule, at}` and never `proved`: AC-9's `ReachesTwo` certificate with `(2, 2)` removed (`SuccessorMissing` at the first, in certificate order, of the two closure states that reach it, `(1, 2)` and `(2, 1)`; the engine gives `(1, 2)`); with the rank of `(1, 0)` changed to 2 (`RankBroken` at `(0, 0)`, the only ranked state left with no successor one rank lower, because `(1, 0)` keeps its successor `(1, 1)` at rank 1); with `(0, 0)` unranked (`RankMissing` at `(0, 0)`); a hand-built certificate for FR-168-AC-5's item that lists all 9 states (`PredicateUndefined` at the first, in certificate order, of the three states where `va = 2`, because the target divides by zero at each; the engine gives `(2, 0)`); the `InOneWay` certificate over §7.3's unsequenced job with every count 1 and a valid reverse topological order (`CountBroken` at the node with two paths); the sequenced certificate with its order reversed (`OrderBroken` at the first, in certificate order, of its nodes other than the `to` node; the engine gives `tff`). The check with `max_states` 2 stops and settles `failed`, naming `max_states`. | Test (TC-644) |
 | FR-169-AC-11 | A certificate holding a state whose expansion evaluates a contract conjunction undefined is rejected `BadState` at that state and settles `inconclusive`, `CertificateRejected{BadState, at}`, never `proved`: §7.1's subject with universe `{a}`, the one initial state `va = 0` and the guard `pre Guard using v on Config::ConfigVersion::attemptUpdate { 2 div (2 - self.versionNumber) >= 1 }` (the guard of TC-592's FR-167-AC-2 fixture), checked with a hand-built certificate of its 3 states ranked 2, 1 and 0 for `ReachesTwo`, is rejected `BadState` at the state where `va = 2`, whose guard has no value; the same ranks over a subject without the guard are accepted. | Test (TC-644) |
+| FR-169-AC-12 | Package identity. AC-9's `ReachesTwo` certificate carries the `package_id` of the package the engine explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by another package's returns `PackageMismatch{certificate, recompiled}` naming both identities before any rule is evaluated, and the item settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `proved`. AC-9's `ReachesTwo` witness replayed with a request whose `package_id` is stale refuses `PackageIdMismatch` and the item settles `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the request's `package_id`, not `ReplayRefused`. | Test (TC-1141) |
 
 ## Dependencies
 

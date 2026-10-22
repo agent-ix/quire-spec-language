@@ -25,9 +25,9 @@ one-defining-location search, and a shape-equality comparison, to every
 symbol FR-068-CON-3 names (`CheckCause`, `CheckRefusal`, `Obligation`,
 `MeasureObligation`, `CheckingStage`, `CheckingLimitKind`,
 `DispatchFunctionRole`, `InvalidDispatchDeclaration`, `Location`, `Origin`,
-`ProvedInterval`, `WrongSnapshotCause`, `CheckedPackage`, `CheckedExpression`,
+`ProvedInterval`, `CheckedPackage`, `CheckedExpression`,
 `CheckedFunction`, `PackageDeclarations`, `CheckingLimits`,
-`DispatchOperation`, `EnumBinding` and `CheckMode`) — not only the four checking methods — because a
+`DispatchOperation`, `EnumBinding`, `WrongSnapshotCause` and `CheckMode`) — not only the four checking methods — because a
 renamed leftover (for example a stray `qsl-eval/src/value/expression/typing.rs` still
 defining a second `Typer`-adjacent type under a different file name) is not
 by itself a build error, and the four-method-only scan this test originally
@@ -53,9 +53,10 @@ ran would not surface it. Scope: FR-068-AC-1, FR-068-CON-1, FR-068-CON-3.
    FR-068-CON-3 names (`CheckCause`, `CheckRefusal`, `Obligation`,
    `MeasureObligation`, `CheckingStage`, `CheckingLimitKind`,
    `DispatchFunctionRole`, `InvalidDispatchDeclaration`, `Location`,
-   `Origin`, `ProvedInterval`, `WrongSnapshotCause`, `CheckedPackage`,
+   `Origin`, `ProvedInterval`, `CheckedPackage`,
    `CheckedExpression`, `CheckedFunction`, `PackageDeclarations`,
-   `CheckingLimits`, `DispatchOperation`, `EnumBinding`, `CheckMode`): search the whole compiled crate for
+   `CheckingLimits`, `DispatchOperation`, `EnumBinding`, `WrongSnapshotCause`,
+   `CheckMode`): search the whole compiled crate for
    every location defining each name, and for every pair of same-named
    definitions found (there should be none), compare their shape
    (variants/fields/signature) as FR-068-CON-3 requires.
