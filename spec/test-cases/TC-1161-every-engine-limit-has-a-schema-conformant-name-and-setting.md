@@ -25,8 +25,11 @@ Scope: FR-255-AC-12, FR-255-AC-13.
    `TimedSampling`, `ZoneCheckLimits`, `CertificateCheckLimits`,
    `ScheduleLimits`, the monitor run's window limit and `hybrid.limits`),
    read its mapping from each limit member (not `TimedSampling`'s `q`; for
-   `ExactProbLimits`, the `model` members included) to its names and match
-   each name against the two patterns; collect every setting name of the setting, engine and
+   `ExactProbLimits`, only the three product-bound `model` members) to its
+   names and match each name against the two patterns; for the three
+   method bounds, check that their V-6 stops name the member and its value
+   (FR-209, FR-225) and that the settings operation raises each by its row's
+   setting; collect every setting name of the setting, engine and
    accounting tables.
 2. For each engine limit enum, map every variant that names a member of
    the engine's limits types through its limit-name and setting-name

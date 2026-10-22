@@ -152,7 +152,11 @@ FR-141, FR-142 and FR-149). EN-5's `ExactProbLimits` is QSpec FR-411's
 flat limits object: every member, including the product bounds QSL holds
 in `ExactProbLimits.model` (`max_states`, `max_transitions`,
 `max_automaton_states`), takes the setting `exact_prob.<member>`, so EN-5's
-product bounds are raised apart from EN-1's. `explore.states` and
+product bounds are raised apart from EN-1's. EN-5 reads only those three
+members of `ExactProbLimits.model`; its other four `ModelCheckLimits`
+members (`witness_samples`, `max_walk_steps`, `max_witness_set`,
+`max_relation_tuples`) bound nothing EN-5 does and take no `exact_prob.*`
+row. `explore.states` and
 `explore.transitions` raise FR-101's exploration and simulation only.
 
 Each engine row's value is a positive count (QSpec backend-provider
@@ -203,8 +207,11 @@ key (FR-250); reaching it stops the solver with `TimedOut`, never
 The method bounds `max_live_instances` (FR-209), `max_store_buffer` and
 `max_messages` (FR-225) are members of QSpec's `TemporalLimits`, so they
 take rows; reaching one settles its owner's V-6 outcome
-(`InstanceBoundReached`, `MemoryBoundReached`), which names the row's
-setting, not `LimitReached`. These request members are not limits and take
+(`InstanceBoundReached{bound, states}`, `MemoryBoundReached{bound,
+states}`), not `LimitReached`. That outcome names the request member and
+its value, as FR-209 and FR-225 state (`bound: max_live_instances 1`), and
+carries no setting; the row's setting is the name the settings operation
+and a replay request accept to raise the bound. These request members are not limits and take
 no row: the search horizon `max_depth`, a method parameter that settles
 V-5 and is never a limit (QSpec FR-460); the method settings `q` (FR-254), the seed,
 the statistical method, `min_cycles` and `max_witnesses` (FR-191), which
@@ -365,7 +372,7 @@ these names through the same operand grammar as the stage settings
 | FR-255-AC-9 | The settings operation given `depth=1` and `accounting=1` each returns a usage refusal with cause unknown setting; given `work_units=ten`, `work_units=-1` and `work_units=18446744073709551616` each returns cause not an integer; given `work_units=5` and `work_units=6` together returns cause repeated naming `work_units=6`. Each refusal names its operand, and no stage runs. | Test (TC-921) |
 | FR-255-AC-10 | A replay request whose `stage_limits` holds the entry `work_units` at `B` decodes, and its call runs with `work_units` at `B` whatever the request's accounting limits give `work_units`, and with every other counter at the request's accounting-limits value. For FR-098-AC-9's counterexample, the entry `work_units` one below the argument's node count settles `inconclusive` with cause `NoValue`, naming `work_units`, and the entry raised to fit replays. | Test (TC-921) |
 | FR-255-AC-11 | Two replay requests that differ only in how they reach the same effective accounting limits, one carrying every counter in its accounting limits and no accounting entry in `stage_limits`, the other carrying `work_units` and `value_occurrences` only as `stage_limits` entries over accounting limits holding other values for them, give the same function-level value-parity claim identity (`claim()`, FR-357) on every outcome, settle the same, and charge the same. | Test (TC-921) |
-| FR-255-AC-12 | Every limit name of the engine table matches `^[a-z][a-z0-9_]*$`, every setting name of the setting and engine tables matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, and the setting names of the three tables are pairwise distinct. For each engine limits type, its mapping from each limit member to (limit name, setting name) equals its engine-table rows (`ExactProbLimits.model`'s members to the `exact_prob.*` product rows, `TimedSampling`'s `q` to none); the union of those names is exactly the engine table's, which AC-3's union does not include. Every stop an engine makes at a member of its limits types names that member's pair. A stop at a limit outside those types (an evaluation meter, `MaxCandidates` of an engine that does not own `ExpansionLimits`, `Time`, `ClauseMeter`, cancellation) is not covered here. The settings operation given `model_check.max_states=0` returns a usage refusal naming the operand, and given `model_check.witness_samples=0` returns `ModelCheckLimits` with `witness_samples` 0. | Test (TC-1161) |
+| FR-255-AC-12 | Every limit name of the engine table matches `^[a-z][a-z0-9_]*$`, every setting name of the setting and engine tables matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, and the setting names of the three tables are pairwise distinct. For each engine limits type, its mapping from each limit member to (limit name, setting name) equals its engine-table rows (`ExactProbLimits.model`'s members to the `exact_prob.*` product rows, `TimedSampling`'s `q` to none); the union of those names is exactly the engine table's, which AC-3's union does not include. Every `LimitReached` an engine makes at a member of its limits types names that member's pair; a method-bound stop (`max_live_instances`, `max_store_buffer`, `max_messages`) is checked against its owner's member naming (the member and its value), not against the setting pair, and its row's setting raises it through the settings operation. A stop at a limit outside those types (an evaluation meter, `MaxCandidates` of an engine that does not own `ExpansionLimits`, `Time`, `ClauseMeter`, cancellation) is not covered here. The settings operation given `model_check.max_states=0` returns a usage refusal naming the operand, and given `model_check.witness_samples=0` returns `ModelCheckLimits` with `witness_samples` 0. | Test (TC-1161) |
 | FR-255-AC-13 | FR-126-AC-8's run stopped by `max_states` 2 settles `incomplete`, `LimitReached{limit: max_states, value: 2, setting: model_check.max_states}`, and the settings operation given `model_check.max_states=3` raises it; FR-101-AC-15's exploration with `max_states` 2 returns `Outcome::Bounded` at `Limit::States` with value 2 under setting `explore.states`, and `explore.states=3` leaves a model check's `max_states` at its default. FR-126-AC-6's `max_automaton_states` 50 stop names `max_automaton_states` and `model_check.max_automaton_states`; FR-254-AC-3's `max_sample_steps` 1 stop names `statistical.max_sample_steps`. | Test (TC-1161) |
 
 ## Status
