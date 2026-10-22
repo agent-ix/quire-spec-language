@@ -20,6 +20,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-015
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-403
+    type: references
 ---
 # AD-001: Shared evaluation-core interface and staged evaluator replacement
 
@@ -164,19 +166,25 @@ here. The ordering rationale is as follows.
   default. NFR-015 gives its build contract, target and gate (closure tier,
   `thumbv7em-none-eabi`, `make build-no-std`). The foundation items the leaf
   itself uses move with S0 (FR-401), not S3.
-- IR-588 (S4) converts only the evaluator-needed semantics and replaces
-  nondeterministic `HashMap` traversal in `model/population.rs` with
-  `BTreeMap`. It follows S2.
+- IR-588 (S4) places the evaluator-needed semantics (FR-403): `divide` and
+  `modulo` move to `quire-eval`; the model reads over an admitted
+  environment stay in `qsl-semantics`, reached only through `quire-eval`'s
+  environment contract. The `HashMap` in `model/population.rs` is read by
+  key only, so its order reaches no output. It follows S2.
 - IR-589 (S5) makes `qsl-package` no_std-capable and removes `serde_json` from
   the checked-IR path, verifying uncertain dependencies before choosing
   replacements. NFR-015 defines the checked-IR path (the in-memory checked
   package, not the v2 wire), puts `quire-contract-model`, the v2 emitter,
   the I2 reader and the dependency-bearing constructor behind `std`, and
-  sets the crate tier; the closure tier also needs S4 and `no_std` layers 2
+  sets the crate tier; the closure tier also needs `no_std` layers 3, 2
   and 1.
-- IR-590 (S6) converts `qsl-eval` to no_std + alloc behind the interface and
-  keeps `std` on by default until S9. It follows the interface and S1-S5.
-  IR-269 is reached through S1, not directly.
+- IR-590 (S6) implements the no_std + alloc evaluator in `quire-eval`
+  behind the FR-401 interface, over `quire-checked`'s checked terms and an
+  environment contract (FR-403). `qsl-eval` depends on it, stays `std`, and
+  keeps the std reference evaluator as its default until S9. The S7
+  differential suite (FR-402) compares that std path with `quire-eval`. It
+  follows the interface and S1-S5. IR-269 is reached through S1, not
+  directly.
 
 S2, S3 and S5 are independent of the IR-269 MVP gate and the IR-583
 interface. The suggested owner lane is the maintainer of each owning QSL

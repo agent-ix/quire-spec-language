@@ -17,6 +17,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-013
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-403
+    type: references
 ---
 # NFR-015: Build evaluator-path crates no_std + alloc behind a default-on std feature
 
@@ -111,11 +113,14 @@ feature unification would turn it back on.
 | Crate | Slice | Tier | Normal dependencies with `std` disabled | Behind `std` | Closure-tier condition |
 | --- | --- | --- | --- | --- | --- |
 | `qsl-foundation` | S3 (IR-587) | closure | `quire-exact` (no features; `#![no_std]`), `quire-semantic-value` (`#![no_std]`; from ADR-011 X-13 or X-14, whichever lands first), `serde` with `derive` and `alloc`, `sha2`, `thiserror`, each with default features off; the `ix-trace-rs` proc macro, which runs on the host | no item: every `std::` path the crate uses (`cmp`, `fmt`, `str`, `hash`, `marker`, `num`, `iter`, `slice`, `error::Error`, `collections::{BTreeMap, BTreeSet, btree_map}`, `sync::Arc`) has a `core::` or `alloc::` equivalent on this target | holds: every dependency listed is `no_std`-capable |
-| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-exact`, `quire-semantic-value`, `quire-canonical` (without `std` in the workspace table), `serde`, `thiserror`, and `ix-trace-rs` | `quire-contract-model` (optional, enabled by `std`) and the items listed in "`qsl-package` surface with `std` disabled" | `qsl-semantics` (S4, IR-588), `qsl-forms` and `qsl-cst` each build with `std` disabled, with their own `std`-only dependencies behind their `std` features: `serde_json`, `tempfile` and the FCD crates (`agent-ix-extraction-frontend`, `agent-ix-semantic-ir`) in `qsl-semantics`; `logos` and `serde_json` in `qsl-cst`. `qsl-package`'s `std` feature then also enables `qsl-semantics/std` |
+| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-exact`, `quire-semantic-value`, `quire-canonical` (without `std` in the workspace table), `serde`, `thiserror`, and `ix-trace-rs` | `quire-contract-model` (optional, enabled by `std`) and the items listed in "`qsl-package` surface with `std` disabled" | `qsl-semantics`, `qsl-forms` and `qsl-cst` each build with `std` disabled, with their own `std`-only dependencies behind their `std` features: `serde_json`, `tempfile` and the FCD crates (`agent-ix-extraction-frontend`, `agent-ix-semantic-ir`) in `qsl-semantics`; `logos` and `serde_json` in `qsl-cst`. `qsl-package`'s `std` feature then also enables `qsl-semantics/std` |
 
-Rows for `qsl-semantics` (S4, IR-588) and `qsl-eval` (S6, IR-590) are
-defined by the checked-term boundary of IR-586, which fixes their
-evaluator-side scope.
+`qsl-semantics` and `qsl-eval` have no row. The `no_std` evaluator is
+`quire-eval`'s (S6, IR-590, FR-403), gated in its own repository. S4
+(IR-588) moves the evaluator-needed `qsl-semantics` code that needs no
+model state into `quire-eval` and leaves the model reads in `qsl-semantics`
+behind `quire-eval`'s environment contract, so neither crate needs a `std`
+feature for the evaluator.
 
 ### The checked-IR path
 
