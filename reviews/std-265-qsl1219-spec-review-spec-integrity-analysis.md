@@ -32,3 +32,11 @@ Units examined:
 ## Verdict
 
 Not mergeable: one major (FND-001, undefined document_pointer for four refusal kinds, which disagrees with QSpec #366's `type`-member pointer). Merge only after #366.
+
+## Dispositions
+
+Round 1, reviewed QSL #1219 at c62980557 (fix commit d84e35855).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The pointers match QSpec #366's `type`-member pointer. The assignments reader now follows QSpec's reading order (entry members, then counterexample type, missing, unknown, then values; duplicate parameter before value). A `transcript` beside a counterexample is UnknownMember. FR-289-AC-14 is narrowed consistently. Whether an in-set but plugin-forbidden spelling is `unknown-cause`/`invalid-value` is recorded as SR-15501 FND-005 (QSpec side). |

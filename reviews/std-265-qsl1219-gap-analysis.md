@@ -30,3 +30,11 @@ Units examined:
 ## Verdict
 
 Mergeable for gaps apart from one minor finding (FND-001).
+
+## Dispositions
+
+Round 1, reviewed QSL #1219 at c62980557 (fix commit d84e35855).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-774 step 7 updated to match. |

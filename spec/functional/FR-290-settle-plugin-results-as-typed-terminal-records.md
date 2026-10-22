@@ -255,9 +255,9 @@ spelling or JSON kind. Every code comes from QSpec FR-272's closed table:
 
 | Refusal | Code / cause |
 | --- | --- |
-| `QslOnlyCause`, `CoreOnlyBasis`, `UnknownSpelling` | `invalid_result`/`unknown-cause` at `/basis/type` or `/cause/type` |
+| `QslOnlyCause`, `CoreOnlyBasis`, `UnknownSpelling` | `invalid_result`/`unknown-cause` at `/basis/type` or `/cause/type`: a spelling outside FR-331's closed set, or a core-only basis or cause, which QSpec FR-331 "Result entries" excludes from a plugin's entry (its core-only causes are this requirement's QSL-only causes) |
 | `MissingMember` | `invalid_result`/`missing-member` |
-| `MissingCounterexample` | at `/counterexample`: `invalid_result`/`missing-member` for an absent one, `invalid_result`/`wrong-value-kind` for one that is not an object; at `/counterexample/type`: `missing-member` for an absent `type`, `wrong-value-kind` for a `type` that is not a string, `invalid-value` for any other `type` |
+| `MissingCounterexample` | at `/counterexample`: `invalid_result`/`missing-member` for an absent one, `invalid_result`/`wrong-value-kind` for one that is not an object; at `/counterexample/type`: `missing-member` for an absent `type`, `wrong-value-kind` for a `type` that is not a string, `invalid-value` for any other `type`, since a plugin's counterexample is assignments (QSpec FR-305, FR-331 "Result entries") |
 | `UnknownMember` | `invalid_result`/`unknown-member` |
 | `Malformed` | `invalid_result`/`wrong-value-kind` when the member's JSON kind is not the kind its domain takes (a non-object `basis`, a string `depth`, a non-string `certification`); otherwise `invalid_result`/`invalid-value` |
 | `CertificationNotTrusted` | `invalid_result`/`certification-mismatch`, with `expected` `trusted` and `actual` the received value |
