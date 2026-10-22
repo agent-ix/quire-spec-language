@@ -2150,12 +2150,19 @@ impl PackageDeclarations {
             let protocol_views: Vec<refinement::ProtocolView<'_>> = self
                 .protocols
                 .iter()
-                .map(|form| refinement::ProtocolView {
-                    form,
-                    checked: checked_protocols
+                .map(|form| {
+                    let place = checked_protocols
                         .iter()
-                        .find(|checked| checked.name == form.name.name.as_str())
-                        .filter(|_| !refused_protocols.contains(form.name.name.as_str())),
+                        .position(|checked| checked.name == form.name.name.as_str());
+                    refinement::ProtocolView {
+                        form,
+                        checked: place
+                            .and_then(|place| checked_protocols.get(place))
+                            .filter(|_| !refused_protocols.contains(form.name.name.as_str())),
+                        attempts: place
+                            .and_then(|place| protocol_bindings.get(place))
+                            .map_or(&[], Vec::as_slice),
+                    }
                 })
                 .collect();
             for (index, refinement) in self.refinements.iter().enumerate() {

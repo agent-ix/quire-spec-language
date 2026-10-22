@@ -1068,3 +1068,113 @@ fn a_field_row_naming_a_protocol_binder_is_refused() {
         field.refinement()
     );
 }
+
+/// `CasTwice` with `commitA`'s row replaced by `target`.
+fn node_row(target: &str) -> String {
+    mutated(
+        &cas_twice(),
+        "step Impl::Counter::commitA -> Spec::Counter::inc(self);",
+        &format!("step Impl::Counter::commitA -> {target};"),
+    )
+}
+
+/// FR-147-AC-14 (TC-552 step 14), admitted rows: `a1` applies `inc`, which
+/// has no parameter and no result, so its binder record is the receiver
+/// alone. A list left out and `_` leave it open.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn a_node_row_whose_arguments_fit_the_binder_record_checks() {
+    for (target, open) in [
+        ("node Spec::Twice::a1(self)", 0),
+        ("node Spec::Twice::a1(_)", 1),
+        ("node Spec::Twice::a1", 1),
+    ] {
+        let graph = checked(&node_row(target), None);
+        let arguments: Vec<_> = the_refinement(&graph)
+            .steps()
+            .iter()
+            .filter_map(|step| match &step.target {
+                StepTarget::Node {
+                    node, arguments, ..
+                } if node == "a1" => Some(arguments),
+                _ => None,
+            })
+            .collect();
+        let [arguments] = arguments.as_slice() else {
+            panic!("{target}: one node row");
+        };
+        assert_eq!(arguments.len(), 1, "{target}: one field");
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.is_none())
+                .count(),
+            open,
+            "{target}"
+        );
+    }
+}
+
+/// FR-147-AC-14 (TC-552 step 14), the count: a list whose length differs
+/// from the field count refuses `ill_typed`/`operator-ineligible` at the
+/// node, retaining both counts.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn a_node_row_with_the_wrong_argument_count_is_refused_at_the_node() {
+    for (target, actual) in [
+        ("node Spec::Twice::a1(self, 1, 2)", 3),
+        ("node Spec::Twice::a1(self, _)", 2),
+    ] {
+        let found = refused(&node_row(target), None, RefinementSupport::BUILD);
+        let count = only(&found);
+        assert_eq!(
+            count.code_and_cause(),
+            (Code::IllTyped, Some("operator-ineligible")),
+            "{target}"
+        );
+        assert_eq!(count.at.as_deref(), Some("Spec::Twice::a1"), "{target}");
+        assert_eq!(
+            count.refinement(),
+            &RefinementCause::NodeArgumentCount {
+                node: "Spec::Twice::a1".to_owned(),
+                expected: 1,
+                actual,
+            },
+            "{target}"
+        );
+    }
+}
+
+/// FR-147-AC-14 (TC-552 step 14), the type: an argument that is not its
+/// field's type refuses `ill_typed`/`type-mismatch` at the argument,
+/// retaining the field's type and the argument's.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn a_node_row_argument_of_the_wrong_type_is_refused_at_the_argument() {
+    let found = refused(
+        &node_row("node Spec::Twice::a1(true)"),
+        None,
+        RefinementSupport::BUILD,
+    );
+    let mismatch = only(&found);
+    assert_eq!(
+        mismatch.code_and_cause(),
+        (Code::IllTyped, Some("type-mismatch"))
+    );
+    assert_eq!(mismatch.at.as_deref(), Some("true"));
+    let RefinementCause::NodeArgumentType {
+        node,
+        position,
+        expected,
+        actual,
+    } = mismatch.refinement()
+    else {
+        panic!("a node argument type refusal: {:?}", mismatch.refinement());
+    };
+    assert_eq!((node.as_str(), *position), ("Spec::Twice::a1", 0));
+    assert!(
+        matches!(**expected, quire_exact::ValueType::Reference(_)),
+        "{expected:?}"
+    );
+    assert_eq!(**actual, quire_exact::ValueType::Boolean);
+}
