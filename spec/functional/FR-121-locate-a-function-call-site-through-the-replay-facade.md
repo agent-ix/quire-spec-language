@@ -169,7 +169,9 @@ QSL-345.
   as `operation`, the operation's `Identifier`. This pair is the QSpec
   FR-323 `frame_operation` replay target that CG FR-024 copies into a frame
   packet. The selection's own object type is not authority for the
-  declaring object, and no `OperationSite` is returned without the pair.
+  declaring object, and no `OperationSite` is returned without the pair. A declaring object that is no declaration of the selected model
+  alias's domain package refuses `CallSiteRefusal::Fault`, never a partial
+  site.
 - For an operation selection, `call_site` SHALL return every `pre` and
   `post` clause of the unit whose operation resolves to the same
   (declaring object type, operation) as the selected frame, in declaration
