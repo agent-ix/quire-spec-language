@@ -324,7 +324,7 @@ item moves once.
 - The dual-implementation period (IR-584) ends when the S9 switch change is
   on `main` and FR-405-AC-1 to FR-405-AC-10 pass. The slices before it are
   complete when their own criteria pass: FR-400, FR-401, NFR-015, FR-403,
-  FR-402, slice S8's audit and the clause-entry requirement. RT's port
+  FR-402, NFR-016 (slice S8's unsafe audit) and the clause-entry requirement. RT's port
   deletion is RT's migration (IR-349, FR-262-AC-9), not part of that
   period.
 

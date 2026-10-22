@@ -31,6 +31,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-295
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/NFR-016
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/AD-001
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -88,14 +90,14 @@ are measured on the switch base, items 3 to 5 at the switch change's head.
    `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>`, also reports
    zero divergences (FR-402-AC-10).
 2. **FR-262 under both implementations.** On the switch base,
-   FR-262-AC-1 to FR-262-AC-8 pass with each implementation (FR-402-AC-9
+   FR-262-AC-1 to AC-8, AC-10 and AC-11 pass with each implementation (FR-402-AC-9
    and FR-403-AC-7), AC-1 and AC-2 on a 512 KiB stack.
 3. **The `no_std` gate.** FR-401-AC-1's `thumbv7em-none-eabi` build passes in
    `agent-ix/quire-eval` at the `quire-eval` revision QSL's `Cargo.lock`
    resolves at the switch head.
-4. **The unsafe audit.** Slice S8's unsafe audit (IR-592) passes in
-   `agent-ix/quire-eval` at that revision, over the closure that links into
-   the `no_std` evaluator.
+4. **The unsafe audit.** Slice S8's unsafe audit, NFR-016's
+   `make audit-unsafe` gate, passes in `agent-ix/quire-eval` at that
+   revision.
 5. **Every evaluation family.** Every evaluation `qsl-eval` performs runs on
    `quire-eval`'s evaluator (FR-405-AC-4), and the tests FR-405-AC-5 names
    pass.
@@ -247,8 +249,8 @@ QSL-owned corpus. FR-262-AC-1 to AC-8 and FR-403's vectors run once, on
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-405-AC-1 | On the switch base, `make evaluator-differential` over the QSL-owned corpus admits every checked-in case and all 256 generated cases and reports zero divergences, and `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>` over a bundle CG's `make evaluator-corpus` wrote from CG's `main` reports zero divergences; the switch change's description reports the switch base and both results. | Test (TC-1124) and Inspection |
-| FR-405-AC-2 | On the switch base, FR-262-AC-1 to FR-262-AC-8 pass with each implementation, AC-1 and AC-2 on a 512 KiB stack with no depth refusal and no stack overflow; the switch change's description reports the result. | Test (TC-1124) and Inspection |
-| FR-405-AC-3 | At the `quire-eval` revision QSL's `Cargo.lock` resolves at the switch head, FR-401-AC-1's `thumbv7em-none-eabi` build and slice S8's unsafe audit both pass in `agent-ix/quire-eval`. | Test (TC-1124) |
+| FR-405-AC-2 | On the switch base, FR-262-AC-1 to AC-8, AC-10 and AC-11 pass with each implementation, AC-1 and AC-2 on a 512 KiB stack with no depth refusal and no stack overflow; the switch change's description reports the result. | Test (TC-1124) and Inspection |
+| FR-405-AC-3 | At the `quire-eval` revision QSL's `Cargo.lock` resolves at the switch head, FR-401-AC-1's `thumbv7em-none-eabi` build and NFR-016's `make audit-unsafe` gate both pass in `agent-ix/quire-eval`. | Test (TC-1124) |
 | FR-405-AC-4 | At the switch head: `qsl-eval/src/value/expression/evaluate.rs` and its `evaluate/` submodules, the `Machine` type, the std reference adapter and FR-403's separate `quire-eval` entry do not exist; no type in `qsl-eval`'s shipped source keeps an evaluation's task or value stack; each `qsl-eval` function whose result is a `Value`, an `Outcome` or an `Evaluation` of a checked node or expression obtains it from a `quire-eval` session, and every `NodeKind` match left in `qsl-eval` is a structural walk that returns no value, such as the ADR-031 SW-2 decision-path walk; no QSL manifest and no `quire-eval` manifest declares a feature that selects an evaluator; no `[dev-dependencies]` entry, `test-support` feature, `xtask` command or fixture crate holds an evaluator of checked terms; and no deleted path is re-exported or forwards to `quire-eval`. | Inspection (TC-1124) |
 | FR-405-AC-5 | A test inventory of the switch base and the switch head (every test function of the workspace, by crate, file and name, with its expected values) shows that every test absent at the head ran only the std reference as a second implementation, paired a std with a `no_std` record, or tested FR-403's separate entry, and that each test of the deleted files, including the `evaluate/invariants.rs` probes, exists ported at the head with its expected values. Every other base test exists at the head with unchanged expected values, and at the head the `qsl-eval`, `qsl-replay` and `qsl-analyze` suites, the FR-262 tests, the FR-096 refusal-record tests, TC-780's backend-versus-interpreter tests, the clause, separation (FR-265, ADR-031) and value-invariant tests, and the QSL conformance run over the QSpec checked-package fixtures pass. | Test (TC-1124) |
 | FR-405-AC-6 | At the switch head, the `Value`-family Begin over `pre(allInstances<T>(p))` built by `check_postcondition_expression`, with `p: Population<T>[3]`, returns `CallFailure::Fault` with stage `quire-eval` and invariant `outside-value-family` and no charge. The clause entry over the same expression, with a pre observation recording `p`'s population as members `a`, `b` and a post observation recording `a`, `b`, `c`, completes with the collection of `a` and `b` in ascending reference-key order, with the admitted charges of the checked-in fixture that the switch base's reference produced for that expression. | Test (TC-1124) |
@@ -282,7 +284,8 @@ QSL-owned corpus. FR-262-AC-1 to AC-8 and FR-403's vectors run once, on
   `quire-eval`.
 - [FR-295](FR-295-return-interpreter-outcomes-from-jit-and-aot.md): the
   interpreter the backends are compared with.
-- Slice S8 (IR-592): the unsafe audit.
+- [NFR-016](../non-functional/NFR-016-audit-unsafe-code-in-the-evaluator-closure.md):
+  slice S8's unsafe audit, `make audit-unsafe`.
 - [AD-001](../assurance/AD-001-shared-evaluation-core-interface.md) slice S9
   (IR-593) and [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   X-17.

@@ -21,12 +21,12 @@ against recorded expectations. Scope: FR-405-AC-1 to FR-405-AC-10.
    bundle with `make evaluator-corpus` on CG's `main` and run
    `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>`. Read the
    switch change's description.
-2. On the switch base, run FR-262-AC-1 to FR-262-AC-8 with each
+2. On the switch base, run FR-262-AC-1 to AC-8, AC-10 and AC-11 with each
    implementation, AC-1 and AC-2 on a thread with a 512 KiB stack. Read the
    switch change's description.
 3. Read the `quire-eval` revision in QSL's `Cargo.lock` at the switch head.
    In `agent-ix/quire-eval` at that revision, run FR-401-AC-1's
-   `thumbv7em-none-eabi` build and slice S8's unsafe audit.
+   `thumbv7em-none-eabi` build and NFR-016's `make audit-unsafe`.
 4. At the switch head, list `qsl-eval`'s files and its shipped types. For
    each `qsl-eval` function returning a `Value`, `Outcome` or `Evaluation`,
    trace where the result comes from. List every `NodeKind` match in
