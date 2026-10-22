@@ -5,6 +5,10 @@ type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-356
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-401
+    type: references
 ---
 # FR-059: Check the backend dependency direction across QSL, Contract IR, Runtime and Codegen
 
@@ -14,7 +18,7 @@ ADR-011 §3 fixes two forbidden bypasses over the four-repository ecosystem
 (QSL, quire-contract-ir, quire-contract-runtime, quire-contract-codegen):
 
 - **FB-05**: no backend (IR, RT or CG) depends on QSL, except CG's normal
-  dependency on the QSL layer-6 `replay` facade.
+  dependency on the QSL layer-6 `replay` facade, the package `qsl-replay`.
 - **FB-11**: no dependency edge, normal or dev, closes a cycle among the four
   repositories.
 
@@ -32,7 +36,7 @@ violating FB-11, and passes only when neither set of findings is non-empty.
 ## Outputs
 
 - An FB-05 report: the list of edges into QSL that are not CG's normal
-  dependency on QSL.
+  dependency on `qsl-replay`.
 - An FB-11 report: the list of simple cycles over the combined normal+dev
   edge graph of the four repositories, each reported once regardless of which
   repository the cycle is discovered from.
@@ -56,9 +60,33 @@ classifies a QSL-sourced shared leaf as QSL.
 The check SHALL treat a `build`-kind dependency as a normal edge for FB-05/
 FB-11 purposes, and a `dev`-kind dependency as a dev edge.
 
-The check SHALL report CG's normal dependency on QSL as the one FB-05
-exception. The check SHALL report a *dev* dependency from CG on QSL, since a
-dev dependency is not the stated exception.
+The check SHALL treat CG's normal dependency on the QSL package
+`qsl-replay` as the one FB-05 exception. This is the rule
+[FR-356](FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md)-AC-1
+states for the same direction check ("refuses one to any `qsl-*` crate
+other than CG's normal edge to `qsl-replay`"), which
+`tc_arch_lint_direction_004` (`tools/arch-lint/graph.rs`) tests; FR-059-AC-10
+and FR-059-AC-1 are read with it as one rule.
+
+The check SHALL report every other CG normal dependency on a package that
+classifies as QSL, such as `qsl-eval` or `qsl-semantics`, as an FB-05
+violation naming that package.
+
+The check SHALL report a *dev* dependency from CG on QSL, since a dev
+dependency is not the stated exception. CG's dependencies on the crates of
+`agent-ix/quire-eval` (`quire-eval`, `quire-eval-corpus`, `quire-checked`),
+on the semantic-value leaf `quire-semantic-value` (SV, ADR-011 X-11) and on
+the other shared leaves classify as no ecosystem repository, so they are no
+FB-05 edge. CG names the types FR-401 moves to those leaves, such as
+`Category`, from the leaves directly
+([FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md));
+`qsl-replay` does not re-export the types FR-401 moves. Among CG's
+QSL-owned dependencies, the allowed set is `qsl-replay`, the one QSL crate,
+plus the shared leaves `quire-semantic-value` and the `agent-ix/quire-eval`
+crates, and no other QSL-owned crate (FR-060, "T12-A and the evaluator
+differential corpus"). CG's edges to the other shared leaves, such as
+`quire-exact` and `quire-walk`, are not QSL-owned and remain as ADR-011
+FB-05 states.
 
 The check SHALL combine normal and dev edges into one directed graph for
 FB-11, and SHALL report a cycle exactly once regardless of its rotation or
@@ -80,7 +108,7 @@ all, not that the edge's caller code stays inside the layer-6 `replay` facade.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-059-AC-1 | A graph with only CG's normal dependency on QSL, and no cycle, reports both FB-05 and FB-11 clean. | Test (TC-156) |
+| FR-059-AC-1 | A graph with only CG's normal dependency on `qsl-replay`, and no cycle, reports both FB-05 and FB-11 clean. | Test (TC-156) |
 | FR-059-AC-2 | Any normal or dev edge from IR or RT into QSL is reported as an FB-05 violation. | Test (TC-156) |
 | FR-059-AC-3 | A *dev* edge from CG into QSL is reported as an FB-05 violation; the stated exception covers only CG's normal edge. | Test (TC-156) |
 | FR-059-AC-4 | A 2-repository or longer cycle over normal and/or dev edges among the four repositories is reported exactly once as an FB-11 violation, however many repositories the search starts from. | Test (TC-156) |
@@ -88,6 +116,8 @@ all, not that the edge's caller code stays inside the layer-6 `replay` facade.
 | FR-059-AC-6 | Run against the real, current-head resolution of quire-contract-ir's manifest, the check reports no FB-05 edge from IR into QSL and no FB-11 cycle between QSL and IR, since neither IR manifest declares a QSL dependency (ADR-011 OBS-029). Resolving QSL's own workspace manifest through the same edge-resolution path the check uses for `--qsl` yields QSL's normal edge on the git-sourced `quire-contract-model`, classified as QSL → IR, the permitted direction. | Test (TC-156) |
 | FR-059-AC-8 | A resolved RT dependency on the git-sourced `quire-exact` yields no edge and no finding; a resolved RT dependency on another crate sourced from the QSL repository, such as `qsl-eval`, yields an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
 | FR-059-AC-9 | A resolved RT dependency on the git-sourced `quire-semantic-value` yields no edge and no finding; resolved RT dependencies on `qsl-eval` and on `qsl-semantics`, from the same QSL source, each yield an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
+| FR-059-AC-10 | A graph in which CG has normal dependencies on `qsl-replay` and on `qsl-eval`, both sourced from the QSL repository, on `quire-semantic-value` sourced from `agent-ix/quire-semantic-value`, and on `quire-eval` and `quire-eval-corpus` sourced from `agent-ix/quire-eval`, reports exactly one FB-05 violation, the CG → QSL edge via `qsl-eval`; the same graph without the `qsl-eval` dependency reports FB-05 clean. | Test (TC-156) |
+| FR-059-AC-11 | Run against the real, current-head resolution of quire-contract-codegen's manifest, every CG normal dependency sourced from the QSL repository, `agent-ix/quire-semantic-value` or `agent-ix/quire-eval` is `qsl-replay`, `quire-semantic-value` or a crate of `agent-ix/quire-eval`; its only CG → QSL normal edge is via `qsl-replay`, and the check reports no FB-05 edge from CG. | Test (TC-156) |
 
 ## Dependencies
 
@@ -95,3 +125,5 @@ all, not that the edge's caller code stays inside the layer-6 `replay` facade.
   (`ix://agent-ix/quire-spec-language/ADR-011`).
 - [FR-060](FR-060-check-qsl-api-surface-boundary.md) checks the FB-05
   exception's call-site boundary.
+- [FR-356](FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md)-AC-1
+  states the same `qsl-replay`-only FB-05 exception for the direction check.
