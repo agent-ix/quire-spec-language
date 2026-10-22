@@ -31,8 +31,7 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9.
    only `I`.
 6. Read the `source_map` entry of step 1's frame node's `generated`
    occurrence; recompile with a second `post` clause naming `attemptUpdate`
-   placed before `VersionUnchanged`; compile TC-1043's fixture R and the
-   fixture `state_clause_operation_and_population_variants`; emit a package
+   placed before `VersionUnchanged`; compile TC-1043's fixture R; emit a package
    whose frame occurrence has its region removed (FR-105-AC-9).
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
@@ -72,5 +71,5 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 - Step 6: one region, the span of `attemptUpdate`'s reference in
   `VersionUnchanged`; with the earlier clause, that clause's span and the
   same (node id, role, ordinal); in R, each operation's first naming span;
-  the variants fixture emits; the regionless occurrence refuses
+  the regionless occurrence refuses
   `UnlocatedOccurrence`.
