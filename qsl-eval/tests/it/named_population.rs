@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-391 (TC-1076): a state clause or a `holds` atom that names a
 //! domain-package population, evaluated at S6a over the snapshot of its
-//! observation; its read footprint; and the package emission that refuses
-//! it until FR-322 encodes the population-reference term. The S3 half is
-//! `qsl-semantics`'s `named_population`.
+//! observation; its read footprint; and the package emission that writes
+//! its population reference (FR-322). The S3 half is `qsl-semantics`'s
+//! `named_population`.
 
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
-use qsl_package::{emit_checked, EmitRefusal};
+use qsl_package::emit_checked;
 use qsl_semantics::check::footprint::{derive_footprint, SymbolicLocation};
 use qsl_semantics::check::{CheckedGraph, FormulaNode};
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
@@ -407,14 +407,13 @@ fn footprint(
         .expect("a footprint derives")
 }
 
-/// TC-1076 row 8, the footprint and emission half (FR-391-AC-6): `A` reads
+/// TC-1076 row 8, the footprint half (FR-391-AC-6): `A` reads
 /// `AnyMembership{counters}` and not `archive`'s, `B` the reverse, each
 /// beside the receiver's own membership; FR-155-AC-2's precondition over
-/// `counters` reads `AnyField{v}` and `AnyMembership{counters}`; the package
-/// refuses at emission `unsupported_construct`/`not-yet-implemented`.
+/// `counters` reads `AnyField{v}` and `AnyMembership{counters}`.
 #[trace("TC-1076", "FR-391-AC-6", "TC-574", "FR-155-AC-2")]
 #[test]
-fn a_named_population_is_the_one_membership_read_and_is_not_emitted() {
+fn a_named_population_is_the_one_membership_read() {
     const A: &str = "pre A using v on M::Widget::grow { \
                      forall(o in allInstances<M::Counter>(M::counters) : true) }";
     const B: &str = "pre B using v on M::Widget::grow { \
@@ -446,18 +445,6 @@ fn a_named_population_is_the_one_membership_read_and_is_not_emitted() {
     assert!(bump.reads.contains(&SymbolicLocation::AnyMembership {
         population: key("counters")
     }));
-
-    let Err(refusal) = emit_checked(&unit.package) else {
-        panic!("emission refuses the population reference");
-    };
-    assert!(matches!(
-        &refusal,
-        EmitRefusal::PopulationReferenceNotEmitted { population } if *population == ident("counters")
-    ));
-    assert_eq!(
-        (refusal.code().as_str(), refusal.cause()),
-        ("unsupported_construct", Some("not-yet-implemented"))
-    );
 }
 
 /// TC-1076 row 9, the evaluation half (FR-391-AC-7): the postcondition `P`,
@@ -738,21 +725,53 @@ fn a_named_lookup_finds_a_member_and_an_uncovered_type_is_incomplete() {
     );
 }
 
-/// TC-1076 row 8 (FR-391-AC-6): a unit whose only population reference is
-/// in a `holds` atom is refused at emission too.
+/// The `relation`/`population` nodes of an emitted package, as the node's
+/// owning declaration identity.
+fn population_references(unit: &Unit) -> Vec<String> {
+    let emission = emit_checked(&unit.package).expect("the package emits");
+    assert!(emission.omitted().is_empty(), "{:?}", emission.omitted());
+    let wire: Json = serde_json::from_slice(emission.package().bytes()).expect("the wire is JSON");
+    let mut owners: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "population")
+        .map(|node| node["owner"]["node"].as_str().expect("an owner").to_owned())
+        .collect();
+    owners.sort();
+    owners
+}
+
+/// TC-1076 row 8, the emission half (FR-391-AC-6): `A` and `B` reference two
+/// population nodes, `C` the same node as `A`, so the package holds one
+/// `relation`/`population` node per declared population read.
 #[trace("TC-1076", "FR-391-AC-6")]
 #[test]
-fn a_holds_atom_naming_a_population_is_not_emitted() {
+fn a_named_population_is_emitted_once_per_declared_population_read() {
+    let unit = Unit::new(
+        true,
+        "pre A using v on M::Widget::grow { \
+         forall(o in allInstances<M::Counter>(M::counters) : true) }\n\
+         pre B using v on M::Widget::grow { \
+         forall(o in allInstances<M::Counter>(M::archive) : true) }\n\
+         pre C using v on M::Widget::grow { \
+         forall(o in allInstances<M::Counter>(M::counters) : true) }",
+    );
+    assert_eq!(
+        population_references(&unit),
+        [ident("archive"), ident("counters")]
+    );
+}
+
+/// TC-1076 row 8 (FR-391-AC-6): a unit whose only population reference is
+/// in a `holds` atom emits it too.
+#[trace("TC-1076", "FR-391-AC-6")]
+#[test]
+fn a_holds_atom_naming_a_population_is_emitted() {
     let unit = Unit::new(
         false,
         "temporal C using t over (w: M::Watch) clock \"model-steps\" on origin { \
          eventually holds(forall(x in M::counters : x.v < 2)) }",
     );
-    let Err(refusal) = emit_checked(&unit.package) else {
-        panic!("emission refuses the population reference");
-    };
-    assert!(matches!(
-        &refusal,
-        EmitRefusal::PopulationReferenceNotEmitted { population } if *population == ident("counters")
-    ));
+    assert_eq!(population_references(&unit), [ident("counters")]);
 }

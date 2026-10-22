@@ -347,19 +347,6 @@ pub enum LeafTerm {
         /// The node's id in the dependency.
         node: WireNodeRef,
     },
-    /// A domain-package population a population position names (FR-391
-    /// "Lowering"): its declaration key, the package then the node, in the
-    /// slot FR-093's `AllInstances` and `Lookup` rows take `ref(p)`. It
-    /// names no node: a population declaration has no model node, and the
-    /// anonymous `Population<U>[N]` type node cannot tell two populations
-    /// apart. FR-322 has no encoding for it yet, so package emission refuses
-    /// a graph that holds one.
-    PopulationReference {
-        /// The declaring package's identity.
-        package: String,
-        /// The population's node identity.
-        node: String,
-    },
 }
 
 /// `{term: "binding", name, value}`: a named `value` of a lower stratum.
@@ -827,7 +814,7 @@ impl LeafTerm {
         match self {
             Self::Literal { ty, .. } => Some(ty.0),
             Self::Reference { target } => Some(target.0),
-            Self::DependencyReference { .. } | Self::PopulationReference { .. } => None,
+            Self::DependencyReference { .. } => None,
         }
     }
 
@@ -844,10 +831,6 @@ impl LeafTerm {
             Self::DependencyReference { package, node } => Self::DependencyReference {
                 package: *package,
                 node: *node,
-            },
-            Self::PopulationReference { package, node } => Self::PopulationReference {
-                package: package.clone(),
-                node: node.clone(),
             },
         }
     }
@@ -2206,10 +2189,6 @@ enum PreimageLeaf<'a> {
         package: PackageRef,
         node: WireNodeRef,
     },
-    PopulationReference {
-        package: &'a str,
-        node: &'a str,
-    },
     Frame {
         modifies: &'a [FrameModifies],
         creates: &'a [NodeRef],
@@ -2384,10 +2363,6 @@ impl Walk<'_> {
                     package: *package,
                     node: *node,
                 })
-            }
-            // FR-391: the declaration key enters the preimage as written.
-            LeafTerm::PopulationReference { package, node } => {
-                PreimageTerm::Leaf(PreimageLeaf::PopulationReference { package, node })
             }
         })
     }

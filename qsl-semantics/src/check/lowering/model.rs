@@ -953,6 +953,22 @@ impl<'a> Lowering<'a> {
         Ok(key)
     }
 
+    /// FR-322 "Population references": the `relation`/`population` node of
+    /// the population `declaration`, keyed by its declaration key alone (no
+    /// member type, no maximum, no clause). Every read of one population
+    /// lowers to this one node.
+    pub(super) fn population_reference_node(
+        &mut self,
+        declaration: &DeclarationKey,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let (owner, _) = self.model_owner(declaration, location)?;
+        self.insert_node(
+            location,
+            model_node_content(owner, NodeTag::Relation, "population"),
+        )
+    }
+
     /// The model declaration node of the variant type `variant` and one
     /// `enum_value` node per case (FR-360 item 12), each keyed over the
     /// type's node and the exact case name, any non-empty name kept as
