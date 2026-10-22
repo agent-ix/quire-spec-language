@@ -50,6 +50,9 @@ pub enum BuiltinType {
     Option,
     /// `Reference<T>`.
     Reference,
+    /// `Quantity<u>` (QSpec FR-142 "Quantity type reference"): its one
+    /// argument is the named unit `u`, looked up in the unit namespace.
+    Quantity,
     /// `Clock`, the built-in clock type: only an unqualified `Clock`
     /// (FR-393). Whether a unit admits it is S3's decision (FR-230).
     Clock,
