@@ -1622,8 +1622,8 @@ impl<'a> Typer<'a> {
     }
 
     /// A typed equality operand, the equality operand it compares as, and
-    /// the type its peer is hinted with. A converted operand's IEEE source
-    /// is refused.
+    /// the type its peer is hinted with. IEEE conversion is evaluated as its
+    /// own checked operation, never as an exact equality coercion.
     fn equality_typed(
         &mut self,
         typed: Node,
@@ -1642,7 +1642,8 @@ impl<'a> Typer<'a> {
                     }
                 }
                 if matches!(typed.value_type, ValueType::Float(_)) {
-                    return Err(mismatch(&location));
+                    let converted = self.convert(&target, typed, &location)?;
+                    return Ok((converted, EqualityOperand::typed(target.clone()), target));
                 }
                 let source = typed.value_type.clone();
                 Ok((

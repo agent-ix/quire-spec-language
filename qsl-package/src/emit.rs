@@ -1286,7 +1286,12 @@ fn emit_package_inner(
             },
         )
         .collect::<Result<Vec<_>, _>>()?;
-    let (profile_selections, laws) = split_laws(&order);
+    let (profile_selections, mut laws) = split_laws(&order);
+    // The IEEE trigger includes a declared float with no IEEE application.
+    // Keep the selected, admitted policy even when no node needs its law.
+    if let Some(profile) = graph.scope().ieee_profile() {
+        laws.push(profile.definition().clone());
+    }
 
     let catalog = DefinitionLock::pinned();
     let (edition, definition_selections) =
