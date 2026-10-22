@@ -64,6 +64,9 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   A state-graph certificate carries its own `package_id` (FR-169), and the
   state-graph checker's rejection `PackageMismatch{certificate, recompiled}`
   settles `Inconclusive(StaleDependency{requested, recompiled})` (FR-127).
+  The FR-338 and FR-339 certificates carry no `package_id` of their own and
+  are bound through their `CertificateRequest`; the settlement of a package
+  mismatch in those checkers is not stated by this requirement.
 - Each certificate checker shall decide the certificate using the
   recompiled package and the certificate document only.
 - If the certificate does not establish the claim under the checker's rules,
@@ -71,6 +74,9 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   failing obligation.
 - A certificate checker shall return the same verdict for the same
   certificate bytes and byte provision whichever run or frontend calls it.
+
+Remaining work: the settlement of an FR-338 or FR-339 checker's package
+mismatch, to be filed by the lead.
 
 ## Acceptance Criteria
 

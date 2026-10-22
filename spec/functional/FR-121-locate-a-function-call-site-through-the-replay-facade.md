@@ -237,7 +237,15 @@ QSL-345.
   backend run (the replay of a refutation) is no refusal of the obligation's
   input: it settles `TerminalValue::Inconclusive` with
   `InconclusiveCause::ReplayRefused` carrying its code, which
-  `TerminalValue::from_replay_refusal` builds. A `Fault` of either,
+  `TerminalValue::from_replay_refusal` builds. The one exception is not this
+  mapping's: in a model-check counterexample replay (FR-127) and a
+  state-graph evidence replay (FR-169), a `PackageIdMismatch` of the proved
+  package's own `package_id` settles
+  `InconclusiveCause::StaleDependency{requested, recompiled}` (QSpec
+  FR-331). Every other replay refusal, a stale `package_id` in a call-site,
+  scalar-parity (FR-357, FR-358) or plugin replay (FR-289) and
+  `DependencyIdentityMismatch` included, settles `ReplayRefused` through
+  `from_replay_refusal`. A `Fault` of either,
   `CallSiteRefusal::Fault` or `ReplayRefusal::Fault` (and
   `ReplayRefusal::Admission` with `AdmissionFailure::Fault`), settles
   `failed` (`TerminalValue::Failed`).
