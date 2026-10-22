@@ -121,6 +121,11 @@ is never mistaken for a proof over every instance count.
 | FR-209-AC-3 | With `max_live_instances` 2: after two `activate` steps the instances hold ordinals 0 and 1; once instance 0 finishes and is removed, the next `activate` creates ordinal 0. An instance-limited state is not reported as a deadlock by the deadlock-freedom item. | Test (TC-654) |
 | FR-209-AC-4 | A run where both a memory bound (ADR-025) and the instance bound limited a state, and no counterexample was found, settles `MemoryBoundReached`; a run where the instance bound limited a state and `BoundReached` (the completed `max_depth` search horizon) also applies settles `InstanceBoundReached`. | Test (TC-654) |
 
+Remaining work: QSL-968. A record-typed trigger `T` refuses
+`UnenumerableRecord` in the protocol program, so the tests of these ACs use the
+`Int` range trigger `Level` until it lands; the ACs themselves are written
+over the record type `Tick` and are unchanged.
+
 ## Dependencies
 
 - ADR-027 §2.2 ST-13, §2.2a AE-1 to AE-4, §3.2 PD-5; ADR-014 B-5 (run

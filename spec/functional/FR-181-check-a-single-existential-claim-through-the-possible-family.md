@@ -86,6 +86,10 @@ that no trace exists.
   clause's fairness set in FR-126's fairness filter.
 - A product node the engine did not fully expand SHALL be open, with the
   causes FR-167 names.
+- A cycle through an open node SHALL NOT count as a fair accepting cycle, and
+  a phase 0 loop through a state whose contract evaluation had no value SHALL
+  NOT count as a witness: what the state enables is unknown, so fairness
+  cannot be read there.
 
 ### Phase 0
 
@@ -116,11 +120,19 @@ that no trace exists.
   breadth-first path to the first such product state, `where` naming that
   position and `cause` the evaluator's undefined cause (ADR-023 HV-8,
   ADR-018 UE-4). `Undefined` SHALL take the place of `Witnessed` and
-  `WitnessedUnchecked`; between it and a trap, the first in canonical
-  breadth-first order SHALL be returned.
-- `Trapped` SHALL be returned for the first initial state, in subject
-  order, whose part of the product is closed (no open node) and holds no
-  fair accepting cycle.
+  `WitnessedUnchecked`. Between `Undefined` and a trap, the one whose first
+  product state is first in canonical breadth-first order SHALL be returned, a
+  trap ranking at the first product state of its initial state's part; at the
+  same product state `Undefined` wins, since a position's letter is read before
+  the automaton steps (ADR-018 UE-4).
+- `Trapped` SHALL name the first initial state, in subject order, whose part
+  of the product is closed (no open node) and holds no fair accepting
+  cycle.
+- A clause with object parameters (`over`) SHALL be checked once per instance
+  in FR-125's canonical instance order, the instances sharing the run's
+  `max_states` and `max_transitions` as FR-126 shares them across bindings, and
+  the result SHALL be one outcome per instance; a clause with no instance has
+  no outcome.
 - Every other case SHALL return `NoDecision` with the run's end and open
   causes.
 
@@ -149,10 +161,18 @@ that no trace exists.
 |----|----------|--------------|
 | FR-181-AC-1 | Over ADR-023 §8's secure vault, `exists trace b of V { eventually always holds(v.l @ b = 1) }` with `witness_samples` 0 returns `Witnessed` with one lasso per initial state, each ending in a loop of `step(1)` steps, source `Explored`; each replays to `reproduced-with-evaluated-witness`, and the item settles `proved`, `decisive-witness`. With the default `witness_samples` it settles `proved` too, and its record names each witness's source. | Test (TC-606) |
 | FR-181-AC-2 | `exists trace b of V { eventually holds(v.l @ b = 2) }` returns `Trapped` for initial state 0 with an empty stem; replay re-explores its part of the product, finds no accepting cycle, and the item settles `refuted`, `closed-scope`. | Test (TC-606) |
-| FR-181-AC-3 | Over the secure vault with FR-176-AC-3's `reset` operation, `exists trace b of V fair { weak V::Vault::reset } { eventually always holds(v.l @ b = 1) }` settles `refuted`, `closed-scope`, and the same clause with no fairness set settles `proved`. | Test (TC-606) |
+| FR-181-AC-3 | Over the secure vault with FR-176-AC-3's `reset` operation, `exists trace b of V fair weak V::Vault::reset; { eventually always holds(v.l @ b = 1) }` settles `refuted`, `closed-scope`, and the same clause with no fairness set settles `proved`. | Test (TC-606) |
 | FR-181-AC-4 | AC-1's claim with `max_depth` 1 and `witness_samples` 0 returns `NoDecision` and settles `inconclusive`, `BoundReached{depth: 1}`. AC-1's witness with its loop's last step removed refuses as FR-128 refuses a loop that does not close. | Test (TC-606) |
-| FR-181-AC-5 | Over the secure vault, `exists trace b of V { eventually always holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0) }`, whose division is evaluated first and has no value at `l = 1`, has a witness lasso looping `step(0)` at `(h, 0)` for each initial state, and still returns `Undefined` at the first product state with `l = 1`, cause `division-by-zero`, settling `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`. AC-1's claim with the default `witness_samples` settles `proved` only from a product exploration that completed with no open node. | Test (TC-615) |
+| FR-181-AC-5 | Over the secure vault, `exists trace b of V { eventually always holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0) }`, whose division is evaluated first and has no value at `l = 1`, returns `Undefined` at the first product state with `l = 1`, with the default `witness_samples` as with `witness_samples` 0, while phase 0 finds a sampled witness lasso looping `step(0)` at `(h, 0)` for each initial state; cause `division-by-zero`. It settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`. AC-1's claim with the default `witness_samples` settles `proved` only from a product exploration that completed with no open node. | Test (TC-615) |
 | FR-181-AC-6 | AC-1's claim with the default `witness_samples` and `max_states` 2 gets a sampled witness lasso per initial state, the exploration stops at `max_states`, and the item returns `WitnessedUnchecked` and settles `inconclusive`, `WellDefinednessUnchecked`, never `proved`; with `witness_samples` 0 the same run settles `incomplete`, `LimitReached`, naming `max_states`. | Test (TC-616) |
+| FR-181-AC-7 | Two vaults in one start, so two instances of `over (v: V::Vault)`, give one outcome per instance in canonical order, and the second instance's product is explored with the `max_states` the first left; a clause with no instance has no outcome. | Test (TC-606) |
+
+## Remaining work
+
+The replay, certificate and settlement halves are not built: the `proved`,
+`refuted`, `inconclusive` and `incomplete` settlement records of AC-1 to AC-6,
+AC-4's replay-refusal sentence, the FR-163 product-closure certificate that
+`Witnessed` carries, and the Replay section above. Remaining work: QSL-964.
 
 ## Dependencies
 

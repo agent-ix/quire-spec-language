@@ -3162,15 +3162,11 @@ impl<'a> Lowering<'a> {
                 return Ok(LowerStep::Lowered(LeafTerm::reference(key)));
             }
             // FR-391 "Lowering": the population operand of `allInstances` or
-            // `lookup` carries the population's declaration key; it names no
-            // node, so no occurrence is recorded for it.
+            // `lookup` references the population's `relation`/`population`
+            // node (FR-322 "Population references").
             NodeKind::NamedPopulation { population, .. } => {
-                return Ok(LowerStep::Lowered(
-                    super::node_key::LeafTerm::PopulationReference {
-                        package: population.package.clone(),
-                        node: population.node.clone(),
-                    },
-                ));
+                let key = self.population_reference_node(population, node.location())?;
+                return Ok(LowerStep::Lowered(LeafTerm::reference(key)));
             }
             NodeKind::Coerce(operand, interval) => {
                 if !super::ir::coerce_builds_narrow(node.at(*operand).value_type(), interval) {

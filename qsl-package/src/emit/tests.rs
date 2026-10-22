@@ -43,6 +43,7 @@ mod identity_depth;
 mod navigation;
 mod owners;
 mod population_bound;
+mod population_reference;
 mod probabilistic;
 mod protocol_reference;
 mod reachability;
@@ -1380,9 +1381,6 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
-            }
-            Err(EmitRefusal::PopulationReferenceNotEmitted { .. }) => {
-                panic!("the fixture set names no population in a clause")
             }
         }
     }
