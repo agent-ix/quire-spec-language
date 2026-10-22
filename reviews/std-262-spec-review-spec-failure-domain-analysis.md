@@ -33,3 +33,22 @@ spelling-first rule (step 3) is sound and matches FR-289. The FR-272 codes exist
 
 No major findings in this method. FND-001 to FND-006 are minor. FND-001 and FND-002 are the ones an
 implementer would trip on.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | minor: the new `request` refusal 3 (`UnresolvedDependency`) and its FR-290-AC-14 vector cannot be reached from consistent units. The FR-322 lock writes only the unit's direct imports (`CheckedPackage::direct_dependency_selections`). Every direct import is in the resolved closure, and both the lock and `CheckedUnit::libraries` come from the same `CheckedUnit`. The spec does not say how AC-14's "unit whose lock dependency has no resolved library source" is built. One possibility is a library that the dependency input supplies with no source; if so, name that case. Otherwise, call the step a defensive check and drop the vector, or test it with a constructed context. | spec/functional/FR-290-settle-plugin-results-as-typed-terminal-records.md:359-362 |
+
+## Dispositions
+
+Round 1, reviewed QSL #1217 at 6ce0503e2.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |

@@ -359,7 +359,10 @@ obligation form. The encoding rules are O-09's parity rules.
 3. A lock `dependency_selections` entry has no library source that `check`
    resolved: `UnresolvedDependency`, `missing_import`/`missing-selection`.
    The refusal retains the entry's `identity`. This is the code FR-071-AC-5
-   gives a source reference with no provision.
+   gives a source reference with no provision. The step is a defensive check:
+   the lock and `CheckedUnit::libraries` come from the same `CheckedUnit`, and
+   `check` resolves every library the lock lists, so consistent inputs never
+   reach it, and no acceptance criterion builds it.
 4. Two proof bounds name the same `DomainKey`, which O-09 forbids
    ("no two entries having an equal `key`"): `DuplicateBoundKey`,
    `invalid_runtime_input`/`duplicate-member`. The refusal retains the key.
@@ -437,7 +440,8 @@ One QSL terminal record per routed item.
   other input.
 - When the occurrence names neither a checked function declaration nor a
   requirement record, or names a non-replayable item, or a lock dependency
-  has no resolved source, or two proof bounds share a domain key,
+  has no resolved source (a defensive check), or two proof bounds share a
+  domain key,
   `request` shall refuse in that order and return no request.
 - When `request` refuses `NotReplayable`, QSL shall settle the item
   `inconclusive` with cause `replay-refused` and code
@@ -464,7 +468,7 @@ One QSL terminal record per routed item.
 | FR-290-AC-11 | The diagnostic of each refusal kind in AC-6 to AC-10 carries the code and cause the diagnostics table gives. Its detail names the result item index, the member or pointer, and the received spelling or JSON kind. A refused member's item settles `failed`, naming the plugin, with no diagnostic in the record. | Test (TC-774) |
 | FR-290-AC-12 | Take a unit compiled through `parse`, `select`, `check` and `package` whose Boolean function `p(x: Int[0, 9])` returns `x > 3`, and whose `Integer` function `q(x: Int[0, 9])` returns `x + 1`. Build the context from its units and limits. <br>- For the function-contract item at `p`'s `declaration` occurrence with assignment `x = 0`, `request` gives a `ReplayRequestWire` whose members are those of the replay-context table: `source_digests` the unit's one source, `selected_function` `p`, `backend` the plugin's identity, `declared_domains` the item's proof bounds, an empty state environment, no object environment, and a byte provision holding the unit's source. `replay` of it settles the input arm reproduced with category violation, and `TerminalRecord::from_plugin_counterexample` settles `refuted`, naming the plugin. <br>- The same item with `x = 5` settles `inconclusive` with cause `replay-parity`. <br>- For the value-validity item of `q`'s application `x + 1` with assignment `x = 9`, `request` refuses `NotReplayable`, builds no request, and the item settles `inconclusive` with `ReplayRefused(unknown_required_feature)`, naming the plugin, with no replay result. | Test (TC-774) |
 | FR-290-AC-13 | The `process-provider` preimage for node `11` repeated 32 times, occurrence `{"ordinal":0,"role":"declaration"}`, and one bound `integer_range` 0 to 9 at `DomainKey::Node` `22` repeated 32 times with an empty path, encodes to `{"declared_domains":{"entries":[{"bound":{"lower":"0","tag":"integer_range","upper":"9"},"key":{"node_id":"2222222222222222222222222222222222222222222222222222222222222222","path":[],"tag":"node"}}],"tag":"bounds"},"node":"1111111111111111111111111111111111111111111111111111111111111111","obligation_kind":"value-validity","occurrence_key":{"ordinal":0,"role":"declaration"},"subject_kind":"process-provider"}`, whose SHA-256 is `3df483b143782f27840dd0d42eca97ba51fdb60c01cb3ddbc48db020de6ac899`. With no bound, the digest is `95905de0c8797755b51edf13b26a4fcdb41908a1e55f43b60784e280fa8e3a1c`. AC-12's request for `p` carries the identity of its item's preimage. | Test (TC-774) |
-| FR-290-AC-14 | The context built with `CallerLimits` whose `s1.tokens` is 200000, whose `library.definitions` is 9000, and whose accounting `work_units` is 5000, gives a request whose `stage_limits` holds `s1.tokens` 200000 and `library.definitions` 9000. Every other stage setting except `replay.input_bytes` and `format.output_bytes` is at its bound, and `accounting_limits` has `work_units` 5000. `request` refuses each of these, in this order: <br>- an occurrence key that is no function declaration and no record of the package: `UnknownOccurrence` (`missing_declaration`/`missing-name`), which comes before `NotReplayable` for the same call; <br>- a state clause's `operation-contract` record: `NotReplayable`; <br>- for `p` in a unit whose lock dependency has no resolved library source: `UnresolvedDependency` (`missing_import`/`missing-selection`); <br>- for `p` with two proof bounds at one `DomainKey`: `DuplicateBoundKey` (`invalid_runtime_input`/`duplicate-member`). <br>Each refusal other than `NotReplayable` settles the item `failed`, naming the plugin. | Test (TC-774) |
+| FR-290-AC-14 | The context built with `CallerLimits` whose `s1.tokens` is 200000, whose `library.definitions` is 9000, and whose accounting `work_units` is 5000, gives a request whose `stage_limits` holds `s1.tokens` 200000 and `library.definitions` 9000. Every other stage setting except `replay.input_bytes` and `format.output_bytes` is at its bound, and `accounting_limits` has `work_units` 5000. `request` refuses each of these, in this order: <br>- an occurrence key that is no function declaration and no record of the package: `UnknownOccurrence` (`missing_declaration`/`missing-name`), which comes before `NotReplayable` for the same call; <br>- a state clause's `operation-contract` record: `NotReplayable`; <br>- for `p` with two proof bounds at one `DomainKey`: `DuplicateBoundKey` (`invalid_runtime_input`/`duplicate-member`). <br>Each refusal other than `NotReplayable` settles the item `failed`, naming the plugin. | Test (TC-774) |
 
 ## Dependencies
 

@@ -59,3 +59,21 @@ has a minor finding in this file or in SR-15491/SR-15492. The open replay-semant
 Not mergeable: FND-001 (major) needs an owner or driver ruling on replay semantics for application
 items. The ruling should come before QSL-977 implements AC-12. FND-002 to FND-005 are minor. Apart from
 these, the PR is consistent with FR-331, FR-272, FR-289, PL-7 and the code.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | minor: FR-290 now replays a plugin's assignments only for a function-contract item. Any other item settles `inconclusive`/`replay-refused` and is never replayed. ADR-029 PL-7 "Counterexamples" (main, after #1210) still says that "the driver replays those assignments through layer-6 `replay` ... and the replay alone settles the item", for every plugin counterexample. So the ADR and the FR now disagree on the one rule that keeps installing a provider from changing results. Amend PL-7 by one sentence that names the function-contract limit, the `NotReplayable` settlement and STD-264, or record the PL-7 amendment as a tracked follow-up. FR-289's Behavior remains consistent. | spec/functional/FR-290-settle-plugin-results-as-typed-terminal-records.md:266-288 |
+
+## Dispositions
+
+Round 1, reviewed QSL #1217 at 6ce0503e2.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |

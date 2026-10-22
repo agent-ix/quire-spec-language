@@ -32,3 +32,11 @@ SR-15490 FND-001.
 ## Verdict
 
 Minor only. All ten new ACs are traced by TC-774. Coverage gaps are FND-001.
+
+## Dispositions
+
+Round 1, reviewed QSL #1217 at 6ce0503e2.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

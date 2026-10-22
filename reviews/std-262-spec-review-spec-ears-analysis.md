@@ -31,3 +31,13 @@ ADR-013. The defects below are about content, not grammar.
 
 Not mergeable: FND-001 (major), because a normative statement contradicts AC-7. FND-002 and FND-003
 are minor.
+
+## Dispositions
+
+Round 1, reviewed QSL #1217 at 6ce0503e2.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
