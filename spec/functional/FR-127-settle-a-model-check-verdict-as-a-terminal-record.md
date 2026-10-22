@@ -92,6 +92,8 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 //   UndecidedSuccessor, NoInitialState, NoInstance,
 //   CertificateRejected { rule: CertificateRule, at: CertificateLocus },
 //   written certificate-rejected{rule, at} (QSpec FR-331)
+//   StaleDependency { requested: PackageId, recompiled: PackageId },
+//   written stale-dependency{requested, recompiled} (QSpec FR-331)
 
 // ProductStateRef, ClosureCertificate, CertificateRule: FR-338.
 // ComponentCertificate, ProofCertificate: FR-339.
@@ -127,6 +129,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-6 | `Undecided(UndecidedSuccessor)` (a refused contract conjunction), `Undecided(NoInitialState)` or `Undecided(NoInstance)` (an item with zero instances, FR-125) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-6 | `Violated` whose replay settles `inconclusive` (`Verdicts` or `NoValue`) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
 | V-6 | `Violated` whose replay refuses with `ReplayRefusal::UnfairLasso` (FR-131), an unfair lasso, which EN-1 never builds (ADR-019 SV-4) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
+| V-6 | `Violated` whose replay refuses with `ReplayRefusal::PackageIdMismatch{requested, recompiled}` (ADR-013 O-26), the request's `package_id` and the recompiled one | `inconclusive` | `unsettled` | `Inconclusive(StaleDependency{requested, recompiled})`, written `stale-dependency{requested, recompiled}` | inconclusive |
 | V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
 | — | `Violated` whose replay refuses with `InternalFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | V-7 | `Stopped{cause: ResourceExhausted, limit: Some(ReachedLimit{limit, value})}`, a limit reached | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` | incomplete |
@@ -222,6 +225,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-8 | FR-339-AC-1's weak `each` proof with its accepted certificate settles `Proved{Exhaustive, Certified}`; with FR-339-AC-2's `upd(a)` witness it settles `Inconclusive(CertificateRejected{WitnessFails, ...})` naming that component's first state. | Test (TC-522) |
 | FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, Certified}`, `Proved{BoundedComplete{depth: 5}, Certified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}`, `Proved{Inductive{depth: 2}, Uncertified}` and a plugin's `Proved{Exhaustive, Trusted}`, as CG's maps and the settlement map construct them, each read `proved` with category success, never `inconclusive`, and each keeps its one certification. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the QSpec FR-331 record. | Test (TC-522) |
+| FR-127-AC-11 | FR-127-AC-3's counterexample replayed with a request whose `package_id` is another package's refuses `PackageIdMismatch` and settles `inconclusive`, `Inconclusive(StaleDependency{requested, recompiled})` naming the request's and the recompiled `package_id`, written `stale-dependency{requested, recompiled}` on the FR-331 record, not `ReplayRefused`. | Test (TC-1141) |
 
 ## Dependencies
 
