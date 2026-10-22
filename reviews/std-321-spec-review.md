@@ -66,3 +66,25 @@ an accessor to the wrapped `PluginReplayContext` that bypasses the binding.
 | FND-005 | low | "refuse exactly as `run_with_requirements` refuses for the same inputs" leaves the limits mapping implicit, since the two entries take different limit types; state it as the Outputs clause does (the `CallerLimits`' `spine` limits as `SpineLimits`). | spec/functional/FR-404-carry-the-call-s-plugin-replay-context-through-the-replay-facade.md:123-126 |
 | FND-006 | low | Facade boundary says the consumer names no "other QSL crate", but the proof bounds the driver passes come from `qsl_route::items_from_requirements` (FR-075), which `qsl-replay` does not depend on; AC-9 lists only `qsl_replay::spine`, `qsl_foundation` and `qsl_semantics`. Align the clause with AC-9. | spec/functional/FR-404-carry-the-call-s-plugin-replay-context-through-the-replay-facade.md:131-138,165 |
 | FND-007 | low | AC-3's second sentence builds a request for `q`'s member without naming the assignment; TC-1173 step 3 uses `x = 9`. State it in the AC. | spec/functional/FR-404-carry-the-call-s-plugin-replay-context-through-the-replay-facade.md:159 |
+
+## Dispositions
+
+Round 1, checked against fix commit 27431348 (`git diff 9b95aea4..27431348`).
+`make check-spec-validation` exits 0 with no diagnostic on FR-404 or TC-1173.
+The new `PluginReplayRefusal` variants use catalog pairs the spec already
+gives the same conditions: `ForeignRun` takes `stale_dependency`/`content-mismatch`
+naming both identities, as FR-098 does for a stale `package_id` and ADR-017
+does for identity mismatches. `NotACallItem` takes `missing_declaration`/`missing-name`,
+as FR-290 step 1 does for an occurrence the package does not hold. Both settle
+`failed` through `PluginReplayRefusal::record`, which matches FR-290's rule
+for every refusal other than `NotReplayable`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Item binding now keys on FR-395's pairing key and refuses `ForeignRun` or `NotACallItem`; AC-5 and AC-7 test R2's `q` pairing key against R's context. |
+| FND-002 | fixed | The "Limits mapping" clause states the stage inputs, says `package` takes the field-less `PackageLimits`, and says the other `CallerLimits` fields bound no stage of the run; AC-6 adds an S1 refusal that `run_with_requirements` does not give. |
+| FND-003 | fixed | "No consumer construction" names `new`, `Default`, `From`, `TryFrom` and `Deserialize`; AC-9 lists six `compile_fail` cases, `serde_json` among them, and `serde_json` is a normal dependency of qsl-replay. |
+| FND-004 | fixed | The new "No unbound access" clause forbids `Deref`, `AsRef`, `Borrow`, `Into` and any getter; AC-9 checks `&*context` and `context.as_ref()`. |
+| FND-005 | fixed | "Typed refusals" names the `CallerLimits`' `spine` field as the `SpineLimits`. |
+| FND-006 | fixed | "Facade boundary" names `qsl_replay::spine`, `qsl_foundation` and `qsl_semantics`, and names `qsl_route::items_from_requirements` as outside the facade; AC-9 agrees. |
+| FND-007 | fixed | AC-3 names the assignment `x = 9`. |
