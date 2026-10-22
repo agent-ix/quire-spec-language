@@ -20,8 +20,8 @@ Fixtures: `Service` and the `2 ms` claim, seed 7, `max_witnesses` 3; `Health` wi
 
 1. Run the claim and read the witnesses.
 2. Replay each witness; replay altered copies (value outside the support, changed seed, changed path probability).
-3. Convert a witness to a `TemporalCounterexample` for the TP-2 claim and replay it; do the same for a witness of the `<= 1/100` fault claim; run `LongRun`.
-4. Refuse `Service` and `Health` at S4, then run steps 2 and 3's `Service` replays and step 3's `Health` replay over their checked subjects.
+3. Replay a `Service` witness with `replay_sampled_witness`, which converts it to a counterexample for the TP-2 claim and replays that in the one call; do the same for a witness of the `<= 1/100` fault claim; replay a copy of that witness whose steps no longer violate the bound; run `LongRun`.
+4. Refuse `Service` and `Health` at S4, then run step 2's replays of `Service` witnesses and step 3's replays of `Service` and `Health` witnesses over their checked subjects.
 
 Tag the tests `#[trace("TC-628", "FR-193-AC-n")]`.
 
@@ -29,5 +29,5 @@ Tag the tests `#[trace("TC-628", "FR-193-AC-n")]`.
 
 - Step 1: three witnesses in trace order with latency above `2 ms` and exact path probabilities.
 - Step 2: `Reproduced`; `invalid_runtime_input`/`invalid-value`; `Inconclusive(ReplayParity)` twice; the item stays `measured`, `rejected`.
-- Step 3: the TP-2 claim settles `refuted`; the negated claim settles `refuted`; `LongRun` keeps no witness.
-- Step 4: the S4 refusal of FR-185-AC-7; the same outcomes as steps 2 and 3 for `Service`, and the `refuted` outcome for the `Health` fault claim, although `emit_checked` refuses the package; the replay call takes only the checked subject, the provenance and the witness.
+- Step 3: `Reproduced` for the `Service` witness and for the `Health` fault-claim witness, each of which includes the refutation of its TP-2 claim by the converted counterexample; `Inconclusive(ReplayParity)` for the non-violating copy; `LongRun` keeps no witness.
+- Step 4: the S4 refusals of `Service` (FR-185-AC-7) and of `Health`; the same outcomes as steps 2 and 3 for the `Service` witnesses and as step 3 for the `Health` witness, although `emit_checked` refuses each package; the replay call takes only the checked subject, the provenance and the witness.

@@ -28,7 +28,7 @@ relationships:
 
 EN-4 SHALL keep, up to `max_witnesses`, the samples on the violating side
 of the claim's bound as **sampled witnesses** (ADR-024 SV-6), the first in trace-index order. The layer-6 replay facade SHALL
-replay a sampled witness through FR-128's model-trace replay plus two
+replay a sampled witness through FR-128's re-execution steps plus two
 checks, over the checked subject the sampler ran over: S4 refuses to emit a
 package that declares random parameters, workloads, rewards or probabilistic
 claims (FR-185), but its checked package remains, so the replay reads that
@@ -94,7 +94,7 @@ pub fn replay_sampled_witness(
   probabilistic claim (FR-185) while its checked package remains. It SHALL
   re-admit the initial state the provenance records for the witness's test from the
   subject's provision, and re-execute each step
-  through FR-128's model-trace replay: enabledness, successor selection by
+  through FR-128's re-execution steps: enabledness, successor selection by
   post-state digest, and SM-1 evaluation of the event or measure over the
   replayed positions.
 - It SHALL check that each drawn random value lies in its parameter's
@@ -126,20 +126,22 @@ pub fn replay_sampled_witness(
   behaviour" for a `>= θ` bound, "not `E` on every behaviour" for a
   `<= θ` bound, the PF-4 event's form for a quantile, and the fraction
   comparison on every behaviour for a mean of a fraction.
-- The same call of `replay_sampled_witness`, which takes no input beyond the
-  witness, converts the witness and SHALL replay that converted counterexample by
+- The one call of `replay_sampled_witness` needs no input beyond the checked
+  subject, the provenance and the witness to replay the counterexample: it
+  converts the witness and SHALL replay that converted counterexample by
   applying FR-128's re-execution, fairness and evaluation steps to the checked
   subject the sampler ran over, with no recompile and no `package_id`
   comparison, and SHALL settle the TP-2 claim `refuted` when they agree, which it returns as
-  `Reproduced`, and `Inconclusive(ReplayParity)` when they disagree. The
-  claim is derived from the probabilistic claim and not declared as a clause,
-  so the checks FR-128 makes against a recompiled clause read their values from
-  the checked probabilistic claim (FR-186) instead: the clause identity is the
-  derived claim's identity, that is the probabilistic claim's identity with the
-  bound direction of this section; the fairness set is the one the checked
-  subject declares; the `interval` is the claim event's interval. The
-  counterexample carries the same three values, and the replay refuses
-  `stale_dependency`/`content-mismatch` when they differ.
+  `Reproduced`, and `Inconclusive(ReplayParity)` when they disagree. A timed
+  witness (FR-254) replays its steps with ADR-026 CT-3's timed steps over the
+  same subject. The claim is derived from the probabilistic claim and not
+  declared as a clause, and the call builds the counterexample from the checked
+  probabilistic claim (FR-186) itself, so it makes none of the checks FR-128
+  makes against a recompiled clause: the clause identity is the derived
+  claim's identity, that is the probabilistic claim's identity with the bound
+  direction of this section; the fairness set is the one the checked subject
+  declares; the `interval` is the claim event's interval; and the
+  counterexample and the claim cannot differ in them.
 
 ## Acceptance Criteria
 
@@ -147,9 +149,9 @@ pub fn replay_sampled_witness(
 |----|----------|--------------|
 | FR-193-AC-1 | The `2 ms` claim of ADR-024 §7.2 with seed 7 and `max_witnesses` 3 keeps three witnesses in increasing trace-index order, each with latency above `2 ms` and a path probability equal to the product of its steps' FR-187 probabilities. In a witness whose first attempt drew `d = 3 ms`, `outcome = Ok`, the `request` step has probability 1 and that `attempt` step `343/5000`. | Test (TC-628) |
 | FR-193-AC-2 | Each kept witness replays `Reproduced`. The same witness with `d` changed to `2 ms` (outside the support) refuses `invalid_runtime_input`/`invalid-value`; with the seed changed so a recomputed draw selects `1 ms` it settles `Inconclusive(ReplayParity)`; with its path probability changed it settles `Inconclusive(ReplayParity)`. The item's record stays `measured`, `rejected` in each case. | Test (TC-628) |
-| FR-193-AC-3 | A witness converted to a `TemporalCounterexample` for the TP-2 claim "`M <= 2 ms` on every activated behaviour" replays through FR-128 and settles that claim `refuted`. For `probability <= 0.01 [eventually[0,1000] holds(not n.healthy)]` with `alpha 0.01, beta 0.01, indifference 0.005` over `Health` under `Steady` (ADR-024 §7.1), a witness is a sample with a fault; it converts to a counterexample for "not `eventually[0,1000] holds(not n.healthy)` on every behaviour" and settles that claim `refuted`. `LongRun` keeps no witness. | Test (TC-628) |
+| FR-193-AC-3 | `replay_sampled_witness` over a witness of the `2 ms` claim returns `Reproduced`; in that one call the witness converts to a counterexample for the TP-2 claim "`M <= 2 ms` on every activated behaviour", and the replay of the counterexample refutes that claim. For `probability <= 0.01 [eventually[0,1000] holds(not n.healthy)]` with `alpha 0.01, beta 0.01, indifference 0.005` over `Health` under `Steady` (ADR-024 §7.1), a witness is a sample with a fault; `replay_sampled_witness` returns `Reproduced`, and the counterexample it replays refutes "not `eventually[0,1000] holds(not n.healthy)` on every behaviour". The same witness with its steps changed so that the replayed positions no longer violate the bound returns `Inconclusive(ReplayParity)`. `LongRun` keeps no witness. | Test (TC-628) |
 | FR-193-AC-4 | FR-189-AC-6's undefined sample is kept as a witness with value `Undefined(UndefinedEvaluation)` and replays `Reproduced`; the same witness with its cause changed to `precondition-false` settles `Inconclusive(ReplayParity)`. | Test (TC-640) |
-| FR-193-AC-5 | `Service` is refused at S4 (FR-185-AC-7) and `Health` is refused at S4 too, and the witnesses of AC-1 replay `Reproduced` over its checked subject and the converted counterexample of AC-3 settles `refuted` over it, and so does the converted counterexample of the `Health` fault claim of AC-3, although `emit_checked` refuses the package of each; `replay_sampled_witness` takes only the checked subject, the provenance and the witness. | Test (TC-628) |
+| FR-193-AC-5 | `Service` is refused at S4 (FR-185-AC-7) and `Health` is refused at S4 too. The witnesses of AC-1 replay `Reproduced` over the checked subject of `Service`, and so do the witnesses of the `Health` fault claim of AC-3 over the checked subject of `Health`, in each case although `emit_checked` refuses the package; `replay_sampled_witness` takes only the checked subject, the provenance and the witness. | Test (TC-628) |
 
 ## Dependencies
 

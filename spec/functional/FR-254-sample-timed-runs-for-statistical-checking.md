@@ -87,7 +87,10 @@ server is available. Each estimate comes with its confidence and the grid
   `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`, as
   ADR-024 ST-7 does.
 - **Witnesses.** A sampled witness SHALL carry each step's delay and replay
-  by FR-237, plus recomputation of each draw from the seed, trace index,
+  through `replay_sampled_witness` (FR-193) over the checked subject the sampler
+  ran over, with no recompile since S4 does not emit a timed package that has a
+  workload, applying FR-237's timed steps (delay admissibility, enabledness,
+  successor selection, resets and time invariants), plus recomputation of each draw from the seed, trace index,
   step, choice index and `q`.
 - **Exact route.** The request writer SHALL route a request for `exact`
   evidence over a timed subject to EN-5, whose digital route (ADR-028 TA-1,
