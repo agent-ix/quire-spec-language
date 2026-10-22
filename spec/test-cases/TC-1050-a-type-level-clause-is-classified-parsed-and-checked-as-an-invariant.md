@@ -15,7 +15,7 @@ effective invariants of a type, and the parse and check of an invariant: the
 Boolean root, the `pre` refusal and the clause location. These are QSpec
 [TC-235](ix://agent-ix/quire-specification/TC-235) M06 run 4, M13 run 2 and
 M14 run 2, with M03 run 4, M17 run 1 and M19 runs 1 and 7 for the effective
-invariants. Scope: FR-366-AC-1, FR-366-AC-2 and FR-366-AC-3.
+invariants. Scope: FR-366-AC-1, FR-366-AC-2, FR-366-AC-3 and FR-366-AC-10.
 
 Catches a classification that calls a guard an invariant, one that drops an
 inherited invariant, a `pre` read in a type-level clause that is accepted, a
@@ -49,6 +49,9 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
 9. K2 with a record value type `Pair` given an optional `Reference<Order>`
    field `buddy` and the invariant `Peer`
    (`present(self.buddy) implies value(self.buddy).total.amount_minor >= 0`).
+10. Step 9's `Pair` with `Peer` reading through the one-level call
+    `total_of`, then through the two-level call `checked`, then calling only
+    `linked` (FR-366-AC-10).
 
 ## Expected Results
 
@@ -73,3 +76,7 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
 8. The refusal of `NonNegative` is located at `TypeDefinition.clauses[1]`.
 9. The compile refuses `unsupported_construct`/`expression-form` naming
    `ix://test/orders/Pair/Peer` at `TypeDefinition.clauses[0]`.
+10. The one-level and two-level calls each refuse
+    `unsupported_construct`/`expression-form` naming
+    `ix://test/orders/Pair/Peer` at `TypeDefinition.clauses[0]`; the `linked`
+    compile succeeds.
