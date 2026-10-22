@@ -36,9 +36,8 @@ backend selection. Every newly created crate in this path forbids unsafe code.
 QSL's current std evaluator remains the reference implementation behind this
 interface during the migration. IR-583 delivers the shared interface and std
 reference adapter. It does not claim that the evaluator itself is no_std. The
-no_std + alloc implementation is IR-590, after S1-S5. IR-269 remains a direct
-blocker of S1 and therefore an indirect predecessor of S6. During the bounded dual-implementation period, differential tests
-compare both implementations on the same checked inputs. IR-593 ends that
+no_std + alloc implementation is IR-590, after S1-S5. During the bounded
+dual-implementation period, differential tests compare both implementations on the same checked inputs. IR-593 ends that
 period by selecting the no_std implementation as the default and retiring or
 demoting the std-only path.
 
@@ -49,7 +48,7 @@ execution limits, staged ownership, and downstream consumer acceptance.
 
 ### Current source boundary
 
-The source boundary was rechecked against QSL main on 2026-10-22.
+The source boundary is as follows.
 `CheckedGraph` and `CheckedExpression` are checker outputs in
 `qsl-semantics/src/check/mod.rs`; they are not yet an independent evaluator
 input crate. `CheckedPackage` is owned by `qsl-package`. The public evaluator
@@ -141,29 +140,32 @@ accepted runtime outcome. The std and no_std implementations must agree on
 outcome, refusal, location/loss behavior, and charge sequence for shared
 inputs.
 
-### Staged ownership and blockers
+### Staged ordering
 
-Linear was re-read on 2026-10-22. The following dependency states are the
-structured blocker graph, not just the prose saying that no_std work is
-parallel to MVP:
+Readiness, state, owners and blocker edges live in Linear and are not copied
+here. The ordering rationale is as follows.
 
-| Slice | Current state / owner | Blocked by | Earliest start and scope |
-| --- | --- | --- | --- |
-| IR-583 interface | In Progress / peter | STD-298, QSL-682 (Done) | QSL owns the interface, leaf-crate contract, reference adapter plan, and this design. |
-| IR-585 S1 vocabulary | Backlog / unassigned | STD-298, IR-583, IR-269 | After these blockers: move evaluation refusal/call-plan vocabulary into `quire-semantic-value`, rebase object environment on `ObjectClosure`, remove the obsolete consumer fields. |
-| IR-586 S2 checked terms | Backlog / unassigned | STD-297 | After its spec blocker: separate checked IR from checker; preserve checking authority, source locations and identities. |
-| IR-587 S3 foundation | Backlog / unassigned | STD-299 | After its spec blocker: make `qsl-foundation` no_std + alloc capable while keeping `std` on by default. |
-| IR-588 S4 semantics | Backlog / unassigned | STD-299, IR-586 | After both blockers: convert only evaluator-needed semantics; replace nondeterministic `HashMap` traversal in `model/population.rs` with `BTreeMap`. |
-| IR-589 S5 package | Backlog / unassigned | STD-299 | After its spec blocker: make `qsl-package` no_std-capable and remove `serde_json` from checked-IR path; verify uncertain dependencies before choosing replacements. |
-| IR-590 S6 evaluator | Backlog / unassigned | STD-299, IR-583, IR-585, IR-586, IR-587, IR-588, IR-589 | After the interface, S1-S5, and its spec blocker: convert `qsl-eval` to no_std + alloc behind the interface; keep std enabled by default until S9. IR-269 is reached through S1, not a direct S6 edge. |
+- IR-583 delivers the interface, leaf-crate contract and std reference adapter.
+- IR-585 (S1) moves the evaluation refusal/call-plan vocabulary into
+  `quire-semantic-value`, rebases the object environment on `ObjectClosure`
+  and removes the obsolete consumer fields. It follows IR-583 and IR-269.
+- IR-586 (S2) separates checked IR from the checker, preserving checking
+  authority, source locations and identities.
+- IR-587 (S3) makes `qsl-foundation` no_std + alloc capable with `std` on by
+  default.
+- IR-588 (S4) converts only the evaluator-needed semantics and replaces
+  nondeterministic `HashMap` traversal in `model/population.rs` with
+  `BTreeMap`. It follows S2.
+- IR-589 (S5) makes `qsl-package` no_std-capable and removes `serde_json` from
+  the checked-IR path, verifying uncertain dependencies before choosing
+  replacements.
+- IR-590 (S6) converts `qsl-eval` to no_std + alloc behind the interface and
+  keeps `std` on by default until S9. It follows the interface and S1-S5.
+  IR-269 is reached through S1, not directly.
 
-The structured graph leaves S2, S3 and S5 independent of the IR-269 MVP gate
-and the IR-583 interface; each waits for its named spec blocker. S4 waits for
-S2 and STD-299. S1 still waits for IR-269, IR-583 and STD-298. The suggested
-owner lane is the maintainer of each owning QSL crate, coordinated by the QSL
-architecture lead. S6 waits for S1-S5, IR-583 and STD-299; it reaches IR-269
-through S1. The prose "parallel project" does not change those structured
-dependencies.
+S2, S3 and S5 are independent of the IR-269 MVP gate and the IR-583
+interface. The suggested owner lane is the maintainer of each owning QSL
+crate, coordinated by the QSL architecture lead.
 
 After S6, S7 runs differential tests over identical inputs through both
 implementations, S8 performs the unsafe/dependency audit (all newly authored
@@ -228,6 +230,5 @@ evidence that the RT target accepts the later implementation.
 - RT AD-004 predates FR-262 and describes a fixed call-depth guard and a
   different Q-1 fork. RT must amend that document and its FR-273 acceptance
   before claiming that the new interface completes the old port migration.
-- IR-269 directly blocks S1 and indirectly precedes S6 through S1. It does not
-  block S2-S5 directly. The structured Linear edges, rather than this design's
-  earlier 2026-10-10 table, decide readiness.
+- IR-269 precedes S1 and reaches S6 through S1. The Linear edges decide
+  readiness.
