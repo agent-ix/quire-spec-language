@@ -228,6 +228,12 @@ pub fn check_match_witness(
   `HyperProductIdentity` names (FR-315), with no recompile from a replay
   request. An HP-2 SMT outcome's witness is checked there, never by a
   caller that hands a `MatchWitnessCheck` to settlement.
+- `settle_hyper_smt` SHALL likewise replay an HP-2 SMT outcome's
+  `Lockstep` or `Undefined` counterexample itself, by this requirement's
+  rules for its kind, over the item's own clause and subjects and under the
+  instance its outcome's identity names, with no recompile from a replay
+  request and no caller-supplied replay. A counterexample whose `instance`
+  is not that instance is not replayed (FR-182).
 - An `Accepted` witness is a tuple of fair behaviours that `μ_U` matches at
   every joint step under `witness.instance`. It establishes a matched fair
   tuple for that instance only, so FR-182 does not settle that instance

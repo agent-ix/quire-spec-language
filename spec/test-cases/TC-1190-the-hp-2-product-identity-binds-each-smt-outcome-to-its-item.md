@@ -67,9 +67,12 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
    subject, for the fair clause (both results) and for the fair clause at
    instance `w`. Then settle with the item's `instance` empty.
 7. With `settle_hyper_smt` for the same item, settle outcomes carrying its
-   identity: `BoundReached{depth: 2}`; the leaky vault's `Violated` lasso
-   with a `replay` that reproduces it, then one that refuses it;
-   `Unknown{depth: 1}`; `Cancelled{source: Requested}`; and
+   identity: `BoundReached{depth: 2}`; the leaky vault's `Violated`
+   `Lockstep` lasso (method `SmtUnrolling`), then the same lasso with one
+   post-state digest altered, then the same lasso with its `instance`
+   binding `w`; FR-315-AC-9's undefined-match base model as an `Undefined`
+   counterexample (method `KInduction`); `Unknown{depth: 1, method:
+   KInduction}`; `Cancelled{source: Requested}`; and
    `EncodingRefused` with `match-conjunct`, `hyper-body` and `query-kind`.
    Repeat each with the identity for instance `w`.
 
@@ -105,8 +108,11 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   (both results) and `clause` for the fair clause at `w`; and
   `ItemIdentity` carrying `instance-binding` for the empty instance.
 - Step 7: `inconclusive`, `BoundReached{depth: 2}`, method `smt-unrolling`;
-  `refuted`, `decisive-counterexample`, then `inconclusive`,
-  `ReplayRefused`; `inconclusive`, `InductionNotClosed{depth: 1}`;
+  `refuted`, `decisive-counterexample`, method `smt-unrolling`, from
+  QSL's own replay; `inconclusive`, `ReplayRefused`; no record and
+  `ProductMismatch` naming `instance` for the `w` lasso, never `refuted`;
+  `refuted`, `UndefinedEvaluation`, method `k-induction`; `inconclusive`,
+  `InductionNotClosed{depth: 1}`, method `k-induction`;
   `failed`, `Incomplete(Cancelled{Requested})`; `inconclusive`,
   `MatchUndetermined`; `unsupported`, `unsupported-requested-capability`;
   no record and `QueryKind`. Every repeat with the instance-`w` identity
