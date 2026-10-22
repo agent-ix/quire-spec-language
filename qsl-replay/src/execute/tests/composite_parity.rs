@@ -263,7 +263,7 @@ impl Unit {
         let compiled = recompile(&decoded, &limits).unwrap();
         let site = locate(
             &compiled,
-            decoded.selected_function(),
+            crate::execute::function_target(&decoded, crate::ReplayEntry::Replay).unwrap(),
             claim.node,
             &claim.occurrence,
             claim.operator,
@@ -639,7 +639,8 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
     }));
 
     let mut undeclared = unit.wire("f", &claim(), vec![]);
-    undeclared.selected_function = name(&["nope"]);
+    undeclared.replay_target =
+        crate::RequestTargetWire::function(name(&["nope"]), crate::target::test_key());
     cases.push(("an undeclared function", undeclared, claim(), |refusal| {
         matches!(refusal, ReplayRefusal::UnknownFunction { .. })
     }));
@@ -797,9 +798,9 @@ fn tc_907_a_covering_harness_proves() {
     proved(&settle(&unit, "c", bounds, vec![], exhausted));
 }
 
-/// FR-358-AC-5 (TC-907 step 5): evidence short of covering the claim's
+/// FR-358-AC-9 (TC-907 step 5): evidence short of covering the claim's
 /// domain is `Tested`, never `Proved`.
-#[trace("TC-907", "FR-358-AC-5")]
+#[trace("TC-907", "FR-358-AC-9")]
 #[test]
 fn tc_907_anything_short_of_covering_is_tested() {
     let unit = unit();
@@ -1305,7 +1306,7 @@ fn prepared(
     let compiled = recompile(&request, &limits).unwrap();
     let site = locate(
         &compiled,
-        request.selected_function(),
+        crate::execute::function_target(&request, crate::ReplayEntry::Replay).unwrap(),
         claim.node,
         &claim.occurrence,
         claim.operator,
@@ -1839,4 +1840,28 @@ fn tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it() {
     };
     assert_ne!(narrow, unit.parameter("m", 0));
     assert!(matches!(&preimage.arguments[1].domain, Domain::Bounds(_)));
+}
+
+/// FR-358-AC-9 (TC-907): `replay_composite_parity` refuses a request whose
+/// replay target is not `function` as `replay` does, naming itself.
+#[trace("TC-907", "FR-358-AC-9")]
+#[test]
+fn tc_907_the_composite_entry_refuses_a_non_function_target() {
+    let unit = unit();
+    for (target, pointer) in super::non_function_targets() {
+        let claim = unit.claim("f", EqualityOperator::Equal, unit.covering());
+        let mut wire = unit.wire("f", &claim, vec![]);
+        wire.replay_target = target.into();
+        let (left, right) = (unit.q(1, &[2]), unit.q(1, &[3]));
+        let report = replay_composite_parity(
+            wire,
+            claim,
+            falsified(left, right, outcome(false, 4)),
+            ReplayLimits::default(),
+        );
+        let CompositeParityResult::Refused(refusal) = report.result() else {
+            panic!("expected a refusal: {:?}", report.result());
+        };
+        super::assert_wrong_target(refusal, crate::ReplayEntry::ReplayCompositeParity, pointer);
+    }
 }

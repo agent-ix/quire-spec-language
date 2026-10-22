@@ -744,7 +744,14 @@ fn tc_774_function_contract_items_replay_and_value_validity_items_do_not() {
     let wire = context
         .request(&p, &bounds, &plugin(), input(p_x, 0))
         .expect("a function-contract item");
-    assert_eq!(wire.selected_function.to_string(), "p");
+    assert_eq!(
+        wire.replay_target
+            .members
+            .function
+            .as_ref()
+            .map(ToString::to_string),
+        Some("p".to_owned())
+    );
     assert_eq!(wire.backend, "acme");
     assert_eq!(wire.source_digests.len(), 1);
     assert_eq!(wire.declared_domains.len(), 1);

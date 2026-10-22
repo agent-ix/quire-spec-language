@@ -16,7 +16,7 @@ stale identity
 refuses before admission, and an envelope whose `clause_node` or
 `occurrence_key` is not its payload's refuses before the recompile.
 
-Scope: FR-116-AC-1 to FR-116-AC-6, FR-116-AC-8.
+Scope: FR-116-AC-1 to FR-116-AC-6, FR-116-AC-8, FR-116-AC-9.
 
 ## Test Procedure
 
@@ -50,6 +50,10 @@ the domain package and the invocation documents in the byte provision.
    envelope's `clause_node` also replaced by another package's frame node;
    the third and fourth cases again with a request whose source does not
    compile, and again with the source's byte-provision entry removed.
+7. With the request's and the envelope's target equal: `{Config::VersionNumber,
+   attemptUpdate}`; `{Config::Absent, attemptUpdate}`; and, over a domain
+   package where `Sub` has the supertypes `ConfigVersion` and `Other`, both
+   declaring `attemptUpdate`, `{Config::Sub, attemptUpdate}`.
 
 Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
 
@@ -82,3 +86,4 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
   with the source that does not compile; `missing_import`/
   `missing-selection` for both with the provision entry removed.
   `FrameCounterexample` has no member naming the operation (FR-116-AC-8).
+- Step 7: `invalid_model_binding`/`malformed-declaration` naming `{Config::VersionNumber, attemptUpdate}`; `missing_declaration`/`missing-name`; `ambiguous_declaration`/`ambiguous-name` naming `{Config::Sub, attemptUpdate}` (FR-116-AC-9).

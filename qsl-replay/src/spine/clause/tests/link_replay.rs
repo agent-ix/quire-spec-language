@@ -273,12 +273,11 @@ fn replay_rehome(modifies: &[String], change: ClaimedChange) -> FrameReplayResul
         .expect("RehomePost names the operation");
     let (anchor, frame_node) = (wire(frame.anchor()), wire(frame.frame()));
     let occurrence = OccurrenceKey::new(frame_node, frame.frame_origin().clone());
+    let target = crate::ReplayTarget::FrameOperation(FrameOperation {
+        object: crate::QualifiedName::new(vec![identifier("Orders"), identifier("Pump")]).unwrap(),
+        operation: identifier("rehome"),
+    });
     let payload = FrameCounterexample {
-        operation: FrameOperation {
-            object: crate::QualifiedName::new(vec![identifier("Orders"), identifier("Pump")])
-                .unwrap(),
-            operation: identifier("rehome"),
-        },
         anchor,
         frame: frame_node,
         occurrence: occurrence.clone(),
@@ -286,7 +285,13 @@ fn replay_rehome(modifies: &[String], change: ClaimedChange) -> FrameReplayResul
         change,
     };
     let package_id = package_digest(unit.compiled.emitted.package_id());
-    let wire_request = request(&unit.bytes, &unit.domain_document, package_id, &documents);
+    let wire_request = request(
+        &unit.bytes,
+        &unit.domain_document,
+        package_id,
+        &documents,
+        target.clone(),
+    );
     let packet = packet(
         &unit.bytes,
         package_id,
@@ -294,6 +299,7 @@ fn replay_rehome(modifies: &[String], change: ClaimedChange) -> FrameReplayResul
         frame_node,
         occurrence,
         payload,
+        target,
     );
     let envelope = WitnessEnvelope::reconstruct(packet, crate::ReplayLimits::default())
         .expect("a complete packet reconstructs");

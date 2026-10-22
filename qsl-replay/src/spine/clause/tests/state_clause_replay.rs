@@ -14,8 +14,8 @@ use super::*;
 use crate::{
     replay_state_clause, ClauseIdentityMismatch, DisagreementCause, EvaluatedValue, FamilyPayload,
     InputSettlement, ObservationForm, ReplayRefusal, ReplayRequestRefusal, ReplayRequestWire,
-    ReplayResult, ReplaySource, SnapshotValue, StateClauseCounterexample, StateClauseKind,
-    StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
+    ReplayResult, ReplaySource, ReplayTarget, SnapshotValue, StateClauseCounterexample,
+    StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -25,6 +25,11 @@ use quire_semantic_value::catalog::Category;
 
 fn name(text: &str) -> Identifier {
     Identifier::new(text).expect("an identifier")
+}
+
+/// The `state_clause` replay target naming `clause`.
+fn clause_target(clause: &str) -> ReplayTarget {
+    ReplayTarget::state_clause(crate::QualifiedName::new(vec![name(clause)]).unwrap())
 }
 
 /// `clause`'s node and `claim` occurrence in `unit`'s compiled package.
@@ -236,6 +241,28 @@ fn case_with(
     source: ReplaySource,
     adjust: impl FnOnce(&mut ReplayRequestWire, &mut (WireNodeId, OccurrenceKey)),
 ) -> Case {
+    case_targeting(
+        unit,
+        clause,
+        documents,
+        source,
+        clause_target(clause),
+        clause_target(clause),
+        adjust,
+    )
+}
+
+/// [`case_with`] with the request's replay target and the envelope's given
+/// (`clause` still names the clause whose identities the envelope carries).
+fn case_targeting(
+    unit: Unit,
+    clause: &str,
+    documents: Documents,
+    source: ReplaySource,
+    request_target: ReplayTarget,
+    envelope_target: ReplayTarget,
+    adjust: impl FnOnce(&mut ReplayRequestWire, &mut (WireNodeId, OccurrenceKey)),
+) -> Case {
     let package_id = package_digest(unit.compiled.emitted.package_id());
     let mut identity = clause_identity(&unit, clause);
     let mut wire = request(
@@ -243,10 +270,10 @@ fn case_with(
         &unit.domain_document,
         package_id,
         &documents.bytes,
+        request_target,
     );
     adjust(&mut wire, &mut identity);
     let payload = StateClauseCounterexample {
-        clause: name(clause),
         observation: documents.observation.clone(),
         witness: None,
     };
@@ -259,6 +286,7 @@ fn case_with(
             clause_node,
             occurrence_key,
             payload,
+            envelope_target,
         ),
         crate::ReplayLimits::default(),
     )
@@ -319,7 +347,7 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
     assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.package_id(), package_id);
-    assert_eq!(result.clause().as_str(), clause);
+    assert_eq!(result.clause().to_string(), clause);
     assert_eq!(result.clause_node(), node);
     assert_eq!(result.occurrence_key(), &occurrence);
     assert_eq!(result.documents(), &read[..]);
@@ -365,7 +393,7 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.package_id(), package_id);
-    assert_eq!(result.clause().as_str(), "VersionUnchanged");
+    assert_eq!(result.clause().to_string(), "VersionUnchanged");
     assert_eq!(result.clause_node(), node);
     assert_eq!(result.occurrence_key(), &occurrence);
     assert_eq!(result.documents(), &read[..]);
@@ -565,7 +593,13 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
         b"function extra using v(a: Config::ConfigVersion): Integer pure { 2 }\n",
     );
     let documents = changed_version();
-    let wire = request(&edited, &unit.domain_document, original, &documents.bytes);
+    let wire = request(
+        &edited,
+        &unit.domain_document,
+        original,
+        &documents.bytes,
+        clause_target("VersionUnchanged"),
+    );
     let envelope = WitnessEnvelope::reconstruct(
         packet(
             &edited,
@@ -574,10 +608,10 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
             clause_node,
             occurrence_key,
             StateClauseCounterexample {
-                clause: name("VersionUnchanged"),
                 observation: documents.observation,
                 witness: None,
             },
+            clause_target("VersionUnchanged"),
         ),
         crate::ReplayLimits::default(),
     )
@@ -594,36 +628,26 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
 }
 
-/// TC-517 step 3 (FR-122-AC-3): a `clause` naming `Absent`, and one naming
-/// the function `sameIdentity`, each refuse `missing_declaration`/
-/// `missing-name`.
+/// TC-517 step 3 (FR-122-AC-3): a request `state_clause` naming `Absent`,
+/// and one naming the function `sameIdentity`, each refuse
+/// `missing_declaration`/`missing-name`.
 #[trace("TC-517", "FR-122-AC-3")]
 #[test]
 fn a_clause_naming_no_state_clause_refuses_missing_name() {
     for missing in ["Absent", "sameIdentity"] {
-        let mut case = case(config_version_unit(), "VersionUnchanged", changed_version());
-        let payload = StateClauseCounterexample {
-            clause: name(missing),
-            observation: case.documents.observation.clone(),
-            witness: None,
-        };
-        let package_id = package_digest(case.unit.compiled.emitted.package_id());
-        case.envelope = WitnessEnvelope::reconstruct(
-            packet(
-                &case.unit.bytes,
-                package_id,
-                witness_source(),
-                case.envelope.clause_node(),
-                case.envelope.occurrence_key().clone(),
-                payload,
-            ),
-            crate::ReplayLimits::default(),
-        )
-        .unwrap();
+        let case = case_targeting(
+            config_version_unit(),
+            "VersionUnchanged",
+            changed_version(),
+            witness_source(),
+            clause_target(missing),
+            clause_target(missing),
+            |_, _| {},
+        );
         let refusal = replay(case).unwrap_err();
         assert!(
             matches!(&refusal, ReplayRefusal::UnknownClause { clause, .. }
-                if clause.as_str() == missing),
+                if clause.to_string() == missing),
             "{refusal:?}"
         );
         assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
@@ -944,6 +968,144 @@ fn replaying_one_envelope_twice_gives_equal_results() {
             ObservationForm::Invocation
         ]
     );
+}
+
+/// TC-517 step 6 (FR-122-AC-6): the payload names no clause. An exhaustive
+/// destructure naming only `observation` and `witness` compiles, so a
+/// clause member added back fails here.
+#[trace("TC-517", "FR-122-AC-6")]
+#[test]
+fn the_payload_has_no_member_naming_the_clause() {
+    let StateClauseCounterexample {
+        observation,
+        witness,
+    } = case(config_version_unit(), "VersionUnchanged", changed_version())
+        .envelope
+        .family_payload()
+        .clone();
+    assert_eq!(observation.form(), ObservationForm::Invocation);
+    assert!(witness.is_none());
+}
+
+/// TC-517 step 8 (FR-122-AC-8): over the changed-version `VersionUnchanged`
+/// envelope, a request target that is a function or a frame operation
+/// refuses `invalid_runtime_input`/`unknown-member` at that member's
+/// pointer, naming `replay_state_clause` and `state_clause` (check 1
+/// precedes check 2, though each target also differs from the envelope's),
+/// and a `state_clause` request against a `ParentOrder` envelope refuses
+/// `stale_dependency`/`content-mismatch` naming both targets. Each refusal
+/// is unchanged when the request's source does not compile, and becomes the
+/// byte-provision refusal when the source's entry is removed.
+#[trace("TC-517", "FR-122-AC-8")]
+#[test]
+fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
+    #[derive(Clone, Copy)]
+    enum Source {
+        Compiles,
+        DoesNotCompile,
+        EntryRemoved,
+    }
+    let function = ReplayTarget::function(
+        crate::QualifiedName::new(vec![name("sameIdentity")]).unwrap(),
+        Some(crate::target::test_key()),
+    );
+    let frame = ReplayTarget::FrameOperation(crate::FrameOperation {
+        object: crate::QualifiedName::new(vec![name("Config"), name("ConfigVersion")]).unwrap(),
+        operation: name("attemptUpdate"),
+    });
+    let own = clause_target("VersionUnchanged");
+    let other = clause_target("ParentOrder");
+    let cases = [(function, own.clone()), (frame, own.clone()), (own, other)];
+    for (request_target, envelope_target) in cases {
+        for source in [
+            Source::Compiles,
+            Source::DoesNotCompile,
+            Source::EntryRemoved,
+        ] {
+            let unit = config_version_unit();
+            let package_id = package_digest(unit.compiled.emitted.package_id());
+            let domain_document = unit.domain_document.clone();
+            let documents = changed_version();
+            let bytes = documents.bytes.clone();
+            let target = request_target.clone();
+            let refusal = replay(case_targeting(
+                unit,
+                "VersionUnchanged",
+                documents,
+                witness_source(),
+                request_target.clone(),
+                envelope_target.clone(),
+                |wire, _| match source {
+                    Source::Compiles => {}
+                    Source::DoesNotCompile => {
+                        *wire = request(
+                            b"this is not a QSL unit\n",
+                            &domain_document,
+                            package_id,
+                            &bytes,
+                            target,
+                        );
+                    }
+                    Source::EntryRemoved => wire.byte_provision.retain(|(domain, _, _)| {
+                        domain.as_deref() != Some(DigestDomain::SourceBytesV1.as_str())
+                    }),
+                },
+            ))
+            .unwrap_err();
+            if matches!(source, Source::EntryRemoved) {
+                assert!(
+                    matches!(
+                        &refusal,
+                        ReplayRefusal::Request(
+                            ReplayRequestRefusal::IncompleteByteProvision { .. }
+                        )
+                    ),
+                    "{refusal:?}"
+                );
+                assert_eq!(refusal.code(), qsl_foundation::Code::MissingImport);
+                continue;
+            }
+            match (&request_target, &refusal) {
+                (
+                    ReplayTarget::Declaration {
+                        kind: crate::NamedKind::Function,
+                        ..
+                    }
+                    | ReplayTarget::FrameOperation(_),
+                    ReplayRefusal::WrongReplayTarget {
+                        target,
+                        entry,
+                        member,
+                    },
+                ) => {
+                    assert_eq!(**target, request_target);
+                    assert_eq!(*entry, crate::ReplayEntry::ReplayStateClause);
+                    assert_eq!(*member, crate::TargetMember::StateClause);
+                    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidRuntimeInput);
+                    assert_eq!(refusal.cause(), Some("unknown-member"));
+                    assert_eq!(
+                        target.member().pointer(),
+                        match request_target {
+                            ReplayTarget::Declaration { .. } => "/replay/function",
+                            _ => "/replay/frame_operation",
+                        }
+                    );
+                }
+                (
+                    ReplayTarget::Declaration {
+                        kind: crate::NamedKind::StateClause,
+                        ..
+                    },
+                    ReplayRefusal::TargetMismatch { request, envelope },
+                ) => {
+                    assert_eq!(**request, request_target);
+                    assert_eq!(**envelope, envelope_target);
+                    assert_content_mismatch(&refusal);
+                }
+                _ => panic!("unexpected refusal for {request_target:?}: {refusal:?}"),
+            }
+        }
+    }
 }
 
 /// FR-122-AC-7: the post-state range violations of `result` as `(object

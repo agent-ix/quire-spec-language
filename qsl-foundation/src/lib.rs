@@ -16,6 +16,9 @@
 //! crate's own ADR-011 §7.1/§7.3 extraction note).
 
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 pub mod absence;
 pub mod backend;

@@ -5056,6 +5056,45 @@ fn config_version_domain_document_with_sub() -> Vec<u8> {
     envelope.to_string().into_bytes()
 }
 
+/// [`config_version_domain_document_with_sub`] plus `Other`, an object type
+/// declaring its own `attemptUpdate`, with `Sub`'s `supertypes` set to
+/// `[ConfigVersion, Other]`: two supertypes expose the name and neither is
+/// more derived, so `Config::Sub::attemptUpdate` is ambiguous.
+fn config_version_domain_document_with_diamond() -> Vec<u8> {
+    let config_version = config_version_type();
+    let sub = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub");
+    let other = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Other");
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&config_version_domain_document_with_sub())
+            .expect("the document is JSON");
+    let types = envelope["types"].as_array_mut().expect("types is an array");
+    let mut operation = types
+        .iter()
+        .find(|declared| declared["identity"] == json!(config_version))
+        .expect("ConfigVersion is declared")["operations"][0]
+        .clone();
+    operation["identity"] = json!(format!("{other}/attemptUpdate"));
+    operation["frame"] = json!({"modifies": [], "creates": [], "deletes": []});
+    let mut other_type = types
+        .iter()
+        .find(|declared| declared["identity"] == json!(sub))
+        .expect("Sub is declared")
+        .clone();
+    other_type["identity"] = json!(other);
+    other_type["displayName"] = json!(other);
+    other_type["origin"]["generated"]["generatorIdentity"] = json!(other);
+    other_type["origin"]["generated"]["inputIdentities"] = json!([other]);
+    other_type["supertypes"] = json!([]);
+    other_type["operations"] = json!([operation]);
+    for declared in types.iter_mut() {
+        if declared["identity"] == json!(sub) {
+            declared["supertypes"] = json!([config_version, other]);
+        }
+    }
+    types.push(other_type);
+    envelope.to_string().into_bytes()
+}
+
 /// TC-463 (FR-105-AC-4): over a package where `Sub` specializes
 /// `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and
 /// `pre B ... on Config::Sub::attemptUpdate` share one `operation_anchor`,

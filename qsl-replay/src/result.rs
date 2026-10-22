@@ -1386,7 +1386,7 @@ mod tests {
                         origin("reference", 0),
                     )),
                     clause_node: Some(WireNodeId::from_digest([4; 32])),
-                    selected_function: Some(
+                    replay_target: crate::ReplayTargetMembers::function(
                         QualifiedName::new(vec![
                             Identifier::new("module").unwrap(),
                             Identifier::new(function_name).unwrap(),
@@ -1418,8 +1418,12 @@ mod tests {
             };
         let one_arg = build_witness_envelope("one_arg_fn", "x=1");
         let two_arg = build_witness_envelope("two_arg_fn", "x=1;y=2");
-        assert_eq!(one_arg.selected_function().segments().len(), 2);
-        assert_eq!(two_arg.selected_function().segments().len(), 2);
+        for envelope in [&one_arg, &two_arg] {
+            let Some(function) = envelope.replay_target().as_function() else {
+                panic!("the packet's target is a function");
+            };
+            assert_eq!(function.segments().len(), 2);
+        }
 
         // FR-072: the replay result, built with exactly this module's own
         // types -- no fifth type is defined anywhere in this test.

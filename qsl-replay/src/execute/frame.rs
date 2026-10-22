@@ -5,7 +5,7 @@
 //! It checks the envelope's clause node and occurrence key against the
 //! payload's frame node and occurrence, recompiles the request's package by
 //! FR-098's rules ([`recompile`]),
-//! resolves the payload's operation in the recompiled package, refuses a
+//! resolves the request's `frame_operation` in the recompiled package, refuses a
 //! payload whose frame, occurrence or anchor identity is not the recompiled
 //! one before any admission, then runs FR-115's frame run -- the very
 //! `check_frame` that `run_clause`'s `Frame` selection runs (FR-109) --
@@ -16,12 +16,15 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::CheckedOperationFrame;
+use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
 use quire_semantic_value::catalog::InternalFault;
 
-use super::{charges, domain_packages, one_source, recompile, wire_id, ReplayRefusal};
+use super::{
+    charges, check_envelope_target, domain_packages, one_source, recompile, wire_id, wrong_target,
+    MalformedOperationReason, ReplayRefusal,
+};
 use crate::bounds::ReplayLimits;
 use crate::identity::RawSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
@@ -29,9 +32,9 @@ use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
 };
 use crate::spine::{
-    check_frame, resolve_frame, CallOutcome, CallValue, ClauseDisposition, CompiledRun, FrameCheck,
-    OperationName,
+    check_frame, CallOutcome, CallValue, ClauseDisposition, CompiledRun, FrameCheck, OperationName,
 };
+use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
 use crate::WitnessEnvelope;
 use quire_semantic_value::catalog::Category;
@@ -93,7 +96,7 @@ pub enum FrameIdentityMismatch {
 
 /// FR-116 Outputs: an FR-072 result on the envelope's arm, with the
 /// identities the replay kept: the source unit's identity and digest, the
-/// `package_id`, the payload's operation, anchor, frame and occurrence
+/// `package_id`, the request's `frame_operation`, the payload's anchor, frame and occurrence
 /// (each equal to the recompiled one, or the replay refused), the three
 /// admitted documents, the payload's claimed change and the change the
 /// replay found.
@@ -126,7 +129,7 @@ impl FrameReplayResult {
     pub fn package_id(&self) -> PackageId {
         self.package_id
     }
-    /// The payload's operation.
+    /// The request's `frame_operation`.
     pub fn operation(&self) -> &FrameOperation {
         &self.operation
     }
@@ -167,18 +170,21 @@ impl FrameReplayResult {
 }
 
 /// FR-116: replay `envelope`'s frame counterexample. `wire` is FR-098's
-/// request, supplying the package reference, byte provision and limits;
-/// its function selection and replay source are FR-098's function-replay
-/// members, which a frame replay does not read: its selection is the
-/// payload and its result arm the envelope's.
+/// request, supplying the package reference, byte provision and limits and
+/// the `frame_operation` replay target that selects the operation; its
+/// replay source is FR-098's function-replay member, which a frame replay
+/// does not read: its result arm is the envelope's.
 ///
 /// Refuses, with no partial result, when the request does not decode, then
-/// when the envelope's `clause_node` or `occurrence_key` is not the
-/// payload's frame node or frame occurrence (before recompiling), then by
-/// FR-098's rules (in FR-098's order), when the recompiled `package_id` is not the
-/// envelope's, when the payload's operation names no operation frame, when
-/// a payload identity is stale (before any admission), and when FR-106
-/// admission fails. The counterexample refuted the frame, so the proved
+/// (before recompiling, in this order) when the request's target is not
+/// `frame_operation`, when the envelope's target differs from the request's,
+/// and when the envelope's `clause_node` or `occurrence_key` is not the
+/// payload's frame node or frame occurrence, then by FR-098's rules (in
+/// FR-098's order), when the recompiled `package_id` is not the envelope's,
+/// when the request's `frame_operation` names no operation frame, names an
+/// object that only inherits the operation or is ambiguous, when a payload
+/// identity is stale (before any admission), and when FR-106 admission
+/// fails. The counterexample refuted the frame, so the proved
 /// verdict is `violation`: a violation reproduces; a frame the invocation
 /// respects is `inconclusive`, `Verdicts`; a check that completed no value
 /// (a declared delta that disagrees) is `inconclusive`, `NoValue`.
@@ -191,12 +197,22 @@ pub fn replay_frame(
     replay_limits: ReplayLimits,
 ) -> Result<FrameReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
+    // FR-116's three envelope checks, in order, after decode and before the
+    // recompile.
+    let ReplayTarget::FrameOperation(target) = request.replay_target() else {
+        return Err(wrong_target(
+            request.replay_target(),
+            ReplayEntry::ReplayFrame,
+            TargetMember::FrameOperation,
+        ));
+    };
+    check_envelope_target(&request, envelope.replay_target())?;
+    check_envelope(envelope).map_err(ReplayRefusal::FrameIdentity)?;
     let limits = super::request_limits(
         request.stage_limits(),
         request.accounting_limits(),
         replay_limits,
     )?;
-    check_envelope(envelope).map_err(ReplayRefusal::FrameIdentity)?;
     let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {
@@ -206,13 +222,8 @@ pub fn replay_frame(
         });
     }
     let payload = envelope.family_payload();
-    let unknown = || ReplayRefusal::UnknownOperation {
-        operation: payload.operation.clone(),
-        package: package_id,
-    };
-    let operation = operation_name(&payload.operation).ok_or_else(unknown)?;
     let graph = compiled.checked.package().graph();
-    let (context, operation_frame) = resolve_frame(graph, &operation).ok_or_else(unknown)?;
+    let (context, operation_frame) = resolve_target(graph, target, package_id)?;
     check_identities(payload, operation_frame).map_err(ReplayRefusal::FrameIdentity)?;
 
     // `recompile` already required exactly one source, provided.
@@ -326,7 +337,7 @@ pub fn replay_frame(
         result,
         source: source.clone(),
         package_id,
-        operation: payload.operation.clone(),
+        operation: target.clone(),
         anchor: payload.anchor,
         frame: payload.frame,
         occurrence: payload.occurrence.clone(),
@@ -338,9 +349,9 @@ pub fn replay_frame(
     })
 }
 
-/// `operation` as a `Frame` selection's `M::T::op`: its declaring type
-/// must be exactly a model alias and an object type. `None` otherwise, so
-/// it names no operation.
+/// The request's `frame_operation` as a `Frame` selection's `M::T::op`:
+/// its object must be exactly a model alias and an object type. `None`
+/// otherwise, so it names no operation.
 fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
     let [model, object] = operation.object.segments() else {
         return None;
@@ -352,11 +363,54 @@ fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
     })
 }
 
+/// FR-116: resolve `target` by QSpec FR-342's operation resolution. An
+/// object or operation that resolves nothing, or an operation with no frame
+/// node, is `missing-name`; two supertypes exposing the name is
+/// `ambiguous-name`; and an object that only inherits the operation (its
+/// declaring type is another) is `malformed-declaration`, since the target
+/// names the declaring object.
+fn resolve_target<'g>(
+    graph: &'g CheckedGraph,
+    target: &FrameOperation,
+    package: PackageId,
+) -> Result<(quire_exact::EffectiveId, &'g CheckedOperationFrame), ReplayRefusal> {
+    let unknown = || ReplayRefusal::UnknownOperation {
+        operation: target.clone(),
+        package,
+    };
+    let name = operation_name(target).ok_or_else(unknown)?;
+    if graph.names_non_object_declaration(&name.model, &name.object) {
+        return Err(ReplayRefusal::MalformedOperationTarget {
+            operation: target.clone(),
+            package,
+            reason: MalformedOperationReason::NotAnObjectType,
+        });
+    }
+    let selection = graph
+        .resolve_operation(&name.model, &name.object, &name.operation)
+        .ok_or_else(unknown)?;
+    if graph.operation_is_ambiguous(&selection) {
+        return Err(ReplayRefusal::AmbiguousOperation {
+            operation: target.clone(),
+            package,
+        });
+    }
+    let (context, frame) = graph.operation_frame(&selection).ok_or_else(unknown)?;
+    if frame.operation().declaring != context {
+        return Err(ReplayRefusal::MalformedOperationTarget {
+            operation: target.clone(),
+            package,
+            reason: MalformedOperationReason::OnlyInherited,
+        });
+    }
+    Ok((context, frame))
+}
+
 /// FR-116: a frame packet carries its frame node and frame occurrence
 /// twice, as the envelope's `clause_node` and `occurrence_key` and as the
 /// payload's `frame` and `occurrence`; the two must agree. The frame goes
 /// first, as in [`check_identities`], because the occurrence key is
-/// derived from it. The envelope's `selected_function` is not read.
+/// derived from it.
 fn check_envelope(
     envelope: &WitnessEnvelope<FrameCounterexample>,
 ) -> Result<(), Box<FrameIdentityMismatch>> {

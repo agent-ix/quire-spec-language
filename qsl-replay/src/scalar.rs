@@ -368,8 +368,10 @@ pub struct ValueIdentity {
     /// The request's `package_id` as supplied: its digest domain and hex.
     /// Carried as given and never checked here.
     pub package_id: (Option<String>, String),
-    /// The selected function.
-    pub function: QualifiedName,
+    /// The `function` replay target as the request sent it; `None` when the
+    /// request carried another target (such a claim refuses before any
+    /// evaluation).
+    pub function: Option<QualifiedName>,
     /// The request's `source`: the bindings of the function's declared
     /// parameters, as supplied.
     pub source: ReplaySource,
@@ -385,8 +387,8 @@ impl ValueIdentity {
         32 + self.package_id.1.len()
             + self
                 .function
-                .segments()
                 .iter()
+                .flat_map(|name| name.segments())
                 .map(|segment| segment.as_str().len())
                 .sum::<usize>()
             + self.source.measured_bytes()
@@ -399,7 +401,7 @@ impl ValueIdentity {
         Self {
             obligation: ObligationIdentity::from_digest(wire.obligation_identity),
             package_id: wire.package_id.clone(),
-            function: wire.selected_function.clone(),
+            function: wire.replay_target.members.function.clone(),
             source: wire.source.clone(),
             limits: wire.effective_accounting_limits(),
             generated: generated.clone(),

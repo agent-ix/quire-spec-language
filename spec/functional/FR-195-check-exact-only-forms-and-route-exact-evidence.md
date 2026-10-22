@@ -116,6 +116,20 @@ written `rational(6, 5)` and a negative quantity cannot be written.
 - `exact_only` SHALL be true for a `Reach` or `ExpectedReward` form, for a
   claim `under every scheduler`, and for a claim that states no confidence
   parameters.
+- S3 SHALL write one requirement record for each checked probabilistic
+  claim (FR-186), as FR-165 does for a state-graph claim: keyed by the
+  claim node's `claim` occurrence key (ADR-013 O-07), with
+  `Requirements{kind: probabilistic-satisfaction, extent:
+  Unbounded{domains}}`, with `domains` naming the claim as FR-165 names a
+  state-graph claim's (FR-057, ADR-014 A-3), its result bound the
+  `Boolean` type node (FR-092), no direct conversion context and an empty
+  path condition. No other capability kind SHALL be written for it.
+- S3 SHALL record on each checked probabilistic claim's
+  `probabilistic-satisfaction` requirement record its evidence kind:
+  `exact` when `exact_only` is true, and `statistical` otherwise. It is the
+  evidence kind FR-075's request builder writes when the request names
+  none, and it enters neither the claim's normal form nor its obligation
+  identity.
 
 ### Capability
 
@@ -141,6 +155,7 @@ written `rational(6, 5)` and a negative quantity cannot be written.
 | FR-195-AC-3 | `exact_only` is true for each claim of AC-1 and AC-2 that checks and for `P95` with no confidence parameters, and false for `P95` under `Steady` with its confidence parameters. | Test (TC-630) |
 | FR-195-AC-4 | EN-4's gate given the checked `FairTerminates` refuses `EveryScheduler`; given the `Link` expected-reward claim under a workload it refuses `ExactOnlyForm`; given a bounded event under a workload with no confidence parameters it refuses `MissingConfidence`; given `P95` under `Steady` with its confidence parameters it passes. Each refusal is returned before a `StatisticalClaim` is built and so before a sample is drawn, and for every claim of AC-1 to AC-3 that checks the gate refuses exactly when `exact_only` is true. | Test (TC-630) |
 | FR-195-AC-5 | EN-5's manifest lists `probabilistic-satisfaction` with the evidence kind `exact` only. Each of the three refusals of AC-4 settles `unsupported` with its cause (`every-scheduler`, `exact-only-form`, `missing-confidence`) through FR-192's map. | Test (TC-630) |
+| FR-195-AC-6 | The use case's `FairTerminates` (`under every scheduler`, no confidence parameters) has one requirement record, keyed by its claim node's `claim` occurrence, with kind `probabilistic-satisfaction`, extent `Unbounded` with `domains` naming `FairTerminates`, the `Boolean` result bound, no conversion context, an empty path condition and evidence kind `exact`; a `Reach` claim under a workload with confidence parameters records `exact`; FR-186's `P95` (a quantile form under `Steady` with `alpha`, `beta` and `indifference`) records `statistical`. `P95`'s obligation identity is equal across a request naming no evidence selection, one naming `exact` and one naming both kinds (QSpec FR-407-AC-6). | Test (TC-1163) |
 
 ## Dependencies
 

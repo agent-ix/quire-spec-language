@@ -7,6 +7,10 @@ rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer F: absence/json-number/serde-object utilities, byte digests, the native wire-format catalog, exact source text and source maps, and stable native diagnostics."
 
+[features]
+default = ["std"]
+std = ["serde/std", "sha2/std", "thiserror/std"]
+
 [dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # ADR-011 §6.1: F depends on K. ADR-013 T-5's `Locus` carries the kernel
@@ -15,9 +19,9 @@ quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the catalog vocabulary (`Category`, `CatalogCode`,
 # `InternalFault`, ...) F's diagnostics name (FR-401, ADR-011 X-14).
 quire-semantic-value = { workspace = true }
-serde = { version = "1.0.228", features = ["derive"] }
-sha2 = "0.10.9"
-thiserror = "2.0.20"
+serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
+sha2 = { version = "0.10.9", default-features = false }
+thiserror = { version = "2.0.20", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

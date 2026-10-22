@@ -1270,6 +1270,10 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::PackageIdMismatch { .. }
         | ReplayRefusal::UnknownFunction { .. }
         | ReplayRefusal::UnknownOperation { .. }
+        | ReplayRefusal::WrongReplayTarget { .. }
+        | ReplayRefusal::TargetMismatch { .. }
+        | ReplayRefusal::MalformedOperationTarget { .. }
+        | ReplayRefusal::AmbiguousOperation { .. }
         | ReplayRefusal::FrameIdentity(_)
         | ReplayRefusal::ClauseIdentity(_)
         | ReplayRefusal::UnknownClause { .. }
@@ -1976,8 +1980,9 @@ mod tests {
                         crate::scalar::ScalarClaim::Function(Box::new(crate::ValueIdentity {
                             obligation: crate::identity::ObligationIdentity::from_digest([1; 32]),
                             package_id: (None, String::new()),
-                            function: QualifiedName::new(vec![Identifier::new("f").unwrap()])
-                                .unwrap(),
+                            function: Some(
+                                QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                            ),
                             source: crate::ReplaySource::Input(Vec::new()),
                             limits: quire_exact::ScalarLimits {
                                 integer_bits: 1,

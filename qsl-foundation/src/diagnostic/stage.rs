@@ -10,6 +10,7 @@
 //! `quire.native.diagnostics/v1`. It carries the T-5 [`Locus`] where the limit was reached, absent
 //! only where FR-096 says no producer can know one.
 
+use alloc::{borrow::ToOwned, boxed::Box, collections::BTreeMap, string::String, string::ToString};
 use quire_exact::CancelCause;
 
 use super::{Code, Locus};
@@ -174,8 +175,8 @@ impl CatalogCoded for LimitExceeded {
     /// The catalog row's payload: the exceeded limit kind (its cause tag),
     /// the configured bound, the actual counter and the setting that raises
     /// the limit (FR-096, FR-255). Its position is its locus.
-    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
-        Some(std::collections::BTreeMap::from([
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([
             ("kind", self.kind().catalog_cause().to_owned()),
             ("bound", self.configured_bound.to_string()),
             ("actual", self.actual.to_string()),
@@ -187,8 +188,8 @@ impl CatalogCoded for LimitExceeded {
 /// FR-255 Behavior 3, QSpec FR-461's rendering: the stage and counter, the
 /// configured bound, the count reached, the locus where known, and the
 /// setting that raises the limit at each entry point.
-impl std::fmt::Display for LimitExceeded {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for LimitExceeded {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             formatter,
             "{} {} limit {} reached ({})",
@@ -210,6 +211,9 @@ impl std::fmt::Display for LimitExceeded {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{
+        borrow::ToOwned, collections::BTreeMap, string::String, string::ToString, vec::Vec,
+    };
     use ix_trace_rs::trace;
 
     use quire_exact::CancelCause;
@@ -229,7 +233,7 @@ mod tests {
             CatalogCode::new(self.0, "cause")
         }
 
-        fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
             None
         }
     }

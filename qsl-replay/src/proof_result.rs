@@ -1536,8 +1536,10 @@ mod tests {
         ScalarClaim::Function(Box::new(crate::ValueIdentity {
             obligation: crate::ObligationIdentity::from_digest([1; 32]),
             package_id: (None, String::new()),
-            function: crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
-                .unwrap(),
+            function: Some(
+                crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
+                    .unwrap(),
+            ),
             source: crate::ReplaySource::Input(assignments),
             limits: quire_exact::ScalarLimits {
                 integer_bits: 1,

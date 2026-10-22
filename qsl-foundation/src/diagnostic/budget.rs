@@ -5,7 +5,7 @@
 //! limit (FR-255 Behavior 1, FR-260 item 5). One builder serves every producer, so the field set is
 //! written once.
 
-use std::collections::BTreeMap;
+use alloc::{borrow::ToOwned, collections::BTreeMap, string::String, string::ToString};
 
 use super::LimitExceeded;
 use crate::Setting;

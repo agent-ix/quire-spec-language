@@ -189,7 +189,13 @@ pub(crate) fn request<'a>(
         ),
         source_digests: vec![source_wire(unit)],
         dependencies: Vec::new(),
-        selected_function: selected(),
+        replay_target: qsl_replay::RequestTargetWire::function(
+            selected(),
+            qsl_replay::OccurrenceKey::new(
+                qsl_replay::WireNodeId::from_digest([7; 32]),
+                qsl_replay::Origin::new(qsl_replay::Role::new("declaration"), 0),
+            ),
+        ),
         source: witness_source(),
         obligation_identity: [3; 32],
         backend: "qsl-en-1".to_owned(),
@@ -228,7 +234,7 @@ pub(crate) fn envelope_at<T: SubjectTransition>(
             obligation_identity: Some([3; 32]),
             occurrence_key: Some(occurrence),
             clause_node: Some(node),
-            selected_function: Some(selected()),
+            replay_target: qsl_replay::ReplayTargetMembers::function(selected()),
             package_id: Some((
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),

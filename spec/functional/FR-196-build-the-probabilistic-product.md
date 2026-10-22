@@ -88,9 +88,9 @@ pub enum ProductStop { Limit { limit: ModelCheckLimit, value: u64 }, Cancelled(C
 members are the `ExactProbRefusal` members of the same names, and FR-203
 "Build refusals and stops" settles the members its table lists. `Admission`
 and `NotSimulated` are request refusals that return no terminal record, as
-EN-1's `ModelCheckRefusal` does (FR-126). How `PredicateRefused`,
-`Translation` and an `Expansion` that names a limit settle is open: no rule
-of FR-126, FR-127 or FR-192 covers them. A build that finds an
+EN-1's `ModelCheckRefusal` does (FR-126). FR-203's table settles
+`PredicateRefused`, `Translation` and an `Expansion` that names a limit
+too. A build that finds an
 undefined read is no refusal but a result: `ProbBuild::Undefined` is the
 refutation's evidence (see "Behavior").
 

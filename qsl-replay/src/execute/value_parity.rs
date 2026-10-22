@@ -22,8 +22,8 @@ use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedStop};
 
 use super::argument::{self, Stopped};
 use super::{
-    arguments, call_failure_to_replay_refusal, consumed, recompile, request_limits, select, Claim,
-    ReplayRefusal,
+    arguments, call_failure_to_replay_refusal, consumed, function_target, recompile,
+    request_limits, select, Claim, ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
 use crate::identity::ObligationIdentity;
@@ -32,6 +32,7 @@ use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{
     evaluated, Evaluated, ScalarAgreement, ScalarClaim, ScalarOutcome, ValueIdentity,
 };
+use crate::target::ReplayEntry;
 
 /// FR-357: what a value-parity replay found. None of these is a `Refuted`
 /// result.
@@ -142,7 +143,7 @@ pub fn replay_value_parity(
     let claim = ValueIdentity {
         obligation: ObligationIdentity::from_digest(wire.obligation_identity),
         package_id: wire.package_id.clone(),
-        function: wire.selected_function.clone(),
+        function: wire.replay_target.members.function.clone(),
         source: wire.source.clone(),
         limits: wire.effective_accounting_limits(),
         generated,
@@ -177,6 +178,7 @@ fn settle(
     replay_limits: ReplayLimits,
 ) -> Result<ValueParityResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
+    let function = function_target(&request, ReplayEntry::ReplayValueParity)?;
     let limits = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
@@ -184,7 +186,7 @@ fn settle(
     )?;
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
-    let call = select(&compiled, request.selected_function(), Claim::ValueParity)?;
+    let call = select(&compiled, function, Claim::ValueParity)?;
     let joined = arguments(
         package,
         &call,

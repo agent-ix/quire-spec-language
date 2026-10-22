@@ -3,6 +3,10 @@
 //!
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
+use alloc::{
+    borrow::ToOwned, boxed::Box, collections::BTreeMap, format, string::String, string::ToString,
+    vec::Vec,
+};
 
 mod budget;
 mod locus;
@@ -10,8 +14,6 @@ mod stage;
 pub use budget::{BudgetDenial, BudgetOwner, DeniedCharge};
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
-
-use std::collections::BTreeMap;
 
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
@@ -357,8 +359,8 @@ impl Code {
     }
 }
 
-impl std::fmt::Display for Code {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Code {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -417,8 +419,8 @@ pub enum SyntaxLimit {
     },
 }
 
-impl std::fmt::Display for SyntaxLimit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for SyntaxLimit {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Tokens { bound } => write!(f, "token ceiling of {bound} tokens exhausted"),
             Self::Nodes { bound } => write!(f, "syntax node ceiling of {bound} nodes exhausted"),
@@ -464,13 +466,13 @@ pub fn resource_exhausted(
 
 // FR-010: thiserror infers `source` as an Error cause, but this public field
 // carries source identity. Preserve the API and implement standard traits.
-impl std::fmt::Display for Diagnostic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", self.code, self.message)
     }
 }
 
-impl std::error::Error for Diagnostic {}
+impl core::error::Error for Diagnostic {}
 
 impl Diagnostic {
     /// The resource ceiling a `resource_exhausted` refusal names; `None`
@@ -968,6 +970,7 @@ impl RefusalRecord {
 
 #[cfg(test)]
 mod foundation_tests {
+    use alloc::{string::ToString, vec, vec::Vec};
 
     use super::{
         category_of, resource_exhausted, Code, Phase, Source, SourceIdentity, Span, SyntaxLimit,
@@ -1032,7 +1035,7 @@ mod foundation_tests {
                 "{codes:?} reversed"
             );
         }
-        assert_eq!(Category::most_severe(std::iter::empty()), None);
+        assert_eq!(Category::most_severe(core::iter::empty()), None);
     }
 
     /// `Code::from_code` is the typed reverse lookup of `Code::as_str`,
