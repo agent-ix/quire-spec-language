@@ -1313,6 +1313,7 @@ fn resolve_protocol(
         view.form,
         checked,
         view.attempts,
+        types,
     )))
 }
 
@@ -2209,9 +2210,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             return None;
         }
         let (protocol, member) = named.spelling().split_once("::")?;
-        // An `attempt` node's binder record is stated (ADR-027 ST-1); the
-        // fields of the other node kinds are not, so their arguments are
-        // typed one by one.
+        // QSpec FR-432 "The binder record of an abstract node".
         let record: Option<Vec<ValueType>> = classes.record(member).map(<[ValueType]>::to_vec);
         if let Some(record) = &record {
             if !arguments.is_empty() && arguments.len() != record.len() {

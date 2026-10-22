@@ -111,12 +111,6 @@ not an input yet, so a name only such a clause declares refuses
   otherwise.
 - The expressions of a node right side SHALL be typed against the node's
   binder record, whose fields per node kind are QSpec FR-432's.
-  Remaining work: QSL-887 for every node kind but `attempt`. QSpec FR-432
-  does not yet state the binder record's fields for an `effect`, `event`,
-  `commit`, `send`, `receive` or `finish` node, so this build gives an
-  `attempt` node's record (ADR-027 ST-1: the receiver, the operation's
-  parameters, then its result when it has one) and types the written
-  expressions of the other kinds without a count or type check.
 - An argument list whose length differs from the field count SHALL refuse
   `ill_typed`/`operator-ineligible` at the node, retaining `expected`, the
   field count, and `actual`, the written count.
