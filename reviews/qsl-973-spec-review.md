@@ -28,3 +28,7 @@ The edit is sound and agrees with the code. There is one wording gap.
 | FND-001 | low | "absent when it carried another target" does not cover a request carrying `function` and another member. The decode refuses it `invalid-value`, and the claim holds `Some(function)` because the value is copied from the wire's `function` member. A clearer wording is "the request's `function` member as sent, absent when the request carries none". | spec/functional/FR-357-replay-scalar-parity-claims.md:91-93 |
 
 ## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: FR-357 now reads the request's function member as sent, absent when the request carries no function member | b02604c70 |

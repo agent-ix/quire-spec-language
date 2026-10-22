@@ -60,3 +60,12 @@ the envelope; `FrameCounterexample.operation` and
 | FND-006 | low | The `RequestTargetWire.arguments` and `occurrence_key` bools only trigger a refusal. `ReplayRequest::to_wire` always writes `false`, so a function request decoded with either flag set does not round-trip it. This is harmless today, because a function request ignores both. | qsl-replay/src/target.rs:992-1000; qsl-replay/src/request.rs:993 |
 
 ## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: a frame_operation object naming a non-object declaration refuses malformed-declaration (MalformedOperationTarget, NotAnObjectType); test an_object_that_cannot_declare_operations_is_malformed | b02604c70 |
+| FND-002 | fixed: one non-function-target test per parity entry (tc_904_the_value_entry..., tc_904_the_operator_entry..., tc_907_the_composite_entry...) | b02604c70 |
+| FND-003 | fixed: diamond fixture and a_name_two_supertypes_expose_is_ambiguous | b02604c70 |
+| FND-004 | fixed: ReplayRefusal::pointer() | b02604c70 |
+| FND-005 | fixed: ReplayEntry enum replaces the entry string; stale rustdoc corrected | b02604c70 |
+| FND-006 | fixed: documented on RequestTargetWire (a function request ignores both flags; to_wire writes false) | b02604c70 |

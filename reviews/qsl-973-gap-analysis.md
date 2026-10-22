@@ -43,3 +43,9 @@ pair-coverage depth.
 | FND-003 | low | TC-185 tests the target pairs `function`+`frame_operation` and `function`+`state_clause`. It does not test `frame_operation`+`state_clause`, all three members, or a frame request carrying both `arguments` and an occurrence key. These are FR-323 decode-rule-1 cases. A probe shows each is correct (`/replay/state_clause` for the first two, and `/replay/arguments` wins for the third). | qsl-replay/src/request.rs:655-729 |
 
 ## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: FR-116-AC-9 and TC-515 step 7, with tests | b02604c70 |
+| FND-002 | fixed: FR-357-AC-20 (TC-904 step 19) and FR-358-AC-9 (TC-907 step 13), with tests | b02604c70 |
+| FND-003 | fixed: TC-185 test covers frame_operation+state_clause, all three members, and arguments plus occurrence key together | b02604c70 |
