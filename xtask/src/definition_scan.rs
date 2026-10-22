@@ -437,7 +437,6 @@ mod tests {
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
             "ProvedInterval",
-            "WrongSnapshotCause",
             "CheckedExpression",
             "CheckedFunction",
             "PackageDeclarations",
@@ -454,6 +453,7 @@ mod tests {
             "DEFAULT_CHECKING_INPUT_BYTES",
             "DEFAULT_CHECKING_WORK_BUDGET",
             "CheckMode",
+            "WrongSnapshotCause",
         ] {
             let locations = definitions.items.get(symbol).cloned().unwrap_or_default();
             assert_not_defined_in_qsl(symbol, &locations);
@@ -478,7 +478,6 @@ mod tests {
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
             "ProvedInterval",
-            "WrongSnapshotCause",
         ];
         for name in names {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();

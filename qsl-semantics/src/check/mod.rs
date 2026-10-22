@@ -331,7 +331,6 @@ pub use refusal::{
     NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
     ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration,
     SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimeUnitCause, TimedConstruct,
-    WrongSnapshotCause,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,

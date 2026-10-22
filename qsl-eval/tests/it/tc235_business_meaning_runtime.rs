@@ -16,7 +16,7 @@ use qsl_forms::{BinaryOperator, ClauseKind, Expression, FunctionDeclaration, Typ
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::IntakeLimits;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckCause, LockEvidence, PackageDeclarations, WrongSnapshotCause};
+use qsl_semantics::check::{CheckCause, LockEvidence, PackageDeclarations};
 use qsl_semantics::model::accounting::{ChargePoint, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
 use qsl_semantics::model::intake::{admit_unit, package_input, read_domain_package};
@@ -35,6 +35,7 @@ use quire_exact::{
     ObjectId, ObjectReference, OptionValue, Outcome, Presence, ScalarLimits, UniverseId, Value,
     ValueType,
 };
+use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,

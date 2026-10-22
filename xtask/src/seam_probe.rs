@@ -115,7 +115,7 @@ pub struct SeamLocation {
 /// so it resolves unqualified.
 ///
 /// FR-090-AC-6 (TC-387): the `ProtocolClause` snapshot cause's
-/// `catalog_code()` match over `crate::check::WrongSnapshotCause`, whose
+/// `catalog_code()` match over `quire_semantic_value::call::WrongSnapshotCause`, whose
 /// `#[cfg(seam_probe)]` variant has an arm only in `WrongSnapshotCause::
 /// as_str`. **S4-shaped, not S4 itself (PR #434 review, LOW-4):** the match
 /// has the same shape S4 does (a `Cause` enum's `catalog_code()` arm), but
@@ -1560,7 +1560,6 @@ mod tests {
             ("qsl-semantics/src/family/mod.rs", "FamilyKind"),
             ("qsl-forms/src/syntax.rs", "ExprNode"),
             ("qsl-semantics/src/check/ir.rs", "NodeKind"),
-            ("qsl-semantics/src/check/refusal.rs", "WrongSnapshotCause"),
             ("qsl-semantics/src/check/refusal.rs", "CheckCause"),
         ] {
             assert_enum_is_not_non_exhaustive(workspace_root, file, name);

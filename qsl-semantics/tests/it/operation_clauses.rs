@@ -3,8 +3,9 @@
 //! checked as Boolean clauses (TC-993) over the ConfigVersion package.
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::{CheckCause, CheckRefusal, WrongSnapshotCause};
+use qsl_semantics::check::{CheckCause, CheckRefusal};
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
+use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{OperationClauseKind, Origin};
 use serde_json::json;
