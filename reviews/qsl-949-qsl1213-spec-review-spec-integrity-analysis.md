@@ -67,3 +67,17 @@ no warnings on FR-093 or FR-094.
 Not mergeable: FND-001 and FND-002 (major). The removals are correct: the IR reader admits quantity
 literals at the QSL lock pin, IR-955 is gone, no other text blames the reader, FR-093-AC-33 and TC-483
 still hold, no AC id changed, and the text is behaviour-only. Only the new reason is wrong.
+
+## Dispositions
+
+Round 1, reviewed QSL #1213 at c4c4fc3e1 (fix commit over 3b7c8b893). Code facts verified at that head:
+`check/node_key/mod.rs` `LiteralValue` has no quantity variant (Boolean, Integer, Rational, Text, String,
+Uuid, Timestamp, None, Enum); `check/lowering.rs` maps `Value::Quantity(_)` to
+`probabilistic::quantity_literal`, which raises `ProbabilisticCause::QuantityLiteral`, coded
+`unsupported_construct`/`not-yet-implemented`. No `RequiresBound` or IR-955 text remains in FR-093 or
+FR-094; no AC id changed. Gate `make check-spec-validation` exit 0.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-093 now states the refusal as QSL's own V1 lowering scope (no `value_kind: quantity` literal; `check` raises `ProbabilisticCause::QuantityLiteral`); verified against the code at c4c4fc3e1 |
+| FND-002 | fixed | FR-094 now says the refusal is QSL's own V1 lowering scope, with no `RequiresBound` claim |
