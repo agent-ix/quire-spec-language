@@ -482,6 +482,8 @@ impl<'a> LiveSubject for ModelSystem<'a> {
         let atoms = Atoms {
             letters: run.letters,
             nodes: &product.atoms,
+            // A guarded activation is refused before the run starts.
+            guarded: false,
         };
         let por = Por::new(
             run.system,

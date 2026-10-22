@@ -142,6 +142,28 @@ both branches of an `if`.
 | `Record{declaration, slots}` (`R { f: e, g: null }`) | `value` / `record_value`; `semantic_type` the record's node; body `aggregate` of one binding per slot in declaration order: `f` = `reference(e)` for a present slot, and `f` = `literal{type: the field's Option node, value_kind: "none", value: null}` for a `null` slot and for an omitted optional slot, which denote one value |
 | `Tuple{declaration, arguments}` (`Q(a, b)`) | `value` / `tuple_value`; `semantic_type` the tuple's node; body `aggregate{[reference(a), reference(b)]}` |
 
+### Quantity literals are outside V1 scope
+
+Complete-V1 SHALL refuse a quantity literal in a value expression, including
+`f(3 ms)`, as `unsupported_construct`/`not-yet-implemented`, carried by the
+typed `ProbabilisticCause::QuantityLiteral`. No checked-package literal node
+is emitted for that expression. The source typer can resolve its exact
+rational magnitude and declared unit; this does not admit its lowering.
+
+QSpec defines `value_kind: quantity`, its canonical magnitude and its
+unit-typed literal fit rule in FR-322-AC-79, and both V2 schemas enumerate the
+kind. The Contract IR reader does not yet admit that literal kind. A `rational`
+literal typed at a unit violates the literal/type-family contract, so QSL
+SHALL NOT substitute a rational scalar type and SHALL NOT bypass strict reader
+admission to emit a quantity literal. Quantity parameters and the existing
+quantity comparison, arithmetic and exact unit-conversion operations are in
+scope.
+
+Quantity literals are admitted in V1 bodies when an IR reader change admits
+FR-322-AC-79; QSL lowering follows that change, then CG.
+
+Remaining work: IR-955
+
 ### Application nodes
 
 Each application's `operation` is built by FR-322's rules from its catalog
@@ -844,6 +866,7 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-30 | Over `x: Int[0, 9]`, the bodies `x + 1`, `1 + x`, `x - 1`, `x * 2` and `-5`, and over `x: Integer` the bodies `x == 1` and `1 != x`, each lower to one application whose integer literal operand is a `literal{type, value_kind: integer, value}` term in the application's `arguments`, typed at the builtin `Integer` node, and the checked graph holds no node for that literal. In `2 * (x + 1)` each literal is inline in its own application and the inner application is a reference in the outer. Over `x: Int[0, 9]`, `x == 1` compares `x` with a `numeric.narrow` application of the literal's node, which FR-358 step 6 identifies as `graph_child`. `x > 0` and `a == true` (with `a: Boolean`) keep a reference to their literal node, and a function whose body is the literal `1` holds the `value`/`literal` node L6. | Test (TC-415) |
 | FR-093-AC-31 | `function f using v(a: Int[-100,100], b: Decimal[-100,100;0,0;nearest-even]): Boolean pure { convert<Decimal[-100,100;0,0;nearest-even]>(a) = b }` lowers to one `quire.op.numeric.convert` node over `a`'s parameter node, whose `result_type` is `b`'s type node, and one `quire.op.decimal.eq` whose arguments are `[ref(convert), ref(b)]`. `!=` gives `quire.op.decimal.ne`, and `b = convert<..>(a)` puts the convert node second. `convert<Decimal[..]>(a) = convert<Decimal[..]>(c)` builds one convert per operand. A conversion between Rational, Decimal and Int types in either direction, and a Quantity conversion `convert<Km>(q) = r` (`quire.op.quantity.convert` with mode `rounding` = `exact`, then `quire.op.quantity.eq`), each lowers a convert node and the equality of the converted type. `a = b` over two `Int[-100,100]` parameters builds no convert node and gives `quire.op.integer.eq` over the two parameters. IR's v2 reader admits each package, and evaluating each equality gives the result of comparing the converted values. | Test (TC-415) |
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
+| FR-093-AC-33 | With declared unit `ms` and `f` taking `Quantity<ms>`, the Complete-V1 call `f(3 ms)` refuses with typed `ProbabilisticCause::QuantityLiteral`, `unsupported_construct`/`not-yet-implemented`, and emits no literal node. | Test (TC-483) |
 
 ## Dependencies
 

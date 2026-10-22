@@ -14,7 +14,7 @@ Verify [FR-064](../functional/FR-064-restrict-string-dispatch-to-marked-edges.md
 through both QSL's adapter and the reusable scanner's library and command.
 The scan reports unmarked string dispatch, respects valid consumer rules,
 excludes test code, rejects branch-gating allow-list entries and preserves
-source locations. Scope: FR-064-AC-1 through FR-064-AC-11.
+source locations. Scope: FR-064-AC-1 through FR-064-AC-15.
 
 The consumer procedures below are acceptance obligations for the extraction;
 existing QSL-only tests do not establish consumer installation or adoption.
@@ -60,7 +60,7 @@ dataflow retain the limitations stated by FR-064.
    absolute paths. Add a named string constant in reader and a same-named
    numeric constant and numeric comparison in emitter to check crate scope.
 9. Exercise the fixtures from steps 1–5 through the public library and binary
-   with consumer rules. Add qualified `#[qsl_attrs::string_edge]` coverage.
+   with consumer rules.
    Submit a branch-gating allow-list entry both before and after marking its
    function. Compare occurrence fields and errors with the QSL adapter.
 10. Submit each invalid case independently: no roots; missing, non-directory,
@@ -81,6 +81,21 @@ dataflow retain the limitations stated by FR-064.
     in the adapter. Feed clean, violating and invalid-input fixtures through
     the adapter and direct library call. Confirm the existing lint
     prerequisite remains and extraction adds only the scanner crate's tests.
+
+13. Mark one function `#[ix_trace_rs::string_edge]`, one
+    `#[::ix_trace_rs::string_edge]` and one `#[string_edge]` imported from
+    `ix-trace-rs`; scan with the library, the command and the
+    adapter (FR-064-AC-12).
+14. Compile a consumer crate with a marked function and run it; compile a
+    second with `#[string_edge(anything)]` and read the compiler's errors
+    (FR-064-AC-13).
+15. Search the QSL workspace's manifests and production source for any attribute
+    macro named `string_edge`, any re-export or alias of one and any crate whose
+    only purpose is the marker, and run `cargo check` over every package so each
+    marker's resolution is the compiler's (FR-064-AC-14).
+16. Scan a fixture with a function marked `#[my_macros::string_edge]` and
+    functions whose only mark is `// string_edge` or `/// string_edge`; read
+    `cargo metadata` for the QSL workspace (FR-064-AC-15).
 
 ### Worked external consumer acceptance
 
@@ -125,12 +140,12 @@ package using:
 qsl-string-edge = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 ```
 
-A consumer compiling marked intake functions uses the existing attribute
-crate by reference as well:
+A consumer compiling marked intake functions uses the marker crate by
+reference as well:
 
 ```toml
 [dependencies]
-qsl-attrs = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 ```
 
 These commands are the acceptance recipe, not a claim that the standalone
@@ -167,3 +182,15 @@ package has already been implemented or the installation run has passed.
 - Step 12 (FR-064-AC-11): the adapter calls the public scanner with QSL's
   roots and rules and propagates its reports and failures. No duplicate
   detector or additional QSL gate is introduced.
+- Step 13 (FR-064-AC-12): the three marked comparisons (`ix_trace_rs::`,
+  `::ix_trace_rs::` and imported forms) are absent from every report and the
+  unmarked one is present.
+- Step 14 (FR-064-AC-13): the marked function behaves as the unmarked one; the
+  argument case reports exactly one error with the message
+  `#[string_edge] takes no arguments`.
+- Step 15 (FR-064-AC-14): no such attribute macro, re-export, alias or crate is found,
+  `cargo check` passes for every package, and each marker resolves to
+  `ix_trace_rs::string_edge`.
+- Step 16 (FR-064-AC-15): the `my_macros::string_edge`, comment and doc-comment
+  fixtures are reported, and `ix-trace-rs` is a dependency of every package that
+  uses the marker.

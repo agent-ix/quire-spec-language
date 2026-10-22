@@ -63,7 +63,7 @@ use qsl_foundation::diagnostic::{Category, Code, InternalFault};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Meter, ScalarLimits};
@@ -195,12 +195,6 @@ pub enum ModelTraceRefusal {
     /// replay (FR-128-AC-5) is not built.
     #[error("unsupported_construct/not-yet-implemented: replay of an authored clause's undefined evaluation")]
     AuthoredUndefined,
-    /// A clause with a guarded `on each ... when` activation, which EN-1
-    /// refuses and replay does not read.
-    #[error(
-        "unsupported_construct/not-yet-implemented: the clause has a guarded `on each` activation"
-    )]
-    GuardedActivation,
     /// A refinement counterexample that names no refinement failure.
     #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
     NoRefinementFailure,
@@ -349,9 +343,7 @@ impl ModelTraceRefusal {
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } | Self::ProtocolFairnessSet { .. } => Code::StaleDependency,
-            Self::AuthoredUndefined | Self::GuardedActivation | Self::HyperProjected => {
-                Code::UnsupportedConstruct
-            }
+            Self::AuthoredUndefined | Self::HyperProjected => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
@@ -382,9 +374,7 @@ impl ModelTraceRefusal {
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => "content-mismatch",
-            Self::AuthoredUndefined | Self::GuardedActivation | Self::HyperProjected => {
-                "not-yet-implemented"
-            }
+            Self::AuthoredUndefined | Self::HyperProjected => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
                 Some(code) => code.cause(),
@@ -861,9 +851,6 @@ fn resolve_item<'p, T: SubjectTransition>(
     if matches!(payload.kind, CounterexampleKind::UndefinedEvaluation(_)) {
         return Err(refused(ModelTraceRefusal::AuthoredUndefined));
     }
-    if matches!(clause.activation(), Activation::Each { guarded: true }) {
-        return Err(refused(ModelTraceRefusal::GuardedActivation));
-    }
     Ok(Some(clause))
 }
 
@@ -1210,6 +1197,21 @@ struct ReplayedLetters<'a, S: SubjectSystem> {
     loop_edge_counts: bool,
 }
 
+impl<S: SubjectSystem> ReplayedLetters<'_, S> {
+    /// The replayed state at the represented `position`.
+    fn state_at(&self, position: TemporalPosition) -> Result<&Position<S::State>, LetterStop> {
+        usize::try_from(position.index())
+            .ok()
+            .and_then(|index| self.positions.get(index))
+            .ok_or_else(|| {
+                LetterStop::Fault(InternalFault::new(
+                    "replay-model-trace",
+                    "the-evaluator-reads-a-replayed-position",
+                ))
+            })
+    }
+}
+
 impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
     fn counts_step(&self, position: TemporalPosition) -> bool {
         usize::try_from(position.index())
@@ -1229,15 +1231,7 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
-        let state = usize::try_from(position.index())
-            .ok()
-            .and_then(|index| self.positions.get(index))
-            .ok_or_else(|| {
-                LetterStop::Fault(InternalFault::new(
-                    "replay-model-trace",
-                    "the-evaluator-reads-a-replayed-position",
-                ))
-            })?;
+        let state = self.state_at(position)?;
         Ok(self.letters.atom(
             atom,
             self.instance,
@@ -1248,13 +1242,13 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
 
     fn activation(
         &mut self,
-        _position: TemporalPosition,
-        _meter: &mut Meter,
+        position: TemporalPosition,
+        meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
-        Err(LetterStop::Fault(InternalFault::new(
-            "replay-model-trace",
-            "a-guarded-activation-is-never-replayed",
-        )))
+        let state = self.state_at(position)?;
+        Ok(self
+            .letters
+            .activation(self.instance, &self.system.atom_state(&state.state), meter)?)
     }
 }
 
@@ -1689,6 +1683,7 @@ fn undefined<S: SubjectSystem>(
     let constraint = match &claimed.site.locus {
         UndefinedLocus::Constraint(name) => Some(name.as_str()),
         UndefinedLocus::Atom(_)
+        | UndefinedLocus::Activation
         | UndefinedLocus::Contract(_)
         | UndefinedLocus::Terminal(_)
         | UndefinedLocus::Protocol(_)
