@@ -85,6 +85,10 @@
 //! canonical form (FR-177) and can be shorter than the depth it was found at,
 //! so a joint-step coverage would claim more than the run reached.
 //!
+//! A single-existential clause (HP-5) is not decided here: it is a possibility
+//! claim of the possible family, decided by [`check_single_existential`] in
+//! `single`.
+//!
 //! Not built here, and refused or absent rather than approximated: the
 //! product-closure certificate (FR-163), so a `Holds` carries none and settles
 //! no `proved`; the reductions a request selects for an HP-6 item; and the
@@ -104,9 +108,9 @@ use qsl_eval::fairness::{
     analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
 };
 use qsl_eval::hyper::{
-    cartesian, copy_symmetry, ComponentStep, CopySwapInputs, Halt, HyperFinding, HyperInputs,
-    HyperLetters, HyperProduct, HyperState, HyperTransition, ParameterBinding, Partner,
-    PartnerStep, ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs,
+    cartesian, copy_symmetry, BodySense, ComponentStep, CopySwapInputs, Halt, HyperFinding,
+    HyperInputs, HyperLetters, HyperProduct, HyperState, HyperTransition, ParameterBinding,
+    Partner, PartnerStep, ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs,
     WitnessProduct,
 };
 use qsl_eval::model_subject::ModelSubject;
@@ -142,6 +146,9 @@ use super::reduce::Reductions;
 use lift::{through, Lifted};
 
 mod projected;
+mod single;
+
+pub use single::{check_single_existential, SingleExistentialRequest, SingleExistentialRun};
 
 type HyperGraph = RetainedGraph<HyperState, HyperTransition, HyperFinding>;
 
@@ -180,6 +187,12 @@ pub enum HyperRefusal {
     /// The clause is not an HP-2, HP-3 or HP-6 clause.
     #[error("EN-1 decides a universal (HP-2), forall-exists safety (HP-3) or projection-aligned (HP-6) hyperproperty here, not {form:?}")]
     FormNotDecided {
+        /// The clause's form.
+        form: Option<HyperForm>,
+    },
+    /// The clause is not an HP-5 clause.
+    #[error("EN-1 decides a single-existential (HP-5) hyperproperty here, not {form:?}")]
+    NotSingleExistential {
         /// The clause's form.
         form: Option<HyperForm>,
     },
@@ -1300,6 +1313,7 @@ impl<'a> Run<'_, 'a> {
                 instance,
                 body: clause.body(),
                 profile: clause.profile(),
+                sense: BodySense::Negated,
                 letters: self.request.letters,
                 matcher: (!clause.mu_universal().is_empty()).then_some(self.request.matcher),
                 max_automaton_states: limits.max_automaton_states,

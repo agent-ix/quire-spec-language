@@ -30,6 +30,32 @@ pub struct ModelPath {
     pub steps: Vec<ModelStep>,
 }
 
+/// A lasso of the subject's state graph in ADR-018 CX-2's step and loop shape
+/// (FR-170, FR-181): a path whose steps are the stem and then the loop.
+///
+/// The loop re-enters at the position `loop_entry`, so its steps are the
+/// path's steps from `loop_entry` on and the last post-state of the path is
+/// the state at `loop_entry`. A loop that is the one terminal stutter step
+/// (ADR-018 SM-4) has no model step: `loop_entry` is the path's length, the
+/// position of the terminal state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelLasso {
+    /// The stem and the loop.
+    pub path: ModelPath,
+    /// The position the loop re-enters, in `0..=path.steps.len()`.
+    pub loop_entry: u32,
+}
+
+/// One initial state's HP-5 witness: a lasso on which the body is true and
+/// whose loop is fair, and its source (FR-181).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LassoWitness {
+    /// The lasso.
+    pub lasso: ModelLasso,
+    /// How it was found.
+    pub source: WitnessSource,
+}
+
 /// How a witness for one initial state was found (ADR-022 GV-1).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WitnessSource {
