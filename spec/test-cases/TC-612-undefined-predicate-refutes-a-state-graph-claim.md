@@ -37,13 +37,14 @@ for `c = a`.
    `where.predicate` naming the `from` predicate `c.versionNumber >= 1`
    and the same cause.
 
-5. Run FR-168-AC-11's `ReachesTwo` and `CanReachTwo` over the guarded
+5. Run FR-168-AC-11's `ReachesTwo`, `CanReachTwo` and `ReachesThree` over the guarded
    subject, settle each, and replay the guard evidence, then the same
    evidence with `where.transition` naming another transition, then with its
    stem's last step removed.
 6. Run FR-168-AC-12's `possible c.value = 3` over the `Counter` subject with
    the undefined `terminal when` predicate, and replay its evidence.
-7. Run FR-168-AC-13's `ReachesTwo` with the undefined state constraint.
+7. Run FR-168-AC-13's `ReachesTwo` with the undefined state constraint
+   `Half`, and replay its evidence with the request that selects `Half`.
 
 Tag the tests `#[trace("TC-612", "<AC id>")]`.
 
@@ -58,9 +59,10 @@ Tag the tests `#[trace("TC-612", "<AC id>")]`.
 - Step 4: `Undefined` with stem `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`
   and `where.predicate` the body; `reproduced-with-evaluated-witness`;
   then `inconclusive`, `Verdicts`.
-- Step 5: both items `Undefined` with stem `(0) -upd(a)-> (1) -upd(a)-> (2)`,
-  `where` the state key of `va = 2`, the guard's locus and `upd(a)`'s
-  transition identity; no `UndecidedSuccessor` open node; each settles
+- Step 5: all three items `Undefined`, not `Trapped`, with stem
+  `(0) -upd(a)-> (1) -upd(a)-> (2)`, `where` the state key of `va = 2`, the
+  guard's locus and `upd(a)`'s transition identity; `va = 2` open
+  `UndecidedSuccessor`; each settles
   `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`; the
   replays settle `reproduced-with-evaluated-witness`, then `inconclusive`,
   `Verdicts`, twice.
@@ -68,4 +70,5 @@ Tag the tests `#[trace("TC-612", "<AC id>")]`.
   neither a predicate nor a transition; the replay settles
   `reproduced-with-evaluated-witness`.
 - Step 7: `Undefined` at `va = 2` with the constraint's locus; no
-  `ConstraintBoundary` node there.
+  `ConstraintBoundary` node there; the replay settles
+  `reproduced-with-evaluated-witness`.
