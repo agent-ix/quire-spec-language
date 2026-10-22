@@ -4609,3 +4609,24 @@ mod tests {
         ));
     }
 }
+
+/// FR-401-AC-3: `WrongSnapshotCause` lives in `quire-semantic-value`, and
+/// `check` leaves no name for it.
+///
+/// ```compile_fail,E0432
+/// use qsl_semantics::check::WrongSnapshotCause;
+/// ```
+///
+/// A positive control: the surviving `CheckCause` still imports cleanly, so
+/// the failure above is the removed name, not a broken module path.
+///
+/// ```
+/// use qsl_semantics::check::CheckCause;
+/// fn _use(_: Option<CheckCause>) {}
+/// ```
+#[cfg(doctest)]
+use ix_trace_rs::trace;
+
+#[cfg(doctest)]
+#[trace("FR-401-AC-3")]
+struct Fr401Ac3Doctests;
