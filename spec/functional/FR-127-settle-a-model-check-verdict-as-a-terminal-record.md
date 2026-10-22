@@ -185,7 +185,13 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
   `certification: Certified` when it returns `Verified`,
   `Inconclusive(CertificateRejected{rule, at})` when it rejects, and
   `proved` with `Uncertified` when it returns `Unverifiable` or the
-  result carries no certificate (ADR-018 PC-6). A proof from any other
+  result carries no certificate (ADR-018 PC-6). The map SHALL supply the
+  request's actual `CertificateCheckLimits` and `Cancel` handle to
+  `check_smt_proof` and `check_refinement_smt_proof`; when either returns
+  `Stopped(cause)`, the map SHALL settle V-7 as for `check_closure` above:
+  execution `resource-incomplete`, basis `unavailable`,
+  `TerminalValue::Incomplete(cause)` with the exact limit, value and
+  setting or cancellation source, category incomplete, never `proved`. A proof from any other
   native engine with no core certificate checker SHALL
   carry `Uncertified`; one from a third-party plugin SHALL
   carry `Trusted`; a Kani `Checks` proof, from the qualified core's
