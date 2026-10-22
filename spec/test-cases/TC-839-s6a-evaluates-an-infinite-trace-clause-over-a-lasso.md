@@ -14,7 +14,7 @@ Verify ADR-018 SM-8 lasso evaluation with past operators reaching into the
 prefix, malformed-lasso refusals, fairness on a model-step lasso, and
 metering.
 
-Scope: FR-329-AC-1 to FR-329-AC-5.
+Scope: FR-329-AC-1 to FR-329-AC-5 and FR-329-AC-8 to FR-329-AC-10.
 
 ## Test Procedure
 
@@ -29,6 +29,13 @@ Scope: FR-329-AC-1 to FR-329-AC-5.
    attemptUpdate` and under `fair weak each attemptUpdate`.
 5. Evaluate step 1's first clause with a meter one unit short of its visit
    count.
+6. Under a bounded profile, evaluate `eventually[1,1] holds(p)` and
+   `eventually[0,1] holds(p)` over a fair zero-counted `Lasso::Model` on a
+   protocol subject (loop of `fork` and `join` steps, `p` false throughout
+   the loop, true at position 0).
+7. Under a bounded profile, evaluate a clause over a `Lasso::Observed`, over
+   a `Lasso::Model` whose loop has one counted step, and over a zero-counted
+   `Lasso::Model` that is unfair for a scheduler constraint.
 
 Tag the tests `#[trace("TC-839", "FR-329-AC-n")]`.
 
@@ -40,3 +47,6 @@ Tag the tests `#[trace("TC-839", "FR-329-AC-n")]`.
 - Step 4: `false` at 0; refusal `invalid_runtime_input`/`invalid-value`
   naming the `each` constraint.
 - Step 5: `Incomplete` with no truth value.
+- Step 6: `false` at 0; `true`.
+- Step 7: `invalid_runtime_input`/`invalid-value` for each, the unfair one
+  naming the scheduler constraint, and no truth value.
