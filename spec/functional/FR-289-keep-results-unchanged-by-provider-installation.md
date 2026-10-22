@@ -79,7 +79,7 @@ Candidate sets (FR-075) and FR-331 terminal records.
   `failed`.
 - A process provider's `proved` result settles `proved` with the certification
   `trusted`, the provider's `BackendId` and the basis the provider reports
-  (ADR-029 PL-7, "Trusted proofs"), except the bases whose certificate or
+  (ADR-029 PL-7, "Trusted proofs": `exhaustive`, `bounded-complete`, `inductive`, `reduced` and `bounded-solver`, each `trusted` whatever a first-party engine's label is), except the bases whose certificate or
   evidence only the core establishes (ADR-018 §1, ADR-026, ADR-028; QSpec
   FR-331 "Certification"): the Kani check count (`bounded-proof`), a
   core-recomputed closed form (`closed-form`), a replayed witness
@@ -111,6 +111,7 @@ Candidate sets (FR-075) and FR-331 terminal records.
 | FR-289-AC-11 | A provider result naming the cause kind `replay-parity`, `replay-refused` or `kani_vacuous_proof` (QSpec FR-331 spellings) is refused by the cause-kind reader, and its item settles `failed`. | Test (TC-773) |
 | FR-289-AC-12 | A provider `inconclusive` result carrying the typed cause `ReplayParity` or `ReplayRefused` is refused, and its item settles `failed`. | Test (TC-773) |
 | FR-289-AC-13 | Every other `InconclusiveCause` kind, and the hyphenated `kani-vacuous-proof` that FR-331 lists for no plugin, is not refused by the cause-kind reader. | Test (TC-773) |
+| FR-289-AC-14 | A refused plugin result yields the diagnostic `invalid_result`/`unknown-cause` (member `cause` or `basis`, with the item index and the received spelling) or, for a `refuted` with nothing to replay, `invalid_result`/`missing-member` (member `counterexample`). | Test (TC-773) |
 
 ## Dependencies
 

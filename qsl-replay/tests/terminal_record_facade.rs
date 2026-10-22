@@ -537,3 +537,75 @@ fn reproduced_non_violation_settles_failed() {
         assert_eq!(record.replay_result(), None);
     }
 }
+
+/// FR-289-AC-14 / TC-773: a refused plugin result carries the
+/// `invalid_result` code with the cause PL-7 names, and the member it
+/// offended.
+#[trace("TC-773", "FR-289-AC-14")]
+#[test]
+fn refused_plugin_results_carry_pl7_diagnostics() {
+    let unknown_cause = qsl_replay::read_plugin_cause_kind("replay-parity")
+        .unwrap_err()
+        .diagnostic(2, "replay-parity");
+    assert_eq!(unknown_cause.code(), "invalid_result");
+    assert_eq!(unknown_cause.cause(), Some("unknown-cause"));
+    assert!(unknown_cause.message().contains("`cause`"));
+    assert!(unknown_cause.message().contains("replay-parity"));
+    assert!(unknown_cause.message().contains('2'));
+
+    let unknown_basis =
+        qsl_replay::PluginResultRefusal::CoreOnlyBasis.diagnostic(0, "zone-certified");
+    assert_eq!(unknown_basis.code(), "invalid_result");
+    assert_eq!(unknown_basis.cause(), Some("unknown-cause"));
+    assert!(unknown_basis.message().contains("`basis`"));
+    assert!(unknown_basis.message().contains("zone-certified"));
+
+    let missing = qsl_replay::PluginResultRefusal::MissingCounterexample.diagnostic(1, "");
+    assert_eq!(missing.code(), "invalid_result");
+    assert_eq!(missing.cause(), Some("missing-member"));
+    assert!(missing.message().contains("`counterexample`"));
+    let record = qsl_replay::PluginResultRefusal::MissingCounterexample
+        .record(RequestIndex::new(1), BackendId::new("acme-prover"));
+    assert_eq!(record.value(), &TerminalValue::Failed);
+}
+
+/// FR-289-AC-9 / TC-773: every basis PL-7 lets a plugin carry, a
+/// bounded-solver one included, settles `proved` with `trusted` and the
+/// plugin's identity.
+#[trace("TC-773", "FR-289-AC-9")]
+#[test]
+fn every_plugin_basis_is_trusted() {
+    use qsl_replay::ProofBasis;
+    let horizon = qsl_replay::SolverHorizon::new(quire_exact::Rational::from_integer(
+        qsl_replay::Integer::from(5_i64),
+    ))
+    .unwrap();
+    for basis in [
+        ProofBasis::Exhaustive,
+        ProofBasis::BoundedComplete { depth: 3 },
+        ProofBasis::Inductive { depth: 2 },
+        ProofBasis::Reduced {
+            reductions: Vec::new(),
+        },
+        ProofBasis::BoundedSolver {
+            method: qsl_replay::SolverMethod::DeltaComplete,
+            horizon,
+            jumps: 4,
+        },
+    ] {
+        let record = TerminalRecord::from_plugin_proof(
+            RequestIndex::new(0),
+            BackendId::new("acme-prover"),
+            basis.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            record.value(),
+            &TerminalValue::Proved {
+                basis,
+                certification: qsl_replay::Certification::Trusted,
+            }
+        );
+        assert_eq!(record.backend().map(BackendId::as_str), Some("acme-prover"));
+    }
+}

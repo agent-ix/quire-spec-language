@@ -11,6 +11,7 @@ use super::{
     REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND,
 };
 use crate::execute::ReplayRefusal;
+use crate::outcome::OutcomeDiagnostic;
 use crate::result::{InputSettlement, ReplayResult};
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::{BackendId, RequestIndex};
@@ -60,9 +61,33 @@ pub enum PluginResultRefusal {
     /// later is refused here.
     #[error("a plugin proof reports a basis only the core establishes")]
     CoreOnlyBasis,
+    /// A `refuted` result with nothing to replay as canonical assignments.
+    #[error("a plugin `refuted` result has no counterexample to replay")]
+    MissingCounterexample,
 }
 
 impl PluginResultRefusal {
+    /// The outcome-document diagnostic for this refusal (ADR-029 PL-7,
+    /// "Refused plugin results"): `invalid_result`/`unknown-cause` for a
+    /// QSL-only cause (member `cause`) or a core-only basis (member `basis`),
+    /// `invalid_result`/`missing-member` for a `refuted` with nothing to
+    /// replay (member `counterexample`). `item_index` is the result item's
+    /// index and `received` the spelling the plugin sent, which the driver
+    /// holds as wire text.
+    pub fn diagnostic(&self, item_index: usize, received: &str) -> OutcomeDiagnostic {
+        let (cause, member) = match self {
+            Self::QslOnlyCause(_) => ("unknown-cause", "cause"),
+            Self::CoreOnlyBasis => ("unknown-cause", "basis"),
+            Self::MissingCounterexample => ("missing-member", "counterexample"),
+        };
+        OutcomeDiagnostic::new(
+            Some(cause),
+            "invalid_result",
+            None,
+            format!("result item {item_index}: member `{member}`, received `{received}`"),
+        )
+    }
+
     /// The item's terminal record: `failed`, naming the plugin. The record
     /// carries no diagnostic; the driver carries the refusal in the outcome
     /// document (`OutcomeDiagnostic::new`).
