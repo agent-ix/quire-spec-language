@@ -12,7 +12,7 @@ relationships:
 
 Verify what QSL supplies to the driver's `prove`: each engine's FR-331 manifest and the provider entry.
 
-Scope: FR-280-AC-1 to FR-280-AC-3.
+Scope: FR-280-AC-1, FR-280-AC-2, FR-280-AC-4.
 
 ## Test Procedure
 
@@ -26,4 +26,4 @@ Tag the tests `#[trace("TC-761", "<AC id>")]`.
 
 - Step 1: each converts to a `BackendDescriptor` whose (kind, mode) pairs equal the claim kinds the engine settles in TC-762.
 - Step 2: each pair of terminal records is equal.
-- Step 3: the descriptor advertises exactly (`probabilistic-satisfaction`, `bounded`) with `{statistical}` and is admitted; the `statistical` item's candidates are the EN-4 identity alone and the `exact` item's the other identity alone.
+- Step 3: the descriptor advertises exactly (`probabilistic-satisfaction`, `bounded`) with `{statistical}` and the `domains` `{population, integer}`, and is admitted; the `statistical` item's candidates are the EN-4 identity alone and the `exact` item's the other identity alone.

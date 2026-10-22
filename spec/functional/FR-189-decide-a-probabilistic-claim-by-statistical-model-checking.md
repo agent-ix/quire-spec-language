@@ -211,8 +211,8 @@ the claim's form does not admit (FR-190, SPRT below).
   request, so repeating the request reproduces it.
 - The outcome SHALL be a function of the subject, the claim, the method,
   `min_cycles`, the seed, the sampler and the limits.
-- The EN-4 provider manifest (FR-280) SHALL advertise (`probabilistic-satisfaction`,
-  `bounded`), evidence `statistical`, and register through FR-075.
+- The EN-4 provider manifest SHALL be the one FR-280 states, and EN-4 SHALL
+  register through FR-075.
 
 ## Acceptance Criteria
 
