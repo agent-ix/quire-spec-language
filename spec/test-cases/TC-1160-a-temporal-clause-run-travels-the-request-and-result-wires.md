@@ -24,7 +24,7 @@ every FR-330 temporal disposition is written and read as
 basis, and that a refused `holds` condition settles as a refusal at its
 position.
 
-Scope: FR-312-AC-7, FR-267-AC-13, FR-267-AC-14, FR-267-AC-15, FR-266-AC-4,
+Scope: FR-312-AC-7, FR-267-AC-13, FR-267-AC-14, FR-267-AC-15, FR-267-AC-16, FR-266-AC-4,
 FR-327-AC-6, FR-330-AC-7.
 
 ## Test Procedure
@@ -49,6 +49,7 @@ snapshots with `c.value` 0, 1, 2.
    trace, the infinite-trace prefix and the lasso.
 5. Run FR-330-AC-7's clause (`InUnit(c.value)`) from source over `c.value`
    0, 2.
+6. Apply each edit FR-267-AC-16 lists and read the documents.
 
 Tag the tests `#[trace("TC-1160", "<criterion>")]` with the criterion each
 step asserts.
@@ -73,3 +74,5 @@ step asserts.
 - Step 5: stage `evaluate`, `refusal`, exit 20, position 1, `outcome`
   `refused` with `integer_out_of_domain`/`outside-domain`, `expected`
   `Int[0, 1]` and the condition's locus; no `truth`, no `internal_fault`.
+- Step 6: each edited document refuses with a located diagnostic naming
+  the member.
