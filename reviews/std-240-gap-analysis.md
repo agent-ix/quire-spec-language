@@ -39,3 +39,15 @@ lane adds the tests.
 
 Every new AC has a TC row. Only one changed clause is left without a
 procedure step.
+
+## Dispositions
+
+Round 1. Against QSL #1195 head 0971a22 (fix commit 9dab122). TC-667 step 3
+now sets up `SB` with both threads loading `x`: after `Sy`, `y1`'s message
+view is `{x0, y1}`, and `S` still points at `x0` (no fence), so the new step
+reaches a state where only a message view and `S` point at `x0`. The new
+QSpec ids FR-435-AC-8 and TC-389 AC-13 map to each other.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-667 step 3: "In `SB` with both threads loading `x` after `Sx`, list the messages at the state after both threads' current views have passed `x0`, while a message view still points at it."; expected: "unreachable messages removed, including `x0` when only a message view or `S` points at it." |

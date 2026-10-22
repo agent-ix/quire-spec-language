@@ -80,3 +80,48 @@ QSL and QSpec observation statements agree. The PR bodies contain no
 review-finding paraphrase. QSL #1195's RA-7 row sits next to the RA-8 row
 that open #1192, #1193 and #1194 edit, so `git merge-tree` reports a textual
 conflict: the second to merge needs a rebase.
+
+## Dispositions
+
+Round 1. Against QSL #1195 head 0971a22 (fix commit 9dab122, then a merge of
+origin/main) and QSpec #334 head 52251d6 (fix commit d8c8c83, then a merge of
+origin/main). Both heads contain origin/main. QSL gates: `make
+check-spec-validation` exit 0 with no diagnostic on a touched file;
+`tools/check-index-completeness.sh` passes; no `docs/` file or test-parsed
+vector table is touched. QSpec gates: `quire validate --scope . spec/**/*.md`
+reports 134 failing documents, none of them a touched file; `cargo test --test
+checked_package_v2 --test backend_provider_v1`: 14 and 117 passed. The new
+QSpec ids FR-435-AC-8 and TC-389 AC-13 occur in no other open QSpec PR: #329
+(head f655246) adds FR-435-AC-7 and TC-389 AC-12, and #328 (head 412a71e)
+touches neither file. `git merge-tree` of #334 with #329 still conflicts on
+FR-435 and TC-389, but each hunk is only the two PRs' new rows at the same
+place, so the second to merge keeps both rows. #1195 still conflicts
+textually with #1192, #1193 and #1194 at the RA-7/RA-8 rows, as before. No
+other spec text outside reviews/ states the old pin set. The TC-389 AC-13 and
+FR-229-AC-6 scenario was re-traced: the repeating branch stores `x := 0` at
+its current view, then its load with `x.v = 1` reads the value-1 message after
+its view, after which its next store is not enabled, so the negative clause
+is reachable.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | QSpec FR-435: "\| FR-435-AC-8 \| Under `ra`, a store whose precondition requires `x.v = 0` is enabled only while its thread's current view points at a message of `x` with value 0, …"; TC-389: "\| AC-13 \| under `ra`, a branch storing `x := 1` once and a second branch repeating an attempt …(FR-435-AC-8) \|". No id overlap with #329 or #328. |
+| FND-002 | fixed | QSpec FR-437 and QSL RA-7 now state the same rule: "a view that points at a removed message reads as, and is encoded in the state key as, pointing at the earliest live message of its location"; both PR bodies' Remaining work list the `view_enc` change for the code lane. |
+| FND-003 | fixed | TC-389: "\| AC-13 \| under `ra`, a branch storing `x := 1` once and a second branch repeating an attempt that stores `x := 0` with precondition `x.v = 0` and then loads `x` with precondition `x.v = 1` \| after the first branch's store, the second branch's store is enabled while its current view points at the message with value 0 and is not enabled once its view points at the message with value 1; …" |
+| FND-004 | fixed | FR-229-AC-6: "one branch repeating a `relaxed` store of the constant `x := 0` with the precondition `x.v = 0` and a `relaxed` load of `x` with the precondition `x.v = 1`, and a second branch storing `x := 1` once: … its load is enabled for each message at or after that view whose value is 1." |
+| FND-005 | fixed | FR-222-AC-5: "a `relaxed` store of the constant `x := 1` and then a `relaxed` load of `x`"; TC-393 MB-07 (c): "a `relaxed` store of the constant `x := 1` and then a `relaxed` load of `x`, with `max_messages` 1". |
+| FND-006 | fixed | RA-7 and FR-437: "A thread is **running** unless it is waiting at a `join`; a branch that has finished and is not yet joined is running." This matches the engine's `running`. |
+| FND-007 | fixed | RA-7: "Removal is part of the canonical state and makes loops finite: a location's initial message is removed once every running thread's current view has moved past it." |
+| FND-008 | fixed | MB-07: "(a) TC-390's `SB` under `ra`; (b) `SB` in which both threads load `x` after `Sx`; (c) … \| in (b), `x0` is removed in the step after which no running thread's current view points at it, …" |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | Both PR bodies' Remaining work say "`view_enc` … drops the entry whose message was removed; it encodes it as the depth of the location's earliest live message". The second clause reads as a statement of what the code does now and contradicts the first; it should say the code must encode it that way. | QSL #1195 body, QSpec #334 body (Remaining work) |
+
+## Dispositions (pass 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-009 | fixed | Both PR bodies' Remaining work now say the code must encode a pointer at a removed message as the depth of its location's earliest live message, and that the view encoding drops the entry today. The specs carry no such statement. Branches also merge the STD-239, STD-246 and STD-247 branches; the RA-7 and RA-8 rows keep both sides (RA-7 from STD-240, RA-8 naming PSC-7's omitted clauses). |

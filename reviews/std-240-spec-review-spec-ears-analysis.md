@@ -39,3 +39,13 @@ Minor. Both statements are ubiquitous with the subject `Ra` or "the value
 the model gives". Splitting each bullet into one SHALL per obligation, and
 writing "the earliest message any running thread's current view points at",
 would remove the ambiguity.
+
+## Dispositions
+
+Round 1. Against QSL #1195 head 0971a22 (fix commit 9dab122). `make
+check-spec-validation` reports no EARS warning on FR-222 or FR-229.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-222 now has three bullets: "`Ra` SHALL remove a message once it is earlier in mo than the earliest message that any running thread's current view points at." / "`Ra` SHALL NOT let an acquire view, a release view, a message view, a view carried by a `send` or `S` keep a message." / "`Ra` SHALL read, and encode in the state key, a view that points at a removed message as pointing at its location's earliest live message." |
+| FND-002 | fixed | FR-229: "Under `ra`, the value the model gives the acting thread at a shared location SHALL be the value of the message the access chose, for the location a load or the read part of an RMW reads, and otherwise the value of the message the thread's current view points at." The second SHALL is removed. |
