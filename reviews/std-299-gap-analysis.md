@@ -51,3 +51,14 @@ need `alloc` imports.
 
 Two minor findings in this method. Every AC has a TC step with an expected result. The majors are
 SR-15530 FND-001 and FND-002.
+
+## Dispositions
+
+Round 1 reviewed QSL #1223 at c6e3c941e. `make check-spec-validation` with `QSPEC_DIR` set passes
+(exit 0). `cargo tree -p qsl-semantics -e normal -i quire-contract-model` finds no path, so the new
+AC-4 inverse-tree check can pass once `qsl-package` gates its own edge.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

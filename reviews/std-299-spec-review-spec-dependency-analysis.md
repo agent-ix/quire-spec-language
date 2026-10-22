@@ -44,3 +44,19 @@ Overlap with other open PRs, from `git merge-tree` over main:
 One minor finding, about merge order. The new edges are sound. The S4 dependency
 (`qsl-semantics`), which keeps `qsl-package` at the crate tier, is stated explicitly. SR-15530
 FND-001 records that this dependency is incomplete.
+
+## New findings (disposition pass 1)
+
+Round 1 reviewed QSL #1223 at c6e3c941e, with main a89136bfa merged in. #1224 is on main. #1225
+(STD-297) is open and still conflicts textually in AD-001. #1227 (STD-298) is newly open and merges
+cleanly with this PR.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | minor: #1227 (STD-298) adds X-14, under which "`qsl-foundation` adds SV to its `[dependencies]` (amending X-2)", and moves the catalog vocabulary to SV `catalog`. NFR-015's `qsl-foundation` row and AC-2 (with TC-1110 expected result 3) list the depth-1 dependencies as "exactly `quire-exact`, `serde`, `sha2`, `thiserror` and the `ix-trace-rs` proc macro". Once #1227 lands, that list misses `quire-semantic-value`, and AC-2 fails. The closure tier still holds, because SV is `#![no_std]` with no features. The PR that merges second between #1223 and #1227 adds `quire-semantic-value` to the row, to AC-2 and to TC-1110. | spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:110, spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:209 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | The AD-001 half is fixed: #1224 is on main and the merged head no longer has the "no S1-S5 slice can start" paragraph. The `quire-checked` half waits on #1225, which is still open. Whichever of #1223 and #1225 merges second adds `quire-checked` to NFR-015's `qsl-package` row and resolves the AD-001 conflict. |

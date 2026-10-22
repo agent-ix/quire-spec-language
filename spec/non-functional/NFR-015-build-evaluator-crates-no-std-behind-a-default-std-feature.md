@@ -127,10 +127,13 @@ and the package it builds has an empty dependency closure and no
 selections. The dependency-bearing constructor, `link_with`, recomputes
 each dependency's `package_id` by emitting it (`emit_checked`), and
 ADR-013 O-02 forbids accepting a `package_id` from a caller, so `link_with`
-and everything it alone uses are `std` items. A `no_std` constructor of a
-package with dependencies needs a `no_std` reader of the
-`quire.checked-package-id/v2` identity preimage, which IR owns; it is
-outside this requirement.
+and everything it alone uses are `std` items. Recomputing a dependency's
+`package_id` builds its `quire.checked-package-id/v2` identity preimage from
+IR's preimage types and encodes it through `quire-canonical`; it reads
+nothing. A `no_std` constructor of a package with dependencies therefore
+needs IR's preimage types (`quire-contract-model`) to build without `std`; a
+`no_std` reader matters only for a dependency that arrives as bytes. Both
+are outside this requirement.
 
 With `std` disabled the checked-IR path reads no JSON and computes no
 `package_id`. `qsl-package`'s shipped source does not name `serde_json`; it
@@ -161,8 +164,10 @@ Every public export of `qsl-package`, by module:
 | `emit` | none | the whole module: `emit_checked`, `emit_checked_with_cancel`, `emit_package`, `checked_node_id`, `checked_occurrence`, `Emission`, `EmitRefusal`, `OmissionCause`, `OmittedNode`, and the `test-support` items `checked_node_id_of` and `emit_checked_with_fault` |
 | `checked_v2` | none | the whole module: `read_import_view`, `supply_closure`, `clause_roots`, `resolve_clause_root`, `AdmittedPackages`, `ClauseRoot`, `ClauseRootUnresolved`, `ImportViewRefusal`, `SourceMapDefect`, `UnsupportedWire`, `V2ReadLimits`, `V2ReadRefusal` |
 
-`bind_abstraction` and `bind_abstraction_at` keep their behaviour; with
-`std` enabled they also clear the remembered emission.
+`bind_abstraction` and `bind_abstraction_at` behave the same with `std`
+disabled. With `std` enabled, `bind_abstraction` also clears the remembered
+emission, so a later `emitted_package_id` is `None` until the package is
+emitted again; `bind_abstraction_at` does not clear it.
 
 ### Gate
 
@@ -213,6 +218,7 @@ ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
 | NFR-015-AC-6 | With default features, the `quire.checked-package/v2` bytes and `package_id` that `qsl-package` emits match the QSpec FR-322 conformance vectors (`cargo test -p qsl-package --lib checked_v2` against `QSPEC_DIR`), and the FR-091 S1-to-S4 round trip passes. | Test (TC-1111) |
 | NFR-015-AC-7 | With `std` disabled, no shipped source of a crate in the per-crate table names `serde_json`, `HashMap` or `HashSet`, and the `arch-lint canonical-encoder` check passes. | Inspection (TC-1111) |
 | NFR-015-AC-8 | `make build-no-std` runs AC-1's build for each closure-tier row and AC-4's host check for each crate-tier row, each with `-p`, plus `cargo clippy --no-default-features -D warnings` per row, in its own `no-std` target directory, and `build-no-std` is listed in the Makefile's `CI_CHECKS`; a shipped `std::` path added to a closure-tier crate outside `#[cfg(feature = "std")]` makes the target fail. | Test (TC-1110) |
+| NFR-015-AC-9 | With default features, after `emit_checked` records an emission, `bind_abstraction` with valid bindings leaves `emitted_package_id` `None`, and `bind_abstraction_at` with valid bindings leaves it equal to the emitted `package_id`. | Test (TC-1111) |
 
 ## Verification
 

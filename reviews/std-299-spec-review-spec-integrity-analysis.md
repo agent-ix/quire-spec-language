@@ -71,3 +71,22 @@ on the `std` side, and no new QSL reader is added) is sound, but it needs FND-00
 defaults 1 (`std` feature, no `alloc` feature, `thumbv7em-none-eabi`, `make build-no-std` in
 `CI_CHECKS`, `no-std` target directory) and 3 (no re-export) are sound. The S3 contract for
 `qsl-foundation` is accurate and buildable. The minors can be fixed in the same round.
+
+## New findings (disposition pass 1)
+
+Round 1 reviewed QSL #1223 at c6e3c941e, with main a89136bfa merged in.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | minor: the surface section says "`bind_abstraction` and `bind_abstraction_at` keep their behaviour; with `std` enabled they also clear the remembered emission". On main only `bind_abstraction` resets `emission`. `bind_abstraction_at` (`qsl-package/src/checked.rs:473-482`) sets the relation and leaves the remembered emission in place. As written, the sentence either requires a behaviour change for `bind_abstraction_at` with `std` on, which contradicts "keep their behaviour" and the Scope's "behaves as it does with no `std` feature declared", or it is wrong. Say that only `bind_abstraction` clears it. If clearing it in `bind_abstraction_at` is the intended fix for a stale `emitted_package_id`, state that as its own behaviour with an AC. | spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:164-165 |
+| FND-007 | low | minor: NFR-015 lines 130-133 and AD-001's Risks bullet say a `no_std` constructor of a dependency-bearing package "needs a `no_std` reader of the `quire.checked-package-id/v2` identity preimage". To recompute a dependency's `package_id` from an in-memory `CheckedPackage`, it builds and encodes the preimage. It reads nothing. What it lacks is IR's preimage types without `std`, encoded through `quire-canonical`. A reader is only needed for a dependency that arrives as bytes. Name both, or name the preimage types. | spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:130-133, spec/assurance/AD-001-shared-evaluation-core-interface.md:257-259 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |

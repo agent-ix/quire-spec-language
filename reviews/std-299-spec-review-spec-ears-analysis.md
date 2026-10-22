@@ -28,3 +28,11 @@ on NFR-015, TC-1110 or TC-1111.
 ## Verdict
 
 One minor finding. Otherwise the statement conforms to EARS.
+
+## Dispositions
+
+Round 1 reviewed QSL #1223 at c6e3c941e.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

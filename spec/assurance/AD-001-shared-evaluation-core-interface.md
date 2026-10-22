@@ -255,5 +255,7 @@ evidence that the RT target accepts the later implementation.
   `qsl-semantics`, `qsl-forms` and `qsl-cst` each `no_std`-capable with
   those dependencies `no_std` or behind their `std` features; the layer 3 →
   2 edge stays. A `no_std` constructor of a dependency-bearing checked
-  package needs an IR-owned `no_std` preimage reader built on
-  `quire-canonical`'s `read`; NFR-015 does not provide one.
+  package recomputes each dependency's `package_id` by building and encoding
+  its identity preimage, so it needs IR's preimage types to build without
+  `std`; a `no_std` reader matters only for a dependency that arrives as
+  bytes. NFR-015 provides neither.
