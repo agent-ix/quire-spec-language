@@ -400,9 +400,26 @@ crate's loader, refusals and compared-record forms need no second
 implementation; their criteria run in `quire-eval-corpus`'s own tests and
 the admission criteria in QSL's `cargo test --workspace`.
 
-[FR-405](FR-405-retire-the-std-reference-evaluator-for-quire-eval.md)
-states the switch this suite's result allows and the regression harness
-that replaces the two-implementation run after it.
+### After the switch
+
+This suite's zero-divergence result is the switch criterion of
+[FR-405](FR-405-retire-the-std-reference-evaluator-for-quire-eval.md), and
+the switch deletes the std reference. Until the switch, every criterion
+below holds as written. After it, the corpus, its loader, admission and
+compared record stay, the harness runs one implementation as
+`evaluator-regression` (FR-405 "The corpus after the switch"), and the
+criteria that name the std implementation hold in this form:
+
+- AC-6: the records are `quire-eval`'s, each equal to the case's recorded
+  `expected`, with the same values.
+- AC-7: the pair is `expected/quire-eval`; a case with `expected` `null`
+  reports `missing_expected`; the comparator pairs one record set with the
+  expectations (FR-405-AC-8).
+- AC-9: `make ci` runs `evaluator-regression` over the QSL-owned corpus with
+  zero divergences, and FR-262-AC-2 to AC-8's tests run once, on
+  `quire-eval` (FR-405-AC-8).
+- AC-10: `make evaluator-regression EVALUATOR_CORPUS_DIR=<dir>` runs CG's
+  bundle, and every record needs a non-null `expected` (FR-405-AC-9).
 
 ### What CG writes
 

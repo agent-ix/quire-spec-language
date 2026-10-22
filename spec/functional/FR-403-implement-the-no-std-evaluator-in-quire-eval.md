@@ -105,8 +105,11 @@ application of an admitted callable and a checked expression with its
 parameters. It has no entry that evaluates a state clause, a clause set, an
 operation frame, a separating `forall` witness (ADR-031), a model type's
 invariants by runtime value path (FR-366), a temporal, protocol or hyper
-clause, or a simulation step. Those entries stay in `qsl-eval` and run on
-the std reference evaluator.
+clause, or a simulation step. Until FR-405's switch, those entries stay in
+`qsl-eval` and run on the std reference evaluator; the switch moves their
+evaluation onto a `quire-eval` clause entry
+([FR-405](FR-405-retire-the-std-reference-evaluator-for-quire-eval.md)
+"Clause evaluation"), and this section then scopes the `Value`-family entry.
 
 The checker's body entry (`check_expression`) and a function body admit
 every `NodeKind` except five, which only other checker passes build:
@@ -186,7 +189,8 @@ argument planning before any charge (RT's `plan_call` and
 frames (RT's `Frame` and `Body`, FR-262's session, body contract and child
 request), and the `work_units` charge sequence with its ordered admitted
 charges. RT and CG evaluate no state clause, operation frame or other
-clause, so no clause entry is part of `quire-eval`.
+clause, so they use only the `Value`-family entry; until FR-405's switch no
+clause entry is part of `quire-eval`.
 
 ### Argument admission
 
@@ -389,6 +393,14 @@ repository, and nothing else.
 
 ## Acceptance Criteria
 
+Each criterion below that compares the `no_std` evaluator with the
+reference (AC-2 to AC-7 and AC-10 to AC-14) holds as written until FR-405's
+switch. After the switch it holds in this form: the test runs once, on
+`quire-eval`, and the reference's results are its recorded expected
+values. AC-3's and AC-6's reference-side registration and call, and AC-7's
+second pass, become that single run. AC-9's reference clause is bounded by
+the switch, and FR-405-AC-4 states what holds after it.
+
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-403-AC-1 | `quire-eval`'s manifest names only `quire-checked`, `quire-semantic-value`, `quire-exact`, `quire-walk` and `thiserror` as normal dependencies, with default features off, and `cargo tree -p quire-eval -e features -i quire-checked` in `agent-ix/quire-eval`'s gate shows no `construct` feature. It declares no feature that adds or removes the evaluator. | Test (TC-1121) |
@@ -399,7 +411,7 @@ repository, and nothing else.
 | FR-403-AC-6 | Over `quire-eval`'s closure-only environment, a call of a function with a `Population` parameter, given a `Population` value whose `PopulationId` is not recorded, returns `CallFailure::Input(InputRefusal::WrongValueKind)` naming parameter `0`, with no charge. The reference over `ObjectEnvironment::new` of the same closure returns the same result. | Test (TC-1121) |
 | FR-403-AC-7 | FR-262-AC-1 to FR-262-AC-8 each pass a second time with the `no_std` evaluator as the implementation, through `qsl-eval`'s `quire-eval` entry, with the reference's expected values. The AC-1 and AC-2 runs use a thread with a 512 KiB stack and observe no depth refusal and no stack overflow. | Test (TC-1121) |
 | FR-403-AC-8 | Admitting a population document whose three members are listed in two different orders, with a subsetting violation on two of them, refuses both times naming the violating member with the lowest reference key, on each of ten runs. | Test (TC-1121) |
-| FR-403-AC-9 | `qsl-eval`'s manifest declares no `std` feature. Until FR-405's switch, `CheckedPackageEvaluation::call` and `evaluate` run the reference evaluator. `qsl-eval` re-exports no `quire-eval` item and defines no argument admission of its own. `quire-eval`'s source contains no name resolution, FR-098 conversion phase, model admission, simulation, or clause, frame, separation or value-invariant entry. | Inspection (TC-1121) |
+| FR-403-AC-9 | `qsl-eval`'s manifest declares no `std` feature. Until FR-405's switch, `CheckedPackageEvaluation::call` and `evaluate` run the reference evaluator. `qsl-eval` re-exports no `quire-eval` item and defines no argument admission of its own. `quire-eval`'s source contains no name resolution, FR-098 conversion phase, model admission or simulation, and, until FR-405's switch, no clause, frame, separation or value-invariant entry. | Inspection (TC-1121) |
 | FR-403-AC-10 | On each of ten runs, the `no_std` evaluator's results equal the reference's in order: the members of AC-5's `allInstances` over a population recorded with its members in descending reference-key order, which both return ascending; and the loss list of FR-262-AC-8's kernel-loss case. | Test (TC-1121) |
 | FR-403-AC-11 | The `StateModel` undefined result of a `lookup<T>(p, r) absent undefined` with an absent key, raised by each evaluator, has the catalog code prefix `state-model` and the `binding` and `key` fields `render_identity` gives. `FamilyKind::StateModel.catalog_code_prefix()` returns SV's constant, and `qsl-eval`'s source defines no `StateModelUndefined`, `PreconditionFailure`, `NavigationRefusal`, `ReferenceUnresolved` or `ProtocolReferenceUnsupported`. | Test (TC-1121) |
 | FR-403-AC-12 | Through each evaluator, a checked expression `x + 1` with one parameter `x: Int[0, 9]`, given `10`, returns `CallFailure::Input` from argument admission with no charge; given `3`, it completes with `4` and no `function.call` among its admitted charges. A chain of three functions with no parameters, whose bodies call the next or, for the last, return a literal, admits exactly three `function.call` charges with `work_units` spend `3`; with `work_units` `2` it returns `Incomplete` naming `work_units` at the third `function.call`, with two calls in the counter and the log. | Test (TC-1121) |

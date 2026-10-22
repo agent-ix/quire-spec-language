@@ -188,7 +188,7 @@ here. The ordering rationale is as follows.
   environment contract, for the `Value` family, with argument admission in
   `quire-eval` (FR-403). The checked input reaches `quire-eval` in
   process; RT and CG need no wire form of a checked graph. `qsl-eval` depends on it, stays `std`, and
-  keeps the std reference evaluator as its default until S9. The S7
+  keeps the std reference evaluator on its production paths until S9. The S7
   differential suite (FR-402) compares that std path with `quire-eval`. It
   follows the interface and S1-S5. IR-269 is reached through S1, not
   directly.
@@ -199,8 +199,8 @@ crate, coordinated by the QSL architecture lead.
 
 After S6, S7 runs differential tests over identical inputs through both
 implementations, S8 performs the unsafe/dependency audit (all newly authored
-crates still use `unsafe_code = forbid`), and S9 switches the default and
-retires the std path (FR-405). S7-S9 remain separately gated slices, not part of
+crates still use `unsafe_code = forbid`), and S9 makes the no_std implementation the
+only evaluator and retires the std path (FR-405). S7-S9 remain separately gated slices, not part of
 S6's claimed completion.
 
 FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, TC-069's
@@ -234,9 +234,11 @@ the interface. RT acceptance therefore requires all of the following:
 - Run the 100,000-deep recursive call at fitting `work_units` on a 512 KiB
   host stack, plus the `w - 1` denial and `w` restoration controls; verify
   iterative value/type handling at the depth required by FR-262.
-- Differentially compare the shared implementation with the QSL std
-  reference on the common evaluation corpus, including charge order and
-  complete outcome data.
+- Compare the shared implementation on the common evaluation corpus,
+  including charge order and complete outcome data: with the QSL std
+  reference while it exists, and after S9 with the recorded corpus
+  expectations that `evaluator-regression` checks (FR-405). RT's acceptance
+  is not part of QSL's S9 switch criterion.
 - Remove RT's evaluator port and do not add a compatibility re-export or
   shim at its former `exact::CheckedPackage` path. CG's generated closures
   remain a first-class lowering and consume the same shared interface rather
@@ -283,7 +285,8 @@ item moves once.
 - The QSL-owned leaf is the one shared interface and scheduler authority for
   interpreted checked expressions and registered generated bodies.
 - QSL's std evaluator is the semantic reference until the no_std implementation
-  passes the shared differential suite; only then may IR-593 switch defaults.
+  passes the shared differential suite; only then may IR-593 make it the only
+  evaluator.
 - Checked-term separation (IR-586) can proceed after STD-297 independently of
   IR-583. The no_std implementation (IR-590) still waits for S1-S5 and the
   shared interface (IR-583).
@@ -302,7 +305,14 @@ item moves once.
   the reference's results stay as recorded corpus expectations. A second
   evaluator kept beside the first would be the duplicated module the shared
   core exists to remove, and keeping it reachable would be a compatibility
-  layer.
+  layer. The switch also needs `quire-eval`'s clause entry, which its own
+  requirement defines (STD-318).
+- The dual-implementation period (IR-584) ends when the S9 switch change is
+  on `main` and FR-405-AC-1 to FR-405-AC-10 pass. The slices before it are
+  complete when their own criteria pass: FR-400, FR-401, NFR-015, FR-403,
+  FR-402, slice S8's audit and the clause-entry requirement. RT's port
+  deletion is RT's migration (IR-349, FR-262-AC-9), not part of that
+  period.
 
 ## Risks
 
