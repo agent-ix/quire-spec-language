@@ -63,3 +63,29 @@ Units examined (role, id, path):
 ## Verdict
 
 Not mergeable as is: two medium and three low findings. PSC-4(a), (b) and (d) are sound for owed and pairs. Part (b) matches the engine's `owed` map. LT-15 and LT-16 recompute as stated in every column. The QSL and QSpec halves agree with each other. PR bodies list lead defaults and contain no review-finding text. The lead default (pairs rather than a new PSC-7 omission) leaves every AC buildable once FND-002 names in-flight views.
+
+## New findings (disposition pass 1)
+
+Reviewed at QSL f12e88a3497a28fb244da5be4ba41fbb3676c8ad (#1193, own diff against origin/std-ra-239-qsl 985acb35d; fix commit f12e88a34) and QSpec 0943c2cc67912ebd3039134e8fb85ddad23241c7 (#332, own diff against origin/std-ra-239-qspec 7e7a8e0; fix commit 0943c2c).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | FR-437-AC-10 says garbage collection removes "the SC events on the earlier messages of `L` when the thread that wrote them stores `X := 2`" and that "their predecessors are kept for that thread". In LT-15 the earlier messages have two writers: `u` wrote `L := 1` and `t` wrote `L := 2`, and only `t` stores `X := 2`. By the collection rule `L := 1`'s predecessors go to `owed(u)`; `t` is held back by `L := 2`'s live predecessors (`X := 1`), which is how this round reworded LT-15's ADR rationale (FND-005). Reword to name `L := 2`: "whether or not garbage collection has removed the SC event on `L := 2`, the earlier message the storing thread wrote: when it has, its live predecessors, among them `X := 1`, are kept for that thread". FR-223-AC-7's "their predecessors are kept in `owed(t)`" reads the same way and can take the same wording. | spec/functional/memory/FR-437-explore-release-acquire-memory.md:226 |
+
+## Dispositions
+
+Round 1, reviewed at QSL f12e88a3497a28fb244da5be4ba41fbb3676c8ad (#1193, own diff against origin/std-ra-239-qsl 985acb35d; fix commit f12e88a34) and QSpec 0943c2cc67912ebd3039134e8fb85ddad23241c7 (#332, own diff against origin/std-ra-239-qspec 7e7a8e0; fix commit 0943c2c).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-223-AC-7, FR-437-AC-10 and the LT-15 rationale no longer claim that the events are collected: each holds whether or not garbage collection has removed them, and TC-668 step 7 inspects only states in which they were collected. The #1193 and #332 bodies name STD-240 (#1195, #334) and the merge order for the vectors to exercise `owed`. After: \| FR-223-AC-7 \| ADR-025 §15's LT-15 does not reach a = 2, b = 3 and final `X = 1` under `ra`, whether or not garbage collection has removed the SC events on `L := 1` and `L := 2` when `t` stores `X := 2`: when it has, their predecessors are kept in `owed(t)`, `u`'s `X := 1` still precedes `t`'s `X := 2` in the SC event graph, and the slot for `X := 2` before `X := 1` in modification order is not offered. \| |
+| FND-002 | fixed | PSC-4(c) and the FR-437 pair bullet name a view a `send` carries that no `receive` has joined, and add pairs to every view wherever it is held, in flight on a channel included. After: (c) *Later events of other threads.* Every view (RA-1), including a view that a `send` carries and no `receive` has yet joined, also holds `owed(V)`, pairs `(ℓ, p)` with `p` a live SC event: `p` precedes every later SC event on `ℓ` of a thread whose current view includes `V`. A removed event `e` on `ℓ` adds `(ℓ, p)`, for each live predecessor `p` of `e`, to every view whose frontier covers `e`, wherever that view is held (by a thread, in a message, as `S`, or in flight on a channel) |
+| FND-003 | fixed | PSC-4(d) and FR-437's last Collection sub-bullet both cover a removed member of `F(ℓ)`. After: (d) A member of `F(ℓ)` or of `owed(b)`, or the `p` of a pair, that is itself removed is replaced by its live predecessors. - a member of `F(ℓ)` or of `owed(b)`, or the `p` of a pair, that is itself removed is replaced by its live predecessors. |
+| FND-004 | fixed | FR-223 Description and its first two Behavior bullets, FR-437's State bullet and Key bullet all list the `owed` sets; FR-437 names both the per-thread sets and the per-view pairs. After: `P`, `F`, the frontiers and the `owed` sets SHALL be part of the state key. come; and the `owed` sets of the collection rule below, one per thread and the pairs of every view. |
+| FND-005 | fixed | LT-15's rationale now names `L := 2` and `owed(t)`. After: forbidden: `u`'s `X := 1` precedes `t`'s `X := 2` through `L := 1` and `L := 2`, and when `L := 2` is collected it leaves `X := 1` in `owed(t)` \| |
+
+## Dispositions (pass 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-006 | fixed | QSpec FR-437-AC-10 and QSL FR-223-AC-7 now name `L := 2`, the earlier message the storing thread wrote: when its SC event has been collected, its live predecessors, among them `X := 1`, are kept for that thread (in `owed(t)` in QSL). |
