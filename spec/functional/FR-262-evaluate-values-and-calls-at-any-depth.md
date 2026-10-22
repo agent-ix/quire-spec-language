@@ -62,9 +62,9 @@ leaf extraction and host registration are not claimed to be implemented.
 The shared interface belongs to QSL, in a leaf crate in its own repository.
 It SHALL use `core` and `alloc` and forbid unsafe code. QSL's existing std
 evaluator remains the semantic reference behind that interface. The interface
-deliverable (IR-583) precedes checked-term separation (IR-586); the no_std
-evaluator implementation behind it is a later milestone (IR-590), after that
-separation and the other no_std prerequisites. Accepting the interface SHALL
+deliverable (IR-583) and checked-term separation (IR-586) are independent of
+each other; the no_std evaluator implementation behind the interface is a
+later milestone (IR-590), after both and the other no_std prerequisites. Accepting the interface SHALL
 NOT imply availability of a no_std evaluator. RT and CG SHALL consume this interface, without
 depending on evaluator internals.
 
@@ -223,8 +223,8 @@ and JIT preparation retain their existing contracts.
 ## Dependencies
 
 - Shared interface ownership: QSL-682 then IR-583; checked-term extraction:
-  IR-586 after the interface; no_std evaluator implementation: IR-590 after
-  its prerequisites. RT consumes this contract in
+  IR-586 under FR-400, independent of the interface; no_std evaluator
+  implementation: IR-590 after both and its other prerequisites. RT consumes this contract in
   `ix://agent-ix/quire-contract-runtime/FR-273` (IR-512); its resumable-body
   implementation is downstream work.
 
