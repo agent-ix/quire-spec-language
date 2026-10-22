@@ -242,19 +242,27 @@ FR-243 basis, O-16 category and method.
     of these that applies, so no stop has two causes:
     1. `Cancelled{source}`, when the run's cancellation handle tripped
        (FR-276), a caller's deadline included;
-    2. `TimedOut`, when the backend's own wall-clock limit expired. The
-       request carries no SMT deadline: a caller's deadline reaches the run
-       only through its cancellation handle, which is rule 1. It settles V-7
+    2. `TimedOut`, when the backend's own wall-clock limit expired. CG's
+       HP-2 SMT arm runs under the `qsl-replay` facade's cancellation handle
+       and carries no QSpec FR-331 `deadline_ms` from QSL, so a caller's
+       deadline reaches the run only through that handle, which is rule 1.
+       A host that enforces a `deadline_ms` overrun on the backend enforces
+       the backend's own wall clock, which is this rule, as QSpec FR-363
+       settles that overrun `timed-out`. It settles V-7
        `Incomplete(TimedOut)` (FR-293), QSpec FR-331's `timed-out`, never
        `LimitReached` or `InductionNotClosed`;
     3. `LimitStopped{limit}`, when a `ModelCheckLimit` the request names,
        and that bounds the SMT run, stopped the solver. It settles V-7
        `Incomplete(LimitReached{limit, value, setting})` naming that limit,
        never `InductionNotClosed`. A limit bounds the SMT run only when its
-       definition names an EN-2 or EN-3 query. `MaxStates`,
-       `MaxTransitions`, `MaxAutomatonStates`, `MaxCandidates`,
-       `WitnessSamples` and `SolverSteps` (FR-250's hybrid solver budget)
-       bound none. `EvaluationMeter` bounds `μ_U` while the query is
+       definition names an EN-2 or EN-3 query; every other
+       `ModelCheckLimit` bounds none. For example, `MaxStates`,
+       `MaxTransitions` and `MaxAutomatonStates` bound EN-1's exploration,
+       `MaxWitnessSet` and `MaxRelationTuples` bound FR-184's searches,
+       `MaxCertificateBytes` and `MaxCertificateEdges` bound a certificate
+       check, `MaxWalkSteps`, `WitnessSamples` and the `Statistical` limits
+       bound sampling runs, `MaxCandidates` bounds expansion, and
+       `SolverSteps` is FR-250's hybrid solver budget. `EvaluationMeter` bounds `μ_U` while the query is
        encoded, and its stop is the `match-conjunct` encoding refusal. A
        `LimitStopped` naming a limit that does not bound the SMT run SHALL
        write no record and refuse `HyperSettleRefusal::LimitNotApplicable`.

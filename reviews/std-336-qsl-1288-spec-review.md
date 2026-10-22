@@ -68,3 +68,17 @@ Mergeable. The order is sound and covers every stop CG reports. It agrees
 with FR-250, FR-276 and FR-293, and with QSpec #388's FR-363 order. Its ACs
 can fail. The two low findings can be fixed in this PR or deferred. Neither
 blocks a merge.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | [minor] QSpec FR-331 gives a provider request a `deadline_ms` (`request.deadline_ms is the provider deadline`, and its in-process form carries it too, FR-331-AC-33). QSpec #388's FR-363 rule 2 settles an overrun of it as `timed-out`. Rule 2 here says "the request carries no SMT deadline" and sends a caller's deadline to rule 1 (`Cancelled{deadline}`). Both texts can be true only if CG's HP-2 SMT arm never receives an FR-331 `deadline_ms`. If it does, a host-enforced `deadline_ms` overrun is `timed-out` in QSpec but has no QSL rule, or is read as cancellation. Fix: state that the HP-2 SMT path carries no FR-331 `deadline_ms`, or add the `deadline_ms` overrun to rule 2, as QSpec does. | spec/functional/FR-182-settle-a-hyper-verdict.md:245-248 |
+| FND-004 | low | [nit] Rule 3's list of limits that bound no SMT run (`MaxStates`, `MaxTransitions`, `MaxAutomatonStates`, `MaxCandidates`, `WitnessSamples`, `SolverSteps`, plus `EvaluationMeter`) omits `ModelCheckLimit` members that exist: `MaxWalkSteps`, `MaxWitnessSet`, `MaxRelationTuples` (FR-184), `Statistical` (FR-166) and `MaxCertificateBytes`/`MaxCertificateEdges` (FR-314). The general rule ("only when its definition names an EN-2 or EN-3 query") still decides each one, but the list reads as complete. Fix: say "no `ModelCheckLimit` member bounds the SMT run today" and keep the list as examples, or list every member. | spec/functional/FR-182-settle-a-hyper-verdict.md:253-262 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Rule 3 now applies only to a `ModelCheckLimit` that bounds the SMT run, says none does today, and maps the `EvaluationMeter` stop to the `match-conjunct` refusal. A `LimitStopped` naming an inapplicable limit writes no record and refuses the new `HyperSettleRefusal::LimitNotApplicable`. FR-182-AC-12 and TC-1190 step 7 now expect `MaxStates` to refuse `LimitNotApplicable`, never `LimitReached`. |
+| FND-002 | fixed | Rule 2 is the backend's own wall clock only, and a caller's deadline reaches the run through the cancellation handle (rule 1). The new `BackendFault{method}` takes a solver crash or unparseable output, never `Unknown`, and settles `failed`, `Failed`, O-16 internal failure, as the existing `InternalFault` row and FR-127 do. The vectors cover both faults. The removed request-deadline clause raises FND-003 against QSpec FR-331's `deadline_ms`. |
