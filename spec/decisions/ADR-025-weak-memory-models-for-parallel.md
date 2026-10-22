@@ -207,7 +207,8 @@ they do. EN-1 explores it like any other successor relation.
 
 `ra` is RC11 as an operational model: the promise-free model of Kang et al.
 for non-atomic, relaxed, release and acquire accesses and fences, with
-`seq_cst` accesses ordered by the partial SC order of §15.
+`seq_cst` accesses ordered by the partial SC order of §15, less the clauses PSC-7
+omits.
 
 | ID | Rule |
 | --- | --- |
@@ -218,7 +219,7 @@ for non-atomic, relaxed, release and acquire accesses and fences, with
 | RA-5 | **Fences.** An `acquire` fence sets `cur_b` to `cur_b` joined with `acq_b`. A `release` fence sets `rel_b(ℓ)` to `cur_b` for every `ℓ`. An `acq_rel` fence does both. A `seq_cst` fence does both, then sets `cur_b` and `S` to `cur_b` joined with `S`, and is an SC event of §15. |
 | RA-6 | **Fork, join and channels.** Each branch starts with its parent's views. The `join` sets the parent's views to the join of its branches' views. A `send` carries the sender's `cur_b`, and its `receive` joins that view into the receiver's `cur` and `acq`: a channel synchronises as a release and an acquire. These are `ra`'s split, merge and channel rules through ADR-027 SE-1 (f), with no gate. Amended by ADR-027. |
 | RA-7 | **Garbage collection.** After every step, every message of `ℓ` earlier in mo than the earliest message any view points to at `ℓ` (every thread's three views, every message view, and `S`) is removed, with PSC-4's summary of the SC events on it. No step can read a removed message: a load reads at or after its thread's current view. Removal is part of the canonical state and makes loops finite. After a top-level `join all` only the parent's views remain, and each location keeps one message. |
-| RA-8 | **What it admits.** Coherence holds per location: views only move forward in mo. Program order with reads-from is acyclic, so load buffering is excluded, as in RC11. Independent reads of independent writes (IRIW) and 2+2W are admitted with release and acquire accesses, and excluded with `seq_cst` accesses, as in RC11. The intended correspondence is RC11; the litmus vectors below fix it. |
+| RA-8 | **What it admits.** Coherence holds per location: views only move forward in mo. Program order with reads-from is acyclic, so load buffering is excluded, as in RC11. Independent reads of independent writes (IRIW) and 2+2W are admitted with release and acquire accesses, and excluded with `seq_cst` accesses, as in RC11. The intended correspondence is RC11 except for PSC-7's omitted clauses; the litmus vectors below fix it. |
 
 **Litmus outcomes.** "Allowed" means the weak outcome is reachable.
 
@@ -585,11 +586,22 @@ that a future step can still close into a cycle.
 | ID | Rule |
 | --- | --- |
 | PSC-1 | **State.** The memory component holds the **live SC events**, each a `seq_cst` access or fence with its thread, kind, location and message (the message it read or wrote), and a directed acyclic graph `P` over them: `e → x` when `e` precedes `x` in `psc`, closed under transitivity. For each location `ℓ` it also holds `F(ℓ)`, the live SC events that precede in `psc` every SC write to `ℓ` still to come. |
-| PSC-2 | **Happens-before frontier.** Every view (RA-1) also records, for each thread, the latest live SC event of that thread that happens before the view, and whether that happens-before path leaves the event's thread through an event on another location, which RC11's `po|≠loc ; hb ; po|≠loc` clause reads. Frontiers are carried and joined wherever §3.3 carries and joins views. |
-| PSC-3 | **A new SC event.** When thread `b` executes a `seq_cst` access or fence `x`, `P` gains an edge `e → x` for each live `e` that RC11's `psc` places before `x`, decided from the frontier (program order and happens-before), from locations (`hb|loc`), and from message positions (mo and fr); an edge `x → e` for each live SC write `e` that `x` precedes in mo (a store inserted before `e`'s message) or in fr (a load or RMW reading a message before `e`'s); and, for a write to `ℓ`, an edge from each member of `F(ℓ)`. A `seq_cst` fence's edges also follow RC11's fence clause, whose happens-before parts `S` already carries (RA-5). `x` is enabled with a given message or slot choice only when the resulting `P` is acyclic; each choice is a separate transition identity (RA-2, RA-3), so the check prunes exactly the choices RC11 forbids. |
+| PSC-2 | **Happens-before frontier.** Every view (RA-1) also records, for each thread, the latest live SC event of that thread that happens before the view. Every live SC event of that thread no later in program order than the recorded one happens before the view too, so the frontier decides, for any live SC event, whether it happens before the view. Frontiers are carried and joined wherever §3.3 carries and joins views; a join takes, for each thread, the later event. |
+| PSC-3 | **A new SC event.** When thread `b` executes a `seq_cst` access or fence `x`, `P` gains these edges, each from a live SC event: `e → x` for each `e` of `b` (program order); `e → x` for each `e` on `x`'s location that happens before `b`'s current view (RC11's `hb|loc`); `f → x` for each `seq_cst` fence `f` of another thread that happens before `b`'s current view (RC11's `[Fsc] ; hb ; po ; [Esc]` when `x` is an access, and `[Fsc] ; hb ; [Fsc]` when `x` is a fence); `e → x` for each live SC write `e` whose message is mo-before the message `x` writes, and, when `x` writes, for each live SC read `e` of a message mo-before it (fr); `x → e` for each live SC write `e` that `x` precedes in mo (a store inserted before `e`'s message) or in fr (a load or RMW reading a message before `e`'s); and, when `x` writes `ℓ`, an edge from each member of `F(ℓ)`. The happens-before edges are decided from the frontier (PSC-2). RC11's fence clause `[Fsc] ; (hb ∪ hb ; eco ; hb) ; [Fsc]` builds only its `hb` part as the fence-to-fence edge above: its `eco` part builds no edge, because RA-5 joins `S`, which holds the view of every earlier `seq_cst` fence, into the fencing thread's view, so a message choice that would complete the `eco` path is not offered. `x` is enabled with a given message or slot choice only when the resulting `P` is acyclic; each choice is a separate transition identity (RA-2, RA-3), so the check prunes the choices `P` forbids. PSC-7 states the RC11 edges `P` does not build. |
 | PSC-4 | **Collection.** When RA-7 removes a message, each live SC event on it leaves `P`. Its `psc` predecessors among the live events, and the event's own effect, are kept as follows: a removed write's predecessors and itself are summarised into `F(ℓ)` as predecessors of every later SC write to `ℓ`, since every later write is mo-after it; a removed SC read's predecessors join `F(ℓ)`, since every later write to `ℓ` is fr-after it; `P` is restricted to the remaining live events with its transitive closure kept. A thread's SC read of a message is replaced by its next SC read of the same message, which follows it in program order and so inherits its predecessors; a read takes no incoming edge from a later event (PSC-3), so nothing is lost. Every SC event is therefore live only while its message is, so `P` stays within the bound on messages. |
 | PSC-5 | **Determinism.** `P`, `F` and the frontiers are part of the canonical state key (MS-1), encoded with events named by thread and message position, so equal histories that admit the same futures coalesce. |
 | PSC-6 | **Cost.** `P` has at most one live event per live message and thread (PSC-4), so its size is bounded by the message bound, the shared locations and the thread count. The acyclicity check is one reachability query per new edge set. |
+| PSC-7 | **Omitted clauses.** `P` does not build two kinds of RC11 `psc` edge, because neither the frontier nor the rest of the component decides them. (a) The edge `e → x` of `po|≠loc ; hb ; po|≠loc` from an SC *access* `e`: its test names the locations of the events that leave `e`'s thread after `e` and arrive in `x`'s thread before `x`, which a view does not record. (b) An edge between an SC fence and an SC access that RC11 derives through a non-SC event adjacent to the fence in program order (the `po?` around `[Fsc]` in `psc_base`), such as a relaxed load, in the fence's thread, of a message older than an SC write. Every execution RC11 allows is an execution of `ra`, and `ra` additionally admits an execution only when every RC11 `psc` cycle through it uses an omitted edge. A `proved` verdict under `ra` therefore holds under RC11 and transfers by MX-4; a counterexample is an `ra` execution and replays under `ra` (MK-2). LT-12 and LT-13 below are one execution of each kind. |
+
+**Litmus programs for §15.** Every location and register starts at 0. `‖`
+separates threads, and each statement names its ordering. "Allowed" means the
+weak outcome is reachable.
+
+| Vector | Program | Weak outcome | `sc` | `tso` | `ra` |
+| --- | --- | --- | --- | --- | --- |
+| LT-12 | `u`: `X := 1` sc; `Y := 1` release ‖ `v`: `a := Y` acquire; `b := Z` sc ‖ `w`: `Z := 1` sc; `c := X` sc | a = 1, b = 0, c = 0 | forbidden | forbidden | allowed; RC11 forbids it (PSC-7 a) |
+| LT-13 | `u`: `X := 1` sc; `a := Y` sc ‖ `v`: `Y := 1` relaxed; fence sc; `b := X` relaxed | a = 0, b = 0 | forbidden | forbidden | allowed; RC11 forbids it (PSC-7 b) |
+| LT-14 | `u`: `X := 1` sc; fence sc; `Y := 1` release ‖ `v`: `a := Y` acquire; `P := 1` sc ‖ `w`: `P := 2` sc; `b := X` sc | a = 1, b = 0, final P = 2 | forbidden | forbidden | forbidden: the fence-to-access edge of PSC-3 closes the cycle |
 
 ## Consequences
 
@@ -600,7 +612,8 @@ that a future step can still close into a cycle.
   every result states the bound used and whether it was reached, and a bound
   reached with no counterexample is `inconclusive`, never `proved`.
 - `ra` is RC11: relaxed, release, acquire and `seq_cst` accesses and fences,
-  with the partial SC order tracked over live events.
+  with the partial SC order tracked over live events, less the clauses PSC-7
+  omits; every RC11 execution is an `ra` execution.
 - Non-atomic locations are admitted, and every subject that has one reports
   its data races through one derived item with a replayable counterexample.
 - Counterexamples show buffers, messages, views, SC events and race facts at
