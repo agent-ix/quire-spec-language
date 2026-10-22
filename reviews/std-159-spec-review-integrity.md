@@ -51,6 +51,12 @@ Disposition pass 1, against agent-ix/quire-spec-language@692abe7b425d15a1a7a696d
 | FND-001 | fixed | FR-246 now states all four conditions under `invalid_timed_model`/`invalid-task-set`, so every `TaskSetRefusal` variant (task_set.rs:148-229) has a specified code. After: "... a task set that declares no task; ... a jitter or blocking term that is negative; ..." and "When an `edf` claim is over a task with a jitter or blocking term other than zero, or an `amc` claim is over a task whose deadline exceeds its period, the checker SHALL refuse `invalid_timed_model`/`invalid-task-set`, naming the task, because the analysis does not read the term or does not cover that deadline." |
 | FND-002 | fixed | AC-2 and TC-701 step 2 now require both names for the clash. AC-2 after: "Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task, and both tasks for the clash: ..." TC-701 after: "each refuses at its span with its stated code, naming the task (both tasks for the clash)". |
 
+Disposition pass 2, against agent-ix/quire-spec-language@8432b364990bd1aa1c245836f10cb57ea683e468 (fix commit 8432b3649).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | The refusal bullet, FR-246-AC-2 and TC-701's expected result now name the task set for the empty one. Bullet after: "The checker SHALL refuse, each with `invalid_timed_model`/`invalid-task-set` at the span, naming the task (the task set when it declares none): a task set that declares no task; ..." AC-2 after: "Each of these refuses `invalid_timed_model`/`invalid-task-set` naming the task (the task set for the empty one), and both tasks for a clash: a task set with no task; ..." TC-701 after: "naming the task (the task set for the empty one, both tasks for a clash)". `TaskSet::new` takes the set's name, so the code work can name it. |
+
 ## New findings (disposition pass 1)
 
 | ID | Severity | Summary | Refs |
