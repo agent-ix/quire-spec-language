@@ -103,8 +103,10 @@ FR-403-AC-1 to FR-403-AC-14.
 9. `qsl-eval` declares no `std` feature and defines no argument admission,
    `call` and `evaluate` use the reference evaluator, and no `quire-eval`
    item is re-exported. `quire-eval/src` holds no name resolution, FR-098
-   conversion, model admission, simulation, or clause, frame, separation or
-   value-invariant entry.
+   conversion, model admission, simulation, frame check, clause-set
+   combination, separation-check orchestration or value-invariant
+   collection, and no entry besides the `Value`-family entry and FR-406's
+   clause entry.
 10. On every run the members come back ascending and equal across the two
     evaluators, and the loss lists are equal and in the same order.
 11. Both results carry the prefix `state-model` and the `binding` and `key`
