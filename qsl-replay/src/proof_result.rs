@@ -20,7 +20,7 @@ use crate::scalar::ScalarAgreement;
 use crate::statistical::{Decision, StatisticalVerdict};
 use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
-use qsl_foundation::diagnostic::{CatalogCode, Category, Code};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::family::UnsupportedItem;
@@ -28,6 +28,7 @@ use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
 use quire_exact::{CancelCause, Integer};
+use quire_semantic_value::catalog::{CatalogCode, Category};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
 
@@ -1928,7 +1929,7 @@ mod tests {
     #[trace("TC-516", "FR-121-AC-16")]
     #[test]
     fn a_replay_refusal_settles_inconclusive_with_its_code_and_a_fault_failed() {
-        use qsl_foundation::diagnostic::InternalFault;
+        use quire_semantic_value::catalog::InternalFault;
 
         let refusal = ReplayRefusal::UnboundParameter(WireNodeId::from_digest([1; 32]));
         assert_eq!(
@@ -2489,9 +2490,9 @@ mod tests {
     #[test]
     fn a_call_site_refusal_settles_declined_with_its_code_and_a_fault_failed() {
         use crate::identity::QualifiedName;
-        use qsl_foundation::diagnostic::InternalFault;
         use qsl_foundation::digest::{DigestDomain, DigestRecord};
         use quire_exact::Identifier;
+        use quire_semantic_value::catalog::InternalFault;
 
         let compile = CallSiteRefusal::Compile {
             code: Code::StaleDependency,

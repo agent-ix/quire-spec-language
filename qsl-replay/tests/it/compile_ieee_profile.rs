@@ -306,8 +306,8 @@ fn bit_level_float_constructors_remain_unrepresented_source_forms() {
 fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source_spine() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
     use qsl_replay::spine::{self, ParseRequest, SpineLimits};
-    use qsl_semantics::family::FamilyOutcome;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_eval::FamilyOutcome;
     use quire_exact::{Cancel, IeeeValue, Integer, Meter, Outcome, Rational, Value as KernelValue};
 
     for (width, left, right) in [

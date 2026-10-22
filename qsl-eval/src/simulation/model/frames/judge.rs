@@ -12,12 +12,12 @@
 //! loop make, so a step that passes here is a successor of `a` in the
 //! abstract system's own expansion and the two never disagree.
 
-use qsl_foundation::CatalogCode;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{AnchorKind, SelectedAnchor};
 use qsl_semantics::model::state::ModelState;
 use quire_canonical::Limits as CanonicalLimits;
 use quire_exact::{ObjectReference, Value};
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::{pre_observations, text_limits, text_of, transition_of, FrameRefused, Run};

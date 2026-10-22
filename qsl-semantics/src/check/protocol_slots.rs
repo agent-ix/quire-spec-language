@@ -1425,10 +1425,12 @@ fn partition(
                 return Err(CheckRefusal {
                     location: Location::root(Origin::Expression),
                     cause: CheckCause::InternalFault(Box::new(
-                        super::refusal::KeyFault::StageFault(qsl_foundation::InternalFault::new(
-                            "check.protocol",
-                            "choice-guard-atoms",
-                        )),
+                        super::refusal::KeyFault::StageFault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "check.protocol",
+                                "choice-guard-atoms",
+                            ),
+                        ),
                     )),
                 });
             };

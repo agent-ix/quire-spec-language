@@ -12,8 +12,9 @@ use qsl_eval::simulation::{
     ExpansionStop, Limit, Limits, Outcome, Permutation, Stats, SymmetryGroup, TransitionSystem,
 };
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::{ByteDigest, CatalogCode, IdentityLimits};
+use qsl_foundation::{ByteDigest, IdentityLimits};
 use quire_canonical::Encode;
+use quire_semantic_value::catalog::CatalogCode;
 
 /// The successors a state is expanded through under partial-order reduction.
 pub enum Choice<T> {

@@ -10,12 +10,12 @@ use crate::{
     replay_frame, ClaimedChange, DisagreementCause, FrameCounterexample, FrameOperation,
     FrameReplayResult, ReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::intake::meaning;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{FrameChange, LinkDifference, SelectedObject};
 use quire_exact::Identifier;
+use quire_semantic_value::catalog::Category;
 
 const PACKAGE: &str = "test/orders";
 const DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";

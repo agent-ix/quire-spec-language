@@ -245,9 +245,7 @@ fn a_selection_on_a_navigation_is_located_at_the_referenced_object() {
         .expect("the clause evaluates");
     assert!(matches!(
         evaluation.evaluation.outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(
-            Value::Boolean(true)
-        ))
+        quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(true)))
     ));
     let reads: Vec<_> = evaluation.reads().iter().map(|read| &read.path).collect();
     assert_eq!(

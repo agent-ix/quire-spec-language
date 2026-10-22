@@ -12,8 +12,9 @@ use qsl_eval::simulation::{
     Expansion, ExpansionStop, Footprint, Limit, Limits, Location, OfferedReductions, Outcome,
     TransitionSystem,
 };
-use qsl_foundation::{CatalogCode, IdentityLimits};
+use qsl_foundation::IdentityLimits;
 use qsl_semantics::model::key::DeclarationKey;
+use quire_semantic_value::catalog::CatalogCode;
 
 type Graph = RetainedGraph<usize, String, usize>;
 

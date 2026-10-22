@@ -1291,8 +1291,8 @@ pub(crate) fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
 /// one finding per offending public item, `"<file>: <description>"`.
 pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<Vec<String>> {
     // FR-100-AC-8: a `qsl_eval` path is named either literally
-    // (`qsl_eval::value::Evaluation`) or through a local name a `use` import
-    // bound to one (`use qsl_eval::value::Evaluation as Ev;` then `Ev` in a
+    // (`quire_eval::Evaluation`) or through a local name a `use` import
+    // bound to one (`use quire_eval::Evaluation as Ev;` then `Ev` in a
     // signature or field type) -- `aliases` holds every such local name this
     // file's own top-level `use` items bind, so both spellings are caught by
     // the same identifier scan. A glob import (`use qsl_eval::value::*;`)
@@ -1304,7 +1304,7 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
         found: bool,
     }
     impl<'ast> syn::visit::Visit<'ast> for PathFinder<'_> {
-        // A type path's leading segment (`qsl_eval::value::Evaluation`) and
+        // A type path's leading segment (`quire_eval::Evaluation`) and
         // a `use` tree's own identifiers (`UseTree::Path`/`UseTree::Name`,
         // which hold a bare `Ident`, never a `Path`) both surface here, so
         // visiting every identifier catches both forms, plus any aliased
@@ -2789,7 +2789,7 @@ mod tests {
     }
 
     /// FR-100-AC-8 (TC-452 step 3): a probe that adds
-    /// `pub use qsl_eval::value::Evaluation;` to `qsl_replay` fails the
+    /// `pub use quire_eval::Evaluation;` to `qsl_replay` fails the
     /// check, naming the re-export.
     #[trace("TC-452", "FR-100-AC-8")]
     #[test]
@@ -2803,7 +2803,7 @@ mod tests {
         write(
             dir.path(),
             "lib.rs",
-            "pub mod spine;\npub use qsl_eval::value::Evaluation;\n",
+            "pub mod spine;\npub use quire_eval::Evaluation;\n",
         );
         let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
         assert_eq!(findings.len(), 1, "{findings:?}");
@@ -2821,8 +2821,8 @@ mod tests {
         write(
             dir.path(),
             "spine.rs",
-            "pub fn run(x: qsl_eval::value::Evaluation) { }\n\
-             pub fn compile() {\n    let _ = qsl_eval::value::CallFailure::Fault;\n}\n",
+            "pub fn run(x: quire_eval::Evaluation) { }\n\
+             pub fn compile() {\n    let _ = quire_eval::CallFailure::Fault;\n}\n",
         );
         write(dir.path(), "lib.rs", "pub mod spine;\n");
         let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
@@ -2840,7 +2840,7 @@ mod tests {
         write(
             dir.path(),
             "spine.rs",
-            "use qsl_eval::value::Evaluation as Ev;\n\
+            "use quire_eval::Evaluation as Ev;\n\
              pub struct Selected {\n    pub value: Ev,\n}\n",
         );
         write(dir.path(), "lib.rs", "pub mod spine;\n");
@@ -2861,7 +2861,7 @@ mod tests {
             dir.path(),
             "spine.rs",
             "pub struct Selected;\n\
-             impl Selected {\n    pub fn evaluation(&self) -> qsl_eval::value::Evaluation { todo!() }\n}\n",
+             impl Selected {\n    pub fn evaluation(&self) -> quire_eval::Evaluation { todo!() }\n}\n",
         );
         write(dir.path(), "lib.rs", "pub mod spine;\n");
         let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();

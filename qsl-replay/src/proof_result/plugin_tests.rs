@@ -758,7 +758,7 @@ fn tc_774_function_contract_items_replay_and_value_validity_items_do_not() {
     };
     assert_eq!(
         arm.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
 
     let refuted = settle(&context, &p, &bounds, input(p_x, 0));

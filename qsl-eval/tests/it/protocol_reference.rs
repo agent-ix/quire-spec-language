@@ -4,12 +4,12 @@
 //! function whose body is a reference refuses, typed, with a catalog cause.
 
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_foundation::diagnostic::CatalogCode;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, ScalarLimits};
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");

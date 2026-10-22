@@ -15,14 +15,15 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::WireNodeId;
-use qsl_semantics::value::supplied::{
-    SuppliedCause, SuppliedFailure, SuppliedPhase, SuppliedRun, SuppliedStop,
-};
+use qsl_semantics::value::supplied::SuppliedRun;
 use quire_exact::{plan_equality, planned_equality, Meter, Outcome, ScalarLimits, Value};
 use quire_exact::{Cancel, IntegerInterval};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EqualityOperator;
+use quire_semantic_value::supplied_stop::{
+    SuppliedCause, SuppliedFailure, SuppliedPhase, SuppliedStop,
+};
 
 use super::argument::{self, Stopped};
 use super::composite_domain::derive;

@@ -6,8 +6,8 @@
 
 use num_bigint::BigInt;
 use num_integer::Integer as _;
-use qsl_foundation::InternalFault;
 use quire_exact::{Integer, Rational};
+use quire_semantic_value::catalog::InternalFault;
 
 /// The bit precision of every series tail bound: a series stops once its
 /// tail is below `2^-70` (QSpec FR-408).

@@ -8,21 +8,22 @@
 //! pairs by path and clause key, and evaluates them under the one `Meter` the
 //! caller gives it. A result is the FR-107 [`Evaluation`] of the invariant.
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedTypeInvariant, TypeSlot};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{AdmittedObservations, Observation, SelfKind};
+use quire_eval::FamilyOutcome;
 use quire_exact::{FieldValue, Incomplete, Meter, ObjectReference, Outcome, Presence, Value};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
-use super::evaluate::{Evaluation, Machine};
+use super::evaluate::Machine;
 use super::s6a::separation::{
     observation_identity, InvocationBinding, RuntimeValuePath, ValuePathStep, ValuePathSubject,
 };
-use super::CallFailure;
+use quire_eval::CallFailure;
+use quire_eval::Evaluation;
 
 /// One invariant's result for one value (FR-366 "Evaluation per reachable
 /// value").
@@ -66,9 +67,9 @@ impl ValueInvariantOutcome {
     /// `resource_exhausted`/`insufficient-next-charge` (ADR-014 section 1);
     /// `None` for an evaluation that completed.
     #[must_use]
-    pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
+    pub fn catalog_code(&self) -> Option<quire_semantic_value::catalog::CatalogCode> {
         match self {
-            Self::Incomplete(_) => Some(qsl_foundation::diagnostic::CatalogCode::new(
+            Self::Incomplete(_) => Some(quire_semantic_value::catalog::CatalogCode::new(
                 "resource_exhausted",
                 "insufficient-next-charge",
             )),

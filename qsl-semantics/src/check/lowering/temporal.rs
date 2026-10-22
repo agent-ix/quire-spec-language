@@ -333,7 +333,9 @@ const fn binary_identity(operator: BinaryTemporal) -> &'static str {
 fn stage_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     fault(
         location,
-        KeyFault::StageFault(qsl_foundation::InternalFault::new(STAGE, invariant)),
+        KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
+            STAGE, invariant,
+        )),
     )
 }
 

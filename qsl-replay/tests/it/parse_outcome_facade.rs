@@ -7,8 +7,9 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::StageFailure;
 use qsl_replay::spine::{parse, CompileRefusal, ParseRequest, SpineLimits, SpineStage};
-use qsl_replay::{Category, InternalFault, OutcomeDocument, SourceIdentity};
+use qsl_replay::{OutcomeDocument, SourceIdentity};
 use quire_exact::{Cancel, CancelCause};
+use quire_semantic_value::catalog::{Category, InternalFault};
 use serde_json::{json, Value};
 
 const FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/spine-compile.native");

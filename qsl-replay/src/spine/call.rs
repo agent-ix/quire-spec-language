@@ -20,22 +20,21 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::StageFailure;
-use qsl_foundation::diagnostic::{
-    CatalogCode, Category, Code, InternalFault, Locus, RefusalRecord,
-};
+use qsl_foundation::diagnostic::{Code, Locus, RefusalRecord};
 use qsl_foundation::source::Source;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedGraph;
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::refusal::OfferedSelection;
 use qsl_semantics::value::environment_stage::membership_failure_code;
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     Cancel, CancelCause, Incomplete, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value,
     ValueType,
 };
+use quire_semantic_value::catalog::{CatalogCode, Category, InternalFault};
 use quire_semantic_value::declaration::EnvironmentFailure;
 use quire_semantic_value::location::Location;
 
@@ -320,12 +319,12 @@ pub enum RunRefusal {
     /// context. No evaluation ran: zero meter consumption, no `FunctionCall`
     /// charge and no partial value. Not a declaration environment failure.
     #[error("supplied-value {phase} stopped before the call: {cause:?}", phase = .0.context.phase.as_str(), cause = .0.cause)]
-    Supplied(Box<qsl_semantics::value::supplied::SuppliedStop>),
+    Supplied(Box<quire_semantic_value::supplied_stop::SuppliedStop>),
     /// FR-277: the admission walk reached a helper family QSV has not
     /// qualified, before that helper ran. Distinct from every other
     /// refusal: never invalid input, never a limit.
     #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
-    UnsupportedHelper(Box<qsl_semantics::value::supplied::UnsupportedHelperStop>),
+    UnsupportedHelper(Box<quire_semantic_value::supplied_stop::UnsupportedHelperStop>),
 }
 
 impl RunRefusal {
@@ -360,11 +359,11 @@ impl RunRefusal {
         match self {
             Self::Cancelled(cause) => Some(*cause),
             Self::Supplied(stop) => match stop.cause {
-                qsl_semantics::value::supplied::SuppliedCause::Cancelled(cause) => Some(cause),
-                qsl_semantics::value::supplied::SuppliedCause::Limit(_)
-                | qsl_semantics::value::supplied::SuppliedCause::Input { .. }
-                | qsl_semantics::value::supplied::SuppliedCause::Storage(_)
-                | qsl_semantics::value::supplied::SuppliedCause::Capacity(_) => None,
+                quire_semantic_value::supplied_stop::SuppliedCause::Cancelled(cause) => Some(cause),
+                quire_semantic_value::supplied_stop::SuppliedCause::Limit(_)
+                | quire_semantic_value::supplied_stop::SuppliedCause::Input { .. }
+                | quire_semantic_value::supplied_stop::SuppliedCause::Storage(_)
+                | quire_semantic_value::supplied_stop::SuppliedCause::Capacity(_) => None,
             },
             Self::Compile(_)
             | Self::MissingDeclaration { .. }
@@ -524,7 +523,7 @@ pub(crate) fn run_reading<T>(
         cancel,
     )
     .map_err(|failure| match failure {
-        qsl_eval::value::CallFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
+        quire_eval::CallFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
         other => convert_call_failure(other),
     })?;
     // FND-016: the unit's and every resolved library's source, reused
@@ -858,8 +857,8 @@ pub(crate) fn admit_model_arguments(
 
 /// `CheckedPackage::call`'s admission failure, converted with no `qsl_eval`
 /// path in the conversion's own signature (only in this function body).
-pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box<RunRefusal> {
-    use qsl_eval::value::CallFailure;
+pub(crate) fn convert_call_failure(failure: quire_eval::CallFailure) -> Box<RunRefusal> {
+    use quire_eval::CallFailure;
     use quire_semantic_value::call::InputRefusal;
     match failure {
         CallFailure::Input(InputRefusal::WrongValueKind { parameter }) => {
@@ -984,12 +983,12 @@ fn convert_refusal(
 /// `--cfg seam_probe` with `E0004`.
 #[deny(clippy::wildcard_enum_match_arm)]
 pub(crate) fn convert_outcome(
-    evaluation: qsl_eval::value::Evaluation,
+    evaluation: quire_eval::Evaluation,
     graph: &CheckedGraph,
     sources: &[Source],
 ) -> Result<CallOutcome, Box<RunRefusal>> {
-    let record = evaluation.refusal_record(graph);
-    let qsl_eval::value::Evaluation {
+    let record = qsl_eval::value::refusal_record(&evaluation, |location| graph.region(location));
+    let quire_eval::Evaluation {
         outcome, location, ..
     } = evaluation;
     match outcome {

@@ -26,17 +26,13 @@
 //! event. The semantic counters stay per argument and separate: converted
 //! nodes against `work_units` and occurrences against `value_occurrences`.
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::NominalNode;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
 use qsl_semantics::model::observation::population_universe_for;
 use qsl_semantics::value::enumeration::mint_variant_id;
-use qsl_semantics::value::supplied::{
-    AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
-    SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop,
-};
+use qsl_semantics::value::supplied::SuppliedRun;
 use quire_exact::{
     admit_text, form, from_admitted_slots, CollectionKind, CollectionType, ConstructionRefusal,
     Decimal, EffectiveId, EnumMember, FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey,
@@ -45,7 +41,12 @@ use quire_exact::{
     Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
+use quire_semantic_value::supplied_stop::{
+    AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
+    SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedStop,
+};
 use std::collections::{BTreeMap, HashMap};
 
 use super::ReplayRefusal;

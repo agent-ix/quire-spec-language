@@ -7,7 +7,7 @@
 //! a refinement's product has a simulation certificate (FR-149) instead,
 //! which [`SafetyOutcome::Holds`] carries.
 
-use qsl_foundation::InternalFault;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::certificate::simulation::SimulationCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;

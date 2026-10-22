@@ -37,7 +37,6 @@ use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ClauseOutcome, NotMarkov};
 use qsl_eval::simulation::{ExpansionStop, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::InternalFault;
 use qsl_replay::statistical::{
     ClaimForm, Decision, MeasureValue, SampledUndefined, SampledWitness, StatisticalBasis,
     StatisticalLimit, StatisticalLimits, StatisticalMethod, StatisticalOutcome,
@@ -46,6 +45,7 @@ use qsl_replay::statistical::{
 };
 use qsl_replay::UndefinedEvaluation;
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
+use quire_semantic_value::catalog::InternalFault;
 
 pub use claim::{
     reduce_quantile, require_statistical, Bound, ClaimRefusal, Comparison, MeasureEvent,

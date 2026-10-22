@@ -29,7 +29,7 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::location::Location;
 
-use super::super::evaluate::Evaluation;
+use quire_eval::Evaluation;
 
 /// QSpec FR-207's selected observation identity of `document`.
 pub(crate) fn observation_identity(document: &DocumentRef) -> ObservationIdentity {

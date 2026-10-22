@@ -23,8 +23,9 @@ use qsl_foundation::bound::ProofBound;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
-use qsl_foundation::{BackendId, Code, InternalFault, RequestIndex, Setting, SettingLimits};
+use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
 use quire_exact::{Identifier, Origin, Role, ScalarLimits, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 /// The occurrence role and ordinal of a function's declaration (ADR-013 O-09).
 const DECLARATION_ROLE: &str = "declaration";

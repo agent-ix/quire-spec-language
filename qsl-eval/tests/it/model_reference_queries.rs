@@ -18,16 +18,14 @@
 //! does (ADR-013 §8 OQ-C ruling).
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     AdmittedModel, CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations,
     WrongSnapshotCause,
 };
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
@@ -42,6 +40,8 @@ use qsl_semantics::model::population::{
     InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
     PopulationMember,
 };
+use quire_eval::{CallFailure, Evaluation};
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
@@ -49,6 +49,7 @@ use quire_exact::{
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::catalog::UndefinedReason;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
@@ -661,7 +662,7 @@ fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
 /// universe, absent-key-refused, type-mismatch on an undeclared model type)
 /// is carried in `FamilyResult::Refused`, not the kernel's own
 /// `Outcome::Refused` (ADR-013 O-16).
-fn refused_catalog_code(evaluation: Evaluation) -> qsl_foundation::diagnostic::CatalogCode {
+fn refused_catalog_code(evaluation: Evaluation) -> quire_semantic_value::catalog::CatalogCode {
     match evaluation.outcome {
         FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => cause.catalog_code(),
         other => panic!("expected FamilyOutcome::FamilyEvaluated(Refused(_)), got {other:?}"),
@@ -1774,7 +1775,7 @@ fn assert_state_model_ill_typed(refusal: &CheckRefusal, expected: IllTypedCause,
     assert_eq!(code.prefix(), Some("state-model"));
     assert_eq!(
         qsl_foundation::diagnostic::category_of(&code),
-        Some(qsl_foundation::diagnostic::Category::Refusal)
+        Some(quire_semantic_value::catalog::Category::Refusal)
     );
 }
 
@@ -3584,7 +3585,10 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
     let code = refused_catalog_code(evaluation);
     assert_eq!(
         code,
-        qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+        quire_semantic_value::catalog::CatalogCode::new(
+            "cardinality_out_of_bound",
+            "above-maximum"
+        )
     );
     assert_eq!(code, direct);
 }
@@ -3643,7 +3647,7 @@ fn both_family_outcome_arms_reach_a_caller_through_the_s6a_seam() {
     match refused.outcome {
         FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => assert_eq!(
             cause.catalog_code(),
-            qsl_foundation::diagnostic::CatalogCode::new(
+            quire_semantic_value::catalog::CatalogCode::new(
                 "cardinality_out_of_bound",
                 "above-maximum"
             )
@@ -3765,9 +3769,10 @@ fn tc_441_population_maximum_absence_must_match_at_admission() {
 #[trace("TC-428", "FR-096-AC-6")]
 fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
     use qsl_forms::{DeclarationSpans, ExpressionSpans};
-    use qsl_foundation::diagnostic::{Category, Locus};
+    use qsl_foundation::diagnostic::Locus;
     use qsl_foundation::source::provenance::SourceRegion;
     use qsl_foundation::Span;
+    use quire_semantic_value::catalog::Category;
 
     let scenario = scenario();
     let source = qsl_semantics::check::fixture_source();
@@ -3829,12 +3834,12 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
         )
         .expect("the call runs");
 
-    let record = evaluation
-        .refusal_record(package.graph())
-        .expect("a family refusal builds a record");
+    let record =
+        qsl_eval::value::refusal_record(&evaluation, |location| package.graph().region(location))
+            .expect("a family refusal builds a record");
     assert_eq!(
         record.code(),
-        qsl_foundation::diagnostic::CatalogCode::new("invalid_runtime_input", "absent-key")
+        quire_semantic_value::catalog::CatalogCode::new("invalid_runtime_input", "absent-key")
     );
     assert_eq!(record.category(), Category::Refusal);
     let binding = scenario.binding.population_id().to_string();
@@ -3855,9 +3860,9 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
         location: None,
         ..evaluation
     };
-    let record = unlocated
-        .refusal_record(package.graph())
-        .expect("a family refusal builds a record");
+    let record =
+        qsl_eval::value::refusal_record(&unlocated, |location| package.graph().region(location))
+            .expect("a family refusal builds a record");
     assert_eq!(record.locus(), None);
 }
 
@@ -3900,12 +3905,12 @@ fn a_foreign_universe_lookup_builds_a_record_with_both_universes() {
         SCALAR_UNLIMITED,
         &object_world,
     );
-    let record = evaluation
-        .refusal_record(package.graph())
-        .expect("foreign-universe has a key-table row");
+    let record =
+        qsl_eval::value::refusal_record(&evaluation, |location| package.graph().region(location))
+            .expect("foreign-universe has a key-table row");
     assert_eq!(
         record.code(),
-        qsl_foundation::diagnostic::CatalogCode::new("foreign_reference", "foreign-universe")
+        quire_semantic_value::catalog::CatalogCode::new("foreign_reference", "foreign-universe")
     );
     let hex = |bytes: &[u8]| -> String { bytes.iter().map(|b| format!("{b:02x}")).collect() };
     assert_eq!(
@@ -3937,17 +3942,21 @@ fn a_kernel_refusal_builds_a_record_only_where_the_catalog_has_a_code() {
         location: None,
         losses: Vec::new(),
     };
-    let record = evaluation(Refusal::CardinalityOutOfBound {
+    let cardinality = evaluation(Refusal::CardinalityOutOfBound {
         violation: BoundViolation::AboveMaximum,
         kind: CollectionKind::Set,
         bound: CardinalityBound::new(1, 2).unwrap(),
         count: 3,
-    })
-    .refusal_record(package.graph())
-    .expect("cardinality_out_of_bound has a code");
+    });
+    let record =
+        qsl_eval::value::refusal_record(&cardinality, |location| package.graph().region(location))
+            .expect("cardinality_out_of_bound has a code");
     assert_eq!(
         record.code(),
-        qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+        quire_semantic_value::catalog::CatalogCode::new(
+            "cardinality_out_of_bound",
+            "above-maximum"
+        )
     );
     assert_eq!(
         record
@@ -3958,11 +3967,11 @@ fn a_kernel_refusal_builds_a_record_only_where_the_catalog_has_a_code() {
         [("bound", "[1, 2]"), ("collection", "set"), ("count", "3")]
     );
     // `CheckedInvariant` is an internal fault, never a refusal record.
+    let invariant = evaluation(Refusal::CheckedInvariant {
+        cause: quire_exact::CheckedInvariantCause::CollectionElementNotAdmitted,
+    });
     assert_eq!(
-        evaluation(Refusal::CheckedInvariant {
-            cause: quire_exact::CheckedInvariantCause::CollectionElementNotAdmitted
-        })
-        .refusal_record(package.graph()),
+        qsl_eval::value::refusal_record(&invariant, |location| package.graph().region(location)),
         None
     );
 }
@@ -3986,12 +3995,12 @@ fn a_kernel_foreign_reference_builds_a_record_with_both_universes() {
         location: None,
         losses: Vec::new(),
     };
-    let record = evaluation
-        .refusal_record(package.graph())
-        .expect("foreign_reference has a code");
+    let record =
+        qsl_eval::value::refusal_record(&evaluation, |location| package.graph().region(location))
+            .expect("foreign_reference has a code");
     assert_eq!(
         record.code(),
-        qsl_foundation::diagnostic::CatalogCode::new("foreign_reference", "foreign-universe")
+        quire_semantic_value::catalog::CatalogCode::new("foreign_reference", "foreign-universe")
     );
     let hex = |bytes: &[u8]| -> String { bytes.iter().map(|b| format!("{b:02x}")).collect() };
     assert_eq!(
@@ -4232,7 +4241,7 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                         assert_eq!(fault.kernel_cause(), None);
                         assert_eq!(
                             fault.category(),
-                            qsl_foundation::diagnostic::Category::InternalFailure
+                            quire_semantic_value::catalog::Category::InternalFailure
                         );
                     } else {
                         let evaluation = result.expect("valid identity completes");

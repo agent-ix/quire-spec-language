@@ -55,7 +55,6 @@
 //! value function"), which `check` keys by occurrence (ADR-012 §13.5).
 
 mod contract;
-mod evaluation;
 mod outcome;
 pub mod requirements;
 
@@ -67,7 +66,6 @@ pub use contract::{CheckContext, FamilyContract};
 pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
-pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
 pub use outcome::CheckOutcome;
 pub use requirements::{
     classify_domains, classify_extent, ClaimExtent, ClassifyFailure, Requirements,

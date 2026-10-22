@@ -66,8 +66,9 @@ use qsl_foundation::digest::{ByteDigest, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
-use qsl_foundation::{InternalFault, Setting, Span};
+use qsl_foundation::{Setting, Span};
 use quire_exact::ValueType;
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation, PropertyForm,
 };

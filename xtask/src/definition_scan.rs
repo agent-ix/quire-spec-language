@@ -306,7 +306,8 @@ mod tests {
     /// clauses through the evaluator) `s6a` (the S6a family contract,
     /// `ReferenceEvaluation` and `S6aFamilyKind`, layer 5) and `value_invariants`
     /// (FR-366's per-value evaluation, which runs invariants through the
-    /// evaluator), so an unexpected module
+    /// evaluator) and `closure` (FR-401's reference `quire-eval` adapter over
+    /// the checked package), so an unexpected module
     /// cannot be hiding a renamed leftover here.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
@@ -322,6 +323,7 @@ mod tests {
         let expected: std::collections::BTreeSet<&str> = [
             "causes",
             "clause_set",
+            "closure",
             "evaluate",
             "family",
             "s6a",
@@ -332,7 +334,7 @@ mod tests {
         let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
         assert_eq!(
             actual, expected,
-            "value::expression::mod.rs declares an unexpected module beyond causes/clause_set/evaluate/family/s6a/value_invariants"
+            "value::expression::mod.rs declares an unexpected module beyond causes/clause_set/closure/evaluate/family/s6a/value_invariants"
         );
     }
 

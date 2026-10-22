@@ -8,7 +8,7 @@
 //! abstract operation a loop leaves undelivered.
 
 use qsl_eval::simulation::model::ModelSystem;
-use qsl_foundation::InternalFault;
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity};
 use quire_semantic_value::model_transition::ModelTransition;
 

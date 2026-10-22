@@ -3,8 +3,8 @@
 //! invariants and the conjunction of an application's `pre` or `post`
 //! clauses through FR-107.
 
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::observation::{AdmissionUsage, AdmittedObservations, SelfKind};
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, Outcome, Value};
 
 use super::walk::{exhausted, stop, Walk};

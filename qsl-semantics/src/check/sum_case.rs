@@ -350,7 +350,7 @@ fn fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     CheckRefusal {
         location: location.clone(),
         cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
-            qsl_foundation::InternalFault::new("S3", invariant),
+            quire_semantic_value::catalog::InternalFault::new("S3", invariant),
         ))),
     }
 }

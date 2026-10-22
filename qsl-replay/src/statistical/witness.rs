@@ -18,9 +18,9 @@ use qsl_eval::simulation::{
     replay_sampled, SampleStop, SampledDisagreement, SampledRecord, SampledReplay,
     SampledReplayRefusal, SampledStep, TransitionSystem,
 };
-use qsl_foundation::diagnostic::CatalogCode;
 use qsl_semantics::check::Workload;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::CatalogCode;
 
 use super::{SampledWitness, StatisticalProvenance, TestProvenance, WitnessValue};
 use crate::model_check::counterexample::{CounterexampleKind, ModelStep, TemporalCounterexample};

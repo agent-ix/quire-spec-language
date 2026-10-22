@@ -75,9 +75,9 @@ use qsl_eval::simulation::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::InternalFault;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ScalarLimits};
+use quire_semantic_value::catalog::InternalFault;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 use crate::certificate::check::{

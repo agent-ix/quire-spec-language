@@ -39,6 +39,7 @@ mod native_scalar_equality;
 mod property_automata;
 mod protocol_reference;
 mod quantity_literals;
+mod reference_adapter;
 mod refinement_populations;
 mod relationship_navigation;
 mod relationship_reachability;

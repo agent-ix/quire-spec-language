@@ -22,11 +22,11 @@ use crate::{
     WitnessEnvelope, WitnessFailure, WitnessSettlement,
 };
 use qsl_eval::value::ClauseEvaluation;
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use quire_semantic_value::catalog::Category;
 
 /// The `witness` unit's invariants, on `Config::ConfigVersion` at
 /// `current`. `L` is `ints(sequence[0, self.versionNumber, self.versionNumber])`:
@@ -581,7 +581,7 @@ fn native_result_two_command_details_keep_deep_wire_diagnostic() {
 #[test]
 fn native_result_two_retains_refused_outcome_members() {
     use crate::spine::{CallOutcome, CallRefusal};
-    use qsl_foundation::diagnostic::CatalogCode;
+    use quire_semantic_value::catalog::CatalogCode;
     use quire_semantic_value::location::{Location, Origin};
 
     let mut report = run("AllBelow", Snapshot::Low, "child");
@@ -690,7 +690,7 @@ fn native_result_two_retains_refused_outcome_members() {
 fn native_result_two_retains_internal_fault() {
     let mut report = run("AllBelow", Snapshot::Low, "child");
     report.disposition = ClauseDisposition::EvaluateFault(
-        qsl_foundation::diagnostic::InternalFault::new("evaluate", "broken-map"),
+        quire_semantic_value::catalog::InternalFault::new("evaluate", "broken-map"),
     );
     report.basis = crate::proof_result::SettlementBasis::Unavailable;
     let bytes = crate::spine::write_clause_run_result(&report).unwrap();
@@ -1191,7 +1191,7 @@ fn tc_741_clause_reports_carry_the_derived_basis_and_witness() {
     let refuted = run("AllBelow", Snapshot::High, "mid");
     assert_eq!(
         refuted.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!(refuted.disposition.truth(), Some(false));
     assert_eq!(refuted.disposition.category().exit_code(), 10);
@@ -1217,7 +1217,7 @@ fn tc_741_clause_reports_carry_the_derived_basis_and_witness() {
     let holds = run("AllBelow", Snapshot::Low, "child");
     assert_eq!(
         holds.disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
     assert_eq!(holds.basis, SettlementBasis::ClosedScope);
     assert_eq!(holds.witness, None);
@@ -1346,7 +1346,7 @@ fn tc_741_corpus_and_function_reports_carry_their_basis() {
     let violation = run_clause(same_identity("child")).unwrap();
     assert_eq!(
         violation.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!((violation.basis, violation.witness.is_some()), closed);
     let ghost = run_clause(same_identity("ghost")).unwrap();
@@ -1376,7 +1376,7 @@ fn tc_741_frame_and_internal_failure_reports_carry_their_basis() {
     assert_eq!(report.witness, None);
     assert_eq!(
         super::super::undecided_basis(&ClauseDisposition::EvaluateFault(
-            qsl_foundation::diagnostic::InternalFault::new("S6a", "checked-program-invariant")
+            quire_semantic_value::catalog::InternalFault::new("S6a", "checked-program-invariant")
         )),
         SettlementBasis::Unavailable
     );
@@ -1672,7 +1672,7 @@ fn tc_744_an_undefined_step_maps_to_undefined_evaluation() {
         },
         &[0],
     );
-    let evaluation = qsl_eval::value::Evaluation {
+    let evaluation = quire_eval::Evaluation {
         outcome: FamilyOutcome::Evaluated(Outcome::Undefined(
             quire_exact::Undefined::DivisionByZero,
         )),

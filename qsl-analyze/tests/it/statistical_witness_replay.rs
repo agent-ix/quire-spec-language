@@ -12,7 +12,6 @@ use qsl_eval::simulation::model::{ModelSystem, TransitionId};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::simulation::{sample_probabilistic, SampledDisagreement};
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::{CatalogCode, UndefinedReason};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::statistical::{
     replay_sampled_witness, SampledParity, SampledWitness, SampledWitnessRefusal,
@@ -22,6 +21,7 @@ use qsl_replay::statistical::{
 use qsl_replay::{CounterexampleKind, UndefinedLocus};
 use qsl_semantics::check::ProbScheduler;
 use quire_exact::{Cancel, Integer, Value};
+use quire_semantic_value::catalog::{CatalogCode, UndefinedReason};
 
 use crate::prob_world::{self, World};
 

@@ -667,7 +667,9 @@ fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
 fn union_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     fault(
         location,
-        KeyFault::StageFault(qsl_foundation::InternalFault::new("S3", invariant)),
+        KeyFault::StageFault(quire_semantic_value::catalog::InternalFault::new(
+            "S3", invariant,
+        )),
     )
 }
 

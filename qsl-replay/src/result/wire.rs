@@ -33,7 +33,7 @@ use super::{
     WitnessFailure,
 };
 use crate::identity::TracePosition;
-use qsl_foundation::diagnostic::Category;
+use quire_semantic_value::catalog::Category;
 
 mod value;
 use value::{decode_element, encode_element, reference_of, validate_element_shape, Keys};
@@ -353,7 +353,8 @@ impl<'de> Deserialize<'de> for VerdictWire {
 
 #[cfg(test)]
 mod verdict_tests {
-    use super::{Category, VerdictWire};
+    use super::VerdictWire;
+    use quire_semantic_value::catalog::Category;
 
     /// Every verdict category round-trips through its `as_str` label, and
     /// `undefined` and an unknown label are refused.

@@ -48,8 +48,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::{InternalFault, Setting};
+use qsl_foundation::Setting;
 use quire_exact::{NodeKey, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::check::Capability;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};

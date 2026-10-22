@@ -546,7 +546,7 @@ fn a_terminal_declaration_on_no_model_refuses_at_the_model_alias() {
         assert_eq!(found[0].cause.code(), Code::MissingDeclaration);
         assert_eq!(
             found[0].cause.catalog_code(),
-            qsl_foundation::CatalogCode::new("missing_declaration", "missing-name")
+            quire_semantic_value::catalog::CatalogCode::new("missing_declaration", "missing-name")
         );
     }
 }

@@ -489,7 +489,7 @@ fn a_clause_with_align_skip_is_refused_in_lockstep() {
     assert_eq!(refusal, TemporalRefusal::AlignSkipNotLockstep);
     assert_eq!(
         refusal.catalog_code(),
-        qsl_foundation::CatalogCode::new("unsupported_construct", "expression-form")
+        quire_semantic_value::catalog::CatalogCode::new("unsupported_construct", "expression-form")
     );
     assert_eq!(
         refusal.to_string(),
@@ -707,6 +707,6 @@ fn a_clause_without_align_skip_is_refused_a_projected_prefix() {
     assert_eq!(refusal, TemporalRefusal::NotProjectionAligned);
     assert_eq!(
         refusal.catalog_code(),
-        qsl_foundation::CatalogCode::new("unsupported_construct", "expression-form")
+        quire_semantic_value::catalog::CatalogCode::new("unsupported_construct", "expression-form")
     );
 }

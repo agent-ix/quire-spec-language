@@ -8,8 +8,9 @@
 //! another.
 
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::{Code, InternalFault};
+use qsl_foundation::Code;
 use qsl_semantics::check::{AbstractionKey, CheckedBinding};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::CheckedPackage;
 

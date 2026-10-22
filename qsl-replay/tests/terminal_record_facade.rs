@@ -6,11 +6,12 @@
 use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_replay::{
-    read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, Category, DeclineCode,
-    EvaluatedValue, InconclusiveCause, InputArmResult, InternalFault, ProofRefusalCause,
-    ReplayRefusal, ReplayResult, ReportedInconclusiveCause, RequestIndex, TerminalRecord,
-    TerminalValue, Verdict, WitnessArmResult, WitnessCheck,
+    read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, DeclineCode,
+    EvaluatedValue, InconclusiveCause, InputArmResult, ProofRefusalCause, ReplayRefusal,
+    ReplayResult, ReportedInconclusiveCause, RequestIndex, TerminalRecord, TerminalValue, Verdict,
+    WitnessArmResult, WitnessCheck,
 };
+use quire_semantic_value::catalog::{Category, InternalFault};
 
 fn violating_replay() -> ReplayResult {
     ReplayResult::Witness(WitnessArmResult::settle_range_violation(
@@ -252,7 +253,7 @@ fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade()
     }
 }
 
-/// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`
+/// FR-121-AC-16: an `InternalFault` built through `quire_semantic_value::catalog::InternalFault`
 /// is a `ReplayRefusal::Fault`, and `TerminalValue::from_replay_refusal`
 /// settles it `Failed` (an internal failure), never `Inconclusive`.
 #[trace("TC-516", "FR-121-AC-16")]

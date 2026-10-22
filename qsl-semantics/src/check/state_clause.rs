@@ -997,7 +997,7 @@ fn record(
                 roots.iter().map(|(_, value_type)| *value_type).collect();
             for ((root, path), kind) in classify_domains(&root_types, types, position_limit)? {
                 let position = u32::try_from(root).map_err(|_| {
-                    ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
+                    ClassifyFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
                         "check.requirements",
                         "type-position-index-past-u32",
                     ))
@@ -1049,9 +1049,12 @@ fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
 pub(crate) fn population_key(
     domain: &PopulationDomain,
     object: NodeKey,
-) -> Result<DomainKey, qsl_foundation::InternalFault> {
+) -> Result<DomainKey, quire_semantic_value::catalog::InternalFault> {
     let ordinal = u32::try_from(domain.ordinal).map_err(|_| {
-        qsl_foundation::InternalFault::new("check.requirements", "population-ordinal-past-u32")
+        quire_semantic_value::catalog::InternalFault::new(
+            "check.requirements",
+            "population-ordinal-past-u32",
+        )
     })?;
     Ok(DomainKey::Population {
         member_type: wire(object),

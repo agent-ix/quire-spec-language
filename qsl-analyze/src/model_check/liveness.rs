@@ -96,7 +96,7 @@ use qsl_eval::simulation::{
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
+use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     undefined_finding, AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind,
     IncompleteCause, ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome,
@@ -106,6 +106,7 @@ use qsl_replay::{
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits};
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity};
 use quire_semantic_value::model_transition::ModelTransition;
 

@@ -13,13 +13,12 @@ use std::num::NonZeroU64;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
+use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedExpression, Obligation, PackageDeclarations,
 };
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
@@ -28,6 +27,8 @@ use qsl_semantics::value::{
     admit_unit_graph, AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference,
     DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
 };
+use quire_eval::FamilyOutcome;
+use quire_eval::{CallFailure, Evaluation};
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
 use quire_exact::FloatType;
@@ -361,7 +362,10 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
                     panic!("nested cause wrapper was lost");
                 };
                 assert_eq!(cause, IllTypedCause::DistinctEnumDeclarations);
-                assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
+                assert_eq!(
+                    fault.category(),
+                    quire_semantic_value::catalog::Category::InternalFailure
+                );
                 assert_eq!(crate::support::admitted_charge_points(&meter), prefix);
                 if call {
                     let mut denied = Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {

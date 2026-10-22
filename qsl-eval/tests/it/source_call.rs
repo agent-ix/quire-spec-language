@@ -6,9 +6,9 @@ use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{BodyTerm, CheckCause, CheckedGraph, LawRole, PackageDeclarations};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     DivisionProfile, Integer, Meter, Outcome, ScalarLimits, Undefined, Value, ValueType,
 };

@@ -485,10 +485,9 @@ fn check_predicate<'a>(
 ) -> Result<(CheckedStatePredicate, u64), StageFailure<CheckRefusal>> {
     // The syntactic refusals ran first: what reaches here is one operand.
     let [operand] = predicate.operands.as_slice() else {
-        return Err(StageFailure::Fault(qsl_foundation::InternalFault::new(
-            STAGE,
-            "predicate-has-one-operand",
-        )));
+        return Err(StageFailure::Fault(
+            quire_semantic_value::catalog::InternalFault::new(STAGE, "predicate-has-one-operand"),
+        ));
     };
     let body: &Expression = &operand.expression;
     // Each predicate continues from the nodes the claim's earlier ones used,

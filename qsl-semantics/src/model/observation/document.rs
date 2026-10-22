@@ -2168,7 +2168,7 @@ pub(super) fn admit_population_values<'t>(
                 .ok_or_else(|| fault("object-type-has-no-effective-id"))?;
 
             let declared = types.attributes(effective_type).ok_or_else(|| {
-                AdmissionFailure::Fault(qsl_foundation::diagnostic::InternalFault::new(
+                AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
                     "observation-admission",
                     "object-type-has-no-checked-attributes",
                 ))

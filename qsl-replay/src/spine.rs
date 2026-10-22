@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{ClauseTextRefusal, FormsCause, FormsRefusal};
-use qsl_foundation::diagnostic::{CatalogCoded, LimitExceeded, Locus};
+use qsl_foundation::diagnostic::{LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Setting;
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -40,6 +40,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::refusal::MemberPath;
+use quire_semantic_value::catalog::CatalogCoded;
 pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageUnit;
 

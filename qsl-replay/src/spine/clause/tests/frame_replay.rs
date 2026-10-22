@@ -15,12 +15,12 @@ use crate::{
     ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, StateEnvironment, Verdict,
     Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{AdmissionFailure, FrameChange, SelectedObject};
 use quire_exact::Identifier;
+use quire_semantic_value::catalog::Category;
 
 /// The labels `source()` gives the unit, as the request's source reference
 /// spells them; the recompile displays the unit under its identity.

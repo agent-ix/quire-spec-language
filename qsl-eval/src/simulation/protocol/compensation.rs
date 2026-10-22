@@ -21,7 +21,7 @@
 //! and thread takes its ordinal.
 
 use qsl_semantics::check::{CheckedBody, ProtocolNodeId};
-use qsl_semantics::family::FamilyOutcome;
+use quire_eval::FamilyOutcome;
 use quire_exact::{Meter, Outcome, Value};
 
 use super::identity::{ProtocolTransition, ThreadPath, WaitCause};

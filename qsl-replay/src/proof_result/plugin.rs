@@ -13,8 +13,8 @@ use super::{
 use crate::execute::ReplayRefusal;
 use crate::outcome::OutcomeDiagnostic;
 use crate::result::{InputSettlement, ReplayResult};
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::{BackendId, RequestIndex};
+use quire_semantic_value::catalog::Category;
 
 /// A cause settled by QSL's own replay or Kani mapping, never by a provider
 /// (ADR-029 PL-7). The wire spells only the kind; the typed payload exists

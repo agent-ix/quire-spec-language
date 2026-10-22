@@ -77,8 +77,7 @@ use quire_contract_model::{
 };
 
 use qsl_foundation::diagnostic::{
-    CatalogCode, CatalogCoded, Code, InternalFault, JsonPointer, LimitExceeded, Locus,
-    RefusalRecord, StageFailure, Staged,
+    Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::{
@@ -90,6 +89,7 @@ use qsl_semantics::library::{
     PackageId, PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_semantics::model::key::hex;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
 use crate::emit::{emit_checked, Emission, EmitRefusal};
@@ -122,7 +122,7 @@ pub(crate) enum Read {
     /// `StageFailure::Cancelled`.
     Cancelled(quire_exact::CancelCause),
     /// `StageFailure::Fault`.
-    Fault(qsl_foundation::diagnostic::InternalFault),
+    Fault(quire_semantic_value::catalog::InternalFault),
 }
 
 /// [`read_checked_package_v2`], viewed as a [`Read`].
@@ -462,7 +462,7 @@ impl V2ReadRefusal {
     pub(crate) fn unsupported_wire_record(&self) -> Option<RefusalRecord> {
         match self {
             Self::UnsupportedVersion { wire, locus } => {
-                wire.refusal_record(Some((**locus).clone()))
+                qsl_foundation::diagnostic::refusal_record(wire, Some((**locus).clone()))
             }
             _ => None,
         }

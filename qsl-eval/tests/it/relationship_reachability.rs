@@ -9,10 +9,9 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
@@ -27,6 +26,8 @@ use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, DocumentRef, Observation, PopulationEnumerationFailure,
     RelationshipExtents, SelfKind,
 };
+use quire_eval::Evaluation;
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, LimitKind, Meter, ObjectId, ObjectReference, Outcome,
     Presence, ScalarLimits, UniverseId, Value,
@@ -1375,12 +1376,15 @@ fn an_observation_above_the_authored_bound_refuses_above_maximum() {
             ..
         }
     ));
-    let record = above
-        .refusal_record(orders.package.graph())
-        .expect("cardinality_out_of_bound has a catalog code");
+    let record =
+        qsl_eval::value::refusal_record(&above, |location| orders.package.graph().region(location))
+            .expect("cardinality_out_of_bound has a catalog code");
     assert_eq!(
         record.code(),
-        qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+        quire_semantic_value::catalog::CatalogCode::new(
+            "cardinality_out_of_bound",
+            "above-maximum"
+        )
     );
     let fields: Vec<(&str, &str)> = record
         .fields()

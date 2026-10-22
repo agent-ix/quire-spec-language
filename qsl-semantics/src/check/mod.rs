@@ -3554,13 +3554,13 @@ fn population_domain_key(
     object_types: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
     object_nodes: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
     domain: state_clause::PopulationDomain,
-) -> Result<qsl_foundation::bound::DomainKey, qsl_foundation::InternalFault> {
+) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault> {
     let node = object_types
         .iter()
         .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
         .and_then(|declaration| object_nodes.get(declaration))
         .ok_or_else(|| {
-            qsl_foundation::InternalFault::new(
+            quire_semantic_value::catalog::InternalFault::new(
                 "check.population-domain",
                 "member-type-has-a-model-node",
             )
@@ -3872,7 +3872,10 @@ impl CheckedGraph {
         model: &Identifier,
         object: &Identifier,
         field: &Identifier,
-    ) -> Result<Option<qsl_foundation::bound::DomainKey>, qsl_foundation::InternalFault> {
+    ) -> Result<
+        Option<qsl_foundation::bound::DomainKey>,
+        quire_semantic_value::catalog::InternalFault,
+    > {
         let Some(context) = self
             .model_objects
             .get(model.as_str())
@@ -3885,7 +3888,9 @@ impl CheckedGraph {
         let Some(attribute) = types.attribute(*context, field.as_str()) else {
             return Ok(None);
         };
-        let fault = |invariant| qsl_foundation::InternalFault::new("check.field-domain", invariant);
+        let fault = |invariant| {
+            quire_semantic_value::catalog::InternalFault::new("check.field-domain", invariant)
+        };
         let declaring = attribute.owner();
         let node = self
             .object_types
@@ -3923,7 +3928,10 @@ impl CheckedGraph {
         &self,
         model: &Identifier,
         population: &Identifier,
-    ) -> Result<Option<qsl_foundation::bound::DomainKey>, qsl_foundation::InternalFault> {
+    ) -> Result<
+        Option<qsl_foundation::bound::DomainKey>,
+        quire_semantic_value::catalog::InternalFault,
+    > {
         let Some(domain) = self
             .model_populations
             .get(model.as_str())
@@ -3950,7 +3958,8 @@ impl CheckedGraph {
     pub fn population_key(
         &self,
         domain: state_clause::PopulationDomain,
-    ) -> Result<qsl_foundation::bound::DomainKey, qsl_foundation::InternalFault> {
+    ) -> Result<qsl_foundation::bound::DomainKey, quire_semantic_value::catalog::InternalFault>
+    {
         population_domain_key(&self.object_types, &self.object_nodes, domain)
     }
 
@@ -4136,6 +4145,25 @@ impl CheckedGraph {
     /// FR-151 synthesized dispatch candidate is never reachable this way).
     pub fn callable(&self, name: &str) -> Option<CallableFunction<'_>> {
         self.function(name)
+            .filter(|(signature, _)| signature.callable_by_name)
+            .map(|(signature, function)| CallableFunction {
+                identity: function.identity,
+                parameters: &signature.parameters,
+                result: &signature.result,
+            })
+    }
+
+    /// The function callable by name whose minted identity is `identity`
+    /// (`callable_by_name` only: a crate-internal FR-151 synthesized dispatch
+    /// candidate is never reachable this way, TC-196 D07). The accessor the
+    /// evaluation interface's reference adapter admits a callable through
+    /// (FR-401).
+    pub fn callable_by_identity(
+        &self,
+        identity: quire_exact::NodeKey,
+    ) -> Option<CallableFunction<'_>> {
+        self.functions
+            .with_identity(identity)
             .filter(|(signature, _)| signature.callable_by_name)
             .map(|(signature, function)| CallableFunction {
                 identity: function.identity,

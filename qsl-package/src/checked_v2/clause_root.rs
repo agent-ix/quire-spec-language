@@ -20,10 +20,10 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, TemporalForm,
 };
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Origin, Role};
+use quire_semantic_value::catalog::InternalFault;
 
 /// One declaration of an admitted temporal clause: its identity triple and
 /// its `over` node (FR-337 "Outputs").

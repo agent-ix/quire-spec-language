@@ -59,7 +59,7 @@ use qsl_eval::temporal::{
     evaluate_open_prefix, evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome,
     TemporalPosition, TemporalTrace,
 };
-use qsl_foundation::diagnostic::{Category, Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
@@ -67,6 +67,7 @@ use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Meter, ScalarLimits};
+use quire_semantic_value::catalog::{Category, InternalFault};
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 

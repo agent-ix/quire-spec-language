@@ -2,8 +2,8 @@
 //! FR-248's verdict map: what a closed-form outcome settles as once the
 //! checker has answered.
 
-use qsl_foundation::diagnostic::Category;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::Category;
 
 use crate::certificate::closed_form::outcome::ClosedFormOutcome;
 use crate::certificate::closed_form::recompute::{recompute, ClosedFormCheck};

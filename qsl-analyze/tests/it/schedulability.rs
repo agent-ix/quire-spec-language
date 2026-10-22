@@ -8,13 +8,14 @@ use ix_trace_rs::trace;
 use qsl_analyze::schedulability::{analyze, ScheduleLimits};
 use qsl_replay::IncompleteCause;
 use qsl_replay::{
-    recompute, settle, AmcEvidence, Arrival, Category, Certification, ClosedFormAnalysis,
-    ClosedFormCheck, ClosedFormDisagreement, ClosedFormEvidence, ClosedFormOutcome, Code,
-    Criticality, DisagreementCause, Identifier, InconclusiveCause, JobIterates, MissEvidence,
-    ProofBasis, QualifiedName, ScheduleClaim, ScheduleLimit, ScheduleSubject, SchedulingPolicy,
-    Task, TaskFixpoint, TaskSet, TaskSetRefusal, TerminalValue, TimeMember, Verdict, Wcet,
+    recompute, settle, AmcEvidence, Arrival, Certification, ClosedFormAnalysis, ClosedFormCheck,
+    ClosedFormDisagreement, ClosedFormEvidence, ClosedFormOutcome, Code, Criticality,
+    DisagreementCause, Identifier, InconclusiveCause, JobIterates, MissEvidence, ProofBasis,
+    QualifiedName, ScheduleClaim, ScheduleLimit, ScheduleSubject, SchedulingPolicy, Task,
+    TaskFixpoint, TaskSet, TaskSetRefusal, TerminalValue, TimeMember, Verdict, Wcet,
 };
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
+use quire_semantic_value::catalog::Category;
 
 fn r(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a nonzero divisor")

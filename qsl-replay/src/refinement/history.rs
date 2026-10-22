@@ -89,7 +89,10 @@ impl HistoryValues {
         &self,
         system: &ModelSystem<'_>,
         state: &ModelState,
-    ) -> Result<BTreeMap<(ObjectReference, String), Value>, qsl_foundation::CatalogCode> {
+    ) -> Result<
+        BTreeMap<(ObjectReference, String), Value>,
+        quire_semantic_value::catalog::CatalogCode,
+    > {
         self.entries
             .iter()
             .map(|((object, field), value)| {
@@ -169,7 +172,10 @@ pub(super) struct Advanced {
 fn update_of<'r>(
     row: &'r HistoryRow,
     transition: &ModelTransition,
-) -> Result<Option<&'r qsl_semantics::check::HistoryUpdate>, qsl_foundation::CatalogCode> {
+) -> Result<
+    Option<&'r qsl_semantics::check::HistoryUpdate>,
+    quire_semantic_value::catalog::CatalogCode,
+> {
     for update in &row.updates {
         let text = operation_identity_text(&update.operation).map_err(|stop| stop.cause)?;
         if text == transition.operation() {
@@ -185,7 +191,7 @@ fn update_of<'r>(
 pub(super) fn has_update(
     refinement: &CheckedRefinement,
     transition: &ModelTransition,
-) -> Result<bool, qsl_foundation::CatalogCode> {
+) -> Result<bool, quire_semantic_value::catalog::CatalogCode> {
     for row in refinement.history() {
         if update_of(row, transition)?.is_some() {
             return Ok(true);

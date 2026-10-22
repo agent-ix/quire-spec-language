@@ -42,8 +42,8 @@ use std::ops::ControlFlow;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::InternalFault;
 use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::ir::{
     coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,

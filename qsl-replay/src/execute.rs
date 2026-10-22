@@ -21,26 +21,27 @@
 //! ([`crate::ReplayResult`]).
 
 use qsl_eval::value::{
-    input_refusal_code, supplied_stop_cause, supplied_stop_code, CallFailure,
-    CheckedPackageEvaluation,
+    input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
 };
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
-use qsl_semantics::value::supplied::{
-    SuppliedCause, SuppliedFailure, SuppliedRun, SuppliedStop, UnsupportedHelperStop,
-};
+use qsl_semantics::value::supplied::SuppliedRun;
+use quire_eval::CallFailure;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     Cancel, CancelCause, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EnvironmentFailure;
+use quire_semantic_value::supplied_stop::{
+    SuppliedCause, SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
+};
 
 use crate::bounds::ReplayLimits;
 use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
@@ -59,10 +60,10 @@ use crate::witness::{
 };
 use argument::Stopped;
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::Setting;
 use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
 use quire_exact::Identifier;
+use quire_semantic_value::catalog::Category;
 
 mod argument;
 mod object_environment;

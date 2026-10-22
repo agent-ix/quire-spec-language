@@ -12,6 +12,9 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # ADR-011 §6.1: F depends on K. ADR-013 T-5's `Locus` carries the kernel
 # `Location`, and O-07's occurrence key the kernel `Origin`.
 quire-exact = { workspace = true }
+# ADR-011 §6.1 layer SV: the catalog vocabulary (`Category`, `CatalogCode`,
+# `InternalFault`, ...) F's diagnostics name (FR-401, ADR-011 X-14).
+quire-semantic-value = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 sha2 = "0.10.9"
 thiserror = "2.0.20"

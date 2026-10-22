@@ -5,11 +5,11 @@
 
 use ix_trace_rs::trace;
 use qsl_semantics::check::NominalNode;
-use qsl_semantics::value::supplied::{
-    AttemptedCount, SuppliedEvent, SuppliedLimitKind, SuppliedPhase, SuppliedStop,
-};
 use quire_exact::{Integer, ValueType};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::supplied_stop::{
+    AttemptedCount, SuppliedEvent, SuppliedLimitKind, SuppliedPhase, SuppliedStop,
+};
 
 use super::*;
 use crate::witness::{QuantityMagnitude, WitnessBinding, WitnessField, WitnessSlot};
@@ -653,16 +653,16 @@ fn tc_906_a_decimal_magnitude_scale_stops_at_the_request_limit() {
         &mut default_run(),
         &argument::ReferenceModel::unselected(),
     );
-    let Err(argument::Stopped::Supplied(qsl_semantics::value::supplied::SuppliedFailure::Stop(
-        stop,
-    ))) = stopped
+    let Err(argument::Stopped::Supplied(
+        quire_semantic_value::supplied_stop::SuppliedFailure::Stop(stop),
+    )) = stopped
     else {
         panic!("the scale stops at the limit: {stopped:?}");
     };
     let limit = stop.limit().expect("a pre-call limit");
     assert_eq!(
         limit.limit_kind,
-        qsl_semantics::value::supplied::SuppliedLimitKind::ScaleExpansion
+        quire_semantic_value::supplied_stop::SuppliedLimitKind::ScaleExpansion
     );
     assert_eq!(limit.limit, 64);
     assert_eq!(limit.next_charge, 1_000_000_000);

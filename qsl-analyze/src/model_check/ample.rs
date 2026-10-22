@@ -15,9 +15,9 @@ use std::rc::Rc;
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::{any_affects, independent, ExpansionStop, Footprint, Location};
-use qsl_foundation::CatalogCode;
 use qsl_semantics::check::footprint::SymbolicLocation;
 use qsl_semantics::check::FormulaNodeId;
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity};
 use quire_semantic_value::model_transition::ModelTransition;
 

@@ -151,7 +151,8 @@ use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
+use quire_semantic_value::catalog::InternalFault;
 use serde::Serialize;
 
 use quire_exact::{
@@ -2790,11 +2791,11 @@ mod tests {
         assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
         assert_eq!(
             fault.category(),
-            qsl_foundation::diagnostic::Category::InternalFailure
+            quire_semantic_value::catalog::Category::InternalFailure
         );
         assert_eq!(
             qsl_foundation::diagnostic::catalog_category(fault.catalog_code().code()),
-            Some(qsl_foundation::diagnostic::Category::InternalFailure)
+            Some(quire_semantic_value::catalog::Category::InternalFailure)
         );
         assert_ne!(fault.catalog_code().code(), "resource_exhausted");
         assert_eq!(Code::RuntimeInvariant.category(), fault.category());

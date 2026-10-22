@@ -343,14 +343,14 @@ impl RunCause {
     }
 
     /// The cause's ADR-013 O-16 category, whose
-    /// [`Category::exit_code`](qsl_foundation::diagnostic::Category::exit_code)
+    /// [`Category::exit_code`](quire_semantic_value::catalog::Category::exit_code)
     /// is the command's exit status (FR-285): writing the outcome out is an
     /// internal failure, as is a broken S6a invariant (FR-100 "Internal
     /// failure at S6a"); every other cause takes its code's category.
-    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
         match self {
             Self::Output(_) | Self::ClauseOutput(_) => {
-                qsl_foundation::diagnostic::Category::InternalFailure
+                quire_semantic_value::catalog::Category::InternalFailure
             }
             Self::SpineRun(refusal) => refusal.category(),
             _ => self.code().category(),
@@ -371,7 +371,7 @@ pub struct RunError {
 
 impl RunError {
     /// The cause's ADR-013 O-16 category (FR-285).
-    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
         self.cause.category()
     }
 
@@ -1076,7 +1076,7 @@ fn spine_run_failure(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::InternalFault;
+    use quire_semantic_value::catalog::InternalFault;
 
     fn fault_error(stage: &'static str, invariant: &'static str) -> RunError {
         RunError {

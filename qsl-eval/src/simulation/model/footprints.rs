@@ -64,7 +64,7 @@ pub struct FootprintViolation {
 
 impl FootprintViolation {
     /// The catalog code the expansion stops with.
-    pub fn cause(&self) -> qsl_foundation::CatalogCode {
+    pub fn cause(&self) -> quire_semantic_value::catalog::CatalogCode {
         BROKEN
     }
 }

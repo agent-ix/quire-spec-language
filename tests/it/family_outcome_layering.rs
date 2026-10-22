@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-390 (FR-090-AC-9) and TC-386 step 3 (FR-090-AC-5): `FamilyOutcome`,
-//! `FamilyResult` and `EvalOutcome` are defined once, in the layer-3 `check`
-//! core (`qsl-semantics/src/family/`); no module below the core names them;
+//! `FamilyResult` and `EvalOutcome` are defined once, in the layer-E leaf
+//! `quire-eval` (FR-401), so no QSL crate defines them; no module below the
+//! check core names them;
 //! the core names no family cause type; no crate below layer 3 depends on
 //! this crate; and `qsl-semantics`, layer 3 itself, depends on layers 2, F,
 //! SV and K only. Uses the resolved-import and definition scans of TC-256, TC-170 and
@@ -45,11 +46,11 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
-/// Step 1: exactly one definition of each type, under
-/// `qsl-semantics/src/family/`.
-#[trace("FR-090-AC-9", "TC-390")]
+/// Step 1 (FR-401-AC-3): the one definition of each type is `quire-eval`'s,
+/// so no QSL crate defines it, `qsl-semantics/src/family/` included.
+#[trace("FR-090-AC-9", "TC-390", "FR-401-AC-3")]
 #[test]
-fn family_outcome_types_are_defined_once_in_the_check_core() {
+fn family_outcome_types_are_defined_in_no_qsl_crate() {
     let definitions = xtask::definition_scan::scan_dirs(
         &workspace_root(),
         &[
@@ -60,20 +61,15 @@ fn family_outcome_types_are_defined_once_in_the_check_core() {
             "qsl-semantics/src",
             "qsl-package/src",
             "qsl-eval/src",
+            "qsl-replay/src",
         ],
     )
     .expect("the definition scan runs cleanly");
     for name in CORE_TYPES {
         let locations = definitions.items.get(name).cloned().unwrap_or_default();
-        assert_eq!(
-            locations.len(),
-            1,
-            "{name} must be defined exactly once: {locations:?}"
-        );
         assert!(
-            locations[0].file.starts_with("qsl-semantics/src/family/"),
-            "{name} must be defined under qsl-semantics/src/family/, found {:?}",
-            locations[0].file
+            locations.is_empty(),
+            "{name} is defined in quire-eval only, found in the workspace: {locations:?}"
         );
     }
 }
@@ -440,6 +436,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-package",
                     "qsl-semantics",
                     "quire-canonical",
+                    "quire-eval",
                     "quire-exact",
                     "quire-semantic-value",
                     "serde",
@@ -693,5 +690,51 @@ fn no_core_crate_depends_on_qsl_analyze() {
                 "{core} has a {kind} dependency on layer-A qsl-analyze"
             );
         }
+    }
+}
+
+/// FR-401-AC-2: the crates whose shipped code names a `quire-eval` item
+/// (`qsl-eval`, `qsl-replay`) list it in `[dependencies]`; the lower layers
+/// name it in no table, so the leaf stays below them in the dependency
+/// direction.
+#[trace("FR-401-AC-2", "TC-390")]
+#[test]
+fn only_the_evaluation_layers_depend_on_quire_eval() {
+    let packages = workspace_dependencies();
+    let names_leaf = |package: &PackageDependencies| {
+        [&package.normal, &package.dev, &package.build]
+            .into_iter()
+            .any(|table| table.iter().any(|dependency| dependency == "quire-eval"))
+    };
+    for named in ["qsl-eval", "qsl-replay"] {
+        let package = packages
+            .iter()
+            .find(|package| package.name == named)
+            .unwrap_or_else(|| panic!("cargo metadata lists no {named}"));
+        assert!(
+            package
+                .normal
+                .iter()
+                .any(|dependency| dependency == "quire-eval"),
+            "{named} does not name quire-eval in [dependencies]"
+        );
+    }
+    for lower in [
+        "qsl-foundation",
+        "qsl-cst",
+        "qsl-source",
+        "qsl-forms",
+        "qsl-semantics",
+        "qsl-package",
+        "qsl-route",
+    ] {
+        let package = packages
+            .iter()
+            .find(|package| package.name == lower)
+            .unwrap_or_else(|| panic!("cargo metadata lists no {lower}"));
+        assert!(
+            !names_leaf(package),
+            "{lower} names quire-eval, which sits above it"
+        );
     }
 }

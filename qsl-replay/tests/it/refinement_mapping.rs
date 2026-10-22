@@ -3,13 +3,13 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::CatalogCode;
 use qsl_replay::{
     map_state, EvalFailure, HiddenSlot, HistoryValues, MappingFailure, MappingRowRef, ObjectKey,
 };
 use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::state::ModelState;
 use quire_exact::ScalarLimits;
+use quire_semantic_value::catalog::CatalogCode;
 
 use crate::refinement_fixture::{
     cas_refines_counter, cas_state, key, mutated, spec_state, Variant, World, CAS, SPEC, THIRD,

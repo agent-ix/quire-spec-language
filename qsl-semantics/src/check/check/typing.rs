@@ -656,7 +656,7 @@ fn case_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     refuse(
         location,
         CheckCause::InternalFault(Box::new(KeyFault::StageFault(
-            qsl_foundation::InternalFault::new("S3", invariant),
+            quire_semantic_value::catalog::InternalFault::new("S3", invariant),
         ))),
     )
 }

@@ -12,9 +12,10 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::{
-    CatalogCode, Code, LimitExceeded, StageFailure, ALLOCATION_FAILED, RESERVATION_SIZE_OVERFLOW,
+    Code, LimitExceeded, StageFailure, ALLOCATION_FAILED, RESERVATION_SIZE_OVERFLOW,
 };
 use qsl_foundation::Setting;
+use quire_semantic_value::catalog::CatalogCode;
 
 use quire_semantic_value::declaration::{
     EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, InvalidDeclaration, StorageRequest,

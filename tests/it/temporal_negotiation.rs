@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKind, FiniteBound};
-use qsl_foundation::diagnostic::{CatalogCoded, Category};
 use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::{Execution, ResultLabel};
@@ -19,6 +18,7 @@ use qsl_route::{
     BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
+use quire_semantic_value::catalog::{CatalogCoded, Category};
 use quire_semantic_value::checking::CheckingLimits;
 
 /// ADR-018 §6's `Reaches`: `eventually holds(c.versionNumber = 2)` under the

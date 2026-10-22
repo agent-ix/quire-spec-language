@@ -12,8 +12,9 @@
 
 use quire_exact::CancelCause;
 
-use super::{CatalogCode, CatalogCoded, Category, Code, InternalFault, Locus};
+use super::{Code, Locus};
 use crate::setting::Setting;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category, InternalFault};
 
 /// ADR-013 T-4's closed limit kind: one variant per
 /// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1`. Nesting depth is not a kind: no stage refuses on depth
@@ -213,9 +214,11 @@ mod tests {
 
     use quire_exact::CancelCause;
 
-    use super::{CatalogCoded, LimitExceeded, StageFailure};
-    use crate::diagnostic::{category_of, CatalogCode, Category};
+    use super::{LimitExceeded, StageFailure};
+    use crate::diagnostic::category_of;
     use crate::setting::Setting;
+    use quire_semantic_value::catalog::CatalogCoded;
+    use quire_semantic_value::catalog::{CatalogCode, Category};
 
     /// A stage cause with one fixed catalog code.
     #[derive(Debug)]
@@ -257,7 +260,7 @@ mod tests {
     #[test]
     fn a_stage_fault_is_an_internal_failure() {
         let failure: StageFailure<Cause> =
-            StageFailure::Fault(crate::diagnostic::InternalFault::new("S3", "x"));
+            StageFailure::Fault(quire_semantic_value::catalog::InternalFault::new("S3", "x"));
         assert_eq!(failure.category(), Category::InternalFailure);
     }
 

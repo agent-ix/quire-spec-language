@@ -53,7 +53,10 @@ macro_rules! probe_package {
             assert_eq!(fault.stage(), "S6a");
             assert_eq!(fault.invariant(), $identifier);
             assert_eq!(fault.kernel_cause(), None);
-            assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
+            assert_eq!(
+                fault.category(),
+                quire_semantic_value::catalog::Category::InternalFailure
+            );
             fault
         };
         let expected: &[ChargePoint] = &$charges;
@@ -1353,9 +1356,10 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
 #[test]
 #[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
 fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
-    use super::super::{CallFailure, CheckedPackageEvaluation, QualifiedName};
+    use super::super::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::PackageDeclarations;
+    use quire_eval::CallFailure;
     let span = qsl_foundation::Span { start: 0, end: 0 };
     let expected =
         ValueType::Int(IntegerInterval::new(Integer::zero(), Integer::from(9_i64)).unwrap());
@@ -1466,7 +1470,10 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                     fault.kernel_cause(),
                     Some(quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted)
                 );
-                assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
+                assert_eq!(
+                    fault.category(),
+                    quire_semantic_value::catalog::Category::InternalFailure
+                );
                 let expected: &[ChargePoint] = if call {
                     &[ChargePoint::FunctionCall]
                 } else {
@@ -1519,9 +1526,7 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
             } else {
                 assert!(matches!(
                     result.unwrap().outcome,
-                    qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(
-                        Value::Boolean(true)
-                    ))
+                    quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
                 ));
             }
         }
@@ -1545,11 +1550,14 @@ fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
             assert_eq!(fault.stage(), "S6a");
             assert_eq!(fault.invariant(), "checked-program-invariant");
             assert_eq!(fault.kernel_cause(), Some(cause));
-            assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
+            assert_eq!(
+                fault.category(),
+                quire_semantic_value::catalog::Category::InternalFailure
+            );
             assert_eq!(fault.catalog_code().code(), "runtime_invariant");
             // Both public entries use map_err(CallFailure::Fault) unchanged.
-            let super::super::CallFailure::Fault(carried) =
-                super::super::CallFailure::Fault(fault.clone())
+            let quire_eval::CallFailure::Fault(carried) =
+                quire_eval::CallFailure::Fault(fault.clone())
             else {
                 panic!("public call/evaluate fault conversion changed category");
             };

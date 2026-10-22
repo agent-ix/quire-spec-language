@@ -13,11 +13,11 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use qsl_semantics::value::supplied::{
-    AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedLimitKind, SuppliedLimits, SuppliedPhase,
-    SuppliedStop,
-};
+use qsl_semantics::value::supplied::SuppliedLimits;
 use quire_exact::{Cancel, CancelCause, Integer};
+use quire_semantic_value::supplied_stop::{
+    AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedLimitKind, SuppliedPhase, SuppliedStop,
+};
 
 use super::*;
 use crate::supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};

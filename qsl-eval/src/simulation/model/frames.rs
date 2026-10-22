@@ -37,7 +37,7 @@ use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
 use crate::simulation::key;
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::CatalogCode;
+use quire_semantic_value::catalog::CatalogCode;
 
 /// The most values a result domain may hold and still be put in canonical
 /// order; a larger one stops the expansion.

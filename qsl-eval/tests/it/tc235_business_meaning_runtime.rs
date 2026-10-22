@@ -832,19 +832,19 @@ fn money_non_negative_scalar_components() {
         .collect();
     assert!(matches!(
         results[0],
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert!(matches!(
         results[1],
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
     assert!(matches!(
         results[2],
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert!(results[3..].iter().all(|result| matches!(
         result,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     )));
 }
 
@@ -899,7 +899,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
             &mut Meter::new(UNLIMITED),
         )
         .expect_err("an unresolved object reference is refused at admission");
-    assert!(matches!(evaluation, qsl_eval::value::CallFailure::Input(_)));
+    assert!(matches!(evaluation, quire_eval::CallFailure::Input(_)));
 }
 
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-10", "QSpec-FR-208-AC-11")]
@@ -972,7 +972,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         evaluate("ReadsBothContexts", &both_contexts)
             .evaluation
             .outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     // The model guard is no checked clause, so `NotYetPlaced` can be neither
     // looked up nor evaluated against the run's observations.
@@ -987,11 +987,11 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert!(not_yet_placed(&pre_one).is_err());
     assert!(matches!(
         evaluate("PlaceRequires", &pre_one).evaluation.outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert!(matches!(
         evaluate("PlaceEnsures", &post_one).evaluation.outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert!(matches!(
         evaluate(
@@ -1007,7 +1007,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         )
         .evaluation
         .outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     assert!(matches!(
         evaluate(
@@ -1023,7 +1023,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         )
         .evaluation
         .outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
 
     let (snapshots, invocations, invocation) = run(&[(true, false)], &[(true, false)]);
@@ -1041,7 +1041,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert!(not_yet_placed(&pre_two).is_err());
     assert!(matches!(
         evaluate("PlaceRequires", &pre_two).evaluation.outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
 
     let (snapshots, invocations, invocation) = run(&[(false, false)], &[(true, true)]);
@@ -1056,7 +1056,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     .expect("run 3 postcondition admits");
     assert!(matches!(
         evaluate("PlaceEnsures", &post_three).evaluation.outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
     assert!(matches!(
         evaluate(
@@ -1072,7 +1072,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         )
         .evaluation
         .outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
     let inconsistent = evaluate(
         "Consistent",
@@ -1087,7 +1087,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     );
     assert!(matches!(
         inconsistent.evaluation.outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
     assert_eq!(
         inconsistent.receiver_path(),
@@ -1379,11 +1379,11 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
     };
     assert!(matches!(
         evaluate(flags_true),
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
     assert!(matches!(
         evaluate(flags_false),
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
 }
 
@@ -1542,9 +1542,7 @@ pub(crate) fn truth(
         )
         .expect("admitted observations evaluate");
     match evaluated.evaluation.outcome {
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(
-            value,
-        ))) => value,
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(value))) => value,
         other => panic!("expected a completed Boolean, got {other:?}"),
     }
 }
@@ -1719,9 +1717,9 @@ fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
             .iter()
             .map(|entry| {
                 let truth = match entry.evaluation.evaluation.outcome {
-                    qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(
-                        Value::Boolean(value),
-                    )) => value,
+                    quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(
+                        value,
+                    ))) => value,
                     ref other => panic!("expected a completed Boolean, got {other:?}"),
                 };
                 (entry.name.to_string(), truth)
@@ -1900,7 +1898,7 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
     );
     assert!(matches!(
         consistent.evaluation.outcome,
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+        quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
     ));
     assert_eq!(
         consistent.receiver_path(),

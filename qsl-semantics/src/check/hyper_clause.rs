@@ -28,8 +28,9 @@ use qsl_forms::{
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::{InternalFault, Span};
+use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Identifier, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
 use quire_semantic_value::location::{Location, Origin};
 

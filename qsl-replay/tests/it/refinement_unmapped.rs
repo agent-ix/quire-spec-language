@@ -5,9 +5,9 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_replay::{map_state, EvalFailure, HistoryValues, MappingFailure, MappingRowRef};
 use quire_exact::Value;
+use quire_semantic_value::catalog::UndefinedReason;
 
 use crate::ring_world::{
     custom_state, key, ring_is_queue, MapWorld, RingSpec, RingWorld, Variant, ITEMS, QUEUE, RING,

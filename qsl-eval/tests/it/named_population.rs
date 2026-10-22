@@ -13,7 +13,6 @@ use qsl_package::emit_checked;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::footprint::{derive_footprint, SymbolicLocation};
 use qsl_semantics::check::{CheckedGraph, FormulaNode};
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     admit_observations, admit_trace_snapshot, AdmissionFailure, AdmittedObservations, ClauseFacts,
@@ -22,6 +21,7 @@ use qsl_semantics::model::observation::{
 };
 use qsl_semantics::model::operation::OperationLookup;
 use qsl_semantics::model::state::StateModel;
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, Outcome, ScalarLimits, Value};
 use serde_json::{json, Value as Json};
 

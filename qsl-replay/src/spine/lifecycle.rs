@@ -85,11 +85,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
+use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::{build_unit, parse_clause_text, ParsedUnit};
-use qsl_foundation::diagnostic::{
-    InternalFault, LimitExceeded, Locus, StageFailure, StageWork, Staged,
-};
+use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, StageWork, Staged};
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source::Source;
@@ -112,7 +110,9 @@ use qsl_semantics::model::intake::{
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
+use quire_eval::{CallFailure, Evaluation};
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
 use super::{region, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SuppliedLibrary};

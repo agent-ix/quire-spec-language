@@ -4,7 +4,7 @@
 
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::CatalogCode;
+use quire_semantic_value::catalog::CatalogCode;
 
 use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;

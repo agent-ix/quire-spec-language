@@ -13,9 +13,9 @@ use qsl_analyze::exact_probabilistic::{
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_replay::{ModelCheckLimit, ModelCheckLimits};
 use quire_exact::{Cancel, CancelCause, Integer, Rational, Value};
+use quire_semantic_value::catalog::UndefinedReason;
 
 use crate::prob_world::{self, World};
 

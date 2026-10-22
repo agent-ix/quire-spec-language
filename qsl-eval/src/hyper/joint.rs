@@ -8,9 +8,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
+use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, Meter, ScalarLimits};
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{Atom, Letter};

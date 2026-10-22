@@ -22,6 +22,8 @@ qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
 quire-semantic-value = { workspace = true }
+# ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
+quire-eval = { workspace = true }
 # ADR-011 X-8: the simulation state key and the pinned sampler's draw
 # preimage encode through the one RFC 8785 implementation (FR-101).
 quire-canonical = { workspace = true }

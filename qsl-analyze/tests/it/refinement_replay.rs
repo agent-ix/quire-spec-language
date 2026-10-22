@@ -8,7 +8,6 @@ use qsl_analyze::model_check::{check_refinement, RefinementCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{operation_identity_text, ModelSimulationRequest, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
-use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     abstract_classes, open_systems, replay_refinement_trace, settle_refinement,
@@ -23,6 +22,7 @@ use qsl_replay::{
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::refinement_aux::{
     halting_refinement, hidden_register_history, int, pair_refinement, probe_contracts,

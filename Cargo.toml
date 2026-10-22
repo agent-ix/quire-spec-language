@@ -16,6 +16,9 @@ quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1 item 2),
 # its own repository so IR, RT and CG depend on it without the QSL repo.
 quire-walk = { git = "https://github.com/agent-ix/quire-walk", branch = "main" }
+# ADR-011 §6.1 layer E: the shared evaluation-core interface (FR-262, FR-401),
+# its own repository so RT and CG depend on it without the QSL repo.
+quire-eval = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
 
 [package]
 name = "quire-spec-language"

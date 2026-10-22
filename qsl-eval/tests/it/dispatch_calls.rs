@@ -14,12 +14,12 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{
     BinaryOperator, ClauseKind, DeclarationSpans, DeclaredClauseKind, Expression, ExpressionSpans,
     FunctionDeclaration, StateClauseKind, TypeForm,
 };
-use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::Span;
 use qsl_package::CheckedPackage;
@@ -32,7 +32,7 @@ use qsl_semantics::check::{
     DispatchOperation, DispatchTable, InvalidDispatchDeclaration, ModelClause, PackageDeclarations,
     StateClauseDeclaration,
 };
-use qsl_semantics::family::{FamilyKind, FamilyOutcome, FamilyResult};
+use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
@@ -47,12 +47,15 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
 };
+use quire_eval::{CallFailure, Evaluation};
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use quire_semantic_value::location::{Location, Origin};

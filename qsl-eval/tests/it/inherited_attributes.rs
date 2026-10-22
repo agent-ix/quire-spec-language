@@ -11,12 +11,14 @@
 //! in `model_reference_queries.rs`, where `lookup` produces it.
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, Evaluation};
+use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::Expression;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations};
-use qsl_semantics::family::{FamilyKind, FamilyOutcome};
+use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::Evaluation;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     EffectiveId, FieldValue, IllTypedCause, Integer, Meter, ObjectId, ObjectReference, Outcome,
     Presence, ScalarLimits, UniverseId, Value, ValueType,

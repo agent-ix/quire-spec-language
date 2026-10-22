@@ -1334,7 +1334,7 @@ impl Scope {
         let fault = |invariant: &'static str| CheckRefusal {
             location: Location::root(quire_semantic_value::location::Origin::Expression),
             cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
-                qsl_foundation::InternalFault::new("S3", invariant),
+                quire_semantic_value::catalog::InternalFault::new("S3", invariant),
             ))),
         };
         let unions: Vec<(quire_exact::NodeKey, Vec<quire_exact::Identifier>)> = self

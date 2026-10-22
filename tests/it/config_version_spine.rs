@@ -6,10 +6,11 @@
 
 use crate::support::config_version_spine::{cases::CASES, spine, Case};
 use ix_trace_rs::trace;
-use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::diagnostic::Code;
 use qsl_replay::spine::{
     run_clause, CallOutcome, ClauseDisposition, ClauseRunRequest, ClauseRunStage,
 };
+use quire_semantic_value::catalog::Category;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, path::Path, process::Command};
 

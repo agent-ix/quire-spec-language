@@ -869,11 +869,11 @@ fn keying_a_second_declaration_onto_a_recorded_node_refuses() {
     );
     assert_eq!(cause.cause(), Some("established-invariant-broken"));
     assert_eq!(
-        qsl_foundation::diagnostic::category_of(&qsl_foundation::diagnostic::CatalogCode::new(
+        qsl_foundation::diagnostic::category_of(&quire_semantic_value::catalog::CatalogCode::new(
             cause.code().as_str(),
             "established-invariant-broken",
         )),
-        Some(qsl_foundation::diagnostic::Category::InternalFailure)
+        Some(quire_semantic_value::catalog::Category::InternalFailure)
     );
     assert_eq!(resolved, Some(d1));
 }

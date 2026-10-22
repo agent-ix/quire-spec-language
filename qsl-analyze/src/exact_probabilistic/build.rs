@@ -14,10 +14,10 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::InternalFault;
 use qsl_replay::ModelCheckLimit;
 use qsl_semantics::check::{CheckedPredicate, Workload};
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::plan::{Plan, PlanFault, Reads};
 use super::{

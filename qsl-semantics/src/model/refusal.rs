@@ -17,9 +17,10 @@ use std::collections::BTreeSet;
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::origin::JsonValue;
-use qsl_foundation::diagnostic::{CatalogCode, JsonPointer, ALLOCATION_FAILED};
+use qsl_foundation::diagnostic::{JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
 use quire_exact::UniverseId;
+use quire_semantic_value::catalog::CatalogCode;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// two sites (#163 review finding: each offered value stays distinguishable
@@ -1923,7 +1924,7 @@ pub(crate) mod tests {
     use super::fixtures::exhaustive_samples;
     use super::ModelRefusalCause;
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::CatalogCode;
+    use quire_semantic_value::catalog::CatalogCode;
 
     /// The spec's spelling parses to the typed path and prints back, and the
     /// reader's document location maps onto the same path.

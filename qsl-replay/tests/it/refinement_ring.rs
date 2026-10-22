@@ -5,7 +5,6 @@
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{operation_identity_text, ModelSimState, ModelSystem};
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_replay::{
     check_step, map_state, ConcreteStep, EvalFailure, HistoryValues, MappingFailure, MappingRowRef,
     RefinementFailure, RefinementPosition, StepArgument, StepRejection, StepVerdict, Taken,
@@ -13,6 +12,7 @@ use qsl_replay::{
 };
 use qsl_semantics::model::state::ModelState;
 use quire_exact::{Integer, Value, ValueType};
+use quire_semantic_value::catalog::UndefinedReason;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::ring_world::{

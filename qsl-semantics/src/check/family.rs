@@ -3534,10 +3534,10 @@ mod locus_tests {
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
     use ix_trace_rs::trace;
     use qsl_forms::build_unit;
-    use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded};
     use qsl_foundation::source::provenance::SourceRegion;
     use qsl_foundation::SourceIdentity;
     use quire_exact::{Meter, ScalarLimits};
+    use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
     use quire_semantic_value::location::Origin as CheckOrigin;
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\

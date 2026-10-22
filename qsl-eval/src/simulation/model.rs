@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
+use qsl_foundation::IdentityLimits;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::OperationKey;
 use qsl_semantics::family::ClassifyFailure;
@@ -51,6 +51,7 @@ use quire_canonical::Limits as CanonicalLimits;
 use quire_exact::{
     EffectiveId, Incomplete, NodeKey, ObjectReference, Refusal, ScalarLimits, Undefined, ValueType,
 };
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -199,7 +200,7 @@ pub enum ClauseOutcome {
     /// A kernel evaluation was refused.
     KernelRefused(Refusal),
     /// The family's evaluation-time result was undefined, for this reason.
-    FamilyUndefined(qsl_foundation::diagnostic::UndefinedReason),
+    FamilyUndefined(quire_semantic_value::catalog::UndefinedReason),
     /// The family's evaluation-time result was a refusal with this code.
     FamilyRefused(CatalogCode),
     /// A charge was unavailable.
@@ -223,7 +224,7 @@ impl ClauseOutcome {
                 Some(crate::temporal::UndefinedCause::Kernel(undefined.clone()))
             }
             Self::FamilyUndefined(reason) => Some(crate::temporal::UndefinedCause::Family(
-                qsl_foundation::diagnostic::UndefinedRecord {
+                quire_semantic_value::catalog::UndefinedRecord {
                     reason: *reason,
                     fields: BTreeMap::new(),
                 },
@@ -424,7 +425,7 @@ fn record(code: Code, cause: &'static str, fields: &[(&'static str, String)]) ->
 }
 
 fn fault(invariant: &'static str) -> AdmissionFailure {
-    AdmissionFailure::Fault(qsl_foundation::diagnostic::InternalFault::new(
+    AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
         "model-simulation",
         invariant,
     ))

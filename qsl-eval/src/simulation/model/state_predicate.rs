@@ -11,9 +11,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{UndefinedReason, UndefinedRecord};
 use qsl_semantics::check::StatePredicate;
 use quire_exact::{Meter, ObjectReference};
+use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 use quire_semantic_value::location::Location;
 
 use super::contracts::{verdict, Verdict};

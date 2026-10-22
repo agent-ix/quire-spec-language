@@ -185,7 +185,7 @@ pub(super) fn run_temporal(
     let (_, over_type) = clause.over();
     let ValueType::Reference(type_identity) = over_type else {
         return late(ClauseDisposition::EvaluateFault(
-            qsl_foundation::diagnostic::InternalFault::new("temporal", "over-is-a-reference"),
+            quire_semantic_value::catalog::InternalFault::new("temporal", "over-is-a-reference"),
         ));
     };
     let universe = match population_universe_for(
@@ -315,7 +315,7 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
         | TemporalRefusal::DecreasingStamp { .. }
         | TemporalRefusal::NonPositiveLoopDelay
         | TemporalRefusal::LoopReentersBeforeLastStamp => TemporalTraceRefusal::Fault(
-            qsl_foundation::diagnostic::InternalFault::new("temporal", "step-evaluator-refusal"),
+            quire_semantic_value::catalog::InternalFault::new("temporal", "step-evaluator-refusal"),
         ),
     }
 }

@@ -24,13 +24,14 @@
 //! non-proof evaluation outcome such as `execute`.
 
 use qsl_cst::format::FormatRefusal;
-use qsl_foundation::diagnostic::{Category, Code, Locus, StageFailure, Staged};
+use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::CancelCause;
+use quire_semantic_value::catalog::Category;
 use serde::{Serialize, Serializer};
 
 use crate::certificate::{CertificateLocus, CertificateRule};
@@ -1091,7 +1092,7 @@ impl OutcomeDocument {
 
     /// The document of an `operation` that hit a broken internal invariant:
     /// internal failure, at no stage, with the fault's catalog code.
-    fn faulted(operation: Operation, fault: &qsl_foundation::diagnostic::InternalFault) -> Self {
+    fn faulted(operation: Operation, fault: &quire_semantic_value::catalog::InternalFault) -> Self {
         Self::new(operation, None, fault.category()).with_diagnostics(vec![OutcomeDiagnostic::new(
             Some(fault.catalog_code().cause()),
             fault.catalog_code().code(),
@@ -1196,17 +1197,17 @@ impl OutcomeDocument {
                 // result contract has no field for the phase context yet, so
                 // nothing is invented for it here.
                 RunRefusal::Supplied(stop) => match stop.cause {
-                    qsl_semantics::value::supplied::SuppliedCause::Cancelled(cause) => {
+                    quire_semantic_value::supplied_stop::SuppliedCause::Cancelled(cause) => {
                         Self::cancelled(Operation::Execute, cause)
                     }
-                    qsl_semantics::value::supplied::SuppliedCause::Limit(_) => Self::new(
+                    quire_semantic_value::supplied_stop::SuppliedCause::Limit(_) => Self::new(
                         Operation::Execute,
                         Some(OutcomeStage::S6a),
                         refusal.category(),
                     ),
-                    qsl_semantics::value::supplied::SuppliedCause::Input { .. }
-                    | qsl_semantics::value::supplied::SuppliedCause::Storage(_)
-                    | qsl_semantics::value::supplied::SuppliedCause::Capacity(_) => Self::new(
+                    quire_semantic_value::supplied_stop::SuppliedCause::Input { .. }
+                    | quire_semantic_value::supplied_stop::SuppliedCause::Storage(_)
+                    | quire_semantic_value::supplied_stop::SuppliedCause::Capacity(_) => Self::new(
                         Operation::Execute,
                         Some(OutcomeStage::S6a),
                         refusal.category(),
@@ -1305,12 +1306,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::{CatalogCode, InternalFault};
     use qsl_foundation::digest::DigestDomain;
     use qsl_foundation::{Position, SourceIdentity};
     use qsl_semantics::library::LibraryName;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{Cancel, CancelCause, Identifier, ScalarLimits};
+    use quire_semantic_value::catalog::{CatalogCode, InternalFault};
     use serde_json::{json, Value};
 
     use super::*;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The family-owned evaluation-time causes S6a returns in
-//! [`qsl_semantics::family::FamilyResult`] (FR-090, ADR-013 O-16, T-6), defined
+//! [`quire_eval::FamilyResult`] (FR-090, ADR-013 O-16, T-6), defined
 //! beside the evaluator that raises them. Layer 5 `value::expression` holds
 //! every family's evaluator (ADR-011 §6.1), so the module path does not
 //! decide the owning family: [`ProtocolClauseSnapshot`] is `ProtocolClause`'s,
@@ -9,10 +9,10 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{
+use quire_exact::ObjectReference;
+use quire_semantic_value::catalog::{
     CatalogCode, CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
-use quire_exact::ObjectReference;
 
 use qsl_semantics::check::WrongSnapshotCause;
 use qsl_semantics::model::key::DeclarationKey;
@@ -22,7 +22,7 @@ use qsl_semantics::model::observation::AdmissionRecord;
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
 /// effective operation, the selected method's effective identity, the
 /// receiver reference and the call locus. The call locus is the evaluator's
-/// own [`crate::value::Evaluation::location`], not repeated here. Moved from
+/// own [`quire_eval::Evaluation::location`], not repeated here. Moved from
 /// the now-deleted `value::outcome`: not a kernel type
 /// (ADR-013 T-6 -- FR-151 dispatch resolution is QSL `model`/`check`
 /// vocabulary), and narrowed to `pub(crate)` since its only consumers are
@@ -483,8 +483,9 @@ impl UndefinedCoded for StateModelUndefined {
 mod tests {
     use super::{identity_string, ModelQueryRefusal, ProtocolClauseSnapshot};
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::{category_of, CatalogCode, CatalogCoded, Category, Code};
+    use qsl_foundation::diagnostic::{category_of, Code};
     use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
+    use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
     fn wrong_anchor() -> ProtocolClauseSnapshot {
         ProtocolClauseSnapshot::WrongAnchor {
@@ -551,7 +552,10 @@ mod tests {
             detail: String::new(),
         };
         assert_eq!(mismatch.catalog_fields(), None);
-        assert_eq!(mismatch.refusal_record(None), None);
+        assert_eq!(
+            qsl_foundation::diagnostic::refusal_record(&mismatch, None),
+            None
+        );
     }
 
     /// TC-387 (FR-090-AC-6): each `WrongSnapshotCause` maps to

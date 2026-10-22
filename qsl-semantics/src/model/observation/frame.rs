@@ -35,7 +35,8 @@ use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
     decide_frame, FrameCharge, FrameDecision, FrameObject, FrameStop as DecisionStop,
 };
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 /// What check 11 reads besides the documents: the re-derived model views,

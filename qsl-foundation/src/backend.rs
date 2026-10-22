@@ -43,8 +43,8 @@ impl EmptyBackendIdentity {
     }
 
     /// The refusal category.
-    pub const fn category(&self) -> crate::Category {
-        crate::Category::Refusal
+    pub const fn category(&self) -> quire_semantic_value::catalog::Category {
+        quire_semantic_value::catalog::Category::Refusal
     }
 }
 

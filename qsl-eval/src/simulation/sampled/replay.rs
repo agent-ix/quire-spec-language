@@ -12,10 +12,10 @@
 //! state no successor has, or a draw that selects another item all show as
 //! a recomputed step that differs from the recorded one.
 
-use qsl_foundation::diagnostic::CatalogCode;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_semantics::check::Workload;
 use quire_exact::{Cancel, Integer, Rational};
+use quire_semantic_value::catalog::CatalogCode;
 
 use super::{sample_probabilistic, SampleStop, SampledStep};
 use crate::simulation::model::probabilistic::same_value;

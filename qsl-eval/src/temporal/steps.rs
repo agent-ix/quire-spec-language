@@ -17,8 +17,8 @@
 //! interval that needs a counted step after the loop is entered is not met on
 //! it (PB-3).
 
-use qsl_foundation::InternalFault;
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::letters::TemporalLetters;
 use super::plan::fault;

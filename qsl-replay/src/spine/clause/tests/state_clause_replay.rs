@@ -17,11 +17,11 @@ use crate::{
     ReplayResult, ReplaySource, SnapshotValue, StateClauseCounterexample, StateClauseKind,
     StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::Identifier;
+use quire_semantic_value::catalog::Category;
 
 fn name(text: &str) -> Identifier {
     Identifier::new(text).expect("an identifier")

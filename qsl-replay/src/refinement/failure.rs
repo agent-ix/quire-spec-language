@@ -2,7 +2,7 @@
 //! ADR-020 RC-1 and QSpec FR-379: the failure a refinement counterexample
 //! names, and the verdict of one step check (FR-141).
 
-use qsl_foundation::{CatalogCode, InternalFault};
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 

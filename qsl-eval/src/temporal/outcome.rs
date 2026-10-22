@@ -2,10 +2,10 @@
 //! What the temporal evaluator returns: an outcome that settles the clause
 //! on the trace, and the typed refusals of a trace it cannot read.
 
-use qsl_foundation::diagnostic::Category;
-use qsl_foundation::{CatalogCode, InternalFault};
 use qsl_semantics::check::TemporalProfile;
 use quire_exact::Incomplete;
+use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::letters::UndefinedCause;

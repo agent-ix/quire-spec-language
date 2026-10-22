@@ -14,11 +14,10 @@
 //! charged points in order, and the work and result units.
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, Evaluation};
+use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::Expression;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Multiplicity, ObjectTypeRecord,
@@ -28,6 +27,8 @@ use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{PopulationEnumerationFailure, RelationshipExtents};
+use quire_eval::Evaluation;
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     from_admitted, BoundViolation, ChargePoint, CollectionKind, CollectionType, EffectiveId,
     LimitKind, Meter, ObjectId, ObjectReference, OptionValue, Outcome, Refusal, ScalarLimits,

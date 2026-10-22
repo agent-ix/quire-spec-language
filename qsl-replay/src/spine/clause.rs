@@ -13,7 +13,6 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::source::Source;
 use qsl_foundation::source_map::NativeLanguage;
 use qsl_foundation::SourceIdentity;
@@ -27,6 +26,7 @@ use qsl_semantics::model::observation::{
     Provisions,
 };
 use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 mod temporal;
 pub use temporal::{OverObject, TraceInput};
@@ -302,7 +302,7 @@ pub enum ClauseDisposition {
     /// Stage `evaluate`, category `internal-failure`: a broken S6a
     /// invariant reached outside the outcome mapping (FR-100's own
     /// internal-failure exit status).
-    EvaluateFault(qsl_foundation::diagnostic::InternalFault),
+    EvaluateFault(quire_semantic_value::catalog::InternalFault),
 }
 
 impl ClauseDisposition {
@@ -323,16 +323,16 @@ impl ClauseDisposition {
     }
 
     /// FR-109 Outputs' `category` (ADR-013 O-16, `qsl_foundation::
-    /// diagnostic::Category`). A compile refusal, an argument refusal and an
+    /// quire_semantic_value::catalog::Category`). A compile refusal, an argument refusal and an
     /// admission refusal take their code's
     /// [`Code::category`](qsl_foundation::diagnostic::Code::category)
     /// (`unknown_required_feature` is unsupported); an admission
     /// `Incomplete` is incomplete and a `Fault` an internal failure. The
     /// run's exit code is this category's
-    /// [`Category::exit_code`](qsl_foundation::diagnostic::Category::exit_code)
+    /// [`Category::exit_code`](quire_semantic_value::catalog::Category::exit_code)
     /// (FR-285).
-    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
-        use qsl_foundation::diagnostic::Category;
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+        use quire_semantic_value::catalog::Category;
         match self {
             Self::Compile(refusal) => refusal.code().category(),
             Self::ArgumentRefusal(refusal) => refusal.category(),
@@ -423,8 +423,8 @@ pub enum TemporalVerdict {
 
 impl TemporalVerdict {
     /// The ADR-013 O-16 category of this verdict (FR-327 "Results").
-    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
-        use qsl_foundation::diagnostic::Category;
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+        use quire_semantic_value::catalog::Category;
         match self {
             Self::Holds => Category::Success,
             Self::Undefined {
@@ -445,7 +445,7 @@ pub enum TemporalUndefinedCause {
     /// The kernel `Outcome::Undefined`, for example division by zero.
     Kernel(quire_exact::Undefined),
     /// A family's `FamilyResult::Undefined` record.
-    Family(qsl_foundation::UndefinedRecord),
+    Family(quire_semantic_value::catalog::UndefinedRecord),
     /// A window aggregate held fewer values than its `min_count` (ADR-024
     /// WA-4).
     InsufficientData {
@@ -520,8 +520,8 @@ impl TemporalTraceRefusal {
     /// `unsupported_construct`/`expression-form` for a profile or trace shape
     /// the evaluator does not read, and
     /// `runtime_invariant`/`established-invariant-broken` for a fault.
-    pub fn catalog_code(&self) -> qsl_foundation::CatalogCode {
-        use qsl_foundation::CatalogCode;
+    pub fn catalog_code(&self) -> quire_semantic_value::catalog::CatalogCode {
+        use quire_semantic_value::catalog::CatalogCode;
         match self {
             Self::EmptyTrace
             | Self::EmptyLoop
@@ -649,7 +649,7 @@ pub struct ClauseRunReport {
 /// result is decided by the whole call, a `Frame` run's witness is
 /// FR-115's), `unavailable` for every other disposition.
 fn undecided_basis(disposition: &ClauseDisposition) -> SettlementBasis {
-    use qsl_foundation::diagnostic::Category;
+    use quire_semantic_value::catalog::Category;
     match (disposition.stage(), disposition.category()) {
         (ClauseRunStage::Evaluate, Category::Success | Category::Violation) => {
             SettlementBasis::ClosedScope
@@ -941,7 +941,8 @@ pub(crate) fn check_clause_admitted(
     clause: &CheckedStateClause,
     selection: &ClauseSelection,
 ) -> ClauseCheck {
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use quire_eval::CallFailure;
     use quire_semantic_value::call::InputRefusal;
 
     let graph = run.package.graph();
@@ -1085,8 +1086,9 @@ pub(crate) fn check_frame(
     operation_frame: &qsl_semantics::check::CheckedOperationFrame,
     invocation: &DocumentRef,
 ) -> FrameCheck {
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, FrameEvaluation};
-    use qsl_semantics::family::FamilyOutcome;
+    use qsl_eval::value::{CheckedPackageEvaluation, FrameEvaluation};
+    use quire_eval::CallFailure;
+    use quire_eval::FamilyOutcome;
 
     let graph = run.package.graph();
     let frame = operation_frame.frame();
@@ -1141,7 +1143,7 @@ pub(crate) fn check_frame(
         // violation.
         Ok(FrameEvaluation {
             evaluation:
-                qsl_eval::value::Evaluation {
+                quire_eval::Evaluation {
                     outcome:
                         FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(false))),
                     ..

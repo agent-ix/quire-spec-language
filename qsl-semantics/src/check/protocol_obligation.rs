@@ -1350,7 +1350,10 @@ pub(crate) fn unresolved_fault() -> CheckRefusal {
     CheckRefusal {
         location: Location::root(Origin::Expression),
         cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
-            qsl_foundation::InternalFault::new("check.protocol", "obligation-types-resolved"),
+            quire_semantic_value::catalog::InternalFault::new(
+                "check.protocol",
+                "obligation-types-resolved",
+            ),
         ))),
     }
 }

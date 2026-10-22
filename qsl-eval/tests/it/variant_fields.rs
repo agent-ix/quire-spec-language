@@ -13,10 +13,10 @@ use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::{BinaryOperator, Expression};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, PackageDeclarations};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     CollectionKind, CollectionType, FieldValue, IllTypedCause, Integer, Meter, Outcome,
     ScalarLimits, Value, ValueType,

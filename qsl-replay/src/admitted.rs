@@ -14,7 +14,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
@@ -23,6 +22,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::library::PackageId;
 use quire_exact::{Identifier, Integer, NodeKey, UnionMember, UnitId, ValueType, VariantId};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape};
 use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
 use quire_semantic_value::unit::{NominalUnitForm, NominalUnitNode};

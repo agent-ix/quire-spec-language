@@ -11,13 +11,13 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{RequestIndex, SourceIdentity};
 use qsl_semantics::check::{Capability, CheckedGraph, RequirementRecord};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{planned_equality, Cancel, Meter, Outcome, Value};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::spine::{
     default_accounting, run_reading, Call, CallArgument, CallOutcome, DependencyInput, RunRefusal,

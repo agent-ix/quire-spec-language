@@ -36,10 +36,7 @@ pub mod wire_format;
 pub mod witness;
 
 pub use backend::{BackendId, EmptyBackendIdentity};
-pub use diagnostic::{
-    CatalogCode, CatalogCoded, Category, Code, Diagnostic, InternalFault, Phase, SyntaxLimit,
-    UndefinedCoded, UndefinedReason, UndefinedRecord,
-};
+pub use diagnostic::{Code, Diagnostic, Phase, SyntaxLimit};
 pub use digest::ByteDigest;
 pub use identity_limits::{IdentityLimits, DEFAULT_IDENTITY_INPUT_BYTES};
 pub use intake_limits::{IntakeLimits, DEFAULT_INTAKE_INPUT_BYTES};

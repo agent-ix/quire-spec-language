@@ -198,7 +198,7 @@ pub use proof_result::{
     StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
     TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
 };
-pub use qsl_foundation::{Code, InternalFault, RequestIndex};
+pub use qsl_foundation::{Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
 // The inputs `call_site` takes and the typed operation name it and FR-115
 // select by. They are defined in `spine` because the spine compile reads
@@ -231,7 +231,7 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
 // The ADR-013 O-16 category a `Verdict` and each arm result carry, re-exported
 // so CG names `Category::Success` and `Category::Violation` through this crate.
-pub use qsl_foundation::diagnostic::Category;
+
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not

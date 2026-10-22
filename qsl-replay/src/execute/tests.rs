@@ -2,7 +2,7 @@
 //! FR-098 (TC-444): the replay executor over real complete-V1 source,
 //! recompiled through the spine.
 
-use qsl_foundation::diagnostic::Category;
+use quire_semantic_value::catalog::Category;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -68,7 +68,7 @@ fn default_run() -> qsl_semantics::value::supplied::SuppliedRun {
 /// The parameter an input refusal of a stopped conversion names, whether it
 /// stopped as a plain refusal or inside the conversion phase.
 fn refused_parameter(stopped: &argument::Stopped) -> Option<usize> {
-    use qsl_semantics::value::supplied::{SuppliedCause, SuppliedFailure};
+    use quire_semantic_value::supplied_stop::{SuppliedCause, SuppliedFailure};
     let input = match stopped {
         argument::Stopped::Refusal(refusal) => refusal.input_refusal(),
         argument::Stopped::Supplied(SuppliedFailure::Stop(stop)) => match &stop.cause {
@@ -881,7 +881,7 @@ fn tc_444_stage_limits_bound_the_recompile() {
     assert_eq!(refused.code(), Code::InvalidRequest);
     assert_eq!(
         refused.code().category(),
-        qsl_foundation::diagnostic::Category::Refusal
+        quire_semantic_value::catalog::Category::Refusal
     );
     assert_eq!(refused.code().category().exit_code(), 20);
 

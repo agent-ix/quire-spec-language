@@ -13,8 +13,8 @@ use std::cmp::Ordering;
 use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::union_fixture as fixture;
-use qsl_semantics::value::supplied::{SuppliedFailure, SuppliedLimitKind, SuppliedPhase};
 use quire_exact::{compare_keys, ScalarLimits, Value, ValueType};
+use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedLimitKind, SuppliedPhase};
 
 use super::{
     default_run, name, parameter, refused_parameter, replay, request, spine, typed_input,
