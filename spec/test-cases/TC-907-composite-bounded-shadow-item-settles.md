@@ -19,7 +19,7 @@ pair count with the retained shadow, and never settles `Refuted`.
 `settle_verified_shadow` applies the coverage rule and settles by rows V-1
 to V-5 for every CG FR-028-AC-17 strength.
 
-Scope: FR-358-AC-1 to FR-358-AC-8.
+Scope: FR-358-AC-1 to FR-358-AC-9.
 
 ## Test Procedure
 
@@ -94,6 +94,9 @@ call's harness bounds.
 12. `ReplayLimits`: a request whose S1 limit is above the default
     `replay.input_bytes` refuses `LimitAboveReader` through both entries
     under the default and settles when the limit is raised.
+13. Replay a falsified request with the replay target replaced by
+    `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`), and by
+    `state_clause` (`VersionUnchanged`).
 
 Tag each test `#[trace("TC-907", "FR-358-AC-N")]` for the criterion it
 backs.
@@ -144,3 +147,4 @@ source form (the grammar takes only `K<T>[min, max]`), so the unbounded
   two digests.
 - Step 11: equal for the sent claim and unequal for each changed member.
 - Step 12: `LimitAboveReader` under the default, a settlement when raised.
+- Step 13: `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` and `/replay/state_clause`, naming `replay_composite_parity` and `function` (FR-358-AC-9).

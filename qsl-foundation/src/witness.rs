@@ -5,6 +5,7 @@
 //! uses, and FR-268's separation-check steps.
 
 use crate::source::provenance::OccurrenceKey;
+use alloc::{string::String, vec::Vec};
 use quire_exact::ObjectReference;
 
 /// QSpec FR-207's selected observation identity: the authority-qualified

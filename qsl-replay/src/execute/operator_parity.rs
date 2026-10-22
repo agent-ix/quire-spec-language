@@ -19,7 +19,7 @@ use super::parity_identity::{
     parity_obligation, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
 };
 use super::scalar_site::{applies, check_node_operands, in_body};
-use super::{lookup, recompile, request_limits, ReplayRefusal};
+use super::{function_target, lookup, recompile, request_limits, ReplayRefusal};
 use crate::bounds::ReplayLimits;
 use crate::identity::{ObligationIdentity, QualifiedName};
 use crate::request::{ReplayRequest, ReplayRequestWire};
@@ -27,6 +27,7 @@ use crate::scalar::{
     compare, OperatorClaim, OperatorIdentity, OperatorParityReport, OperatorParityResult,
     ScalarOperator,
 };
+use crate::target::ReplayEntry;
 
 /// FR-357's `stale_dependency`/`content-mismatch`: a claim identity that is
 /// not the recompiled package's.
@@ -156,7 +157,7 @@ pub enum ScalarIdentityMismatch {
 ///
 /// `wire` is the original proving context: its `package_id`, package
 /// reference, dependencies and byte provision are the call site's, its
-/// `selected_function` names the enclosing function (an undeclared name
+/// `function` replay target names the enclosing function (an undeclared name
 /// refuses [`ReplayRefusal::UnknownFunction`], and the scalar node must lie in
 /// that function's body), its
 /// `obligation_identity` is the obligation CG minted, and its `source` is
@@ -234,6 +235,7 @@ fn settle(
     claim: &OperatorIdentity,
     replay_limits: ReplayLimits,
 ) -> Result<OperatorParityResult, ReplayRefusal> {
+    let function_name = function_target(request, ReplayEntry::ReplayOperatorParity)?;
     let limits = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
@@ -262,12 +264,12 @@ fn settle(
             },
         )));
     }
-    let (_, function) = lookup(&compiled, request.selected_function())?;
+    let (_, function) = lookup(&compiled, function_name)?;
     if !in_body(graph, function.identity, node.key()) {
         return Err(ReplayRefusal::ScalarIdentity(Box::new(
             ScalarIdentityMismatch::Function {
                 node: claim.node,
-                function: request.selected_function().clone(),
+                function: function_name.clone(),
                 package,
             },
         )));

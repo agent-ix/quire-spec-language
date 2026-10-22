@@ -42,8 +42,8 @@ formats! {
     SpineRunResult => "spine-run-result/1",
 }
 
-impl std::fmt::Display for WireFormat {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for WireFormat {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(self.as_str())
     }
 }
