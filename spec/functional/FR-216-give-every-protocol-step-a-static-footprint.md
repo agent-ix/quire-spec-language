@@ -102,7 +102,9 @@ order gives the same answer.
   locations a `retire` predicate or an activation guard `p` reads SHALL be
   the binders `p` names; for each field read `x.f` in `p`, the location
   (`o`, `f`) of every object `o` in the subject's universe whose type
-  declares `f`; and the membership of each population `p` ranges over or
+  declares `f`, for a model-state field read (a field read of a record binder
+  reads no model location, and an activation guard reads no model state,
+  FR-218); and the membership of each population `p` ranges over or
   whose object `p` dereferences. A step `by r` SHALL read `role(r)`.
 - A memory step SHALL have its model's footprint; a gate SHALL add its
   memory locations to `R`.
@@ -138,7 +140,7 @@ order gives the same answer.
 | FR-216-AC-3 | Under `join any … outstanding cancel` (FR-206-AC-3), `join`'s write footprint holds the `ctl` of every branch thread; under `outstanding continue` it holds none of theirs. A `receive`'s enabling footprint holds its channel's `queue`, and in `Chatter` (FR-212) the `send` and `receive` on `ch` are dependent while `attempt(Done)` and `duplicate(ch, Tx)` are independent. When a branch of an `outstanding cancel` join holds a `parallel` that has forked, `join`'s write footprint also holds the `ctl` of every thread at or below that branch and the inner parallel instances. | Test (TC-661) |
 | FR-216-AC-4 | In ADR-027 §7.1, `event(Paid)` writes `reg(Refund, ·)`; `event(Fail)` reads and writes it and writes the compensation thread's `ctl`. For each step of §7.1, recomputing its post-state while changing a location outside its `R` leaves the post-state's change confined to its `W`. Where template `Refund` has two registrations, `cend(Refund, r1)` of thread `(0, Refund, 0)` writes `reg(Refund, r1)` and `ctl` of that thread, and the step that activates the second registration reads that `ctl`; the two are dependent, and their two orders give the new thread ordinal 1 and 0. | Test (TC-661) |
 | FR-216-AC-5 | An attempt of `bump(by)` on receiver `c` with reference argument `d`, whose precondition reads `c.v`, whose postcondition reads `pre(d.w)` and whose binder constraint reads binder `a`, has an enabling footprint holding (`c`, `v`), (`d`, `w`), the membership of `c` and of `d`, `bind` of `a`, its own `ctl(t)`, and nothing else; a `duplicate(ch, Tx)` step's enabling footprint holds `queue(ch)` of its instance. An `event` whose record type holds a `Reference<Peer>` reads the membership of the `Peer` population. In `Chatter`, `send` on `ch` is visible to an atom that reads its position's anchor and names `ch` and invisible to one naming another channel; the same holds for a template (`cattempt` of a compensation template) and for a role (a step `by` it). Each footprint is a `Footprint{reads, writes, enabling}` with protocol locations as `Location::Protocol`. | Test (TC-661) |
-| FR-216-AC-6 | A `retire` predicate `w.done` over replicated role `w` of type `Worker`, with `Worker` declaring `done` and universe `{w1, w2}`, has a read footprint holding (`w1`, `done`) and (`w2`, `done`) and `role(w)`; a predicate that also reads `lookup<Job>(jobs, k)` holds the membership of the `Job` population; an `activate(T)` step under the guard `x.n > 0` has an enabling footprint holding the locations the guard reads. A step that writes (`w2`, `done`) is dependent with `retire(w, w1)`. | Test (TC-661) |
+| FR-216-AC-6 | A `retire` predicate `w.done` over replicated role `w` of type `Worker`, with `Worker` declaring `done` and universe `{w1, w2}`, has a read footprint holding (`w1`, `done`) and (`w2`, `done`) and `role(w)`; a predicate that also reads `lookup<Job>(jobs, k)` holds the membership of the `Job` population; an `activate(T)` step under the guard `x.n > 0` over a record binder `x` has an enabling footprint holding no model location. A step that writes (`w2`, `done`) is dependent with `retire(w, w1)`. | Test (TC-661) |
 
 ## Dependencies
 
