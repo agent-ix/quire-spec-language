@@ -81,7 +81,8 @@ and `unsupported` (a missing fairness premise), and its `disposition` for a
   FR-329 for an infinite-trace clause over `Lasso` or `Model`. A
   bounded-profile clause over `Lasso` or `Model` SHALL report stage
   `admit`, `invalid_runtime_input`/`invalid-value`: a bounded profile reads
-  a closed finite trace.
+  a closed finite trace here; the zero-counted protocol lasso FR-329
+  reads under a bounded profile is not an input of this entry.
 - A refusal of FR-329 (malformed or unfair lasso) SHALL report stage
   `evaluate`, category `refusal`, with its record.
 - The entry SHALL map `Completed(true)` to `success` (exit 0);
