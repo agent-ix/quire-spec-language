@@ -215,8 +215,6 @@ local access takes none).
 - Owning ticket: Linear QSL-372. QSpec half: QSpec FR-435 (Linear STD-138),
   and QSpec FR-439 for the `weak-access-shape` cause and its shapes.
 - EN-1 sharing, classification and the ordering rule (FR-220-AC-11 to
-  FR-220-AC-14): Linear QSL-910 under QSL-565. QSpec owes the matching
-  change (Linear STD-305): FR-439 gains the `ordering-mismatch` shape, and
-  FR-435's check-time `ill_typed`/`operator-ineligible` refusal of an
-  ordering the instantiated class does not take (FR-435-AC-2) becomes this
-  pre-check outcome.
+  FR-220-AC-14): Linear QSL-910 under QSL-565. QSpec FR-435 and FR-439 state
+  the same check-time rules, pre-check outcome and `ordering-mismatch` shape
+  (FR-435-AC-2, FR-435-AC-9, FR-439-AC-11).
