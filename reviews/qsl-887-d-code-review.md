@@ -52,3 +52,10 @@ Judgement calls checked against the spec text, not the coder's account:
 ## Verdict
 
 No major code defect. The count check, the type check, their codes, causes, loci and retained fields match FR-147 and QSpec FR-432 for the `attempt` kind, and each is killed by mutation. FND-001 (medium) and FND-002 (low) are coverage gaps. The blocking gap of this PR is in the gap analysis (SR-12311 FND-001): the six other node kinds get no check although QSpec FR-432 states their records.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: Added `quad(x)` with a result and `Evt{p,q}` to the Spec fixture and tests asserting 3-field `a2` rows, count 3/2 and type mismatch at `true` | 3a5180722 |
+| FND-002 | fixed: The mismatch test asserts `expected` is `Reference` of the id `Twice`'s role `w` acts on (`Spec::Counter`) | 3a5180722 |

@@ -55,3 +55,9 @@ Out of scope here, already declared by the PR body as remaining QSL-887 work: FR
 ## Verdict
 
 Not mergeable. FR-147-AC-14 is fully and strongly covered, and its checks are mutation-killed. FND-001 is high: the FR-147 requirement this AC belongs to is met for one of seven node kinds, and the deferral that excuses the other six rests on a statement about QSpec that is false at QSpec main.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: `ProtocolClasses::of` derives the record of effect, event, commit, finish (record fields or one field) and send, receive (over the channel's `carries`); tests for ev, eb, tx, rx and Done rows; the existing `Done(self)` row became `Done(true)` | 3a5180722 |

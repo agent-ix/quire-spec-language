@@ -41,3 +41,10 @@ The `attempt` description in the paragraph is right: it matches ADR-027 ST-1 ("t
 ## Verdict
 
 Not mergeable as written. FND-001 is high: the spec edit states a fact about QSpec that QSpec main contradicts, and it is the only justification for the implementation gap. FND-002 is low.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: The false Remaining-work paragraph is deleted from FR-147 | 3a5180722 |
+| FND-002 | fixed: No Remaining-work note survives in the SHALL bullet | 3a5180722 |
