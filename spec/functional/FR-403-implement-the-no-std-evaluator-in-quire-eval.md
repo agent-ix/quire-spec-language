@@ -199,7 +199,7 @@ is compiled into a binary only when the binary begins it.
 
 `quire-eval` SHALL admit a callable's completed arguments, and a checked
 expression's completed parameter values, before the application's first
-charge, with no meter in scope. Both evaluators run this one admission: the
+charge, taking the session's meter but charging it nothing. Both evaluators run this one admission: the
 reference evaluator calls it in place of its own. For the declared
 parameter `ValueType`s of the callee, in order, it decides:
 
@@ -217,17 +217,17 @@ parameter `ValueType`s of the callee, in order, it decides:
    every object reference inside an argument that the environment's object
    closure does not contain refuses `InputRefusal::DanglingReference`
    naming the parameter.
-5. **Cancellation.** The run polls its `Cancel` for each value it visits.
+5. **Cancellation.** The run polls the session's handle at FR-277's poll
+   points, as FR-262's Begin states.
 
 A failure is a pre-charge Begin failure: `CallFailure::Input`,
 `CallFailure::Cancelled`, `CallFailure::Supplied`,
 `CallFailure::UnsupportedHelper` or `CallFailure::Fault`, from the run's
 `SuppliedFailure` conversion (FR-401), with no charge and no body
 invocation. A Begin with no supplied-value run uses a run of its own at
-`SuppliedLimits::default()` with a fresh `Cancel` that nobody holds, as the
-reference's `call` and `evaluate` do. Argument admission therefore never
-observes the session's handle. The meter polls its installed handle from the
-application's first charge, as FR-262 states.
+`SuppliedLimits::default()` over the meter's installed handle, or over a
+handle no caller holds when the meter has none. A caller-supplied run and a
+run whose handle differs from the meter's follow FR-262's Begin rule.
 
 The supplied-value run (`SuppliedRun`, `SuppliedLimits`, and the private
 event and storage helpers FR-401 places with them) SHALL move from
