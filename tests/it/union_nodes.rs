@@ -101,6 +101,7 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
         ManifestDigest::from_digest(ByteDigest::of(b"kani").as_bytes()),
         [(Capability::ValueValidity, Mode::Bounded)],
         Some(BTreeSet::from([DomainKind::Collection])),
+        None,
     )
     .expect("a well-formed descriptor");
     let mut registry = Registry::new();

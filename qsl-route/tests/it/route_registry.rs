@@ -19,8 +19,9 @@ use qsl_foundation::bound::DomainKind;
 use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::BackendId;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode,
-    ProviderOrigin, RegistrationCause, RegistrationRefusal, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, EvidenceKind,
+    ItemEvidence, ManifestDigest, Mode, ProviderOrigin, RegistrationCause, RegistrationRefusal,
+    Registry,
 };
 use qsl_semantics::check::Capability;
 
@@ -39,6 +40,8 @@ fn backend(
         digest(seed),
         advertises,
         Some(BTreeSet::from([DomainKind::Collection])),
+        // Used only by a descriptor advertising `probabilistic-satisfaction`.
+        Some(BTreeSet::from([EvidenceKind::Statistical])),
     )
     .expect("a well-formed descriptor")
 }
@@ -444,7 +447,11 @@ mod adr_012_section_5_2_rows {
             .register(backend("x", b"1", advertises))
             .expect("every Capability::ALL member registers without a registry-level refusal");
         for kind in Capability::ALL {
-            let CandidateOutcome::Candidates(set) = registry.candidates(*kind, None) else {
+            let CandidateOutcome::Candidates(set) = registry.candidates_for_evidence(
+                *kind,
+                &ItemEvidence::Kind(EvidenceKind::Statistical),
+                None,
+            ) else {
                 panic!("expected a computed candidate set for {kind:?}");
             };
             assert_eq!(
@@ -903,6 +910,7 @@ mod tc_282_duplicate_backend_identity {
                     [(Some("value-validity"), Some("finite"))],
                     Some(&["collection"]),
                     None,
+                    None,
                 )
                 .expect_err("`finite` is not an FR-290 mode")
             };
@@ -1278,6 +1286,7 @@ mod permutation_equality {
                 )],
                 Some(&["collection"]),
                 None,
+                None,
             )
             .expect("generated item manifest is valid");
             let irrelevant = descriptor_from_manifest(
@@ -1287,6 +1296,7 @@ mod permutation_equality {
                 [(Some(other_label), Some("bounded"))],
                 Some(&["collection"]),
                 None,
+                None,
             )
             .expect("generated irrelevant manifest is valid");
             let relevant = descriptor_from_manifest(
@@ -1295,6 +1305,7 @@ mod permutation_equality {
                 digest(format!("relevant-manifest-{seed}").as_bytes()),
                 [(Some(item_label), Some("unbounded"))],
                 Some(&["collection"]),
+                None,
                 None,
             )
             .expect("generated relevant manifest is valid");
