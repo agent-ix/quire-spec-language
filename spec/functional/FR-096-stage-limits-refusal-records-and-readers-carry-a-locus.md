@@ -171,8 +171,9 @@ as `LimitExceeded`, never as `resource_exhausted`. `PackageDeclarations::
 check` re-reports that same `LimitExceeded` as a `CheckRefusal` with code
 `stage_limit_exceeded` for its own caller -- one producer, one path, not a
 second ceiling. A package-level `CheckingLimits` stop with no `LimitExceeded`
-producer of its own -- `Typer`'s package-wide node count, and lowering's
-own work charge (the other S3 rows below) -- is a stage limit
+producer of its own -- `Typer`'s package-wide node count, a `choice`'s
+partition-proof charge (FR-218), and lowering's own work charge (the other
+S3 rows below) -- is a stage limit
 by the same rule, but is reported directly as a `CheckRefusal` with code
 `stage_limit_exceeded`, carrying the locus this FR gives its row; it is
 never `resource_exhausted`. A ceiling of an
@@ -203,6 +204,7 @@ Each producer's locus is the position at which its charge failed:
 | --- | --- | --- |
 | S3, a family `check`, for a declaration as a whole | the declaration's preimage input bytes and work charge | `Locus::Region` over that declaration's span |
 | S3, `Typer` and lowering, under `CheckingLimits` | the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `quire_semantic_value::location::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
+| S3, a `choice`'s partition proof (FR-218), under `CheckingLimits` | the shared work meter, one unit per valuation, charged after the declaration's precheck and before its lowering | `Locus::Region` over the `choice`'s span |
 | S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `quire_semantic_value::location::Location` |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
@@ -363,6 +365,26 @@ At S6a, a consumer SHALL build a record as follows:
   [FR-369](ix://agent-ix/quire-exact/FR-369) owns its closed typed cause set;
   these QSL producers do not extend that set.
 
+  `CheckedInvariantCause::NativeIntegerCapacityBreach` is the kernel's report
+  that an admitted native integer operation (Add, Subtract, Multiply or
+  Negate through `evaluate_native_integer_arithmetic`) whose exact result is
+  not inside the capacity interval its `NativeIntegerPlan` derived when the
+  plan was built ([FR-384](ix://agent-ix/quire-exact/FR-384)). Admission already checks the
+  operand domains and the whole result image, so the cause names a broken
+  kernel carrier invariant, not a property of the program or its inputs. QSL
+  SHALL receive it on the same route as every other cause: an `InternalFault`
+  with stage `S6a`, invariant `checked-program-invariant`, catalog code
+  `runtime_invariant`, cause `established-invariant-broken`, category
+  internal failure, no named fields, no locus and the typed cause retained as
+  provenance. It SHALL NOT become a refusal record, and in particular not
+  `integer_out_of_domain`: a value outside the plan's separate semantic result
+  domain is the kernel's ordinary `IntegerOutOfDomain` refusal, and a
+  capacity failure at plan construction or operand admission is a typed
+  `NativeIntegerAdmissionError` that never reaches S6a as a `Refusal`. QSL's
+  S6a evaluator evaluates integer arithmetic on the general exact route and
+  calls no native integer evaluator, so no QSL program or runtime input
+  reaches this cause.
+
 In both cases the locus is `Evaluation.location`, resolved by the checked
 package. It is absent when the location is `None` or resolves to no region.
 
@@ -409,6 +431,8 @@ name.
 | FR-096-AC-18 | The I2 reader, given a v2 wire whose bytes are valid JSON for a valid envelope but carry one space after the opening brace, refuses with the native code `noncanonical_wire`, not `invalid_package`. | Test |
 | FR-096-AC-19 | For each typed kernel CheckedInvariantCause, a received CheckedInvariant at S6a returns an InternalFault with stage `S6a`, invariant `checked-program-invariant` and the identical typed cause payload as accessible provenance through public call, public evaluate and replay fault mappings; kernel code and cause accessors remain absent. | Test |
 | FR-096-AC-20 | A unit compiled with `body sizeA ... { 11 }`, `body sizeB ... { 22 }` and `pre preA`, `pre preB` on `A.size` and `B.size` (`B` redefining `A`), and a `pre` clause calling `size`: the body function of `A.size` resolves to the text `11` and that of `B.size` to `22`; the precondition function of `A.size` and of `B.size`, and the disjunction `B.size` takes with `A.size`, resolve to the text of `preA`, `preB` and `preB`; each of the five functions has one `generated` occurrence resolving to the same region as its body; and `compile_package` emits the unit. | Test (TC-1018) |
+| FR-096-AC-21 | A received `Refusal::CheckedInvariant { cause: NativeIntegerCapacityBreach }` at S6a, located or unlocated, returns `Err(InternalFault)` with stage `S6a`, invariant `checked-program-invariant`, code `runtime_invariant`, cause `established-invariant-broken`, category internal failure, no named fields and `kernel_cause()` equal to `NativeIntegerCapacityBreach`; building a kernel refusal record from it yields none, and the paired kernel `IntegerOutOfDomain { target: Int[-5, 9] }` stop still yields the `integer_out_of_domain` record with `expected` `Int[-5, 9]`. | Test |
+| FR-096-AC-22 | A partition-proof work-budget stop (FR-218-AC-30's 24-atom `choice` under the default `s3.work_units`) is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the `choice`'s span, not the declaration span and not a lowering node. | Test (TC-1172) |
 
 The fourth
 no-region case (a span the map splits) is backed directly against the

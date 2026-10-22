@@ -112,6 +112,27 @@ is never mistaken for a proof over every instance count.
   SHALL state in its method the `max_live_instances` value used and whether
   any state was instance-limited.
 
+### Liveness under the bound
+
+- The liveness engine SHALL check an infinite-trace clause over an `on each`
+  protocol under `max_live_instances`, over the bounded graph in which no
+  `activate` step leaves an instance-limited state.
+- `activate` is in no fairness class (FR-212), so the SCC phase SHALL NOT
+  read an `activate` step that stays enabled at instance-limited states and
+  is never taken as making a lasso unfair, whether the fairness set is the
+  derived scheduler constraints, authored constraints or both. A fair run
+  may leave an enabled `activate` untaken while other steps run.
+- A fair lasso the engine finds SHALL be a counterexample whatever its states:
+  its stem and loop may pass through instance-limited states and its loop may
+  close at one. Every step of the bounded graph is a step of the unbounded
+  protocol, so the lasso is a behaviour of the unbounded protocol, and it
+  settles V-4 after its replay (FR-217).
+- A liveness run that completes with no fair lasso and at least one
+  instance-limited state SHALL return `Undecided(InstanceBoundReached{bound,
+  states})`, settled V-6, because an unexpanded `activate` successor could
+  lead to a fair lasso; with no instance-limited state it SHALL return
+  `Holds`, settled V-1. The precedence above applies unchanged.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -120,6 +141,9 @@ is never mistaken for a proof over every instance count.
 | FR-209-AC-2 | The same protocol with guard `{false}`: no `activate` step exists, the run settles V-1, and its record states `max_live_instances` 3, not reached. With the guard back at `{true}`, the claim `always holds(k.v = 0)` and `max_live_instances` 1, the run settles V-4 with a counterexample `activate(Tick)`, `attempt(set)`. | Test (TC-654) |
 | FR-209-AC-3 | With `max_live_instances` 2: after two `activate` steps the instances hold ordinals 0 and 1; once instance 0 finishes and is removed, the next `activate` creates ordinal 0. An instance-limited state is not reported as a deadlock by the deadlock-freedom item. | Test (TC-654) |
 | FR-209-AC-4 | A run where both a memory bound (ADR-025) and the instance bound limited a state, and no counterexample was found, settles `MemoryBoundReached`; a run where the instance bound limited a state and `BoundReached` (the completed `max_depth` search horizon) also applies settles `InstanceBoundReached`. | Test (TC-654) |
+| FR-209-AC-5 | Over FR-209-AC-1's protocol and `Cell`, the infinite-trace claim `always eventually holds(k.v = 1)` with the derived scheduler constraints, checked by the liveness engine, finds no fair lasso and settles V-6, `InstanceBoundReached{bound: max_live_instances 1, states}` with `states` at least 1, with `max_live_instances` 1; with 2 it settles V-6 with `bound: max_live_instances 2`; neither run is refused as an unsupported construct. | Test (TC-654) |
+| FR-209-AC-6 | Over the same protocol, `always eventually holds(k.v = 0)` with `max_live_instances` 1 settles V-4 with a lasso whose loop holds `activate(Tick)`, `attempt(set)` and the instance's `finish` and passes through the instance-limited state after `activate`, where `activate` is enabled and not taken; the lasso replays and is not rejected as unfair. | Test (TC-654) |
+| FR-209-AC-7 | FR-209-AC-1's protocol with its body `repeat R by p visible() while { true } attempt Done on set` (no `max`, the shared grammar's `repetition` with `p` the protocol's role) and `always eventually holds(k.v = 0)`, with `max_live_instances` 1, settles V-4 with a lasso whose loop is the `attempt(set)` self-loop at the instance-limited state after `activate(Tick)`, where `activate` is enabled at every loop state and never taken; the lasso is fair and replays. A checker that counts `activate` in a fairness class rejects that loop and settles V-6 instead, so this AC fails for it. | Test (TC-654) |
 
 Remaining work: QSL-968. A record-typed trigger `T` refuses
 `UnenumerableRecord` in the protocol program, so the tests of these ACs use the
