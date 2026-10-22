@@ -161,13 +161,18 @@ reaches S4 (FR-383).
   `join any` or `join predicate` that lists no label, with
   `invalid_package`/`invalid-value` at the list (the count for `quorum`). A
   label listed twice is one joined label.
-- S3 SHALL admit a static role `role w on M` whose model is a model alias
-  `M` of the unit: the role acts on the model subject as a whole, with no
-  object-type receiver of its own, and its attempts MAY name an operation of
-  any type of `M`. An attempt by such a role that names an operation of
-  another model alias, and a replicated role on a model alias, SHALL refuse
-  `invalid_model_binding`/`malformed-declaration` at the operation's model
-  alias or at the role's model name.
+- S3 SHALL admit a static role `role w on M` whose model is the model alias
+  `M` of the protocol's `over` parameter type: the role acts on the model
+  subject as a whole, with no object-type receiver of its own, and its
+  attempts MAY name an operation of any type of `M`.
+- S3 SHALL refuse `invalid_model_binding`/`malformed-declaration` at the
+  model alias for a static role on any other model alias (`role w on N`
+  when `over` is typed `M::Cell`) and for a replicated role whose type is a
+  model alias (`role w each M from <population> ...`); the replicated role's
+  model-name refusal comes first, and its `from` population is not checked.
+- S3 SHALL refuse `invalid_model_binding`/`malformed-declaration` at the
+  operation's model alias for an attempt by a role on `M` that names an
+  operation of another model alias.
 - S3 SHALL refuse a role whose model is not a model alias, an object type, a
   process, a state machine, a systems interface or a persistence interface
   with `invalid_model_binding`/`malformed-declaration` at the model name, and a
@@ -439,7 +444,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
 | FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each fail at the parser with a syntax diagnostic and build no form; two cases and two branches check. | Test (TC-1065) |
 | FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
-| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; `role w on M` on the unit's model alias `M` checks, as does an attempt by `w` on `M::Cell::inc`, while an attempt by `w` on `N::Device::tick` of a second alias `N` and a replicated role `on M` each refuse `invalid_model_binding`/`malformed-declaration` at `N` and at `M`; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
+| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`, population `cells`) with a second alias `N` whose object type `Device` has operation `tick`, `role w on M` checks, as does an attempt by `w` on `M::Cell::inc`, while an attempt by `w` on `N::Device::tick`, `role u on N`, and `role r each M from M::cells max 2 lifetime workflow` each refuse `invalid_model_binding`/`malformed-declaration`, at `N`, at `N` and at `M` respectively, the last with no population refusal; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 | FR-218-AC-27 | The unit of TC-1056 with a second protocol `Billing` that also declares `channel Pay` with the same premises checks, and the checked clauses hold two channels: `Pipeline`'s `Pay` and `Billing`'s `Pay`. Each is recorded under its protocol's qualified identity and the handle `Pay`; the two have different qualified names and equal handles. | Test (TC-1056) |

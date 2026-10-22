@@ -20,7 +20,8 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
 
 1. Build the subject; build variants differing in `over` and in the
    `terminal` member and compare obligation identities; build with an absent
-   protocol name, an unbound `w`, and `k` bound outside the universe.
+   protocol name, a request binding supplied for `w`, the variant with
+   `role v on M::Cell` and `v` unbound, and `k` bound outside the universe.
 2. Read the initial key; take `fork(Both)` and read the key; serialize it
    twice; read `observations` in every reachable state; repeat with the
    variant whose post-join node reads `a`, the `sequence { attempt A;
@@ -53,8 +54,9 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: the subject builds; identities differ; the three refusals of
-  FR-205-AC-1, each naming its protocol, role or parameter.
+- Step 1: the subject builds with no binding for `w`; identities differ;
+  the four refusals of FR-205-AC-1, each naming its protocol, role or
+  parameter.
 - Step 2: the keys of FR-205-AC-2, sorted by JCS bytes and byte-equal on
   re-serialization; `observations` empty throughout `Fill`; in the variant
   the binder is present exactly from `attempt(A)` to the reading step, in
