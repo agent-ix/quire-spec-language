@@ -1175,3 +1175,53 @@ fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
         );
     }
 }
+
+/// FR-398-AC-5 (TC-1092): the unit id `compile_admitted` returns for a
+/// declared unit is the unit replay converts a quantity argument against. A
+/// witness quantity in the admitted id of `m` replays on both arms at a
+/// `Quantity<m>` parameter; one in the admitted id of `km` refuses.
+#[trace("TC-1092", "FR-398-AC-5")]
+#[test]
+fn admitted_unit_ids_are_the_units_replay_converts_against() {
+    let fixture = fixture(
+        "dimension Length;\n\
+         unit m : Length = rational(1, 1);\n\
+         unit km : Length = rational(1000, 1) * m;\n\
+         function p using v(x: Quantity<m>): Boolean pure { false }\n",
+    );
+    let admitted = crate::compile_admitted(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        fixture.source.as_bytes(),
+        [],
+        &crate::spine::DependencyInput::default(),
+        crate::request::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles");
+    let unit_id = |name: &str| {
+        *admitted
+            .context()
+            .units()
+            .find(|unit| unit.qualified_name().last().map(Identifier::as_str) == Some(name))
+            .expect("an admitted unit")
+            .id()
+            .as_bytes()
+    };
+    let quantity = |unit: [u8; 32]| WitnessValue::Quantity {
+        magnitude: QuantityMagnitude::Decimal {
+            coefficient: Integer::from(15_i64),
+            scale: Integer::from(1_i64),
+        },
+        unit,
+    };
+    for result in fixture.both("p", quantity(unit_id("m"))) {
+        assert_reproduced(result);
+    }
+    for result in fixture.both("p", quantity(unit_id("km"))) {
+        assert!(
+            result.is_err(),
+            "a quantity in another unit refuses: {result:?}"
+        );
+    }
+}
