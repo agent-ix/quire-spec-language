@@ -35,3 +35,20 @@ The one new requirement statement is FR-124's bullet "The checker SHALL give `se
 ## Verdict
 
 Mergeable on the EARS axis after the three lows. The statement names its subject (the checker), its conditions are explicit and its outcomes are observable. The defects are compounding and keyword choice, plus one descriptive clause that hides an obligation.
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at head ce7fddd31. `make check-spec-validation` gives no EARS warning on FR-124. Findings below are from a manual reading of the split bullets.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The two new classifier bullets open "When `P` reads `self`, ..." and "When `P` does not read `self`, ...". Whether `P` reads `self` is a static property of the declaration, not an event, which is the FND-002 defect the fix removed from the typing bullets. Use the optional-feature form ("Where `P` reads `self`, ..."). | spec/functional/FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md:103,110 |
+| FND-005 | low | The quantifier bullet holds three SHALLs: admit the population form, type each bound variable, and "A `P` that does not read `self` SHALL check for every model". The last is a separate obligation under its own condition, with `P` rather than the checker as subject. Make it its own statement with the checker as subject, for example "Where `P` does not read `self`, the checker SHALL check `P` whatever the model's population member types are." | spec/functional/FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md:98-102 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: the bullet is split into five statements by condition: one-type typing ("Where the member types ... are exactly one object type `T`, the checker SHALL type `self` in `P` as `Reference<M::T>`."), the none-or-several refusal, the quantifier admission, and the two classifier readings. The quantifier bullet still bundles a third obligation (new FND-005). |
+| FND-002 | fixed | Round 1: "Where the member types of the model's populations ... are exactly one object type `T`" and "Where those populations cover no object type or several". The new classifier bullets reintroduce "When" for a static condition (new FND-004). |
+| FND-003 | fixed | Round 1: "The checker SHALL admit in `P`, for a model with any number of object types, a quantifier or population form over a population `M::P` of the model (`forall(o in M::P : ...)`, `exists(o in M::P : ...)`, FR-391), and SHALL type each bound variable by that population." |

@@ -144,7 +144,8 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
   when `P` has an authored maximum `N` (FR-380) and the unbounded
   `Set<Reference<T>>` otherwise, as FR-084 states for a parameter.
 - Every read through the name takes the clause's observation (FR-104,
-  "Observations of reads"): `current` in an invariant and in a `holds` atom,
+  "Observations of reads"): `current` in an invariant, in a `holds` atom and in the predicate of a
+  `terminal when` declaration,
   `pre` in a precondition, `post` in a postcondition and `pre` inside
   `pre(e)`.
 
@@ -171,7 +172,7 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 ### Evaluation
 
 - The `ProtocolClause` evaluator SHALL evaluate `allInstances`, `lookup` and
-  a population domain in a state clause (FR-107) and in a `holds` atom, reading the population named by the operand
+  a population domain in a state clause (FR-107), in a `holds` atom and in the predicate of a `terminal when` declaration (FR-124), reading the population named by the operand
   term's declaration key from the snapshot of the clause's observation: the
   `pre` snapshot for `pre` and the `post` snapshot for `post` (a `current`
   invariant reads the current snapshot), and under `pre(e)` the `pre`
@@ -187,7 +188,7 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 ### Requirements
 
 - The named population SHALL be a domain of the clause's requirement record
-  (FR-104, "Requirements"; for a `holds` atom, of its temporal clause's record), keyed as FR-104 keys it. A clause that names its
+  (FR-104, "Requirements"; for a `holds` atom, of its temporal clause's record; for a `terminal when` predicate, of the model subject's deadlock-freedom item, FR-124), keyed as FR-104 keys it. A clause that names its
   context population adds no second domain. A clause that names a different
   population adds that one, so a bound on it (FR-380) makes it a bounded
   domain.

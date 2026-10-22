@@ -14,7 +14,7 @@ Verify the `terminal` declaration's forms and refusals, the classification of
 terminal states as intended or deadlocked, and the request writer's
 deadlock-freedom item with its per-model opt-out.
 
-Scope: FR-124-AC-1 to FR-124-AC-3 and FR-124-AC-5 to FR-124-AC-8.
+Scope: FR-124-AC-1 to FR-124-AC-3 and FR-124-AC-5 to FR-124-AC-10.
 
 ## Test Procedure
 
@@ -41,6 +41,12 @@ exactly when every counter is at 3, and `terminal any`.
 7. In the one-type model, classify the terminal states under
    `terminal Done using v on M when { exists(c in M::counters : c.value = 3) };`
    with universe `{c1}` and with universe `{}`.
+8. Check `terminal Done using v on M when { self.value = 3 };` in a model
+   whose one object type `Counter` is covered by populations `counters` and
+   `archive`, and the same predicate written as a quantifier over `counters`.
+9. In the one-type model with no operations, classify the terminal state under
+   `terminal Done using v on M when { 2 / (2 - self.value) <= 1 };` for
+   `c1.value`, `c2.value` of 2 and 1, 2 and 3, and 0 and 3.
 
 Tag the tests `#[trace("TC-519", "FR-124-AC-n")]`.
 
@@ -62,5 +68,10 @@ Tag the tests `#[trace("TC-519", "FR-124-AC-n")]`.
   intended.
 - Step 6: `missing_declaration`/`missing-name` at `self` for both `self`
   predicates; `When` for `{ true }`.
-- Step 7: `P` is evaluated once at each terminal state; with universe `{}` it
-  is false and the state is deadlocked.
+- Step 7: `P` is evaluated once at each terminal state; with universe `{c1}`
+  and `c1.value = 3` the state is intended; with universe `{}` it is false and
+  the state is deadlocked.
+- Step 8: `ambiguous_declaration`/`ambiguous-name` at `self` naming `archive`
+  and `counters`; `When` for the quantifier.
+- Step 9: deadlocked; neither intended nor deadlocked, item `refuted` with
+  `UndefinedEvaluation`; intended.

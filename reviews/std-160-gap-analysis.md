@@ -40,3 +40,18 @@ AC-to-TC rows: TC-519's scope now names FR-124-AC-5 to AC-7, and steps 4, 5 and 
 ## Verdict
 
 Every new AC has a TC-519 row, and the steps match the ACs one to one. One behaviour clause (the empty-population vacuity) has no AC, and the code side will have to retire one existing test that asserts the old refusal. Tests for AC-5 to AC-7 are pending by design and are not a finding here.
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at head ce7fddd31. New ACs FR-124-AC-8 and FR-391-AC-9 map to TC-519 step 7 (with step 4's `{}` repeat) and TC-1076 row 11; TC-519 and TC-1076 scopes name them. Tests for FR-124-AC-5 to AC-8 and FR-391-AC-9 remain pending by design (spec-only PR).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The per-object combination rule ("not satisfied when it is false for any object, and otherwise, when it is `Undefined` for some object, as `Undefined`") has no AC or TC-519 step. No row has one object false and another `Undefined`, so an implementation that returns `Undefined` first would pass every AC. Add a row, for example two counters where one `value` read is undefined and the other is false. | spec/functional/FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md:107-109 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: FR-124-AC-8 "In the AC-5 model with universe `{}`, the single state is terminal and intended under `terminal Done using v on M when { self.value = 3 };`"; TC-519 step 4 repeats with universe `{}`, expected "with universe `{}` the state is terminal and intended". |
+| FND-002 | deferred | Round 1: implementation work for the STD-160 code lane, outside this spec-only PR. The PR body's remaining work records it: "Replace (do not add beside) `a_when_predicate_needs_exactly_one_state_object_type` in `qsl-semantics/tests/it/terminal_declarations.rs`, which asserts the old refusals at the `on` alias". No separate follow-up ticket id is named. |
