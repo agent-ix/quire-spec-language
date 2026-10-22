@@ -175,8 +175,8 @@ applied recursively to the types its fields hold:
    `match_expression`. The moved record keeps its SV `Location`s.
 2. **Plain values from F or layer 2 move to SV.** A plain value type that a
    moved record carries and that `qsl-foundation` or `qsl-forms` defines
-   moves down into SV in the same change, unless the S1 slice has already
-   moved it, and leaves no copy or re-export behind. The known set is
+   moves down into SV in the same change and leaves no copy or re-export
+   behind. The known set is
    `AbsenceMode`, `ByteDigest`, `WireNodeId`, `OccurrenceKey`,
    `IdentityLimits`, `DomainKey`, `DomainKind`, `MemoryModelName`,
    `TemporalInterval`, `TimedInterval`, `ProfileSelection` and
@@ -213,8 +213,10 @@ in the trait's crate; the name-resolution index of `Scope`; the full
 `SemanticGraph`; and source-region resolution, which moves from
 `CheckedGraph::region` to the checker-side record. `SCALAR_LIMITS_UNLIMITED`
 stays a `qsl-semantics` test fixture. The S6a result vocabulary
-(`FamilyOutcome`, `FamilyResult`, `EvalOutcome`, `FamilyKind`) does not
-move in this slice; S0 places it with the evaluation vocabulary. The
+(`FamilyOutcome`, `FamilyResult`, `EvalOutcome`) does not move in this
+slice; S0 moves it to `quire-eval`
+([FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md)),
+and `FamilyKind` stays in `family`. The
 runtime evaluation cause `WrongSnapshotCause` leaves `check` in whichever of
 S1 and S2 lands first: when the S1 slice has not moved it, X-13 moves it from
 `check::refusal` to SV's `call` module, where the checker's `CheckCause` and
@@ -351,5 +353,6 @@ move MAY land in steps, in this order: expression terms; clause records;
   the refusal-record locus the checker-side record keeps.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1 layer C, FB-05, FB-14 and §7.3 X-13.
-- AD-001 slice S2 (IR-586). S1 (IR-585) moves the evaluation vocabulary,
+- AD-001 slice S2 (IR-586). S0 (IR-583) and S1 (IR-585) move the evaluation
+  vocabulary (FR-401),
   and S6 (IR-590) builds the no_std evaluator on this boundary.
