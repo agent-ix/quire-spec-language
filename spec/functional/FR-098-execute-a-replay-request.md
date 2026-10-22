@@ -165,8 +165,8 @@ list.
   package's declarations (OQ-5), and then select the claim as "The claim a
   function request decides" states. It SHALL refuse a predicate claim whose
   function's declared result is not `Boolean` before any call (FR-357's
-  value-parity entry replays a non-`Boolean` function); an application
-  claim's function may declare any result type. It SHALL convert each argument's
+  value-parity entry replays a non-`Boolean` function). An application
+  claim's function is not refused for its result type. It SHALL convert each argument's
   `WireNodeId` to a `NodeKey` only by lookup in the recompiled package, and
   order the arguments by the function's declared parameter positions.
   `Input` assignments, and the `WitnessBinding` list the executor builds,
