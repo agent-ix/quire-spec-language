@@ -74,6 +74,12 @@ Owner and planner decisions:
 | --- | --- | --- | --- |
 | FND-010 | low | minor: FR-405-AC-4 is narrower than the Behavior text it checks. Behavior allows any "structural walk over checked terms that computes no value". AC-4 and TC-1124 expected result 4 instead require that "the `NodeKind` matches left in `qsl-eval` are the ADR-031 SW-2 decision-path walk". The clause orchestration that the switch rewrites (for example a clause-set or frame walk, or `composite_site`-style local matching) could legitimately add another structural match, and that would fail AC-4 while meeting the Behavior. <br>Fix: make AC-4 say "every `NodeKind` match left in `qsl-eval` is a structural walk that returns no value, such as the ADR-031 SW-2 decision-path walk". | spec/functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md:187-195, spec/functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md:252 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | minor: The merge extended FR-405 criterion 2, AC-2 and TC-1124 step 2 to "FR-262-AC-1 to AC-8, AC-10 and AC-11", but the post-switch sentence in "The corpus after the switch" ("FR-262-AC-1 to AC-8 and FR-403's vectors run once, on `quire-eval`") and the FR-262 Dependencies bullet ("AC-1 to AC-8, which both implementations meet before the switch and `quire-eval` meets after it") still name only AC-1 to AC-8. After the switch, nothing states that AC-10 and AC-11 run on `quire-eval`. <br>Fix: write "AC-1 to AC-8, AC-10 and AC-11" in both places. | spec/functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md:244, spec/functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md:265 |
+
 ## Dispositions
 
 Round 1, reviewed at 591355c8cfc0678ec05bbcbb7cfdb555ef4e7081.
@@ -91,3 +97,11 @@ Round 1, reviewed at 591355c8cfc0678ec05bbcbb7cfdb555ef4e7081.
 | FND-009 | fixed | The PR body labels the Q-1 quotes as the planner's relay of Peter's earlier ruling, unverified by the lead. The owner still has to confirm retire rather than demote. |
 
 Verdict after round 1: no major finding is open. FND-010 (low) is a new minor finding.
+
+Round 2, reviewed at 315ca1241d9b1c54249604cec4b31cc7e0bac94b.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-010 | fixed | FR-405-AC-4 and TC-1124 expected result 4 read: every `NodeKind` match left in `qsl-eval` is a structural walk that returns no value, such as the ADR-031 SW-2 decision-path walk. |
+
+Verdict after round 2: every finding from FND-001 to FND-010 is closed. FND-011 (low) is new.

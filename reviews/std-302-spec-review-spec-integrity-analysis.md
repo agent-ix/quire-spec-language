@@ -64,3 +64,12 @@ Round 1, reviewed at 591355c8cfc0678ec05bbcbb7cfdb555ef4e7081.
 | FND-006 | fixed | FR-405's relationships add FR-106, FR-138, FR-139, FR-366, FR-380, FR-391 and ADR-031. The IR-584 completion paragraph moved to AD-001's Decisions. |
 
 Verdict after round 1: no major finding is open. FND-007 and FND-008 (medium) are new minor findings.
+
+Round 2, reviewed at 315ca1241d9b1c54249604cec4b31cc7e0bac94b. The head merges main 43f4e2086, which includes #1236 (NFR-016). FR-405 cites NFR-016's `make audit-unsafe` in criterion 4, AC-3, TC-1124 step 3, the Dependencies and a `depends_on` relationship, and AD-001's IR-584 bullet names NFR-016. The FR-262-AC-10 and AC-11 references need #1243 (STD-319, open) to merge first: on main, FR-262 ends at AC-9. `git merge-tree` with #1243's head is clean, and after both merge, FR-403-AC-7 also covers AC-10 and AC-11.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-007 | fixed | FR-403's Description now reads "Until FR-405's switch, `qsl-eval` keeps the std reference evaluator and the std reference adapter". The lead-in of "What `qsl-eval` keeps", the engines bullet, the adapter bullet and the separate-entry SHALL each carry "until FR-405's switch". |
+| FND-008 | fixed | FR-402's After-the-switch AC-7 keeps the `/charges` `sizes` vector and the missing-`case_id` vector, and AC-9 keeps the lacking-case vector and FR-402-AC-9's own list of FR-262 ACs. FR-405-AC-8 and TC-1124 step 8 test both vectors. |
+
+Verdict after round 2: every finding in this file is closed. No new finding.

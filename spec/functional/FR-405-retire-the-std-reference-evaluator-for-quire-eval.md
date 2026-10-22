@@ -241,7 +241,7 @@ an alias of the other. The runner evaluates every admitted case once through
 
 The pass criterion stays zero divergences with no option that tolerates,
 skips or excludes a case. `make ci` runs `evaluator-regression` over the
-QSL-owned corpus. FR-262-AC-1 to AC-8 and FR-403's vectors run once, on
+QSL-owned corpus. FR-262-AC-1 to AC-8, AC-10 and AC-11 and FR-403's vectors run once, on
 `quire-eval`, against the values the reference produced.
 
 ## Acceptance Criteria
@@ -262,7 +262,7 @@ QSL-owned corpus. FR-262-AC-1 to AC-8 and FR-403's vectors run once, on
 ## Dependencies
 
 - [FR-262](FR-262-evaluate-values-and-calls-at-any-depth.md): the semantics
-  and AC-1 to AC-8, which both implementations meet before the switch and
+  and AC-1 to AC-8, AC-10 and AC-11, which both implementations meet before the switch and
   `quire-eval` meets after it.
 - [FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md):
   the leaf, its `thumbv7em-none-eabi` gate and the std reference adapter
