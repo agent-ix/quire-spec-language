@@ -48,9 +48,9 @@ identity changes when the declaration does.
 
 - One `temporal`/`terminal` node per checked declaration, body as QSpec
   FR-476 states, with `semantic_type` the package's `scalar_type`/`boolean`
-  node, its `declaration` path the model alias's path followed by
-  `terminal`, and one occurrence of role `declaration` at the declaration's
-  span.
+  node, no `declaration` (QSpec FR-476: the node is content-addressed and
+  nested under its model by its `model` reference), and one occurrence of
+  role `declaration` at the declaration's span.
 - For `When(clause)`: the clause's `expression` node, its body the predicate's
   Boolean term as FR-093 lowers it, and the `self` parameter node when the
   predicate reads `self`.
@@ -64,19 +64,20 @@ identity changes when the declaration does.
   declaration's model alias.
 - The emitter SHALL write `mode` as `when` for `When(clause)` and `any` for
   `Any`.
-- The emitter SHALL write `parameters` as a reference to the `self`
-  parameter node, typed `Reference<M::T>` as FR-124 types it, when the
-  predicate reads `self`, and as the empty aggregate otherwise and for `Any`.
+- The emitter SHALL write `parameters` as an aggregate holding one
+  reference, to the `self` parameter node at level 0 typed `Reference<M::T>`
+  as FR-124 types it, when the predicate reads `self`, and as the empty
+  aggregate otherwise and for `Any`.
 - The emitter SHALL write `condition` as a reference to the predicate's
   `expression` node for `When(clause)`, and as the empty aggregate for `Any`.
-- The emitter SHALL key the node by FR-322's rules over its body and
-  `declaration`, so the mode, the model and the predicate enter the node id
+- The emitter SHALL key the node by FR-322's rules over its body, so the mode, the model and the predicate enter the node id
   and the `package_id`, and the written name `T` enters neither.
 - S4 SHALL NOT refuse a checked `terminal` declaration as not emitted.
-- The request writer SHALL bind the model subject's terminal node id, when
-  the package holds one, into the subject identity of every item over that
-  subject, the derived deadlock-freedom item included (QSpec FR-476
-  "Identity").
+- The terminal node enters the package's `package_id`, and a model
+  subject binds its package through that `package_id` (QSpec FR-361,
+  FR-476 "Identity"), so every obligation identity over the subject, the
+  derived deadlock-freedom item's included, changes with the declaration.
+  The request carries no separate terminal member.
 - Replay of a deadlock-freedom counterexample (FR-128) SHALL read the
   model's `TerminalDeclaration` from the recompiled package's
   `temporal`/`terminal` node.
@@ -90,10 +91,10 @@ identity changes when the declaration does.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-411-AC-1 | Compiling FR-126-AC-9's `Counter` unit with `terminal Done using v on Counter when { self.value = 3 };` emits one `temporal`/`terminal` node with `mode` `when`, `parameters` the `self` parameter node, `condition` a reference to the `expression` node of `self.value = 3`, `declaration` path ending `terminal` and one `declaration` occurrence at the declaration's span; with `terminal Halt using v on Counter any;` it emits `mode` `any` with empty `parameters` and `condition`; without a declaration it emits no terminal node. The I2 reader returns `When`, `Any` and `None` respectively. No checked declaration is refused as not emitted. | Test (TC-1142) |
-| FR-411-AC-2 | AC-1's `when` and `any` units have different `package_id`s; renaming `Done` to `Stop` keeps the node id and `package_id`; the deadlock-freedom item over `Counter` with the `when` declaration and with none have different obligation identities. | Test (TC-1142) |
-| FR-411-AC-3 | FR-128-AC-6's unit, `terminal when 6 / (3 - c.value) = 0`, compiles to a package holding its terminal node, and replay of its deadlock-freedom counterexample reads the declaration from the recompiled package and settles as FR-128-AC-6 states. | Test (TC-1142) |
-| FR-411-AC-4 | Fed to QSL's I2 reader, AC-1's `when` node with `mode` `some` refuses `invalid_package`/`invalid-value`, and with `condition` the empty aggregate refuses `invalid_semantic_graph`, each at FR-476's locus. | Test (TC-1142) |
+| FR-411-AC-1 | Compiling FR-126-AC-9's `Counter` unit with `terminal Done using v on Counter when { self.value = 3 };` emits one `temporal`/`terminal` node with `mode` `when`, `parameters` an aggregate holding one reference to the `self` parameter node, `condition` a reference to the `expression` node of `self.value = 3`, no `declaration` and one `declaration` occurrence at the declaration's span; with `terminal Halt using v on Counter any;` it emits `mode` `any` with empty `parameters` and `condition`; without a declaration it emits no terminal node. The I2 reader returns `When`, `Any` and `None` respectively. No checked declaration is refused as not emitted. | Test (TC-1142) |
+| FR-411-AC-2 | AC-1's `when` and `any` units have different `package_id`s; renaming `Done` to `Stop` keeps the node id and `package_id`; the deadlock-freedom item over `Counter` with the `when` declaration and with none have different `package_id`s and so different obligation identities, with no other request member differing. | Test (TC-1142) |
+| FR-411-AC-3 | FR-128-AC-6's unit, with its declaration written `terminal Done using v on Counter when { 6 / (3 - self.value) = 0 };`, compiles to a package holding its terminal node, and replay of its deadlock-freedom counterexample settles as FR-128-AC-6 states. The same counterexample in a request for the unit with `terminal Halt using v on Counter any;` in its place settles `inconclusive`, `Verdicts`: the recompiled package's terminal node marks `value = 3` intended, so replay finds neither a deadlock nor an undefined predicate there. | Test (TC-1142) |
+| FR-411-AC-4 | Fed to QSL's I2 reader, with `dependencies` set to the body's targets, the node key, projection entry and `package_id` recomputed after each edit, AC-1's `when` node with `mode` `some` refuses `invalid_package`/`invalid-value`, and with `condition` the empty aggregate refuses `invalid_semantic_graph`, each at FR-476's locus. | Test (TC-1142) |
 
 ## Dependencies
 
