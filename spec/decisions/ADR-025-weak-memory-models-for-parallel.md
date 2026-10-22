@@ -410,9 +410,12 @@ state (`D0`, `D0`) and its joined state violate the claim.
 Every buffer holds at most one entry and every location at most two messages,
 so neither bound is reached and each verdict is exact (MB-4).
 
-**Counterexample under `tso`.** With transition identities ordered `left`
-before `right` and attempts before flushes, the canonical counterexample is the
-first violation in breadth-first order, at depth 4:
+**Counterexample under `tso`.** The canonical counterexample is the
+first violation in breadth-first order, at depth 4, with successors visited in
+ascending JCS bytes of the transition identity (ADR-027 TS-2). It holds the four
+attempts `Sx`, `Sy`, `Lx` and `Ly`, each load after its own thread's store, and
+no `flush`; the memory, buffers and registers at position 4 are the same in
+every such order. One such counterexample is:
 
 | Position | Step into it | Memory `x`, `y` | `left` buffer | `right` buffer | `c1.r`, `c2.r` |
 | --- | --- | --- | --- | --- | --- |

@@ -95,7 +95,11 @@ has already seen instead of a new one.
 - `ProtocolKey` SHALL be QSpec FR-425's state key, with `queues` and
   `roles` keyed by protocol instance ordinal, each map sorted by JCS bytes,
   and the memory component as the member the memory model supplies, empty
-  under `Sc`.
+  under `Sc`. The key SHALL also hold, as FR-425 states: for each
+  compensation thread, the registration it compensates; for each protocol
+  instance in which a step of a template's commit node has occurred, that
+  node; and for each compensation thread that has taken a `cattempt`, the
+  record of its previous attempt, until its `cend`.
 - Thread, instance, registration and nesting counts SHALL have no ceiling
   of their own; the run's method bounds and resource limits (FR-209, FR-215) are
   the only bounds.
@@ -114,6 +118,7 @@ has already seen instead of a new one.
 | FR-205-AC-5 | A template `Refund` with two registrations, whose first activates and whose compensation thread `(0, Refund, 0)` is still live when the second activates: the second thread takes ordinal 1. When `cend` has removed `(0, Refund, 0)` before the second activates, the second thread takes ordinal 0. | Test (TC-650) |
 | FR-205-AC-6 | Two protocol definitions in one package, each declaring `channel Pay`, give two subjects whose state keys hold `queues` entries, and whose `duplicate` and `lose` identities hold channel names, each in its own protocol's qualified name; no key or identity of one names the other's channel. | Test (TC-650) |
 | FR-205-AC-7 | Inside a `repeat` of maximum 2: `parallel P { branch left attempt A1 binding a; branch right attempt B1 } join all`, then `parallel Q { branch u sequence { attempt U1; check Ck { a.ready } }; branch v attempt V1 } join any [u, v] outstanding continue`, where `A1` has two successors, binding `a` with `ready` true or false. After iteration 1's `join(P)` with `ready` true, the forking thread's binder environment holds `a` with `ready` true, and `fork(Q)` copies it into `u` and `v`. In the state where `V1` has been taken, the `join(Q)` step has run and `u` still rests at `U1`, the second fork of `P` takes ordinal 0, because `P`'s first instance is removed, while `Q`'s instance 0 is still live because `u` is `running`. In iteration 2 with `ready` false, `fork(Q)` takes ordinal 1 and gives its `u` an environment holding `a` with `ready` false: iteration 1's `u` still evaluates `Ck` over its own `a` (true) and iteration 2's `u` over its own (false, so it rests at `Ck`), and no state refuses. When `u` of iteration 1 completes, its entry is dropped, and the key's `observations` holds no `a` under its path. | Test (TC-650) |
+| FR-205-AC-8 | Template `Refund` with two registrations `r1` and `r2` activated in either order gives two states whose keys differ, because each compensation thread's entry names its registration. After a step of the commit node `Committed` the key holds that node under its instance and a state before the step does not, so the two states have distinct keys; the commit entry is absent once the instance finishes. A compensation thread after its first `cattempt` has the previous attempt's record in `observations`, a retry relation over it evaluates, and the entry is absent after the thread's `cend`. | Test (TC-650) |
 
 ## Dependencies
 

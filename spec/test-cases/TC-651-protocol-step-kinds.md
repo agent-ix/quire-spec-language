@@ -12,7 +12,7 @@ relationships:
 
 Verify the enabledness and effects of the attempt, event, channel, fork, join, timeout and finish steps, the folding of structural moves and the waiting rule.
 
-Scope: FR-206-AC-1 to FR-206-AC-9.
+Scope: FR-206-AC-1 to FR-206-AC-10.
 
 ## Test Procedure
 
@@ -35,6 +35,8 @@ Scope: FR-206-AC-1 to FR-206-AC-9.
 8. Run FR-206-AC-8's fence protocols under `sc` and `tso`.
 9. Run FR-206-AC-9's nested-cancel protocol to the `join(Outer)` step and
    explore every later state.
+10. Run FR-206-AC-10's protocol with the `effect` after the `all` join and
+    read `event(E)`'s enabledness and the root's environment after `join`.
 
 Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 
@@ -59,3 +61,5 @@ Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 - Step 8: the fence enabledness of FR-206-AC-8.
 - Step 9: `b`, `x` and `y` `cancelled`, `Inner` removed, no later step by
   any of them.
+- Step 10: `event(E)` is enabled after `join`, with `A`'s binder in the root's
+  environment.
