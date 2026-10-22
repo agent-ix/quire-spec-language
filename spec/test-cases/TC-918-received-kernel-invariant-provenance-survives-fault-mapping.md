@@ -8,6 +8,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-090
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-127
+    type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-121
     type: references
   - target: ix://agent-ix/quire-exact/FR-369
@@ -18,9 +20,9 @@ relationships:
 ## Description
 
 Verify the received-kernel route separately from QSL-owned constructors.
-Scope: FR-096-AC-19 and FR-090-AC-17; existing FR-121 fault terminal mapping
-is a dependency, not a new replay-phase contract. Use the kernel's actual
-typed cause set, without copying or extending its enum in QSL.
+Scope: FR-096-AC-19, FR-090-AC-17 and FR-127-AC-11; existing FR-121 fault
+terminal mapping is a dependency, not a new replay-phase contract. Use the
+kernel's actual typed cause set, without copying or extending its enum in QSL.
 
 ## Test Procedure
 
@@ -53,7 +55,10 @@ kernel cause requires explicit enumeration, not a fallback cause.
 Public mappings retain `CallFailure::Fault` and the original stage, invariant
 and typed provenance. Both replay fault paths produce Failed with an
 internal-failure diagnostic and unavailable basis; neither produces an
-ordinary-refusal Inconclusive terminal. Mapping adds no meter event and does
-not erase earlier charges. Ordinary refusal/undefined/incomplete controls
-retain their existing outcomes; an ordinary replay refusal remains
-Inconclusive. The QSL-owned negative control has no synthetic kernel cause.
+ordinary-refusal Inconclusive terminal. Neither path may turn the typed fault
+into `Proved{..., Uncertified}` or `Inconclusive(CertificateRejected{...})`;
+those are proof/certificate dispositions, not replay-fault outcomes. Mapping
+adds no meter event and does not erase earlier charges. Ordinary
+refusal/undefined/incomplete controls retain their existing outcomes; an
+ordinary replay refusal remains Inconclusive. The QSL-owned negative control
+has no synthetic kernel cause.
