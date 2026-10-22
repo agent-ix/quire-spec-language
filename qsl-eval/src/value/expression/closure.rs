@@ -119,12 +119,11 @@ where
         // The meter's installed handle is the session's: a handle cancelled
         // before `Begin` ends it as `Cancelled`, before any charge.
         let cancel = meter.cancel().cloned().unwrap_or_default();
-        let mut run =
-            SuppliedRun::new(SuppliedLimits::default(), cancel).map_err(|stop| {
-                CallFailure::from(quire_semantic_value::supplied_stop::SuppliedFailure::Stop(
-                    stop,
-                ))
-            })?;
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), cancel).map_err(|stop| {
+            CallFailure::from(quire_semantic_value::supplied_stop::SuppliedFailure::Stop(
+                stop,
+            ))
+        })?;
         admit_arguments(
             parameters,
             arguments,
@@ -145,7 +144,10 @@ enum Frame<X> {
         arguments: Vec<Value>,
     },
     /// An admitted checked expression.
-    Expression { expression: X, parameters: Vec<Value> },
+    Expression {
+        expression: X,
+        parameters: Vec<Value>,
+    },
     /// The frame ran; nothing remains to resume.
     Finished,
 }

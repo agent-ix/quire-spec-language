@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, PackageClosure, QualifiedName};
-use qsl_forms::{DeclarationSpans, DeclaredClauseKind, Expression, ExpressionSpans, FunctionDeclaration};
+use qsl_forms::{
+    DeclarationSpans, DeclaredClauseKind, Expression, ExpressionSpans, FunctionDeclaration,
+};
 use qsl_foundation::{SourceIdentity, Span};
 use qsl_package::{CheckedPackage, Import};
 use qsl_semantics::check::{CheckedExpression, PackageDeclarations};
@@ -371,7 +373,12 @@ fn a_registered_host_body_runs_for_its_root_callable() {
     );
     let mut meter = Meter::new(UNLIMITED);
     let result = registry
-        .begin_call(identity(&package, "keep"), vec![int(5)], &objects, &mut meter)
+        .begin_call(
+            identity(&package, "keep"),
+            vec![int(5)],
+            &objects,
+            &mut meter,
+        )
         .unwrap()
         .run()
         .unwrap();
@@ -412,7 +419,12 @@ fn begin_observes_the_meters_cancelled_handle() {
     cancel.cancel(CancelCause::Deadline);
     let mut meter = Meter::new(UNLIMITED).with_cancel(cancel);
     let mut registry = Registry::new(Closure::new(&package));
-    let refused = registry.begin_call(identity(&package, "keep"), vec![int(1)], &objects, &mut meter);
+    let refused = registry.begin_call(
+        identity(&package, "keep"),
+        vec![int(1)],
+        &objects,
+        &mut meter,
+    );
     assert!(matches!(
         refused,
         Err(CallFailure::Cancelled(CancelCause::Deadline))
@@ -515,7 +527,10 @@ fn a_mixed_chain_steps_to_the_synchronous_result_and_stops_at_its_fuel() {
         )
     };
     let (done, w, charges, steps, resumed) = chain(u64::MAX);
-    assert!(matches!(completed(&done.unwrap()), Some(Value::Boolean(true))));
+    assert!(matches!(
+        completed(&done.unwrap()),
+        Some(Value::Boolean(true))
+    ));
     assert_eq!(w, 3);
     assert_eq!(charges, [ChargePoint::FunctionCall; 3]);
     assert!(steps > 3);
@@ -533,7 +548,11 @@ fn a_mixed_chain_steps_to_the_synchronous_result_and_stops_at_its_fuel() {
                 && record.limit_kind == LimitKind::WorkUnits
     ));
     assert_eq!(denied.location, Some(call_site()));
-    assert_eq!(spent_short, w - 1, "earlier spend kept, denied charge unrecorded");
+    assert_eq!(
+        spent_short,
+        w - 1,
+        "earlier spend kept, denied charge unrecorded"
+    );
     assert_eq!(resumed_short, (1, 1), "no caller resumed with a child");
 }
 

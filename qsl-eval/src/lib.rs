@@ -14,6 +14,62 @@
 //! root crate until M-6c deletes them): Cargo refuses the first, and the root
 //! crate is the only home of the second. Every later layer depends on this
 //! crate, never the other way.
+//!
+//! # Where the evaluation interface lives (FR-401-AC-3)
+//!
+//! The interface types are defined in `quire-eval` and `quire-semantic-value`,
+//! and resolve at their new paths:
+//!
+//! ```
+//! use quire_eval::{CallFailure, EvalOutcome, Evaluation, FamilyOutcome, FamilyResult};
+//! use quire_semantic_value::call::WrongSnapshotCause;
+//! use quire_semantic_value::catalog::{
+//!     CatalogCode, CatalogCoded, Category, InternalFault, UndefinedCoded, UndefinedReason,
+//!     UndefinedRecord,
+//! };
+//! use quire_semantic_value::supplied_stop::{
+//!     SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
+//! };
+//! ```
+//!
+//! No former path resolves from another crate:
+//!
+//! ```compile_fail,E0432
+//! use qsl_eval::value::Evaluation;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_eval::value::CallFailure;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::family::FamilyOutcome;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::family::FamilyResult;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::family::EvalOutcome;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_foundation::diagnostic::InternalFault;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_foundation::InternalFault;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::value::supplied::SuppliedStop;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_semantics::check::WrongSnapshotCause;
+//! ```
+//!
 
 pub mod automaton;
 pub mod fairness;

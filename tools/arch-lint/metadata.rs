@@ -273,6 +273,47 @@ mod tests {
         assert!(report.fb11.is_empty(), "{report:?}");
     }
 
+    /// FR-401-AC-7: the leaf `quire-eval`, git-sourced from its own
+    /// repository, contributes no repository to the edge graph, so an RT
+    /// resolved graph with a normal edge to it is clean and closes no FB-11
+    /// cycle through it, even though it depends on `quire-exact` and
+    /// `quire-semantic-value` in turn.
+    #[trace("FR-401-AC-7", "TC-156")]
+    #[test]
+    fn a_normal_edge_to_the_quire_eval_leaf_is_clean() {
+        let eval_git = "git+https://github.com/agent-ix/quire-eval?branch=main";
+        let exact_git = "git+https://github.com/agent-ix/quire-exact?branch=main";
+        let sv_git = "git+https://github.com/agent-ix/quire-semantic-value?branch=main";
+        let normal = json!([{"kind": null, "target": null}]);
+        let document = json!({
+            "packages": [
+                {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
+                {"id": "eval 0.1.0", "name": "quire-eval", "source": eval_git},
+                {"id": "exact 0.1.0", "name": "quire-exact", "source": exact_git},
+                {"id": "sv 0.1.0", "name": "quire-semantic-value", "source": sv_git},
+            ],
+            "resolve": {
+                "nodes": [
+                    {"id": "rt 0.1.0", "deps": [
+                        {"name": "quire_eval", "pkg": "eval 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "eval 0.1.0", "deps": [
+                        {"name": "quire_exact", "pkg": "exact 0.1.0", "dep_kinds": normal},
+                        {"name": "quire_semantic_value", "pkg": "sv 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "exact 0.1.0", "deps": []},
+                    {"id": "sv 0.1.0", "deps": [
+                        {"name": "quire_exact", "pkg": "exact 0.1.0", "dep_kinds": normal}
+                    ]}
+                ]
+            }
+        });
+        let edges = parse_edges(&document).unwrap();
+        assert!(edges.is_empty(), "{edges:?}");
+        let report = crate::graph::check(&edges);
+        assert!(report.is_clean(), "{report:?}");
+    }
+
     /// tc_arch_lint_metadata_008: the shared leaf `quire-semantic-value`,
     /// git-sourced from its own repository, contributes no repository to the
     /// edge graph, so an RT dependency on it yields no edge and no finding.
