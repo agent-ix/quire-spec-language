@@ -1,0 +1,7 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+enum Status { READY, DONE }
+union Choice { Item(Status), Empty }
+function enum_union_symmetric using v(a: Status, b: Status, x: Choice, y: Choice): Boolean pure {
+    ((a = b) and (x = y)) = ((a = a) and (x = x))
+}

@@ -3,6 +3,7 @@
 
 mod category_facade;
 mod compile_protocol_profile;
+mod enum_union_mvp_source;
 mod format_outcome_facade;
 mod outcome_facade;
 mod parse_outcome_facade;
