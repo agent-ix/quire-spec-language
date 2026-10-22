@@ -121,6 +121,10 @@ pub enum RunEnd {
 - If a node's expansion evaluates a contract conjunction undecided (FR-120
   `ContractUndetermined`), then the node SHALL be open,
   `UndecidedSuccessor`, and exploration SHALL continue with the other nodes.
+  An undefined guard, a precondition clause whose `evaluation` is
+  `Undefined`, leaves its node open `UndecidedSuccessor` like any undecided
+  expansion, and is also refuting evidence of every state-graph item over
+  the subject (FR-168 "Undefined evaluation").
 - When `max_states`, `max_transitions`, a clause meter or a cancelled
   `Cancel` handle stops the run, every discovered node not yet expanded SHALL be open,
   `NotExpanded`, and `end` SHALL be `Stopped` with that limit.
