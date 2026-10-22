@@ -1174,6 +1174,10 @@ pub enum LiteralValue {
     Integer(Integer),
     /// `rational`: `"n/d"`, reduced, positive denominator.
     Rational(Rational),
+    /// `quantity`: the exact magnitude, spelled as the decimal integer when
+    /// the denominator is 1 and otherwise `"n/d"` in lowest terms (QSpec
+    /// FR-322 "Scalar literal values").
+    Quantity(Rational),
     /// `text`: the text as a JSON string.
     Text(String),
     /// `string`: the exact scalar sequence as a JSON string, with no
@@ -1200,6 +1204,14 @@ impl LiteralValue {
             Self::Rational(value) => (
                 "rational",
                 LiteralJson::Spelled(format!("{}/{}", value.numerator(), value.denominator())),
+            ),
+            Self::Quantity(value) => (
+                "quantity",
+                LiteralJson::Spelled(if value.is_integer() {
+                    value.numerator().to_string()
+                } else {
+                    format!("{}/{}", value.numerator(), value.denominator())
+                }),
             ),
             Self::Text(value) => ("text", LiteralJson::Text(value)),
             Self::String(value) => ("string", LiteralJson::Text(value)),

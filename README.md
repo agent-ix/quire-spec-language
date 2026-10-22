@@ -350,8 +350,10 @@ Other directories:
 
 `make ci` is the local gate: formatting, clippy, tests across feature
 combinations, docs and the architecture lints. It reads the standard's test
-vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). Hosted CI
-runs only on manual dispatch, so run the gate before opening a pull request.
+vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). The hosted
+native compiler CI runs only on manual dispatch, so run the gate before opening
+a pull request. The separate pull request language-boundary check
+reports only whether new executable paths respect the Rust containment rule.
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 Contributions require the [CLA](CLA.md).

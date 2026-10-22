@@ -79,7 +79,7 @@ CG call sites to find). T12-B, T12-C and T12-D are QSL-role: each protects a
 constructor QSL itself calls.
 
 At the time of this requirement, the rule set SHALL contain exactly these
-six rules:
+seven rules:
 
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
@@ -89,6 +89,7 @@ six rules:
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `qsl-semantics/src/model/population.rs` |
 | T12-E | Qsl | The ADR-011 §4 condition-1 witness minter `library::SupportedV2Wire::attest_ir_admitted_v2` (ADR-013 T-1, FR-087-AC-1), `pub` only for the `qsl-semantics` crate boundary | `qsl-package`'s `checked_v2` (layer-4 v2 reader, allow-listed by crate and module); no debt list | `qsl-semantics/src/library/witness.rs` |
 | T12-F | Qsl | The kernel `NodeKey::decode_admitted` decoder (ADR-011 T-12, "Decoding an admitted key"): it re-reads a key `check` minted from an admitted package's bytes, after the admitted-package identity check | none in QSL: QSL has no decode site, so any QSL call fails the rule (FR-087-AC-6, AC-11); a backend has no allowed caller, and generated or emitted code is never a reader (a key literal there is a `WireNodeId` resolved by lookup without holding a key); no debt list | none |
+| T12-G | Qsl | The checked-term constructors: every function of the `quire_checked::construct` module (ADR-011 FB-14, [FR-400](FR-400-separate-checked-terms-from-the-checker.md)), compiled only under the `construct` feature that only `qsl-semantics` enables | `qsl-semantics`' `check` and every descendant module; `library` for the `PackageId` constructor and `value::definition` for the `AdmittedIntegerDivision` constructor; no debt list | the `construct` module's source in the resolved `quire-checked` checkout |
 
 A rule's call patterns SHALL include every textual spelling that constructs
 the protected value, not only its primary constructor name.
@@ -99,7 +100,9 @@ value. T12-E's pattern is the bare name `attest_ir_admitted_v2`, which
 matches it through the type, through `Self` or as a function value; its own
 definition is not a call. T12-F's pattern matches `NodeKey::decode_admitted`, called or
 passed as a function value; it is not a T12-B mint, and T12-B's pattern stays
-`NodeKey::from_digest`. T12-E runs on the repository's own tree in `cargo
+`NodeKey::from_digest`. T12-G's pattern is any path through `quire_checked::construct`, as a `use`
+tree leaf, a call or a function value; a crate alias or glob import of the
+module counts as a reference. T12-E runs on the repository's own tree in `cargo
 test --workspace` (`tc_arch_lint_api_surface_024`), and T12-F likewise
 (`tc_arch_lint_api_surface_028`), since the `arch-lint`
 binary is not yet part of `make ci`.
@@ -217,6 +220,23 @@ stage limits `replay` reads from a request (S1 `text_input_bytes`, S3
 checked-package bytes from source of its own, such as CG testing against real
 QSL output, calls this entry and never names `qsl_replay::spine`.
 
+### T12-A and the evaluator differential corpus
+
+T12-A protects the `qsl-replay` facade, the QSL crate through which CG
+calls into QSL; its call patterns name only `qsl_replay`. A crate from its own
+repository is not a QSL crate for T12-A, even when QSL owns it: the
+evaluation leaf `quire-eval`, the evaluator corpus crate
+`quire-eval-corpus` and the checked-term leaf `quire-checked` (all in
+`agent-ix/quire-eval`), and `quire-exact`, `quire-semantic-value` and
+`quire-walk`. CG's edges to those crates are outside T12-A, and FR-059
+governs them.
+
+CG's evaluator corpus producer
+([FR-402](FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md))
+needs no T12-A change: it writes cases with `quire-eval-corpus`, and it
+takes each case's `package_id` from `qsl_replay::compile_package` inside
+CG's `replay` module, T12-A's existing allowed caller.
+
 ### Honest reporting of real findings
 
 Running the check against QSL's real source tree at any commit SHALL report
@@ -238,6 +258,7 @@ each list can only shrink.
 | FR-060-AC-5 | `qsl_replay::compile_package` compiles FR-092's recursive `List` (`record List { next: List?; }`) and `Tree` (`record Tree { kids: Sequence<Tree>[0, 3]; }`) from source through the facade alone, and for each the package bytes and `package_id` equal those of the spine's parse, select, check and package run over the same source. | Test (TC-908) |
 | FR-060-AC-6 | `qsl_replay::compile_package` refuses as the spine does: a malformed source refuses `ReplayRefusal::Recompile` with the spine refusal's catalog code and stage; a library whose source has the unit's owner refuses `ReplayRefusal::DependencyInput`; an S1 `text_input_bytes` limit below the source's size refuses `stage_limit_exceeded`; and an S1 limit above the reader limit refuses `LimitAboveReader`. | Test (TC-908) |
 | FR-060-AC-7 | `qsl_replay::compile_package` takes the domain packages a unit's `model` selection names as I1's package input: a unit selecting a package compiles, with the package supplied, to the package bytes and `package_id` of the spine's run over the same source and packages, and without the package refuses `missing_import` at the intake stage as the spine does. | Test (TC-908) |
+| FR-060-AC-8 | Over a CG fixture tree with a QSL tree whose `qsl-replay/src/lib.rs` exists, a `qsl_replay::compile_package(..)` call in `src/replay/evaluator_corpus.rs` leaves T12-A passing; the same `qsl_replay::compile_package(..)` call moved to `src/oracle/mod.rs` fails T12-A, named with file, line and module. | Test (TC-1113) |
 
 ## Dependencies
 

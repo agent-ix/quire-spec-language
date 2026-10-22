@@ -30,7 +30,7 @@ with C before overlapping edits.
 - Use isolated worktrees for concurrent code sessions; preserve unrelated edits.
 - Run the actual build/test commands documented in README.md.
 - New integration tests go in `tests/it/<name>.rs` with a `mod <name>;` line added to `tests/it/main.rs` never a new top-level `tests/*.rs` file.
-- Owner directive: checks run locally until stable. Every hosted workflow must be manual-dispatch only (`workflow_dispatch`); do not add automatic triggers or dispatch a run without explicit direction. See NFR-002.
+- Owner directive: qualification checks run locally until stable. The native compiler CI workflow remains manual-dispatch only (`workflow_dispatch`); do not add automatic qualification triggers or dispatch a run without explicit direction. The automatic containment check `.github/workflows/language-boundary.yml` may run on `pull_request_target` solely to invoke the trusted Rust language-boundary checker and publish its result to the pull request head. This status is containment evidence, not a passing local build, test or qualification gate. The existing CLA workflow is separate. See NFR-002.
 
 <!-- required-language-policy:start -->
 ## Required implementation language and containment
