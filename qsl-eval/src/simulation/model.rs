@@ -25,6 +25,7 @@ mod frames;
 pub(crate) mod probabilistic;
 mod refine;
 mod state_predicate;
+mod symbolic;
 mod symmetry;
 mod terminal;
 mod walk;
@@ -83,6 +84,7 @@ pub use probabilistic::{
 };
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
+pub(crate) use symbolic::{SymbolicObject, SymbolicOperation, SymbolicSubject};
 pub use terminal::TerminalClass;
 pub(crate) use walk::{Applied, Budget};
 

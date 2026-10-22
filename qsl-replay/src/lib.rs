@@ -163,6 +163,7 @@ pub use model_check::settle::{
     settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, ResultLabel, Truth,
     EXPLICIT_STATE,
 };
+pub use model_check::smt_query::{encode_smt_query, SmtEncodingRefusal, SmtQueryKind};
 pub use model_check::state_graph::{
     GraphUndefined, GraphWitness, LassoWitness, ModelLasso, ModelPath, OpenCause, RunEnd,
     StateGraphInstanceOutcome, StateGraphOutcome, WitnessSource,
