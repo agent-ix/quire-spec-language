@@ -56,3 +56,10 @@ verification and documentation gap, not missing behaviour.
 | --- | --- | --- | --- |
 | FND-001 | medium | No AC or test covers a large source of real declarations. TC-1093 pads one enum with comment lines, which produce no tokens or nodes, so it never reaches `s1.tokens` or `s1.nodes`. Measured: a real 2.0 MB or 2.6 MB source raised only on `s1.input_bytes` and the reader limit is refused at `s1.tokens` (100000), then at `s1.nodes` (50000). It compiles only when both are also raised. The ticket's goal, CG intaking its 2.0 MB and 2.6 MB fixtures, is reachable, but nothing tested shows it. | qsl-replay/tests/stage_limit_named_root_only.rs:18-26 |
 | FND-002 | low | FR-399-AC-4's "default `s1.input_bytes` is unchanged" rests on AC-1 alone: a source of 1 MiB + 4 KiB is refused. Nothing shows a source at or just under 1 MiB still admitted at the default, so a lowered default would also pass. | qsl-replay/tests/stage_limit_named_root_only.rs:98-116 |
+
+## Dispositions
+
+| FND | Outcome | Sha |
+| --- | --- | --- |
+| FND-001 | fixed | 9ffbfbb16 |
+| FND-002 | fixed | 9ffbfbb16 |

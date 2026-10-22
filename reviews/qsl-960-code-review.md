@@ -46,3 +46,10 @@ Fix it in this PR if it is cheap.
 | --- | --- | --- | --- |
 | FND-001 | medium | The rustdoc of `with_named` does not say that `s1.input_bytes` above `ReplayLimits.input_bytes` refuses as `AdmittedResource::AboveReader`, so the reader limit must be raised with it. It also does not say that a source of real declarations reaches the `s1.tokens` (100000) and `s1.nodes` (50000) defaults at about 267 KB and 300 KB, far below 1 MiB. Only FR-399 and a test comment state the pairing. A consumer such as CG reads the rustdoc, and with only `s1.input_bytes` raised it gets AboveReader, then a token-limit refusal. | qsl-replay/src/request.rs:91-95 |
 | FND-002 | low | The tests match `AdmittedResource::StageLimit(_)` and do not check which setting fired. AC-1's refusal would still pass if `s1.tokens` fired instead of `s1.input_bytes`. | qsl-replay/tests/stage_limit_named_root_only.rs:48-51, 107-114 |
+
+## Dispositions
+
+| FND | Outcome | Sha |
+| --- | --- | --- |
+| FND-001 | fixed | 9ffbfbb16 |
+| FND-002 | fixed | 9ffbfbb16 |

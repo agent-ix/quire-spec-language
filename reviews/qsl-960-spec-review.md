@@ -29,3 +29,10 @@ Mergeable. There are no high findings.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-399 says a source larger than 1 MiB is blocked by `s1.input_bytes` alone ("cannot raise the input allowance"). Measured: a source of real declarations reaches the `s1.tokens` default (100000) at about 267 KB and the `s1.nodes` default (50000) at about 300 KB, long before 1 MiB. The FR should say a large real source also needs `s1.tokens` and `s1.nodes` raised by name. TC-1093 step 1 fixes the comment-padded fixture in place, so it can never show this. | spec/functional/FR-399-set-a-named-stage-limit-through-the-replay-root.md:22-31, 55-58 |
 | FND-002 | low | FR-399-AC-2 makes two claims in one criterion: the source compiles with both limits raised, and it is refused as AboveReader with the default reader limit. The two could be separate ACs. | spec/functional/FR-399-set-a-named-stage-limit-through-the-replay-root.md:65 |
+
+## Dispositions
+
+| FND | Outcome | Sha |
+| --- | --- | --- |
+| FND-001 | fixed | 9ffbfbb16 |
+| FND-002 | fixed | 9ffbfbb16 |
