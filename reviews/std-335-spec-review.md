@@ -105,3 +105,12 @@ origin/main is an ancestor.
 | --- | --- | --- | --- |
 | FND-009 | medium | With no installed handle and a caller-supplied run whose own `Cancel` is cancelled, FR-262 gives two answers: "With no installed handle, the run polls a handle no caller holds" (Begin returns a session, and the run's original Cancel is replaced, which FR-277 forbids: "SHALL NOT replace it with a fresh token") versus the differing-handle rule, which polls the run's handle (Begin returns `Cancelled`). AC-12 covers only the uncancelled case. Scope the no-handle sentence to Begin's own run and state the outcome for a caller's cancelled run with no installed handle in AC-12. | spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:162-169,287; spec/functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md:154-156 |
 | FND-010 | low | FR-401-AC-8 is inserted above FR-401-AC-7; append it after AC-7. | spec/functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md:265-266 |
+
+Round 2, checked against fix head 6d96c201 (`git diff 4bcce502..6d96c201`).
+`make check-spec-validation` exits 0 with 19 warnings, none on a touched
+file; the head merges cleanly with #1277 and origin/main is an ancestor.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-009 | fixed | The no-handle sentence now covers only the run Begin builds for itself; a caller's run keeps its own `Cancel` (FR-277), admission polls the run's handle alone when the meter has none, and AC-12 adds the cancelled-run, no-installed-handle case (`Cancelled(Requested)`, no session, zero consumption). |
+| FND-010 | fixed | FR-401-AC-8 now follows FR-401-AC-7. |
