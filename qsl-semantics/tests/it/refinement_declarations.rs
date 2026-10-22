@@ -843,7 +843,9 @@ fn every_concrete_operation_has_a_checked_step_row() {
     let mut applied = Vec::new();
     let mut stuttered = 0;
     for step in steps {
-        let StepClass::Operation(concrete) = &step.class;
+        let StepClass::Operation(concrete) = &step.class else {
+            panic!("an operation row: {:?}", step.class);
+        };
         match &step.target {
             StepTarget::Abstract {
                 operation,
@@ -1694,7 +1696,9 @@ fn row_refs_by_operation(graph: &CheckedGraph) -> BTreeMap<String, StepRowRef> {
         .iter()
         .zip(refs)
         .map(|(row, reference)| {
-            let StepClass::Operation(operation) = &row.class;
+            let StepClass::Operation(operation) = &row.class else {
+                panic!("an operation row: {:?}", row.class);
+            };
             (operation.node.clone(), reference)
         })
         .collect()
