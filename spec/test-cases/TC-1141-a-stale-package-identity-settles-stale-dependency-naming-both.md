@@ -47,7 +47,9 @@ weak `each` claim for step 6.
    certificate's `package_id` with that of the same unit with the claim's
    bound edited to `1001`, check it, settle the item and write its FR-331
    record. Remove the initial product state from the stale certificate and
-   check it again.
+   check it again. Check the stale certificate once more with a request
+   whose clause root is the edited unit's clause node, which does not
+   resolve in FR-338-AC-1's recompiled package, and settle the item.
 6. Run FR-339-AC-1's claim and check its `ComponentCertificate`. Replace
    its closure's `package_id` with that of the same unit with the claim's
    target edited to `c.versionNumber = 1`, check it, settle the item and
@@ -78,7 +80,9 @@ Tag the tests `#[trace("TC-1141", "<AC>")]` with the AC each step backs.
   `Inconclusive(StaleDependency{requested, recompiled})` with `requested`
   the certificate's `package_id`, written `stale-dependency`, never
   `certificate-rejected`; with its initial product state removed it still
-  returns `PackageMismatch`, not `InitialMissing`.
+  returns `PackageMismatch`, not `InitialMissing`; with the unresolved
+  clause root it returns `PackageMismatch` and settles
+  `Inconclusive(StaleDependency{requested, recompiled})`, not `Failed`.
 - Step 6 (FR-339-AC-4, FR-282-AC-10, FR-127-AC-13): the closure's
   `package_id` equals the recompiled one and `check_components` accepts the
   certificate; the stale certificate returns `PackageMismatch{certificate,
