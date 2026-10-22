@@ -289,8 +289,8 @@ item, each at the item's own occurrence:
   `replay` binds an owner parameter the record reads nowhere and the
   assignments leave unbound, when its type is `Boolean` or an integer type
   (FR-098 "unread parameters"). An assignment to a binder root of the
-  record's extent, and one that leaves an extent root unbound, is a replay
-  refusal.
+  record's extent, and one that leaves unbound an owner parameter that is an
+  extent root, is a replay refusal.
 
 QSL's request writer writes no item at a `declaration` occurrence: a `Value`
 function declaration carries no claim of its own, and its claims are its

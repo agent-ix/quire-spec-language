@@ -43,3 +43,20 @@ belongs to the code lane. Merge order against open PRs:
 
 No major finding in this method. The majors are SR-15510 FND-001 (the `r` vectors fail `check`) and
 SR-15512 FND-001 (matching an evaluation to its occurrence). The ids are unique, and the gate passes.
+
+## Dispositions
+
+Round 1, reviewed QSL #1221 at 92094c48b with QSpec #367 at daaf4e892. Merge order:
+
+- QSpec #367 must merge before QSL #1221, because FR-071 now cites FR-323-AC-22.
+- QSpec #366 must merge before QSL #1219.
+- #1219 at c62980557 and #1221 now conflict textually in FR-290 and TC-774. The rows they change do
+  not overlap: #1219 changes AC-9 to AC-11 and TC-774 step 7, #1221 changes AC-12 and steps 8 and 11.
+  Whichever PR merges second keeps both sides.
+- QSpec #366 and #367 touch different files.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

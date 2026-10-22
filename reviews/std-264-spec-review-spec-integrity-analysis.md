@@ -52,3 +52,18 @@ agree on the `occurrence_key` member, the claim selection and the refusal order.
 conclusion holds: FR-057's text says "A `Value` function declaration carries no clause; each scalar
 operation application in its body is one claim of its own", and FR-062 part 4 places requirements only
 at scalar applications. Lead defaults 1, 5, 6 and 8 are sound as written.
+
+## Dispositions
+
+Round 1, reviewed QSL #1221 at 92094c48b (fix commit 03471092d). The new fixtures were checked again in
+the TC-160 harness: `p`, `q`, `r` (`10 mod x`), `s`, `b`, `u` and `inc` check together as one unit. Each
+has the record the ACs name: `r`'s `10 mod x` with bound `Integer` and owner `r`; `s`'s two `10 mod x`
+occurrences, the `then` one guarded by `x > 0`; `b`'s `10 mod v` with owner `b`; `u`'s `10 mod x` with
+owner `u`; and `inc`'s `x + 1` with bound `Int[0, 10]`, under a narrow occurrence that holds no record.
+The probe was reverted.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

@@ -45,3 +45,20 @@ Not mergeable as written. FND-001 is major: as specified, the observation allows
 refutes a claim on a counterexample that does not reproduce, which breaks the "refuted only when replay
 reproduces" invariant (FR-289 item 4). Lead defaults: 4 is sound once FND-001 is fixed; 7 is sound but
 costs coverage (FND-002); 3 is acceptable (FND-003); 6 is sound.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | minor: the new unread-parameters rule refuses "an unbound extent root", and FR-098-AC-24 contradicts it. A binder root (`v` in `b`'s `forall(v in t: 10 mod v > 0)`) is an extent root that the replay source can never bind: naming it refuses `UnknownParameter`. Read literally, every binder-rooted request refuses `UnboundParameter`, yet AC-24 says `b` with `t = [3, 0]` reproduces. Say "an unbound parameter that is an extent root". The rule's rationale is also incomplete. "The claim's operands and guards read no such parameter" is false where a binder's values come from an unread parameter (`b`'s `v` ranges over `t`; a `fold` accumulator starts from its init). The verdict stays sound, since every observed evaluation is a real assignment of the claim's roots in their types. But the reason given is the wrong one: state that one. | spec/functional/FR-098-execute-a-replay-request.md:487-500 |
+
+## Dispositions
+
+Round 1, reviewed QSL #1221 at 92094c48b.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

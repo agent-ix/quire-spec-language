@@ -490,14 +490,19 @@ subtrees, the `let` values they read and the guards of its path condition
 read it nowhere) need not be bound by the replay source. The executor
 SHALL bind such a parameter of type `Boolean` to `false`, and one of an
 integer type to the value of its declared range nearest 0 (0 when the range
-holds it, the lower of two equally near values otherwise). The claim's
-operands and guards read no such parameter, so the value cannot change the
-claim's Boolean at an observed evaluation; a stop elsewhere that it causes
-settles `NoValue`, never a reproduction. An unbound parameter of any other
-type, an unbound extent root, an assignment naming a node that is not a
-parameter (a binder root included) and a parameter bound twice refuse as for
-a predicate claim (`UnboundParameter`, `UnknownParameter`,
-`DuplicateArgument`).
+holds it, the lower of two equally near values otherwise). A filled value
+cannot make a false reproduction: every observed evaluation is a real
+evaluation of the application under a real assignment of the claim's extent
+roots, whatever values those roots take from the filled parameters (a binder
+ranging over a filled collection, a fold accumulator starting from a filled
+initial value), so a failing observation always refutes the claim. A filled
+value can only cause a stop elsewhere, which settles `NoValue`, or a missed
+reproduction. An unbound parameter of any other type that is no extent
+root, an unbound parameter that is an extent root, an assignment naming a node that is not a parameter
+(a binder root included) and a parameter bound twice refuse as for a
+predicate claim (`UnboundParameter`, `UnknownParameter`,
+`DuplicateArgument`). A binder root is never bound by the replay source: the
+call binds it.
 
 **Application claim: the call.** The executor SHALL call the resolved
 function through S6a as for a predicate claim, with the same join,

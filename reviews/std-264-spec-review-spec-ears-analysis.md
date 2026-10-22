@@ -33,3 +33,11 @@ warning, but it is outside the diff.
 
 No major findings. The new statements follow EARS forms, and each one names its subject (the request
 type, the reader or the executor).
+
+## Dispositions
+
+Round 1, reviewed QSL #1221 at 92094c48b.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
