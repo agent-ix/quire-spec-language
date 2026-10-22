@@ -88,7 +88,9 @@ pub fn check_model(
 
 `max_states`, `max_transitions` and `max_automaton_states` are
 caller-raisable ADR-014 B-5 budgets of QSL's own provider (ADR-018 §1,
-IV-6). `ModelCheckLimits::default()` takes `limits` as FR-101's
+IV-6), raised by the settings `model_check.max_states`,
+`model_check.max_transitions` and `model_check.max_automaton_states`
+(FR-255's engine table). `ModelCheckLimits::default()` takes `limits` as FR-101's
 `Limits::default()` (`max_states` 10,000,000, `max_transitions`
 100,000,000) and publishes `max_automaton_states` 1,048,576 (2^20). A request
 raises any of them; reaching one settles `incomplete`,
