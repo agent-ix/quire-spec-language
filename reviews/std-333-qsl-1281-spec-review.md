@@ -95,3 +95,11 @@ this PR's) are missing from `quire matrix`. That defect predates this PR and
 needs its own ticket. Separately, QSpec #387's FR-331-AC-36 calls result 1 a
 "liveness proof", but its vector gives that result `kind`
 `temporal-satisfaction`. The QSpec review should check that.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head 44b7a66c (fix commit 4e83177ac). The blank line after FR-338-AC-10 is deleted, and so is the one after FR-127-AC-6. `quire matrix --scope . --format tsv` now lists FR-338-AC-11, FR-127-AC-7 to FR-127-AC-13, FR-282-AC-10 and FR-339-AC-4. `quire validate` exits 0 on every touched file. |
+| FND-002 | fixed | FR-338-AC-11 adds a vector: a request whose clause root is the edited unit's clause node, which does not resolve in AC-1's recompiled package, with a certificate naming the edited unit's `package_id`, returns `PackageMismatch` and settles `StaleDependency`, not `Failed`. TC-1141 step 5 and its expected result add the matching check. A checker that resolves the root first now fails this AC. |
+| FND-003 | fixed | The clause-root bullet now opens "If the certificate's `package_id` equals the recompiled one and the request's own clause root does not resolve". FR-338-AC-8's last sentence now adds "with a certificate whose `package_id` equals the recompiled one". No new findings. |
