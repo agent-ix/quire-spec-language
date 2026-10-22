@@ -39,7 +39,8 @@ Scope: FR-329-AC-1 to FR-329-AC-5 and FR-329-AC-8 to FR-329-AC-10.
    whose loop has one counted step; replay the last through FR-217.
 8. Under a bounded profile, evaluate a zero-counted protocol lasso that is
    unfair for a scheduler constraint (FR-338-AC-6's duplicate/lose cycle,
-   replayed against the default package), and the same cycle replayed
+   replayed against the default package, the payload carrying the default
+   package's fairness set), and the same cycle replayed
    against the package that declares `scheduling adversarial`, with `p` false
    at every position.
 

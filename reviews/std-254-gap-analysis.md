@@ -61,8 +61,11 @@ Disposition pass 1 at `agent-ix/quire-spec-language@9eb06cde9` (fix commit `9eb0
 | FND-002 | fixed 9eb06cde9 | AC-8 adds "with `p` true only at a loop position, at distance 0, `eventually[0,1] holds(p)` is `Completed(true)`", and TC-839 step 6 and its expected result ("`false` at 0; `true`; `true`") carry it. The review-pass probe returned `Holds` for this case. |
 | FND-003 | fixed 9eb06cde9 | AC-9 now names "a `Lasso::Observed`, a `Lasso::Model` over a model subject, and a protocol-subject `Lasso::Model` whose loop has one counted step", and TC-839 step 7 evaluates each. |
 | FND-004 | fixed f18e5c026 | TC-839 step 8 now evaluates "a zero-counted protocol lasso that is unfair for a scheduler constraint (FR-338-AC-6's duplicate/lose cycle, replayed against the default package)", which the review-pass probe refused `UnfairProtocolLasso{Root}`. Its second half is a new finding (FND-005). |
+| FND-005 | fixed 2949c4e0e | TC-839 step 8 now evaluates "the same cycle replayed against the package that declares `scheduling adversarial`, with `p` false at every position", and the expected result reads "`false` at 0 against the adversarial package". I read the FR-338-AC-6 fixture this names (`qsl-analyze/tests/it/protocol_counted_steps.rs:593-662`, `lossy_channel`): its loop is `duplicate`, `lose`, no step counts, the default package proves the claim because the cycle is unfair, and the adversarial package refutes it with that lasso and an empty fairness set. So step 8's second half now checks AC-10's "fair once the scheduler constraints are dropped" claim. |
 
 Disposition pass 2 at `agent-ix/quire-spec-language@f18e5c026` (fix commit `f18e5c026`). The FND-004 row above is pass 2's. FND-001's latest row (deferred) needs no new row. The PR still changes no test. The new FR-217-AC-7 has a TC-662 row (step 6 and its expected result).
+
+Disposition pass 3 at `agent-ix/quire-spec-language@2949c4e0e` (fix commit `2949c4e0e`; the head contains origin/main). The FND-005 row above is pass 3's. FND-001's latest row (deferred) needs no new row. The PR still changes no test. I also read `qsl-replay/src/model_check/replay.rs:687-722` and `qsl-analyze/tests/it/scheduler_fairness.rs:396-416`: a lasso replayed against a package whose fairness set differs from the payload's refuses `stale_dependency`/`content-mismatch` before the fairness check runs, which is new finding FND-006.
 
 ## New findings (disposition pass 1)
 
@@ -79,3 +82,11 @@ These were found at `f18e5c026`. They are new, not dispositions of the rows abov
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-005 | medium | FR-329-AC-10 says "the same lasso under `scheduling adversarial` is fair", meaning the unfair lasso becomes fair once the scheduler constraints are dropped. TC-839 step 8 now takes the duplicate/lose cycle as the unfair lasso but still evaluates "the step 6 lasso under `scheduling adversarial`". The step 6 lasso is fair under the default scheduler too, so that half never checks AC-10's claim and would pass if adversarial scheduling kept the constraints. Fix: evaluate the duplicate/lose cycle replayed against the adversarial package (as FR-338-AC-6's test does). | spec/test-cases/TC-839-s6a-evaluates-an-infinite-trace-clause-over-a-lasso.md:40-43,58-59; spec/functional/FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md:196 |
+
+## New findings (disposition pass 3)
+
+These were found at `2949c4e0e`. They are new, not dispositions of the rows above.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | TC-839 step 8's first half replays FR-338-AC-6's duplicate/lose cycle "against the default package" and expects `invalid_runtime_input`/`invalid-value`. The default package never produces this lasso (it proves the claim), so the test has to take the adversarial counterexample, whose fairness set is empty. Replay compares the payload's fairness set with the recompiled one first and refuses `stale_dependency`/`content-mismatch` when they differ (replay.rs:687-692; TC-662's test at scheduler_fairness.rs:396-398 sets `scheduled.fairness = fair.fairness()` to reach the unfair refusal). The step does not say to replace the fairness set, so a literal reading reaches the wrong refusal. Fix: say the payload carries the default package's scheduler constraints, as TC-662 does. | spec/test-cases/TC-839-s6a-evaluates-an-infinite-trace-clause-over-a-lasso.md:40-44; qsl-replay/src/model_check/replay.rs:687-692; qsl-analyze/tests/it/scheduler_fairness.rs:396-416 |
