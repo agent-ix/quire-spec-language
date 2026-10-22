@@ -65,17 +65,25 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
 ### S3
 
 - S3 SHALL admit an aggregate term only in a clause over a trace subject. An
-  aggregate term in a claim over a model subject SHALL be refused, with a
-  diagnostic naming ADR-024 §2's measures.
+  aggregate term in a claim over a model subject SHALL be refused
+  `unsupported_construct`/`expression-form` at the aggregate term, with a
+  diagnostic naming ADR-024 §2's measures (QSpec FR-414-AC-6).
 - `past[a, b]` SHALL have `a <= b`: natural numbers under event-position,
   durations under the timestamped-event profile. A duration window under
   event-position, or a position window under timestamped-event, SHALL be
-  refused.
-- `quantile q` SHALL have an exact rational `0 < q < 1`. `min_count` SHALL
-  be at least 1.
+  refused `ill_typed`/`unit-mismatch` at the first bound whose kind the
+  profile does not take. A window with `a > b` SHALL be refused
+  `invalid_package`/`invalid-value` at the window `past[a, b]`.
+- `quantile q` SHALL have an exact rational `0 < q < 1`; another `q` SHALL be
+  refused `invalid_package`/`invalid-value` at the literal `q`. `min_count`
+  SHALL be at least 1; `min_count 0` SHALL be refused
+  `invalid_package`/`invalid-value` at the literal.
 - The value expression and the threshold SHALL have equal dimensions; a
   threshold in another unit converts exactly by QSpec FR-142, and another
-  dimension SHALL be refused.
+  dimension SHALL be refused `ill_typed`/`unit-mismatch` at the threshold
+  (QSpec FR-414-AC-4).
+- An aggregate term with several of these faults SHALL report each, in
+  source order.
 - An aggregate atom SHALL add nothing to the formula's horizon (ADR-014
   TR-4).
 
@@ -145,6 +153,7 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
 | FR-194-AC-4 | S3 refuses an aggregate term in a claim over a model subject, `past[0, 300 s]` under event-position, `quantile 1`, `min_count 0`, and a threshold of length against a time value. AC-1's clause has the same horizon with and without its aggregate atom; its tl-mltl input is the derived Boolean signal; a holding result is `tested` with evidence `Observed`. | Test (TC-629) |
 | FR-194-AC-5 | Over event-position `x` values `2, 1, 0, 4` at positions 0 to 3, `sum of 6 / e.x over past[0, 3] <= 20` has the clause result `Undefined(UndefinedEvaluation{where: position 2, cause: division-by-zero})` in the O-16 category violation, `where` being the first position at which the atom is undefined (the window at position 2 is the first to hold `x` 0). At position 3 the atom reads `Undefined` with cause `division-by-zero`, not the sum `10.5` of the other three positions and not a holding result. The guarded `sum of 6 / e.x where holds(e.x != 0) over past[0, 3] <= 20` stays defined at position 3: the sum is `10.5` and the atom is true. At position 3, `count where holds(6 / e.x > 1) over past[0, 3] >= 1` reads `Undefined` with `division-by-zero` for the undefined filter, and `fraction holds(6 / e.x > 1) over past[0, 3] >= 1/2` for the undefined predicate. At position 3, the unguarded sum with `min_count 5` reads `Undefined` with `division-by-zero`, not `InsufficientData`, and the guarded sum with `min_count 5` reads `Undefined` with `InsufficientData{count: 3, min_count: 5}`, which is O-16 `undefined` and never `UndefinedEvaluation`. `past[2, 3]` at position 3 holds positions 0 and 1 only, with no zero: `sum of 6 / e.x over past[2, 3] <= 20` is `9` and true, `count` is `2`, and `fraction holds(6 / e.x > 1)` is `1`. | Test (TC-629) |
 | FR-194-AC-6 | Over `x` values `1, 0, 2, 3` at positions 0 to 3, `sum of 6 / e.x over past[0, 3]` has the clause result `UndefinedEvaluation{where: position 1, cause: division-by-zero}`. Its atom at position 3 reads `Undefined` with `division-by-zero` and charges 2 visit units, positions 0 and 1, because the evaluator visits oldest first and stops at position 1; the clause-level visit charge (window-visit units only, excluding the clause's node-visit and letter-read units) over positions 0 and 1 is 3 units (1 at position 0, 2 at position 1). With `max_window_values` 2 the atom at position 3 is the same, not `Incomplete`, because the third admitted value, at position 2, is not reached. The 2-unit charge shows the oldest-first order, since a newest-first visit charges 3 units. A filter that rejects 10 of 20 positions charges 20 visit units, not 10. | Test (TC-629) |
+| FR-194-AC-7 | Each refusal at its locus: `count over past[0, 9]` in a claim over a model subject, `unsupported_construct`/`expression-form` at the `count` term; `past[0, 300 s]` under event-position, `ill_typed`/`unit-mismatch` at `300 s`; `past[0, 9]` under timestamped-event, `ill_typed`/`unit-mismatch` at `0`; `past[5, 2]`, `invalid_package`/`invalid-value` at `past[5, 2]`; `quantile 1`, `quantile 0` and `quantile 3/2`, `invalid_package`/`invalid-value` at the `q` literal; `min_count 0`, `invalid_package`/`invalid-value` at `0`; a threshold `5 m` against a time value, `ill_typed`/`unit-mismatch` at `5 m`. A term with `quantile 1` and `min_count 0` reports both refusals, the quantile's first. | Test (TC-629) |
 
 ## Dependencies
 
