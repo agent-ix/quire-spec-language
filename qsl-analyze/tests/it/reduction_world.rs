@@ -542,7 +542,13 @@ pub(crate) fn replay_unit(
         ),
         source_digests: vec![source_wire(unit.identity, unit.text)],
         dependencies: Vec::new(),
-        replay_target: qsl_replay::RequestTargetWire::function(selected()),
+        replay_target: qsl_replay::RequestTargetWire::function(
+            selected(),
+            qsl_replay::OccurrenceKey::new(
+                qsl_replay::WireNodeId::from_digest([7; 32]),
+                qsl_replay::Origin::new(qsl_replay::Role::new("declaration"), 0),
+            ),
+        ),
         source: witness_source(),
         obligation_identity: [3; 32],
         backend: "qsl-en-1".to_owned(),

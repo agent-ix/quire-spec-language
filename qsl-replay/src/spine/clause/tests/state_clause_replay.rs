@@ -29,7 +29,7 @@ fn name(text: &str) -> Identifier {
 
 /// The `state_clause` replay target naming `clause`.
 fn clause_target(clause: &str) -> ReplayTarget {
-    ReplayTarget::StateClause(crate::QualifiedName::new(vec![name(clause)]).unwrap())
+    ReplayTarget::state_clause(crate::QualifiedName::new(vec![name(clause)]).unwrap())
 }
 
 /// `clause`'s node and `claim` occurrence in `unit`'s compiled package.
@@ -1005,8 +1005,10 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
         DoesNotCompile,
         EntryRemoved,
     }
-    let function =
-        ReplayTarget::Function(crate::QualifiedName::new(vec![name("sameIdentity")]).unwrap());
+    let function = ReplayTarget::function(
+        crate::QualifiedName::new(vec![name("sameIdentity")]).unwrap(),
+        Some(crate::target::test_key()),
+    );
     let frame = ReplayTarget::FrameOperation(crate::FrameOperation {
         object: crate::QualifiedName::new(vec![name("Config"), name("ConfigVersion")]).unwrap(),
         operation: name("attemptUpdate"),
@@ -1065,7 +1067,11 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
             }
             match (&request_target, &refusal) {
                 (
-                    ReplayTarget::Function(_) | ReplayTarget::FrameOperation(_),
+                    ReplayTarget::Declaration {
+                        kind: crate::NamedKind::Function,
+                        ..
+                    }
+                    | ReplayTarget::FrameOperation(_),
                     ReplayRefusal::WrongReplayTarget {
                         target,
                         entry,
@@ -1080,13 +1086,16 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
                     assert_eq!(
                         target.member().pointer(),
                         match request_target {
-                            ReplayTarget::Function(_) => "/replay/function",
+                            ReplayTarget::Declaration { .. } => "/replay/function",
                             _ => "/replay/frame_operation",
                         }
                     );
                 }
                 (
-                    ReplayTarget::StateClause(_),
+                    ReplayTarget::Declaration {
+                        kind: crate::NamedKind::StateClause,
+                        ..
+                    },
                     ReplayRefusal::TargetMismatch { request, envelope },
                 ) => {
                     assert_eq!(**request, request_target);

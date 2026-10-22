@@ -1339,9 +1339,9 @@ mod envelope_tests {
     fn tc_183_replay_target_round_trips_and_refuses_none_and_two() {
         let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
         let targets = [
-            ReplayTarget::Function(function.clone()),
+            ReplayTarget::function(function.clone(), None),
             ReplayTarget::FrameOperation(frame_operation()),
-            ReplayTarget::StateClause(clause_name()),
+            ReplayTarget::state_clause(clause_name()),
         ];
         for target in targets {
             let mut packet = full_packet(0);

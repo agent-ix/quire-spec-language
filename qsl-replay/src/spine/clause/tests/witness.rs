@@ -1397,7 +1397,7 @@ fn replay_case(
 ) {
     let (label, bytes) = snapshot.document();
     let package_id = package_digest(unit.compiled.emitted.package_id());
-    let target = crate::ReplayTarget::StateClause(
+    let target = crate::ReplayTarget::state_clause(
         crate::QualifiedName::new(vec![quire_exact::Identifier::new(clause).unwrap()]).unwrap(),
     );
     let wire = request(

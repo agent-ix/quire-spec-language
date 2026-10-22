@@ -12,6 +12,7 @@ use std::fmt;
 
 use crate::identity::QualifiedName;
 use crate::witness::FrameOperation;
+use qsl_foundation::source::provenance::OccurrenceKey;
 
 /// One of QSpec FR-323's replay target members, in FR-323's order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -87,25 +88,118 @@ impl fmt::Display for ReplayEntry {
     }
 }
 
-/// The one item a packet, envelope or request selects to replay (QSpec
-/// FR-323). It holds typed names only.
+/// Which declaration a named replay target selects.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum NamedKind {
+    /// A function, by its declared name (`function`).
+    Function,
+    /// A state clause, by its declared name (`state_clause`).
+    StateClause,
+}
+
+/// The one item a packet, envelope or request selects (QSpec FR-323). It
+/// holds typed names only. A declared name is a component of the target,
+/// never an identity on its own (FR-088-AC-6): it is resolved against the
+/// recompiled package, so it sits beside the kind of declaration it names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayTarget {
-    /// The selected function (FR-098).
-    Function(QualifiedName),
+    /// A function or a state clause, by its declared name (FR-098, FR-122).
+    Declaration {
+        /// Which kind of declaration the name selects.
+        kind: NamedKind,
+        /// The declared name.
+        name: QualifiedName,
+        /// A `function` request's QSpec FR-323 `occurrence_key`: the failing
+        /// node's occurrence key, which selects the claim the replay decides
+        /// (FR-071, FR-098). Present on every decoded `function` request;
+        /// absent on a `state_clause` target and on an envelope's target,
+        /// whose packet carries no such member.
+        occurrence_key: Option<OccurrenceKey>,
+    },
     /// The operation whose frame is replayed (FR-116).
     FrameOperation(FrameOperation),
-    /// The state clause, by its declared name (FR-122).
-    StateClause(QualifiedName),
 }
 
 impl ReplayTarget {
+    /// A `function` target, with its `occurrence_key` when it comes from a
+    /// request.
+    pub fn function(name: QualifiedName, occurrence_key: Option<OccurrenceKey>) -> Self {
+        Self::Declaration {
+            kind: NamedKind::Function,
+            name,
+            occurrence_key,
+        }
+    }
+
+    /// A `state_clause` target.
+    pub fn state_clause(name: QualifiedName) -> Self {
+        Self::Declaration {
+            kind: NamedKind::StateClause,
+            name,
+            occurrence_key: None,
+        }
+    }
+
     /// The FR-323 member this target is carried in.
     pub fn member(&self) -> TargetMember {
         match self {
-            Self::Function(_) => TargetMember::Function,
+            Self::Declaration {
+                kind: NamedKind::Function,
+                ..
+            } => TargetMember::Function,
+            Self::Declaration {
+                kind: NamedKind::StateClause,
+                ..
+            } => TargetMember::StateClause,
             Self::FrameOperation(_) => TargetMember::FrameOperation,
-            Self::StateClause(_) => TargetMember::StateClause,
+        }
+    }
+
+    /// The function name, when this is a `function` target.
+    pub fn as_function(&self) -> Option<&QualifiedName> {
+        match self {
+            Self::Declaration {
+                kind: NamedKind::Function,
+                name,
+                ..
+            } => Some(name),
+            Self::Declaration {
+                kind: NamedKind::StateClause,
+                ..
+            }
+            | Self::FrameOperation(_) => None,
+        }
+    }
+
+    /// The clause name, when this is a `state_clause` target.
+    pub fn as_state_clause(&self) -> Option<&QualifiedName> {
+        match self {
+            Self::Declaration {
+                kind: NamedKind::StateClause,
+                name,
+                ..
+            } => Some(name),
+            Self::Declaration {
+                kind: NamedKind::Function,
+                ..
+            }
+            | Self::FrameOperation(_) => None,
+        }
+    }
+
+    /// The `function` request's `occurrence_key`, when it carries one.
+    pub fn occurrence_key(&self) -> Option<&OccurrenceKey> {
+        match self {
+            Self::Declaration { occurrence_key, .. } => occurrence_key.as_ref(),
+            Self::FrameOperation(_) => None,
+        }
+    }
+
+    /// The frame operation, when this is a `frame_operation` target.
+    pub fn as_frame_operation(&self) -> Option<&FrameOperation> {
+        match self {
+            Self::FrameOperation(operation) => Some(operation),
+            Self::Declaration { .. } => None,
         }
     }
 }
@@ -113,9 +207,7 @@ impl ReplayTarget {
 impl fmt::Display for ReplayTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Function(name) | Self::StateClause(name) => {
-                write!(f, "{} `{name}`", self.member())
-            }
+            Self::Declaration { name, .. } => write!(f, "{} `{name}`", self.member()),
             Self::FrameOperation(operation) => write!(f, "{} `{operation}`", self.member()),
         }
     }
@@ -189,9 +281,9 @@ impl ReplayTargetMembers {
     pub fn select(self) -> Result<ReplayTarget, TargetSelectionRefusal> {
         let members = self.present();
         match (self.function, self.frame_operation, self.state_clause) {
-            (Some(name), None, None) => Ok(ReplayTarget::Function(name)),
+            (Some(name), None, None) => Ok(ReplayTarget::function(name, None)),
             (None, Some(operation), None) => Ok(ReplayTarget::FrameOperation(operation)),
-            (None, None, Some(name)) => Ok(ReplayTarget::StateClause(name)),
+            (None, None, Some(name)) => Ok(ReplayTarget::state_clause(name)),
             (None, None, None) => Err(TargetSelectionRefusal::Missing),
             _ => Err(TargetSelectionRefusal::Conflicting { members }),
         }
@@ -214,33 +306,44 @@ impl ReplayTargetMembers {
 impl From<ReplayTarget> for ReplayTargetMembers {
     fn from(target: ReplayTarget) -> Self {
         match target {
-            ReplayTarget::Function(name) => Self::function(name),
+            ReplayTarget::Declaration {
+                kind: NamedKind::Function,
+                name,
+                ..
+            } => Self::function(name),
+            ReplayTarget::Declaration {
+                kind: NamedKind::StateClause,
+                name,
+                ..
+            } => Self::state_clause(name),
             ReplayTarget::FrameOperation(operation) => Self::frame_operation(operation),
-            ReplayTarget::StateClause(name) => Self::state_clause(name),
         }
     }
 }
 
-/// The replay target in a request's wire form: the three target members
-/// and whether the request also carries the function-only `arguments` and
-/// occurrence-key members (QSpec FR-323 decode rule 1 refuses either on a
-/// frame or state-clause request). A function request ignores both flags:
-/// decode keeps neither, so [`crate::ReplayRequest::to_wire`] writes `false`
-/// for both and a function request does not round-trip them.
+/// The replay target in a request's wire form: the three target members,
+/// the function-only `occurrence_key` and whether the request carries an
+/// `arguments` member (QSpec FR-323 decode rule 1: a `function` request
+/// requires the occurrence key; a frame or state-clause request refuses it
+/// and `arguments`). A function request ignores `arguments`: decode keeps
+/// no such member, so [`crate::ReplayRequest::to_wire`] writes `false`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RequestTargetWire {
     /// The target members.
     pub members: ReplayTargetMembers,
     /// The request carries an `arguments` member.
     pub arguments: bool,
-    /// The request carries an `occurrence_key` member.
-    pub occurrence_key: bool,
+    /// The request's `occurrence_key` member, if it carries one.
+    pub occurrence_key: Option<OccurrenceKey>,
 }
 
 impl RequestTargetWire {
-    /// A function request carrying neither extra member.
-    pub fn function(name: QualifiedName) -> Self {
-        ReplayTargetMembers::function(name).into()
+    /// A function request for the claim at `occurrence_key`.
+    pub fn function(name: QualifiedName, occurrence_key: OccurrenceKey) -> Self {
+        Self {
+            occurrence_key: Some(occurrence_key),
+            ..ReplayTargetMembers::function(name).into()
+        }
     }
 
     /// A frame request.
@@ -259,13 +362,26 @@ impl From<ReplayTargetMembers> for RequestTargetWire {
         Self {
             members,
             arguments: false,
-            occurrence_key: false,
+            occurrence_key: None,
         }
     }
 }
 
 impl From<ReplayTarget> for RequestTargetWire {
     fn from(target: ReplayTarget) -> Self {
-        ReplayTargetMembers::from(target).into()
+        Self {
+            occurrence_key: target.occurrence_key().cloned(),
+            ..ReplayTargetMembers::from(target).into()
+        }
     }
+}
+
+/// A function request's `occurrence_key` for tests: a `declaration`
+/// occurrence at ordinal 0.
+#[cfg(test)]
+pub(crate) fn test_key() -> OccurrenceKey {
+    OccurrenceKey::new(
+        qsl_foundation::digest::WireNodeId::from_digest([7; 32]),
+        quire_exact::Origin::new(quire_exact::Role::new("declaration"), 0),
+    )
 }

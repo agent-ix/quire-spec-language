@@ -167,7 +167,7 @@ fn request(
             digest.hex(),
         )],
         dependencies: Vec::new(),
-        replay_target: crate::RequestTargetWire::function(function),
+        replay_target: crate::RequestTargetWire::function(function, crate::target::test_key()),
         source,
         obligation_identity: [2; 32],
         backend: "kani-backend-1".to_owned(),
@@ -256,7 +256,7 @@ fn tc_444_a_non_function_target_refuses_before_the_recompile() {
         object: name(&["Config", "ConfigVersion"]),
         operation: Identifier::new("attemptUpdate").unwrap(),
     });
-    let clause = ReplayTarget::StateClause(name(&["VersionUnchanged"]));
+    let clause = ReplayTarget::state_clause(name(&["VersionUnchanged"]));
     for (target, pointer) in [
         (frame, "/replay/frame_operation"),
         (clause, "/replay/state_clause"),
@@ -696,7 +696,8 @@ fn tc_444_a_selection_naming_no_function_refuses() {
         name(&["module", "small"]),
     ] {
         let mut wire = small(7);
-        wire.replay_target = crate::RequestTargetWire::function(selection.clone());
+        wire.replay_target =
+            crate::RequestTargetWire::function(selection.clone(), crate::target::test_key());
         let refused = replay(wire, ReplayLimits::default()).unwrap_err();
         let ReplayRefusal::UnknownFunction {
             selection: named,
@@ -1556,7 +1557,8 @@ fn call_site_refusal_codes_are_the_replay_refusal_codes() {
         "{refusal:?}"
     );
     let mut wire = small(7);
-    wire.replay_target = crate::RequestTargetWire::function(name(&["large"]));
+    wire.replay_target =
+        crate::RequestTargetWire::function(name(&["large"]), crate::target::test_key());
     let replayed = replay(wire, ReplayLimits::default()).expect_err("large is not declared");
     assert_eq!(refusal.code(), Code::MissingDeclaration);
     assert_eq!(refusal.code(), replayed.code());
@@ -2358,7 +2360,7 @@ fn non_function_targets() -> [(crate::ReplayTarget, &'static str); 2] {
             "/replay/frame_operation",
         ),
         (
-            crate::ReplayTarget::StateClause(name(&["VersionUnchanged"])),
+            crate::ReplayTarget::state_clause(name(&["VersionUnchanged"])),
             "/replay/state_clause",
         ),
     ]
@@ -3308,7 +3310,8 @@ mod operator_arm {
         }
 
         let mut unknown = parity("inc", 3);
-        unknown.replay_target = crate::RequestTargetWire::function(name(&["nope"]));
+        unknown.replay_target =
+            crate::RequestTargetWire::function(name(&["nope"]), crate::target::test_key());
         let (text, code, settled, report) = refusal_of(unknown, add_claim());
         assert!(text.contains("missing-name"), "{text}");
         assert_eq!(code, Code::MissingDeclaration);

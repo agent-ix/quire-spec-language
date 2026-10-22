@@ -283,7 +283,7 @@ pub use result::{
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // QSpec FR-323: the replay target a packet, envelope and request each carry.
 pub use target::{
-    ReplayEntry, ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember,
+    NamedKind, ReplayEntry, ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember,
     TargetSelectionRefusal,
 };
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
@@ -381,6 +381,7 @@ mod redaction_tests {
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
@@ -425,6 +426,7 @@ mod redaction_tests {
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),

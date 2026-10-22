@@ -638,7 +638,8 @@ fn tc_907_the_common_steps_refuse_for_both_entries() {
     }));
 
     let mut undeclared = unit.wire("f", &claim(), vec![]);
-    undeclared.replay_target = crate::RequestTargetWire::function(name(&["nope"]));
+    undeclared.replay_target =
+        crate::RequestTargetWire::function(name(&["nope"]), crate::target::test_key());
     cases.push(("an undeclared function", undeclared, claim(), |refusal| {
         matches!(refusal, ReplayRefusal::UnknownFunction { .. })
     }));

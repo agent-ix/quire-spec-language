@@ -578,6 +578,11 @@ pub enum ReplayRequestRefusal {
         /// The request's target member.
         target: TargetMember,
     },
+    /// QSpec FR-323 decode rule 1: a `function` request carries no
+    /// `occurrence_key` (`invalid_runtime_input`/`missing-member` at
+    /// `/replay/occurrence_key`).
+    #[error("invalid_runtime_input/missing-member at /replay/occurrence_key: a function request carries no occurrence key")]
+    MissingOccurrenceKey,
     /// QSpec FR-323 decode rule 1: a frame or state-clause request carries
     /// an occurrence key (`invalid_runtime_input`/`unknown-member` at
     /// `/replay/occurrence_key`).
@@ -614,13 +619,24 @@ fn decode_target(wire: RequestTargetWire) -> Result<ReplayTarget, ReplayRequestR
         }
     })?;
     let member = target.member();
-    if member != TargetMember::Function {
-        if arguments {
-            return Err(ReplayRequestRefusal::UnexpectedArguments { target: member });
-        }
-        if occurrence_key {
-            return Err(ReplayRequestRefusal::UnexpectedOccurrenceKey { target: member });
-        }
+    if member == TargetMember::Function {
+        let Some(key) = occurrence_key else {
+            return Err(ReplayRequestRefusal::MissingOccurrenceKey);
+        };
+        return Ok(match target {
+            ReplayTarget::Declaration { kind, name, .. } => ReplayTarget::Declaration {
+                kind,
+                name,
+                occurrence_key: Some(key),
+            },
+            other @ ReplayTarget::FrameOperation(_) => other,
+        });
+    }
+    if arguments {
+        return Err(ReplayRequestRefusal::UnexpectedArguments { target: member });
+    }
+    if occurrence_key.is_some() {
+        return Err(ReplayRequestRefusal::UnexpectedOccurrenceKey { target: member });
     }
     Ok(target)
 }
@@ -705,6 +721,7 @@ impl ReplayRequestRefusal {
             }
             Self::StageLimitEntry { .. }
             | Self::MissingReplayTarget
+            | Self::MissingOccurrenceKey
             | Self::ConflictingReplayTarget { .. }
             | Self::UnexpectedArguments { .. }
             | Self::UnexpectedOccurrenceKey { .. } => Code::InvalidRuntimeInput,
@@ -716,7 +733,7 @@ impl ReplayRequestRefusal {
     /// rule 1); `None` for every other refusal, whose text names its own.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
-            Self::MissingReplayTarget => Some("missing-member"),
+            Self::MissingReplayTarget | Self::MissingOccurrenceKey => Some("missing-member"),
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
             Self::UnexpectedArguments { .. } | Self::UnexpectedOccurrenceKey { .. } => {
                 Some("unknown-member")
@@ -730,6 +747,7 @@ impl ReplayRequestRefusal {
     pub fn pointer(&self) -> Option<&'static str> {
         match self {
             Self::MissingReplayTarget => Some("/replay"),
+            Self::MissingOccurrenceKey => Some("/replay/occurrence_key"),
             Self::ConflictingReplayTarget { members } => {
                 Some(members.last().map_or("/replay", |member| member.pointer()))
             }
@@ -1024,6 +1042,7 @@ mod tests {
     use crate::target::ReplayTargetMembers;
     use ix_trace_rs::trace;
     use qsl_foundation::digest::{ByteDigest, DigestDomain, WireNodeId};
+    use qsl_foundation::source::provenance::OccurrenceKey as OccurrenceKeyForTest;
     use quire_exact::Identifier;
 
     fn scalar_limits(seed: u64) -> ScalarLimits {
@@ -1079,6 +1098,7 @@ mod tests {
                     Identifier::new("f").unwrap(),
                 ])
                 .unwrap(),
+                crate::target::test_key(),
             ),
             source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
@@ -1478,7 +1498,7 @@ mod tests {
     #[test]
     fn tc_187_selection_is_always_a_typed_qualified_name() {
         let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();
-        let ReplayTarget::Function(function) = request.replay_target() else {
+        let Some(function) = request.replay_target().as_function() else {
             panic!("the wire's target is a function");
         };
         assert_eq!(function.segments().len(), 2);
@@ -1512,11 +1532,12 @@ mod tests {
     #[test]
     fn tc_185_each_replay_target_round_trips() {
         let targets = [
-            ReplayTarget::Function(
+            ReplayTarget::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+                Some(crate::target::test_key()),
             ),
             ReplayTarget::FrameOperation(frame_target()),
-            ReplayTarget::StateClause(clause_name()),
+            ReplayTarget::state_clause(clause_name()),
         ];
         for target in targets {
             let mut wire = wire(1);
@@ -1529,6 +1550,27 @@ mod tests {
         }
     }
 
+    /// FR-071-AC-15 (TC-185 step 7): a `function` request round-trips its
+    /// `declaration` occurrence key and an `expression` key at ordinal 1.
+    #[trace("TC-185", "FR-071-AC-15")]
+    #[test]
+    fn tc_185_a_function_request_round_trips_its_occurrence_key() {
+        let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+        let node = WireNodeId::from_digest([5; 32]);
+        for key in [
+            OccurrenceKeyForTest::new(node, quire_exact::Origin::new("declaration".into(), 0)),
+            OccurrenceKeyForTest::new(node, quire_exact::Origin::new("expression".into(), 1)),
+        ] {
+            let mut wire = wire(1);
+            wire.replay_target = RequestTargetWire::function(function.clone(), key.clone());
+            let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
+            assert_eq!(request.replay_target().occurrence_key(), Some(&key));
+            let again =
+                ReplayRequest::decode(request.to_wire(), crate::ReplayLimits::default()).unwrap();
+            assert_eq!(again.replay_target().occurrence_key(), Some(&key));
+        }
+    }
+
     /// FR-071-AC-14 (TC-185 step 6): the reader refuses none, two and a
     /// frame or state-clause request carrying `arguments` or an occurrence
     /// key, with FR-323's codes and pointers, and a removed byte-provision
@@ -1537,7 +1579,16 @@ mod tests {
     #[test]
     fn tc_185_replay_target_refusals_precede_the_byte_provision_rule() {
         let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
-        let cases: [(RequestTargetWire, ReplayRequestRefusal, &str, &str); 8] = [
+        let cases: [(RequestTargetWire, ReplayRequestRefusal, &str, &str); 9] = [
+            (
+                RequestTargetWire {
+                    occurrence_key: None,
+                    ..RequestTargetWire::function(function.clone(), crate::target::test_key())
+                },
+                ReplayRequestRefusal::MissingOccurrenceKey,
+                "missing-member",
+                "/replay/occurrence_key",
+            ),
             (
                 RequestTargetWire::default(),
                 ReplayRequestRefusal::MissingReplayTarget,
@@ -1583,7 +1634,7 @@ mod tests {
             ),
             (
                 RequestTargetWire {
-                    occurrence_key: true,
+                    occurrence_key: Some(crate::target::test_key()),
                     ..RequestTargetWire::state_clause(clause_name())
                 },
                 ReplayRequestRefusal::UnexpectedOccurrenceKey {
@@ -1625,7 +1676,7 @@ mod tests {
             (
                 RequestTargetWire {
                     arguments: true,
-                    occurrence_key: true,
+                    occurrence_key: Some(crate::target::test_key()),
                     ..RequestTargetWire::frame_operation(frame_target())
                 },
                 ReplayRequestRefusal::UnexpectedArguments {

@@ -1419,7 +1419,7 @@ mod tests {
         let one_arg = build_witness_envelope("one_arg_fn", "x=1");
         let two_arg = build_witness_envelope("two_arg_fn", "x=1;y=2");
         for envelope in [&one_arg, &two_arg] {
-            let crate::ReplayTarget::Function(function) = envelope.replay_target() else {
+            let Some(function) = envelope.replay_target().as_function() else {
                 panic!("the packet's target is a function");
             };
             assert_eq!(function.segments().len(), 2);

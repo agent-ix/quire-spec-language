@@ -618,8 +618,12 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
+/// # let key = OccurrenceKey::new(
+/// #     WireNodeId::from_digest([0; 32]),
+/// #     Origin::new(Role::new("declaration"), 0),
+/// # );
 /// let wire = ReplayRequestWire {
-///     replay_target: RequestTargetWire::function("small"),
+///     replay_target: RequestTargetWire::function("small", key),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
@@ -690,8 +694,12 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
+/// # let key = OccurrenceKey::new(
+/// #     WireNodeId::from_digest([0; 32]),
+/// #     Origin::new(Role::new("declaration"), 0),
+/// # );
 /// let wire = ReplayRequestWire {
-///     replay_target: RequestTargetWire::function(small),
+///     replay_target: RequestTargetWire::function(small, key),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
@@ -1262,12 +1270,10 @@ pub(crate) fn function_target(
     request: &ReplayRequest,
     entry: ReplayEntry,
 ) -> Result<&QualifiedName, ReplayRefusal> {
-    match request.replay_target() {
-        ReplayTarget::Function(name) => Ok(name),
-        other @ (ReplayTarget::FrameOperation(_) | ReplayTarget::StateClause(_)) => {
-            Err(wrong_target(other, entry, TargetMember::Function))
-        }
-    }
+    request
+        .replay_target()
+        .as_function()
+        .ok_or_else(|| wrong_target(request.replay_target(), entry, TargetMember::Function))
 }
 
 /// `entry` reads `member`, but the request's target is `target`.

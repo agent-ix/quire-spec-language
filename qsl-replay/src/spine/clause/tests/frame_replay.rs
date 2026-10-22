@@ -1078,8 +1078,9 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
         EntryRemoved,
     }
     let probe = ReplayTarget::FrameOperation(operation("probe"));
-    let function = ReplayTarget::Function(
+    let function = ReplayTarget::function(
         crate::QualifiedName::new(vec![Identifier::new("sameIdentity").unwrap()]).unwrap(),
+        Some(crate::target::test_key()),
     );
     for (request_target, envelope_target, replace_node) in [
         (function, frame_target(), false),
@@ -1135,7 +1136,7 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
                     }),
                 ) => assert_eq!(refusal.code(), qsl_foundation::Code::MissingImport),
                 (
-                    ReplayTarget::Function(_),
+                    ReplayTarget::Declaration { .. },
                     Source::Compiles | Source::DoesNotCompile,
                     ReplayRefusal::WrongReplayTarget {
                         target,
