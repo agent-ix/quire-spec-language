@@ -32,3 +32,24 @@ The rule itself is sound. The partition proof enumerates every valuation of the 
 | FND-003 | medium | [minor] "checks, charging 8 valuation units" names no observable. The meter reports a total, so a test cannot read the proof's own charge unless the AC says how to compute it. Name the comparison, for example the measured work of this unit minus that of the same unit whose guards are `a` and `not a` (2 valuations) is 6, with guard-term node charges equalised. Without it the 8-unit claim passes whatever the proof charges. | spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md:454; spec/test-cases/TC-1172-choice-partition-proof-charges-the-s3-work-budget.md:29 |
 | FND-004 | low | [minor] "A gap among three atoms" (AC-30) and "the three-atom choice with guards `a and b` and `not a`" (TC-1172 step 4) disagree with FR-218's atom rule. The atoms are the atoms of the guards, so those guards have two atoms, `a` and `b`, and 4 valuations. `c` is only listed in `visible`. Say two atoms, or add `c` to a guard. | spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md:454; spec/test-cases/TC-1172-choice-partition-proof-charges-the-s3-work-budget.md:24 |
 | FND-005 | low | [minor] "Collecting and comparing atoms SHALL charge no more than the node charges of the guard terms" sets an upper limit that no AC checks. It also leaves the pairwise syntactic comparison of atoms (up to quadratic in the guard size) as work that is charged to nothing. Either say the comparison is covered by the guard terms' node charges because it is linear in them, or charge it. Separately, TC-133 still says "Measure zero, exact and one-short proof budgets" for the old path. The PR body says TC-1172 takes over those rows, but TC-133 is left as it was. That is acceptable if QSL-840 deletes TC-133, but the planner should confirm it. | spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md:356-357; spec/test-cases/TC-133-admit-bounded-choreography-control.md:22 |
+
+## New findings (disposition pass 1)
+
+Round 1 checked head 795467742, which contains main 6fb751a31 and merges cleanly with main 879c3bf73. `make check-spec-validation` on the merge exits 0. FR-096-AC-22 appears on no other open PR head. Hand checks:
+- The guards `a and b and c` (3 distinct atoms, 8 valuations) and `a and a and a` (1 distinct atom, 2 valuations) have the same nodes and the same preimage length, so the measured spends differ by exactly 6.
+- The 24-atom stop must fall inside the proof. The proof runs after the precheck and before lowering, and its 2^24 valuation charges alone reach the default budget.
+- The guards `a and b and c` and `not a` have three atoms and leave three valuations uncovered with no overlap, which gives `[missing-arm]`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | [minor] FR-096's prose still lists only "`Typer`'s package-wide node count, and lowering's own work charge (the other S3 rows below)" as the `CheckingLimits` stops reported directly as a `CheckRefusal`. The new partition-proof row is a third such stop (FR-218: "a `CheckRefusal`/`stage_limit_exceeded`"), so add it to that list. | spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md:173-177 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The `w - 1` row is dropped. The proof's place is stated: after the declaration precheck (FR-062-AC-12) and before lowering. The 24-atom row carries the stop at the choice's span. |
+| FND-002 | fixed | FR-096 has a new producer/locus row for the partition proof, and FR-096-AC-22 makes it a direct `CheckRefusal` with `refusal_region` set to the choice's span. |
+| FND-003 | fixed | The observable is now the spend difference of exactly 6 against `a and a and a`. Checked by hand. |
+| FND-004 | fixed | The gap case now uses `a and b and c` and `not a`, which has three real atoms. |
+| FND-005 | fixed | Atoms are compared once per guard term node, and the 6-unit difference tests that. TC-133's old proof-budget sentence is left for QSL-840 to delete (planner item). |

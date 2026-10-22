@@ -171,8 +171,9 @@ as `LimitExceeded`, never as `resource_exhausted`. `PackageDeclarations::
 check` re-reports that same `LimitExceeded` as a `CheckRefusal` with code
 `stage_limit_exceeded` for its own caller -- one producer, one path, not a
 second ceiling. A package-level `CheckingLimits` stop with no `LimitExceeded`
-producer of its own -- `Typer`'s package-wide node count, and lowering's
-own work charge (the other S3 rows below) -- is a stage limit
+producer of its own -- `Typer`'s package-wide node count, a `choice`'s
+partition-proof charge (FR-218), and lowering's own work charge (the other
+S3 rows below) -- is a stage limit
 by the same rule, but is reported directly as a `CheckRefusal` with code
 `stage_limit_exceeded`, carrying the locus this FR gives its row; it is
 never `resource_exhausted`. A ceiling of an
