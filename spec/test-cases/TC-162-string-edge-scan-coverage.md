@@ -82,8 +82,9 @@ dataflow retain the limitations stated by FR-064.
     the adapter and direct library call. Confirm the existing lint
     prerequisite remains and extraction adds only the scanner crate's tests.
 
-13. Mark one function `#[ix_trace_rs::string_edge]` and one `#[string_edge]`
-    imported from `ix-trace-rs`; scan with the library, the command and the
+13. Mark one function `#[ix_trace_rs::string_edge]`, one
+    `#[::ix_trace_rs::string_edge]` and one `#[string_edge]` imported from
+    `ix-trace-rs`; scan with the library, the command and the
     adapter (FR-064-AC-12).
 14. Compile a consumer crate with a marked function and run it; compile a
     second with `#[string_edge(anything)]` and read the compiler's errors
@@ -93,7 +94,6 @@ dataflow retain the limitations stated by FR-064.
     only purpose is the marker, and run `cargo check` over every package so each
     marker's resolution is the compiler's (FR-064-AC-14).
 16. Scan a fixture with a function marked `#[my_macros::string_edge]` and
-    a function marked `#[::ix_trace_rs::string_edge]` (a marker, not reported) and
     functions whose only mark is `// string_edge` or `/// string_edge`; read
     `cargo metadata` for the QSL workspace (FR-064-AC-15).
 
@@ -182,8 +182,9 @@ package has already been implemented or the installation run has passed.
 - Step 12 (FR-064-AC-11): the adapter calls the public scanner with QSL's
   roots and rules and propagates its reports and failures. No duplicate
   detector or additional QSL gate is introduced.
-- Step 13 (FR-064-AC-12): both marked comparisons are absent from every
-  report and the unmarked one is present.
+- Step 13 (FR-064-AC-12): the three marked comparisons (`ix_trace_rs::`,
+  `::ix_trace_rs::` and imported forms) are absent from every report and the
+  unmarked one is present.
 - Step 14 (FR-064-AC-13): the marked function behaves as the unmarked one; the
   argument case reports exactly one error with the message
   `#[string_edge] takes no arguments`.
@@ -191,5 +192,5 @@ package has already been implemented or the installation run has passed.
   `cargo check` passes for every package, and each marker resolves to
   `ix_trace_rs::string_edge`.
 - Step 16 (FR-064-AC-15): the `my_macros::string_edge`, comment and doc-comment
-  fixtures are reported, the `::ix_trace_rs::string_edge` function is not, and `ix-trace-rs` is a dependency of every package that
+  fixtures are reported, and `ix-trace-rs` is a dependency of every package that
   uses the marker.

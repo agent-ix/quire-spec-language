@@ -86,3 +86,14 @@ Round 1, head df77f17c3 (origin/main merged at f47731b39). `make check-spec-vali
 | FND-005 | fixed | Fixed in df77f17c3: The marker is the attribute `#[string_edge]`, written as `string_edge` or as `ix_trace_rs::string_edge`. The marker has no comment or doc-comment form. |
 | FND-006 | fixed | Fixed in df77f17c3: \| FR-064-AC-14 \| The QSL workspace defines no item named `string_edge` (no proc-macro attribute, no `pub use`, no alias), holds no crate whose only purpose is that marker, and `cargo check` of every package resolves each `string_edge` marker in production code to `ix_trace_rs::string_edge`. \| Test (TC-162) \| |
 | FND-007 | fixed | Fixed in df77f17c3: These commands are the acceptance recipe, not a claim that the standalone package has already been implemented or the installation run has passed.  ## Expected Results |
+| FND-008 | fixed | Fixed in a4bd90f37 (round 2): git diff --stat origin/main...a4bd90f37 -- reviews/: only reviews/qsl-951-pr1175-gap-analysis.md, qsl-951-pr1175-spec-review-base.md, qsl-951-pr1175-spec-review-ears.md and qsl-951-pr1175-spec-review-integrity.md added; reviews/comment-base.md, comment-ears.md and comment-integrity.md identical to origin/main; reviews/comment-gap.md not tracked. |
+| FND-009 | fixed | Fixed in a4bd90f37 (round 2): - The scan SHALL treat a function as marked when it carries an attribute whose path is `string_edge`, `ix_trace_rs::string_edge` or `::ix_trace_rs::string_edge`. |
+| FND-010 | fixed | Fixed in a4bd90f37 (round 2): - The QSL workspace SHALL define no attribute macro named `string_edge` and no re-export or alias of one. / \| FR-064-AC-14 \| The QSL workspace defines no attribute macro named `string_edge` and no re-export or alias of one, holds no crate whose only purpose is that marker, and `cargo check` of every package resolves each `string_edge` marker in production code to `ix_trace_rs::string_edge`. \| Test (TC-162) \| |
+
+## New findings (disposition pass 2)
+
+Head a4bd90f37 (PR #1175 round 2).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | TC-162 step 16 now checks that a function marked `#[::ix_trace_rs::string_edge]` 'is not' reported, and maps the step to FR-064-AC-15. AC-15 states only that look-alike and comment marks are reported, and no AC says the leading-colon form is a marker. So the step's result traces to no criterion, and a test tagged FR-064-AC-15 would assert behaviour the AC does not state. Add the leading-colon form to AC-12, with the other two accepted forms, and map that half of step 16 to AC-12. | spec/test-cases/TC-162-string-edge-scan-coverage.md:95-98; spec/test-cases/TC-162-string-edge-scan-coverage.md:193-195; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md:247 |
