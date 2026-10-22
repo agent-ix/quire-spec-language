@@ -86,4 +86,4 @@ Checked against f5468187b by measuring it. The coder's draft table is replaced b
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-003 | fixed | f-sha: `sample` draws each `(initial, trace)` walk once, tests it against every instance with no witness yet for that initial state, and drops it before the next walk; no candidate is kept. |
+| FND-003 | fixed | 788ee9c55: `sample` draws each `(initial, trace)` walk once, tests it against every instance with no witness yet for that initial state, and drops it before the next walk; no candidate is kept. |
