@@ -204,14 +204,15 @@ FR-098's `WitnessValue` conversion. A converted argument that call admission
 then refuses (arity, kind, domain) is not an admission refusal: it is the
 case's result, `CallFailure::Input`, compared like any other result.
 
-Admission happens once, in the std build. The `no_std` build compiles
-nothing: it evaluates exactly the cases the std admission admitted, each
-through the `no_std` implementation's own checked-input contract (FR-401:
-the checked input is a type the implementation supplies). How each admitted
-case's checked input reaches the `no_std` build is the contract of the slice
-that adds the `no_std` implementation (S6, IR-590). An admitted case that the
-`no_std` build cannot take as its checked input produces no `no_std` record,
-and is a divergence.
+Admission happens once per case, in the runner. Both implementations
+evaluate the same admitted `CheckedPackage` in the runner's process: the
+std reference through `CheckedPackageEvaluation`, and the `no_std`
+implementation through `qsl-eval`'s `quire-eval` entry over the package's
+checked graph
+([FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md)). No byte
+form carries an evaluable checked graph, so the checked input never leaves
+that process. An admitted case for which either implementation produces no
+record is a divergence.
 
 ### The compared record
 
@@ -348,32 +349,35 @@ FR-262-AC-2 (a 100,000-long `List` value), AC-3, AC-4, AC-6, AC-7 and AC-8
 resumption) cannot be written as a version-1 case, because a case's result
 must be `Boolean` or `Integer`, and a case registers no QSL-side body and
 cancels nothing. The suite compares them by running those criteria's tests
-against both builds: each test SHALL pass against the std reference and
+against both implementations: each test SHALL pass against the std reference and
 against the `no_std` implementation, and each asserts the reference's result
 and charge sequence.
 
 ### The harness and its pass criterion
 
-The std reference and the `no_std` implementation SHALL run as two separate
-builds of the harness's runner, because one Cargo build unifies features and
-cannot hold both. Each build evaluates every admitted case on a thread with
-a 512 KiB stack, with a fresh meter at the case's limits and every callable
-interpreted, and writes one compared record per key. The runner is a Cargo
-test target, so each build is a test build in which the dev-dependency on
-`quire-eval-corpus` enables `charge-log`, and each keeps the kernel charge
-log. The comparator then pairs the records by key. How the runner is built
-twice is the `no_std` implementation's concern.
+The std reference and the `no_std` implementation SHALL run in one test
+build of the harness's runner; `quire-eval` has no `std` feature, so one
+build holds both. The runner evaluates every admitted case once with each
+implementation, each run on its own thread with a 512 KiB stack and a fresh
+meter at the case's limits, with every callable interpreted, and writes one
+compared record per key and implementation. The runner is a Cargo test
+target, so its build is a test build in which the dev-dependency on
+`quire-eval-corpus` enables `charge-log`, and both runs keep the kernel
+charge log. The comparator then pairs the records by key. That `quire-eval`
+builds without `std` is FR-401-AC-1's `thumbv7em-none-eabi` gate, not this
+run.
 
-A case diverges when its two records differ, when either build produced no
+A case diverges when its two records differ, when either implementation produced no
 record for it, or when its `expected` is not `null` and the std record
 differs from it in `result` or `consumed`, or in `charges` when neither is
 `null`. A run that panics, overflows the host stack or refuses
-`unencodable_value` in either build produces no record for that case.
+`unencodable_value` in either implementation's run produces no record for
+that implementation.
 
 The harness SHALL run every case even after a divergence, and SHALL report
 each divergent case on one line: its bundle and `case_id`, which pair
 differed (`std/no_std` or `expected/std`) and the first differing JSON
-pointer with both values, or the build that produced no record and why.
+pointer with both values, or the implementation that produced no record and why.
 
 The pass criterion SHALL be zero divergences. The harness SHALL accept no
 option, list or configuration that tolerates, skips or excludes a case.
@@ -383,7 +387,7 @@ option, list or configuration that tolerates, skips or excludes a case.
 The harness SHALL be the `xtask` command `evaluator-differential`, run by
 `make evaluator-differential`, which passes `EVALUATOR_CORPUS_DIR` through
 when it is set. The command evaluates no case itself: it runs the runner's
-two test builds, std and `no_std`, collects their compared records and runs
+test build, collects its std and `no_std` compared records and runs
 the comparator.
 
 While QSL ships both the std reference and the `no_std` implementation,
@@ -420,7 +424,7 @@ std reference.
 | FR-402-AC-6 | The std build's compared record for `fr402/count-3` has `result.outcome` `completed` with `value` `{"integer": "3"}`, a `charges` list with exactly four entries whose `point` is `function.call`, and `consumed` with all ten counters as decimal strings. For `fr402/count-3-short` it has `outcome` `incomplete` with `limit_kind` `work_units` and no `charges` entry for the denied charge. For `fr402/count-3-boolean` it has `result.kind` `call_failure`, `arm` `input` and the `WrongValueKind` code. For `fr262/ac1/count-100000` it has `charges` `null` and value `{"integer": "100000"}`. A run completing with a `Value::Text` is refused `unencodable_value` naming the kind `text`. | Test (TC-1112) |
 | FR-402-AC-7 | A harness run over a bundle holding `fr402/count-3` with an `expected` whose `consumed.work_units` is one less than the std record's fails, reports that `case_id` with pair `expected/std` and pointer `/consumed/work_units`, and still runs and reports every other case; with the std build's own record as `expected` that case passes; with `expected` `null` it is compared `std/no_std` only. A comparator fed two record sets that differ only in one `charges` entry's `sizes` reports pair `std/no_std` and a pointer under `/charges`; a record set missing one `case_id` reports that case and the build that produced no record. | Test (TC-1112) |
 | FR-402-AC-8 | The checked-in bundle loads, admits and holds exactly the `case_id`s the corpus list names; the generator, run twice for count 256, produces byte-identical lines with `case_id`s `gen/000` to `gen/255` that all load and admit; a run whose external bundle reuses the `case_id` `fr402/count-3` runs, pairs and reports it as a second case, keyed by bundle `external`; and the QSL workspace's `Cargo.lock` gains no random-number or property-testing crate for the generator. | Test (TC-1112) |
-| FR-402-AC-9 | `make ci` runs `evaluator-differential` over the QSL-owned corpus; the command runs the runner's std and `no_std` test builds, the std build admits every case once and the `no_std` build compiles nothing and produces a record for every admitted case, both builds' records carry non-null `charges` for `fr402/count-3`, and the run reports zero divergences; a comparator fed a `no_std` record set that lacks an admitted case reports that case as a divergence; FR-262-AC-2, AC-3, AC-4, AC-6, AC-7 and AC-8's tests pass against both builds; and the harness's command line, environment and configuration offer no setting that tolerates, skips or excludes a case. | Test (TC-1112) and Inspection |
+| FR-402-AC-9 | `make ci` runs `evaluator-differential` over the QSL-owned corpus; the command runs the runner's test build, which admits every case once and produces a std and a `no_std` record for every admitted case, both records carry non-null `charges` for `fr402/count-3`, and the run reports zero divergences; a comparator fed a `no_std` record set that lacks an admitted case reports that case as a divergence; FR-262-AC-2, AC-3, AC-4, AC-6, AC-7 and AC-8's tests pass against both implementations; and the harness's command line, environment and configuration offer no setting that tolerates, skips or excludes a case. | Test (TC-1112) and Inspection |
 | FR-402-AC-10 | Given a bundle that CG's `make evaluator-corpus` writes, `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>` loads and admits every record and reports zero divergences, and every record whose `expected` is non-null passes its `expected/std` check. | Test (TC-1112) |
 
 ## Dependencies

@@ -166,21 +166,27 @@ here. The ordering rationale is as follows.
   default. NFR-015 gives its build contract, target and gate (closure tier,
   `thumbv7em-none-eabi`, `make build-no-std`). The foundation items the leaf
   itself uses move with S0 (FR-401), not S3.
-- IR-588 (S4) places the evaluator-needed semantics (FR-403): `divide` and
-  `modulo` move to `quire-eval`; the model reads over an admitted
-  environment stay in `qsl-semantics`, reached only through `quire-eval`'s
-  environment contract. The `HashMap` in `model/population.rs` is read by
+- IR-588 (S4) places the evaluator-needed semantics (FR-403): `divide`,
+  `modulo` and the `Value`-family runtime causes move to `quire-eval`;
+  `render_identity`, the `StateModel` catalog prefix and the supplied-value
+  run move to SV; the model reads over an admitted environment stay in
+  `qsl-semantics`, reached only through `quire-eval`'s environment
+  contract. The `HashMap` in `model/population.rs` is read by
   key only, so its order reaches no output. It follows S2.
 - IR-589 (S5) makes `qsl-package` no_std-capable and removes `serde_json` from
   the checked-IR path, verifying uncertain dependencies before choosing
   replacements. NFR-015 defines the checked-IR path (the in-memory checked
   package, not the v2 wire), puts `quire-contract-model`, the v2 emitter,
   the I2 reader and the dependency-bearing constructor behind `std`, and
-  sets the crate tier; the closure tier also needs `no_std` layers 3, 2
-  and 1.
+  sets the crate tier. `qsl-package` stays crate tier: the evaluator path
+  is `quire-eval`, `quire-checked` and the foundation items moved to SV, so
+  no slice makes layers 3, 2 and 1 `no_std`.
 - IR-590 (S6) implements the no_std + alloc evaluator in `quire-eval`
   behind the FR-401 interface, over `quire-checked`'s checked terms and an
-  environment contract (FR-403). `qsl-eval` depends on it, stays `std`, and
+  environment contract, for the `Value` family, with argument admission in
+  `quire-eval` (FR-403). A wire-borne evaluable checked graph for a
+  `no_std` backend is a separate surface FR-403 does not specify (RT
+  FR-273-AC-12). `qsl-eval` depends on it, stays `std`, and
   keeps the std reference evaluator as its default until S9. The S7
   differential suite (FR-402) compares that std path with `quire-eval`. It
   follows the interface and S1-S5. IR-269 is reached through S1, not
@@ -201,16 +207,16 @@ vectors, deterministic generated cases and CG's exported generated-closure
 bundle), its case record, loader and compared record in the crate
 `quire-eval-corpus` beside `quire-eval`, QSL's case admission through
 `qsl_replay::compile_package`, the zero-divergence pass criterion and the
-two separate std and `no_std` builds. The harness joins `make ci` in IR-590,
+one runner build that runs both implementations. The harness joins `make ci` in IR-590,
 the first slice with a second implementation, and stays until IR-593 retires
 or demotes the std path; the run over CG's bundle passes in IR-593's switch.
 The `no_std` implementation the suite compares lives in `quire-eval`
 (`agent-ix/quire-eval`), and `qsl-eval` consumes it; the suite compares the
 std path with it until S9 retires that path. CG records expected evaluations
 through `quire-eval` once it carries that implementation; until then CG's
-cases carry no expectation. Admission compiles each case once, on the std side; how an
-admitted case's checked input reaches the `no_std` build is part of IR-590's
-contract.
+cases carry no expectation. Admission compiles each case once, and both
+implementations evaluate the same admitted checked package in the runner's
+process (FR-403).
 
 ### RT and CG acceptance
 

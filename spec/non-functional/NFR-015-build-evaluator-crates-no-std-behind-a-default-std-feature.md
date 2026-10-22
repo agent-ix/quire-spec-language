@@ -113,12 +113,12 @@ feature unification would turn it back on.
 | Crate | Slice | Tier | Normal dependencies with `std` disabled | Behind `std` | Closure-tier condition |
 | --- | --- | --- | --- | --- | --- |
 | `qsl-foundation` | S3 (IR-587) | closure | `quire-exact` (no features; `#![no_std]`), `quire-semantic-value` (`#![no_std]`; from ADR-011 X-13 or X-14, whichever lands first), `serde` with `derive` and `alloc`, `sha2`, `thiserror`, each with default features off; the `ix-trace-rs` proc macro, which runs on the host | no item: every `std::` path the crate uses (`cmp`, `fmt`, `str`, `hash`, `marker`, `num`, `iter`, `slice`, `error::Error`, `collections::{BTreeMap, BTreeSet, btree_map}`, `sync::Arc`) has a `core::` or `alloc::` equivalent on this target | holds: every dependency listed is `no_std`-capable |
-| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-exact`, `quire-semantic-value`, `quire-canonical` (without `std` in the workspace table), `serde`, `thiserror`, and `ix-trace-rs` | `quire-contract-model` (optional, enabled by `std`) and the items listed in "`qsl-package` surface with `std` disabled" | `qsl-semantics`, `qsl-forms` and `qsl-cst` each build with `std` disabled, with their own `std`-only dependencies behind their `std` features: `serde_json`, `tempfile` and the FCD crates (`agent-ix-extraction-frontend`, `agent-ix-semantic-ir`) in `qsl-semantics`; `logos` and `serde_json` in `qsl-cst`. `qsl-package`'s `std` feature then also enables `qsl-semantics/std` |
+| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-exact`, `quire-semantic-value`, `quire-canonical` (without `std` in the workspace table), `serde`, `thiserror`, and `ix-trace-rs` | `quire-contract-model` (optional, enabled by `std`) and the items listed in "`qsl-package` surface with `std` disabled" | none in AD-001's slices: `qsl-package` stays crate tier. The evaluator path is `quire-eval`, `quire-checked` and the foundation items moved to SV (FR-403), so no slice makes `qsl-semantics`, `qsl-forms` or `qsl-cst` build with `std` disabled |
 
 `qsl-semantics` and `qsl-eval` have no row. The `no_std` evaluator is
 `quire-eval`'s (S6, IR-590, FR-403), gated in its own repository. S4
 (IR-588) moves the evaluator-needed `qsl-semantics` code that needs no
-model state into `quire-eval` and leaves the model reads in `qsl-semantics`
+model state into `quire-eval` or SV and leaves the model reads in `qsl-semantics`
 behind `quire-eval`'s environment contract, so neither crate needs a `std`
 feature for the evaluator.
 
@@ -148,8 +148,8 @@ With `std` disabled the checked-IR path reads no JSON and computes no
 reaches the crate through `quire-contract-model` (which also brings
 `jsonschema`, `serde_path_to_error`, `serde_stacker` and `stacker`, none
 `no_std`) and through `qsl-semantics` and `qsl-cst`. The first edge is
-behind `qsl-package`'s `std` feature. The others are behind those crates'
-`std` features once the row's closure-tier condition holds.
+behind `qsl-package`'s `std` feature. The others stay: `qsl-package` is
+crate tier, so its host check needs only its own source to be `no_std`.
 
 The wire representation is unchanged: QSpec FR-322 defines
 `quire.checked-package/v2`, IR's `quire-contract-model` owns its reader,
@@ -195,8 +195,8 @@ every slice's feature, target and gate the same, so a later slice adds a
 row, not a new convention. Building for a target with no `std` in its
 sysroot is the only check that cannot pass by accident on the host. The
 host `cargo check` of the crate tier lets a crate clean its own source
-before its dependencies are `no_std`-capable, so S3 and S5 do not wait for
-S4. Clippy with `std` disabled catches unused imports and dead `cfg` code
+before its dependencies are `no_std`-capable, so `qsl-package`'s row does
+not wait for layers 3, 2 and 1. Clippy with `std` disabled catches unused imports and dead `cfg` code
 that exist only in that configuration, which the default and all-features
 lanes never build.
 
