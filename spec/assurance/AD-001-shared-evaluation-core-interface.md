@@ -14,6 +14,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: references
+  - target: ix://agent-ix/quire-spec-language/NFR-015
+    type: references
 ---
 # AD-001: Shared evaluation-core interface and staged evaluator replacement
 
@@ -152,9 +154,9 @@ parallel to MVP:
 | IR-583 interface | Backlog / unassigned | QSL-682 (Done) | Ready now. QSL owns the interface, leaf-crate contract, reference adapter plan, and this design. |
 | IR-585 S1 vocabulary | Backlog / unassigned | IR-583, IR-269 | After both blockers: move evaluation refusal/call-plan vocabulary into `quire-semantic-value`, rebase object environment on `ObjectClosure`, remove the obsolete consumer fields. |
 | IR-586 S2 checked terms | Backlog / unassigned | IR-583, IR-269 | After both blockers: separate checked IR from checker; preserve checking authority, source locations and identities. |
-| IR-587 S3 foundation | Backlog / unassigned | IR-583, IR-269 | After both blockers: make `qsl-foundation` no_std + alloc capable while keeping `std` on by default. |
+| IR-587 S3 foundation | Backlog / unassigned | IR-583, IR-269 | After both blockers: make `qsl-foundation` no_std + alloc capable while keeping `std` on by default. Build contract, target and gate: NFR-015 (closure tier, `thumbv7em-none-eabi`, `make build-no-std`). The foundation items the leaf itself uses move with S1, not S3. |
 | IR-588 S4 semantics | Backlog / unassigned | IR-583, IR-586, IR-269 | After all blockers, especially S2: convert only evaluator-needed semantics; replace nondeterministic `HashMap` traversal in `model/population.rs` with `BTreeMap`. |
-| IR-589 S5 package | Backlog / unassigned | IR-583, IR-269 | After both blockers: make `qsl-package` no_std-capable and remove `serde_json` from checked-IR path; verify uncertain dependencies before choosing replacements. |
+| IR-589 S5 package | Backlog / unassigned | IR-583, IR-269 | After both blockers: make `qsl-package` no_std-capable and remove `serde_json` from checked-IR path; verify uncertain dependencies before choosing replacements. NFR-015 defines the checked-IR path (the in-memory checked closure, not the v2 wire), puts `quire-contract-model`, the v2 emitter and the I2 reader behind `std`, and sets the crate tier; the closure tier follows S4. |
 | IR-590 S6 evaluator | Backlog / unassigned | IR-583, IR-585, IR-586, IR-587, IR-588, IR-589, IR-269 | Earliest only after interface, every S1-S5 slice, and the IR-269 MVP gate are complete. Convert `qsl-eval` to no_std + alloc behind the interface; keep std enabled by default until S9. |
 
 Consequently, no S1-S5 implementation slice can start under the current
@@ -232,3 +234,13 @@ evidence that the RT target accepts the later implementation.
 - IR-269 is a structured blocker on S1-S5 and S6 despite IR-584's
   non-MVP/parallel wording. Changing that order requires an explicit planning
   dependency change, not an interpretation of the narrative.
+- The `no_std` dependency verdicts, measured on QSL `origin/main`: `serde`,
+  `sha2` and `thiserror` build without `std`; `quire-contract-model` does
+  not (it depends on `serde_json` with `std`, `jsonschema`,
+  `serde_path_to_error`, `serde_stacker` and `stacker`), so it stays behind
+  `qsl-package`'s `std` feature and the `no_std` path reads no
+  `quire.checked-package/v2` JSON; `logos` reaches the evaluator closure
+  only through `qsl-cst` and `qsl-forms` (the parser), which are not on the
+  evaluator path and stay `std`. A `no_std` consumer that must read
+  checked-package bytes needs an IR-owned `no_std` reader built on
+  `quire-canonical`'s `read`; NFR-015 does not provide one.
