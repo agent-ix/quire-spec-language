@@ -42,3 +42,13 @@ anchors an operation that is only inherited at its declaring type and refuses `(
 ## Verdict
 
 Not mergeable: FND-001 and FND-002 (major).
+
+## Dispositions
+
+Round 1, reviewed QSL #1212 at 373ddf489.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fixed at 373ddf489 (three ordered checks after decode and byte provision; AC-8 precedence and missing-provision cases) |
+| FND-002 | fixed | fixed at 373ddf489 (redefining type is the declaring object; FR-121-AC-24, TC-516 step 24) |
+| FND-003 | fixed | fixed at 373ddf489 (wrong-entry target refuses unknown-member, a cause in QSpec FR-272's closed invalid_runtime_input row, distinct from FR-323's two-target invalid-value) |
