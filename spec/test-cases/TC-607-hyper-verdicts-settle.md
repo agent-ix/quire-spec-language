@@ -12,7 +12,7 @@ relationships:
 
 Verify the hyper verdict map, the new inconclusive causes, replay-gated refutation, the V-7 budgets, V-8 for HP-4, and the stated reading of a bound.
 
-Scope: FR-182-AC-1 to FR-182-AC-4, FR-182-AC-7, FR-182-AC-8, FR-182-AC-9.
+Scope: FR-182-AC-1 to FR-182-AC-4, FR-182-AC-7 to FR-182-AC-10.
 
 ## Test Procedure
 
@@ -22,9 +22,10 @@ Fixtures: the outcomes of TC-601, TC-602, TC-604 and TC-598.
 2. Settle §8.1 leaky and secure, with and without copy-swap; settle §8.2 leaky.
 3. Settle the vacuous match, the `max_witness_set` stop, the `max_relation_tuples` stop and the HP-4 clauses.
 4. Settle FR-179-AC-3's `max_depth` run.
-5. Settle §8.1's secure proof with FR-163-AC-1's accepted certificate and with FR-163-AC-2's member-removed certificate; settle an HP-2 `Inductive{depth: 1}` outcome.
+5. Settle §8.1's secure proof with FR-163-AC-1's accepted certificate and with FR-163-AC-2's member-removed certificate; settle an HP-2 `Inductive{depth: 1}` outcome with an empty `μ_U`.
 6. Settle the outcomes of FR-177-AC-5, FR-177-AC-6 and FR-178-AC-6.
 7. Settle ADR-023 §1's `NonInterference` on the vault subject with an empty `Vault` universe and with no `Vault` universe, and ADR-023 §1's `SavesPower` with `S::Device` empty and `N::Device` of 3 keys, then the reverse.
+8. Settle `NonInterference`'s `Inductive{depth: 1}` outcome over the secure vault with no `MatchWitnessCheck`, with FR-183-AC-8's matched and unmatched witnesses' checks, and over the vault with an empty initial list; settle FR-182-AC-10's empty-`μ_U` clause's `Inductive{depth: 1}` outcome with no witness.
 
 Tag the tests `#[trace("TC-607", "FR-182-AC-n")]`.
 
@@ -37,3 +38,4 @@ Tag the tests `#[trace("TC-607", "FR-182-AC-n")]`.
 - Step 5: `proved`, `Certified`; `inconclusive`, `CertificateRejected`; `proved`, `decisive-witness`, `Uncertified`.
 - Step 6: `refuted`, `decisive-counterexample`, `UndefinedEvaluation` naming `a` and `b`; `inconclusive`, `MatchUndetermined` twice.
 - Step 7: `inconclusive`, `NoInstance`, `unsettled` for the empty `Vault` universe and for both `SavesPower` runs, before any state is explored; `RequiresBound` for the missing universe.
+- Step 8: `inconclusive`, `VacuousMatch`; `proved`, `decisive-witness`, `Uncertified`; `inconclusive`, `VacuousMatch`; `inconclusive`, `NoInitialState`; `proved`, `Uncertified`.

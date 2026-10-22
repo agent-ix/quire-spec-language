@@ -48,7 +48,9 @@ sets along the universal traces, so the absence of a matching existential
 run is checked with no engine present. Replay needs no model checker and no
 solver. The same crate, `qsl-replay` (ADR-029 CB-2), holds the
 product-closure certificate checker of FR-163, which an EN-1 `proved` must
-pass before it settles (ADR-023 HX-7).
+pass before it settles (ADR-023 HX-7). The crate also holds the
+match-witness check that an HP-2 `k`-induction proof with a non-empty `μ_U`
+must pass before FR-182 settles it `proved`.
 
 ## Use case
 
@@ -92,6 +94,22 @@ pub struct HyperTrace {
 
 - `HyperCounterexample` implements `FamilyPayload` (FR-070-AC-5); its
   `trace_position` names the failing joint position (ADR-014 TR-2).
+- For the match-witness check: FR-098's request and a `MatchWitness`:
+
+```rust
+pub struct MatchWitness {
+    pub instance: Vec<(Name, Key)>,  // object parameter binding
+    pub traces: Vec<HyperTrace>,     // one per universal variable, in quantifier order
+    pub loop_entry: u64,
+}
+
+pub enum MatchWitnessCheck {
+    Accepted,
+    Refused(ReplayRefusal),
+}
+
+pub fn check_match_witness(/* FR-098 request */, witness: &MatchWitness) -> MatchWitnessCheck;
+```
 
 ## Outputs
 
@@ -184,6 +202,22 @@ pub struct HyperTrace {
   `false` SHALL settle `reproduced-with-evaluated-witness`; `true` SHALL
   settle `inconclusive`, `Verdicts`.
 
+### Match witness (HP-2 non-vacuity)
+
+- `check_match_witness` SHALL re-execute each trace through its alias's
+  `ModelSystem` as for `Lockstep`, with the same step, loop and
+  step-count refusals.
+- It SHALL then check `μ_U` at every joint step, the loop's closing step
+  included, and each trace's fairness set on its own loop (ADR-023 HX-2).
+  It SHALL NOT evaluate the body.
+- It SHALL return `Accepted` when every check passes. A joint step at which
+  `μ_U` is false, undefined, refused or incomplete, or an unfair trace,
+  SHALL return `Refused` with `invalid_runtime_input`/`invalid-value`.
+- An `Accepted` witness is a tuple of fair behaviours that `μ_U` matches at
+  every joint step, so the clause is not vacuous (ADR-023 HM-7).
+- Building a witness is the SMT backend's work, an EN-2 lasso query with no
+  body (ADR-018 DS-3). This requirement states only the check.
+
 ### Engine independence
 
 - A counterexample from EN-2, or found under symmetry or copy-swap, SHALL
@@ -191,7 +225,7 @@ pub struct HyperTrace {
   and SHALL replay by the rules above.
 - Replay SHALL read no path, environment variable, clock or search
   location, and SHALL give the same result for the same request and
-  envelope.
+  envelope, or the same request and match witness.
 
 ## Acceptance Criteria
 
@@ -204,6 +238,7 @@ pub struct HyperTrace {
 | FR-183-AC-5 | FR-179-AC-4's `Undefined` counterexample, with one path per execution variable, replays to `reproduced-with-evaluated-witness` with its `UndefinedEvaluation` as the value; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `Verdicts`. | Test (TC-610) |
 | FR-183-AC-6 | FR-177-AC-5's `Undefined` counterexample, whose traces include the existential variable's path to the state where `μ_E` has no value, replays to `reproduced-with-evaluated-witness`; with the existential trace removed the reader refuses it as `invalid_runtime_input`/`invalid-value` before replay. | Test (TC-602) |
 | FR-183-AC-7 | FR-178-AC-9's `Undefined` counterexample, whose paths each hold a skipped `mix` and a visible `step(0)`, is refused with `unsupported_construct`/`not-yet-implemented` and settles no result; it is not replayed as a lockstep counterexample. | Test (TC-608) |
+| FR-183-AC-8 | Over ADR-023 §8's secure vault and `NonInterference` at instance `v`, the matched witness, with `a` and `b` each from initial `(0, 0)` taking `step(0)` twice and `loop_entry` 0, is `Accepted` without evaluating the body. The unmatched witness, with `a` the same and `b` from `(0, 0)` taking `step(1)` then `step(0)` and `loop_entry` 0, re-executes, since each loop closes, and is `Refused` with `invalid_runtime_input`/`invalid-value` at joint step 1, where `μ_U` is false. Checking either witness twice gives equal results. | Test (TC-608) |
 
 ## Dependencies
 

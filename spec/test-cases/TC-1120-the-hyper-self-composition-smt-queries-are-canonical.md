@@ -29,19 +29,24 @@ Scope: FR-315-AC-7 to FR-315-AC-11.
    FR-176-AC-4's added `match` conjunct.
 4. Call `encode_hyper_query` with the HP-3 clause, FR-176-AC-3's liveness
    clause, `Unrolling{depth: 1}`, `SavesPower` with one subject, and a
-   `match` conjunct whose function exhausts its meter.
+   `match` conjunct whose function exhausts the request's `meter`, the last
+   twice with equal budgets.
 5. Submit step 1's base query and step 2's depth-1 step query to a `QF_LIA`
    solver; then the base query at depth 1 over the vault whose post clause
-   is `self.l = self.h`.
+   is `self.l = self.h`. When no solver is available, the test SHALL be
+   marked skipped with the reason "no QF_LIA solver" in the test report,
+   never passed.
 
 Tag the tests `#[trace("TC-1120", "FR-315-AC-n")]`.
 
 ## Expected Results
 
 - Step 1: the eight declarations of FR-315-AC-7 in order, no `m<i>`, `a`'s
-  then `b`'s initial predicate, two joint disjuncts for step 0 to 1, four in
-  lexicographic order without the `match` block; byte-equal scripts; every
-  term linear.
+  then `b`'s initial predicate, three joint disjuncts for step 0 to 1
+  (`(step(0), step(0))`, `(step(1), step(1))`, `(stutter, stutter)`), and
+  without the `match` block all nine tuples in lexicographic order with
+  `stutter` last in each component; byte-equal scripts; every term
+  linear.
 - Step 2: no initial predicate, the property at 0, distinctness of
   positions 0 and 1 (0, 1 and 2 at depth 2), the violation at the last
   position; the fair clause's scripts byte-equal to the unfair ones.
@@ -49,8 +54,9 @@ Tag the tests `#[trace("TC-1120", "FR-315-AC-n")]`.
   holding when it is taken from copy 0 to copy 1.
 - Step 4: `SmtEncodingRefusal` naming `hyper-form`, `hyper-body`,
   `query-kind`, `subject-binding` at alias `N`, and `match-conjunct` at the
-  conjunct, each with no script.
+  conjunct naming `(step(0), step(0))`, each with no script; equal
+  refusals for equal budgets.
 - Step 5: both secure queries unsatisfiable, the `Inductive{depth: 1}`
   outcome FR-182-AC-7 settles; the `self.l = self.h` base satisfiable from
-  `((0, 0), (1, 0))` with `(step(0), step(0))`. Step 5 runs where a solver is
-  available; otherwise FR-315-AC-11 stands on its analysis.
+  `((0, 0), (1, 0))` with `(step(0), step(0))`. A skipped step 5 is reported
+  as skipped, and FR-315-AC-11 then stands on its analysis alone.
