@@ -88,27 +88,43 @@ impl StageLimits {
         self.stages.get(&setting).copied()
     }
 
+    /// These limits with the stage or accounting limit named `name` (FR-255's
+    /// dotted name, such as `s1.input_bytes`) set to `bound`, replacing an
+    /// earlier entry of that name (FR-399). Refuses, returning no limits, a
+    /// name that is no setting of FR-255's tables and `replay.input_bytes` and
+    /// `format.output_bytes`, which a request does not carry.
+    pub fn with_named(mut self, name: &str, bound: u64) -> Result<Self, StageLimitNameRefusal> {
+        match SettingName::from_name(name) {
+            Some(SettingName::Stage(setting))
+                if !matches!(
+                    setting,
+                    Setting::ReplayInputBytes | Setting::FormatOutputBytes
+                ) =>
+            {
+                self.stages.insert(setting, bound);
+            }
+            Some(SettingName::Accounting(setting)) => {
+                self.accounting.insert(setting, bound);
+            }
+            _ => {
+                return Err(StageLimitNameRefusal {
+                    name: name.to_owned(),
+                })
+            }
+        }
+        Ok(self)
+    }
+
     /// Reads the wire entries, refusing the first whose name is no setting
     /// of FR-255's tables or is `replay.input_bytes` or `format.output_bytes`.
     fn decode(entries: BTreeMap<String, u64>) -> Result<Self, ReplayRequestRefusal> {
-        let mut limits = Self::default();
-        for (name, bound) in entries {
-            match SettingName::from_name(&name) {
-                Some(SettingName::Stage(setting))
-                    if !matches!(
-                        setting,
-                        Setting::ReplayInputBytes | Setting::FormatOutputBytes
-                    ) =>
-                {
-                    limits.stages.insert(setting, bound);
-                }
-                Some(SettingName::Accounting(setting)) => {
-                    limits.accounting.insert(setting, bound);
-                }
-                _ => return Err(ReplayRequestRefusal::StageLimitEntry { name }),
-            }
-        }
-        Ok(limits)
+        entries
+            .into_iter()
+            .try_fold(Self::default(), |limits, (name, bound)| {
+                limits
+                    .with_named(&name, bound)
+                    .map_err(|refusal| ReplayRequestRefusal::StageLimitEntry { name: refusal.name })
+            })
     }
 
     /// The entries as wire `name -> bound`.
@@ -123,6 +139,15 @@ impl StageLimits {
             .map(|(setting, bound)| (setting.name().to_owned(), *bound));
         stages.chain(accounting).collect()
     }
+}
+
+/// FR-399: the name given to [`StageLimits::with_named`] is no limit a stage
+/// takes.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("invalid_runtime_input/unknown-member: `{name}` is not a stage limit a request carries")]
+pub struct StageLimitNameRefusal {
+    /// The name as the caller wrote it.
+    pub name: String,
 }
 
 impl FromIterator<(Setting, u64)> for StageLimits {
