@@ -149,6 +149,25 @@ section "Header-selectable layers" cites): `quire.state.core/v1`,
   FR-361 item 12 governs a form of the model families that a unit not
   selecting the model profile writes: it receives FR-361's refusal alone.
 
+### Editor profile check
+
+The editor's profile check (`complete::editor::profile_refusal`, which
+`complete::parse_with_catalog`, `complete::format_document`,
+`complete::analyze_document` and `complete::apply_edit_with_catalog` run)
+compares each header profile identity with the `ProfileCatalog` its caller
+supplies. The root crate's `complete::header_profile_catalog()` SHALL return
+the production catalog: a `ProfileCatalog` holding exactly the identities of
+`DefinitionLock::pinned().layers()`, in that order, read from the one layer
+table E3 reads, with no second list of layer identities.
+
+- With that catalog, the editor's profile check SHALL admit a header
+  profile exactly when E3 resolves it to a layer.
+- With that catalog, the editor's profile check SHALL refuse every other
+  header profile with `unknown_profile`/`unsupported-selection` at the span
+  of its identity literal. The editor has no catalog roles, so a
+  `qualification_catalog` row's identity, which E3 refuses as
+  `wrong-selection-role`, also receives `unsupported-selection` there.
+
 ### Equality by operand family
 
 QSpec's layer definitions (`state-core.md`, `state-queries.md`,
@@ -232,6 +251,7 @@ edge therefore compile to distinct packages.
 | FR-110-AC-9 | Under `make conformance`, `DefinitionLock::pinned()`'s catalog rows (role, authority and identity, in order), its package-selection rules, its trigger vocabulary and its selection refusal codes equal QSpec's `complete-value-lock.json`, and QSpec's selection vectors give the outcomes the lock's rules compute. | Test (TC-490) |
 | FR-110-AC-10 | Under `quire.state.core/v1`, `x = y` over `Int[0, 9]`, over `Boolean` and over an enum compiles. Under `quire.state.core/v1` and under `quire.state.queries/v1`, each of a whole-record equality `r = q` (a record whose fields are `Int[0, 9]` and `Boolean`), a sequence equality `s = t` (over `Sequence<Int[0, 9]>`), an option equality `o = p` (over `Option<Int[0, 9]>`) and a reference equality `a = b` (over `Reference<Order>`) refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and, in order, `quire.value.complete/v1`, `quire.value.complete/v1`, `quire.value.complete/v1` and `quire.state.graph/v1`. Under `quire.state.graph/v1`, `a = b` compiles and `r != q` refuses naming `quire.value.complete/v1`. Under `quire.value.complete/v1`, `r = q`, `s = t` and `o = p` compile and `a = b` refuses naming `quire.state.graph/v1`; under `quire.model.complete/v1`, all four compile. Under `quire.state.core/v1`, `r = 1` with `r` a record refuses `ill_typed`/`type-mismatch` and no layer refusal. | Test (TC-490) |
 | FR-110-AC-11 | In a unit with no header profile, `r = q` over records and `x = y` over `Int[0, 9]` compile. Under `quire.value.complete/v1`, `s = t` over `Sequence<Reference<Order>>` and `r = q` over a record with a `Reference<Order>` field each refuse `unsupported_construct`/`expression-form` at the operator naming `quire.state.graph/v1`; under `quire.state.graph/v1` the same two refuse naming `quire.value.complete/v1`; under `quire.model.complete/v1` both compile. | Test (TC-490) |
+| FR-110-AC-12 | `complete::header_profile_catalog()` holds exactly the identities of `DefinitionLock::pinned().layers()`, in order. For each of the five layers, `complete::parse_with_catalog` over a unit whose one header profile names the layer, with that catalog, adds no `unknown_profile` diagnostic. The same call over the unit with the identity `test:unknown-profile` reports `unknown_profile`/`unsupported-selection` at the identity literal's span, the pair FR-110-AC-2 gives. | Test (TC-490) |
 
 ## Dependencies
 
