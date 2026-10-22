@@ -38,3 +38,12 @@ FR-070 has no such member (it carries `selected_function`), so #1211 must merge 
 ## Verdict
 
 Not mergeable: FND-001 (major). The FR-122 text itself agrees with QSpec #364. Merge after #1212.
+
+## Dispositions
+
+Round 1, reviewed QSL #1211 at ae5d7d83f, with QSL #1212 at 373ddf489.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fixed in QSL #1212 at 373ddf489 (FR-070, FR-071, FR-070-AC-18, FR-071-AC-14, TC-183, TC-185 cover state_clause); #1211 merges after #1212 |
+| FND-002 | fixed | fixed: CG follow-up filed as IR-965 (CG FR-024 drops the payload clause and carries state_clause) |
