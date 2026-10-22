@@ -23,7 +23,7 @@ use qsl_foundation::bound::ProofBound;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
-use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
+use qsl_foundation::{BackendId, Code, InternalFault, RequestIndex, Setting, SettingLimits};
 use quire_exact::{Identifier, Origin, Role, ScalarLimits, ValueType};
 
 /// The occurrence role and ordinal of a function's declaration (ADR-013 O-09).
@@ -32,14 +32,16 @@ const DECLARATION_ROLE: &str = "declaration";
 /// A checked function declaration the context can build a request for.
 #[derive(Clone, Debug)]
 struct FunctionDeclaration {
-    name: Identifier,
+    /// `None` when the declared name is no identifier, which a checked
+    /// package never holds; `request` then reports an internal fault.
+    name: Option<Identifier>,
     /// Whether the declared result is `Boolean`: the function-contract
     /// subject (ADR-013 O-09).
     predicate: bool,
 }
 
-/// One entry of the lock's `dependency_selections`, with the source `check`
-/// resolved for it, if it resolved one.
+/// One resolved library selection of the checked package, with the source
+/// `check` resolved for it, if it resolved one.
 #[derive(Clone, Debug)]
 struct DependencySelection {
     identity: String,
@@ -94,7 +96,7 @@ impl PluginReplayContext {
             .map_while(|index| graph.function_state(index))
             .filter_map(|state| {
                 let callable = graph.callable(state.name)?;
-                let name = Identifier::new(state.name).ok()?;
+                let name = Identifier::new(state.name).ok();
                 Some((
                     WireNodeId::from_digest(*callable.identity.as_bytes()),
                     FunctionDeclaration {
@@ -221,16 +223,30 @@ impl PluginReplayContext {
             IdentityEncodeError::DuplicateKey { key } => {
                 PluginReplayRefusal::DuplicateBoundKey { key }
             }
-            other => PluginReplayRefusal::Encoding(other),
+            // The preimage's other members are decimal strings and a `u32`,
+            // so the encoder refuses nothing else.
+            _ => PluginReplayRefusal::Fault(InternalFault::new(
+                "plugin-replay",
+                "obligation-identity-encodes",
+            )),
         })?;
         let obligation =
-            process_provider_obligation(occurrence.node(), occurrence.origin(), &bounds)
-                .map_err(PluginReplayRefusal::Encoding)?;
-        let selected_function = QualifiedName::new(vec![function.name.clone()]).map_err(|_| {
-            PluginReplayRefusal::UnknownOccurrence {
-                key: occurrence.clone(),
-            }
-        })?;
+            process_provider_obligation(occurrence.node(), occurrence.origin(), &bounds).map_err(
+                |_| {
+                    PluginReplayRefusal::Fault(InternalFault::new(
+                        "plugin-replay",
+                        "obligation-identity-encodes",
+                    ))
+                },
+            )?;
+        let fault = || {
+            PluginReplayRefusal::Fault(InternalFault::new(
+                "plugin-replay",
+                "declared-function-name-is-an-identifier",
+            ))
+        };
+        let name = function.name.clone().ok_or_else(fault)?;
+        let selected_function = QualifiedName::new(vec![name]).map_err(|_| fault())?;
         Ok(ReplayRequestWire {
             profile_selections: Vec::new(),
             package_id: (
@@ -279,8 +295,8 @@ pub enum PluginReplayRefusal {
         /// The occurrence key.
         key: OccurrenceKey,
     },
-    /// A lock `dependency_selections` entry has no library source that
-    /// `check` resolved. A defensive check: consistent inputs never reach
+    /// A resolved library selection has no library source that `check`
+    /// resolved. A defensive check: consistent inputs never reach
     /// it.
     #[error(
         "missing_import/missing-selection: no source resolved for the dependency `{identity}`"
@@ -296,12 +312,10 @@ pub enum PluginReplayRefusal {
         /// The repeated key, in its display form.
         key: String,
     },
-    /// The obligation identity's encoder refused. Every preimage member is a
-    /// decimal string or a `u32`, so consistent inputs never reach it.
-    #[error(
-        "invalid_runtime_input/invalid-value: the obligation identity could not be encoded: {0}"
-    )]
-    Encoding(IdentityEncodeError),
+    /// An invariant of the checked package failed: consistent inputs never
+    /// reach it. The item settles `failed`.
+    #[error("runtime_invariant: plugin replay request: {0:?}")]
+    Fault(InternalFault),
 }
 
 impl PluginReplayRefusal {
@@ -313,7 +327,7 @@ impl PluginReplayRefusal {
             Self::NotReplayable { .. } => (Code::UnknownRequiredFeature, "unsupported-feature"),
             Self::UnresolvedDependency { .. } => (Code::MissingImport, "missing-selection"),
             Self::DuplicateBoundKey { .. } => (Code::InvalidRuntimeInput, "duplicate-member"),
-            Self::Encoding(_) => (Code::InvalidRuntimeInput, "invalid-value"),
+            Self::Fault(_) => (Code::RuntimeInvariant, "established-invariant-broken"),
         };
         OutcomeDiagnostic::new(
             Some(cause),
@@ -340,7 +354,7 @@ impl PluginReplayRefusal {
             Self::UnknownOccurrence { .. }
             | Self::UnresolvedDependency { .. }
             | Self::DuplicateBoundKey { .. }
-            | Self::Encoding(_) => TerminalRecord::failed(request_index, plugin),
+            | Self::Fault(_) => TerminalRecord::failed(request_index, plugin),
         }
     }
 }

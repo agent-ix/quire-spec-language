@@ -136,6 +136,8 @@ fn tc_774_basis_reader_refuses_in_order() {
         json!({"type": "closed-form", "extra": 1}),
         json!({"type": "witnessed", "sources": []}),
         json!({"type": "zone-certified"}),
+        json!({"type": "exact-value", "value": "1"}),
+        json!({"type": "value-bounds", "lower": "0", "upper": "1"}),
     ] {
         assert_eq!(
             read_plugin_basis(&basis),
@@ -157,6 +159,11 @@ fn tc_774_basis_reader_refuses_in_order() {
         (json!({"depth": 4}), missing("/basis/type")),
         (json!({"type": 7}), wrong("/basis/type")),
         (json!({"type": "inductive"}), missing("/basis/depth")),
+        // A missing payload member comes before an undefined one.
+        (
+            json!({"type": "inductive", "extra": 1}),
+            missing("/basis/depth"),
+        ),
         (
             json!({"type": "exhaustive", "depth": 3}),
             unknown("/basis/depth"),
@@ -623,7 +630,8 @@ fn tc_774_refusal_diagnostics_carry_the_table_codes() {
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     function p using v(x: Int[0, 9]): Boolean pure { x > 3 }\n\
-    function q using v(x: Int[0, 9]): Integer pure { x + 1 }\n";
+    function q using v(x: Int[0, 9]): Integer pure { x + 1 }\n\
+    function r using v(x: Int[0, 9]): Boolean pure { x + 1 > 3 }\n";
 
 struct Fixture {
     checked: crate::spine::CheckedUnit,
@@ -632,6 +640,14 @@ struct Fixture {
 }
 
 fn fixture() -> Fixture {
+    fixture_of(SOURCE, &BTreeMap::new(), &DependencyInput::default())
+}
+
+fn fixture_of(
+    source: &str,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+) -> Fixture {
     let identity = SourceIdentity::new("agent-ix", "test:plugin", "fixture", "fixture:1");
     let limits = CallerLimits::default();
     let cancel = Cancel::new();
@@ -639,20 +655,20 @@ fn fixture() -> Fixture {
         &ParseRequest {
             source: &identity,
             path: "unit.native",
-            bytes: SOURCE.as_bytes(),
+            bytes: source.as_bytes(),
         },
         limits.spine.source,
         &cancel,
     )
     .unwrap_or_else(|failure| panic!("parse: {failure:?}"))
     .into_value();
-    let models = select(&parsed, &BTreeMap::new(), limits.spine.model, &cancel)
+    let models = select(&parsed, packages, limits.spine.model, &cancel)
         .unwrap_or_else(|failure| panic!("select: {failure:?}"))
         .into_value();
     let checked = check(
         &parsed,
         &models,
-        &DependencyInput::default(),
+        dependencies,
         &LockEvidence::default(),
         limits.spine,
         &cancel,
@@ -759,6 +775,33 @@ fn tc_774_function_contract_items_replay_and_value_validity_items_do_not() {
     let identity = process_provider_obligation(p.node(), p.origin(), &entries).unwrap();
     assert_eq!(wire.obligation_identity, *identity.as_bytes());
 
+    // `r(x) = x + 1 > 3` holds for every x, yet `r(0)` is false: the item at
+    // `r`'s application is a value-validity item, so replaying the owner as a
+    // predicate would wrongly refute it. It is non-replayable and settles
+    // inconclusive, while `r`'s own function-contract item is still replayed.
+    let (r, r_x) = declaration(&fixture, "r");
+    let r_application = fixture
+        .checked
+        .package()
+        .graph()
+        .requirements()
+        .iter()
+        .find(|(_, record)| record.owner() == Some("r"))
+        .map(|(key, _)| key.clone())
+        .expect("r's application has a requirement record");
+    let record = settle(&context, &r_application, &[bound_at(r_x)], input(r_x, 0));
+    assert_eq!(
+        record.value(),
+        &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+            Code::UnknownRequiredFeature
+        ))
+    );
+    assert!(record.replay_result().is_none());
+    assert_eq!(
+        settle(&context, &r, &[bound_at(r_x)], input(r_x, 0)).value(),
+        &TerminalValue::Refuted
+    );
+
     // A value-validity item at `q`'s application `x + 1` is non-replayable.
     let (q, q_x) = declaration(&fixture, "q");
     let application = fixture
@@ -851,6 +894,40 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
         assert_eq!(wire.stage_limits.get(name), Some(&bound), "{name}");
     }
 
+    // The occurrence checks come before the bound check: a non-replayable
+    // item with two bounds at one key is `NotReplayable`, not a duplicate.
+    let (_, q_x) = declaration(&fixture, "q");
+    let application = fixture
+        .checked
+        .package()
+        .graph()
+        .requirements()
+        .iter()
+        .find(|(_, record)| record.owner() == Some("q"))
+        .map(|(key, _)| key.clone())
+        .expect("q's application has a requirement record");
+    assert_eq!(
+        context
+            .request(
+                &application,
+                &[bound_at(q_x), bound_at(q_x)],
+                &plugin(),
+                Vec::new()
+            )
+            .err(),
+        Some(PluginReplayRefusal::NotReplayable {
+            key: application.clone()
+        })
+    );
+    // Only the `declaration` occurrence at ordinal 0 names a function.
+    let off_ordinal = OccurrenceKey::new(p.node(), Origin::new(Role::new("declaration"), 1));
+    assert_eq!(
+        context
+            .request(&off_ordinal, &[], &plugin(), Vec::new())
+            .err(),
+        Some(PluginReplayRefusal::UnknownOccurrence { key: off_ordinal })
+    );
+
     // An unknown key comes before NotReplayable; duplicate bounds come last.
     let unknown_key = OccurrenceKey::new(
         WireNodeId::from_digest([0x99; 32]),
@@ -873,14 +950,101 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
         refusal,
         PluginReplayRefusal::DuplicateBoundKey { .. }
     ));
-    for refusal in [
-        PluginReplayRefusal::UnknownOccurrence { key: unknown_key },
-        refusal,
+    for (refusal, code, cause) in [
+        (
+            PluginReplayRefusal::UnknownOccurrence { key: unknown_key },
+            "missing_declaration",
+            "missing-name",
+        ),
+        (refusal, "invalid_runtime_input", "duplicate-member"),
     ] {
         let record = refusal.record(RequestIndex::new(0), plugin());
         assert_eq!(record.value(), &TerminalValue::Failed);
         assert_eq!(record.backend(), Some(&plugin()));
-        let code = refusal.diagnostic(0);
-        assert!(["missing_declaration", "invalid_runtime_input"].contains(&code.code()));
+        let diagnostic = refusal.diagnostic(0);
+        assert_eq!(diagnostic.code(), code);
+        assert_eq!(diagnostic.cause(), Some(cause));
     }
+}
+
+/// FR-290-AC-14: a record no function holds (an operation frame's or a state
+/// clause's `operation-contract` record) is non-replayable.
+#[trace("TC-774", "FR-290-AC-14")]
+#[test]
+fn tc_774_a_state_clause_record_is_not_replayable() {
+    let (source, packages) = crate::spine::clause::tests::config_version_unit_and_packages();
+    let fixture = fixture_of(&source, &packages, &DependencyInput::default());
+    let context = context(&fixture, CallerLimits::default());
+    let keys: Vec<OccurrenceKey> = fixture
+        .checked
+        .package()
+        .graph()
+        .requirements()
+        .iter()
+        .filter(|(_, record)| record.owner().is_none())
+        .map(|(key, _)| key.clone())
+        .collect();
+    assert!(!keys.is_empty(), "the unit has operation-contract records");
+    for key in keys {
+        assert_eq!(
+            context.request(&key, &[], &plugin(), Vec::new()).err(),
+            Some(PluginReplayRefusal::NotReplayable { key: key.clone() })
+        );
+        let record = settle(&context, &key, &[], Vec::new());
+        assert_eq!(
+            record.value(),
+            &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                Code::UnknownRequiredFeature
+            ))
+        );
+    }
+}
+
+/// FR-290 "Replay context": `dependencies` carries every resolved library, so
+/// a unit that imports `b`, which imports `c`, replays end to end.
+#[trace("TC-774", "FR-290-AC-12")]
+#[test]
+fn tc_774_a_transitive_dependency_replays() {
+    let header =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+    let c = format!("{header}function big using v(x: Int[0, 9]): Boolean pure {{ x > 3 }}\n");
+    let b = format!(
+        "{header}import \"test/c\" as c;\nfunction big using v(x: Int[0, 9]): Boolean pure {{ c::big(x) }}\n"
+    );
+    let a = format!(
+        "{header}import \"test/b\" as b;\nfunction q using v(x: Int[0, 9]): Boolean pure {{ b::big(x) }}\n"
+    );
+    let library = |identity: &str, bytes: &String| crate::spine::SuppliedLibrary {
+        identity: format!("test/{identity}"),
+        source: SourceIdentity::new(
+            "agent-ix",
+            format!("test:{identity}"),
+            "fixture",
+            "fixture:1",
+        ),
+        path: format!("{identity}.native"),
+        bytes: bytes.as_bytes().to_vec(),
+    };
+    let supplied =
+        DependencyInput::new(vec![library("b", &b), library("c", &c)]).expect("supplied");
+    let fixture = fixture_of(&a, &BTreeMap::new(), &supplied);
+    let context = context(&fixture, CallerLimits::default());
+    let (q, q_x) = declaration(&fixture, "q");
+    let wire = context
+        .request(&q, &[bound_at(q_x)], &plugin(), input(q_x, 0))
+        .expect("a function-contract item");
+    let identities: Vec<&str> = wire
+        .dependencies
+        .iter()
+        .map(|entry| entry.identity.as_str())
+        .collect();
+    assert_eq!(identities, ["test/b", "test/c"]);
+    assert_eq!(
+        settle(&context, &q, &[bound_at(q_x)], input(q_x, 0)).value(),
+        &TerminalValue::Refuted
+    );
+    assert!(matches!(
+        settle(&context, &q, &[bound_at(q_x)], input(q_x, 7)).value(),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
 }
