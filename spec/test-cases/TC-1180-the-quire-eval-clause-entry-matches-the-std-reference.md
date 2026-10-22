@@ -116,8 +116,8 @@ against the reference's recorded values.
    bases and witness records equal the reference's.
 9. Each check gives the reference's `Separation` and charges, with one
    recorder per check. No Begin is made for the element step. `LetAll`
-   holds. The denied `let` value gives `Separation::Stopped` at the domain
-   step.
+   holds. The denied `let` value gives `Separation::Stopped` at FR-268's
+   step 2, the domain step.
 10. The two runs are equal in evaluation, counters, charges and reported
     reads. The faulting recorder ends the session with `CallFailure::Fault`
     carrying its fault, and no charge follows the event.
