@@ -51,3 +51,11 @@ Round 1 checked head 26314aa42, which contains main 6fb751a31 and merges cleanly
 | FND-002 | fixed | The root list is now FR-104's: the context population plus the populations a `reaches` walks. FR-146-AC-10 has an unread `audits` population that adds no domain. |
 | FND-003 | fixed | Routing now says candidates are chosen by kind alone, and that extent meets the candidate's mode only at negotiation. FR-146-AC-8 is conditioned on an unbounded-mode backend, and FR-146-AC-10 gives `requires-bound` under a bounded-only backend. |
 | FND-004 | deferred | The QSpec FR-468/FR-290 extent follow-up stays a planner item (a QSpec ticket or an explicit no-change). It is outside this QSL PR. |
+
+## Dispositions (round 2)
+
+Round 2 checked head b08c24499, which contains main 4c3562eaa and merges cleanly. `make check-spec-validation` on the merge exits 0. No new findings. In the `spare` variant, the clauses on `Impl::Counter` also refuse under FR-104, and the AC does not claim its refusals are the only ones, so the vector holds.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-005 | fixed | When the receiver's type conforms to member types of two or more populations, FR-146 refuses `ambiguous_declaration`/`ambiguous-name` at the step row, names the populations in ascending `DeclarationKey` order and writes no record. FR-146-AC-10 and TC-551 step 11 have the `spare` vector. |
