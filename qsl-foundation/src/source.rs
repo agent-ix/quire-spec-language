@@ -6,8 +6,9 @@
 //! and package source map.
 use crate::digest::{DigestDomain, DigestRecord};
 use crate::ByteDigest;
+use alloc::sync::Arc;
+use alloc::{boxed::Box, format, string::String, vec, vec::Vec};
 use provenance::{RawSourceRef, SourceRegion};
-use std::sync::Arc;
 
 pub mod provenance;
 
@@ -306,9 +307,9 @@ pub fn render_offered(bytes: &[u8], region: &SourceRegion) -> Option<LocatedSpan
     if region.source().digest().as_bytes() != &ByteDigest::of(bytes).as_bytes() {
         return None;
     }
-    let text = match std::str::from_utf8(bytes) {
+    let text = match core::str::from_utf8(bytes) {
         Ok(text) => text,
-        Err(error) => std::str::from_utf8(bytes.get(..error.valid_up_to())?).ok()?,
+        Err(error) => core::str::from_utf8(bytes.get(..error.valid_up_to())?).ok()?,
     };
     let position = |byte: u64| -> Option<Position> {
         let byte = usize::try_from(byte).ok()?;
@@ -399,7 +400,7 @@ impl Source {
             let (start, end) = (u64::try_from(start).ok()?, u64::try_from(end).ok()?);
             SourceRegion::new(reference.clone(), start, end).ok()
         };
-        let text = match std::str::from_utf8(bytes) {
+        let text = match core::str::from_utf8(bytes) {
             Ok(text) => text,
             Err(error) => {
                 let end = error.valid_up_to();
@@ -591,6 +592,7 @@ impl Source {
 
 #[cfg(test)]
 mod tests {
+    use alloc::boxed::Box;
     use ix_trace_rs::trace;
 
     use super::*;
