@@ -72,3 +72,9 @@ Round 1, head 4d558634d. QSL-968 (Backlog) exists and names both FND-001 gaps.
 | FND-001 | fixed | 4d558634d. The test is tagged `TC-661` only, with a partial note that cites QSL-968. No test carries `FR-216-AC-6` any more, so the matrix shows it uncovered, which is honest. |
 | FND-002 | deferred | QSL-968, item 1 (record triggers, `UnenumerableRecord`). |
 | FND-003 | still-open | The retired-object test no longer carries the tag, but `FR-208-AC-5` is still tagged in full on `a_send_and_a_receive_owned_by_a_replicated_role_are_taken_by_each_instance` (protocol_roles.rs:1367). Its empty-universe clause has no test and is not in QSL-968. The claim that "an empty cell universe cannot be built because `over` needs a cell" holds only for Fill's single `cells` population. A second, empty, closed population of `Cell`, with `role r each M::Cell from <it>`, builds the case while `over` still binds `c` from `cells`. Add that world, or mark the test partial and add the clause to QSL-968. |
+
+Round 2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | See PR head. A second object type `Idle` with a closed population `idles` and an empty universe builds the empty-universe world (a second population of `Cell` would make `Cell` ambiguous to the state-clause population lookup). `a_send_from_a_role_over_an_empty_universe_waits_with_no_role_instance` tests the clause. |

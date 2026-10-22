@@ -475,6 +475,24 @@ fn send_and_receive_are_owned_by_their_channel_roles_and_count_in_the_region() {
     );
 }
 
+/// FR-218 "Scopes" (TC-663): a `commit` written `by` a `scope` role is a node
+/// `by` that role, so with its `Work` inside `sequence S` and a `commit`
+/// after `S`, the region is `Main`, which holds the commit, not `S`.
+#[trace("TC-663")]
+#[test]
+fn a_commit_by_a_scope_role_counts_in_its_region() {
+    let text = workers("scope").replacen(
+        "check After using v { true };",
+        "commit Cm by r as (cm: M::Receipt) { true };",
+        1,
+    );
+    let graph = checks(&text);
+    assert_eq!(
+        graph.protocol("Workers").expect("checked").slots.roles[0].lifetime,
+        CheckedLifetime::Scope(Some(node_id(&text, "Main")))
+    );
+}
+
 /// ADR-027 RR-2, RR-4: the checked protocol records the role that owns each
 /// node a role acts at: in FR-208-AC-1's protocol, `Work` is owned by the
 /// replicated role `r`, and the `check` and the `finish` node by none.

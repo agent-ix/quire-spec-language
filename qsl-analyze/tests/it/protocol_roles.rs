@@ -1476,3 +1476,35 @@ fn requests_differing_only_in_max_live_instances_share_one_obligation_identity()
     assert_eq!(obligation(&requests[0]), obligation(&requests[1]));
     assert_eq!(obligation(&requests[1]), obligation(&requests[2]));
 }
+
+/// FR-208-AC-5 (TC-653), the empty-universe clause: a `send` from a
+/// replicated role over the `Idle` objects, whose closed population `idles`
+/// has an empty universe, has no `spawn` ever, and a thread at the `send`
+/// waits with `NoRoleInstance{r}`. (`over` still binds the cell `c`.)
+#[trace("TC-653", "FR-208-AC-5")]
+#[test]
+fn a_send_from_a_role_over_an_empty_universe_waits_with_no_role_instance() {
+    let channel = "channel ch from r to w carries Boolean ordering unordered \
+                   delivery exactly-once-premise capacity 1 overflow block;";
+    let world = World::new(
+        &unit(
+            ORIGIN,
+            "role r each M::Idle from idles max 1 lifetime workflow;",
+            channel,
+            "sequence Main { send Tx via ch as (tx: Boolean) { tx }; }",
+        ),
+        &["c"],
+        &[0],
+    );
+    let subject = world.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    assert!(reached.iter().all(|state| state
+        .steps
+        .iter()
+        .all(|(step, _)| step.kind() != StepKind::Spawn)));
+    assert_eq!(
+        deadlocked_at(&system, &reached, "Main/Tx"),
+        [no_role_instance()]
+    );
+}

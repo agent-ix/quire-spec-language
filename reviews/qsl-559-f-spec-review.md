@@ -31,3 +31,11 @@ No SHALL statement or AC changed. Both files pass `quire validate`. A `Remaining
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The FR-209 note says "the ACs run over an `Int` range trigger until it lands". FR-209-AC-1 and AC-2 are written over the record trigger `Tick`. The note reads as narrowing those criteria to an `Int` trigger, when what it means is that the tests substitute one. It should say what is unbuilt: "the record trigger `Tick` of FR-209-AC-1 and AC-2 refuses `UnenumerableRecord`, and the tests use the `Int` range `Level` until QSL-968 lands." The criteria stay as written. | spec/functional/FR-209-start-a-protocol-instance-per-trigger-under-the-instance-budget.md:124-126 |
+
+## Dispositions
+
+Round 2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | See PR head. The FR-209 Remaining-work note says the tests use the `Int` range trigger `Level` until QSL-968 lands, and that the ACs, written over the record type `Tick`, are unchanged. |

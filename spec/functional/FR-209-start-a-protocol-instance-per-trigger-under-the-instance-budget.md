@@ -122,8 +122,9 @@ is never mistaken for a proof over every instance count.
 | FR-209-AC-4 | A run where both a memory bound (ADR-025) and the instance bound limited a state, and no counterexample was found, settles `MemoryBoundReached`; a run where the instance bound limited a state and `BoundReached` (the completed `max_depth` search horizon) also applies settles `InstanceBoundReached`. | Test (TC-654) |
 
 Remaining work: QSL-968. A record-typed trigger `T` refuses
-`UnenumerableRecord` in the protocol program, so the ACs run over an `Int`
-range trigger until it lands.
+`UnenumerableRecord` in the protocol program, so the tests of these ACs use the
+`Int` range trigger `Level` until it lands; the ACs themselves are written
+over the record type `Tick` and are unchanged.
 
 ## Dependencies
 

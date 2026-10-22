@@ -68,3 +68,9 @@ Round 1, head 4d558634d (fix commit 4d558634d on top of a merge of main). Focuse
 | FND-003 | fixed | 4d558634d. The set is cached per field. The `None` to `AnyField` fallback is sound for POR: `AnyField{f}` conflicts with every `Field(_, f)` and `AnyField{f}` write, so it costs precision, never a dependence. A hidden fault is accepted as documented. |
 | FND-004 | accepted-no-change | The test is kept, with its doc stating that it cannot fail today. The guarantee is structural, and the test holds the spec in place for when a bound reaches the writer. Low, so it is not worth a round. |
 | FND-005 | fixed | 4d558634d |
+
+Round 2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | See PR head. `a_commit_by_a_scope_role_counts_in_its_region` puts a `commit` by the scope role after `S`; the region is `Main`. With the `declaration.role` branch of the region filter disabled it fails (1 failed, 8 passed); restored. |
