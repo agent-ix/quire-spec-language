@@ -41,3 +41,11 @@ unchanged text.
 ## Verdict
 
 Mergeable for EARS. One minor finding.
+
+## Dispositions
+
+Round 1, reviewed QSL #1212 at 373ddf489.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fixed at 373ddf489 (the quire ears warning on FR-071 is gone) |
