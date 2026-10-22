@@ -72,6 +72,9 @@ verdict holds under RC11.
   later SC write to its location (or, for a read, every later write to it), and
   of every later SC event on its location by a thread whose view covers it, by
   QSpec FR-437's collection rule.
+- `Ra` SHALL keep a `seq_cst` fence live while some view, at rest or in flight
+  on a channel, has it as the latest live fence of its thread that the view's
+  frontier covers, and SHALL remove it from `P` when no view does.
 - `Ra` SHALL serialize `P`, `F`, the frontiers and the `owed` sets in the
   canonical state key (FR-229), so that states with equal futures coalesce.
 
@@ -87,6 +90,8 @@ verdict holds under RC11.
 | FR-223-AC-6 | ADR-025 §15's LT-14, in which thread `u` stores `X := 1` with `seq_cst`, fences with `seq_cst` and releases `Y`, thread `v` acquires `Y` and stores `P := 1` with `seq_cst`, and thread `w` stores `P := 2` and loads `X` with `seq_cst`, does not reach `a = 1`, `b = 0` and final `P = 2`: at the state where `u` has run, `v` has read `Y = 1` and stored `P := 1`, and `w` has stored `P := 2` after it in modification order, `w`'s load of `X` is enabled for `X = 1` only. | Test (TC-668) |
 | FR-223-AC-7 | ADR-025 §15's LT-15 does not reach a = 2, b = 3 and final `X = 1` under `ra`: once `b`'s load has read `L := 3`, every current view of `L` is at that message, the SC events on `L := 1` and `L := 2` are collected, and the slot for `t`'s `X := 2` before `u`'s `X := 1` in modification order is not offered, because `u`'s `X := 1` still precedes `t`'s `X := 2` in the SC event graph through `owed(t)`. | Test (TC-668) |
 | FR-223-AC-8 | ADR-025 §15's LT-16 does not reach a = 2, b = 3, c = 3, d = 3 and final `X = 1` under `ra`: after `L := 2` is collected, `w`'s `seq_cst` load of `L` after the acquire fence still takes `L := 2`'s predecessors, so the slot for `w`'s `X := 2` before `X := 1` in modification order is not offered. | Test (TC-668) |
+| FR-223-AC-9 | ADR-025 §15's LT-17 does not reach a = 1, b = 0 and final `P = 2` under `ra` in any interleaving, including those in which `u`'s second fence runs before `v` loads `Y`: the first fence is still in `P` when `v` stores `P := 1`, because `Y`'s message view covers it and not the second fence. | Test (TC-668) |
+| FR-223-AC-10 | A thread running two `seq_cst` fences with no store between them and no other thread has, after its second fence, the first fence absent from `P`; the same thread storing a `release` flag between the fences keeps the first fence in `P` after its second fence, for as long as the flag's message is live and its view covers the first fence and not the second. | Test (TC-668) |
 
 ## Dependencies
 
