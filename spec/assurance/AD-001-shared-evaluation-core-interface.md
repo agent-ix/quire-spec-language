@@ -20,7 +20,11 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-015
     type: references
+  - target: ix://agent-ix/quire-spec-language/NFR-016
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-403
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-405
     type: references
 ---
 # AD-001: Shared evaluation-core interface and staged evaluator replacement
@@ -46,8 +50,8 @@ interface during the migration. IR-583 delivers the shared interface and std
 reference adapter. It does not claim that the evaluator itself is no_std. The
 no_std + alloc implementation is IR-590, after S1-S5. During the bounded
 dual-implementation period, differential tests compare both implementations on the same checked inputs. IR-593 ends that
-period by selecting the no_std implementation as the default and retiring or
-demoting the std-only path.
+period by making the no_std implementation the only evaluator and deleting the
+std-only path (FR-405).
 
 ## Views
 
@@ -135,7 +139,9 @@ Yielding, saving a continuation, pushing or popping a frame, and delivering a
 child result add no charge. Existing kernel charge points and order remain
 unchanged. A denied charge produces the existing located `incomplete` result
 at that point, retains earlier spend, and does not record the denied charge.
-Cancellation is observed at each charge and before each scheduler transition.
+Cancellation is observed only at a charge: a charge a cancelled handle denies
+is that charge's located `incomplete` result, and the lifecycle operation
+holding the handle reports `Cancelled` from its `tripped()` cause.
 Terminal outcomes drop suspended continuations without executing them. These
 rules apply identically to the reference and no_std implementations.
 
@@ -186,7 +192,7 @@ here. The ordering rationale is as follows.
   environment contract, for the `Value` family, with argument admission in
   `quire-eval` (FR-403). The checked input reaches `quire-eval` in
   process; RT and CG need no wire form of a checked graph. `qsl-eval` depends on it, stays `std`, and
-  keeps the std reference evaluator as its default until S9. The S7
+  keeps the std reference evaluator on its production paths until S9. The S7
   differential suite (FR-402) compares that std path with `quire-eval`. It
   follows the interface and S1-S5. IR-269 is reached through S1, not
   directly.
@@ -197,8 +203,8 @@ crate, coordinated by the QSL architecture lead.
 
 After S6, S7 runs differential tests over identical inputs through both
 implementations, S8 performs the unsafe/dependency audit (all newly authored
-crates still use `unsafe_code = forbid`), and S9 switches the default and
-retire/demotes the std path. S7-S9 remain separately gated slices, not part of
+crates still use `unsafe_code = forbid`), and S9 makes the no_std implementation the
+only evaluator and retires the std path (FR-405). S7-S9 remain separately gated slices, not part of
 S6's claimed completion.
 
 FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, TC-069's
@@ -208,7 +214,7 @@ bundle), its case record, loader and compared record in the crate
 `qsl_replay::compile_package`, the zero-divergence pass criterion and the
 one runner build that runs both implementations. The harness joins `make ci` in IR-590,
 the first slice with a second implementation, and stays until IR-593 retires
-or demotes the std path; the run over CG's bundle passes in IR-593's switch.
+the std path; the run over CG's bundle passes in IR-593's switch.
 The `no_std` implementation the suite compares lives in `quire-eval`
 (`agent-ix/quire-eval`), and `qsl-eval` consumes it; the suite compares the
 std path with it until S9 retires that path. CG records expected evaluations
@@ -216,6 +222,18 @@ through `quire-eval` once it carries that implementation; until then CG's
 cases carry no expectation. Admission compiles each case once, and both
 implementations evaluate the same admitted checked package in the runner's
 process (FR-403).
+
+NFR-016 defines the unsafe half of S8's audit: `make audit-unsafe` in
+`agent-ix/quire-eval` resolves the closure that links into the `no_std`
+evaluator, `quire-eval`'s normal dependencies for `thumbv7em-none-eabi`
+without proc-macro crates, and scans it. It fails on unsafe code in a
+first-party crate's shipped source, on a first-party crate that does not
+forbid `unsafe_code`, and on a third-party crate with unsafe code (counted
+by `cargo-geiger`) that the repository's `unsafe-inventory.toml` does not
+name. An inventory entry names the crate, what its unsafe code does and why
+the evaluator may link it, and no version or dependency path. The dependency
+half of S8 (allowed sources, licences and advisories) is that repository's
+existing `make deny` gate. `make ci` in that repository runs both.
 
 ### RT and CG acceptance
 
@@ -232,9 +250,11 @@ the interface. RT acceptance therefore requires all of the following:
 - Run the 100,000-deep recursive call at fitting `work_units` on a 512 KiB
   host stack, plus the `w - 1` denial and `w` restoration controls; verify
   iterative value/type handling at the depth required by FR-262.
-- Differentially compare the shared implementation with the QSL std
-  reference on the common evaluation corpus, including charge order and
-  complete outcome data.
+- Compare the shared implementation on the common evaluation corpus,
+  including charge order and complete outcome data: with the QSL std
+  reference while it exists, and after S9 with the recorded corpus
+  expectations that `evaluator-regression` checks (FR-405). RT's acceptance
+  is not part of QSL's S9 switch criterion.
 - Remove RT's evaluator port and do not add a compatibility re-export or
   shim at its former `exact::CheckedPackage` path. CG's generated closures
   remain a first-class lowering and consume the same shared interface rather
@@ -281,7 +301,8 @@ item moves once.
 - The QSL-owned leaf is the one shared interface and scheduler authority for
   interpreted checked expressions and registered generated bodies.
 - QSL's std evaluator is the semantic reference until the no_std implementation
-  passes the shared differential suite; only then may IR-593 switch defaults.
+  passes the shared differential suite; only then may IR-593 make it the only
+  evaluator.
 - Checked-term separation (IR-586) can proceed after STD-297 independently of
   IR-583. The no_std implementation (IR-590) still waits for S1-S5 and the
   shared interface (IR-583).
@@ -293,6 +314,21 @@ item moves once.
 - The leaf is `quire-eval` (ADR-011 layer E) in `agent-ix/quire-eval`, and
   the vocabulary its interface names lives in K, SV or E as FR-401 places
   it.
+- IR-593 retires the std path; it does not demote it (FR-405). The switch
+  is one change that routes every evaluation, clause families included, to
+  `quire-eval` and deletes the std reference evaluator, its adapter and the
+  differential run's std side. No feature, fallback or test oracle keeps it;
+  the reference's results stay as recorded corpus expectations. A second
+  evaluator kept beside the first would be the duplicated module the shared
+  core exists to remove, and keeping it reachable would be a compatibility
+  layer. The switch also needs `quire-eval`'s clause entry, which its own
+  requirement defines (STD-318).
+- The dual-implementation period (IR-584) ends when the S9 switch change is
+  on `main` and FR-405-AC-1 to FR-405-AC-10 pass. The slices before it are
+  complete when their own criteria pass: FR-400, FR-401, NFR-015, FR-403,
+  FR-402, NFR-016 (slice S8's unsafe audit) and the clause-entry requirement. RT's port
+  deletion is RT's migration (IR-349, FR-262-AC-9), not part of that
+  period.
 
 ## Risks
 
