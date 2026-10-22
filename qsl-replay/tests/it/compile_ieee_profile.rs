@@ -98,7 +98,8 @@ fn declared_floats_select_the_profile_even_without_an_ieee_application() {
         "tuple Reading(Float32[nearest-even]);",
         "union Reading { Empty, Some(Float64[nearest-even]) }",
         "type Reading = Float64[nearest-even]; function anchor using v(): Boolean pure { true }",
-        "record Reading { values: Sequence<Float64[nearest-even]>[0, 2]; }",
+        "record Reading { samples: Sequence<Float64[nearest-even]>[0, 2]; }",
+        "function keep using v(a: Option<Float64[nearest-even]>): Boolean pure { true }",
     ] {
         let wire = wire(&format!("{HEADER}{declaration}"));
         assert_eq!(ieee_selection(&wire).len(), 1, "{declaration}");
