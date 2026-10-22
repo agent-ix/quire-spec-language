@@ -65,8 +65,10 @@ Bindings checked:
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, head 4d558634d. QSL-968 (Backlog) exists and names both FND-001 gaps.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: test cites TC-661 only and says partial, Remaining work: QSL-968; FR-216 text and PR body cite QSL-968 | see PR head |
-| FND-002 | fixed: tracked as QSL-968; FR-209 text and PR body cite it | see PR head |
-| FND-003 | fixed: the FR-208-AC-5 tag is removed from the one-object world; no fixture can build an empty cell universe because `over` needs a cell | see PR head |
+| FND-001 | fixed | 4d558634d. The test is tagged `TC-661` only, with a partial note that cites QSL-968. No test carries `FR-216-AC-6` any more, so the matrix shows it uncovered, which is honest. |
+| FND-002 | deferred | QSL-968, item 1 (record triggers, `UnenumerableRecord`). |
+| FND-003 | still-open | The retired-object test no longer carries the tag, but `FR-208-AC-5` is still tagged in full on `a_send_and_a_receive_owned_by_a_replicated_role_are_taken_by_each_instance` (protocol_roles.rs:1367). Its empty-universe clause has no test and is not in QSL-968. The claim that "an empty cell universe cannot be built because `over` needs a cell" holds only for Fill's single `cells` population. A second, empty, closed population of `Cell`, with `role r each M::Cell from <it>`, builds the case while `over` still binds `c` from `cells`. Add that world, or mark the test partial and add the clause to QSL-968. |

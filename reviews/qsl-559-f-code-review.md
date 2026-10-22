@@ -51,12 +51,20 @@ What holds:
 | FND-004 | low | `requests_differing_only_in_max_live_instances_share_one_obligation_identity` cannot fail. `author_clause` and `ItemObligation` take no `max_live_instances`, so the three requests' bound never reaches the code under test. The equality holds because of the signatures, and the test only repeats that. It would need to compare an identity that a `check_protocol` or settle path computes from the request. Otherwise drop it. | qsl-analyze/tests/it/protocol_roles.rs:1434-1473 |
 | FND-005 | low | `#[allow(dead_code)]` silences the whole included fixture module, where the dead item is one function. The TC-661 test comment calls `M::Level` "an enum". It is an `Int` range: `enumerable` rejects `Enum`, so an enum binder would fail as a record does. | qsl-semantics/src/check/protocol_slots/tests.rs:16-21, qsl-analyze/tests/it/protocol_footprints.rs:1049-1053 |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The `scope` region now counts `commit N by r` again (the FND-001 fix), but no test checks it. With the `declaration.role` branch of the region filter disabled, all 144 `qsl-semantics` protocol tests still pass. Counting a commit in the region is behaviour, so it needs a test: a `scope` role whose last `by r` node is a `commit` after `S` has the region that holds the commit, not `S`. | qsl-semantics/src/check/protocol_slots.rs:1274-1289 |
+
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, head 4d558634d (fix commit 4d558634d on top of a merge of main). Focused tests are green: `qsl-semantics --lib protocol_slots` 8 passed, and `qsl-analyze --test it` `protocol_footprints::`/`protocol_roles::` 31 passed. The commit-case mutation was run and restored.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: the `scope` region counts a node whose written `by` role is the role (commit included) as well as owned send and receive; documented in the region filter | see PR head |
-| FND-002 | fixed: `role_population` finds the package from the resolved type (`AdmittedModel::type_key`), no `::` splitting | see PR head |
-| FND-003 | fixed: the fallback to `AnyField` is documented as intentional (sound, costs precision only) and the set is cached per field | see PR head |
-| FND-004 | fixed: the test comment states it cannot fail today and pins the spec for when a protocol bound reaches the writer | see PR head |
-| FND-005 | fixed: `allow(dead_code)` narrowed to the one fixture function; the `Level` comment says `Int` range | see PR head |
+| FND-001 | fixed | 4d558634d. The region filter adds a node whose written `by` role is the role, which covers `commit`. Its test is FND-006. |
+| FND-002 | fixed | 4d558634d. The package is found from the resolved type, `AdmittedModel::type_key(element)`. Unresolved types refuse `MissingRolePopulation`. |
+| FND-003 | fixed | 4d558634d. The set is cached per field. The `None` to `AnyField` fallback is sound for POR: `AnyField{f}` conflicts with every `Field(_, f)` and `AnyField{f}` write, so it costs precision, never a dependence. A hidden fault is accepted as documented. |
+| FND-004 | accepted-no-change | The test is kept, with its doc stating that it cannot fail today. The guarantee is structural, and the test holds the spec in place for when a bound reaches the writer. Low, so it is not worth a round. |
+| FND-005 | fixed | 4d558634d |
