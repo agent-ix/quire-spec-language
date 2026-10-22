@@ -14,7 +14,7 @@ Verify that spine `compile` admits a header profile only when its identity
 is a `header_selectable_layers` row's, refuses every other header profile
 with its catalogued code and cause, and restricts each declaration to its
 selected layer's forms. Scope: FR-110-AC-1 to FR-110-AC-3 and FR-110-AC-5
-to FR-110-AC-9.
+to FR-110-AC-10.
 
 This catches a resolver that accepts any catalog row as a profile, a parser
 that still accepts a header `version` or `digest`, and a resolver that stops
@@ -51,8 +51,12 @@ identity from the catalog, never from a literal.
    `complete-value-selection-vectors.json` from `QSPEC_DIR`. Compare the
    lock with `DefinitionLock::pinned()`, and admit each selection vector
    through it.
+9. For each layer FR-110-AC-10 names, compile a unit whose profile `v`
+   names the layer and whose declaration holds one equality of each
+   FR-110-AC-10 operand family, then the `r = 1` unit under
+   `quire.state.core/v1`.
 
-Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-9", "TC-490")]` over the
+Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-10", "TC-490")]` over the
 criteria each step backs.
 
 ## Expected Results
@@ -83,3 +87,4 @@ criteria each step backs.
   `qualification_catalog` rows in order; its selection rules, trigger
   vocabulary and refusal codes equal QSpec's; QSpec's selection vectors give
   their recorded outcomes (FR-110-AC-9).
+- Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
