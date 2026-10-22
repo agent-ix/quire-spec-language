@@ -46,3 +46,22 @@ TC-386's widened clause (F may name K and SV) is correct.
 
 `QSPEC_DIR=/Users/peter/dev/quire-specification make check-spec-validation` on 2013cea1 exits 0. It reports 17
 warnings, none on a touched file.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The merged FR-400 and FR-401, X-13, X-15 and AD-001 now agree: whichever of S1 and S2 lands first moves `WrongSnapshotCause` to SV `call`, and FR-400-AC-2 requires `qsl-eval` to name it there. FR-400 says S0 moves the S6a result types to `quire-eval` and `FamilyKind` stays in `family`. |
+| FND-002 | fixed | FR-401 and X-14 now make `Evaluation::refusal_record` a `qsl-eval` free function over the evaluation and a region resolver, matching FR-400's Source locations; `qsl-eval` names no checker-side type. |
+| FND-003 | fixed | NFR-015-AC-2 on main (#1223) lists `quire-semantic-value`. NFR-015's Description now names the S0 catalog set, keeps `Code`, `RefusalRecord`, `Locus`, the digest records and setting limits in F, and names S0 rather than S1. New FND-007 covers the remaining ordering question. |
+| FND-004 | fixed | FR-090 now calls the traits SV `catalog`'s. ADR-011's layer-3 row, §6.2 `family` row and E6 row are updated, and layers 5, 6 and A depend on E. ADR-014:95 names `quire_semantic_value::catalog::Category`. FR-262's Begin row takes the registry that holds its closure. New FND-008 covers §2.3, which this finding did not list. |
+| FND-005 | fixed | TC-390 step 1 scans every workspace member, and the `quire_eval::` resolution is left to FR-401-AC-3. |
+| FND-006 | fixed | #1225 merged first. FR-401 now lists FR-400 as `depends_on`, and FR-400 exists on main. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | major: S0 relies on an F → SV edge that only X-13 creates. FR-401 says `qsl-foundation` names the moved catalog vocabulary "over the F → SV dependency FR-400 states", and that S0 and S1 "both build on FR-400's F → SV dependency". X-14 says "over the F → SV edge of the F row (FR-400)". X-2 adds that edge only "From X-13", and NFR-015-AC-2 attributes it to "FR-400's X-13". But X-14 runs only "after X-11", and AD-001 and FR-262 make IR-583 (S0) and IR-586 (S2) independent. If S0 lands before X-13, no spec text says who adds the SV dependency, which the round-0 text did say ("the first change that moves an F item into SV adds it"). Restore that rule in FR-401 and X-14, and extend X-2 and NFR-015-AC-2's attribution to "X-13 or X-14, whichever lands first". The alternative is to order X-14 after X-13 and say so in AD-001. | spec/functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md:152,230 |
+| FND-008 | low | minor: ADR-011 §2.3 still gives the old placement. It describes "The layer-5 `Evaluation<T>`" and "the layer-3 `check`-core `FamilyOutcome`" (lines 385-389), which contradicts the E row, X-14 and FR-090. The mermaid diagram also draws `QEL --> SV & QX` but no `QEL --> QCK` or `QEL --> QW` edge, although the E row lists C and W. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:385-389 |
+| FND-009 | low | minor: TC-390's rewritten step-4 expectation contradicts X-8, the manifest and the test it describes. It says `qsl-eval`'s `[dependencies]` "are exactly `qsl-foundation`, `qsl-package`, `qsl-semantics`, `quire-canonical`, `quire-exact`, `serde` and `thiserror`". But X-8, `qsl-eval/Cargo.toml` and `tests/it/family_outcome_layering.rs:436-446` also name `quire-semantic-value` and `ix-trace-rs`. For `qsl-package`, it calls `quire-contract-model` "their one ecosystem crate outside the workspace", but the manifest also names `quire-canonical` and `quire-semantic-value`. The text came from main, and this PR re-authored the paragraph. | spec/test-cases/TC-390-family-outcome-and-refusal-layering.md:66-79 |

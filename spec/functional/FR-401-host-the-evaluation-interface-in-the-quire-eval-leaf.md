@@ -149,8 +149,8 @@ unchanged. A moved type keeps its
 `WrongSnapshotCause`'s), and the receiving crate declares the `seam_probe`
 cfg, so FR-063's probe builds, whose `RUSTFLAGS` also reach git
 dependencies, still make every QSL match over the type non-exhaustive. `qsl-foundation`
-names the moved catalog vocabulary over the F → SV dependency FR-400 states;
-SV depends on no QSL crate, so that edge closes no cycle.
+names the moved catalog vocabulary through its dependency on SV; SV depends on
+no QSL crate, so that edge closes no cycle.
 
 ### The checked closure the leaf reads
 
@@ -227,7 +227,9 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
   FR-400 names. S0's set (the catalog vocabulary, the stop records, the S6a
   result vocabulary, `Evaluation` and `CallFailure`) and S1's set
   (`WrongSnapshotCause`) are disjoint, and neither overlaps FR-400's F values
-  and layer-2 premise enums. Both build on FR-400's F → SV dependency.
+  and layer-2 premise enums. The first change that moves an F item into SV,
+  S0's (ADR-011 X-14) or S2's (X-13), SHALL add `qsl-foundation`'s SV
+  dependency; the other reuses it. Neither slice waits for the other.
 
 ## Acceptance Criteria
 

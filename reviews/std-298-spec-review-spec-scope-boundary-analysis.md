@@ -54,3 +54,9 @@ Verified:
 Every "already in K/SV" claim holds. The catalog, stop-record, S6a and `Evaluation`/`CallFailure` moves can be
 implemented with no illegal edge: F → SV, E → SV/K, and no QSL crate below layer 5 needs E. `qsl-foundation`
 depending on SV adds no cycle. Clean apart from FND-001.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-401 now names the four private helpers (`SuppliedEvent::of_membership`/`of_part` and `SuppliedStorage::of_request`/`of_arena`), which become private free functions in `qsl-semantics`' `value::supplied` and add no SV API. They read only public fields and enum variants of the moved types, so this works. |

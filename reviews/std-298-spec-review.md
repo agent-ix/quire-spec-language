@@ -50,3 +50,13 @@ Judgement of the eight lead defaults (lead defaults, not owner answers):
 8. Module names `catalog` and `supplied_stop`: sound.
 
 Not mergeable until FND-001 and FND-002 and the majors in SR-15541 are fixed.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-3 now lists `qsl_eval::value::Evaluation` and `qsl_eval::value::CallFailure` (the live `pub use` paths) and adds `qsl_semantics::family::{FamilyResult, EvalOutcome}`; X-14 forbids a re-export at `qsl_eval::value::{Evaluation, CallFailure}` (1c24c146). |
+| FND-002 | fixed | FR-401 now says `quire-eval` MAY name C's checked terms and SHALL NOT name any QSL item (`CheckedPackage`, `ObjectEnvironment`, the checker-side record); AC-6 and ADR-011's E rule bullet match. |
+| FND-003 | fixed | The rule is in the spec: the adapter admits only functions callable by name; a synthesized FR-151 candidate returns `CallableNotAdmitted`, and AC-5 has a row for it. The lead default was reversed and is labelled in the PR body. |
+| FND-004 | fixed | AC-5 now uses `g` (in a dependency package), drops the parameter-name clause, and gives a fresh registry per case; AC-1 and Behavior item 4 now agree ("drawn from" C, SV, K, W and `thiserror`, each declared only when named). |
+| FND-005 | fixed | "defined today", "already K" and the `EvaluationRefusal`/`CallPlan` reconciliation are gone from FR-401 and AD-001. |
