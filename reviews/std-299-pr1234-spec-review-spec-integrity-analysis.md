@@ -180,3 +180,39 @@ These parts of the scope claim were checked and hold:
   refinement passes (refinement.rs:1913-1914).
 - FR-391 named populations are built only under `with_named_populations`, in state clauses and
   temporal conditions (state_clause.rs:692, temporal_clause/condition.rs:77).
+
+## New findings (disposition pass 3)
+
+Head `325ab8e07` (fix commit 325ab8e07), main 5a672d88a, which is an ancestor of the head.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-021 | low | The new node-kind sweep says the body entry and a function body "admit every `NodeKind` except four". It misses a fifth kind, `NodeKind::Dispatch` (FR-151 `receiver.member(args)`). Typing calls `dispatch_admitted` (typing.rs:1446, check.rs:3246-3252), and `state_model`'s `Form::DispatchContext` refuses dispatch as operator-ineligible unless the clause kind is `Invariant`, `Precondition` or `Postcondition` (state_model.rs:472-480). So neither a function body nor `check_expression` can contain a dispatch; it reaches an evaluator only in a clause-checked expression or through a dispatch candidate's precondition. This changes no defined result: FR-403 keeps `Dispatch` in scope, and `PreconditionFailure` and `PreconditionFalse` move to E. The sentence is still false. <br>Fix: say that five kinds are built only outside a body pass, and that the `no_std` evaluator evaluates `Dispatch` (reached through `check_clause_expression` with an invariant or precondition kind) and faults on the other four. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:111-120; qsl-semantics/src/check/state_model.rs:472-480; qsl-semantics/src/check/check.rs:3246-3252; qsl-semantics/src/check/check/typing.rs:1441-1446 |
+
+## Dispositions (round 3)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-018 | fixed | ProtocolReferenceUnsupported moves to E (FR-403 table, X-16, AC-11). Both evaluators refuse a protocol reference with unknown_required_feature/unsupported-feature, construct=protocol, located at the reference. AC-14 and TC-1121 step 14 carry the `refers` vector from qsl-eval/tests/it/protocol_reference.rs, so the vector can be built. |
+| FND-019 | fixed | The scope is now stated by node kind, and FR-403 says that CheckedExpression records no entry kind, so a postcondition-checked expression with no `pre` evaluates normally. AC-13 covers both entries. |
+| FND-020 | fixed | AC-13's second half runs over an ObjectEnvironment that records p's population with three members, through both checker entries. |
+
+## Verdict (disposition pass 3)
+
+Mergeable once FND-021 is fixed or explicitly accepted. FND-018, FND-019 and FND-020 are fixed at
+`325ab8e07`, and no finding has a latest outcome of still-open.
+
+I checked the node-kind sweep independently: all 50 `NodeKind` variants in check/ir.rs, the
+`Typer` context fields (`clause_kind`, `state`, `populations`, `named`, `history`) and every
+construction site outside `Typer`.
+
+- Construction outside `Typer` happens only in the test-only builders in ir.rs and termination.rs.
+- `clause_kind` gates `Pre` (Postcondition) and `Dispatch` (Invariant, Precondition,
+  Postcondition).
+- `populations` and `history` (refinement.rs:1913-1914) gate `PopulationObjects` and `History`.
+- `named` (state_clause.rs:692, temporal_clause/condition.rs:77) gates `NamedPopulation`.
+- `state` gates `self` and `result`, which lower to `Local` and `Attribute`, not to a distinct
+  node kind.
+
+`Dispatch` is the only kind the sweep missed (FND-021). It is a wording defect and does not change
+any behaviour, so this class of finding is closed.

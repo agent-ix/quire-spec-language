@@ -109,7 +109,7 @@ clause, or a simulation step. Those entries stay in `qsl-eval` and run on
 the std reference evaluator.
 
 The checker's body entry (`check_expression`) and a function body admit
-every `NodeKind` except four, which only other checker passes build:
+every `NodeKind` except five, which only other checker passes build:
 
 - `NodeKind::Pre`, built only for `pre(...)` in an operation's
   postcondition (`check_postcondition_expression`); every other pass
@@ -117,10 +117,15 @@ every `NodeKind` except four, which only other checker passes build:
 - `NodeKind::NamedPopulation`, built only when state-clause or
   temporal-clause typing names a population (FR-391);
 - `NodeKind::PopulationObjects` (FR-139) and `NodeKind::History` (FR-138),
-  built only in a refinement pass.
+  built only in a refinement pass;
+- `NodeKind::Dispatch` (FR-151 `receiver.member(args)`), refused outside
+  the invariant, precondition and postcondition passes. It reaches an
+  evaluator through `check_clause_expression` or a dispatch candidate's
+  precondition.
 
 The `no_std` evaluator's scope is defined by node kind. It SHALL evaluate
-every other node kind. A `CheckedExpression` does not record which checker
+`Dispatch` and every node kind outside the five, and fault on the other
+four (`Pre`, `NamedPopulation`, `PopulationObjects`, `History`). A `CheckedExpression` does not record which checker
 entry built it, so an expression from `check_postcondition_expression` that
 contains no `pre(...)` evaluates normally. Begin over a checked expression
 that contains one of the four node kinds SHALL return `CallFailure::Fault`
