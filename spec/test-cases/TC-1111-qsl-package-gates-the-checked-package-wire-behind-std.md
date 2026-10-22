@@ -13,7 +13,7 @@ relationships:
 Verify the crate-tier row for `qsl-package`: the in-memory checked closure
 builds with `std` disabled, the `quire.checked-package/v2` emitter and I2
 reader are behind `std`, and default-feature output is unchanged. Scope:
-NFR-015-AC-4 to NFR-015-AC-7 and NFR-015-AC-9.
+NFR-015-AC-4 to NFR-015-AC-7, NFR-015-AC-9 and NFR-015-AC-10.
 
 ## Test Procedure
 
@@ -45,6 +45,11 @@ NFR-015-AC-4 to NFR-015-AC-7 and NFR-015-AC-9.
    `HashSet`; run `make arch-lint-canonical-encoder`.
 7. With default features, emit a package with `emit_checked`, call
    `bind_abstraction` with valid bindings and read `emitted_package_id`.
+8. With default features, emit a package with no abstraction relation with `emit_checked`, call
+   `bind_abstraction_at` with valid bindings and one site, read
+   `emitted_package_id`, then emit it again and read it. Emit a second
+   package, call `bind_abstraction_at` with bindings it refuses, and read
+   `emitted_package_id`.
 
 ## Expected Results
 
@@ -60,3 +65,6 @@ NFR-015-AC-4 to NFR-015-AC-7 and NFR-015-AC-9.
 5. Both pass: the emitted bytes and `package_id` match the FR-322 vectors.
 6. No match; the canonical-encoder check passes.
 7. It is `None`.
+8. It is `None` after the binding; the second emission's `package_id`
+   differs from the first. After the refused binding it equals the emitted
+   `package_id`.
