@@ -34,3 +34,17 @@ Units examined:
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | [minor] The several-faults rule leaves three interactions open. (1) The threshold belongs to the atom, not the aggregate term, so 'an aggregate term with several of these faults' does not clearly cover a wrong-dimension threshold next to a `quantile 1`. (2) A window with one bound of the wrong kind, such as `past[5, 2 s]` under event-position, has no defined `a > b` comparison; say whether the `a > b` check runs once a kind refusal is reported. (3) For a term over a model subject, which has no window profile, say whether the window-kind check still runs next to the `expression-form` refusal. Say 'an aggregate atom' and state the two skips, or add one vector each. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:71-86 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | [minor] The second vector, `quantile 1 of e.latency over past[0, 9] <= 5 m`, names no profile. 'Under event-position' opens the previous sentence only. Under timestamped-event, `past[0, 9]` adds a `unit-mismatch` at `0`, and TC-629 step 8 checks 'exactly the refusals', so the profile decides pass or fail. Write 'Under event-position' in that sentence too. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:165 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2731cb83c: the rule now covers 'an aggregate atom (the aggregate term with its comparison and threshold)'; a wrong-kind bound suppresses `a > b` (`past[5, 2 s]` gives one `unit-mismatch` at `2 s`); a model-subject term skips the window-kind and `a > b` checks. FR-194-AC-8 has one vector per case, checked by hand against the bullets. |
+
+Disposition pass 1 verdict (head 2731cb83c): **MERGEABLE, with one low finding to fix or accept.**
