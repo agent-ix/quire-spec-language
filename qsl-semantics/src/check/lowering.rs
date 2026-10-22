@@ -96,7 +96,10 @@ mod wire;
 
 pub(crate) use abstraction::{object_type_node, population_node, relation_node};
 pub(crate) use model::ParentSlotFailure;
-pub(crate) use model::{bound_origin, record_node_key, variant_type_node_key, RecordKeyError};
+pub(crate) use model::{
+    bound_origin, quantity_origin, record_node_key, variant_type_node_key, QuantityKind,
+    RecordKeyError,
+};
 pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
 pub(crate) use protocol::{compensation_origin, declaration_origin, ProtocolInput};
 pub(crate) use state::{
