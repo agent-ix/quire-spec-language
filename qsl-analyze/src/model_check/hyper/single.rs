@@ -43,6 +43,7 @@
 //! lasso and of a trap (FR-170, FR-181 Replay) and the settlement of the
 //! outcome (FR-169, FR-182).
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::fairness::{
@@ -338,6 +339,9 @@ impl<'a> Run<'_, 'a> {
             return Ok(Err(stopped(ModelCheckLimit::WitnessSamples, samples)));
         }
         let sampler = sampler()?;
+        // A walk does not depend on the instance (only whether a candidate is a
+        // witness does), so each is drawn once and shared by the instances.
+        let mut drawn: BTreeMap<(usize, u64), Walked> = BTreeMap::new();
         for binding in bindings {
             let mut sampled = Sampled {
                 witnesses: vec![None; count],
@@ -349,17 +353,20 @@ impl<'a> Run<'_, 'a> {
                         return Ok(Err(halt));
                     }
                     let trace = trace_index(initial, samples, walk)?;
-                    let walked = match self.walk(&sampler, initial, trace)? {
-                        Ok(walked) => walked,
-                        Err(halt) => return Ok(Err(halt)),
+                    let walked = match drawn.entry((initial, trace)) {
+                        Entry::Occupied(walked) => walked.into_mut(),
+                        Entry::Vacant(slot) => match self.walk(&sampler, initial, trace)? {
+                            Ok(walked) => slot.insert(walked),
+                            Err(halt) => return Ok(Err(halt)),
+                        },
                     };
-                    let Some(candidate) = walked.candidate else {
+                    let Some(candidate) = &walked.candidate else {
                         if walked.budget_stopped {
                             sampled.stopped = sampled.stopped.saturating_add(1);
                         }
                         continue;
                     };
-                    match self.witness(binding, initial, &candidate)? {
+                    match self.witness(binding, initial, candidate)? {
                         Ok(Some(witness)) => {
                             if let Some(slot) = sampled.witnesses.get_mut(initial) {
                                 *slot = Some(witness);
@@ -788,12 +795,25 @@ impl<'a> Decision<'_, '_, 'a> {
         // letter is read before the automaton steps on it (ADR-018 UE-4).
         let mut trap: Option<(usize, usize)> = None;
         let fair = self.fair_model()?;
+        let analyses = if wanted.iter().any(Option::is_none) {
+            match self.analyses(&fair)? {
+                Ok(analyses) => analyses,
+                Err(end) => {
+                    return Ok(ExistentialOutcome::NoDecision {
+                        end,
+                        open: self.open_causes(),
+                    })
+                }
+            }
+        } else {
+            Vec::new()
+        };
         for (initial, slot) in wanted.iter_mut().enumerate() {
             if slot.is_some() {
                 continue;
             }
             let part = self.part(initial)?;
-            match self.lasso(&fair, &part, initial)? {
+            match self.lasso(&fair, &analyses, &part, initial)? {
                 Ok(Some(witness)) => *slot = Some(witness),
                 Ok(None) => {
                     let closed = !part.roots.is_empty()
@@ -1026,6 +1046,34 @@ impl<'a> Decision<'_, '_, 'a> {
         })
     }
 
+    /// The fairness analyses of the whole graph over the states the run fully
+    /// expanded and left no cause open at, which no state's unknown enabled
+    /// operations can have touched (computed once for every part). `Err` is the
+    /// end of a cancelled run.
+    fn analyses(
+        &self,
+        fair: &FairModel,
+    ) -> Result<Result<Vec<Analysis>, RunEnd>, ModelCheckRefusal> {
+        let graph = &self.product.graph;
+        let vertices: Vec<Vertex> = fair.graph.vertices().collect();
+        let within: BTreeSet<Vertex> = graph
+            .states()
+            .iter()
+            .enumerate()
+            .filter(|(index, state)| {
+                state.expanded && !self.open.contains_key(&ProductStateId(*index))
+            })
+            .filter_map(|(index, _)| vertices.get(index).copied())
+            .collect();
+        match analyze(&fair.graph, &within, &fair.constraints, self.run.cancel) {
+            Ok(analyses) => Ok(Ok(analyses)),
+            Err(FairnessError::Cancelled) => Ok(Err(self.run.cancelled_end()?)),
+            Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
+                Err(fault("the-fairness-graph-is-built-from-retained-states"))
+            }
+        }
+    }
+
     /// The canonical lasso of `initial`'s part (ADR-018 CX-5): the stem is the
     /// path of the part's discovery tree to the first fair accepting component
     /// in the part's discovery order, and the loop is the greedy walk inside it.
@@ -1036,31 +1084,17 @@ impl<'a> Decision<'_, '_, 'a> {
     fn lasso(
         &self,
         fair: &FairModel,
+        analyses: &[Analysis],
         part: &Part,
         initial: usize,
     ) -> Result<Result<Option<LassoWitness>, RunEnd>, ModelCheckRefusal> {
         let graph = &self.product.graph;
-        let vertices: Vec<Vertex> = fair.graph.vertices().collect();
         let rank: BTreeMap<usize, usize> = part
             .members
             .iter()
             .enumerate()
             .map(|(rank, id)| (id.index(), rank))
             .collect();
-        let within: BTreeSet<Vertex> = part
-            .members
-            .iter()
-            .filter(|id| graph.state(**id).is_some_and(|state| state.expanded))
-            .filter(|id| !self.open.contains_key(id))
-            .filter_map(|id| vertices.get(id.index()).copied())
-            .collect();
-        let analyses = match analyze(&fair.graph, &within, &fair.constraints, self.run.cancel) {
-            Ok(analyses) => analyses,
-            Err(FairnessError::Cancelled) => return Ok(Err(self.run.cancelled_end()?)),
-            Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
-                return Err(fault("the-fairness-graph-is-built-from-retained-states"))
-            }
-        };
         let first = |analysis: &&Analysis| {
             analysis
                 .vertices()
@@ -1069,7 +1103,12 @@ impl<'a> Decision<'_, '_, 'a> {
                 .min()
                 .copied()
         };
-        let Some(passing) = Analysis::fair_in(&analyses).min_by_key(|analysis| first(analysis))
+        // A part is closed under successors, so a component of the whole
+        // graph lies in it or is disjoint from it.
+        let in_part = |analysis: &&Analysis| first(analysis).is_some();
+        let Some(passing) = Analysis::fair_in(analyses)
+            .filter(in_part)
+            .min_by_key(|analysis| first(analysis))
         else {
             return Ok(Ok(None));
         };

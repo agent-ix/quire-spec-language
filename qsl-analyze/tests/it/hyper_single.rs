@@ -15,7 +15,7 @@
 //! The replay of a witness lasso and of a trap, the product-closure
 //! certificate and the settlement of an HP-5 outcome (the `proved` and
 //! `refuted` records of FR-181-AC-1 to AC-6) are not built, so no test below
-//! claims them.
+//! claims them. Remaining work: QSL-964.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{HyperRefusal, ModelCheckRefusal};
@@ -374,7 +374,7 @@ fn settles(world: &World, witness: &LassoWitness, initial: usize, secret: i64) {
 /// `step(1)` and the loop `step(1)` that the oracle reads back, source
 /// `Explored`; the product exploration completed with no open node.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn the_secure_vault_is_witnessed_by_a_step_1_loop_per_initial_state() {
@@ -401,7 +401,7 @@ fn the_secure_vault_is_witnessed_by_a_step_1_loop_per_initial_state() {
 /// initial state's block of 64, and the record's sampled lassos are the
 /// outcome's.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn sampled_witnesses_name_their_walk_by_seed_and_trace_index() {
@@ -429,7 +429,7 @@ fn sampled_witnesses_name_their_walk_by_seed_and_trace_index() {
 /// The request's seed names phase 0's walks: another seed draws other walks,
 /// and the run is a function of the seed.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn the_seed_names_the_walks_and_the_run_is_reproducible() {
@@ -464,7 +464,7 @@ fn the_seed_names_the_walks_and_the_run_is_reproducible() {
 /// empty stem: each initial state's part of the product is closed and holds no
 /// fair accepting cycle, and the first in subject order is named.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-2")]
 #[test]
 fn an_unreachable_output_traps_the_first_initial_state() {
@@ -493,7 +493,7 @@ fn an_unreachable_output_traps_the_first_initial_state() {
 /// at `l = 1` has `always holds(v.l @ b = 0)` false at its position 0, and
 /// the start before it settles.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-2")]
 #[test]
 fn the_trap_is_the_first_initial_state_with_no_witness() {
@@ -534,7 +534,7 @@ fn the_trap_is_the_first_initial_state_with_no_witness() {
 /// of `step(1)` leaves `reset` enabled and untaken, and a loop that takes
 /// `reset` has `l = 0`; the same clause with no fairness set is `Witnessed`.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-3")]
 #[test]
 fn a_fairness_set_on_the_existential_variable_changes_the_verdict() {
@@ -568,7 +568,7 @@ fn a_fairness_set_on_the_existential_variable_changes_the_verdict() {
 /// loop `reset`, and a fairness set on an operation the loop does not need
 /// does not hide a witness.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-3")]
 #[test]
 fn a_loop_that_takes_the_fair_operation_is_a_witness() {
@@ -591,7 +591,7 @@ fn a_loop_that_takes_the_fair_operation_is_a_witness() {
 /// horizon are open with cause `MaxDepth`, which the possible family's map
 /// settles `BoundReached{depth: 1}`.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-4")]
 #[test]
 fn a_horizon_of_one_leaves_the_states_at_depth_one_open() {
@@ -633,7 +633,7 @@ fn witnessed_or_unchecked(outcome: &ExistentialOutcome) -> &[LassoWitness] {
 /// witness lasso per initial state looping `step(0)` at `(h, 0)`, which does
 /// not settle the item.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn an_undefined_letter_refutes_although_every_initial_state_has_a_witness() {
@@ -680,7 +680,7 @@ fn an_undefined_letter_refutes_although_every_initial_state_has_a_witness() {
 /// 0 although the start's part is also closed with no fair accepting cycle:
 /// the letter is read before the automaton steps, so it comes first.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn an_undefined_letter_at_a_trapped_start_is_undefined_not_trapped() {
@@ -699,7 +699,7 @@ fn an_undefined_letter_at_a_trapped_start_is_undefined_not_trapped() {
 /// order: `holds(l = 1)` is false at the starts, so no fair accepting cycle
 /// is left, and the division is undefined only after `step(1)`.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn a_trap_comes_before_a_later_undefined_letter() {
@@ -722,7 +722,7 @@ fn a_trap_comes_before_a_later_undefined_letter() {
 /// completed with no open node; the same run under `max_depth` 2 has open
 /// states at the horizon and is not.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn a_witnessed_outcome_needs_a_completed_run_with_no_open_node() {
@@ -748,7 +748,7 @@ fn a_witnessed_outcome_needs_a_completed_run_with_no_open_node() {
 /// with the run's end and open causes; with `witness_samples` 0 the same run
 /// is `NoDecision` with the same end.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-616", "FR-181-AC-6")]
 #[test]
 fn a_stopped_exploration_with_sampled_witnesses_is_witnessed_unchecked() {
@@ -791,9 +791,7 @@ fn a_stopped_exploration_with_sampled_witnesses_is_witnessed_unchecked() {
 /// A part the run did not finish is not a trap: `max_transitions` 1 stops the
 /// exploration inside initial state 0's part, and the second initial state's
 /// part is never discovered, so neither is closed.
-///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
-#[trace("TC-606", "FR-181-AC-2")]
+#[trace("TC-606")]
 #[test]
 fn an_unfinished_part_is_not_a_trap() {
     let world = World::new(
@@ -828,9 +826,7 @@ fn an_unfinished_part_is_not_a_trap() {
 /// expansion of `(0, 0)` after its `reset` edge, which a cycle that ignored the
 /// missing enabledness would take for fair. The run with no limit finds the
 /// fair loop `step(0)`.
-///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
-#[trace("TC-606", "FR-181-AC-3")]
+#[trace("TC-606")]
 #[test]
 fn a_cycle_through_a_partly_expanded_state_is_not_a_witness() {
     let world = World::new(
@@ -1094,7 +1090,7 @@ fn walks_the_step_ceiling_stopped_are_counted() {
 /// entry at its end. A walk reaching the terminal state revisits nothing, so
 /// it is explored.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn a_terminal_state_is_a_stutter_lasso() {
@@ -1127,7 +1123,7 @@ fn a_terminal_state_is_a_stutter_lasso() {
 /// lasso it returns is one the oracle reads back. Where an initial state has
 /// none, the trap names the first such, in subject order.
 ///
-/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
+/// Engine half of the criterion: the outcome shape. Remaining work: QSL-964 (replay, certificate, settlement).
 #[trace("TC-606", "FR-181-AC-1", "FR-181-AC-2", "FR-181-AC-3")]
 #[test]
 fn the_engine_agrees_with_a_brute_force_search_of_lassos() {
@@ -1218,7 +1214,7 @@ const GUARDED_RESET: Vault = Vault::Custom(
 /// `reset` loop there is no witness under `fair weak step`, in the explored
 /// product and in phase 0 alike. The state is open, the run completed, and
 /// nothing is decided.
-#[trace("TC-606", "FR-181-AC-3")]
+#[trace("TC-606")]
 #[test]
 fn a_loop_through_an_undecided_state_is_not_a_witness() {
     let world = World::new(
