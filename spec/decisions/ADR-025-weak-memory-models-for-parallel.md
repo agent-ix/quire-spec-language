@@ -410,36 +410,42 @@ state (`D0`, `D0`) and its joined state violate the claim.
 Every buffer holds at most one entry and every location at most two messages,
 so neither bound is reached and each verdict is exact (MB-4).
 
-**Counterexample under `tso`.** With transition identities ordered `left`
-before `right` and attempts before flushes, the canonical counterexample is the
-first violation in breadth-first order, at depth 4:
+**Counterexample under `tso`.** The reported counterexample is the first
+violation in FR-181's canonical breadth-first order, where attempts sort before
+flushes, an attempt with no argument (`Sx`, `Sy`) sorts before one with an
+argument (`Lx`, `Ly`), and `Lx` sorts before `Ly`. It is at depth 4:
 
 | Position | Step into it | Memory `x`, `y` | `left` buffer | `right` buffer | `c1.r`, `c2.r` |
 | --- | --- | --- | --- | --- | --- |
 | 0 | initial | 0, 0 | empty | empty | 2, 2 |
 | 1 | `Sx` | 0, 0 | `[x := 1]` | empty | 2, 2 |
-| 2 | `Ly`, reads `y` from memory | 0, 0 | `[x := 1]` | empty | 0, 2 |
-| 3 | `Sy` | 0, 0 | `[x := 1]` | `[y := 1]` | 0, 2 |
-| 4 | `Lx`, reads `x` from memory: `left`'s store is still buffered | 0, 0 | `[x := 1]` | `[y := 1]` | 0, 0 |
+| 2 | `Sy` | 0, 0 | `[x := 1]` | `[y := 1]` | 2, 2 |
+| 3 | `Lx`, reads `x` from memory: `left`'s store is still buffered | 0, 0 | `[x := 1]` | `[y := 1]` | 2, 0 |
+| 4 | `Ly`, reads `y` from memory: `right`'s store is still buffered | 0, 0 | `[x := 1]` | `[y := 1]` | 0, 0 |
 
-Replay (MK-2) re-executes the four steps under `tso`, recomputes both buffers
-at each position, and evaluates the invariant false at position 4. Under `sc`
-the same four steps give `c2.r = 1` at position 4, which is why `sc` proves
-the claim.
+The order `Sx`, `Ly`, `Sy`, `Lx` reaches the same violating state, so it is a
+violating path of the system; it is not the reported counterexample. Replay
+(MK-2) re-executes the four steps under `tso`, recomputes both buffers at each
+position, and evaluates the invariant false at position 4. Under `sc` the same
+four steps give `c2.r = 1` at position 3, which is why `sc` proves the claim.
 
-**Counterexample under `ra`.** The same order, with message depths ascending:
+**Counterexample under `ra`.** The reported counterexample is the first
+violation in the same order, with each store at slot depth 0 and message depths
+ascending:
 
 | Position | Step into it | `x` messages | `y` messages | `cur` of `left`, `right` | `c1.r`, `c2.r` |
 | --- | --- | --- | --- | --- | --- |
 | 0 | initial | `x0` | `y0` | `(x0, y0)`, `(x0, y0)` | 2, 2 |
 | 1 | `Sx`, release | `x0`, `x1{x1, y0}` | `y0` | `(x1, y0)`, `(x0, y0)` | 2, 2 |
-| 2 | `Ly`, acquire, depth 0 (`y0`) | `x0`, `x1{x1, y0}` | `y0` | `(x1, y0)`, `(x0, y0)` | 0, 2 |
-| 3 | `Sy`, release | `x0`, `x1{x1, y0}` | `y0`, `y1{x0, y1}` | `(x1, y0)`, `(x0, y1)` | 0, 2 |
-| 4 | `Lx`, acquire, depth 1 (`x0`): `right`'s view of `x` is `x0` | `x0`, `x1{x1, y0}` | `y0`, `y1{x0, y1}` | `(x1, y0)`, `(x0, y1)` | 0, 0 |
+| 2 | `Sy`, release | `x0`, `x1{x1, y0}` | `y0`, `y1{x0, y1}` | `(x1, y0)`, `(x0, y1)` | 2, 2 |
+| 3 | `Lx`, acquire, depth 1 (`x0`): `right`'s view of `x` is `x0` | `x0`, `x1{x1, y0}` | `y0`, `y1{x0, y1}` | `(x1, y0)`, `(x0, y1)` | 2, 0 |
+| 4 | `Ly`, acquire, depth 1 (`y0`): `left`'s view of `y` is `y0` | `x0`, `x1{x1, y0}` | `y0`, `y1{x0, y1}` | `(x1, y0)`, `(x0, y1)` | 0, 0 |
 
-Braces give a message's view. At position 4 the load could also read `x1`
-(depth 0), which is the first successor and reaches `c2.r = 1`; depth 1 is the
-second and violates the claim.
+Braces give a message's view. At position 3 `Lx` could also read `x1` (depth
+0), the first successor, which reaches `c2.r = 1`; depth 1 is the second. The
+order `Sx`, `Ly` at depth 0 (`y0`), `Sy`, `Lx` at depth 1 (`x0`) reaches a
+violating state too, so it is a violating path of the system; it is not the
+reported counterexample.
 
 **With fences.** Adding `fence F ordering seq_cst;` between the store and the
 load in each branch forbids the outcome under every model. Under `tso` the
