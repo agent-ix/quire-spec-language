@@ -23,7 +23,9 @@ topological order, each with a witness that no fair accepting cycle stays
 inside it (ADR-018 PC-4, PC-5, LA-3). Every cycle lies inside one
 component, so an accepted certificate proves that no fair accepting cycle
 exists. A proof whose certificate it accepts settles `proved`, `Certified`
-(FR-127); one it rejects settles `inconclusive`, `CertificateRejected`.
+(FR-127); one it rejects settles `inconclusive`, `CertificateRejected`; one
+whose certificate names a `package_id` other than the recompiled package's
+settles `inconclusive`, `StaleDependency` (FR-282).
 
 ## Use case
 
@@ -40,7 +42,7 @@ it starves.
 
 ```rust
 pub struct ComponentCertificate {
-    pub closure: ClosureCertificate,          // FR-338
+    pub closure: ClosureCertificate,          // FR-338; its package_id is the certificate's
     pub components: Vec<Component>,           // topological order
 }
 pub struct Component { pub states: Vec<ProductStateRef>, pub witness: ComponentWitness }
@@ -64,6 +66,9 @@ pub fn check_components(
 ) -> TemporalCertificateCheck; // FR-338; existing stop causes only
 ```
 
+A `ComponentCertificate` names its `package_id` once, as its closure's
+`package_id` (FR-338); its components carry none.
+
 `UnfairWeak`'s index is into the clause's resolved constraints: one per
 `whole` constraint, and one per transition identity of an `each`
 constraint, in FR-123's order.
@@ -72,11 +77,21 @@ constraint, in FR-123's order.
 
 - `Accepted` when closure and component checks complete successfully.
 - `Rejected(CertificateRejection{rule, at})` on a certificate defect.
+- `PackageMismatch{certificate, recompiled}` when the closure's `package_id`
+  differs from the recompiled package's (FR-338), with no rule evaluated.
 - `Stopped(IncompleteCause)` with the exact existing limit/value/setting or
   cancellation source when checker work cannot complete (FR-338, FR-127).
 
 ## Behavior
 
+- The checker SHALL compare the recompiled package's `package_id` with the
+  closure's `package_id` first, before the closure check and any component
+  rule.
+- When the two `package_id`s differ, the checker SHALL return
+  `PackageMismatch{certificate, recompiled}` naming both, evaluating no
+  closure, partition, edge or witness rule (FR-282); FR-127 settles it
+  `Inconclusive(StaleDependency{requested, recompiled})` with `requested`
+  the closure's `package_id`.
 - The checker SHALL run FR-338's check on the certificate's closure,
   without the monitor-rejection part of `BadState`; a deadlocked state is
   not bad for a TP-4 item, whose terminal state reads by its stutter edge
@@ -118,6 +133,7 @@ constraint, in FR-123's order.
 | FR-339-AC-1 | Accepted vector: FR-126-AC-1's weak `each` outcome returns a `ComponentCertificate` whose accepting components `{(*, 0, q1)}` and `{(*, 1, q1)}` carry `UnfairWeak` naming the `each` constraint's identity `upd(b)`, and `check_components` accepts it. | Test (TC-526) |
 | FR-339-AC-2 | Rejected vectors: AC-1's certificate with the witness of `{(*, 0, q1)}` changed to `UnfairWeak` naming `upd(a)`, which edges inside the component take, is rejected `WitnessFails` at that component's first state; with those two components listed before the components that reach them, `BackwardEdge`; with one state listed in two components, `NotPartition`; with a component's witness `Trivial` over a state with a self-edge, `WitnessFails`. | Test (TC-526) |
 | FR-339-AC-3 | Accepted vector: FR-228-AC-5's synthesized SCC with `r` the only accepting state yields a component certificate whose component `{p, q, r}` carries `UnfairVisibility` naming the pair (`b`, `ℓ`), with `sub` `{r}` (`Trivial`) then `{p, q}` (`MissingAcceptance`), and `check_components` accepts it although the removed edge `q → r` goes from `{p, q}` to the earlier `{r}`; the same certificate with the witness `UnfairWeak` over that pair, or with `q → r` not removed (so `BackwardEdge` fires), is rejected. | Test (TC-526) |
+| FR-339-AC-4 | Package identity. AC-1's certificate carries in its closure the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its closure's `package_id` replaced by that of the same unit with the claim's target edited to `c.versionNumber = 1` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the closure's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with AC-2's `upd(a)` witness (a `WitnessFails` defect) still returns `PackageMismatch`, because no rule is evaluated. | Test (TC-1141) |
 
 ## Dependencies
 
