@@ -57,16 +57,18 @@ replayed pair of runs that the match accepts, reads `inconclusive`,
 
 - A `ModelCheckOutcome` from FR-176, FR-177, FR-178 or FR-179, or an SMT
   outcome for HP-2 mapped by CG (ADR-023 HC-6, HC-7) into the same values.
+  CG hands an EN-3 induction result over as a `HyperSmtOutcome` to
+  `settle_hyper_smt` (Outputs).
 - For `Holds` from EN-1: the `ProductClosureCheck` of its certificate
   (FR-163).
 - For `Violated`: the FR-072 replay result of its `HyperCounterexample`
   (FR-183), or the `ReplayRefusal` that stopped it.
 - For an SMT `Inductive{depth}` or `InductionNotClosed{depth}` outcome for
-  HP-2: the outcome's `HyperProductIdentity` (FR-315 "Product identity"),
-  whose `instance()` is the outcome's instance, and an optional
-  `MatchWitnessCheck` with the `MatchWitness` it checked (FR-183) and the
-  `HyperProductIdentity` of the clause, subjects and witness instance that
-  check replayed, present when a non-vacuity witness came with the outcome.
+  HP-2: the item's `HyperQueryRequest` (FR-315), the outcome's
+  `HyperProductIdentity` (FR-315 "Product identity"), whose `instance()` is
+  the outcome's instance, and an optional `MatchWitness` (FR-183), present
+  when a non-vacuity witness came with the outcome. The caller passes the
+  witness, never a `MatchWitnessCheck`: QSL checks the witness itself.
 - For an item negotiation did not route: its negotiation disposition.
 
 ## Outputs
@@ -82,8 +84,36 @@ replayed pair of runs that the match accepts, reads `inconclusive`,
 // HyperSettleRefusal gains:
 //   ProductMismatch { member: ProductMember }, // an HP-2 SMT outcome whose
 //                        // HyperProductIdentity is not the item's
+//   ItemIdentity(SmtEncodingRefusal),          // the item's own identity
+//                        // refused (FR-315 "Refusals and their order")
 pub enum ProductMember { Clause, Subjects, Instance }
+
+pub enum HyperSmtResult {
+    Inductive { depth: u64 },          // base and step both unsatisfiable
+    InductionNotClosed { depth: u64 }, // base unsatisfiable, step satisfiable
+}
+
+pub struct HyperSmtOutcome {
+    pub result: HyperSmtResult,
+    pub product: HyperProductIdentity, // the `product` of the queries it answers
+}
+
+pub fn settle_hyper_smt(
+    item: &HyperQueryRequest<'_>,      // the item's clause, subjects and instance
+    outcome: &HyperSmtOutcome,
+    witness: Option<&MatchWitness>,
+    replay_limits: ReplayLimits,       // FR-183's limits for the witness check
+    limits: &ModelCheckLimits,
+    requested: &[ModelCheckLimit],
+) -> Result<HyperRecord, HyperSettleRefusal>;
 ```
+
+`HyperSmtResult`, `HyperSmtOutcome` and `settle_hyper_smt` SHALL be types
+and an entry of the `qsl-replay` facade, beside `settle_hyper_check`, and
+CG calls `settle_hyper_smt` from its `replay` adapter module (FR-315
+"Product identity"). The entry settles only these two induction results. A
+satisfiable base, an unknown solver answer, an encoding refusal and a
+resource stop are no `HyperSmtResult`.
 
 and the FR-331 terminal record with its QSpec FR-360 label,
 FR-243 basis, O-16 category and method.
@@ -134,13 +164,25 @@ FR-243 basis, O-16 category and method.
   limit.
 - A verdict SHALL hold for exactly its subjects; the obligation identity
   binds them as FR-172 states.
-- When settlement reads an SMT outcome for HP-2, it SHALL first, ahead of
-  choosing any row, compute the item's `HyperProductIdentity` for the instance it settles,
-  through `HyperProductIdentity::of` over the item's clause and subjects
-  and that instance, and compare it with the outcome's. When they differ,
-  the outcome is no evidence for the item: settlement SHALL write no record
-  and refuse `HyperSettleRefusal::ProductMismatch`, naming the first member
-  that differs in the order `clause`, `subjects`, `instance`.
+- When `settle_hyper_smt` reads an outcome, it SHALL first, ahead of
+  choosing any row, compute the item's identity as
+  `HyperProductIdentity::of(item)` and compare it with `outcome.product`.
+  When `of` refuses, it SHALL write no record and refuse
+  `HyperSettleRefusal::ItemIdentity` carrying that refusal. When the two
+  identities differ, the outcome is no evidence for the item: it SHALL
+  write no record and refuse `HyperSettleRefusal::ProductMismatch`, naming
+  the first member that differs in the order `clause`, `subjects`,
+  `instance`.
+- `settle_hyper_smt` SHALL check a supplied `witness` itself, by FR-183's
+  "Match witness" rules, over the item's own clause and the `ModelSystem`
+  of each of the item's subjects, under `outcome.product.instance()`, and
+  bounded by `replay_limits`. The resulting `MatchWitnessCheck` is the one
+  the rules below read. A witness checked over any other clause, subjects
+  or instance is never an input, so the check is bound to the identity
+  the outcome names.
+- `settle_hyper_smt` SHALL settle `InductionNotClosed{depth}` as V-6
+  `InductionNotClosed{depth}`, and `Inductive{depth}` by the rules below,
+  each with method `k-induction`.
 - An SMT `Inductive{depth: k}` outcome for HP-2 SHALL settle V-3 only when
   every subject has an initial state and either `μ_U` is empty or its
   `MatchWitnessCheck` is `Accepted` for a witness whose `instance` equals
@@ -153,10 +195,7 @@ FR-243 basis, O-16 category and method.
   - Otherwise, with a non-empty `μ_U` and no `Accepted` check for the
     outcome's instance, the outcome SHALL settle V-6 `VacuousMatch`: no
     matched fair tuple has been established. A `Refused` check, or an
-    `Accepted` check of a witness for another instance, counts as none. An
-    `Accepted` check counts only when the `HyperProductIdentity` it comes
-    with equals the outcome's; a check for another clause or other
-    subjects counts as none.
+    `Accepted` check of a witness for another instance, counts as none.
   - An empty `μ_U` needs no witness. A finite subject with an initial state
     has a fair behaviour under any fairness set (ADR-018 §4), and with no
     match constraint every tuple of fair behaviours is matched, so the
@@ -174,7 +213,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-6 | FR-179-AC-5's `Violated` outcome settles `refuted`, `decisive-counterexample`, after its `StepTuple` replays, with no `UndefinedEvaluation`: the false tuple is the first refuting evidence, ahead of the undefined tuples. | Test (TC-611) |
 | FR-182-AC-7 | §8.1's secure proof settles `proved`, certification `Certified`, after FR-163-AC-1's certificate is accepted; with FR-163-AC-2's member-removed certificate the item settles `inconclusive`, `CertificateRejected{Closure, …}`, never `proved`. An HP-2 `Inductive{depth: 1}` outcome from `k-induction`, with an empty `μ_U` or an `Accepted` `MatchWitnessCheck` (FR-182-AC-10), settles `proved`, `decisive-witness`, certification `Uncertified`. | Test (TC-607) |
 | FR-182-AC-10 | Over ADR-023 §8's secure vault, `NonInterference`'s `Inductive{depth: 1}` outcome with no `MatchWitnessCheck` settles `inconclusive`, `VacuousMatch`, never `proved`. With FR-183-AC-8's matched witness, whose check is `Accepted`, it settles `proved`, `decisive-witness`, `Uncertified`. With FR-183-AC-8's unmatched witness, whose check is `Refused`, it settles `inconclusive`, `VacuousMatch`. Over a vault whose `vaults` universe is `{v, w}`, the outcome for instance `w` with the matched witness for instance `v`, whose check is `Accepted`, settles `inconclusive`, `VacuousMatch`. The one-variable clause `forall trace a of V { always holds(v.l @ a <= 1) }`, whose `μ_U` is empty, settles its `Inductive{depth: 1}` outcome `proved`, `Uncertified`, with no witness. `NonInterference` over the secure vault with an empty initial list settles `inconclusive`, `NoInitialState`, never `proved`, with or without a witness. | Test (TC-607) |
-| FR-182-AC-11 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `NonInterference`'s `Inductive{depth: 1}` outcome carrying FR-315's identity for instance `v`, with FR-183-AC-8's matched witness for `v` whose check is `Accepted` and comes with an equal identity, settles `proved`, `decisive-witness`, `Uncertified` for the item at instance `v`. The same outcome settled for the item at instance `w` writes no record and refuses `ProductMismatch` naming `instance`. An outcome carrying the identity of the clause with `fair { weak V::Vault::step }` on `a`, settled for `NonInterference`, refuses `ProductMismatch` naming `clause`, and so does an `InductionNotClosed{depth: 1}` outcome carrying it. The `Inductive{depth: 1}` outcome for `v` with an `Accepted` check that comes with that fair clause's identity settles `inconclusive`, `VacuousMatch`. | Test (TC-1190) |
+| FR-182-AC-11 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `settle_hyper_smt` for the `NonInterference` item at instance `v`, with an `Inductive{depth: 1}` outcome carrying FR-315's identity for that item, settles `proved`, `decisive-witness`, `Uncertified`, method `k-induction`, with FR-183-AC-8's matched witness for `v`, and `inconclusive`, `VacuousMatch` with its unmatched witness; an `InductionNotClosed{depth: 1}` outcome carrying the same identity settles `inconclusive`, `InductionNotClosed{depth: 1}`. Each of these writes no record and refuses `ProductMismatch` for the item at `v`: the outcome carrying the identity for instance `w`, naming `instance`; the outcome carrying the identity for a subject that differs only in a proof bound, naming `subjects`; the `Inductive` and the `InductionNotClosed` outcomes carrying the identity of the clause with `fair { weak V::Vault::step }` on `a`, naming `clause`; and the outcome carrying that fair clause's identity for instance `w`, which differs in both `clause` and `instance`, naming `clause`. The item with an empty `instance` refuses `ItemIdentity` carrying `instance-binding`. | Test (TC-1190) |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 | FR-182-AC-9 | ADR-023 §1's `NonInterference` over an empty `Vault` universe settles `inconclusive`, `NoInstance`, basis `unsettled`, before any state is explored, never `Proved` or `Refuted`; ADR-023 §1's `SavesPower` `(d: S::Device, e: N::Device)` with one empty universe and the other non-empty settles the same way, so the product is read over both parameters; the same clause over a population with no universe is `RequiresBound`, not `NoInstance`. | Test (TC-607) |
 

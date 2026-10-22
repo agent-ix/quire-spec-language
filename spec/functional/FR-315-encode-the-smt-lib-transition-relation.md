@@ -309,14 +309,17 @@ HV-3 reads.
 #### Product identity
 
 `HyperProductIdentity` SHALL be QSL's one public identity of the HP-2
-product and instance a hyper query encodes. It is the value that passes
-from `encode_hyper_query` through CG's SMT backend to FR-182's settlement,
-so every SMT outcome names the exact item and instance it answers. It SHALL
-be a type of the `qsl-replay` facade, at `qsl_replay::HyperProductIdentity`,
-beside `HyperQueryRequest`, `HyperQuery`, `SmtQueryKind`,
-`SmtEncodingRefusal` and FR-336's `SubjectIdentity`, which the facade also
-holds. CG names all of them through its one QSL dependency (FR-059, FR-060
-T12-A).
+product and instance a hyper query encodes. It is the in-process value that
+passes from `encode_hyper_query` through CG's SMT backend to FR-182's
+`settle_hyper_smt`, so every SMT outcome names the exact item and instance
+it answers. It SHALL be a type of the `qsl-replay` facade, at
+`qsl_replay::HyperProductIdentity`, beside `HyperQueryRequest`,
+`HyperQuery`, `SmtQueryKind`, `SmtEncodingRefusal` and FR-336's
+`SubjectIdentity`. CG depends on QSL only through `qsl-replay` (FR-059),
+and it names these types and calls `encode_hyper_query`,
+`HyperProductIdentity::of` and `settle_hyper_smt` from its `replay` adapter
+module, the one module FR-060's T12-A allows to call the facade. CG's SMT
+backend reaches them through that module.
 
 ```rust
 pub struct HyperProductIdentity { /* private members */ } // Clone, Debug, Eq, Hash
@@ -332,23 +335,29 @@ impl HyperProductIdentity {
 - **Members.** The identity SHALL hold exactly three members:
   - `clause`: the `claim` occurrence key (ADR-013 O-07) of the clause's
     `hyperproperty` node in the checked-package v2 emission of the
-    subjects' checked package. Its node id binds every member that FR-172
-    "Identity" and ADR-023 HV-7 name: the aliases in order, the quantifier
-    prefix with each variable's kind, alias and fairness set, `μ`, the
-    `align skip` list and the body.
-  - `subjects`: FR-336's identity projection of each subject in
+    subjects' checked package. Its node id binds every clause-level member
+    that FR-172 "Identity" and ADR-023 HV-7 name: the aliases in order, the
+    quantifier prefix with each variable's kind, alias and fairness set,
+    `μ`, the `align skip` list and the body.
+  - `subjects`: FR-336's `SubjectIdentity` of each subject in
     `clause.aliases` order, which binds its checked package, initial
     states, universes, domain packages and proof bounds.
-  - `instance`: the request's `instance`.
+  - `instance`: the request's `instance`, the one member FR-172 and HV-7
+    name that a clause node id cannot bind.
 - **No digest of its own.** The identity SHALL be made only of these
   existing canonical identities. It SHALL NOT be or carry a digest over its
   members, and it SHALL have no digest domain. Two identities are equal
-  exactly when their three members are equal.
+  exactly when their three members are equal, and its `Hash` SHALL agree
+  with that equality.
+- **In-process only.** The identity SHALL have no wire form: it SHALL
+  implement neither `Serialize` nor `Deserialize`. CG holds it in memory
+  between the query and the settlement call and keeps no copy of it on a
+  run record.
 - **QSL mints it.** Only `HyperProductIdentity::of` and `encode_hyper_query`
   SHALL make a `HyperProductIdentity`. The facade SHALL expose no
-  constructor from members and no deserializer for it, so a caller cannot
-  mint one (ADR-013 O-09: no re-mint of a clause identity). CG keeps the
-  value it receives and returns it unchanged with the outcome.
+  constructor from members, so a caller cannot mint one (ADR-013 O-09: no
+  re-mint of a clause identity). CG keeps the value it receives and passes
+  it unchanged to `settle_hyper_smt` with the outcome.
 - **What it leaves out.** The query kind, the depth, the meter and every run
   limit SHALL be no part of the identity: they choose a query of the
   product, or decide whether a run finishes, and `HyperQuery.kind` names the
@@ -359,24 +368,38 @@ impl HyperProductIdentity {
   before it writes any script and return it as `HyperQuery.product`, equal
   to `HyperProductIdentity::of(&request)`. The base and step queries of one
   request therefore carry equal identities.
-- **Refusals.** `HyperProductIdentity::of` and `encode_hyper_query` SHALL
-  each refuse `SmtEncodingRefusal`, with no identity and no script:
-  - `subject-binding`, as above;
-  - `instance-binding`, when `instance` does not hold exactly one pair per
-    member of `clause.parameters`, in parameter order, each key in that
-    parameter's universe, at the first parameter that breaks this;
-  - `product-identity`, when two subjects carry different checked
-    packages, when the subjects' checked package has no checked-package v2
-    emission, or when that emission has no `hyperproperty` node for the
-    clause, at the clause.
+- **One checked package.** Every subject of the request is a subject of the
+  checked package of the unit that declares the clause: ADR-023 HS-2
+  compares two models through two aliases of that one unit, and each
+  alias's subject differs only in its initial states, universes and proof
+  bounds (ADR-018 SM-2, FR-125). A subject whose checked package is not the
+  first subject's SHALL refuse `subject-binding` at its alias.
+- **Refusals and their order.** `HyperProductIdentity::of` SHALL refuse
+  `SmtEncodingRefusal`, with no identity, on the first of these that
+  applies, in this order:
+  1. `hyper-form`, as above: an identity is of an HP-2 product only;
+  2. `subject-binding`, as above and for a subject over another checked
+     package;
+  3. `instance-binding`, when `instance` does not hold exactly one pair per
+     member of `clause.parameters`, in parameter order, each key in that
+     parameter's universe, at the first parameter that breaks this;
+  4. `product-identity`, when the subjects' checked package has no
+     checked-package v2 emission, so FR-336's `SubjectIdentity::of`
+     refuses, or when that emission has no `hyperproperty` node for the
+     clause, at the clause.
+
+  `encode_hyper_query` SHALL apply these four checks first, in the same
+  order, and then `hyper-body`, `query-kind`, the field-sort and
+  out-of-fragment refusals per copy, and `match-conjunct`, refusing on the
+  first that applies with no script. For one request, the two calls
+  therefore give the same refusal whenever `of` refuses.
   `HyperProductIdentity::of` SHALL evaluate no `μ_U` conjunct and charge
-  nothing to `meter`. For one request it SHALL give the same refusal that
-  `encode_hyper_query` gives when that refusal is one of these three.
-- **Outcome handoff.** The HP-2 SMT outcome CG returns to FR-182
-  (`Inductive{depth}` or `InductionNotClosed{depth}`) SHALL carry the
-  `product` of the base and step `HyperQuery` values it answers, and those
-  two SHALL carry equal identities and equal depths. FR-182 settles an
-  outcome only for the item and instance its identity names.
+  nothing to `meter`.
+- **Outcome handoff.** CG SHALL return each HP-2 induction result to QSL as
+  FR-182's `HyperSmtOutcome`, whose `product` is the `product` of the base
+  and step `HyperQuery` values it answers. Those two SHALL carry equal
+  identities and equal depths. `settle_hyper_smt` settles an outcome only
+  for the item and instance its identity names.
 
 ## Acceptance Criteria
 
@@ -394,8 +417,8 @@ impl HyperProductIdentity {
 | FR-315-AC-10 | Each call refuses `SmtEncodingRefusal` and writes no script: an HP-3 clause (`forall trace a of V exists trace b of V`, FR-177) names `hyper-form`; FR-176-AC-3's clause `forall trace a of V { always eventually holds(v.l @ a = 0) }` names `hyper-body`; `Unrolling{depth: 1}` for `NonInterference` names `query-kind`; ADR-023 §1's `SavesPower` with one subject, for `S`, names `subject-binding` at alias `N`; `NonInterference` with a `match` conjunct that calls a function whose evaluation exhausts the request's `meter` names `match-conjunct` at that conjunct and the tuple `(step(0), step(0))`, the first in the joint-step order. The same request with an equal budget gives the same refusal. | Test (TC-1120) |
 | FR-315-AC-11 | Over the secure vault, a matched joint step sets `l` to the same input `i` in both copies, so `InductionBase{depth: 1}` and `InductionStep{depth: 1}` for `NonInterference` are both unsatisfiable, the HP-2 outcome `Inductive{depth: 1}` that FR-182-AC-7 settles. Over a vault whose post clause is `self.l = self.h`, `InductionBase{depth: 1}` is satisfiable from the initial tuple `((0, 0), (1, 0))` with the joint step `(step(0), step(0))`. That model is a matched bad prefix, not a `HyperCounterexample`: it has no lasso, so no outcome follows from it alone, and the clause is refuted only through EN-2's lasso and FR-183's replay. | Analysis (TC-1120) |
 | FR-315-AC-12 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `NonInterference`'s `InductionBase{depth: 1}`, `InductionStep{depth: 1}` and `InductionStep{depth: 2}` queries for instance `v` carry three equal `product` values, each equal to `HyperProductIdentity::of` over the same request. Its `clause()` is the `claim` occurrence of the clause's `hyperproperty` node in the vault package's checked-package v2 emission; its `subjects()` holds one member, equal to FR-336's projection of the vault subject; its `instance()` is the one pair binding the clause's parameter to `v`. The request for instance `w` gives an identity that differs only in `instance()`. The clause with `fair { weak V::Vault::step }` on `a` gives byte-equal scripts and an identity that differs only in `clause()`. A subject that differs only in a proof bound gives an identity that differs only in `subjects()`. Meters of different budgets give equal identities. | Test (TC-1190) |
-| FR-315-AC-13 | Each of these calls refuses `SmtEncodingRefusal`, from both `HyperProductIdentity::of` and `encode_hyper_query`, with no identity and no script: `NonInterference` with an empty `instance` names `instance-binding` at the clause's parameter; with the key `x`, outside the universe `{v}`, it names `instance-binding` at that parameter; ADR-023 §1's `SavesPower` with its `S` and `N` subjects carrying two different checked packages names `product-identity` at the clause. `HyperProductIdentity::of` over `NonInterference` with a `match` conjunct whose evaluation exhausts the request's `meter` returns the identity and leaves the meter's consumed counters at zero. | Test (TC-1190) |
-| FR-315-AC-14 | A crate whose only QSL dependency is `qsl-replay` names `qsl_replay::HyperProductIdentity`, `HyperQuery`, `HyperQueryRequest` and `SubjectIdentity`, calls `encode_hyper_query` and `HyperProductIdentity::of`, and compiles. In that crate a struct literal of `HyperProductIdentity`, or deserializing one, fails to compile. | Test (TC-1190) |
+| FR-315-AC-13 | Each of these requests is refused `SmtEncodingRefusal` with the same code by both `HyperProductIdentity::of` and `encode_hyper_query`, with no identity and no script: `NonInterference` with an empty `instance` names `instance-binding` at the clause's parameter; with the key `x`, outside the universe `{v}`, it names `instance-binding` at that parameter; ADR-023 §1's `SavesPower` with its `N` subject over a checked package other than the `S` subject's names `subject-binding` at alias `N`; `NonInterference` over a subject whose checked package has no checked-package v2 emission names `product-identity` at the clause; the HP-3 clause of FR-315-AC-10 names `hyper-form`; FR-176-AC-3's liveness clause with an empty `instance` names `instance-binding`, not `hyper-body`. `HyperProductIdentity::of` over `NonInterference` with a `match` conjunct whose evaluation exhausts the request's `meter` returns the identity and leaves the meter's consumed counters at zero. | Test (TC-1190) |
+| FR-315-AC-14 | A crate whose only QSL dependency is `qsl-replay` names `qsl_replay::HyperProductIdentity`, `HyperQuery`, `HyperQueryRequest`, `SubjectIdentity`, `HyperSmtOutcome` and `settle_hyper_smt` from its `replay` module, calls `encode_hyper_query`, `HyperProductIdentity::of` and `settle_hyper_smt` there, and compiles. In that crate a struct literal of `HyperProductIdentity`, serializing one and deserializing one each fail to compile. | Test (TC-1190) |
 
 ## Dependencies
 
@@ -415,7 +438,7 @@ impl HyperProductIdentity {
   identity projection), ADR-013 O-07 and O-09 (the clause occurrence and
   its no-re-mint rule), [FR-059](FR-059-check-backend-dependency-direction.md)
   and [FR-060](FR-060-check-qsl-api-surface-boundary.md) (CG names QSL only
-  through `qsl-replay`).
+  through `qsl-replay`, from its `replay` adapter module).
 
 ## References
 
