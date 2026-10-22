@@ -50,5 +50,8 @@ Units examined:
 | FND-001 | fixed | 153ceca82: `total_of`'s body is `b.total.amount_minor`, a field read through a reference as FR-104-AC-10 types `self.n` over `Reference<Config::Flow>`; it type-checks, so the object-read check is reached. |
 | FND-002 | fixed | 153ceca82: the call graph is 'the checked call graph of the compiling unit (the functions and named predicates the unit declares or imports; a domain package declares none)', and AC-10 says the unit declares the `pure` functions. |
 | FND-003 | fixed | 153ceca82: AC-10 adds `same` (identity comparison) and `wrap` (pass-through), both compiling, and the named predicate `positive` under `quire.state.queries/v1`, refusing. The rule says 'function or named predicate'. |
+| FND-004 | fixed | 2cd8b1928 and 32a475f22: the unit declaring the callees selects `quire.model.complete/v1`. Its `requires` closure admits function and predicate declarations (value.complete and state.queries through state.graph) and reference equality (state.graph), so `same`'s `a = b` compiles under #1247's FR-110 rule. The `positive` predicate vector now runs in the same unit. |
 
 Disposition pass 1 verdict (head 153ceca82): **NOT MERGEABLE until FND-004 is fixed or accepted (minor).**
+
+Disposition pass 2 verdict (head 32a475f22): **MERGEABLE.** Every finding's latest outcome is `fixed`.
