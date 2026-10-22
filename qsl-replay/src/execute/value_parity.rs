@@ -31,6 +31,7 @@ use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{
     evaluated, Evaluated, ScalarAgreement, ScalarClaim, ScalarOutcome, ValueIdentity,
 };
+use crate::target::ReplayEntry;
 
 /// FR-357: what a value-parity replay found. None of these is a `Refuted`
 /// result.
@@ -176,7 +177,7 @@ fn settle(
     replay_limits: ReplayLimits,
 ) -> Result<ValueParityResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let function = function_target(&request, "replay_value_parity")?;
+    let function = function_target(&request, ReplayEntry::ReplayValueParity)?;
     let limits = request_limits(
         request.stage_limits(),
         request.accounting_limits(),

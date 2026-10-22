@@ -50,6 +50,43 @@ impl fmt::Display for TargetMember {
     }
 }
 
+/// The replay entries that read a replay target, as a refusal names them.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ReplayEntry {
+    /// `replay` (FR-098).
+    Replay,
+    /// `replay_value_parity` (FR-357).
+    ReplayValueParity,
+    /// `replay_operator_parity` (FR-357).
+    ReplayOperatorParity,
+    /// `replay_composite_parity` (FR-358).
+    ReplayCompositeParity,
+    /// `replay_frame` (FR-116).
+    ReplayFrame,
+    /// `replay_state_clause` (FR-122).
+    ReplayStateClause,
+}
+
+impl ReplayEntry {
+    /// The entry's function name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Replay => "replay",
+            Self::ReplayValueParity => "replay_value_parity",
+            Self::ReplayOperatorParity => "replay_operator_parity",
+            Self::ReplayCompositeParity => "replay_composite_parity",
+            Self::ReplayFrame => "replay_frame",
+            Self::ReplayStateClause => "replay_state_clause",
+        }
+    }
+}
+
+impl fmt::Display for ReplayEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// The one item a packet, envelope or request selects to replay (QSpec
 /// FR-323). It holds typed names only.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -187,7 +224,9 @@ impl From<ReplayTarget> for ReplayTargetMembers {
 /// The replay target in a request's wire form: the three target members
 /// and whether the request also carries the function-only `arguments` and
 /// occurrence-key members (QSpec FR-323 decode rule 1 refuses either on a
-/// frame or state-clause request).
+/// frame or state-clause request). A function request ignores both flags:
+/// decode keeps neither, so [`crate::ReplayRequest::to_wire`] writes `false`
+/// for both and a function request does not round-trip them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RequestTargetWire {
     /// The target members.

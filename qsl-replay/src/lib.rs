@@ -109,8 +109,9 @@ pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
     replay_value_parity, replay_with_cancel, settle_verified_shadow, BoundEntries,
     DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
-    IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
-    ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
+    IdentityEncodeError, LimitAboveReader, MalformedOperationReason, ParityArgument,
+    ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityReport,
+    ValueParityResult,
 };
 pub use hybrid::{
     NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
@@ -282,7 +283,8 @@ pub use result::{
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // QSpec FR-323: the replay target a packet, envelope and request each carry.
 pub use target::{
-    ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember, TargetSelectionRefusal,
+    ReplayEntry, ReplayTarget, ReplayTargetMembers, RequestTargetWire, TargetMember,
+    TargetSelectionRefusal,
 };
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them

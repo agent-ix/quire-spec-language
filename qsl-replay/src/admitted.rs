@@ -627,7 +627,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::UnknownOperation { .. }
             | ReplayRefusal::WrongReplayTarget { .. }
             | ReplayRefusal::TargetMismatch { .. }
-            | ReplayRefusal::InheritedOperation { .. }
+            | ReplayRefusal::MalformedOperationTarget { .. }
             | ReplayRefusal::AmbiguousOperation { .. }
             | ReplayRefusal::FrameIdentity(_)
             | ReplayRefusal::UnknownClause { .. }

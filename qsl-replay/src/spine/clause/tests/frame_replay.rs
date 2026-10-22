@@ -980,13 +980,84 @@ fn an_inherited_operation_is_selected_by_its_declaring_object() {
     assert!(
         matches!(
             &refusal,
-            ReplayRefusal::InheritedOperation { operation, .. }
+            ReplayRefusal::MalformedOperationTarget { operation, .. }
                 if operation.to_string() == "Config::Sub::attemptUpdate"
         ),
         "{refusal:?}"
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidModelBinding);
     assert_eq!(refusal.cause(), Some("malformed-declaration"));
+}
+
+/// A `frame_operation` request and envelope target `{object, operation}`
+/// over `Config`, replayed over `unit`; the refusal it settles.
+fn refuse_target(unit: Unit, object: &str, operation_name: &str) -> ReplayRefusal {
+    let target = ReplayTarget::FrameOperation(FrameOperation {
+        object: crate::QualifiedName::new(vec![
+            Identifier::new("Config").unwrap(),
+            Identifier::new(object).unwrap(),
+        ])
+        .unwrap(),
+        operation: Identifier::new(operation_name).unwrap(),
+    });
+    replay(case_in(
+        unit,
+        forbidden_parent_change(),
+        child_change("parent"),
+        target.clone(),
+        target,
+        |_, _| {},
+    ))
+    .unwrap_err()
+}
+
+/// TC-515 step 7 (FR-116-AC-9): an `object` naming a declaration that cannot
+/// declare operations (the value type `Config::VersionNumber`) refuses
+/// `invalid_model_binding`/`malformed-declaration` naming the target, and
+/// one naming nothing (`Config::Absent`) still refuses `missing-name`.
+#[trace("TC-515", "FR-116-AC-9")]
+#[test]
+fn an_object_that_cannot_declare_operations_is_malformed() {
+    let refusal = refuse_target(config_version_unit(), "VersionNumber", "attemptUpdate");
+    assert!(
+        matches!(
+            &refusal,
+            ReplayRefusal::MalformedOperationTarget { operation, reason, .. }
+                if operation.to_string() == "Config::VersionNumber::attemptUpdate"
+                    && *reason == crate::MalformedOperationReason::NotAnObjectType
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusal.cause(), Some("malformed-declaration"));
+
+    let refusal = refuse_target(config_version_unit(), "Absent", "attemptUpdate");
+    assert!(
+        matches!(&refusal, ReplayRefusal::UnknownOperation { .. }),
+        "{refusal:?}"
+    );
+}
+
+/// TC-515 step 7 (FR-116-AC-9): over a package where `Sub` has the
+/// supertypes `ConfigVersion` and `Other`, both declaring `attemptUpdate`,
+/// `{Config::Sub, attemptUpdate}` refuses `ambiguous_declaration`/
+/// `ambiguous-name` naming the target.
+#[trace("TC-515", "FR-116-AC-9")]
+#[test]
+fn a_name_two_supertypes_expose_is_ambiguous() {
+    let document = config_version_domain_document_with_diamond();
+    let (unit, _) = config_version_unit_and_packages_for(document.clone());
+    let refusal = refuse_target(unit_for(unit, document), "Sub", "attemptUpdate");
+    assert!(
+        matches!(
+            &refusal,
+            ReplayRefusal::AmbiguousOperation { operation, .. }
+                if operation.to_string() == "Config::Sub::attemptUpdate"
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::AmbiguousDeclaration);
+    assert_eq!(refusal.cause(), Some("ambiguous-name"));
 }
 
 /// TC-515 step 6 (FR-116-AC-8): a request target that is a function refuses
@@ -1073,7 +1144,7 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
                     },
                 ) => {
                     assert_eq!(**target, request_target);
-                    assert_eq!(*entry, "replay_frame");
+                    assert_eq!(*entry, crate::ReplayEntry::ReplayFrame);
                     assert_eq!(*member, crate::TargetMember::FrameOperation);
                     assert_eq!(target.member().pointer(), "/replay/function");
                     assert_eq!(refusal.cause(), Some("unknown-member"));

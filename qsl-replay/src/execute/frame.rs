@@ -23,7 +23,7 @@ use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
 
 use super::{
     charges, check_envelope_target, domain_packages, one_source, recompile, wire_id, wrong_target,
-    ReplayRefusal,
+    MalformedOperationReason, ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
 use crate::identity::RawSourceRef;
@@ -34,7 +34,7 @@ use crate::result::{
 use crate::spine::{
     check_frame, CallOutcome, CallValue, ClauseDisposition, CompiledRun, FrameCheck, OperationName,
 };
-use crate::target::{ReplayTarget, TargetMember};
+use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
 use crate::WitnessEnvelope;
 use qsl_foundation::diagnostic::Category;
@@ -202,7 +202,7 @@ pub fn replay_frame(
     let ReplayTarget::FrameOperation(target) = request.replay_target() else {
         return Err(wrong_target(
             request.replay_target(),
-            "replay_frame",
+            ReplayEntry::ReplayFrame,
             TargetMember::FrameOperation,
         ));
     };
@@ -379,6 +379,13 @@ fn resolve_target<'g>(
         package,
     };
     let name = operation_name(target).ok_or_else(unknown)?;
+    if graph.names_non_object_declaration(&name.model, &name.object) {
+        return Err(ReplayRefusal::MalformedOperationTarget {
+            operation: target.clone(),
+            package,
+            reason: MalformedOperationReason::NotAnObjectType,
+        });
+    }
     let selection = graph
         .resolve_operation(&name.model, &name.object, &name.operation)
         .ok_or_else(unknown)?;
@@ -390,9 +397,10 @@ fn resolve_target<'g>(
     }
     let (context, frame) = graph.operation_frame(&selection).ok_or_else(unknown)?;
     if frame.operation().declaring != context {
-        return Err(ReplayRefusal::InheritedOperation {
+        return Err(ReplayRefusal::MalformedOperationTarget {
             operation: target.clone(),
             package,
+            reason: MalformedOperationReason::OnlyInherited,
         });
     }
     Ok((context, frame))

@@ -43,6 +43,7 @@ use crate::composite::{
 use crate::identity::ObligationIdentity;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::scalar::{OperandIdentity, OperandRefusal, ScalarAgreement, ScalarClaim, ScalarOutcome};
+use crate::target::ReplayEntry;
 use crate::witness::WitnessValue;
 
 /// What the common steps (FR-358 steps 1 to 6) settled about a request and
@@ -62,7 +63,7 @@ fn prepare(
     replay_limits: ReplayLimits,
 ) -> Result<Prepared, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let function = function_target(&request, "replay_composite_parity")?;
+    let function = function_target(&request, ReplayEntry::ReplayCompositeParity)?;
     let limits = request_limits(
         request.stage_limits(),
         request.accounting_limits(),

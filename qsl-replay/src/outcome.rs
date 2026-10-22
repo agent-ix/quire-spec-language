@@ -1271,7 +1271,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::UnknownOperation { .. }
         | ReplayRefusal::WrongReplayTarget { .. }
         | ReplayRefusal::TargetMismatch { .. }
-        | ReplayRefusal::InheritedOperation { .. }
+        | ReplayRefusal::MalformedOperationTarget { .. }
         | ReplayRefusal::AmbiguousOperation { .. }
         | ReplayRefusal::FrameIdentity(_)
         | ReplayRefusal::ClauseIdentity(_)

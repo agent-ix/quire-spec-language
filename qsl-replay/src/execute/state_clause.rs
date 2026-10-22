@@ -41,7 +41,7 @@ use crate::spine::{
     check_clause_admitted, convert_outcome, CallOutcome, CallRefusal, CallValue, ClauseCheck,
     ClauseDisposition, CompiledRun,
 };
-use crate::target::{ReplayTarget, TargetMember};
+use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{ReplaySource, StateClauseCounterexample};
 use crate::WitnessEnvelope;
 use qsl_eval::value::{
@@ -178,7 +178,7 @@ pub fn replay_state_clause(
     let ReplayTarget::StateClause(target) = request.replay_target() else {
         return Err(wrong_target(
             request.replay_target(),
-            "replay_state_clause",
+            ReplayEntry::ReplayStateClause,
             TargetMember::StateClause,
         ));
     };

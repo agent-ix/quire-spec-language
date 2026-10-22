@@ -1537,7 +1537,7 @@ mod tests {
     #[test]
     fn tc_185_replay_target_refusals_precede_the_byte_provision_rule() {
         let function = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
-        let cases: [(RequestTargetWire, ReplayRequestRefusal, &str, &str); 5] = [
+        let cases: [(RequestTargetWire, ReplayRequestRefusal, &str, &str); 8] = [
             (
                 RequestTargetWire::default(),
                 ReplayRequestRefusal::MissingReplayTarget,
@@ -1591,6 +1591,48 @@ mod tests {
                 },
                 "unknown-member",
                 "/replay/occurrence_key",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: None,
+                    frame_operation: Some(frame_target()),
+                    state_clause: Some(clause_name()),
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![TargetMember::FrameOperation, TargetMember::StateClause],
+                },
+                "invalid-value",
+                "/replay/state_clause",
+            ),
+            (
+                ReplayTargetMembers {
+                    function: Some(function.clone()),
+                    frame_operation: Some(frame_target()),
+                    state_clause: Some(clause_name()),
+                }
+                .into(),
+                ReplayRequestRefusal::ConflictingReplayTarget {
+                    members: vec![
+                        TargetMember::Function,
+                        TargetMember::FrameOperation,
+                        TargetMember::StateClause,
+                    ],
+                },
+                "invalid-value",
+                "/replay/state_clause",
+            ),
+            (
+                RequestTargetWire {
+                    arguments: true,
+                    occurrence_key: true,
+                    ..RequestTargetWire::frame_operation(frame_target())
+                },
+                ReplayRequestRefusal::UnexpectedArguments {
+                    target: TargetMember::FrameOperation,
+                },
+                "unknown-member",
+                "/replay/arguments",
             ),
         ];
         for (target, expected, cause, pointer) in cases {

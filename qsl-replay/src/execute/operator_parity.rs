@@ -27,6 +27,7 @@ use crate::scalar::{
     compare, OperatorClaim, OperatorIdentity, OperatorParityReport, OperatorParityResult,
     ScalarOperator,
 };
+use crate::target::ReplayEntry;
 
 /// FR-357's `stale_dependency`/`content-mismatch`: a claim identity that is
 /// not the recompiled package's.
@@ -156,7 +157,7 @@ pub enum ScalarIdentityMismatch {
 ///
 /// `wire` is the original proving context: its `package_id`, package
 /// reference, dependencies and byte provision are the call site's, its
-/// `selected_function` names the enclosing function (an undeclared name
+/// `function` replay target names the enclosing function (an undeclared name
 /// refuses [`ReplayRefusal::UnknownFunction`], and the scalar node must lie in
 /// that function's body), its
 /// `obligation_identity` is the obligation CG minted, and its `source` is
@@ -234,7 +235,7 @@ fn settle(
     claim: &OperatorIdentity,
     replay_limits: ReplayLimits,
 ) -> Result<OperatorParityResult, ReplayRefusal> {
-    let function_name = function_target(request, "replay_operator_parity")?;
+    let function_name = function_target(request, ReplayEntry::ReplayOperatorParity)?;
     let limits = request_limits(
         request.stage_limits(),
         request.accounting_limits(),

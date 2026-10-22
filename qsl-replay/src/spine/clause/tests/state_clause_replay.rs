@@ -1073,7 +1073,7 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
                     },
                 ) => {
                     assert_eq!(**target, request_target);
-                    assert_eq!(*entry, "replay_state_clause");
+                    assert_eq!(*entry, crate::ReplayEntry::ReplayStateClause);
                     assert_eq!(*member, crate::TargetMember::StateClause);
                     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidRuntimeInput);
                     assert_eq!(refusal.cause(), Some("unknown-member"));

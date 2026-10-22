@@ -54,7 +54,7 @@ use crate::spine::{
     self, CompileRefusal, DependencyInput, DependencyInputRefusal, ParseRequest, SpineLimits,
     SuppliedLibrary,
 };
-use crate::target::{ReplayTarget, TargetMember};
+use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{
     DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
 };
@@ -105,6 +105,20 @@ pub struct LimitAboveReader {
 
 fn hex(digest: &[u8; 32]) -> WireNodeId {
     WireNodeId::from_digest(*digest)
+}
+
+/// Why a `frame_operation` object is not the operation's declaring object
+/// (FR-116, QSpec FR-323).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum MalformedOperationReason {
+    /// The object names a declaration that cannot declare operations (a
+    /// value type, an enum, a record).
+    #[error("the object names a declaration that cannot declare operations")]
+    NotAnObjectType,
+    /// The object only inherits the operation; the target names the
+    /// declaring object.
+    #[error("the object only inherits the operation")]
+    OnlyInherited,
 }
 
 /// Why [`replay`] settled no verdict. Each variant is one ADR-013 O-26
@@ -288,7 +302,7 @@ pub enum ReplayRefusal {
         /// The request's replay target.
         target: Box<ReplayTarget>,
         /// The entry that refused it.
-        entry: &'static str,
+        entry: ReplayEntry,
         /// The member the entry reads.
         member: TargetMember,
     },
@@ -310,15 +324,17 @@ pub enum ReplayRefusal {
         /// The recompiled package it was looked up in.
         package: PackageId,
     },
-    /// FR-116: the request's `frame_operation` names an object that only
-    /// inherits the operation (`invalid_model_binding`/
-    /// `malformed-declaration`); the declaring object is the target.
-    #[error("invalid_model_binding/malformed-declaration: package {} object does not declare operation {operation}; it only inherits it", .package.hex())]
-    InheritedOperation {
+    /// FR-116: the request's `frame_operation` names an object that cannot
+    /// be its operation's declaring object (`invalid_model_binding`/
+    /// `malformed-declaration`).
+    #[error("invalid_model_binding/malformed-declaration: package {} cannot select operation {operation}: {reason}", .package.hex())]
+    MalformedOperationTarget {
         /// The request's operation.
         operation: FrameOperation,
         /// The recompiled package it was looked up in.
         package: PackageId,
+        /// Why the object cannot be the declaring object.
+        reason: MalformedOperationReason,
     },
     /// FR-116: two supertypes of the request's `frame_operation` object
     /// expose the operation's name (`ambiguous_declaration`/
@@ -419,7 +435,7 @@ impl ReplayRefusal {
                 Code::MissingDeclaration
             }
             Self::WrongReplayTarget { .. } => Code::InvalidRuntimeInput,
-            Self::InheritedOperation { .. } => Code::InvalidModelBinding,
+            Self::MalformedOperationTarget { .. } => Code::InvalidModelBinding,
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::FrameIdentity(_)
             | Self::ClauseIdentity(_)
@@ -472,7 +488,7 @@ impl ReplayRefusal {
             | Self::ScalarIdentity(_)
             | Self::TargetMismatch { .. } => Some("content-mismatch"),
             Self::WrongReplayTarget { .. } => Some("unknown-member"),
-            Self::InheritedOperation { .. } => Some("malformed-declaration"),
+            Self::MalformedOperationTarget { .. } => Some("malformed-declaration"),
             Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::ModelTrace(refusal) => Some(refusal.cause()),
@@ -500,6 +516,17 @@ impl ReplayRefusal {
             | Self::UnsupportedHelper(_)
             | Self::Cancelled(_)
             | Self::Fault(_) => None,
+        }
+    }
+
+    /// The RFC 6901 pointer of a refusal that names a request member: a
+    /// request-decode refusal's, or the `/replay/<member>` of
+    /// [`Self::WrongReplayTarget`]; `None` for every other refusal.
+    pub fn pointer(&self) -> Option<&'static str> {
+        match self {
+            Self::Request(refusal) => refusal.pointer(),
+            Self::WrongReplayTarget { target, .. } => Some(target.member().pointer()),
+            _ => None,
         }
     }
 
@@ -728,7 +755,7 @@ pub fn replay_with_cancel(
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let function = function_target(&request, "replay")?;
+    let function = function_target(&request, ReplayEntry::Replay)?;
     let caller = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
@@ -1233,7 +1260,7 @@ pub(crate) fn callable_parameter_keys(
 /// recompiles.
 pub(crate) fn function_target<'r>(
     request: &'r ReplayRequest,
-    entry: &'static str,
+    entry: ReplayEntry,
 ) -> Result<&'r QualifiedName, ReplayRefusal> {
     match request.replay_target() {
         ReplayTarget::Function(name) => Ok(name),
@@ -1246,7 +1273,7 @@ pub(crate) fn function_target<'r>(
 /// `entry` reads `member`, but the request's target is `target`.
 pub(crate) fn wrong_target(
     target: &ReplayTarget,
-    entry: &'static str,
+    entry: ReplayEntry,
     member: TargetMember,
 ) -> ReplayRefusal {
     ReplayRefusal::WrongReplayTarget {
