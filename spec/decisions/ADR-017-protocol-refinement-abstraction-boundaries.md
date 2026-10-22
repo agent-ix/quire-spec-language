@@ -284,7 +284,8 @@ PF-3 requires a typed name. TK-1 fixes it (§6).
 `replay_frame` reads the payload's members and not the envelope's three.
 
 **G-2.** Two carriers of one identity, one unread, can disagree silently.
-Decision, with no wire change:
+Decision (the first two bullets change no wire; the third is QSpec FR-323's
+replay target, Q-4):
 
 - For a frame packet, the envelope's `clause_node` is the frame node, its
   `occurrence_key` is the frame's `generated` occurrence, and its
@@ -301,7 +302,7 @@ Decision, with no wire change:
   the envelope's refuses `stale_dependency`/`content-mismatch` naming both,
   before the recompile.
 
-TK-2 implements the first two bullets (§6).
+TK-2 implements the first two bullets (§6); QSL-972 implements the third.
 
 #### PF-5 Frame representations
 

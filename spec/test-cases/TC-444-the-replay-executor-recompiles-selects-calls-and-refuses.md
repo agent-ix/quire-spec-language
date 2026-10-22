@@ -69,7 +69,8 @@ compiled package.
 
 9. Replay step 1's `small` request with its replay target replaced by
    `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`); again with
-   its source edited so it does not compile.
+   its source edited so it does not compile; again with its source's
+   byte-provision entry removed.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -129,5 +130,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `/package/refinement_internals/0/internal/0`; the dependency entry's list
   applies to that dependency's refinements only, and its defect is located at
   `/package/dependencies/<n>/refinement_internals/<pointer>` (FR-098-AC-20).
-- Step 9: `invalid_runtime_input`/`invalid-value` at
-  `/replay/frame_operation` naming the target, both times (FR-098-AC-21).
+- Step 9: `invalid_runtime_input`/`unknown-member` at
+  `/replay/frame_operation` naming the target, `replay` and `function`,
+  the first two times; `missing_import`/`missing-selection` the third
+  (FR-098-AC-21).

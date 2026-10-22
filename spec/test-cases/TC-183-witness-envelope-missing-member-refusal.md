@@ -27,10 +27,11 @@ silently lose it without a visible refusal. Scope: FR-070-AC-4, FR-070-AC-18.
 4. Remove exactly one `RawSourceRef` digest from the package reference and
    attempt reconstruction.
 5. Remove exactly the obligation identity and attempt reconstruction.
-6. Reconstruct a function packet carrying `function` and a frame packet
-   carrying `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`),
+6. Reconstruct a function packet carrying `function`, a frame packet
+   carrying `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`)
+   and a state-clause packet carrying `state_clause` (`VersionUnchanged`),
    and round-trip each envelope; remove each packet's replay target; add a
-   `function` member to the frame packet.
+   `function` member to the frame packet and to the state-clause packet.
 
 ## Expected Results
 
@@ -40,7 +41,8 @@ silently lose it without a visible refusal. Scope: FR-070-AC-4, FR-070-AC-18.
   synthesized value standing in for the missing member.
 - Step 6: both packets reconstruct and round-trip with their one target
   unchanged; the removed targets refuse
-  `WitnessRefusal::MissingMember("replay_target")`, the two-member packet
+  `WitnessRefusal::MissingMember("replay_target")`, the two-member packets
   `WitnessRefusal::ConflictingTarget` naming `function` and
-  `frame_operation`, and neither builds an envelope. The envelope type has
+  `frame_operation`, and `function` and `state_clause`, and none builds an
+  envelope. The envelope type has
   no `selected_function` member (FR-070-AC-18).

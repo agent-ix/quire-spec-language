@@ -82,19 +82,21 @@ payload.
 
 - The executor SHALL decode the request by FR-098's rules first, refusing
   by FR-098's decode refusals.
-- If the request's replay target is `function` or another member than
-  `frame_operation`, then the executor SHALL refuse
-  `invalid_runtime_input`/`invalid-value` at that member's
-  `/replay/<member>` pointer, naming the target, after the request decodes
-  and before it recompiles.
-- If the envelope's replay target differs from the request's, then the
-  executor SHALL refuse `stale_dependency`/`content-mismatch` after the
-  request decodes and before it recompiles, naming both targets.
-- If the envelope's `clause_node` differs from the payload's `frame`, or its
-  `occurrence_key` from the payload's `occurrence`, then the executor SHALL
-  refuse `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) after the request decodes
-  and before it recompiles, naming the envelope's and the payload's
-  identity.
+- The executor SHALL apply the three envelope checks below after the request decodes by FR-071 (QSpec FR-323 decode rule 1, then the byte-provision rule) and before it recompiles, in the order listed, refusing with the first that applies:
+  1. If the request's replay target is not `frame_operation`, then the
+     executor SHALL refuse `invalid_runtime_input`/`unknown-member` at that
+     member's `/replay/<member>` pointer, naming the target, the entry
+     `replay_frame` and the member it reads (`frame_operation`). The code
+     and pointer tell it apart from QSpec FR-323's refusal of a request
+     carrying two targets (`invalid-value`).
+  2. If the envelope's replay target differs from the request's, then the
+     executor SHALL refuse `stale_dependency`/`content-mismatch`, naming
+     both targets.
+  3. If the envelope's `clause_node` differs from the payload's `frame`, or
+     its `occurrence_key` from the payload's `occurrence`, then the
+     executor SHALL refuse `stale_dependency`/`content-mismatch` (QSpec
+     FR-272-AC-14 and native-diagnostics, quire-specification#174 and
+     #176), naming the envelope's and the payload's identity.
 - The executor SHALL recompile and check the package by FR-098's rules, in
   FR-098's order, before it resolves the request's `frame_operation`.
 - If the recompiled `package_id` differs from the request's or the
@@ -148,7 +150,7 @@ payload.
 | FR-116-AC-5 | Replaying one envelope twice gives equal results. `FrameCounterexample` implements `FamilyPayload`, and the envelope carries it as its generic parameter with no string-keyed field. | Test (TC-515) |
 | FR-116-AC-6 | Envelope consistency: the step-1 envelope with its `clause_node` replaced by another package's frame node refuses `stale_dependency`/`content-mismatch` naming the envelope's clause node and the payload's frame node; with its `occurrence_key` at another ordinal it refuses the same way naming both occurrences. Each refuses before the recompile: the request's source does not compile, and the consistent envelope over the same request refuses at the recompile. | Test (TC-515) |
 | FR-116-AC-7 | A hand-built envelope for `Orders::Pump::rehome` carrying TC-1037's invocation I under a frame that modifies no relationship and `change` the link `p1`-`t1` of `Pump-housing-Tank` `removed` settles `reproduced-with-evaluated-witness`, holding the payload's change and the replay's `Link` change; with `change` the link `p1`-`t2` `added` it settles the same and holds both changes as found; under a frame that modifies `Pump-housing-Tank` it settles `inconclusive`, `Verdicts`. | Test (TC-1037) |
-| FR-116-AC-8 | Replay target, over FR-121-AC-18's domain package (`Sub` a subtype of `ConfigVersion` that inherits `attemptUpdate`): the step-1 envelope submitted with the `frame_operation` `{Config::ConfigVersion, attemptUpdate}` that FR-121's `OperationSite` returns for the `Config::Sub::attemptUpdate` selection settles `reproduced-with-evaluated-witness`, and with `{Config::Sub, attemptUpdate}` refuses `invalid_model_binding`/`malformed-declaration` naming the target. With a `function` target the envelope refuses `invalid_runtime_input`/`invalid-value` at `/replay/function`, and with the envelope's target `{Config::ConfigVersion, probe}` against the request's `{Config::ConfigVersion, attemptUpdate}` it refuses `stale_dependency`/`content-mismatch` naming both targets, each before the recompile. `FrameCounterexample` has no member naming the operation. | Test (TC-515) |
+| FR-116-AC-8 | Replay target, over FR-121-AC-18's domain package (`Sub` a subtype of `ConfigVersion` that inherits `attemptUpdate`), with the step-1 envelope rebuilt over that package and the request's and the envelope's target equal unless a case says otherwise: with the target `{Config::ConfigVersion, attemptUpdate}`, which FR-121's `OperationSite` returns for the `Config::Sub::attemptUpdate` selection, it settles `reproduced-with-evaluated-witness`; with `{Config::Sub, attemptUpdate}` it refuses `invalid_model_binding`/`malformed-declaration` naming the target. With the request's target `function` `sameIdentity` and the envelope's `{Config::ConfigVersion, attemptUpdate}` it refuses `invalid_runtime_input`/`unknown-member` at `/replay/function` naming `replay_frame` and `frame_operation` (check 1 precedes check 2). With the request's `{Config::ConfigVersion, attemptUpdate}` and the envelope's `{Config::ConfigVersion, probe}` it refuses `stale_dependency`/`content-mismatch` naming both targets, and does the same when the envelope's `clause_node` is also another package's frame node (check 2 precedes check 3). Each of these two refusals is unchanged when the request's source does not compile, and each becomes the byte-provision refusal (`missing_import`/`missing-selection`) when the source's byte-provision entry is removed. `FrameCounterexample` has no member naming the operation. | Test (TC-515) |
 
 ## Dependencies
 

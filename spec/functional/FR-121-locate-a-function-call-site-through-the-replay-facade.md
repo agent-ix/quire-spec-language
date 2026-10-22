@@ -161,7 +161,10 @@ QSL-345.
   state machine whose own declaration of the operation the selected type's
   effective view resolves to, found through that view's AD-006 effective
   declaration and its original declaration keys (for an operation the
-  selected type only inherits, the supertype that declares it), named by
+  selected type only inherits, the supertype that declares it; for an
+  operation the selected type redefines, the redefining type itself, whose
+  own declaration QSpec FR-342 resolves the pair to, never the type whose
+  member it redefines), named by
   its `QualifiedName` under the unit's model alias for its domain package;
   as `operation`, the operation's `Identifier`. This pair is the QSpec
   FR-323 `frame_operation` replay target that CG FR-024 copies into a frame
@@ -262,6 +265,7 @@ QSL-345.
 | FR-121-AC-21 | For the AC-18 domain package with a second population `aaa_subs` of `Sub` declared after `config_history`, a population selection returns `DomainKey::Population` with `ConfigVersion`'s node and ordinal 1 for `config_history` -- equal to the one population key every requirement record of the unit's `ConfigVersion` clauses carries -- and with `Sub`'s node and ordinal 0 for `aaa_subs`. | Test (TC-516) |
 | FR-121-AC-22 | `Config::nope`, `Nope::config_history` and `Config::ConfigVersion` (an object type, not a population) each refuse `CallSiteRefusal::UnknownPopulation` (code `missing_declaration`), pairing the `PopulationName` with the compiled package's own `package_id`. | Test (TC-516) |
 | FR-121-AC-23 | For FR-121-AC-18's domain package (`Sub` a subtype of `ConfigVersion` declaring no `attemptUpdate` of its own) and the ConfigVersion unit, the `Config::ConfigVersion::attemptUpdate` selection's `frame_operation` is `{Config::ConfigVersion, attemptUpdate}`, and the `Config::Sub::attemptUpdate` selection's is the same `{Config::ConfigVersion, attemptUpdate}`, not `Config::Sub`, with `anchor`, `frame` and `frame_occurrence` equal to the `ConfigVersion` selection's. | Test (TC-516) |
+| FR-121-AC-24 | Over FR-103-AC-10's domain package (`Sub.size` declares `redefines` `ConfigVersion/size`) and a unit with a postcondition on each of `Config::ConfigVersion::size` and `Config::Sub::size`, the `Config::Sub::size` selection's `frame_operation` is `{Config::Sub, size}`, not `{Config::ConfigVersion, size}`, and its `frame` differs from the `Config::ConfigVersion::size` selection's, whose `frame_operation` is `{Config::ConfigVersion, size}`. | Test (TC-516) |
 
 ## Dependencies
 

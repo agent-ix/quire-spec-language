@@ -141,10 +141,12 @@ list.
 - The recompiled `package_id` SHALL equal the request's. No
   `CheckedPackage` is built from wire bytes.
 - If the request's replay target is not `function`, then the executor SHALL
-  refuse `invalid_runtime_input`/`invalid-value` at that member's
-  `/replay/<member>` pointer, naming the target, after the request decodes
-  and before it recompiles. A frame or a state-clause target replays
-  through its own entry (FR-116, FR-122).
+  refuse `invalid_runtime_input`/`unknown-member` at that member's
+  `/replay/<member>` pointer, naming the target, the entry `replay` and the
+  member it reads (`function`), after the request decodes by FR-071 (QSpec FR-323 decode rule 1, then the byte-provision rule) and before it recompiles. The code
+  and pointer tell this refusal apart from QSpec FR-323's refusal of a
+  request carrying two targets (`invalid-value`). A frame or a state-clause
+  target replays through its own entry (FR-116, FR-122).
 - The executor SHALL resolve the `function` replay target by name lookup in the recompiled
   package's declarations (OQ-5), and SHALL refuse a function whose declared
   result is not `Boolean` before any call (predicate replay; FR-357's
@@ -460,7 +462,7 @@ the first paragraph of the Description states.
 | FR-098-AC-18 | The environment document refuses with `ReplayRefusal::ObjectEnvironment` holding FR-106's record, one case per condition: a digest with no byte-provision entry (`unavailable_observation`/`missing-required-artifact`); a `pre` document (`wrong_snapshot`/`wrong-observation`); a `model` digest the package does not select (`invalid_model_binding`/`wrong-model-selection`); a repeated object key (`conflicting-identity`), reported before the dangling reference the same request's argument would raise; a non-sequence and an out-of-range element for `items` (`wrong-value-kind`, `invalid-value`); a reference field to an unlisted object of a complete population (`dangling_reference`/`absent-target-in-complete-population` at check 8); and an argument's population not marked `complete` (`incomplete_population`/`incomplete-scope` naming it at check 7). The call is never made. | Test (TC-1042) |
 | FR-098-AC-19 | Against a complete population, a reference argument whose object the environment does not list refuses `dangling_reference`/`absent-target-in-complete-population` naming position 0 and the reference, and so does one whose `object_type` is another type's, within the same universe, from the held object of the same identity (a different universe refuses earlier, at conversion, as `foreign-universe`); against a population not marked `complete`, such a reference refuses `incomplete_population`/`incomplete-scope`. In a sequence of references the first one that is not present is named, and a present reference before it is not. | Test (TC-1042) |
 | FR-098-AC-20 | A request for a proved package whose refinement `CasTwice` has the internal list `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` carries it at `/package/refinement_internals` and recompiles to the proved `package_id`; the same request with the member removed refuses with `PackageIdMismatch` naming both identities; a request carrying a spelling that resolves to no class (`Spec::Twice::zz` at index 0) refuses `Recompile` with `missing_declaration`/`missing-name` located at `/package/refinement_internals/0/internal/0`, and the value `{}` refuses `invalid_model_binding`/`malformed-declaration` located at `/package/refinement_internals`; a defective value on `dependencies` entry 1 is located at `/package/dependencies/1/refinement_internals/<pointer>`; and a value on a `dependencies` entry applies to that dependency's refinements only. | Test (TC-444) |
-| FR-098-AC-21 | TC-444's `small` request with its replay target replaced by `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) given to `replay` refuses `invalid_runtime_input`/`invalid-value` at `/replay/frame_operation` naming the target, before the recompile: the same request with its source edited so it does not compile refuses the same way. | Test (TC-444) |
+| FR-098-AC-21 | TC-444's `small` request with its replay target replaced by `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) given to `replay` refuses `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` naming the target, the entry `replay` and the member `function`, before the recompile: the same request with its source edited so it does not compile refuses the same way. With its source's byte-provision entry also removed it refuses by the byte-provision rule instead (`missing_import`/`missing-selection`), which decode applies first. | Test (TC-444) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union

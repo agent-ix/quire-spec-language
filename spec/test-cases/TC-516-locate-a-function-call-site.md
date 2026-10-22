@@ -31,7 +31,7 @@ It returns the compiled package's bytes its `package_id` names, builds a
 field under its declaring type's node by its name ordinal, apart from any
 population key, and keys a named population as the requirement records do.
 
-Scope: FR-121-AC-1 to FR-121-AC-23.
+Scope: FR-121-AC-1 to FR-121-AC-24.
 
 ## Test Procedure
 
@@ -122,6 +122,10 @@ Scope: FR-121-AC-1 to FR-121-AC-23.
 23. Over the step 18 domain package and the step 3 unit, select
     `Config::ConfigVersion::attemptUpdate` and `Config::Sub::attemptUpdate`.
 
+24. Over FR-103-AC-10's domain package (`Sub.size` redefines
+    `ConfigVersion/size`) and a unit with a postcondition on each of
+    `Config::ConfigVersion::size` and `Config::Sub::size`, select both.
+
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
 ## Expected Results
@@ -196,3 +200,6 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 - Step 23: each `OperationSite`'s `frame_operation` is
   `{Config::ConfigVersion, attemptUpdate}`, and the two sites' `anchor`,
   `frame` and `frame_occurrence` are equal (FR-121-AC-23).
+- Step 24: `Config::Sub::size`'s `frame_operation` is `{Config::Sub, size}`
+  and `Config::ConfigVersion::size`'s is `{Config::ConfigVersion, size}`,
+  at different `frame` nodes (FR-121-AC-24).

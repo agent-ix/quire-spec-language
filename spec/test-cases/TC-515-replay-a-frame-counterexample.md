@@ -40,12 +40,16 @@ the domain package and the invocation documents in the byte provision.
    with its invocation bytes edited under the same digest.
 5. Step 1's envelope twice.
 6. Over FR-121-AC-18's domain package (`Sub` inherits `attemptUpdate`),
-   step 1's envelope with the request's `frame_operation` taken from the
-   `OperationSite` `call_site` returns for `Config::Sub::attemptUpdate`;
-   with `{Config::Sub, attemptUpdate}`; with a `function` target; with
-   the envelope's target `{Config::ConfigVersion, probe}` against the
-   request's `{Config::ConfigVersion, attemptUpdate}`, the last two again
-   with a request whose source does not compile.
+   step 1's envelope rebuilt over that package, the request's and the
+   envelope's target equal unless stated: the target `call_site` returns
+   for `Config::Sub::attemptUpdate`; the target `{Config::Sub,
+   attemptUpdate}`; the request's target `function` `sameIdentity` with the
+   envelope's `{Config::ConfigVersion, attemptUpdate}`; the request's
+   `{Config::ConfigVersion, attemptUpdate}` with the envelope's
+   `{Config::ConfigVersion, probe}`, once alone and once with the
+   envelope's `clause_node` also replaced by another package's frame node;
+   the third and fourth cases again with a request whose source does not
+   compile, and again with the source's byte-provision entry removed.
 
 Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
 
@@ -72,7 +76,9 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
 - Step 6: `reproduced-with-evaluated-witness` with the target
   `{Config::ConfigVersion, attemptUpdate}`; `invalid_model_binding`/
   `malformed-declaration` naming `{Config::Sub, attemptUpdate}`;
-  `invalid_runtime_input`/`invalid-value` at `/replay/function`;
-  `stale_dependency`/`content-mismatch` naming both targets; the same two
-  refusals with the source that does not compile. `FrameCounterexample`
-  has no member naming the operation (FR-116-AC-8).
+  `invalid_runtime_input`/`unknown-member` at `/replay/function` naming
+  `replay_frame` and `frame_operation`; `stale_dependency`/
+  `content-mismatch` naming both targets, both times; the same two refusals
+  with the source that does not compile; `missing_import`/
+  `missing-selection` for both with the provision entry removed.
+  `FrameCounterexample` has no member naming the operation (FR-116-AC-8).
