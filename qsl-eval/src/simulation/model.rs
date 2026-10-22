@@ -403,6 +403,8 @@ pub struct ModelSystem<'a> {
     limits: ExpansionLimits,
     meter: ScalarLimits,
     footprints: footprints::FootprintCache,
+    /// [`Self::universe_declaring`] per field, computed once.
+    declaring: std::sync::Mutex<BTreeMap<DeclarationKey, Option<Vec<ObjectReference>>>>,
     /// FR-185's random parameters and rewards, as FR-187 reads them.
     probabilistic: probabilistic::Tables,
 }
@@ -597,6 +599,7 @@ impl<'a> ModelSystem<'a> {
             limits: request.expansion,
             meter: request.meter,
             footprints: footprints::FootprintCache::default(),
+            declaring: std::sync::Mutex::default(),
             probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
         };
         system.check_rewards()?;
@@ -982,12 +985,28 @@ impl<'a> ModelSystem<'a> {
     }
 
     /// ADR-027 FT-3: every object of this subject's universe whose type
-    /// declares `field`, in canonical order. `None` when no object type
-    /// declares it or a population has no universe to list.
+    /// declares `field`, in canonical order, computed once per field.
+    ///
+    /// `None` when no object type declares it or a population has no
+    /// universe to list, including a reference that does not resolve. That
+    /// is intentional: the caller then keeps the field on any object, the
+    /// wider footprint, so a fault here costs precision and never a
+    /// dependence.
     pub(crate) fn universe_declaring(
         &self,
         field: &DeclarationKey,
     ) -> Option<Vec<ObjectReference>> {
+        let mut cache = self
+            .declaring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        cache
+            .entry(field.clone())
+            .or_insert_with(|| self.compute_universe_declaring(field))
+            .clone()
+    }
+
+    fn compute_universe_declaring(&self, field: &DeclarationKey) -> Option<Vec<ObjectReference>> {
         let mut objects = Vec::new();
         for (type_key, fields) in &self.fields {
             if !fields.iter().any(|declared| &declared.key == field) {

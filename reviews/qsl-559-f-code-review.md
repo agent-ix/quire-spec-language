@@ -50,3 +50,13 @@ What holds:
 | FND-003 | low | `universe_declaring` turns every `InternalFault` and `NotSimulated` into a quiet `None` with `.ok()?`, which silently falls back to `AnyField`. The fallback is sound, but a real fault (for example `universe-key-references`) is hidden. The function is also recomputed in full on every `retire` and `activate` footprint, a walk over types times objects. Propagate the fault, and compute the set once per field. | qsl-eval/src/simulation/model.rs:987-1004 |
 | FND-004 | low | `requests_differing_only_in_max_live_instances_share_one_obligation_identity` cannot fail. `author_clause` and `ItemObligation` take no `max_live_instances`, so the three requests' bound never reaches the code under test. The equality holds because of the signatures, and the test only repeats that. It would need to compare an identity that a `check_protocol` or settle path computes from the request. Otherwise drop it. | qsl-analyze/tests/it/protocol_roles.rs:1434-1473 |
 | FND-005 | low | `#[allow(dead_code)]` silences the whole included fixture module, where the dead item is one function. The TC-661 test comment calls `M::Level` "an enum". It is an `Int` range: `enumerable` rejects `Enum`, so an enum binder would fail as a record does. | qsl-semantics/src/check/protocol_slots/tests.rs:16-21, qsl-analyze/tests/it/protocol_footprints.rs:1049-1053 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: the `scope` region counts a node whose written `by` role is the role (commit included) as well as owned send and receive; documented in the region filter | see PR head |
+| FND-002 | fixed: `role_population` finds the package from the resolved type (`AdmittedModel::type_key`), no `::` splitting | see PR head |
+| FND-003 | fixed: the fallback to `AnyField` is documented as intentional (sound, costs precision only) and the set is cached per field | see PR head |
+| FND-004 | fixed: the test comment states it cannot fail today and pins the spec for when a protocol bound reaches the writer | see PR head |
+| FND-005 | fixed: `allow(dead_code)` narrowed to the one fixture function; the `Level` comment says `Int` range | see PR head |

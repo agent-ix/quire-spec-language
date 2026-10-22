@@ -13,8 +13,6 @@ use crate::check::protocol_clause::ProtocolNodeId;
 use crate::check::refusal::{ProtocolAnchorCause, SlotKind};
 use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 
-// The fixture's plain constructor serves the other protocol tests.
-#[allow(dead_code)]
 mod fixture {
     use crate as semantics;
     include!("../../../tests/fixtures/protocol_obligations.rs");

@@ -994,7 +994,14 @@ fn role_step(
 /// role reads `role(r)` and is dependent with a `spawn` of that role; an
 /// `activate` under the guard `x > 0` over a `Level` binder `x` has an
 /// enabling footprint holding no model location.
-#[trace("TC-661", "FR-216-AC-6")]
+///
+/// Partial: Remaining work: QSL-968. Two clauses of FR-216-AC-6 are not
+/// tested because they cannot run yet: a record-binder guard (record
+/// triggers refuse `UnenumerableRecord`, so the binder here is the `Int`
+/// range `Level`) and the population-membership read of a `lookup` in a role
+/// predicate (S3 has no named population in a role predicate's scope). The
+/// criterion id is therefore not cited; only the test case is.
+#[trace("TC-661")]
 #[test]
 fn predicate_reads_are_the_fields_of_the_universe_and_a_role_read_orders_spawns() {
     let body = roles::unit(
@@ -1047,8 +1054,8 @@ fn predicate_reads_are_the_fields_of_the_universe_and_a_role_read_orders_spawns(
     assert!(!independent(&sending, &spawn));
 
     // The guard of an `activate` reads no model state. The fixture's record
-    // types are not enumerable as triggers (`UnenumerableRecord`), so the
-    // binder is an enum `Level`.
+    // types are not enumerable as triggers (`UnenumerableRecord`, Remaining
+    // work: QSL-968), so the binder is the `Int` range `Level`.
     let body = roles::unit(
         "on each (x: M::Level) when (x > 0)",
         "",

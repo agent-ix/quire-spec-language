@@ -62,3 +62,11 @@ Bindings checked:
 - Stubs: none found.
 - Spec files changed: none, so no spec-review was run.
 - Plan completion: not assessed
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: test cites TC-661 only and says partial, Remaining work: QSL-968; FR-216 text and PR body cite QSL-968 | see PR head |
+| FND-002 | fixed: tracked as QSL-968; FR-209 text and PR body cite it | see PR head |
+| FND-003 | fixed: the FR-208-AC-5 tag is removed from the one-object world; no fixture can build an empty cell universe because `over` needs a cell | see PR head |

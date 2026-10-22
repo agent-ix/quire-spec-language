@@ -73,6 +73,8 @@ fn native(native: NativeValueType) -> ValueTypeRef {
 /// n}`, `Attempt{tally}`, `Flag{ready}`, `Tick{ready, count}` and
 /// `Hop{ready, node}`; and the event type `Pulse{ready, occurred}`; all
 /// normalized to a [`SelectedModel`] aliased `M`.
+// Unused by the includers that build their own populated model.
+#[allow(dead_code)]
 pub fn obligation_model() -> SelectedModel {
     obligation_model_with(Vec::new())
 }

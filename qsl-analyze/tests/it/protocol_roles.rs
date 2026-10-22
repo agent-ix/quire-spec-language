@@ -610,8 +610,10 @@ fn retired_role_world(members: &str, run: &str) -> World {
 /// Part of FR-211-AC-5 (TC-656), the role part at an `attempt` and at a
 /// `send`: a node owned by a replicated role with every object retired
 /// deadlocks with `NoRoleInstance{r}`, a `send` owned by its channel's
-/// `from` role too (the empty-universe half of FR-208-AC-5).
-#[trace("TC-653", "FR-208-AC-5")]
+/// `from` role too. This is not FR-208-AC-5's empty-universe case: the
+/// world has one object, spawned and retired at once, because `over` needs a
+/// cell and the role's universe is the cells.
+#[trace("TC-653")]
 #[test]
 fn an_attempt_and_a_send_owned_by_a_role_with_no_instance_give_no_role_instance() {
     let attempt = retired_role_world(
@@ -1425,7 +1427,10 @@ fn a_send_and_a_receive_owned_by_a_replicated_role_are_taken_by_each_instance() 
     );
 }
 
-/// FR-209 "The bound" (TC-654, ADR-013 O-09, QSpec FR-428-AC-3): two
+/// FR-209 "The bound" (TC-654, ADR-013 O-09, QSpec FR-428-AC-3): this test
+/// cannot fail today. The request writer and `ItemObligation` take no
+/// `max_live_instances`, so equality holds by their signatures; it pins the
+/// spec for the day a protocol bound is passed to the writer. Two
 /// protocol check requests that differ only in `max_live_instances` write
 /// one item with one obligation identity through the request writer, because
 /// the bound is a method bound outside the subject.

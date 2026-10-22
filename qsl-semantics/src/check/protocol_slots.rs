@@ -1272,7 +1272,21 @@ fn region(
         }
     }
     let members = (0..protocol.declarations.len())
-        .filter(|index| written_owner(protocol, *index) == Some(role))
+        .filter(|index| {
+            // A node `by` the role as written (an `attempt`, `event` or
+            // `commit`), or a `send` or `receive` the role owns by its
+            // channel.
+            written_owner(protocol, *index) == Some(role)
+                || protocol
+                    .declarations
+                    .get(*index)
+                    .is_some_and(|declaration| {
+                        declaration
+                            .role
+                            .as_ref()
+                            .is_some_and(|written| written.name == role)
+                    })
+        })
         .chain(
             protocol
                 .choices
@@ -1330,18 +1344,21 @@ fn role_population(
         population: name.name.clone(),
         span: name.span,
     };
-    let alias = role.context.name.split("::").next().unwrap_or_default();
+    // The package that declares `T` is the one its resolved type belongs to.
+    let element = declarations
+        .scope
+        .object_type_named(&role.context.name)
+        .ok_or_else(missing)?;
     let model = declarations
         .models
         .iter()
-        .find(|model| model.alias() == Some(alias))
+        .find(|model| model.type_key(element).is_some())
         .ok_or_else(missing)?;
     let found = model
         .named_populations()
         .find(|record| record.name == name.name)
         .ok_or_else(missing)?;
-    let element = declarations.scope.object_type_named(&role.context.name);
-    if element.is_some_and(|element| found.members.contains(&element)) {
+    if found.members.contains(&element) {
         Ok(found.key.clone())
     } else {
         Err(ProtocolAnchorCause::RolePopulationType {
