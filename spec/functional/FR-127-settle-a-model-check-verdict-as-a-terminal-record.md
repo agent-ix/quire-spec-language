@@ -97,6 +97,8 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 // ComponentCertificate, ProofCertificate: FR-339.
 // IncompleteCause gains LimitReached { limit: ModelCheckLimit, value: u64, setting: RequestSetting },
 //   QSpec FR-331's limit-reached; setting names the request member that raises it.
+//   A monitor run (FR-251) writes the same record with limit `event_buffer` and
+//   setting `monitor.max_event_rate`.
 //   Cancelled { source: CancelCause }, written cancelled{source} (QSpec FR-331),
 //   source the CancelCause wire name: requested or deadline (FR-276).
 ```
