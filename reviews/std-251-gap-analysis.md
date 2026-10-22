@@ -50,3 +50,11 @@ No test in the tree is tagged with the new AC yet. The manifest and the evidence
 ## Verdict
 
 Every changed AC has a TC row that covers all its clauses. The one gap comes from the duplicate AC id. The existing cargo-tree tests would inflate coverage of the new EN-4 AC, and TC-761's scope range takes in an AC it does not verify. Renumbering the new AC fixes both.
+
+## Dispositions
+
+Disposition pass 1 at head a13a84d08 (fix commit f78db444d).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | after (TC-761:15): "Scope: FR-280-AC-1, FR-280-AC-2, FR-280-AC-4." The EN-4 manifest AC is now FR-280-AC-4 (FR-280:87), verified by TC-761 step 3. TC-767 ("Scope: FR-284-AC-1, FR-280-AC-3.") and the arch-lint tests tagged `FR-280-AC-3` (tools/arch-lint/qualified_core.rs:1081,1111) now cover only the cargo-tree AC. No test carries FR-280-AC-4 yet, so the matrix will show it uncovered until the code lane adds one, which is expected for a spec-only PR. |

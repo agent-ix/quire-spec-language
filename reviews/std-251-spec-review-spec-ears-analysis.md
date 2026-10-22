@@ -40,3 +40,18 @@ The FR-189 and FR-192 statements are ubiquitous EARS ("The EN-4 provider manifes
 ## Verdict
 
 Mergeable on the EARS axis, with two lows. The FR-189 and FR-192 statements conform. The FR-280 additions hold normative content in sentences with no `shall` (FND-001). After this change EN-5's manifest statements in FR-195 use a notation that no longer matches FR-280's (FND-002). Neither is a wrong behaviour.
+
+## Dispositions
+
+Disposition pass 1 at head a13a84d08 (fix commit f78db444d). The quire grammar lint in `make check-spec-validation` reports no warning on FR-189, FR-192, FR-195 or FR-280.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | after (FR-280:63-71), three bullets, each with its own `shall`: "Each engine's manifest shall be data of that engine's own module in `qsl-analyze`, and `qsl-route` shall hold the registry and FR-288's conversion and no engine's manifest."; "An engine that settles `probabilistic-satisfaction` items shall list the evidence kinds it settles (FR-057, FR-075)."; "EN-4's manifest shall list (`probabilistic-satisfaction`, `bounded`) with the evidence kind `statistical` and no other, and with the `domains` `population` and `integer` ...". |
+| FND-002 | fixed | after (FR-195:28-29): "EN-5's provider manifest SHALL advertise `probabilistic-satisfaction` with the evidence kind `exact` (its mode is not yet fixed)". (FR-195:122-123): "The EN-5 provider manifest SHALL advertise `probabilistic-satisfaction` with the evidence kind `exact` only (its mode is not yet fixed), and register through FR-075." (FR-195-AC-5): "EN-5's manifest lists `probabilistic-satisfaction` with the evidence kind `exact` only." The text no longer reads `exact` as a mode, and it states that the mode is open. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | TC-630, which verifies FR-195-AC-5, still writes step 5's expected result in the old pair notation: "Step 5: exactly (`probabilistic-satisfaction`, `exact`); ...". Under FR-280's (kind, mode) notation this reads as a pair with mode `exact`. That contradicts the reworded FR-195-AC-5 ("lists `probabilistic-satisfaction` with the evidence kind `exact` only") and FR-195's "its mode is not yet fixed". Reword it to "`probabilistic-satisfaction` with the evidence kind `exact` only". | spec/test-cases/TC-630-exact-only-forms-and-exact-routing.md:35 |

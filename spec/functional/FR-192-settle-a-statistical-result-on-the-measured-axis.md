@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-189
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-280
+    type: references
 ---
 # FR-192: Settle a statistical result on the measured axis
 
@@ -148,7 +150,9 @@ pub enum Coverage { FiniteSample, Asymptotic }
   and category map), [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
   (the same terminal record for temporal items),
-  [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md).
+  [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md),
+  [FR-280](FR-280-serve-the-driver-s-lower-generate-and-prove-operations.md)
+  (EN-4's provider manifest).
 
 ## References
 
