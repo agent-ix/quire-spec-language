@@ -53,6 +53,12 @@ foundation type.
   with no ceiling (FR-255). Setting `s1.input_bytes` above the reader limit
   refuses at `compile_admitted` as `AdmittedResource::AboveReader`, so a
   consumer raises `ReplayLimits::with_input_bytes` with it.
+- `s1.input_bytes` alone does not admit a large source. A source of real
+  declarations reaches the `s1.tokens` (100000) and `s1.nodes` (50000)
+  defaults at a few hundred kilobytes, so a consumer that compiles a source
+  over 1 MiB raises `s1.input_bytes`, `s1.tokens` and `s1.nodes` by name and
+  `ReplayLimits::with_input_bytes` together. Each raised stage limit is still
+  a separate named entry; there is no combined setting.
 - A limit with no entry runs at its published default: the capability is an
   opt-in and changes no default and no other consumer's caps.
 
@@ -60,10 +66,12 @@ foundation type.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-399-AC-1 | A consumer that names only the `qsl_replay` root compiling a source larger than 1 MiB through `compile_admitted` with default limits is refused as `AdmittedResource::StageLimit`. | Test (TC-1093) |
-| FR-399-AC-2 | The same consumer building `StageLimits::default().with_named("s1.input_bytes", n)` with `n` above the source, and `ReplayLimits::default().with_input_bytes(n)`, has the source compiled; with the default `ReplayLimits` it is refused `AdmittedResource::AboveReader`. | Test (TC-1093) |
-| FR-399-AC-3 | `with_named` refuses an unknown name, the empty name, `replay.input_bytes` and `format.output_bytes` with `StageLimitNameRefusal` carrying the name, and returns no limits. | Test (TC-1093) |
-| FR-399-AC-4 | A default `StageLimits` holds no entry, so the default `s1.input_bytes` is unchanged; a later `with_named` of one name replaces the earlier bound. | Test (TC-1093) |
+| FR-399-AC-1 | A consumer that names only the `qsl_replay` root compiling a source larger than 1 MiB through `compile_admitted` with default limits is refused as `AdmittedResource::StageLimit` naming the `s1.input_bytes` ceiling. | Test (TC-1093) |
+| FR-399-AC-2 | With `s1.input_bytes` raised by `with_named` above the default `ReplayLimits`, the compile refuses as `AdmittedResource::AboveReader`. | Test (TC-1093) |
+| FR-399-AC-3 | With `s1.input_bytes` raised by `with_named` and `ReplayLimits::with_input_bytes` raised to match, a comment-padded source larger than 1 MiB compiles. | Test (TC-1093) |
+| FR-399-AC-4 | A source of real declarations larger than 1 MiB, with `s1.input_bytes` and the reader limit raised, is refused naming the `s1.tokens` ceiling; with `s1.tokens` also raised, naming the `s1.nodes` ceiling; and it compiles only with `s1.input_bytes`, `s1.tokens`, `s1.nodes` and the reader limit all raised. | Test (TC-1093) |
+| FR-399-AC-5 | `with_named` refuses an unknown name, the empty name, `replay.input_bytes` and `format.output_bytes` with `StageLimitNameRefusal` carrying the name, and returns no limits. | Test (TC-1093) |
+| FR-399-AC-6 | A default `StageLimits` holds no entry, so a source just under 1 MiB compiles at the default; a later `with_named` of one name replaces the earlier bound. | Test (TC-1093) |
 
 ## Dependencies
 

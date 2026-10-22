@@ -93,6 +93,14 @@ impl StageLimits {
     /// earlier entry of that name (FR-399). Refuses, returning no limits, a
     /// name that is no setting of FR-255's tables and `replay.input_bytes` and
     /// `format.output_bytes`, which a request does not carry.
+    ///
+    /// To compile a large source through `compile_admitted`, raise more than
+    /// `s1.input_bytes`. An `s1.input_bytes` above `ReplayLimits.input_bytes`
+    /// refuses as `AdmittedResource::AboveReader`, so raise
+    /// `ReplayLimits::with_input_bytes` with it. A source of real
+    /// declarations reaches the `s1.tokens` (100000) and `s1.nodes` (50000)
+    /// defaults at a few hundred kilobytes, far below 1 MiB, so raise those
+    /// two by name as well.
     pub fn with_named(mut self, name: &str, bound: u64) -> Result<Self, StageLimitNameRefusal> {
         match SettingName::from_name(name) {
             Some(SettingName::Stage(setting))
