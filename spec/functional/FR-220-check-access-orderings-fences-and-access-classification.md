@@ -60,9 +60,12 @@ weak model corresponds to real accesses.
 - A checked `fence` control with its ordering.
 - The S3 refusals `ill_typed`/`operator-ineligible` for an attempt's ordering and
   `unsupported_construct`/`declaration-form` for an access shape, and the pre-check's V-8 `WeakAccessShape{site, transition, shape}`,
-  with `shape` one of QSpec FR-439's two shapes: `MultiLocation{locations}`
-  (`multi-location`) for an attempt of FR-220's shape, and `JoinPolicy`
-  (`join-policy`) for a weak `parallel` that joins `any` (FR-219).
+  with `shape` one of three shapes: QSpec FR-439's `MultiLocation{locations}`
+  (`multi-location`) for an attempt of FR-220's shape and `JoinPolicy`
+  (`join-policy`) for a weak `parallel` that joins `any` (FR-219), and
+  `OrderingMismatch{access, ordering}` (`ordering-mismatch`) for an
+  instantiated attempt whose access class does not take its ordering (EN-1
+  ordering rule).
 
 ## Behavior
 
@@ -137,12 +140,20 @@ possible takes it.
 `release`, `seq_cst` or none; an RMW one of the five and always has one).
 
 - The EN-1 pre-check SHALL, under a resolved weak model, settle V-8
-  `WeakAccessShape` for an instantiated load that carries `release` or
-  `acq_rel`, an instantiated store that carries `acquire` or `acq_rel`, and an
-  instantiated RMW that carries no ordering.
-- Until the pre-check applies this rule, an attempt whose instantiated kind does
-  not take its ordering SHALL be explored with the semantics of the ordering it
-  carries.
+  `WeakAccessShape{site, transition, shape: OrderingMismatch{access, ordering}}`
+  for an instantiated load that carries `release` or `acq_rel`, an
+  instantiated store that carries `acquire` or `acq_rel`, and an instantiated
+  RMW that carries no ordering, naming the attempt as `site`, its instantiated
+  class as `access` and the ordering it carries as `ordering` (none for the
+  RMW). The item SHALL settle before any state is explored.
+- The shape SHALL be written
+  `{"type":"ordering-mismatch","access":<"load"|"store"|"rmw">,"ordering":<ordering>}`,
+  `ordering` being the ordering's spelling (`relaxed`, `acquire`, `release`,
+  `acq_rel`, `seq_cst`) or `null` when the attempt carries none.
+- When one instantiated attempt has both a `MultiLocation` shape and an
+  ordering mismatch, the pre-check SHALL report `MultiLocation`.
+- Under `sc`, an attempt whose instantiated class does not take its ordering
+  SHALL be admitted, because orderings change no behaviour under `sc`.
 
 ### Access shape
 
@@ -181,7 +192,7 @@ possible takes it.
 | FR-220-AC-11 | EN-1 classifies ADR-025 §10's `SB` instantiated under `tso` and under `ra` with `Sx` and `Sy` as stores, `Ly` and `Lx` as loads, and (`c1`, `r`), (`c2`, `r`) branch-local. | Test (EN-1 sharing; TC-665 step 10) |
 | FR-220-AC-12 | EN-1 classifies AC-7's two `relaxed` stores as two stores to one shared location. | Test (EN-1 sharing; TC-665 step 11) |
 | FR-220-AC-13 | EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. | Test (EN-1 sharing; TC-665 step 12) |
-| FR-220-AC-14 | The EN-1 pre-check settles V-8 `WeakAccessShape` for an instantiated load with `release`, a store with `acquire`, and an RMW with no ordering, under `tso` and under `ra`. | Test (EN-1 pre-check; TC-665 step 13) |
+| FR-220-AC-14 | The EN-1 pre-check settles V-8 `WeakAccessShape` with `OrderingMismatch` before any state is explored, under `tso` and under `ra`: an instantiated load with `release` as `{"type":"ordering-mismatch","access":"load","ordering":"release"}`, a load with `acq_rel` as `{"type":"ordering-mismatch","access":"load","ordering":"acq_rel"}`, a store with `acquire` as `{"type":"ordering-mismatch","access":"store","ordering":"acquire"}`, a store with `acq_rel` as `{"type":"ordering-mismatch","access":"store","ordering":"acq_rel"}`, and an RMW with no ordering as `{"type":"ordering-mismatch","access":"rmw","ordering":null}`. Under `sc` each is admitted. An attempt that writes two shared fields with `acquire` settles `MultiLocation`. | Test (EN-1 pre-check; TC-665 step 13) |
 | FR-220-AC-15 | In `SB`'s `parallel` under `tso`, a branch holding an `event` whose constraint reads `x.v` beside the branch whose attempt stores `x.v` settles V-8 `WeakAccessShape` with `MultiLocation` naming the event and `(x, v)`; under `sc`, and in a variant of `SB` whose universe also holds a `Cell` `z` that no attempt accesses, with the `event` reading `z.v`, the item is admitted. A `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
 
 ## Dependencies
@@ -198,6 +209,6 @@ possible takes it.
 - Owning ticket: Linear QSL-372. QSpec half: QSpec FR-435 (Linear STD-138),
   and QSpec FR-439 for the `weak-access-shape` cause and its shapes.
 - EN-1 sharing, classification and the ordering rule (FR-220-AC-11 to
-  FR-220-AC-14): Linear QSL-910 under QSL-565. The ordering rule's outcome
-  needs a shape in QSpec FR-439 beyond `MultiLocation` and `JoinPolicy`; that
-  decision is open, and AC-5 changes with it.
+  FR-220-AC-14): Linear QSL-910 under QSL-565. The `OrderingMismatch` shape
+  of the ordering rule's outcome is the QSL statement that QSpec FR-439 and
+  FR-435 mirror (Linear STD-305).

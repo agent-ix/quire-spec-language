@@ -38,8 +38,10 @@ EN-1 steps (not S3 results):
     sharing (FR-220-AC-11).
 11. Instantiate AC-7's two stores and read EN-1's classes (FR-220-AC-12).
 12. Instantiate AC-8's branch and read EN-1's sharing (FR-220-AC-13).
-13. Run the pre-check on an instantiated `release` load, an `acquire` store and
-    an RMW with no ordering, under `tso` and under `ra` (FR-220-AC-14).
+13. Run the pre-check on an instantiated `release` load, an `acq_rel` load, an
+    `acquire` store, an `acq_rel` store and an RMW with no ordering, under
+    `tso`, under `ra` and under `sc`, and on a two-shared-field attempt with
+    `acquire` under `tso` (FR-220-AC-14).
 14. Run the pre-check on FR-220-AC-15's `event` reader beside the storing
     branch under `tso` and under `sc`, on the `z.v` reader of the variant whose universe also holds an unaccessed `z`, and on the
     `finish` reader.
@@ -61,5 +63,5 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 - Step 10: `Sx` and `Sy` are stores, `Ly` and `Lx` are loads, and (`c1`, `r`), (`c2`, `r`) are branch-local.
 - Step 11: two stores to one shared location.
 - Step 12: the register is branch-local.
-- Step 13: V-8 `WeakAccessShape` for each.
+- Step 13: under `tso` and `ra`, V-8 `WeakAccessShape` with the `ordering-mismatch` shape FR-220-AC-14 writes for each, no state explored; under `sc`, each admitted; the two-field attempt settles `multi-location`.
 - Step 14: V-8 `WeakAccessShape` with `MultiLocation` naming the `event` and `(x, v)` under `tso`; admitted under `sc`, for the unshared reader and for the `finish` reader.
