@@ -105,6 +105,8 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 - Step 13: the same `CheckedRefinement` in both orders; with `Twice` refused,
   `Twice`'s refusals alone for the clause, no `missing-name` for its name and
   no `CheckedRefinement`.
-- Step 14: the first three rows check; the argument lists of length 3 and 0
-  refuse `ill_typed`/`operator-ineligible` at the node, and `a1(1)` refuses
-  `ill_typed`/`type-mismatch` at the argument.
+- Step 14: the first three rows check; the argument lists of length 3 and 2
+  refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1
+  and `actual` 3 and 2, and `a1(1)` refuses `ill_typed`/`type-mismatch` at
+  the argument retaining `expected` the reference type of `Spec::Counter` and
+  `actual` the type of `1`.

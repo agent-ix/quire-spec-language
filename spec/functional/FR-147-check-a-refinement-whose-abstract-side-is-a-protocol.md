@@ -103,16 +103,20 @@ not an input yet, so a name only such a clause declares refuses
 
 - Step rows SHALL cover every concrete step class by FR-136. A right side
   SHALL be an abstract operation application, an abstract protocol node
-  with one expression per field of its binder record, `stutter` or `any`.
+  with an argument list per QSpec FR-432 (an open or absent field is
+  unconstrained), `stutter` or `any`.
 - A right side naming an abstract node SHALL resolve to an `attempt`,
-  `event`, `send`, `receive` or `finish` node of the abstract protocol,
-  refusing `missing_declaration`/`missing-name` otherwise; its expressions
-  SHALL be typed against the node's binder record, whose fields per node
-  kind are QSpec FR-432's: an argument list of the wrong length refuses
-  `ill_typed`/`operator-ineligible` at the node, retaining `expected` and
-  `actual`, and an argument of the wrong type refuses
-  `ill_typed`/`type-mismatch` at the argument, retaining `expected` and
-  `actual`.
+  `effect`, `event`, `commit`, `send`, `receive` or `finish` node of the
+  abstract protocol, refusing `missing_declaration`/`missing-name`
+  otherwise.
+- The expressions of a node right side SHALL be typed against the node's
+  binder record, whose fields per node kind are QSpec FR-432's.
+- An argument list whose length differs from the field count SHALL refuse
+  `ill_typed`/`operator-ineligible` at the node, retaining `expected`, the
+  field count, and `actual`, the written count.
+- An argument whose type is not its field's type SHALL refuse
+  `ill_typed`/`type-mismatch` at the argument, retaining `expected`, the
+  field's type, and `actual`, the argument's type.
 - While the abstract side is a model subject, a right side naming a
   protocol node SHALL refuse `invalid_model_binding`/`malformed-declaration`.
 
@@ -286,7 +290,7 @@ declares an `await` node (the `timeout` class) and a compensation template
 | FR-147-AC-11 | Precedence, in a build whose support set omits `refinement-internal-list`: a list on `CasTwice` (protocol subject) with an unresolved entry (`Spec::Twice::zz`) reports `missing_declaration`/`missing-name` and no `not-yet-implemented` naming `refinement-internal-list`, and, because the build also omits `protocol-abstract-side`, the independent `not-yet-implemented` refusal for that feature at `Twice`; a value attributable to no refinement (`{}`, `"refinement": 7`) reports its defect alone; a non-empty resolved list on `CasRefinesCounter` reports only AC-7's refusal, and a malformed entry, a repeated spelling or a `refinement` naming no refinement on it is still reported while an entry such as `Other::Twice::Done` or `Spec::Twice::zz` is not resolved and gives no `missing-name`. | Test (TC-552) |
 | FR-147-AC-12 | In a build that holds `refinement-internal-list`, a non-empty list for `CasRefinesCounter` (model side) refuses `invalid_model_binding`/`malformed-declaration` at (the unit's value, `/0`), with no `CheckedRefinement` and no `not-yet-implemented`; an empty list does not refuse. | Test (TC-552) |
 | FR-147-AC-13 | In a build that holds `protocol-abstract-side`, `CasTwice` checks to the same `CheckedRefinement` whether `protocol Twice` is declared before or after the refinement in the unit's source. With `Twice` refused by its own checks, the unit reports `Twice`'s refusals and no `missing-name` for the clause name and no `CheckedRefinement` for `CasTwice`. | Test (TC-552) |
-| FR-147-AC-14 | In a build that holds `protocol-abstract-side`, over `Twice`, whose attempt `a1` applies `Spec::Counter::inc` (no parameter and no result, so its binder record is the receiver alone), the rows `-> node Spec::Twice::a1(self)`, `-> node Spec::Twice::a1(_)` and `-> node Spec::Twice::a1` are admitted; `-> node Spec::Twice::a1(self, 1, 2)` and `-> node Spec::Twice::a1()` each refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1 and `actual` 3 and 0; `-> node Spec::Twice::a1(1)` refuses `ill_typed`/`type-mismatch` at the argument retaining `expected` and `actual`. | Test (TC-552) |
+| FR-147-AC-14 | In a build that holds `protocol-abstract-side`, over `Twice`, whose attempt `a1` applies `Spec::Counter::inc` (no parameter and no result, so its binder record is the receiver alone), the rows `-> node Spec::Twice::a1(self)`, `-> node Spec::Twice::a1(_)` and `-> node Spec::Twice::a1` are admitted; `-> node Spec::Twice::a1(self, 1, 2)` and `-> node Spec::Twice::a1(self, _)` each refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1 and `actual` 3 and 2; `-> node Spec::Twice::a1(1)` refuses `ill_typed`/`type-mismatch` at the argument retaining `expected` the reference type of `Spec::Counter` and `actual` the type of `1`. | Test (TC-552) |
 
 ## Dependencies
 
