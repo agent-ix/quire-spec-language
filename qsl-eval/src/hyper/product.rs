@@ -42,7 +42,7 @@ use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{
-    translate_negation, AtomSymmetry, AutomatonError, PropertyAutomaton, StateId,
+    translate_itself, translate_negation, AtomSymmetry, AutomatonError, PropertyAutomaton, StateId,
 };
 use crate::hyper::copy_swap::{CopySwap, CopySwapInputs};
 use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading, Seams};
@@ -334,6 +334,17 @@ pub enum Halt {
     Fault(InternalFault),
 }
 
+/// Which automaton of the body a [`HyperProduct`] follows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BodySense {
+    /// The negated body: a fair accepting cycle is a counterexample to a
+    /// universal claim (HP-2).
+    Negated,
+    /// The body itself: a fair accepting cycle is a witness for a
+    /// possibility claim (HP-5, ADR-023 SE-3).
+    Itself,
+}
+
 /// What [`HyperProduct::new`] reads.
 pub struct HyperInputs<'r, 's> {
     /// The `ModelSystem` of each trace variable's subject, in quantifier
@@ -341,10 +352,12 @@ pub struct HyperInputs<'r, 's> {
     pub systems: Vec<&'r ModelSystem<'s>>,
     /// The clause instance: each object parameter's key.
     pub instance: &'r [ParameterBinding],
-    /// The negated body's formula and its profile.
+    /// The body's formula and its profile.
     pub body: &'r CheckedFormula,
     /// The profile the body was checked under.
     pub profile: TemporalProfile,
+    /// Whether the product follows the negated body or the body itself.
+    pub sense: BodySense,
     /// The seam to the body's atoms.
     pub letters: &'r dyn HyperLetters,
     /// The seam to `μ_U`; `None` when the clause has no universal conjunct.
@@ -356,7 +369,9 @@ pub struct HyperInputs<'r, 's> {
     /// The run's cancellation handle.
     pub cancel: &'r Cancel,
     /// The clause's copy group when the product canonicalises under it
-    /// (FR-174): the body's automaton is then built in normal form.
+    /// (FR-174): the body's automaton is then built in normal form. Only a
+    /// product of the [`BodySense::Negated`] body canonicalises: a possibility
+    /// claim has one trace variable, so no copies to swap.
     pub copy_swap: Option<CopySwapInputs<'r>>,
 }
 
@@ -379,8 +394,9 @@ pub struct HyperProduct<'r, 's> {
 }
 
 impl<'r, 's> HyperProduct<'r, 's> {
-    /// Translate the negated body and bind the product to its inputs. The
-    /// initial states are read by [`Self::start`].
+    /// Translate the body, negated or itself as `inputs.sense` says, and bind
+    /// the product to its inputs. The initial states are read by
+    /// [`Self::start`].
     ///
     /// # Errors
     ///
@@ -395,12 +411,17 @@ impl<'r, 's> HyperProduct<'r, 's> {
         let symmetry = inputs.copy_swap.as_ref().map(|_| AtomSymmetry {
             generators: &generators,
         });
-        let mut automaton = translate_negation(
-            inputs.body,
-            inputs.profile,
-            inputs.max_automaton_states,
-            symmetry.as_ref(),
-        )?;
+        let mut automaton = match inputs.sense {
+            BodySense::Negated => translate_negation(
+                inputs.body,
+                inputs.profile,
+                inputs.max_automaton_states,
+                symmetry.as_ref(),
+            )?,
+            BodySense::Itself => {
+                translate_itself(inputs.body, inputs.profile, inputs.max_automaton_states)?
+            }
+        };
         let start = automaton.initial()?;
         let symmetric = automaton.is_symmetric();
         Ok(Self {
@@ -460,8 +481,8 @@ impl<'r, 's> HyperProduct<'r, 's> {
         self.joint.take_halt()
     }
 
-    /// The automaton of the negated body: its acceptance sets and the states
-    /// it has reached.
+    /// The automaton of the body (negated or itself): its acceptance sets and
+    /// the states it has reached.
     pub fn automaton(&self) -> Ref<'_, PropertyAutomaton> {
         self.automaton.borrow()
     }

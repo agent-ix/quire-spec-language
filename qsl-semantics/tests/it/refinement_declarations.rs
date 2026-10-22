@@ -293,6 +293,15 @@ fn counter_spec() -> Vec<u8> {
         "record_value_type",
         json!({"fields": [field(SPEC, "Try", "done", BOOLEAN)]}),
     );
+    let event = declaration(
+        SPEC,
+        "Evt",
+        "record_value_type",
+        json!({"fields": [
+            field(SPEC, "Evt", "p", BOOLEAN),
+            field(SPEC, "Evt", "q", INTEGER),
+        ]}),
+    );
     document_with(
         SPEC,
         vec![construct(
@@ -305,9 +314,20 @@ fn counter_spec() -> Vec<u8> {
                 SPEC,
                 "Counter",
                 &[("value", INTEGER)],
-                vec![operation(SPEC, "Counter", "inc", &[], None, &["value"])],
+                vec![
+                    operation(SPEC, "Counter", "inc", &[], None, &["value"]),
+                    operation(
+                        SPEC,
+                        "Counter",
+                        "quad",
+                        &[("x", INTEGER)],
+                        Some(INTEGER),
+                        &[],
+                    ),
+                ],
             ),
             attempt,
+            event,
         ],
         vec![population(SPEC, "counters", "Counter")],
     )

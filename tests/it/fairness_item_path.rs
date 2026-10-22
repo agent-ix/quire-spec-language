@@ -71,6 +71,7 @@ fn registry() -> Registry {
             [(Some("temporal-satisfaction"), Some("unbounded"))],
             None,
             Some(FairnessKindsMember::List(labels)),
+            None,
         )
         .expect("a valid temporal manifest");
         registry.register(descriptor).expect("admitted");

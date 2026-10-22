@@ -70,6 +70,6 @@ pub use monitor::{Monitor, SafetyAutomaton};
 pub use numbering::{Interned, Numbering};
 pub use state::StateId;
 pub use translate::{
-    translate, translate_body, translate_counted, translate_negation, AtomSymmetry, AutomatonKind,
-    PropertyAutomaton,
+    translate, translate_body, translate_counted, translate_itself, translate_negation,
+    AtomSymmetry, AutomatonKind, PropertyAutomaton,
 };

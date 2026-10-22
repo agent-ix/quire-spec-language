@@ -29,7 +29,7 @@ For every kind in FR-057's table:
 
 - Requested-pair admission is owned by the composed linker and has no registry
   or backend input.
-- Advertised-label validation is owned by `BackendDescriptor::admit`.
+- Advertised-label validation is owned by `descriptor_from_manifest`.
 - Candidate computation occurs in the registry only after descriptor
   admission. The probabilistic fixture's matching `statistical` evidence kind
   yields the backend as a candidate. The stage projection does not move or

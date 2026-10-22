@@ -32,3 +32,16 @@ as the rest of that file is.
 ## Verdict
 
 Mergeable for EARS. Two low findings, no major ones.
+
+## Disposition pass 1
+
+Disposition pass 1 at QSL 203b8c172 and QSpec 4248c9f08 (fix commits 203b8c172 and 4248c9f08, diffs only). Gates in detached worktrees: QSL `make check-spec-validation` exits 0 with no diagnostic on FR-280, TC-761 or ADR-029; QSpec `quire validate --scope . 'spec/**/*.md'` gives 86 fail lines (FR-331's three diagnostics are the ones on main); `cargo test --test checked_package_v2 --test backend_provider_v1` passes 126 and 23. QSL PR #1206 is CONFLICTING with main: FR-280-AC-4 (main renamed `BackendDescriptor::admit` to `descriptor_from_manifest`, #1204) beside the edited AC-5 row.
+
+Disposition pass 1: both low findings fixed; no new EARS finding in the fix diffs.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The statement is split: "the provider entry shall keep in its record the sampled witnesses `analyze` keeps for the same item" and "The provider entry shall keep each sampled witness replayable through `replay_sampled_witness` over the checked subject it was given (FR-193)". |
+| FND-002 | fixed | "the producer SHALL NOT reuse the result of one in-process request for another, and SHALL run the engine once for each in-process request". |

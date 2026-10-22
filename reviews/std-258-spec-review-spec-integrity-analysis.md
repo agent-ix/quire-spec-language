@@ -74,3 +74,28 @@ states the `EmittedPackage` provider signature) and FND-002 (the halves give
 different in-process inputs, and `prove` has no subject binding to pass).
 FND-003 to FND-005 are minor. The direction is faithful to the ticket and
 consistent with FR-185, FR-189, FR-193, FR-281 and the code.
+
+## Disposition pass 1
+
+Disposition pass 1 at QSL 203b8c172 and QSpec 4248c9f08 (fix commits 203b8c172 and 4248c9f08, diffs only). Gates in detached worktrees: QSL `make check-spec-validation` exits 0 with no diagnostic on FR-280, TC-761 or ADR-029; QSpec `quire validate --scope . 'spec/**/*.md'` gives 86 fail lines (FR-331's three diagnostics are the ones on main); `cargo test --test checked_package_v2 --test backend_provider_v1` passes 126 and 23. QSL PR #1206 is CONFLICTING with main: FR-280-AC-4 (main renamed `BackendDescriptor::admit` to `descriptor_from_manifest`, #1204) beside the edited AC-5 row.
+
+Disposition pass 1: FND-001 and FND-002, the two majors, are fixed in both halves, and FND-003 to FND-005 are fixed. New: FND-006 (medium, minor) and FND-007 to FND-009 (low, minor). No major finding remains. QSL PR #1206 needs a rebase over #1204 before it can merge.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | FR-280 says the provider entry "shall take the checked package and no emitted package" and "takes no `EmittedPackage`", but ADR-029 PV-3 now gives `Provider::run` an `emitted: Option<&EmittedPackage>` parameter that "the QSL engines of OP-2" implement, and passes `Some` whenever `package` emitted one. The ADR prose says an in-process provider ignores it; FR-280 says the entry does not take it. Two implementers would write different signatures. Fix: say in FR-280 that the entry ignores `emitted` and reads no emitted package, or keep `emitted` off the in-process path (for example the process adapter alone receives it). | spec/functional/FR-280-serve-the-driver-s-lower-generate-and-prove-operations.md:52,70,97; spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:446-471 |
+| FND-007 | low | The new ADR-029 bullet "ADR-029 OP-1 and PV-3, amended after acceptance" sits under "Amendments this record proposes", which lists amendments to other records applied "once this record is accepted". ADR-029 records no acceptance status, and the OP-1 row and PV-3 were already edited in place, so the bullet is a change note, not a proposed amendment. Fix: drop the bullet, or record ADR-029's status and say the record was revised in place. | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:865-869 |
+| FND-008 | low | ADR-029 PV-3 says the process adapter given `None` returns `unsupported` naming the capability kind and backend (QSpec FR-300). QSpec FR-331 and FR-300 now fix the diagnostic `unsupported_projection`/`unsupported-requested-capability` with a `detail` that also says the package is not emitted. The QSL half omits the diagnostic and the not-emitted detail. Fix: name the diagnostic and detail in PV-3, or cite FR-331 "In-process providers" for them. | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:468-471; quire-specification spec/objects/interfaces/FR-331-backend-provider-envelope.md:298-302 |
+| FND-009 | low | FR-331's `request` property now points to ("In-process providers" above), but the property is at line 88 and the moved `## In-process providers` section is at line 272, below it. Fix: say "below". | quire-specification spec/objects/interfaces/FR-331-backend-provider-envelope.md:88,272 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | ADR-029 OP-1 `prove` row takes the `CheckedPackage` and, when `package` emits it, the `EmittedPackage`, plus the subject binding; PV-3 `Provider::run` takes `&CheckedPackage`, `Option<&EmittedPackage>` and `&SubjectBinding`, with prose that `emitted` is `None` for a package S4 refuses. See FND-006 for the residual wording mismatch with FR-280. |
+| FND-002 | fixed | Both halves now list the same in-process inputs: FR-280 Inputs add the request's `manifest`; QSpec FR-331 "In-process providers" adds the subject binding (QSL FR-120); FR-300's `prove` row and FR-300-AC-6 add the subject binding. |
+| FND-003 | fixed | FR-331 `results` adds the case; "In-process providers" fixes `unsupported` with diagnostic `unsupported_projection`/`unsupported-requested-capability`, which the Result entries table admits for `unsupported` (exactly one of cause and diagnostic); FR-300 and FR-300-AC-6 name it. |
+| FND-004 | fixed | The `request` property is qualified to the frame form and the in-process form, and the section moved out of `## Wire schema` to its own `## In-process providers`. See FND-009 for the wrong direction in the new pointer. |
+| FND-005 | fixed | FR-280-AC-5 names the claim as the `2 ms` claim of ADR-024 §7.2 over `Service` (the claim of FR-193-AC-1 and FR-193-AC-5) and the Okamoto method (FR-189-AC-1); FR-185-AC-1 already fixes §7.2's `Service` with `d` typed `Millis`, so the fixture is the one TC-628 uses. |

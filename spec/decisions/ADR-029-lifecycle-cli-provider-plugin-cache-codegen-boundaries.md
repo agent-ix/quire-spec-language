@@ -465,10 +465,12 @@ provider the same way after routing.
 that holds a random parameter, a workload, a reward or a probabilistic claim
 (FR-185), while its checked package remains, so `emitted` is `None` for such a
 package. An in-process provider, such as a QSL engine of OP-2, reads `package`
-and ignores `emitted`, so EN-4 serves a probabilistic claim through `prove`.
+and ignores `emitted`, whatever `prove` passes, so EN-4 serves a probabilistic claim through `prove`.
 The process adapter needs the package bytes: given `None` it writes no
-request frame and returns `unsupported` for each routed item, naming the
-item's capability kind and backend (QSpec FR-300).
+request frame and returns `unsupported` for each routed item with the
+diagnostic `unsupported_projection`/`unsupported-requested-capability`, whose
+`detail` names the item's capability kind, the backend and that the package is
+not emitted (QSpec FR-331, "In-process providers"; FR-300).
 
 **PV-4 Negotiation for a process provider.** ADR-012 §7.2 makes every
 settlement an arm of CG `negotiate_*` over a closed backend kind. A
@@ -862,11 +864,6 @@ except the ADR-011 amendment, which is applied in place.
   Its certificate checkers and its settlement map sit in layer 6
   `qsl-replay` (CB-2, OP-2); the engine owns no settlement map. Each engine
   entry takes FR-276's `&Cancel`, not a polling closure.
-- ADR-029 OP-1 and PV-3, amended after acceptance: `prove` takes the
-  `CheckedPackage` and the subject binding, with the `EmittedPackage` only
-  when `package` emitted one, and `Provider::run` takes `&CheckedPackage`,
-  `Option<&EmittedPackage>` and `&SubjectBinding` in place of
-  `&EmittedPackage` alone (QSL FR-280, QSpec FR-300 and FR-331).
 - ADR-013 T-4: `StageFailure::Cancelled(CancelCause)` and
   `CallFailure::Cancelled` (LC-3).
 - ADR-012 §7.2: CG's closed backend kind gains the process-provider variant,

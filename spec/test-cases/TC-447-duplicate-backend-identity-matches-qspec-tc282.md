@@ -33,7 +33,7 @@ advertising (`value-validity`, `bounded`) and (`value-validity`,
 `unbounded`) instead; `B`, identity `b`,
 advertising (`value-validity`, `bounded`); and `M`, a registration for
 identity `a` advertising the invalid mode `finite` (which
-`BackendDescriptor::admit` refuses before it becomes a descriptor, so it
+`descriptor_from_manifest` refuses before it becomes a descriptor, so it
 cannot itself enter a `Registry` permutation pool).
 
 For each of DB-01 through DB-06 and DB-08, build a registry for every
