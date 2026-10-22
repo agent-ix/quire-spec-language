@@ -46,5 +46,8 @@ Units examined:
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | 2731cb83c: the rule now covers 'an aggregate atom (the aggregate term with its comparison and threshold)'; a wrong-kind bound suppresses `a > b` (`past[5, 2 s]` gives one `unit-mismatch` at `2 s`); a model-subject term skips the window-kind and `a > b` checks. FR-194-AC-8 has one vector per case, checked by hand against the bullets. |
+| FND-002 | fixed | 276ea0630: the second AC-8 vector now opens 'Under event-position', so `past[0, 9]` takes positions and the two listed refusals are exactly the ones expected. |
 
 Disposition pass 1 verdict (head 2731cb83c): **MERGEABLE, with one low finding to fix or accept.**
+
+Disposition pass 2 verdict (head 276ea0630): **MERGEABLE.** Every finding's latest outcome is `fixed`.
