@@ -37,4 +37,15 @@ The `code-review` method was skipped, because the diff contains no code.
 
 ## Verdict
 
-Mergeable after FND-001 (frontmatter and Dependencies lines). FND-002 is minor. FR-144-AC-8 cannot pass until STD-326 lands in QSV and QSL's pin moves, which QSL-544 owns. The bytes, the order, the `liveness` grounding, FR-123 being left unedited, the trial merge with #1241, id uniqueness and the gate are verified. Owner or planner decisions: (1) merge order. Either the QSV FR-121 amendment (STD-326) merges first, or this QSL spec merges ahead with FND-001's dependency recorded. (2) Acknowledge the three lead defaults: the `{"refinement":{"liveness":<bool>}}` spelling as the only non-string `PropertyForm`, the order after `Liveness`, and `RefinementFailure` staying in QSL against the QSL-918 planner note.
+Disposition pass 1: FND-001 and FND-002 are fixed, and there is no new finding. Mergeable. FR-144-AC-8 still waits on STD-326 (QSV) and QSL-544's pin bump, and the merge-order decision against the QSV amendment remains the planner's.
+
+Review pass: Mergeable after FND-001 (frontmatter and Dependencies lines). FND-002 is minor. FR-144-AC-8 cannot pass until STD-326 lands in QSV and QSL's pin moves, which QSL-544 owns. The bytes, the order, the `liveness` grounding, FR-123 being left unedited, the trial merge with #1241, id uniqueness and the gate are verified. Owner or planner decisions: (1) merge order. Either the QSV FR-121 amendment (STD-326) merges first, or this QSL spec merges ahead with FND-001's dependency recorded. (2) Acknowledge the three lead defaults: the `{"refinement":{"liveness":<bool>}}` spelling as the only non-string `PropertyForm`, the order after `Liveness`, and `RefinementFailure` staying in QSL against the QSL-918 planner note.
+
+## Dispositions
+
+Disposition pass 1, head e8fb4adde (matches `git ls-remote`), checked as a merge with origin/main 6fb751a31. `make check-spec-validation` exits 0 with no diagnostic on a touched file. There is no regression and no new finding.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-144 adds `depends_on` `ix://agent-ix/quire-semantic-value/FR-121`, a Dependencies line saying QSV FR-121 must carry the variant before AC-8 can pass, and a References line naming Linear STD-326. |
+| FND-002 | fixed | AC-8's `RefinementFailure` clause and TC-1167 step 3 are dropped. FR-144's Outputs still place `RefinementFailure` in QSL. |
