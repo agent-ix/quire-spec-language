@@ -1,0 +1,402 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! Genuine complete-V1 IEEE source routes, lock evidence and strict IR admission.
+
+use ix_trace_rs::trace;
+use qsl_replay::{
+    compile_admitted, AdmittedCompilation, AdmittedRefusal, Code, DependencyInput, ReplayLimits,
+    SourceIdentity, StageLimits,
+};
+use qsl_semantics::check::CheckCause;
+use quire_contract_model::{
+    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
+};
+use serde_json::{json, Value};
+
+const HEADER: &str =
+    "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+const PROFILE: &str = "quire.value.ieee754-2019-default/v1";
+const ADD64: &str = include_str!("../fixtures/ieee_float/add64.native");
+const ADD32: &str = include_str!("../fixtures/ieee_float/add32.native");
+const TO_R: &str = include_str!("../fixtures/ieee_float/to_rational.native");
+
+fn compile(text: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
+    compile_admitted(
+        SourceIdentity::new("a", "ieee", "git", "1"),
+        "ieee.native",
+        text.as_bytes(),
+        [],
+        &DependencyInput::default(),
+        StageLimits::default(),
+        ReplayLimits::default(),
+    )
+}
+
+fn wire(text: &str) -> Value {
+    let compiled = compile(text).unwrap_or_else(|error| panic!("{text}\n{error:?}"));
+    serde_json::from_slice(compiled.package().bytes()).expect("emitted JSON")
+}
+
+fn ieee_selection(wire: &Value) -> Vec<&Value> {
+    wire["lock"]["definition_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|definition| definition["identity"] == PROFILE)
+        .collect()
+}
+
+fn operation<'a>(wire: &'a Value, identity: &str) -> &'a Value {
+    wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["body"]["operation"]["identity"] == identity)
+        .unwrap_or_else(|| panic!("missing {identity} in {wire}"))
+}
+
+fn assert_ieee_law(wire: &Value, node: &Value) {
+    let selected = ieee_selection(wire);
+    assert_eq!(selected.len(), 1, "exactly one IEEE selection");
+    assert_eq!(
+        node["body"]["operation"]["laws"],
+        json!([{"role": "ieee_profile", "definition": selected[0]}]),
+    );
+}
+
+fn refusal(text: &str, code: Code, cause: &str) -> Box<qsl_replay::spine::CompileRefusal> {
+    let Err(AdmittedRefusal::Package(refusal)) = compile(text) else {
+        panic!("expected {code:?}/{cause} from {text}");
+    };
+    assert_eq!(refusal.code(), code, "{refusal:?}");
+    assert_eq!(refusal.cause(), Some(cause), "{text}: {refusal:?}");
+    refusal
+}
+
+#[trace("TC-1091", "FR-397-AC-1", "FR-397-AC-4")]
+#[test]
+fn both_float_widths_select_one_profile_and_emit_arithmetic_law_and_rounding() {
+    for (source, width) in [(ADD32, "float32"), (ADD64, "float64")] {
+        for (spelling, name) in [("+", "add"), ("-", "sub"), ("*", "mul"), ("/", "div")] {
+            let wire = wire(&source.replace("a + b", &format!("a {spelling} b")));
+            let operation = operation(&wire, &format!("quire.op.ieee.{width}.{name}"));
+            assert_ieee_law(&wire, operation);
+            assert_eq!(
+                operation["body"]["operation"]["mode"],
+                json!({"kind": "rounding", "value": "nearest-even"}),
+            );
+        }
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-2")]
+#[test]
+fn declared_floats_select_the_profile_even_without_an_ieee_application() {
+    for declaration in [
+        "function keep using v(a: Float64[nearest-even]): Boolean pure { true }",
+        "function keep using v(a: Float32[nearest-even]): Float32[nearest-even] pure { a }",
+        "record Reading { sample: Float64[nearest-even]; }",
+        "tuple Reading(Float32[nearest-even]);",
+        "union Reading { Empty, Some(Float64[nearest-even]) }",
+        "type Reading = Float64[nearest-even]; function anchor using v(): Boolean pure { true }",
+        "record Reading { samples: Sequence<Float64[nearest-even]>[0, 2]; }",
+        "function keep using v(a: Option<Float64[nearest-even]>): Boolean pure { true }",
+    ] {
+        let wire = wire(&format!("{HEADER}{declaration}"));
+        assert_eq!(ieee_selection(&wire).len(), 1, "{declaration}");
+        assert_eq!(
+            wire["lock"]["definition_selections"],
+            wire["identity_preimage"]["definition_selections"],
+        );
+    }
+    let wire = wire(&format!(
+        "{HEADER}function plain using v(a: Int[0, 10], b: Int[0, 10]): Int[0, 20] pure {{ a + b }}"
+    ));
+    assert!(ieee_selection(&wire).is_empty());
+    for node in wire["semantic_graph"]["nodes"].as_array().unwrap() {
+        let laws = node["body"]["operation"]["laws"].as_array();
+        assert!(!laws
+            .into_iter()
+            .flatten()
+            .any(|law| law["role"] == "ieee_profile"));
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-3", "FR-397-AC-4")]
+#[test]
+fn float_to_rational_is_an_ieee_operation_with_the_selected_law() {
+    for source in [TO_R.to_owned(), TO_R.replace("Float64", "Float32")] {
+        let wire = wire(&source);
+        assert_ieee_law(&wire, operation(&wire, "quire.op.ieee.to_rational"));
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-4")]
+#[test]
+fn strict_ir_reader_admits_the_genuine_float_source_packages() {
+    for source in [ADD32, ADD64, TO_R].into_iter().map(str::to_owned).chain([
+        ADD32.replace("a + b", "a * b"),
+        ADD64.replace("a + b", "a * b"),
+    ]) {
+        let compiled = compile(&source).expect("source compiles");
+        let wire: Value = serde_json::from_slice(compiled.package().bytes()).unwrap();
+        let mut evidence = CheckedPackageEvidence::new();
+        for feature in wire["lock"]["required_features"].as_array().unwrap() {
+            evidence.support_feature(feature.as_str().unwrap());
+        }
+        let read = CheckedPackageV2::read(
+            compiled.package().bytes(),
+            CheckedPackageReadLimits::bounded(),
+            &evidence,
+        );
+        let CheckedPackageV2ReadResult::Admitted(package) = read else {
+            panic!("strict IR admission failed: {read:?}");
+        };
+        assert_eq!(
+            package.graph().nodes.len(),
+            wire["semantic_graph"]["nodes"].as_array().unwrap().len()
+        );
+        assert_eq!(
+            package.package_id().digest.as_ref(),
+            compiled.package().package_id().hex()
+        );
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-5")]
+#[test]
+fn ieee_profile_is_not_header_selectable_with_or_without_float_functions() {
+    for source in [
+        ADD64.to_owned(),
+        format!("{HEADER}function plain using v(): Boolean pure {{ true }}"),
+    ] {
+        let source = source.replace(
+            "profile v",
+            &format!("profile w = \"{PROFILE}\";\nprofile v"),
+        );
+        refusal(&source, Code::UnknownProfile, "wrong-selection-role");
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-6")]
+#[test]
+fn float_comparisons_refuse_before_mixed_operand_type_checks() {
+    for (left, right) in [
+        ("Float32[nearest-even]", "Float32[nearest-even]"),
+        ("Float64[nearest-even]", "Float64[nearest-even]"),
+        ("Float32[nearest-even]", "Float64[nearest-even]"),
+        ("Float64[nearest-even]", "Float32[nearest-even]"),
+        ("Float64[nearest-even]", "Int[0, 10]"),
+        ("Int[0, 10]", "Float64[nearest-even]"),
+        ("Float32[nearest-even]", "Rational[-100, 100; 1, 16]"),
+        ("Rational[-100, 100; 1, 16]", "Float32[nearest-even]"),
+    ] {
+        for operator in ["=", "!=", "<", "<=", ">", ">="] {
+            let source = format!("{HEADER}function compare using v(a: {left}, b: {right}): Boolean pure {{ a {operator} b }}");
+            let refusal = refusal(&source, Code::IllTyped, "operator-ineligible");
+            let qsl_replay::spine::CompileRefusal::Check {
+                region: Some(region),
+                ..
+            } = *refusal
+            else {
+                panic!("comparison refusal has a source region");
+            };
+            assert!(
+                source[usize::try_from(region.start()).unwrap()
+                    ..usize::try_from(region.end()).unwrap()]
+                    .contains(operator),
+                "comparison refusal covers its operator",
+            );
+        }
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-6")]
+#[test]
+fn mixed_float_widths_and_exact_arithmetic_refuse_type_mismatch() {
+    for width in ["Float32[nearest-even]", "Float64[nearest-even]"] {
+        for other in [
+            "Float32[nearest-even]",
+            "Float64[nearest-even]",
+            "Int[0, 10]",
+            "Rational[-100, 100; 1, 16]",
+        ] {
+            if width == other {
+                continue;
+            }
+            for (left, right) in [(width, other), (other, width)] {
+                for operator in ["+", "-", "*", "/"] {
+                    refusal(
+                        &format!("{HEADER}function mixed using v(a: {left}, b: {right}): {width} pure {{ a {operator} b }}"),
+                        Code::IllTyped,
+                        "type-mismatch",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-7")]
+#[test]
+fn reserved_ieee_intrinsic_calls_refuse_with_the_named_missing_identity() {
+    for (intrinsic, arguments) in [
+        ("sqrt", "a"),
+        ("fma", "a, b, a"),
+        ("numericEqual", "a, b"),
+        ("totalOrder", "a, b"),
+        ("bitIdentical", "a, b"),
+    ] {
+        let identity = format!("quire::value::ieee::{intrinsic}");
+        let source = format!("{HEADER}function call using v(a: Float64[nearest-even], b: Float64[nearest-even]): Boolean pure {{ {identity}({arguments}) }}");
+        let refusal = refusal(&source, Code::MissingDeclaration, "missing-name");
+        let qsl_replay::spine::CompileRefusal::Check { refusals, .. } = *refusal else {
+            panic!("the intrinsic refuses at checking");
+        };
+        assert!(matches!(&refusals[0].cause, CheckCause::MissingName(name) if name == &identity));
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-8")]
+#[test]
+fn conversion_into_a_float_is_never_admitted() {
+    for (source, target) in [
+        ("Int[0, 10]", "Float64[nearest-even]"),
+        ("Float32[nearest-even]", "Float64[nearest-even]"),
+        ("Float64[nearest-even]", "Float32[nearest-even]"),
+    ] {
+        refusal(
+            &format!("{HEADER}function convert_float using v(a: {source}): {target} pure {{ convert<{target}>(a) }}"),
+            Code::IllTyped,
+            "type-mismatch",
+        );
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-3")]
+#[test]
+fn rational_comparison_evaluates_float_conversion_as_a_separate_operation() {
+    let source = format!("{HEADER}function compare using v(a: Float64[nearest-even], b: Rational[-100, 100; 1, 16]): Boolean pure {{ convert<Rational[-100, 100; 1, 16]>(a) = b }}");
+    let wire = wire(&source);
+    assert_ieee_law(&wire, operation(&wire, "quire.op.ieee.to_rational"));
+}
+
+// Supplemental S2 source-boundary control; this does not claim conversion AC-8.
+#[trace("TC-1091")]
+#[test]
+fn bit_level_float_constructors_remain_unrepresented_source_forms() {
+    for (width, bits) in [("32", "0x3f800000"), ("64", "0x3ff0000000000000")] {
+        let source = format!("{HEADER}function one using v(): Float{width}[nearest-even] pure {{ float{width}(bits: {bits}) }}");
+        let Err(AdmittedRefusal::Package(refusal)) = compile(&source) else {
+            panic!("a float constant has no complete-V1 source route");
+        };
+        let qsl_replay::spine::CompileRefusal::Forms { failure, .. } = *refusal else {
+            panic!("the float constructor refuses at S2: {refusal:?}");
+        };
+        assert!(matches!(
+            failure.cause,
+            qsl_forms::FormsCause::UnrepresentedConstruct {
+                production: qsl_cst::Production::FloatValue,
+            }
+        ));
+    }
+}
+
+#[trace("TC-1091", "FR-397-AC-1", "FR-397-AC-3")]
+#[test]
+fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source_spine() {
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use qsl_replay::spine::{self, ParseRequest, SpineLimits};
+    use qsl_semantics::family::FamilyOutcome;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_exact::{Cancel, IeeeValue, Integer, Meter, Outcome, Rational, Value as KernelValue};
+
+    for (width, left, right) in [
+        (
+            "Float32",
+            IeeeValue::binary32(1.5_f32.to_bits()),
+            IeeeValue::binary32(0.5_f32.to_bits()),
+        ),
+        (
+            "Float64",
+            IeeeValue::binary64(1.5_f64.to_bits()),
+            IeeeValue::binary64(0.5_f64.to_bits()),
+        ),
+    ] {
+        for (operator, expected) in [("+", 2_i64), ("-", 1), ("*", 0), ("/", 3)] {
+            // Multiplication has the exact rational result 3/4; the other
+            // three results are integers, represented as rationals too.
+            let expected = if operator == "*" {
+                Rational::new(Integer::from(3_i64), Integer::from(4_i64)).unwrap()
+            } else {
+                Rational::new(Integer::from(expected), Integer::one()).unwrap()
+            };
+            let text = format!("{HEADER}function agrees using v(a: {width}[nearest-even], b: {width}[nearest-even], expected: Rational[-100, 100; 1, 16]): Boolean pure {{ convert<Rational[-100, 100; 1, 16]>(a {operator} b) = expected }}");
+            let emitted = wire(&text);
+            let arithmetic_name = match operator {
+                "+" => "add",
+                "-" => "sub",
+                "*" => "mul",
+                "/" => "div",
+                _ => unreachable!("the test enumerates four IEEE arithmetic operators"),
+            };
+            let arithmetic = operation(
+                &emitted,
+                &format!("quire.op.ieee.{}.{arithmetic_name}", width.to_lowercase()),
+            );
+            assert_ieee_law(&emitted, arithmetic);
+            assert_eq!(
+                arithmetic["body"]["operation"]["mode"],
+                json!({"kind": "rounding", "value": "nearest-even"}),
+            );
+            assert_ieee_law(&emitted, operation(&emitted, "quire.op.ieee.to_rational"));
+            let source = SourceIdentity::new("a", "ieee", "git", "1");
+            let limits = SpineLimits::default();
+            let cancel = Cancel::new();
+            let parsed = spine::parse(
+                &ParseRequest {
+                    source: &source,
+                    path: "ieee.native",
+                    bytes: text.as_bytes(),
+                },
+                limits.source,
+                &cancel,
+            )
+            .expect("source parses")
+            .into_value();
+            let models = spine::select(&parsed, &Default::default(), limits.model, &cancel)
+                .expect("models select")
+                .into_value();
+            let checked = spine::check(
+                &parsed,
+                &models,
+                &DependencyInput::default(),
+                &spine::LockEvidence::default(),
+                limits,
+                &cancel,
+            )
+            .expect("source checks without an injected IEEE profile")
+            .into_value();
+            let evaluation = checked
+                .package()
+                .call(
+                    &QualifiedName::unqualified("agrees").unwrap(),
+                    vec![
+                        KernelValue::Float(left),
+                        KernelValue::Float(right),
+                        KernelValue::Rational(expected),
+                    ],
+                    &ObjectEnvironment::default(),
+                    &mut Meter::new(spine::default_accounting(1_000_000)),
+                )
+                .expect("the admitted float call runs");
+            assert!(
+                matches!(
+                    evaluation.outcome,
+                    FamilyOutcome::Evaluated(Outcome::Completed(KernelValue::Boolean(true)))
+                ),
+                "{width} {operator}: {:?}",
+                evaluation.outcome,
+            );
+        }
+    }
+}

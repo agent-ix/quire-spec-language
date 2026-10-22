@@ -74,10 +74,6 @@ matters.
   the model gives the acting thread, and branch-local locations as they are.
   Its precondition SHALL read that value, so a load is enabled only for
   values that satisfy it.
-- Under `ra`, the value the model gives the acting thread at a shared
-  location SHALL be the value of the message the access chose, for the
-  location a load or the read part of an RMW reads, and otherwise the value of
-  the message the thread's current view points at.
 - The postcondition's delta at the shared location SHALL go to the memory
   model; branch-local writes SHALL apply in place.
 - An RMW application whose post-state leaves its location unchanged SHALL
@@ -124,7 +120,6 @@ matters.
 | FR-229-AC-3 | A `compare_exchange(1, 2)` on `x` at 0 under `ra` applies as a load: it adds no message and moves only the acting thread's view. | Test (TC-674) |
 | FR-229-AC-4 | Under `tso`, `Sx` is invisible to `always holds(x.v <= 1)` and `flush(left)` is visible; under `ra`, `Sx` is visible. Under `tso`, `Ly` and `Sy` are independent, and `flush(left)` and `Lx` are dependent through `mem(x)`. | Test (TC-674) |
 | FR-229-AC-5 | Every terminal state of `SB` under `tso` has empty buffers, and its deadlock-freedom item settles `proved`. | Test (TC-674) |
-| FR-229-AC-6 | Under `ra`, one branch repeating a `relaxed` store of the constant `x := 0` with the precondition `x.v = 0` and a `relaxed` load of `x` with the precondition `x.v = 1`, and a second branch storing `x := 1` once: after the second branch's store, the first branch's store is enabled only while its current view points at a message with `x.v = 0`, and its load is enabled for each message at or after that view whose value is 1. | Test (TC-674) |
 
 ## Dependencies
 
