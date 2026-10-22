@@ -252,6 +252,10 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   NOT depend on source order: reversing the unit's clauses SHALL NOT change
   which operation a given key names. An operation no clause and no attempt
   names gets no record.
+- The checker SHALL record on each such occurrence one region: the span of
+  the operation reference in the first clause or attempt, in source order,
+  that names the operation (FR-105 Outputs). The region follows source
+  order; the key does not.
 - Each record's extent SHALL follow ADR-014 §4 as FR-097 classifies it, over
   the clause's `self`, `result` and parameter types and the populations the
   clause ranges over: the context's population (every object of which the
