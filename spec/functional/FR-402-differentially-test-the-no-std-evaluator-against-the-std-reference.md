@@ -23,8 +23,12 @@ relationships:
 [AD-001](../assurance/AD-001-shared-evaluation-core-interface.md) keeps QSL's
 std evaluator as the semantic reference while a second, `no_std` + `alloc`
 implementation of the [FR-262](FR-262-evaluate-values-and-calls-at-any-depth.md)
-interface, which [FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md)
-hosts in `quire-eval`, is built behind it. The two implementations must agree
+interface is built behind it. That implementation lives in `quire-eval`, in
+the repository `agent-ix/quire-eval`, beside the interface
+[FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md)
+hosts there; `qsl-eval` consumes it. The suite compares QSL's existing std
+evaluation path with the `quire-eval` implementation until that std path is
+retired. The two implementations must agree
 on outcome, refusal, location, losses and accounting for shared inputs, and
 the reference may be switched out only once the second implementation passes
 the shared differential suite. This requirement defines that suite: which
@@ -42,7 +46,7 @@ The case record, its loader and the compared record live beside the
 evaluation interface, in the crate `quire-eval-corpus` in the repository
 `agent-ix/quire-eval`, not in a QSL crate. The code generator (CG) depends on
 it to write its generated-closure cases, and on `quire-eval` to record
-expected evaluations once `quire-eval` offers an implementation it can run,
+expected evaluations once `quire-eval` carries its implementation,
 so neither the corpus nor CG's expectations need any QSL entry beyond the
 `qsl-replay` facade CG already uses. Turning a case into a checked input is
 the implementation's job, through an admission contract the corpus crate
@@ -398,9 +402,9 @@ CG SHALL write its bundle with `quire-eval-corpus`: each case's source,
 source identity labels and library dependencies as it compiles them, the
 `package_id` that `qsl_replay::compile_package` returns for them (called
 from CG's `replay` module, FR-060 T12-A), and `expected` `null`, with
-`generated_bodies` empty. Once an implementation of the `quire-eval`
-interface exists that CG may depend on, CG MAY instead record a non-null `expected` from one run of the
-case through that implementation, with its generated bodies registered and
+`generated_bodies` empty while `quire-eval` carries no implementation of the
+interface. Once it carries one, CG MAY instead record a non-null `expected`
+from one run of the case through `quire-eval`'s implementation, with its generated bodies registered and
 named in `generated_bodies`; the harness then checks that record against the
 std reference.
 
