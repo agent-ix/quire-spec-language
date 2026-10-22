@@ -233,7 +233,10 @@ payload for it, as stated.
   carries `code` and `cause`, the `InputRefusal`'s catalog code and cause
   strings; `fault` carries `stage` and `invariant`, the `InternalFault`'s;
   `storage` carries `parameter`; `cancelled`, `supplied` and
-  `unsupported_helper` carry no payload member.
+  `unsupported_helper` carry no payload member. `cancelled` is only a
+  pre-charge Begin failure. A charge that a cancelled handle denies is
+  recorded as the evaluation it returns, the `incomplete` outcome at that
+  charge (FR-262).
 
 `<outcome>` SHALL be one of:
 
@@ -344,9 +347,9 @@ cases by key, in the order `checked-in`, `generated`, `external`, and by
 `case_id` within a bundle. CG's generated-closure
 bundle joins the corpus this way.
 
-FR-262-AC-2 (a 100,000-long `List` value), AC-3, AC-4, AC-6, AC-7 and AC-8
-(registry results, registered generated bodies, stepping, cancellation and
-resumption) cannot be written as a version-1 case, because a case's result
+FR-262-AC-2 (a 100,000-long `List` value), AC-3, AC-4, AC-6, AC-7, AC-8,
+AC-10 and AC-11 (registry results, registered generated bodies, stepping,
+cancellation, resumption and child-request validation) cannot be written as a version-1 case, because a case's result
 must be `Boolean` or `Integer`, and a case registers no QSL-side body and
 cancels nothing. The suite compares them by running those criteria's tests
 against both implementations: each test SHALL pass against the std reference and
