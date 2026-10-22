@@ -157,10 +157,9 @@ contract, so QSL SHALL NOT substitute a rational scalar type to emit a
 quantity literal. Quantity parameters and the existing quantity comparison,
 arithmetic and exact unit-conversion operations are in scope.
 
-A quantity is an unbounded domain whose magnitude is an unbounded `Rational`,
-and no `FiniteBound` ranges over a rational magnitude (ADR-014 extent rule,
-FR-097-AC-2). CG's bounded lowering answers such a domain `RequiresBound`, so
-the quantity literal stays outside V1.
+The refusal is QSL's own V1 lowering scope: QSL emits no `value_kind:
+quantity` literal, and `check` raises `ProbabilisticCause::QuantityLiteral` for
+a quantity literal in a value expression.
 
 ### Application nodes
 
