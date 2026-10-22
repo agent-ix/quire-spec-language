@@ -22,18 +22,21 @@
 //! well formed, its resolution and typing -- subject, profile, scheduler,
 //! rewards, predicates, units and event -- recorded as a
 //! [`CheckedProbabilisticClaim`] with its obligation identity (FR-186). The
-//! forms FR-195 and the timed checks own refuse
+//! forms only exact evidence decides (FR-195) are typed with them: an
+//! unbounded reachability event under the infinite-trace profile and an
+//! `expected accumulate` claim. The forms the timed checks own refuse
 //! `unsupported_construct`/`not-yet-implemented`, so no claim compiles
 //! unchecked.
 
 mod claim;
 mod exact;
+pub(crate) use exact::{value as exact_value, ExactFault};
 mod model;
 
 pub use claim::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedTemporalFormula,
     ClaimNormalForm, Confidence, Event, FractionMeasure, ModelSubjectRef, OverBinding, ProbForm,
-    ProbScheduler,
+    ProbScheduler, ReachTarget,
 };
 pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput};
 pub use model::{
@@ -354,6 +357,15 @@ pub enum ProbabilisticCause {
         /// The alias's span.
         span: Span,
     },
+    /// A claim under the timed profile, which has no probabilistic event
+    /// reading (FR-234). `invalid_probabilistic_model`/`timed-event-profile`
+    /// (QSL-proposed).
+    TimedEventProfile {
+        /// The claim.
+        claim: String,
+        /// The alias's span.
+        span: Span,
+    },
     /// An event with an operator that has no closed interval, or whose
     /// profile is not bounded: a probabilistic event needs a finite window
     /// (ADR-024 PF-8). `invalid_probabilistic_model`/`unbounded-event`
@@ -447,9 +459,20 @@ pub enum ProbabilisticCause {
         /// The parameter name's span.
         span: Span,
     },
-    /// A construct of a claim that S3 does not check yet: a form FR-195 owns
-    /// (`expected ... until`, `elapsed`), a timed window or an `on each`
-    /// activation. `unsupported_construct`/`not-yet-implemented`.
+    /// An operand of an unbounded `eventually`, `until` or `always` that is a
+    /// temporal operator or a constant, not a `holds(P)` state predicate
+    /// (ADR-028 XF-4). `invalid_probabilistic_model`/`not-state-predicate`
+    /// (QSL-proposed, STD-188).
+    NotStatePredicate {
+        /// The claim.
+        claim: String,
+        /// The operand's span.
+        span: Span,
+    },
+    /// A construct of a claim that S3 does not check yet: an `expected
+    /// elapsed` claim or an `elapsed` measure (no subject is timed), a timed
+    /// window or an `on each` activation.
+    /// `unsupported_construct`/`not-yet-implemented`.
     NotYetImplemented {
         /// The claim's name.
         claim: String,
@@ -489,6 +512,7 @@ impl ProbabilisticCause {
             | Self::TraceSubject { span, .. }
             | Self::UnresolvedProfile { span, .. }
             | Self::NotTemporalProfile { span, .. }
+            | Self::TimedEventProfile { span, .. }
             | Self::UnboundedEvent { span, .. }
             | Self::UnresolvedWorkload { span, .. }
             | Self::ForeignWorkload { span, .. }
@@ -498,6 +522,7 @@ impl ProbabilisticCause {
             | Self::FractionBound { span, .. }
             | Self::ThresholdNotLiteral { span, .. }
             | Self::OverNotObjectType { span, .. }
+            | Self::NotStatePredicate { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
             Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
         }
@@ -533,10 +558,12 @@ impl ProbabilisticCause {
             | Self::RewardType { .. }
             | Self::TraceSubject { .. }
             | Self::NotTemporalProfile { .. }
+            | Self::TimedEventProfile { .. }
             | Self::UnboundedEvent { .. }
             | Self::ForeignWorkload { .. }
             | Self::FractionBound { .. }
-            | Self::OverNotObjectType { .. } => Code::InvalidProbabilisticModel,
+            | Self::OverNotObjectType { .. }
+            | Self::NotStatePredicate { .. } => Code::InvalidProbabilisticModel,
             Self::UnitMismatch { .. } | Self::ThresholdNotLiteral { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::UnresolvedOperation { .. }
@@ -583,12 +610,14 @@ impl ProbabilisticCause {
             Self::AmbiguousOperation { .. } | Self::AmbiguousReward { .. } => "ambiguous-name",
             Self::TraceSubject { .. } => "trace-subject",
             Self::NotTemporalProfile { .. } => "not-temporal-profile",
+            Self::TimedEventProfile { .. } => "timed-event-profile",
             Self::UnboundedEvent { .. } => "unbounded-event",
             Self::ForeignWorkload { .. } => "foreign-workload",
             Self::UnitMismatch { .. } => "unit-mismatch",
             Self::ThresholdNotLiteral { .. } => "type-mismatch",
             Self::FractionBound { .. } => "fraction-bound-out-of-range",
             Self::OverNotObjectType { .. } => "over-not-object-type",
+            Self::NotStatePredicate { .. } => "not-state-predicate",
             Self::DuplicateWorkload { .. } => "duplicate-declaration",
             Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
         }

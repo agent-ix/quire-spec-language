@@ -23,6 +23,7 @@ use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::{CatalogCode, Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
+use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
@@ -161,6 +162,58 @@ pub enum SymmetryBrokenCause {
         /// The generator.
         generator: Permutation,
     },
+}
+
+/// Why a symmetry declaration's form refuses the request (FR-151 "Form"):
+/// `invalid_runtime_input`/`invalid-value`, naming the declaration (its
+/// index in the request) and the failing member.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum SymmetryRefusal {
+    /// The population is not declared `symmetric` in the checked package.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: {} is not symmetric", population.node)]
+    NotSymmetric {
+        /// The declaration's index.
+        declaration: usize,
+        /// Its population.
+        population: DeclarationKey,
+    },
+    /// The subject has no universe for the population.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: {} has no universe", population.node)]
+    NoUniverse {
+        /// The declaration's index.
+        declaration: usize,
+        /// Its population.
+        population: DeclarationKey,
+    },
+    /// A class names a key outside the population's universe.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: key {key} is not in the universe")]
+    UnknownKey {
+        /// The declaration's index.
+        declaration: usize,
+        /// The key.
+        key: String,
+    },
+    /// A key appears in two classes of its population, in one declaration
+    /// or across two, or twice in one class.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: key {key} is in two classes")]
+    RepeatedKey {
+        /// The declaration's index.
+        declaration: usize,
+        /// The key.
+        key: String,
+    },
+}
+
+impl SymmetryRefusal {
+    /// The refusal's catalog code: `invalid_runtime_input`.
+    pub fn code(&self) -> Code {
+        Code::InvalidRuntimeInput
+    }
+
+    /// The refusal's catalog cause: `invalid-value`.
+    pub fn cause(&self) -> &'static str {
+        "invalid-value"
+    }
 }
 
 /// ADR-018 PC-1: who stands behind a proved result.
@@ -362,6 +415,29 @@ pub enum UnavailabilityCause {
     /// `unsupported_projection`/`unsupported-requested-capability`, naming
     /// the refusal.
     StatisticalRequest(StatisticalRequestRefusal),
+    /// FR-235 (ADR-026 DF-5, TV-1): a timed invariant, safety or liveness
+    /// claim holds a punctual interval, so the request writer routed it to
+    /// no engine. Wire cause `punctual-interval`.
+    ///
+    /// Unwired: QSpec FR-331 spells the wire cause `punctual-interval{locus}`
+    /// with a checked-package `{node, occurrence}` locus, and S3 holds only
+    /// the interval's source span. The outcome wire therefore carries the
+    /// cause kind alone and no settlement path produces it yet; the locus is
+    /// remaining work on QSL-580.
+    PunctualInterval {
+        /// The punctual interval's span.
+        span: qsl_foundation::Span,
+    },
+}
+
+/// FR-235 V-8: an item the request writer disposed `Unsupported` settles
+/// with the cause it was disposed for.
+impl From<&UnsupportedItem> for UnavailabilityCause {
+    fn from(item: &UnsupportedItem) -> Self {
+        match item {
+            UnsupportedItem::PunctualInterval { span } => Self::PunctualInterval { span: *span },
+        }
+    }
 }
 
 /// The EN-4 refusal an [`UnavailabilityCause::StatisticalRequest`] names
@@ -376,6 +452,13 @@ pub enum StatisticalRequestRefusal {
     TraceIndexRange,
     /// The sampler returned a fraction for a Bernoulli test.
     FractionForEvent,
+    /// The claim is under every scheduler: only exact evidence decides it.
+    EveryScheduler,
+    /// The claim's form is one only exact evidence decides.
+    ExactOnlyForm,
+    /// The claim states no confidence parameters: only exact evidence
+    /// decides it.
+    MissingConfidence,
 }
 
 impl StatisticalRequestRefusal {
@@ -386,6 +469,9 @@ impl StatisticalRequestRefusal {
             Self::TooManyTests => "too-many-tests",
             Self::TraceIndexRange => "trace-index-range",
             Self::FractionForEvent => "fraction-for-event",
+            Self::EveryScheduler => "every-scheduler",
+            Self::ExactOnlyForm => "exact-only-form",
+            Self::MissingConfidence => "missing-confidence",
         }
     }
 }
@@ -405,6 +491,7 @@ impl UnavailabilityCause {
             Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
+            Self::PunctualInterval { .. } => "punctual-interval",
         }
     }
 
@@ -417,7 +504,8 @@ impl UnavailabilityCause {
             | Self::NotMarkov
             | Self::TotalAboveDrawRange { .. }
             | Self::ConfidenceBeyondPrecision
-            | Self::WeakAccessShape { .. } => None,
+            | Self::WeakAccessShape { .. }
+            | Self::PunctualInterval { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
@@ -558,6 +646,39 @@ pub enum InconclusiveCause {
         /// The bound-limited states.
         states: u64,
     },
+    /// ADR-027 AE-4 (QSpec FR-428): the run completed with no counterexample
+    /// and left an `activate` step of at least one state unexpanded at
+    /// `max_live_instances`.
+    InstanceBoundReached {
+        /// The bound, by the request member that raises it, and its value.
+        bound: InstanceBound,
+        /// The instance-limited states.
+        states: u64,
+    },
+}
+
+/// The instance bound a run used (ADR-027 AE-4): the value of the request
+/// member `max_live_instances`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InstanceBound {
+    /// The value of `max_live_instances`.
+    pub value: u64,
+}
+
+impl InstanceBound {
+    /// The request member that raises the bound.
+    pub const MEMBER: &'static str = "max_live_instances";
+}
+
+/// The instance bound a terminal record over an `on each` protocol states
+/// (ADR-027 AE-4): the bound its run used and whether a state of the run was
+/// instance-limited.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatedInstanceBound {
+    /// The bound.
+    pub bound: InstanceBound,
+    /// Whether a state of the run was instance-limited.
+    pub reached: bool,
 }
 
 /// A request's memory bound member (ADR-025 MB-2, FR-225).
@@ -622,6 +743,7 @@ impl InconclusiveCause {
             Self::ConstraintReached { .. } => "constraint-reached",
             Self::ReductionHorizon { .. } => "reduction-horizon",
             Self::MemoryBoundReached { .. } => "memory-bound-reached",
+            Self::InstanceBoundReached { .. } => "instance-bound-reached",
         }
     }
 
@@ -643,7 +765,8 @@ impl InconclusiveCause {
             | Self::ReductionNotPreserving { .. }
             | Self::ConstraintReached { .. }
             | Self::ReductionHorizon { .. }
-            | Self::MemoryBoundReached { .. } => 0,
+            | Self::MemoryBoundReached { .. }
+            | Self::InstanceBoundReached { .. } => 0,
             Self::SymmetryBroken { population, cause } => {
                 let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
                 let moved: usize = generator
@@ -1355,6 +1478,24 @@ mod tests {
             None
         );
     }
+    /// FR-235 V-8, cause only: an item the request writer disposed
+    /// `PunctualInterval` maps to the `punctual-interval` cause with basis
+    /// `unavailable` and category `unsupported`. No settlement path exists
+    /// yet, so this backs no acceptance criterion.
+    #[trace("TC-690", "FR-235")]
+    #[test]
+    fn a_punctual_item_settles_unsupported_naming_the_interval() {
+        let span = qsl_foundation::Span { start: 4, end: 16 };
+        let cause = UnavailabilityCause::from(&UnsupportedItem::PunctualInterval { span });
+        assert_eq!(cause, UnavailabilityCause::PunctualInterval { span });
+        assert_eq!(cause.as_str(), "punctual-interval");
+        assert_eq!(cause.basis().as_str(), "unavailable");
+        assert_eq!(
+            TerminalValue::Unsupported(cause).category(),
+            Category::Unsupported
+        );
+    }
+
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use crate::result::Verdict;

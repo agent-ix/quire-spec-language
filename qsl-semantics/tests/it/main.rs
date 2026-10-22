@@ -69,6 +69,8 @@ mod refinement_declarations;
 #[cfg(feature = "test-support")]
 mod refinement_populations;
 #[cfg(feature = "test-support")]
+mod refinement_protocol;
+#[cfg(feature = "test-support")]
 mod relationship_extents;
 #[cfg(feature = "test-support")]
 mod relationship_navigation;
@@ -91,6 +93,8 @@ mod temporal_fairness;
 mod terminal_declarations;
 #[cfg(feature = "test-support")]
 mod timed_declarations;
+#[cfg(feature = "test-support")]
+mod timed_intervals;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
 mod variant_fields;

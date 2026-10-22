@@ -295,6 +295,49 @@ fn an_implementation_gap_is_unsupported() {
     assert_eq!(class_of(&projection), RefinementClass::Unsupported);
 }
 
+/// FR-341-AC-5 over the refinement features (FR-135-AC-5, FR-135-AC-9,
+/// FR-147-AC-7): a refinement refused for a feature the build has not built
+/// classifies `unsupported`, and a defect of the internal list, which is a
+/// typed refusal of the input, classifies `refused`.
+#[trace("TC-861", "FR-341-AC-5")]
+#[test]
+fn an_unbuilt_refinement_feature_is_unsupported_and_a_list_defect_is_refused() {
+    use qsl_semantics::check::{
+        ListDefect, ListDefectKind, RefinementCause, RefinementRefusal, UnsupportedFeature,
+    };
+    let refinement = |cause| {
+        CheckCause::Refinement(Box::new(RefinementRefusal {
+            refinement: "CasTwice".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 1 },
+            cause,
+        }))
+    };
+    for feature in [
+        UnsupportedFeature::ProtocolAbstractSide,
+        UnsupportedFeature::RefinementInternalList,
+        UnsupportedFeature::HistoryRow,
+    ] {
+        let refusal = check(vec![refinement(RefinementCause::Unsupported {
+            feature,
+            profile: "quire.temporal.infinite-trace/v1".to_owned(),
+            subject: None,
+        })]);
+        assert_eq!(
+            class_of(&refusal),
+            RefinementClass::Unsupported,
+            "{feature:?}"
+        );
+    }
+    let defect = check(vec![refinement(RefinementCause::InternalList(
+        ListDefect {
+            kind: ListDefectKind::Missing,
+            pointer: "/0/internal/0".to_owned(),
+            first: None,
+        },
+    ))]);
+    assert_eq!(class_of(&defect), RefinementClass::Refused);
+}
+
 /// FR-341-AC-5, AC-6, AC-3: a `temporal` clause that checks but that no
 /// emission writes yet is `unsupported_construct`/`not-yet-implemented` and
 /// classifies `unsupported`; a profile that does not admit an operator's

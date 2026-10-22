@@ -14,12 +14,13 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    binder_root, explore_protocol, Access, BlockedThread, Disposition, FootprintStep, GatedStep,
-    MemoryModel, MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition,
-    RestKind, RestPoint, Sc, ScComponent, SendOutcome, StepKind, ThreadPath, WaitCause, Written,
+    binder_root, explore_protocol, Access, BlockedThread, Chosen, Disposition, FootprintStep,
+    GatedStep, MemoryModel, MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem,
+    ProtocolTransition, ReadChoice, RestKind, RestPoint, Sc, ScComponent, SendOutcome, SharedCell,
+    StepKind, ThreadPath, WaitCause, Written,
 };
 use qsl_eval::simulation::{
-    Footprint, Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem,
+    Footprint, Limits, Location, NotSimulated, Outcome, SubjectSystem, TransitionSystem,
 };
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
@@ -105,6 +106,7 @@ impl Case {
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: None,
                 max_store_buffer: None,
+                max_live_instances: None,
                 limits: ModelCheckLimits::default(),
             },
             &Cancel::new(),
@@ -152,6 +154,7 @@ impl Case {
                 roles: self.subject(protocol).roles,
                 memory: self.subject(protocol).memory,
                 max_store_buffer: None,
+                max_live_instances: None,
             },
             &envelope_at(&unit, recorded_id, payload, node, occurrence),
             &NO_ATOMS,
@@ -161,7 +164,7 @@ impl Case {
 
     /// FR-127's record of `outcome` over `protocol`, its counterexample
     /// replayed by FR-217.
-    fn settle(
+    pub(crate) fn settle(
         &self,
         protocol: &str,
         outcome: &ModelCheckOutcome<ProtocolTransition>,
@@ -174,6 +177,7 @@ impl Case {
                 subject: self.subject(protocol),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer: None,
+                max_live_instances: None,
             },
             &Cancel::new(),
             |payload| self.replay(protocol, payload.clone()),
@@ -182,7 +186,7 @@ impl Case {
 }
 
 /// The counterexample of a `Violated` outcome.
-fn violated(
+pub(crate) fn violated(
     outcome: &ModelCheckOutcome<ProtocolTransition>,
 ) -> TemporalCounterexample<ProtocolTransition> {
     match outcome {
@@ -366,8 +370,8 @@ fn thread_state(entries: &[Json], path: &ThreadPath) -> Json {
         .steps
         .iter()
         .map(|step| {
-            json!({"node": step.node, "branch": step.branch,
-                "ordinal": step.ordinal.to_string()})
+            json!({"node": step.node(), "branch": step.branch(),
+                "ordinal": step.ordinal().to_string()})
         })
         .collect();
     let wanted = json!({"instance": "0", "steps": steps, "type": "thread-path"});
@@ -993,11 +997,7 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
     let subject = case.subject("Fill");
     let system = sc_system(&subject);
     let reached = reachable(&system);
-    let class = |at: usize| {
-        system
-            .terminal_class(&reached[at].state, !reached[at].steps.is_empty())
-            .expect("classifies")
-    };
+    let class = |at: usize| crate::fill::class_of(&system, &reached[at].state);
     assert_eq!(class(6), TerminalClass::Intended);
     assert_eq!(class(2), TerminalClass::Deadlocked);
     let outcome = case.deadlock("Fill");
@@ -1011,6 +1011,7 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
         ]
     );
     assert_eq!(counterexample.blocked, fill_blocked());
+    assert!(counterexample.fairness.is_empty());
     let record = case.settle("Fill", &outcome);
     assert_eq!(record.label, ResultLabel::Refuted, "{record:?}");
     assert_eq!(record.counterexample, Some(counterexample));
@@ -1048,9 +1049,10 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
 /// `Displaced`, and so is a `lose(ch, P)` under `at-most-once`; when the
 /// last removal of `P`'s entries was a `receive`, the cause is
 /// `EmptyQueue`. The root at `finish` while a branch still runs is
-/// `FinishWaiting`, naming it. Not covered: the `Pay` compensation fixture
-/// (`CommitClosed`), replicated roles (`NoRoleInstance`) and the `tso` fence,
-/// which this system refuses.
+/// `FinishWaiting`, naming it. The `Pay` compensation fixture
+/// (`CommitClosed`) is `protocol_compensation`'s, and the `tso` fence
+/// `weak_memory`'s. Not covered: replicated roles (`NoRoleInstance`), which
+/// this system refuses.
 #[test]
 fn each_channel_wait_cause_names_its_condition() {
     let fifo = "ordering fifo by (m: Boolean) { true }";
@@ -1257,6 +1259,7 @@ fn a_protocol_model_check_is_deterministic() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             max_store_buffer: None,
+            max_live_instances: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),
@@ -1329,10 +1332,11 @@ impl MemoryModel for Interleaving {
         _: &Nothing,
         _: &ThreadPath,
         _: &Access<'_>,
+        _: Option<ReadChoice>,
         _: &ModelSimState,
         post: ModelSimState,
-    ) -> Written<Nothing> {
-        Written::Applied(post, Nothing)
+    ) -> Vec<Chosen<Nothing>> {
+        Chosen::only(Written::Applied(post, Nothing))
     }
 
     fn internal_steps(&self, _: &Nothing, _: &ModelSimState) -> Vec<MemoryStep<Nothing>> {
@@ -1343,7 +1347,15 @@ impl MemoryModel for Interleaving {
         true
     }
 
-    fn split(&self, _: &Nothing, _: &ThreadPath, _: &[ThreadPath], _: MemoryModelName) -> Nothing {
+    fn split(
+        &self,
+        _: &Nothing,
+        _: &ThreadPath,
+        _: &[ThreadPath],
+        _: MemoryModelName,
+        _: &[SharedCell<'_>],
+        _: &ModelSimState,
+    ) -> Nothing {
         Nothing
     }
 
@@ -1364,6 +1376,7 @@ impl MemoryModel for Interleaving {
         _: &Nothing,
         _: &ThreadPath,
         step: FootprintStep<'_>,
+        _: &BTreeSet<Location>,
         _: &mut Footprint,
     ) -> bool {
         !matches!(step, FootprintStep::Memory { .. })
@@ -1676,6 +1689,7 @@ fn check_protocol_refuses_an_unstepped_construct() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             max_store_buffer: None,
+            max_live_instances: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),
@@ -1894,6 +1908,7 @@ fn a_replay_over_an_unbounded_protocol_subject_refuses_requires_bound() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             max_store_buffer: None,
+            max_live_instances: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),

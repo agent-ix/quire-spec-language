@@ -11,9 +11,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
+use qsl_foundation::bound::TemporalUpper;
 use qsl_semantics::check::{
-    BinaryTemporal, CheckedFormula, FormulaNode, FormulaNodeId, UnaryTemporal,
+    BinaryTemporal, CheckedFormula, CheckedInterval, FormulaNode, FormulaNodeId, UnaryTemporal,
 };
 
 use crate::automaton::error::AutomatonError;
@@ -40,10 +40,14 @@ pub(super) enum Window {
 }
 
 impl Window {
-    fn of(interval: Option<TemporalInterval>) -> Self {
-        match interval {
+    /// The offsets of a step interval. A timed interval counts time, not
+    /// positions, and has no offsets: the timed evaluator reads it
+    /// (`temporal::timed`), and a clause holding one is refused before a
+    /// step reader sees it.
+    fn of(interval: Option<&CheckedInterval>) -> Result<Self, AutomatonError> {
+        Ok(match interval {
             None => Self::From { lower: 0 },
-            Some(interval) => match interval.upper() {
+            Some(CheckedInterval::Steps(interval)) => match interval.upper() {
                 TemporalUpper::Finite(upper) => Self::Closed {
                     lower: interval.lower(),
                     upper,
@@ -52,7 +56,12 @@ impl Window {
                     lower: interval.lower(),
                 },
             },
-        }
+            Some(CheckedInterval::Timed(_)) => {
+                return Err(AutomatonError::Invariant {
+                    invariant: "step-interval-has-offsets",
+                })
+            }
+        })
     }
 
     pub(super) const fn lower(self) -> u64 {
@@ -437,9 +446,10 @@ impl Ir {
     }
 
     /// The nodes reachable from `root` through operands and cores, with the
-    /// negation of every state operand of a future operator (the translation
-    /// asserts it when a counter's operand does not hold), in ascending
-    /// order.
+    /// negation of every state operand of a future operator and of an `or`
+    /// that holds a future operator (the translation asserts it when a
+    /// counter's operand does not hold, or in the branch of a disjunction that
+    /// does not discharge on that operand), in ascending order.
     pub(super) fn reachable(&mut self, root: NodeId) -> Result<Vec<NodeId>, AutomatonError> {
         let mut seen = vec![false; self.len()];
         let mut pending = vec![root];
@@ -455,6 +465,16 @@ impl Ir {
             if let Node::Future { left, right, .. } = node {
                 pending.push(self.core(id));
                 for operand in left.into_iter().chain([right]) {
+                    if !self.has_future(operand) {
+                        pending.push(self.not(operand)?);
+                    }
+                }
+                seen.resize(self.len(), false);
+            }
+            if let (Node::Or(left, right), true) = (node, self.has_future(id)) {
+                // The `or` rule asserts the negation of a state operand in
+                // the branch that does not discharge on it.
+                for operand in [left, right] {
                     if !self.has_future(operand) {
                         pending.push(self.not(operand)?);
                     }
@@ -541,7 +561,7 @@ pub(super) fn lower(formula: &CheckedFormula, normal: bool) -> Result<Lowered, A
                 operand,
             } => {
                 let (positive, negative) = pair_of(*operand)?;
-                let window = Window::of(*interval);
+                let window = Window::of(interval.as_ref())?;
                 match operator {
                     UnaryTemporal::Eventually => (
                         ir.future(FutureKind::Eventually, window, None, positive),
@@ -568,7 +588,7 @@ pub(super) fn lower(formula: &CheckedFormula, normal: bool) -> Result<Lowered, A
                 right,
             } => {
                 let ((lp, ln), (rp, rn)) = (pair_of(*left)?, pair_of(*right)?);
-                let window = Window::of(*interval);
+                let window = Window::of(interval.as_ref())?;
                 match operator {
                     BinaryTemporal::Until => (
                         ir.future(FutureKind::Until, window, Some(lp), rp),

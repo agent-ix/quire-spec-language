@@ -610,3 +610,33 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
         );
     }
 }
+
+/// A safety clause violated on the terminal stutter step: `always
+/// (holds(c.value = 3) implies eventually[1,1] not holds(c.value = 3))` is
+/// false at the stutter position after value 3, whose state is value 3 again.
+/// The counterexample lists the model steps `0 -inc-> 1 -inc-> 2 -inc-> 3`
+/// and sets the terminal stutter marker on its loop at position 3, so its
+/// length is 4 and it replays to a reproduction.
+#[trace("TC-521", "FR-126-AC-17")]
+#[test]
+fn a_violation_on_the_stutter_step_carries_the_stutter_marker() {
+    let fixture = counter(
+        document(false),
+        "",
+        "always (holds(c.value = 3) implies eventually[1,1] not holds(c.value = 3))",
+    );
+    let payload = found(&fixture, is_three);
+    assert_eq!(payload.prefix.len(), 3);
+    assert_eq!(
+        payload.lasso,
+        Some(qsl_replay::Lasso {
+            entry: 3,
+            terminal_stutter: true
+        })
+    );
+    assert_eq!(payload.len(), 4);
+    assert_eq!(
+        reproduced(replay_with(&fixture, payload, is_three)),
+        Some(0)
+    );
+}

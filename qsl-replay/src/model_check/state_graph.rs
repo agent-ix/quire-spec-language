@@ -37,17 +37,13 @@ pub struct ModelPath {
 /// path's steps from `loop_entry` on and the last post-state of the path is
 /// the state at `loop_entry`. A loop that is the one terminal stutter step
 /// (ADR-018 SM-4) has no model step: `loop_entry` is the path's length, the
-/// position of the terminal state, and `terminal_stutter` is set, as
-/// [`Lasso`](crate::model_check::counterexample::Lasso) states for a
-/// counterexample.
+/// position of the terminal state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelLasso {
     /// The stem and the loop.
     pub path: ModelPath,
     /// The position the loop re-enters, in `0..=path.steps.len()`.
     pub loop_entry: u32,
-    /// Whether the loop is the one terminal stutter step.
-    pub terminal_stutter: bool,
 }
 
 /// One initial state's HP-5 witness: a lasso on which the body is true and

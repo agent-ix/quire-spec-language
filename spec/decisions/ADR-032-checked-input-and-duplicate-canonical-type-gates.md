@@ -138,7 +138,7 @@ Owner rulings, 2026-10-01, recorded on the owning ticket.
 | --- | --- | --- |
 | R-1 | Tagging the ADR-013 owner-row types makes DT-2 report every seam-module namesake of a tagged type. When does `canonical-types` join `make ci`? | It runs on demand until M-6d lands and joins `make ci` afterwards, once the namesakes are gone; no merge gate waits on IR (plan lead ruling, 2026-10-01). Its findings until then are the DT-7 work list. |
 | R-2 | Layer-crate namesakes such as `qsl-semantics`'s `LimitKind`, `ChargePoint`, `Incomplete` and `Meter` sit beside `quire-exact`'s types of those names. | Decide per type (DT-7). A namesake with the same meaning is a copy: delete it and use the canonical type. A namesake with a different meaning is renamed to say what it is. The spec lists the verdict for each type (FR-273). |
-| R-3 | A marker attribute from `qsl-attrs` would need a new dependency in `quire-exact` and `quire-semantic-value` and an FB-05 change. | No new dependency and no reserved-name list, since a list is a ledger. Canonical types carry the doc-comment tag `/// quire:canonical`, which the xtask parses (DT-1). FB-05 is unchanged. |
+| R-3 | A marker attribute crate (the marker owner is `ix-trace-rs`) would need a new dependency in `quire-exact` and `quire-semantic-value` and an FB-05 change. | No new dependency and no reserved-name list, since a list is a ledger. Canonical types carry the doc-comment tag `/// quire:canonical`, which the xtask parses (DT-1). FB-05 is unchanged. |
 | R-4 | The owning ticket asks for a QSpec half. | There is no QSpec half: both gates check QSL's own code structure. |
 
 ## Amendments to make on acceptance
@@ -168,7 +168,7 @@ Owner rulings, 2026-10-01, recorded on the owning ticket.
   someone edits the table. The tag cannot drift from the type it sits on.
 - **Every `pub` type of K and SV is canonical.** Rejected: it reserves all
   161 names workspace-wide, most of them unrelated to an ADR-013 owner row.
-- **A `#[canonical]` attribute from `qsl-attrs`.** Rejected (R-3): it adds a
+- **A `#[canonical]` attribute from a marker crate.** Rejected (R-3): it adds a
   dependency to K and SV and changes FB-05, where a doc-comment tag does the
   same work with neither.
 - **Name-only matching across repositories.** Rejected. It reports the

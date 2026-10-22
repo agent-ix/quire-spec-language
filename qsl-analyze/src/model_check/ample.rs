@@ -33,6 +33,9 @@ pub struct Atoms<'r> {
     pub letters: &'r dyn ModelLetters,
     /// The atoms, as the clause's automaton orders them.
     pub nodes: &'r [FormulaNodeId],
+    /// Whether the clause's activation has a `when` condition, whose
+    /// footprint the atoms' include.
+    pub guarded: bool,
 }
 
 /// One fairness class of the item's fairness set (FR-157 "Fairness
@@ -84,6 +87,14 @@ impl<'r, 'a> Por<'r, 'a> {
                     atoms
                         .letters
                         .reads(*node)
+                        .map_err(|refusal| ModelCheckRefusal::Footprint(refusal.into()))?,
+                );
+            }
+            if atoms.guarded {
+                atom_reads.extend(
+                    atoms
+                        .letters
+                        .activation_reads()
                         .map_err(|refusal| ModelCheckRefusal::Footprint(refusal.into()))?,
                 );
             }

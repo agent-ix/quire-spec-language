@@ -1066,3 +1066,162 @@ fn tc_1028_another_kind_at_a_native_parameter_is_wrong_value_kind() {
         assert_eq!(refused_parameter(&stopped), Some(0), "{declared:?}");
     }
 }
+
+/// FR-396-AC-5 (TC-1090): the record and tuple keys `compile_admitted`
+/// returns are the declarations replay converts a witness against. A witness
+/// built from them replays on both arms; the same witness built from the
+/// `composite_type` node ids refuses.
+#[trace("TC-1090", "FR-396-AC-5")]
+#[test]
+fn admitted_composite_keys_are_the_keys_replay_converts_against() {
+    let fixture = fixture(
+        "tuple Pair(Boolean, Boolean);\n\
+         record Holder { flag: Boolean; pair: Pair; }\n\
+         function p using v(x: Holder): Boolean pure { x.flag }\n",
+    );
+    let admitted = crate::compile_admitted(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        fixture.source.as_bytes(),
+        [],
+        &crate::spine::DependencyInput::default(),
+        crate::request::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles");
+    let find = |name: &str| {
+        admitted
+            .context()
+            .composites()
+            .find(|composite| {
+                composite.qualified_name().last().map(Identifier::as_str) == Some(name)
+            })
+            .cloned()
+            .expect("an admitted composite")
+    };
+    let (pair, holder) = (find("Pair"), find("Holder"));
+    let id = |key: quire_exact::NodeKey| WireNodeId::from_digest(*key.as_bytes());
+    assert_eq!(id(holder.key()), fixture.record_id("Holder"));
+    let value = |pair: WireNodeId, holder: WireNodeId| WitnessValue::Record {
+        declaration: holder,
+        fields: vec![
+            present("flag", WitnessValue::Boolean(false)),
+            present(
+                "pair",
+                WitnessValue::Tuple {
+                    declaration: pair,
+                    components: vec![WitnessValue::Boolean(true), WitnessValue::Boolean(false)],
+                },
+            ),
+        ],
+    };
+    for result in fixture.both("p", value(id(pair.key()), id(holder.key()))) {
+        assert_reproduced(result);
+    }
+    for result in fixture.both("p", value(id(pair.node()), id(holder.node()))) {
+        assert!(
+            result.is_err(),
+            "node ids are not the kernel keys: {result:?}"
+        );
+    }
+}
+
+/// FR-396-AC-6 (TC-1090): a union witness that names the admitted union's
+/// `composite_type` node id and a member by its admitted identifier replays on
+/// both arms; the same witness naming the kernel key refuses.
+#[trace("TC-1090", "FR-396-AC-9")]
+#[test]
+fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
+    let fixture = fixture(
+        "union Shape { Empty, Circle(Integer) }\n\
+         function p using v(x: Shape): Boolean pure \
+         { case x { Empty: false; Circle(r): r > 3; } }\n",
+    );
+    let admitted = crate::compile_admitted(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        fixture.source.as_bytes(),
+        [],
+        &crate::spine::DependencyInput::default(),
+        crate::request::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles");
+    let shape = admitted
+        .context()
+        .composites()
+        .find(|composite| {
+            composite.qualified_name().last().map(Identifier::as_str) == Some("Shape")
+        })
+        .cloned()
+        .expect("the admitted union");
+    let member = shape.union_members().expect("members")[1]
+        .identifier()
+        .as_str()
+        .to_owned();
+    let id = |key: quire_exact::NodeKey| WireNodeId::from_digest(*key.as_bytes());
+    let value = |declaration: WireNodeId| WitnessValue::Union {
+        declaration,
+        member: member.clone(),
+        components: vec![int(2)],
+    };
+    for result in fixture.both("p", value(id(shape.node()))) {
+        assert_reproduced(result);
+    }
+    for result in fixture.both("p", value(id(shape.key()))) {
+        assert!(
+            result.is_err(),
+            "the kernel key is not the settled union id: {result:?}"
+        );
+    }
+}
+
+/// FR-398-AC-5 (TC-1092): the unit id `compile_admitted` returns for a
+/// declared unit is the unit replay converts a quantity argument against. A
+/// witness quantity in the admitted id of `m` replays on both arms at a
+/// `Quantity<m>` parameter; one in the admitted id of `km` refuses.
+#[trace("TC-1092", "FR-398-AC-5")]
+#[test]
+fn admitted_unit_ids_are_the_units_replay_converts_against() {
+    let fixture = fixture(
+        "dimension Length;\n\
+         unit m : Length = rational(1, 1);\n\
+         unit km : Length = rational(1000, 1) * m;\n\
+         function p using v(x: Quantity<m>): Boolean pure { false }\n",
+    );
+    let admitted = crate::compile_admitted(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        fixture.source.as_bytes(),
+        [],
+        &crate::spine::DependencyInput::default(),
+        crate::request::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles");
+    let unit_id = |name: &str| {
+        *admitted
+            .context()
+            .units()
+            .find(|unit| unit.qualified_name().last().map(Identifier::as_str) == Some(name))
+            .expect("an admitted unit")
+            .id()
+            .as_bytes()
+    };
+    let quantity = |unit: [u8; 32]| WitnessValue::Quantity {
+        magnitude: QuantityMagnitude::Decimal {
+            coefficient: Integer::from(15_i64),
+            scale: Integer::from(1_i64),
+        },
+        unit,
+    };
+    for result in fixture.both("p", quantity(unit_id("m"))) {
+        assert_reproduced(result);
+    }
+    for result in fixture.both("p", quantity(unit_id("km"))) {
+        assert!(
+            result.is_err(),
+            "a quantity in another unit refuses: {result:?}"
+        );
+    }
+}

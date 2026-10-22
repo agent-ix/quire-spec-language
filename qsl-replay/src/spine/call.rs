@@ -431,6 +431,42 @@ pub fn run(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
+    run_reading(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        call,
+        objects,
+        cancel,
+        |_| Ok(()),
+    )
+    .map(|(package_id, outcome, ())| (package_id, outcome))
+}
+
+/// [`run`] over one compile, and, once the call has run, `read` over the
+/// compile's checked graph (FR-395 "One checked graph"): the value `read`
+/// returns comes from the same checked package as the call and the
+/// `package_id`. A refusal before the call, including a cancel, returns
+/// before `read` runs.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "run's signature (FR-100) plus the one read of the checked graph"
+)]
+pub(crate) fn run_reading<T>(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    call: &Call,
+    objects: &ObjectEnvironment,
+    cancel: &Cancel,
+    read: impl FnOnce(&CheckedGraph) -> Result<T, Box<RunRefusal>>,
+) -> Result<(PackageId, CallOutcome, T), Box<RunRefusal>> {
     let refusal = |failure| match failure {
         StageFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
         other => match front_end::refusal_or_fault(other) {
@@ -500,7 +536,8 @@ pub fn run(
     sources.push(checked.source().clone());
     sources.extend(checked.libraries().iter().cloned());
     let outcome = convert_outcome(evaluation, package.graph(), &sources)?;
-    Ok((package_id, outcome))
+    let read = read(package.graph())?;
+    Ok((package_id, outcome, read))
 }
 
 /// The selected function: its S6a name and declared parameters.

@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-126
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: references
 ---
 # FR-338: Check an EN-1 closure certificate
 
@@ -60,7 +62,7 @@ pub enum CertificateLocus {
     Query { part: QueryPart },
     ProofStep { part: QueryPart, index: u64 },
 }
-pub enum QueryPart { Unrolling, Base, Step }   // FR-314
+pub enum QueryPart { Unrolling, Base, Step { row: Option<u64> } }   // FR-314
 
 pub enum TemporalCertificateCheck {
     Accepted,
@@ -79,6 +81,20 @@ pub fn check_closure(
 `AutomatonStateKey` is the property-automaton translation's canonical
 encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
 every order in which the states are materialized.
+
+QSpec FR-331 carries `certificate-rejected{rule, at}` with `rule` and `at` as
+non-empty texts and catalogues no finer spelling. Of the loci in this family
+only FR-314's `QueryPart` has a text spelling (below); FR-149 writes
+`SimulationStep` as a JSON object, and `ProductState`, FR-314's `ProofStep`
+index form, FR-163's `HyperProductState` and FR-169's `ModelState` have no
+catalogued `at` spelling, which STD-238 asks QSpec FR-331 to catalog. This
+requirement carries an `AutomatonStateKey` as the bytes of its canonical
+encoding.
+
+FR-163 additionally owns the labelled-transition-tuple and missing-member
+loci of its hyper checker; those failures are not all product-state failures.
+
+A `QueryPart` is spelled on the wire as the text `unrolling`, `base` or `step`; a `Step` that carries a row (FR-314's refinement certificate, zero-based) is spelled `step/<row>` with the row in decimal, so `step/3` names the fourth step row and `step` alone names the step query of an `Inductive` proof. FR-331's `certificate-rejected` `at` is a non-empty text and defines no finer spelling, so this is QSL's convention for the part. QSpec Linear STD-238 asks FR-331 to catalog the `rule` and `at` spellings, `step/<row>` and the command-number form of `ProofStep` included.
 
 ### Canonical translation state
 
@@ -605,7 +621,7 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 |----|----------|--------------|
 | FR-338-AC-1 | Accepted vector: over ADR-018 §6's subject, FR-126-AC-2's TP-1 claim `always holds(c.versionNumber <= 1000)` returns `Holds` with a `ClosureCertificate` of its explored product states, and `check_closure` accepts it. | Test (TC-525) |
 | FR-338-AC-2 | Rejected vectors: AC-1's certificate with the product state for model state `(1, 0)` removed is rejected `SuccessorMissing` at that state; with the initial product state removed, `InitialMissing` at it; over the `Counter` subject with no `terminal` declaration, a certificate holding every reachable state, offered for the deadlock-freedom item, is rejected `BadState` at value 3 (deadlocked), while the same certificate for `always holds(c.value <= 3)` is accepted, since the deadlock at 3 changes no authored claim (ADR-018 DL-6). | Test (TC-525) |
-| FR-338-AC-3 | Over FR-120-AC-9's `test/tallies` subject, a certificate holding `t1` for `always holds(true)` is rejected `BadState` at `t1`, whose expansion records `ContractUndetermined` for the undefined `pre Low`. | Test (TC-525) |
+| FR-338-AC-3 | Over the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }`, a certificate holding values 0 to 2 for `always holds(true)` is rejected `BadState` at value 2, whose expansion records `ContractUndetermined` for the undefined `pre CanInc`. | Test (TC-525) |
 | FR-338-AC-4 | The canonical octet vectors have exactly the specified state bodies and full `K_C` octets; reversing subset/window insertion order leaves bytes equal, distinct occurrence paths and differing live facts leave bytes unequal, and no graph enumeration index enters the key. | Test |
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
 | FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |

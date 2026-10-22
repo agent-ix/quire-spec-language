@@ -851,11 +851,13 @@ The edges are:
 - CLI argument parsing.
 
 The v2 reader refuses an unknown wire tag or node kind with a named code. Each
-edge function carries the marker attribute `#[string_edge]`, a tool attribute.
+edge function carries the marker attribute `#[string_edge]`, a tool attribute
+owned by the neutral crate `ix-trace-rs` (agent-ix/ix-trace-rs) and imported from
+it; QSL defines no marker of its own.
 An `xtask string-edge` scan over the QSL crates reports every string comparison
 or string `match` outside a marked function in non-test code, and runs in the
 lint gate. Each allow-list entry names the user value it compares and
-selects no behaviour. #214 builds the attribute and the scan.
+selects no behaviour. #214 builds the scan; the attribute is `ix-trace-rs`'s.
 agent-ix/quire-contract-ir#141, agent-ix/quire-contract-codegen#86 and the RT
 ticket run the same scan in their repositories.
 
@@ -1111,7 +1113,7 @@ item settles `invalid-request` with no preference order
 
 | Work | Ticket |
 |---|---|
-| `FamilyKind`, `FamilyContract`, `ReferenceEvaluation`, seams S1–S4, the seam probe, the thin check seam for function application, the `#[string_edge]` attribute and `xtask string-edge` scan | #214 |
+| `FamilyKind`, `FamilyContract`, `ReferenceEvaluation`, seams S1–S4, the seam probe, the thin check seam for function application, the `xtask string-edge` scan (its `#[string_edge]` attribute is `ix-trace-rs`'s) | #214 |
 | Capability type and outcome constructors for §7.3 and §7.4 | #213 |
 | Registry value, `BackendDescriptor`, candidate sets and routing (§7.2), the S7 registry arm and its seam probe, removal of the composed-linker negotiation (the `requests` backend disposition), registry evidence (§5.3) | #185 |
 | Removal of the QSL `negotiate_*` copies from `value::ieee` and `value::division` (OBS-004); `quire-exact`'s own `division`/`ieee` (moved in by X-1, #213 S-1) never carried them | Done |

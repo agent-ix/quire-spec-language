@@ -414,6 +414,10 @@ pub(crate) type Atom = Box<dyn Fn(&ModelSimState, &str) -> Option<bool>>;
 pub(crate) struct Letters {
     holds: Vec<FormulaNodeId>,
     atoms: Vec<Atom>,
+    /// The reading of a guarded `on each` activation's `when` condition.
+    guard: Option<Atom>,
+    /// What the guard reads (FR-156), as the test declares it.
+    guard_reads: crate::units::Reads,
 }
 
 impl Letters {
@@ -426,7 +430,34 @@ impl Letters {
             .atoms()
             .to_vec();
         assert_eq!(holds.len(), atoms.len(), "one predicate per `holds` atom");
-        Self { holds, atoms }
+        Self {
+            holds,
+            atoms,
+            guard: None,
+            guard_reads: crate::units::unread(),
+        }
+    }
+
+    /// These letters, with the `when` condition of the clause's guarded `on
+    /// each` activation read by `guard`, which reads `reads`.
+    pub(crate) fn guarded(self, guard: Atom, reads: crate::units::Reads) -> Self {
+        Self {
+            guard: Some(guard),
+            guard_reads: reads,
+            ..self
+        }
+    }
+}
+
+/// An atom's reading as the engine takes it: `None` is an undefined
+/// division by zero.
+fn reading(truth: Option<bool>) -> AtomReading {
+    match truth {
+        Some(true) => AtomReading::True,
+        Some(false) => AtomReading::False,
+        None => AtomReading::Undefined(UndefinedCause::Kernel(
+            quire_exact::Undefined::DivisionByZero,
+        )),
     }
 }
 
@@ -447,12 +478,23 @@ impl ModelLetters for Letters {
             .iter()
             .position(|node| *node == atom)
             .expect("the engine reads only the clause's atoms");
-        Ok(match (self.atoms[index])(state, &instance.key) {
-            Some(true) => AtomReading::True,
-            Some(false) => AtomReading::False,
-            None => AtomReading::Undefined(UndefinedCause::Kernel(
-                quire_exact::Undefined::DivisionByZero,
-            )),
-        })
+        Ok(reading((self.atoms[index])(state, &instance.key)))
+    }
+
+    fn activation(
+        &self,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        let guard = self
+            .guard
+            .as_ref()
+            .expect("the engine reads only a guarded clause's condition");
+        Ok(reading(guard(state, &instance.key)))
+    }
+
+    fn activation_reads(&self) -> crate::units::Reads {
+        self.guard_reads.clone()
     }
 }

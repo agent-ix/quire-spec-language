@@ -447,6 +447,8 @@ impl<'w> Versions<'w> {
 }
 
 impl ModelLetters for Versions<'_> {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }
@@ -731,6 +733,8 @@ struct Interfering<'w> {
 }
 
 impl ModelLetters for Interfering<'_> {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }
@@ -889,6 +893,8 @@ struct Joint<'w> {
 }
 
 impl ModelLetters for Joint<'_> {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }

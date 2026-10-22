@@ -227,7 +227,7 @@ fn the_counter_refinement_builds_every_row_in_source_order() {
 }
 
 /// Part of FR-310-AC-2 (TC-889 step 2; tagged TC-only while the `seq` and
-/// `only` forms and `Protocol(Spec, Twice)` are unbuilt): an open argument builds as `Open` beside the
+/// `only` forms are unbuilt): an open argument builds as `Open` beside the
 /// receiver expression and an expression argument.
 #[trace("TC-889")]
 #[test]
@@ -260,19 +260,18 @@ fn an_open_argument_builds_open() {
     );
 }
 
-/// Part of FR-310-AC-2 (TC-889 step 2; tagged TC-only while the `seq` and
-/// `only` forms and `Protocol(Spec, Twice)` are unbuilt): a step source builds as `Named` with the
-/// keyword exactly as written -- `fork` for a protocol step row, none for a
-/// bare name whichever class it later resolves to -- or as `Memory`; a
-/// protocol step row's `node` target builds as `Node` with its binder
-/// expressions. The abstract protocol side (`abstract Spec::Twice`) has no
-/// QSpec production yet (Linear STD-182), so its form is not built from
-/// source here.
+/// FR-310-AC-2's protocol half (TC-889 step 2): `CasTwice`, whose header is
+/// `abstract Spec::Twice concrete Impl`, builds abstract side
+/// `Protocol(Spec, Twice)` and concrete side `Impl`; a step source builds as
+/// `Named` with the keyword exactly as written -- `fork` for a protocol step
+/// row, none for a bare name whichever class it later resolves to -- or as
+/// `Memory`; a protocol step row's `node` target builds as `Node` with its
+/// binder expressions.
 #[trace("TC-889")]
 #[test]
 fn step_sources_and_node_targets_build_as_written() {
     let (_, unit) = build(
-        "refinement CasTwice using inf abstract Spec concrete Impl {\n\
+        "refinement CasTwice using inf abstract Spec::Twice concrete Impl {\n\
          step fork Impl::P::par -> node Spec::Twice::a1;\n\
          step Impl::P::a::S -> stutter;\n\
          step memory flush -> stutter;\n\
@@ -280,7 +279,16 @@ fn step_sources_and_node_targets_build_as_written() {
          step activate Impl::P::t -> any;\n\
          }",
     );
-    let rows = &refinement(&unit).rows;
+    let form = refinement(&unit);
+    let AbstractSideForm::Protocol { alias, clause } = &form.abstract_side else {
+        panic!("a protocol side: {:?}", form.abstract_side);
+    };
+    assert_eq!(
+        (alias.name.as_str(), clause.name.as_str()),
+        ("Spec", "Twice")
+    );
+    assert_eq!(form.concrete.name, "Impl");
+    let rows = &form.rows;
     let step = |index: usize| match &rows[index] {
         RefinementRowForm::Step(step) => step,
         other => panic!("a step row: {other:?}"),
@@ -524,4 +532,43 @@ fn population_forms_build_in_a_field_row() {
     assert_eq!(shape(3), "All s Impl::slots true false");
     assert_eq!(shape(4), "Only s Impl::slots true true");
     assert_eq!(shape(5), "Seq i");
+}
+
+/// FR-310-AC-5 (TC-889): `abstract Spec::Twice concrete Impl` builds
+/// `Protocol(Spec, Twice)` and `abstract Spec concrete Impl` builds
+/// `Model(Spec)`; a header with a third segment, a leading or trailing `::`
+/// or a protocol name that is no `member-name` is refused at S1, at the
+/// token the grammar refuses, and builds no form.
+#[trace("TC-889", "FR-310-AC-5")]
+#[test]
+fn the_abstract_subject_builds_a_model_or_a_protocol_side() {
+    let side = |header: &str| {
+        let (_, unit) = build(&format!("refinement R using inf {header} {{ }}"));
+        refinement(&unit).abstract_side.clone()
+    };
+    let spelled = |side: AbstractSideForm| match side {
+        AbstractSideForm::Model(alias) => (alias.name, None),
+        AbstractSideForm::Protocol { alias, clause } => (alias.name, Some(clause.name)),
+    };
+    assert_eq!(
+        spelled(side("abstract Spec::Twice concrete Impl")),
+        ("Spec".to_owned(), Some("Twice".to_owned()))
+    );
+    assert_eq!(
+        spelled(side("abstract Spec concrete Impl")),
+        ("Spec".to_owned(), None)
+    );
+    for (header, offending) in [
+        ("abstract Spec::Twice::finish concrete Impl", "::"),
+        ("abstract ::Twice concrete Impl", "::"),
+        ("abstract Spec:: concrete Impl", "Impl"),
+        ("abstract Spec:: {", "{"),
+        ("abstract Spec::1 concrete Impl", "1"),
+    ] {
+        let text = format!("{HEADER}refinement R using inf {header} {{ }}\n");
+        let parsed = parse(&text);
+        assert!(!parsed.is_admissible(), "{header}");
+        let region = parsed.diagnostics()[0].byte_span().expect("located");
+        assert_eq!(&text[region.start..region.end], offending, "{header}");
+    }
 }

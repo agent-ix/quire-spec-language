@@ -605,6 +605,8 @@ impl Letters {
 }
 
 impl ModelLetters for Letters {
+    crate::units::unguarded!();
+
     fn atom(
         &self,
         atom: FormulaNodeId,

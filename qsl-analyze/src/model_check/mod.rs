@@ -15,6 +15,7 @@ mod ample;
 mod check;
 mod concretise;
 mod fair_walk;
+pub(crate) mod false_extension;
 mod graph;
 mod hyper;
 mod liveness;
@@ -22,6 +23,7 @@ mod product;
 mod quotient;
 mod reduce;
 mod refine;
+mod request;
 mod scc;
 mod state_graph;
 
@@ -43,9 +45,10 @@ pub use product::{
 };
 pub use reduce::{
     admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
-    ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
+    ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, TableForm,
 };
 pub use refine::{check_refinement, RefinementCheckRequest};
+pub use request::{RequestRefusal, SubjectContext, SubjectIdentity};
 pub use scc::Component;
 pub use state_graph::{
     check_state_graph, ExploredStateGraph, GraphEdge, GraphNode, GraphStats, NodeIndex,

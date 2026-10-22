@@ -164,9 +164,11 @@ fn check_with(
     )
     .map_err(|refusal| match refusal {
         SubjectRefusal::Admission(failure) => ModelCheckRefusal::Admission(failure),
+        SubjectRefusal::ProtocolSubject => ModelCheckRefusal::ProtocolRefinement,
         SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
             fault("the-subjects-of-a-refinement-open")
         }
+        SubjectRefusal::ProtocolAbstractSide => ModelCheckRefusal::ProtocolAbstractSide,
     })?;
     let simulation = &request.concrete.simulation;
     check_model_bounds(&concrete, BOUND_POSITIONS).map_err(not_simulated)?;
@@ -293,6 +295,8 @@ impl Run<'_, '_> {
             product_edges: widen(self.edges),
             automaton_states: 0,
             depth: widen(self.nodes.iter().map(|node| node.depth).max().unwrap_or(0)),
+            bound_limited: 0,
+            instance_limited: 0,
         }
     }
 

@@ -228,6 +228,14 @@ impl CheckedBody {
         self.nodes.is_empty()
     }
 
+    /// Whether a node of the body reads the local slot `slot`: for a slot
+    /// below the body's parameter count, whether it reads that parameter.
+    pub fn reads_local(&self, slot: Slot) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| matches!(node.kind, NodeKind::Local(read) if read == slot))
+    }
+
     /// The evaluation frame this body needs when its first `bound` slots
     /// are its parameters: `bound`, or one past the highest slot a node of
     /// the body reads or binds, whichever is larger.

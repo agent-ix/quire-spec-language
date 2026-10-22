@@ -43,15 +43,37 @@
 //!   below a branch that can fork ([`ProtocolLocation::Subtree`]): it
 //!   cancels those threads and settles their parallel instances.
 //!
-//! Compensation registrations, replicated roles and live protocol instances
-//! (`reg(c, ·)`, `role(r)`, `pinst`) belong to constructs this system
-//! refuses.
+//! - A template's registrations in one protocol instance, `reg(c, ·)`
+//!   ([`ProtocolLocation::Registrations`]), hold its registrations' statuses
+//!   and captures and whether a step of its commit node has occurred there,
+//!   which CP-1 and CP-4 read; one registration, `reg(c, r)`
+//!   ([`ProtocolLocation::Registration`]), meets them. A step that binds a
+//!   record of a template's trigger type reads and writes `reg(c, ·)` whether
+//!   or not it activates a registration, writes the control of each
+//!   compensation thread it can create, and reads the control of every
+//!   compensation thread of the template up to the last ordinal it can take.
+//!
+//! - A replicated role's instances in one protocol instance, `role(r)`
+//!   ([`ProtocolLocation::Role`]), hold each object's status. `spawn` and
+//!   `retire` read and write it, a step `by` the role reads it (the actors
+//!   are its live instances), and every step of a thread of an instance with
+//!   a live instance of a `scope` role writes it, since the step may end that
+//!   role's scope (RR-4). `finish` writes the `role` of every replicated role
+//!   of its instance, which AE-3 removes with it.
+//! - The set of live protocol instances, `pinst`
+//!   ([`ProtocolLocation::LiveInstances`]), is read and written by `activate`,
+//!   which takes the smallest ordinal no live instance holds and is not
+//!   expanded at the instance bound (AE-2, AE-4), and written by `finish`,
+//!   which removes its instance under `activation on each`.
+//! - The model locations an activation guard or an `until(p)` predicate
+//!   reads are field reads on any object and the predicate's membership
+//!   reads.
 //!
 //! The memory model adds its own locations (ADR-025 MR-1) through
 //! [`MemoryModel::footprint`]: `sc` names none and has no memory step;
 //! `tso` names each thread's store buffer, `buf(b)`
 //! ([`ProtocolLocation::Buffer`]), beside the model locations that stand for
-//! `mem(ℓ)`. An attempt's class is EN-1's static one (FR-220): a
+//! `mem(ℓ)`; `ra` names `msgs(ℓ)`, `view(b)`, `S` and the SC event graph. An attempt's class is EN-1's static one (FR-220): a
 //! read-modify-write that applies as a load keeps the read-modify-write's
 //! larger footprint.
 
@@ -66,10 +88,12 @@ use qsl_semantics::check::footprint::FootprintRefusal;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 
 use super::access::InstanceAccess;
-use super::identity::{ProtocolTransition, StepKind, ThreadPath};
+use super::identity::{PositionAnchor, ProtocolTransition, RegistrationKey, StepKind, ThreadPath};
 use super::memory::{FootprintStep, GatedStep, MemoryModel};
 use super::program::{Cursor, Rest};
-use super::{Disposition, ProtocolRefusal, ProtocolState, ProtocolSystem, Thread};
+use super::{
+    Disposition, Instance, ProtocolRefusal, ProtocolState, ProtocolSystem, Status, Thread,
+};
 use crate::model_subject::ModelInstance;
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::FootprintError;
@@ -87,7 +111,7 @@ pub struct ParallelInstance {
 }
 
 /// A location of a protocol state (ADR-027 §5).
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ProtocolLocation {
     /// `ctl(t)`: thread `t`'s rest point and disposition.
     Control(ThreadPath),
@@ -116,6 +140,16 @@ pub enum ProtocolLocation {
     /// `buf(b)`: thread `b`'s store buffer in the memory component
     /// (ADR-025 MR-1).
     Buffer(ThreadPath),
+    /// `msgs(ℓ)`: the message sequence of shared location `ℓ` in the memory
+    /// component (ADR-025 MR-1, `ra`).
+    Messages(Box<Location>),
+    /// `view(b)`: thread `b`'s three views in the memory component
+    /// (ADR-025 MR-1, `ra`).
+    View(ThreadPath),
+    /// `S`: the global `seq_cst` fence view (ADR-025 RA-1).
+    ScView,
+    /// The SC event graph (ADR-025 PSC-1).
+    ScGraph,
     /// `queue(h)`: every queue of channel `h` of one protocol instance.
     Queue {
         /// The protocol instance's ordinal.
@@ -123,6 +157,32 @@ pub enum ProtocolLocation {
         /// The channel's qualified name.
         channel: String,
     },
+    /// `reg(c, ·)`: every registration of template `c` in one protocol
+    /// instance, with whether its commit node has occurred there (CP-1,
+    /// CP-4).
+    Registrations {
+        /// The protocol instance's ordinal.
+        instance: u64,
+        /// The template's qualified name.
+        template: String,
+    },
+    /// `reg(c, r)`: one registration's status and captures.
+    Registration {
+        /// The protocol instance's ordinal.
+        instance: u64,
+        /// The registration's key.
+        key: RegistrationKey,
+    },
+    /// `role(r)`: every instance of replicated role `r` in one protocol
+    /// instance, with its status.
+    Role {
+        /// The protocol instance's ordinal.
+        instance: u64,
+        /// The replicated role's name.
+        role: String,
+    },
+    /// `pinst`: the set of live protocol instances.
+    LiveInstances,
 }
 
 impl ProtocolLocation {
@@ -150,12 +210,34 @@ impl ProtocolLocation {
             }
             (Self::Instance(whole), Self::Branch { instance, .. })
             | (Self::Branch { instance, .. }, Self::Instance(whole)) => whole == instance,
+            (
+                Self::Registrations { instance, template },
+                Self::Registration {
+                    instance: holder,
+                    key,
+                },
+            )
+            | (
+                Self::Registration {
+                    instance: holder,
+                    key,
+                },
+                Self::Registrations { instance, template },
+            ) => instance == holder && *template == key.template,
             (Self::Control(_), Self::Control(_))
             | (Self::Instance(_), Self::Instance(_))
             | (Self::Branch { .. }, Self::Branch { .. })
             | (Self::Binder { .. }, Self::Binder { .. })
             | (Self::Buffer(_), Self::Buffer(_))
-            | (Self::Queue { .. }, Self::Queue { .. }) => self == other,
+            | (Self::Messages(_), Self::Messages(_))
+            | (Self::View(_), Self::View(_))
+            | (Self::ScView, Self::ScView)
+            | (Self::ScGraph, Self::ScGraph)
+            | (Self::Queue { .. }, Self::Queue { .. })
+            | (Self::Registrations { .. }, Self::Registrations { .. })
+            | (Self::Registration { .. }, Self::Registration { .. })
+            | (Self::Role { .. }, Self::Role { .. })
+            | (Self::LiveInstances, Self::LiveInstances) => self == other,
             (
                 Self::Control(_)
                 | Self::Subtree(_)
@@ -163,7 +245,15 @@ impl ProtocolLocation {
                 | Self::Branch { .. }
                 | Self::Binder { .. }
                 | Self::Buffer(_)
-                | Self::Queue { .. },
+                | Self::Messages(_)
+                | Self::View(_)
+                | Self::ScView
+                | Self::ScGraph
+                | Self::Queue { .. }
+                | Self::Registrations { .. }
+                | Self::Registration { .. }
+                | Self::Role { .. }
+                | Self::LiveInstances,
                 _,
             ) => false,
         }
@@ -198,6 +288,12 @@ pub enum AnchorName {
     /// A channel, by its qualified name: the `protocol` anchor of its
     /// `send`, `receive`, `duplicate` and `lose` steps (PB-2).
     Channel(String),
+    /// A compensation template, by its qualified name: the anchor of its
+    /// `cattempt` and `cend` steps (PB-2, FT-5).
+    Template(String),
+    /// A replicated role, by name: the `protocol` anchor of the steps `by`
+    /// it and of its `spawn` and `retire` steps (PB-2, FT-5).
+    Role(String),
 }
 
 /// What the atoms of a claim read: model locations, and the anchors they
@@ -214,32 +310,52 @@ pub struct ClaimReads {
 /// `footprint`, is visible to a claim whose atoms read `claim`: its write
 /// footprint affects a location an atom reads, or an atom reads its
 /// position's anchor and names its operation, its node, or, for a channel
-/// step, a `send` or a `receive`, its channel (PB-2).
+/// step, a `send` or a `receive`, its channel, or, for a `cattempt` or
+/// `cend`, its template (PB-2).
 pub fn visible(step: &ProtocolTransition, footprint: &Footprint, claim: &ClaimReads) -> bool {
     let writes = footprint
         .writes
         .iter()
         .any(|written| claim.locations.iter().any(|read| written.affects(read)));
     let named = |name: AnchorName| claim.anchors.contains(&name);
-    let anchored = if let Some(application) = step.application() {
-        named(AnchorName::Operation(application.operation().to_owned()))
-    } else if let Some((channel, _)) = step.channel_queue() {
-        named(AnchorName::Channel(channel.to_owned()))
-    } else {
-        let by_node = step
-            .node()
-            .is_some_and(|node| named(AnchorName::Node(node.to_owned())));
-        // A `send` or `receive` writes exactly its own channel's queue.
-        let by_channel = matches!(step.kind(), StepKind::Send | StepKind::Receive)
-            && footprint.writes.iter().any(|written| {
-                matches!(
-                    written,
-                    Location::Protocol(ProtocolLocation::Queue { channel, .. })
-                        if named(AnchorName::Channel(channel.clone()))
-                )
-            });
-        by_node || by_channel
-    };
+    let by_template = step
+        .template()
+        .is_some_and(|template| named(AnchorName::Template(template.to_owned())));
+    let by_role = step
+        .actor()
+        .map(|actor| actor.role.as_str())
+        .or_else(|| step.role_instance().map(|(role, _, _)| role))
+        .is_some_and(|role| named(AnchorName::Role(role.to_owned())));
+    let anchored = by_template
+        || by_role
+        || match step.anchor() {
+            PositionAnchor::Operation(operation) => {
+                named(AnchorName::Operation(operation.to_owned()))
+            }
+            PositionAnchor::Protocol {
+                channel: Some(channel),
+                ..
+            } => named(AnchorName::Channel(channel.to_owned())),
+            PositionAnchor::Protocol {
+                step: kind,
+                node,
+                channel: None,
+            } => {
+                let by_node = node.is_some_and(|node| named(AnchorName::Node(node.to_owned())));
+                // A `send` or `receive` writes exactly its own channel's queue.
+                let by_channel = matches!(kind, StepKind::Send | StepKind::Receive)
+                    && footprint.writes.iter().any(|written| {
+                        matches!(
+                            written,
+                            Location::Protocol(ProtocolLocation::Queue { channel, .. })
+                                if named(AnchorName::Channel(channel.clone()))
+                        )
+                    });
+                by_node || by_channel
+            }
+            // No atom names a memory anchor (FT-5).
+            PositionAnchor::Memory(_) => false,
+        };
     writes || anchored
 }
 
@@ -353,19 +469,34 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 &state.memory,
                 &identity.thread,
                 memory,
+                self.weak.shared(),
                 &mut built.footprint,
             ) {
                 return Err(unknown());
             }
             return Ok(built.footprint);
         }
+        match step.kind() {
+            StepKind::Activate => return self.activate_footprint(state),
+            StepKind::Spawn | StepKind::Retire => return self.role_footprint(state, step),
+            _ => {}
+        }
         let path = step.thread().ok_or_else(unknown)?;
         let instance = state.instances.get(&path.instance).ok_or_else(unknown)?;
         let thread = instance.threads.get(path).ok_or_else(unknown)?;
+        if matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd) {
+            return self.compensation_footprint(state, instance, path, thread, step);
+        }
         let (node, after) = self.stepped(thread, step)?;
         let own = control(path);
         built.enabling(own.clone());
         built.write(own);
+        // A step `by` a replicated role is taken by one of its live
+        // instances (FT-3).
+        if let Some(index) = self.program.acting.get(&node) {
+            built.enabling(self.role_location(path.instance, *index)?);
+        }
+        self.scope_writes(&mut built, instance, path.instance)?;
         match step.kind() {
             StepKind::Attempt => {
                 let application = step.application().ok_or_else(unknown)?;
@@ -400,15 +531,28 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         .into())
                     }
                 };
-                self.memory
-                    .footprint(&state.memory, path, access, &mut built.footprint);
+                self.memory.footprint(
+                    &state.memory,
+                    path,
+                    access,
+                    self.weak.shared(),
+                    &mut built.footprint,
+                );
                 self.binders_read(&mut built, path, node, Read::Enabling)?;
                 if attempt.binds.is_some() {
+                    built.write(self.binder(node, path)?);
+                    self.folded(&mut built, instance, path, node)?;
+                } else if self.program.effected(node) {
+                    // The record its effects read (ST-2).
                     built.write(self.binder(node, path)?);
                 }
             }
             StepKind::Event | StepKind::Send | StepKind::Receive => {
                 self.binders_read(&mut built, path, node, Read::Enabling)?;
+                // An effect is enabled by its attempt's binder (ST-2).
+                if let Some(attempt) = self.program.effects.get(&node) {
+                    built.enabling(self.binder(*attempt, path)?);
+                }
                 // An `event` and a `send` enumerate their records over the
                 // state's objects; a `receive` takes its record from the queue.
                 let listed = match step.kind() {
@@ -431,7 +575,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     | StepKind::Timeout
                     | StepKind::Finish
                     | StepKind::Fence
-                    | StepKind::Memory => None,
+                    | StepKind::Memory
+                    | StepKind::CAttempt
+                    | StepKind::CEnd
+                    | StepKind::Activate
+                    | StepKind::Spawn
+                    | StepKind::Retire => None,
                 };
                 if let Some(record_type) = listed {
                     for location in self.model.record_reads(record_type) {
@@ -439,11 +588,18 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
                 built.write(self.binder(node, path)?);
-                if step.kind() == StepKind::Send {
+                self.folded(&mut built, instance, path, node)?;
+                if matches!(step.kind(), StepKind::Send | StepKind::Receive) {
+                    let gated = if step.kind() == StepKind::Send {
+                        GatedStep::Send
+                    } else {
+                        GatedStep::Receive
+                    };
                     self.memory.footprint(
                         &state.memory,
                         path,
-                        FootprintStep::Gated(GatedStep::Send),
+                        FootprintStep::Gated(gated),
+                        self.weak.shared(),
                         &mut built.footprint,
                     );
                 }
@@ -468,6 +624,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Fork),
+                    self.weak.shared(),
                     &mut built.footprint,
                 );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
@@ -506,6 +663,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Join),
+                    self.weak.shared(),
                     &mut built.footprint,
                 );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
@@ -543,6 +701,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Fence(ordering)),
+                    self.weak.shared(),
                     &mut built.footprint,
                 );
             }
@@ -561,8 +720,30 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         channel: channel.name.clone(),
                     }));
                 }
+                // AE-3 removes the instance's role instances with it, and,
+                // under `on each`, leaves the set of live instances.
+                for index in 0..self.program.replicated.len() {
+                    built.write(self.role_location(path.instance, index)?);
+                }
+                if self.program.activation.is_some() {
+                    built.write(protocol(ProtocolLocation::LiveInstances));
+                }
+                // AE-3 removes the instance's registrations with it.
+                for template in &self.program.templates {
+                    built.write(protocol(ProtocolLocation::Registrations {
+                        instance: path.instance,
+                        template: template.name.clone(),
+                    }));
+                }
             }
-            StepKind::Duplicate | StepKind::Lose | StepKind::Memory => return Err(unknown()),
+            StepKind::Duplicate
+            | StepKind::Lose
+            | StepKind::Memory
+            | StepKind::CAttempt
+            | StepKind::CEnd
+            | StepKind::Activate
+            | StepKind::Spawn
+            | StepKind::Retire => return Err(unknown()),
         }
         if let Some(after) = after {
             let walk = self.program.settle_walk(after)?;
@@ -594,6 +775,270 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             }
         }
         Ok(built.footprint)
+    }
+
+    /// ADR-027 FT-1 and FT-3 for the folded compensation effects of a step
+    /// of the thread `path` at `node` that binds its binder (CP-1, CP-2,
+    /// CP-4): `reg(c, ·)` of each template whose forward effect or commit
+    /// node `node` is, or whose trigger type its record has; for a trigger,
+    /// the control of every compensation thread of the template up to the
+    /// last ordinal its waiting registrations can take, and the control of
+    /// each it can create.
+    fn folded(
+        &self,
+        built: &mut Builder,
+        instance: &Instance,
+        path: &ThreadPath,
+        node: ProtocolNodeId,
+    ) -> Result<(), ProtocolFootprintError> {
+        let record_type = self.program.binder_type(node);
+        for (index, template) in self.program.templates.iter().enumerate() {
+            let triggers = record_type == Some(&template.trigger);
+            if triggers || template.effect == node || template.commit == Some(node) {
+                let registrations = protocol(ProtocolLocation::Registrations {
+                    instance: path.instance,
+                    template: template.name.clone(),
+                });
+                built.read(registrations.clone());
+                built.write(registrations);
+            }
+            if !triggers {
+                continue;
+            }
+            let waiting = instance
+                .registrations
+                .iter()
+                .filter(|(key, registration)| {
+                    key.template == index && registration.status == Status::Registered
+                })
+                .count();
+            let mut created = 0;
+            let mut candidate = 0u64;
+            while created < waiting {
+                let thread = ThreadPath::compensation(path.instance, &template.name, candidate);
+                built.read(control(&thread));
+                if !instance.threads.contains_key(&thread) {
+                    built.write(control(&thread));
+                    created += 1;
+                }
+                candidate = candidate.saturating_add(1);
+            }
+        }
+        Ok(())
+    }
+
+    /// ADR-027 FT-1 and FT-3 for a `cattempt` or `cend` of the compensation
+    /// thread `path` resting as `thread` does: its own control, which holds
+    /// its attempt count; for a `cattempt`, its application's model
+    /// footprint with every clause of the operation, and `reg(c, ·)`, which
+    /// holds the commit's occurrence and the captures its retry relation
+    /// reads; for a `cend`, its registration `reg(c, r)`, whose status it
+    /// sets. Its recovery predicate reads no model state (FR-381).
+    fn compensation_footprint(
+        &self,
+        state: &ProtocolState<M>,
+        instance: &Instance,
+        path: &ThreadPath,
+        thread: &Thread,
+        step: &ProtocolTransition,
+    ) -> Result<Footprint, ProtocolFootprintError> {
+        let unknown = || ProtocolFootprintError::UnknownStep;
+        let (index, retry) = match thread.rest {
+            Rest::Compensate(index) => (index, false),
+            Rest::Retry(index) => (index, true),
+            Rest::Node(_)
+            | Rest::Await(_)
+            | Rest::Check(_)
+            | Rest::Fork(_)
+            | Rest::Join(_)
+            | Rest::Finish
+            | Rest::End => return Err(unknown()),
+        };
+        let template = self.program.template(index)?;
+        let compensating = instance.compensating.get(path).ok_or_else(unknown)?;
+        let key = self.registration_key(&compensating.registration)?;
+        if step.registration() != Some(&key) {
+            return Err(unknown());
+        }
+        let mut built = Builder::default();
+        let own = control(path);
+        built.enabling(own.clone());
+        built.write(own);
+        if let (Some(index), StepKind::CAttempt) = (template.role, step.kind()) {
+            built.enabling(self.role_location(path.instance, index)?);
+        }
+        self.scope_writes(&mut built, instance, path.instance)?;
+        match step.kind() {
+            StepKind::CAttempt => {
+                let application = step.application().ok_or_else(unknown)?;
+                let model = self.model.footprint_selecting(application, None)?;
+                built.footprint.reads.extend(model.reads);
+                built.footprint.writes.extend(model.writes);
+                built.footprint.enabling.extend(model.enabling);
+                self.memory.footprint(
+                    &state.memory,
+                    path,
+                    FootprintStep::Attempt {
+                        class: AccessClass::Local,
+                        ordering: None,
+                        shared: None,
+                    },
+                    self.weak.shared(),
+                    &mut built.footprint,
+                );
+                built.enabling(protocol(ProtocolLocation::Registrations {
+                    instance: path.instance,
+                    template: template.name.clone(),
+                }));
+            }
+            StepKind::CEnd if retry => {
+                let registration = protocol(ProtocolLocation::Registration {
+                    instance: path.instance,
+                    key,
+                });
+                built.read(registration.clone());
+                built.write(registration);
+            }
+            StepKind::Attempt
+            | StepKind::Event
+            | StepKind::Send
+            | StepKind::Receive
+            | StepKind::Duplicate
+            | StepKind::Lose
+            | StepKind::Fork
+            | StepKind::Join
+            | StepKind::Timeout
+            | StepKind::Finish
+            | StepKind::Memory
+            | StepKind::Fence
+            | StepKind::Activate
+            | StepKind::Spawn
+            | StepKind::Retire
+            | StepKind::CEnd => return Err(unknown()),
+        }
+        Ok(built.footprint)
+    }
+
+    /// `role(r)` of the replicated role `index` in protocol instance
+    /// `instance`.
+    fn role_location(&self, instance: u64, index: usize) -> Result<Location, ProtocolRefusal> {
+        let role = self
+            .program
+            .replicated
+            .get(index)
+            .ok_or_else(|| ProtocolRefusal::fault("a-replicated-role-index-is-a-role"))?;
+        Ok(protocol(ProtocolLocation::Role {
+            instance,
+            role: role.name.clone(),
+        }))
+    }
+
+    /// RR-4: a step of a thread of `instance` may end the scope of a
+    /// `scope` role that has a live instance, so it writes that role.
+    fn scope_writes(
+        &self,
+        built: &mut Builder,
+        instance: &Instance,
+        ordinal: u64,
+    ) -> Result<(), ProtocolRefusal> {
+        for (index, role) in self.program.replicated.iter().enumerate() {
+            let live = instance.live_of(index).next().is_some();
+            if live && matches!(role.lifetime, super::program::Lifetime::Scope) {
+                built.write(self.role_location(ordinal, index)?);
+            }
+        }
+        Ok(())
+    }
+
+    /// ADR-027 FT-1 and FT-3 for an `activate`: `pinst`, which it reads for
+    /// the ordinal and the bound and writes, the control of the root thread
+    /// it creates, the membership its trigger records range over and the
+    /// model locations its guard reads.
+    fn activate_footprint(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<Footprint, ProtocolFootprintError> {
+        let unknown = || ProtocolFootprintError::UnknownStep;
+        let activation = self.program.activation.as_ref().ok_or_else(unknown)?;
+        let ordinal = Self::free_instance_ordinal(state)?;
+        let mut built = Builder::default();
+        let live = protocol(ProtocolLocation::LiveInstances);
+        built.enabling(live.clone());
+        built.write(live);
+        built.write(control(&ThreadPath::root(ordinal)));
+        for location in self.model.record_reads(&activation.record_type) {
+            built.enabling(location);
+        }
+        if let Some(guard) = activation.guard {
+            let parameters = self.slot_parameters(&[self.program.activation_slot, Some(0)])?;
+            for location in self
+                .model
+                .slot_reads(&self.protocol.name, &parameters, guard)?
+            {
+                built.enabling(location);
+            }
+        }
+        Ok(built.footprint)
+    }
+
+    /// ADR-027 FT-1 and FT-3 for a `spawn` or `retire` of the protocol
+    /// instance the step names: `role(r)` in both, and, for a `retire`, the
+    /// model locations its `until(p)` predicate reads. Its settling may end
+    /// the scope of another role.
+    fn role_footprint(
+        &self,
+        state: &ProtocolState<M>,
+        step: &ProtocolTransition,
+    ) -> Result<Footprint, ProtocolFootprintError> {
+        let unknown = || ProtocolFootprintError::UnknownStep;
+        let (name, _, ordinal) = step.role_instance().ok_or_else(unknown)?;
+        let instance = state.instances.get(&ordinal).ok_or_else(unknown)?;
+        let index = self
+            .program
+            .replicated
+            .iter()
+            .position(|role| role.name == name)
+            .ok_or_else(unknown)?;
+        let mut built = Builder::default();
+        let location = self.role_location(ordinal, index)?;
+        built.enabling(location.clone());
+        built.write(location);
+        self.scope_writes(&mut built, instance, ordinal)?;
+        if let (StepKind::Retire, Some(role)) = (step.kind(), self.program.replicated.get(index)) {
+            if let super::program::Lifetime::Until(predicate) = role.lifetime {
+                let object = self.program.replicated.get(index).map(|role| role.object);
+                let mut parameters =
+                    self.slot_parameters(&[Some(0), self.program.activation_slot])?;
+                parameters.push((
+                    role.name.clone(),
+                    quire_exact::ValueType::Reference(object.ok_or_else(unknown)?),
+                ));
+                for location in self.model.slot_reads(&role.name, &parameters, predicate)? {
+                    built.enabling(location);
+                }
+            }
+        }
+        Ok(built.footprint)
+    }
+
+    /// The name and type of each binder slot of `slots` that is some, in
+    /// order.
+    fn slot_parameters(
+        &self,
+        slots: &[Option<usize>],
+    ) -> Result<Vec<(String, quire_exact::ValueType)>, ProtocolRefusal> {
+        slots
+            .iter()
+            .flatten()
+            .map(|slot| {
+                self.protocol
+                    .slots
+                    .binders
+                    .get(*slot)
+                    .map(|binder| (binder.name.clone(), binder.value_type.clone()))
+                    .ok_or_else(|| ProtocolRefusal::fault("a-root-binder-has-a-slot"))
+            })
+            .collect()
     }
 
     /// The node `step` of the resting `thread` steps, and where its thread
@@ -645,7 +1090,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             StepKind::Timeout => kind == Some(ControlStep::Await),
             StepKind::Finish => kind.is_none(),
             StepKind::Fence => kind == Some(ControlStep::Fence),
-            StepKind::Duplicate | StepKind::Lose | StepKind::Memory => false,
+            StepKind::Duplicate
+            | StepKind::Lose
+            | StepKind::Memory
+            | StepKind::CAttempt
+            | StepKind::CEnd
+            | StepKind::Activate
+            | StepKind::Spawn
+            | StepKind::Retire => false,
         };
         if !matches {
             return Err(unknown());

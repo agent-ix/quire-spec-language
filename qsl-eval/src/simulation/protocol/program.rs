@@ -15,9 +15,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
-    AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelOverflow, CheckedActivation,
-    CheckedBody, CheckedJoinPolicy, CheckedOrdering, CheckedOutstanding, CheckedProtocol,
-    CheckedTerminalMember, ControlStep, EdgeKind, LossSelector, Port, ProtocolNodeId,
+    AccessOrdering, CaptureOwner, ChannelCapacity, ChannelDelivery, ChannelOverflow,
+    CheckedActivation, CheckedBody, CheckedCommit, CheckedJoinPolicy, CheckedLifetime,
+    CheckedOrdering, CheckedOutstanding, CheckedProtocol, CheckedTerminalMember, ControlStep,
+    EdgeKind, LossSelector, Port, ProtocolNodeId,
 };
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 
@@ -126,6 +127,76 @@ pub(super) struct Finish<'a> {
     pub(super) binder: (usize, ValueType),
 }
 
+/// One `compensate` template (ADR-027 CP-1 to CP-5, FR-381): its qualified
+/// name, its forward effect, its operation, its trigger type and guard, its
+/// captures by stage, its authored attempt count, its retry relation, its
+/// commit node and its recovery predicate.
+///
+/// Each expression reads the slots FR-381's stage table binds, in its
+/// order, with no protocol capture and no activation binder (both refused
+/// before a template is read): a registration capture `[forward, over,
+/// earlier registration captures]`; the trigger guard `[trigger,
+/// registration captures, over]`; an activation capture `[trigger, over,
+/// registration captures, earlier activation captures]`; the retry relation
+/// `[earlier, later, registration captures, activation captures, over]`;
+/// the recovery predicate `[recovery, registration captures, activation
+/// captures, over]`.
+pub(super) struct Template<'a> {
+    /// `<protocol>::<template>`, as a channel is named (PS-7).
+    pub(super) name: String,
+    pub(super) effect: ProtocolNodeId,
+    pub(super) declaring: EffectiveId,
+    pub(super) operation: String,
+    pub(super) trigger: ValueType,
+    pub(super) guard: &'a CheckedBody,
+    /// The registration captures, then the activation captures, by name.
+    pub(super) registration: Vec<(String, &'a CheckedBody)>,
+    pub(super) activation: Vec<(String, &'a CheckedBody)>,
+    /// The authored `attempts n`, at least 1.
+    pub(super) attempts: u64,
+    pub(super) retry: &'a CheckedBody,
+    pub(super) commit: Option<ProtocolNodeId>,
+    pub(super) recover: &'a CheckedBody,
+    /// The replicated role (an index into [`Program::replicated`]) that
+    /// owns the template's compensation attempt, if it is replicated.
+    pub(super) role: Option<usize>,
+}
+
+/// A replicated role's lifetime (ADR-027 RR-4).
+pub(super) enum Lifetime<'a> {
+    /// The instance retires when its protocol instance finishes.
+    Workflow,
+    /// The instance retires in the step after which no live thread can
+    /// reach any node the role owns.
+    Scope,
+    /// `retire(r, o)` is a step once the predicate holds; it reads `[over,
+    /// activation binder, role instance]`, the binders of `C0` and the
+    /// role's own.
+    Until(&'a CheckedBody),
+}
+
+/// One replicated role `role r each T from pop max n lifetime L` (ADR-027
+/// RR-1 to RR-4).
+pub(super) struct Replicated<'a> {
+    pub(super) name: String,
+    /// The object type the role's instances are objects of.
+    pub(super) object: EffectiveId,
+    pub(super) max: u64,
+    pub(super) lifetime: Lifetime<'a>,
+    /// The nodes the role owns, in node order: where the role acts and
+    /// decides.
+    pub(super) owns: Vec<ProtocolNodeId>,
+}
+
+/// `activation on each (x: T) when {g}` (ADR-027 AE-1, ST-13).
+pub(super) struct Activation<'a> {
+    /// The trigger record's type.
+    pub(super) record_type: ValueType,
+    /// The guard over `[trigger, over]`; `None` for the guard that is
+    /// always true.
+    pub(super) guard: Option<&'a CheckedBody>,
+}
+
 /// Where a thread rests (ADR-027 PS-3), by node identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Rest {
@@ -142,6 +213,11 @@ pub(super) enum Rest {
     Join(ProtocolNodeId),
     /// The `finish` node (root threads only).
     Finish,
+    /// A compensation thread at its compensation attempt, by its template's
+    /// index (ADR-027 CP-3).
+    Compensate(usize),
+    /// A compensation thread at its retry point, by its template's index.
+    Retry(usize),
     /// The end of a branch body.
     End,
 }
@@ -180,7 +256,7 @@ pub(super) struct Program<'a> {
     pub(super) checks: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
     /// Each `fence`'s ordering, by its label (ADR-027 TS-2).
     pub(super) fences: BTreeMap<ProtocolNodeId, AccessOrdering>,
-    /// Each domain `event` and `commit` node's record.
+    /// Each `effect`, domain `event` and `commit` node's record.
     pub(super) events: BTreeMap<ProtocolNodeId, Record<'a>>,
     pub(super) messages: BTreeMap<ProtocolNodeId, Message<'a>>,
     pub(super) channels: Vec<Channel<'a>>,
@@ -191,14 +267,32 @@ pub(super) struct Program<'a> {
     pub(super) readers: Vec<BTreeSet<ProtocolNodeId>>,
     /// The binder slot of each node that has one.
     pub(super) binder_of: BTreeMap<ProtocolNodeId, usize>,
+    /// Each binder slot's declared type.
+    binder_types: Vec<ValueType>,
     /// The protocol's `terminal` member.
     pub(super) terminal: &'a CheckedTerminalMember,
+    /// The `compensate` templates, in source order.
+    pub(super) templates: Vec<Template<'a>>,
+    /// Each `effect` node's attempt, from the `Effect` edges (ST-2).
+    pub(super) effects: BTreeMap<ProtocolNodeId, ProtocolNodeId>,
     /// Each control's place in the `run` tree.
     spans: BTreeMap<ProtocolNodeId, Span>,
     /// Each binder slot's readers by tree position.
     reader_positions: Vec<ReaderPositions>,
     /// Each control's innermost enclosing `repeat` whose body holds it.
     loop_of: BTreeMap<ProtocolNodeId, ProtocolNodeId>,
+    /// The replicated roles, in source order.
+    pub(super) replicated: Vec<Replicated<'a>>,
+    /// The replicated role (an index into `replicated`) that owns each
+    /// event, `attempt`, `send` or `receive` node it owns.
+    pub(super) acting: BTreeMap<ProtocolNodeId, usize>,
+    /// The activation of an `activation on each` clause.
+    pub(super) activation: Option<Activation<'a>>,
+    /// The binder slot of the activation binder.
+    pub(super) activation_slot: Option<usize>,
+    /// Whether anything reads the activation binder after the instance
+    /// starts, so that the trigger record is part of the state key.
+    pub(super) trigger_read: bool,
 }
 
 /// A control's place in the `run` tree: its preorder position, the last
@@ -227,10 +321,11 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
 /// branches, `choice`, `repeat`, `check`, `await`, `attempt`, `send`,
-/// `receive`, domain `event`, `commit`, `fence` and `finish`, channels with a
-/// literal capacity, under `activation on origin` (ADR-027 §9 sequencing
-/// steps 3 and 4). Which memory model each `parallel` runs under is the
-/// subject's resolved model, read when the system is built.
+/// `receive`, `effect`, domain `event`, `commit`, `fence` and `finish`,
+/// channels with a literal capacity, `compensate` templates with their
+/// captures, replicated roles and `activation on each` (ADR-027 §9
+/// sequencing steps 3 to 5). Which memory model each `parallel` runs under
+/// is the subject's resolved model, read when the system is built.
 fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
     for control in &protocol.controls.controls {
         if let ControlStep::Unstepped(construct) = control.step() {
@@ -249,20 +344,22 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
             return Err(unsupported(Unsupported::UnorderedLossSelector));
         }
     }
-    if !protocol.obligations.compensations.is_empty() {
-        return Err(unsupported(Unsupported::Compensation));
-    }
-    if !protocol.obligations.captures.is_empty() {
+    if protocol
+        .obligations
+        .captures
+        .iter()
+        .any(|capture| capture.owner == CaptureOwner::Protocol)
+    {
         return Err(unsupported(Unsupported::Capture));
     }
+    // A template's expressions read the activation binder at a slot this
+    // system does not fill (QSpec FR-381 "Names a stage may read").
     if matches!(
         protocol.obligations.activation,
         CheckedActivation::OnEach { .. }
-    ) {
-        return Err(unsupported(Unsupported::ActivationOnEach));
-    }
-    if protocol.roles.iter().any(|role| role.replicated) {
-        return Err(unsupported(Unsupported::ReplicatedRole));
+    ) && !protocol.obligations.compensations.is_empty()
+    {
+        return Err(unsupported(Unsupported::ActivationOnEachTemplate));
     }
     // The pre-check (TS-5) has already refused an unbounded record type.
     if protocol
@@ -274,6 +371,101 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
         return Err(unsupported(Unsupported::UnenumerableRecord));
     }
     Ok(())
+}
+
+/// Each `compensate` template of `protocol` (FR-381), or the refusal of a
+/// template part this system cannot step: a retry relation that reads the
+/// attempt records of a template with more than one attempt, which no
+/// operation result binds here, and a recovery predicate that reads its
+/// recovery binder, whose recovery view no rule derives from a model state.
+fn templates<'p>(
+    protocol: &'p CheckedProtocol,
+    replicated: &[(usize, Replicated<'p>)],
+) -> Result<Vec<Template<'p>>, ProtocolRefusal> {
+    let obligations = &protocol.obligations;
+    let captures = |indices: &[usize]| -> Result<Vec<(String, &CheckedBody)>, ProtocolRefusal> {
+        indices
+            .iter()
+            .map(|index| {
+                obligations
+                    .captures
+                    .get(*index)
+                    .map(|capture| (capture.name.clone(), &capture.initializer))
+                    .ok_or_else(|| ProtocolRefusal::fault("a-template-capture-is-a-capture"))
+            })
+            .collect()
+    };
+    let mut templates = Vec::with_capacity(obligations.compensations.len());
+    for template in &obligations.compensations {
+        let relation = &template.retry.relation;
+        if template.maximum_attempts > 1 && (relation.reads_local(0) || relation.reads_local(1)) {
+            return Err(unsupported(Unsupported::UnboundAttemptRecord));
+        }
+        if template.recover.predicate.reads_local(0) {
+            return Err(unsupported(Unsupported::RecoveryView));
+        }
+        templates.push(Template {
+            name: format!("{}::{}", protocol.name, template.name),
+            effect: template.effect,
+            declaring: template.operation.declaring,
+            operation: template.operation.declaration.name().to_owned(),
+            trigger: template.trigger.value_type.clone(),
+            guard: &template.guard,
+            registration: captures(&template.registration_captures)?,
+            activation: captures(&template.activation_captures)?,
+            attempts: template.maximum_attempts,
+            retry: relation,
+            commit: match template.commit {
+                CheckedCommit::Never => None,
+                CheckedCommit::Node(node) => Some(node),
+            },
+            recover: &template.recover.predicate,
+            role: replicated
+                .iter()
+                .position(|(role, _)| *role == template.role),
+        });
+    }
+    Ok(templates)
+}
+
+/// The replicated roles of `protocol`, each with its index among the
+/// protocol's roles (ADR-027 RR-1, RR-4).
+fn replicated_roles(
+    protocol: &CheckedProtocol,
+) -> Result<Vec<(usize, Replicated<'_>)>, ProtocolRefusal> {
+    protocol
+        .slots
+        .roles
+        .iter()
+        .map(|checked| {
+            let role = protocol
+                .roles
+                .get(checked.role)
+                .ok_or_else(|| ProtocolRefusal::fault("a-replicated-role-is-a-role"))?;
+            let object = role
+                .context
+                .ok_or_else(|| ProtocolRefusal::fault("a-replicated-role-has-an-object-type"))?;
+            Ok((
+                checked.role,
+                Replicated {
+                    name: role.name.clone(),
+                    object,
+                    max: checked.max,
+                    lifetime: match &checked.lifetime {
+                        CheckedLifetime::Workflow => Lifetime::Workflow,
+                        CheckedLifetime::Scope(_) => Lifetime::Scope,
+                        CheckedLifetime::Until(predicate) => Lifetime::Until(predicate),
+                    },
+                    owns: protocol
+                        .owners
+                        .iter()
+                        .filter(|owner| owner.role == checked.role)
+                        .map(|owner| owner.node)
+                        .collect(),
+                },
+            ))
+        })
+        .collect()
 }
 
 impl<'a> Program<'a> {
@@ -330,11 +522,37 @@ impl<'a> Program<'a> {
         // Slot 0 is the `over` input. Any other binder with no node (the
         // activation binder, a capture) has no value this system binds, so a
         // slot that reads one is refused before any state is built.
-        let nodeless_read = slots
-            .iter()
-            .zip(&readers)
-            .skip(1)
-            .any(|(node, readers)| node.is_none() && !readers.is_empty());
+        let activation = match &protocol.obligations.activation {
+            CheckedActivation::Origin => None,
+            CheckedActivation::OnEach {
+                record_type, guard, ..
+            } => Some(Activation {
+                record_type: (**record_type).clone(),
+                guard: guard.as_ref(),
+            }),
+        };
+        // The activation binder has no node: its value is the trigger record
+        // of the instance that reads it.
+        let activation_slot = match &protocol.obligations.activation {
+            CheckedActivation::Origin => None,
+            CheckedActivation::OnEach { binder, .. } => Some(
+                protocol
+                    .slots
+                    .binders
+                    .iter()
+                    .position(|candidate| candidate.node.is_none() && candidate.name == *binder)
+                    .ok_or_else(|| ProtocolRefusal::fault("an-activation-binder-has-a-slot"))?,
+            ),
+        };
+        let nodeless_read =
+            slots
+                .iter()
+                .zip(&readers)
+                .enumerate()
+                .skip(1)
+                .any(|(slot, (node, readers))| {
+                    node.is_none() && !readers.is_empty() && Some(slot) != activation_slot
+                });
         if nodeless_read {
             return Err(unsupported(Unsupported::NodelessBinder));
         }
@@ -573,6 +791,33 @@ impl<'a> Program<'a> {
             binder: (finish_slot, finish_type),
         };
 
+        let replicated = replicated_roles(protocol)?;
+        let templates = templates(protocol, &replicated)?;
+        let acting = protocol
+            .owners
+            .iter()
+            .filter_map(|owner| {
+                let index = replicated
+                    .iter()
+                    .position(|(role, _)| *role == owner.role)?;
+                let steps = controls.get(&owner.node).is_some_and(|control| {
+                    matches!(
+                        control.step,
+                        ControlStep::Attempt
+                            | ControlStep::Send
+                            | ControlStep::Receive
+                            | ControlStep::Event
+                    )
+                });
+                steps.then_some((owner.node, index))
+            })
+            .collect();
+        let trigger_read = activation_slot.is_some_and(|slot| {
+            readers.get(slot).is_some_and(|readers| !readers.is_empty())
+                || replicated.iter().any(|(_, role)| {
+                    matches!(role.lifetime, Lifetime::Until(until) if until.reads_local(slot))
+                })
+        });
         let mut program = Self {
             root,
             controls,
@@ -595,15 +840,42 @@ impl<'a> Program<'a> {
             slots,
             readers,
             binder_of,
+            binder_types: protocol
+                .slots
+                .binders
+                .iter()
+                .map(|binder| binder.value_type.clone())
+                .collect(),
             terminal: &protocol.slots.terminal,
+            templates,
+            effects: protocol
+                .edges
+                .iter()
+                .filter(|edge| edge.kind == EdgeKind::Effect)
+                .map(|edge| (edge.to.node, edge.from.node))
+                .collect(),
             spans: BTreeMap::new(),
             reader_positions: Vec::new(),
             loop_of: BTreeMap::new(),
+            replicated: replicated.into_iter().map(|(_, role)| role).collect(),
+            acting,
+            activation,
+            activation_slot,
+            trigger_read,
         };
         program.spans = program.spans()?;
         program.loop_of = program.enclosing_loops()?;
-        program.reader_positions = program
-            .readers
+        // An effect keeps its attempt's binder as a reader does: its ST-2
+        // enabledness reads it.
+        let mut keepers = program.readers.clone();
+        for (effect, attempt) in &program.effects {
+            if let Some(slot) = program.binder_of.get(attempt) {
+                if let Some(readers) = keepers.get_mut(*slot) {
+                    readers.insert(*effect);
+                }
+            }
+        }
+        program.reader_positions = keepers
             .iter()
             .map(|readers| ReaderPositions {
                 controls: readers
@@ -637,6 +909,25 @@ impl<'a> Program<'a> {
         node: ProtocolNodeId,
     ) -> Result<Option<ProtocolNodeId>, ProtocolRefusal> {
         Ok(self.control(node)?.parent)
+    }
+
+    /// Whether some `effect` names the attempt `attempt` (ST-2).
+    pub(super) fn effected(&self, attempt: ProtocolNodeId) -> bool {
+        self.effects.values().any(|of| *of == attempt)
+    }
+
+    /// The declared type of `node`'s binder, when it has one.
+    pub(super) fn binder_type(&self, node: ProtocolNodeId) -> Option<&ValueType> {
+        self.binder_of
+            .get(&node)
+            .and_then(|slot| self.binder_types.get(*slot))
+    }
+
+    /// The template at index `template`.
+    pub(super) fn template(&self, template: usize) -> Result<&Template<'a>, ProtocolRefusal> {
+        self.templates
+            .get(template)
+            .ok_or_else(|| ProtocolRefusal::fault("a-template-index-is-a-template"))
     }
 
     /// The `repeat` `node`.
@@ -696,7 +987,7 @@ impl<'a> Program<'a> {
         };
         let (at, start) = match rest {
             Rest::Finish => return readers.finish,
-            Rest::End | Rest::Check(_) => return false,
+            Rest::End | Rest::Check(_) | Rest::Compensate(_) | Rest::Retry(_) => return false,
             Rest::Node(node) | Rest::Fork(node) | Rest::Await(node) => {
                 match self.spans.get(&node) {
                     Some(span) => (node, span.first),
@@ -748,6 +1039,51 @@ impl<'a> Program<'a> {
         }
         (finish && readers.finish)
             || (start <= end && readers.controls.range(start..=end).next().is_some())
+    }
+
+    /// Whether a thread resting at `rest` can still reach one of the controls
+    /// `targets` (ADR-027 RR-4): from its rest point to the end of its scope,
+    /// the nearest enclosing `branch` or, for a root thread, the whole `run`
+    /// tree, and, through the back edge of each `repeat` that encloses its
+    /// rest point inside that scope, every control of that `repeat`'s body.
+    /// A `check` that is false is never passed, and a compensation thread
+    /// and the end of a body reach no control.
+    pub(super) fn reaches_any(&self, rest: Rest, targets: &[ProtocolNodeId]) -> bool {
+        let (at, start) = match rest {
+            Rest::Finish | Rest::End | Rest::Check(_) | Rest::Compensate(_) | Rest::Retry(_) => {
+                return false
+            }
+            Rest::Node(node) | Rest::Fork(node) | Rest::Await(node) => {
+                match self.spans.get(&node) {
+                    Some(span) => (node, span.first),
+                    None => return false,
+                }
+            }
+            Rest::Join(node) => match self.spans.get(&node) {
+                Some(span) => (node, span.last.saturating_add(1)),
+                None => return false,
+            },
+        };
+        let Some(here) = self.spans.get(&at) else {
+            return false;
+        };
+        let mut start = start;
+        let mut enclosing = self.loop_of.get(&at).copied();
+        while let Some(repeat) = enclosing {
+            let Some(span) = self.spans.get(&repeat) else {
+                break;
+            };
+            if span.first < here.scope_first {
+                break;
+            }
+            start = start.min(span.first);
+            enclosing = self.loop_of.get(&repeat).copied();
+        }
+        targets.iter().any(|target| {
+            self.spans
+                .get(target)
+                .is_some_and(|span| (start..=here.scope_last).contains(&span.first))
+        })
     }
 
     /// Where settling from `from` can go, whatever the guards and `check`s

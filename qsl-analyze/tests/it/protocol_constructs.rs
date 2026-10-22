@@ -418,9 +418,7 @@ fn a_fence_moves_its_thread_and_changes_nothing_under_sc() {
             .iter()
             .filter(|state| {
                 state.steps.is_empty()
-                    && system
-                        .terminal_class(&state.state, false)
-                        .expect("classifies")
+                    && crate::fill::class_of(&system, &state.state)
                         == qsl_eval::simulation::model::TerminalClass::Deadlocked
             })
             .count();
@@ -860,8 +858,8 @@ fn path_json(thread: &ThreadPath) -> Json {
         .steps
         .iter()
         .map(|step| {
-            json!({"node": step.node, "branch": step.branch,
-                "ordinal": step.ordinal.to_string()})
+            json!({"node": step.node(), "branch": step.branch(),
+                "ordinal": step.ordinal().to_string()})
         })
         .collect();
     json!({"type": "thread-path", "instance": thread.instance.to_string(), "steps": steps})
@@ -1044,11 +1042,9 @@ fn an_ordinal_stays_held_while_a_descendant_of_its_branch_runs() {
                 .expect("threads")
                 .iter()
                 .any(|thread| {
-                    thread
-                        .path
-                        .steps
-                        .first()
-                        .is_some_and(|step| step.node == "Main/Loop/Outer" && step.ordinal == 1)
+                    thread.path.steps.first().is_some_and(|step| {
+                        step.node() == Some("Main/Loop/Outer") && step.ordinal() == 1
+                    })
                 })
         });
         assert_eq!(

@@ -12,17 +12,17 @@
 //! re-executes its traces through the vault's `ModelSystem`.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{HyperRefusal, ModelCheckRefusal};
+use qsl_analyze::model_check::ModelCheckRefusal;
 use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::AtomReading;
 use qsl_replay::{
-    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
+    BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
     IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelTraceRefusal, ReplayRefusal, StepMark,
     UndecidedCause,
 };
-use qsl_semantics::check::{FormulaNodeId, HyperForm, OperationKey};
+use qsl_semantics::check::{FormulaNodeId, OperationKey};
 use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Cancel, Charge, ChargePoint, Identifier, Incomplete, Meter, Undefined};
 use std::cell::RefCell;
@@ -31,8 +31,7 @@ use crate::counter::ZERO;
 
 use crate::hyper::{input, inputs, positions, refuted, Exhausted, Refusing};
 use crate::hyper_world::{
-    busy_of, high, input_of, key as hyper_key, low, non_interference, Vault, World, EQUAL_INPUTS,
-    KEY,
+    busy_of, high, input_of, key as hyper_key, low, non_interference, Vault, World, KEY,
 };
 use qsl_eval::temporal::UndefinedCause;
 
@@ -52,7 +51,7 @@ pub(crate) const IDLE: [(i64, i64, i64); 2] = [(0, 0, 0), (1, 0, 0)];
 
 /// The secret-1 run caught mid-operation, `busy` already set: its first step
 /// is a `mix`.
-const MID_OPERATION: [(i64, i64, i64); 2] = [(0, 0, 0), (1, 0, 1)];
+pub(crate) const MID_OPERATION: [(i64, i64, i64); 2] = [(0, 0, 0), (1, 0, 1)];
 
 /// Section 13's clause with `align skip { V::Vault::mix }` over the body
 /// `body` and the `match` conjuncts `conjuncts`.
@@ -127,6 +126,49 @@ fn the_vault_is_refuted_in_lockstep_and_held_on_its_projection() {
         panic!("expected the projection to hold");
     };
     assert_eq!(stats.product_states, 18);
+}
+
+/// The always-equal body of section 13's clause written as a disjunction whose
+/// first disjunct is a plain state test.
+const OR_BODY: &str = "holds(v.l @ a = 1) or always holds(v.l @ a = v.l @ b)";
+
+/// QSL-923: every vault state starts with `l = 0` in both runs, so the state
+/// test `l @ a = 1` is false at position 0 and the clause is section 13's:
+/// it is held on its projection and refuted by a projected counterexample at
+/// position 1 when the vault leaks. A translation that loses the `always`
+/// disjunct has no behaviour in the body and refutes the held clause at once.
+#[trace("TC-603")]
+#[test]
+fn a_projected_body_with_a_state_test_disjunct_keeps_the_other_disjunct() {
+    let held = World::busy(Vault::Busy, &IDLE, &aligned_over(OR_BODY, &[]));
+    assert!(matches!(run(&held), HyperOutcome::Holds { .. }));
+
+    let leaky = World::busy(
+        Vault::BusyLeaky,
+        &MID_OPERATION,
+        &aligned_over(OR_BODY, &[]),
+    );
+    let counterexample = refuted(run(&leaky));
+    assert_eq!(counterexample.kind, HyperCounterexampleKind::Projected);
+    assert_eq!(counterexample.trace_position, 1);
+}
+
+/// QSL-923: a body whose first disjunct is itself a disjunction of two state
+/// tests. At position 0 both runs have `l = 0`, so that disjunct is false and
+/// the clause is section 13's. The translation refused it, because the
+/// negation of `l @ a = 1 or l @ b = 1` was never built.
+#[trace("TC-603")]
+#[test]
+fn a_projected_body_with_a_nested_state_disjunction_is_decided() {
+    let body = "(holds(v.l @ a = 1) or holds(v.l @ b = 1)) or \
+                always holds(v.l @ a = v.l @ b)";
+    let held = World::busy(Vault::Busy, &IDLE, &aligned_over(body, &[]));
+    assert!(matches!(run(&held), HyperOutcome::Holds { .. }));
+
+    let leaky = World::busy(Vault::BusyLeaky, &MID_OPERATION, &aligned_over(body, &[]));
+    let counterexample = refuted(run(&leaky));
+    assert_eq!(counterexample.kind, HyperCounterexampleKind::Projected);
+    assert_eq!(counterexample.trace_position, 1);
 }
 
 /// FR-178-AC-2: the leaky `l = (i + h) mod 2` over a secret-1 run that starts
@@ -227,10 +269,15 @@ fn from_idle_starts_the_leak_is_one_visible_step_away() {
 fn the_horizon_counts_a_skip_move_and_the_run_is_deterministic() {
     let mut world = World::busy(Vault::BusyLeaky, &MID_OPERATION, &aligned(&[]));
     world.max_depth = Some(1);
-    let HyperOutcome::BoundReached { depth, stats } = run(&world) else {
+    let HyperOutcome::BoundReached {
+        depth,
+        covers,
+        stats,
+    } = run(&world)
+    else {
         panic!("expected the horizon to be reached");
     };
-    assert_eq!(depth, 1);
+    assert_eq!((depth, covers), (1, BoundCovers::Moves));
     // The initial pairs and the states one move away.
     assert!(stats.depth <= 1, "{stats:?}");
 
@@ -363,34 +410,6 @@ fn an_incomplete_or_refused_match_is_undetermined_and_never_holds() {
             panic!("expected no decision, got {outcome:?}");
         };
         assert_eq!(cause, UndecidedCause::MatchUndetermined);
-    }
-}
-
-/// A search horizon is built for an HP-6 item alone: a clause of another form
-/// that carries one is refused, whichever form it is, rather than run
-/// without it.
-#[trace("TC-603")]
-#[test]
-fn a_horizon_on_a_lockstep_or_forall_exists_item_is_refused() {
-    let opaque = "hyper Opaque using inf over behaviours (v: V::Vault) \
-         forall trace a of V exists trace b of V \
-         match { a.step.Vault::step.i = b.step.Vault::step.i } \
-         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
-    for (declaration, form) in [
-        (non_interference(EQUAL_INPUTS), HyperForm::Universal),
-        (opaque.to_owned(), HyperForm::ForallExistsSafety),
-    ] {
-        let mut world = World::new(Vault::Secure, false, &[(0, 0), (1, 0)], &declaration);
-        world.max_depth = Some(3);
-        assert!(
-            matches!(
-                world.run(ModelCheckLimits::default(), &Cancel::new()),
-                Err(ModelCheckRefusal::Hyper(HyperRefusal::HorizonNotDecided {
-                    form: Some(refused)
-                })) if refused == form
-            ),
-            "{form:?}"
-        );
     }
 }
 

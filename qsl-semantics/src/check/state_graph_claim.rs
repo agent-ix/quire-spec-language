@@ -96,6 +96,28 @@ impl CheckedPredicateBody {
     }
 }
 
+/// A checked Boolean predicate over the slots a claim's `over` parameter
+/// binds, evaluated at one model state through the one clause evaluator
+/// (FR-107): a state-graph claim's ([`CheckedPredicateBody`]) or a
+/// probabilistic claim's ([`CheckedPredicate`](super::CheckedPredicate)).
+pub trait StatePredicate {
+    /// The checked Boolean body.
+    fn body(&self) -> CheckedNode<'_>;
+
+    /// The number of evaluation slots of the body.
+    fn slots(&self) -> usize;
+}
+
+impl StatePredicate for CheckedPredicateBody {
+    fn body(&self) -> CheckedNode<'_> {
+        Self::body(self)
+    }
+
+    fn slots(&self) -> usize {
+        Self::slots(self)
+    }
+}
+
 impl CheckedStatePredicate {
     /// Whether the predicate is the constant `true` an omitted `from` stands
     /// for.
@@ -171,7 +193,7 @@ impl StateGraphClaim {
             },
             DomainKind::InfiniteTrace,
         )]);
-        Requirements::new(self.kind, ClaimExtent::from_domains(domains))
+        Requirements::new(self.kind, ClaimExtent::from_domains(domains)).over_model_subject()
     }
 }
 

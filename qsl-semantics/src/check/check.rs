@@ -50,6 +50,7 @@ use std::sync::Arc;
 
 mod native_literal;
 mod typing;
+use typing::TypedOperand;
 
 use super::ir::{
     Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
@@ -462,6 +463,12 @@ pub struct PackageDeclarations {
     /// checked under the one of them, or refuses when there is none or
     /// several.
     pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// FR-230, FR-233: the time source of each timed model, which a
+    /// `model-time` clause binds (FR-234). The assembler builds none: FR-230's
+    /// "Timed facet gate" refuses every `time` member, since no catalog holds
+    /// `quire.temporal.complete/v1`, so no model reaching S3 is timed. A
+    /// caller that holds a model's checked time source supplies it here.
+    pub time_sources: Vec<super::temporal_clause::ModelTimeSource>,
     /// FR-110, FR-186: every header profile selection of the unit, in source
     /// order, for a `probabilistic` claim's `using` alias to resolve against.
     pub profile_selections: Vec<qsl_foundation::selection::ProfileSelection>,
@@ -487,6 +494,13 @@ pub struct PackageDeclarations {
     /// order, each resolved by the FR-091 assembler and checked after the
     /// state clauses.
     pub refinements: Vec<super::RefinementDeclaration>,
+    /// FR-147: the unit's `refinement_internals` input, supplied beside the
+    /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
+    /// name, "internal": [class, ...]}` objects. `None` is the empty list.
+    pub refinement_internals: Option<serde_json::Value>,
+    /// FR-135: the refinement features this build has built. A build
+    /// capability, not a request parameter; only a test replaces it.
+    pub refinement_support: super::RefinementSupport,
     /// Test-only: check a package that holds a `refinement` declaration
     /// without refusing it as not emitted (FR-135).
     pub emit_unwritten_refinements: bool,
@@ -528,6 +542,23 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_unwritten_refinements(mut self) -> Self {
         self.emit_unwritten_refinements = true;
+        self
+    }
+
+    /// These declarations with the unit's `refinement_internals` input
+    /// (FR-147).
+    #[must_use]
+    pub fn with_refinement_internals(mut self, value: serde_json::Value) -> Self {
+        self.refinement_internals = Some(value);
+        self
+    }
+
+    /// These declarations, to be checked as a build that has built only
+    /// `support` (FR-135).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_refinement_support(mut self, support: super::RefinementSupport) -> Self {
+        self.refinement_support = support;
         self
     }
 
@@ -613,6 +644,7 @@ impl PackageDeclarations {
             probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
+            time_sources: Vec::new(),
             profile_selections: Vec::new(),
             hyper_clauses: Vec::new(),
             operation_clauses: Vec::new(),
@@ -620,6 +652,8 @@ impl PackageDeclarations {
             terminals: Vec::new(),
             emit_unwritten_terminals: false,
             refinements: Vec::new(),
+            refinement_internals: None,
+            refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,
             emit_unwritten_state_graph_claims: false,
             operation_bodies: Vec::new(),
@@ -840,6 +874,37 @@ struct ScopeIndex {
     /// and unit declarations": a unit is used by name outside a type form).
     /// A quantity literal names its unit here (FR-185).
     units: BTreeMap<String, quire_exact::UnitId>,
+}
+
+/// The units `graph` declares by their declared name, read from `declared`,
+/// the table built over the same graph.
+fn unit_ids_by_name(
+    graph: &quire_semantic_value::unit::UnitGraph,
+    declared: &quire_semantic_value::quantity::UnitTable,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    graph
+        .units()
+        .filter_map(|unit| {
+            let name = declared
+                .nominal_node(unit.key().as_bytes())
+                .map(|node| node.declaration.qualified_declaration.as_slice());
+            match name {
+                Some([name]) => Some((name.clone(), unit.id())),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The units `graph` declares by their declared name (QSpec FR-142
+/// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
+pub(crate) fn declared_unit_ids(
+    graph: &quire_semantic_value::unit::UnitGraph,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    unit_ids_by_name(
+        graph,
+        &quire_semantic_value::quantity::UnitTable::declared(graph),
+    )
 }
 
 impl ScopeIndex {
@@ -1074,14 +1139,7 @@ impl Scope {
             return self;
         }
         let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
-        for unit in graph.units() {
-            let name = declared
-                .nominal_node(unit.key().as_bytes())
-                .map(|node| node.declaration.qualified_declaration.as_slice());
-            if let Some([name]) = name {
-                self.index.units.insert(name.clone(), unit.id());
-            }
-        }
+        self.index.units.extend(unit_ids_by_name(graph, &declared));
         let mut units = self.types.units().clone();
         units.append(declared);
         self.types = std::mem::take(&mut self.types).with_units(units);
@@ -2506,32 +2564,42 @@ impl<'a> Typer<'a> {
         Err(refuse(location, CheckCause::MissingName(name.to_owned())))
     }
 
-    /// `left = right` or `left != right` over its two typed operands, each
-    /// with the equality operand it compares as.
+    /// `left = right` or `left != right` over its two typed operands. The
+    /// pair is first checked with the operands as written, so a conversion
+    /// is admitted or refused as such; the stored equality then compares the
+    /// operands as they are typed, a converted operand being its own
+    /// `ConvertScalar` node.
     fn equality(
         &mut self,
         operator: EqualityOperator,
-        (left, left_operand): (Node, EqualityOperand),
-        (right, right_operand): (Node, EqualityOperand),
+        left: TypedOperand,
+        right: TypedOperand,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         // FR-359 item 4: FR-208 gives an event type no equality, so an
         // operand holding one is ineligible, not compared.
-        if self.scope.reaches_event(&left.value_type) || self.scope.reaches_event(&right.value_type)
+        if self.scope.reaches_event(&left.node.value_type)
+            || self.scope.reaches_event(&right.node.value_type)
         {
             return Err(ineligible(location));
         }
-        let checked = self
-            .scope
-            .types
-            .check_equality_in(
-                &self.units,
-                operator,
-                left_operand,
-                right_operand,
-                &|shape: &EnumShape| self.scope.enum_members_of(shape),
-            )
-            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+        let check = |left: &EqualityOperand, right: &EqualityOperand| {
+            self.scope
+                .types
+                .check_equality_in(
+                    &self.units,
+                    operator,
+                    left.clone(),
+                    right.clone(),
+                    &|shape: &EnumShape| self.scope.enum_members_of(shape),
+                )
+                .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))
+        };
+        let mut checked = check(&left.checked, &right.checked)?;
+        if (&left.stored, &right.stored) != (&left.checked, &right.checked) {
+            checked = check(&left.stored, &right.stored)?;
+        }
+        let (left, right) = (left.node, right.node);
         Ok(node(
             NodeKind::Equality(
                 operator,

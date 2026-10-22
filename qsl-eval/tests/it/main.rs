@@ -12,6 +12,7 @@ mod tc235_k2;
 
 mod automaton_kernels;
 mod automaton_key;
+mod automaton_key_bounded;
 mod call_verdicts;
 mod checked_package_call;
 mod child_composite;
@@ -45,6 +46,7 @@ mod state_model_family;
 mod supplied_phases;
 mod tc235_business_meaning_runtime;
 mod temporal_trace;
+mod timed_trace;
 mod total_functions;
 mod type_invariants;
 mod unbounded_set_call;

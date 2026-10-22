@@ -13,7 +13,7 @@ relationships:
 Verify which `operation-contract` records the refinement's `requirements`
 hook writes, their hypotheses, and how their backend outcomes settle.
 
-Scope: FR-146-AC-1 to FR-146-AC-7.
+Scope: FR-146-AC-1 to FR-146-AC-9.
 
 ## Test Procedure
 
@@ -36,6 +36,12 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
 7. Feed the settlement map the checker's `Rejected` and `Unverifiable`
    results for the `commitA` record's "holds" outcome.
 
+8. Settle the safety half of `CasRefinesCounter` from its eight records and hypothesis items: all proved and certified; one hypothesis item `Uncertified`; the invariant `self.value < 0` with every step record proved; a backend counterexample for one `Step` record; a counterexample for the `Initial` record.
+
+9. Settle the eight records of `CasRefinesCounter` when `check_refinement_smt_proof` returns `Verified`; then for `CasRefinesCounterAdd` (FR-315-AC-6), whose `bump` row has a `_` argument (the checker returns `Unencodable` for its step part), and for that fixture with the base query also mismatched.
+
+10. Read the occurrence key of each of `CasRefinesCounter`'s eight records.
+
 Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 
 ## Expected Results
@@ -51,3 +57,6 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 6: `CasInv` listed and `AbsInv` not; unchanged by clause order.
 - Step 7: `inconclusive`, `CertificateRejected{rule, at}` for `Rejected`;
   `proved`, `Uncertified` for `Unverifiable`.
+- Step 8: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`, `hypotheses-not-established`; `Inconclusive(InductionNotClosed{depth: 1})`; `refuted` through replay (FR-146-AC-8).
+- Step 9: every record `Proved{Inductive{depth: 1}, Certified}`; with `CasRefinesCounterAdd` every record `Uncertified`; with the base mismatch the `Initial` record `Inconclusive(CertificateRejected{rule, at})` at `base` and the others `Uncertified` (FR-146-AC-4).
+- Step 10: each key is (the refinement node, `generated`, ordinal): 0 for `Initial` and `i + 1` for `Step { row: i }` (FR-146-AC-9).

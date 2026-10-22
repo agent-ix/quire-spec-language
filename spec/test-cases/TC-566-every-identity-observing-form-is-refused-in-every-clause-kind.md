@@ -18,8 +18,8 @@ Scope: FR-150-AC-3 to FR-150-AC-4.
 
 Fixtures: The annotated ConfigVersion unit of TC-565.
 
-1. Add, one at a time: an invariant comparing `self` to a reference literal for key `a`; a temporal atom converting `c` to text; a `terminal when` predicate with `reduce` over a `Bag` of references; a state constraint with the `fold`. Then add two of them together.
-2. Add the invariant `forall p in config_history: p.parent = self implies p != self`, the atom `holds(c.parent = a.parent)` and a `fold` over a `Set<Int[0, 3]>` field.
+1. Add, one at a time: an invariant comparing `self` to a reference literal for key `a`; a temporal atom converting `c` to text; a `terminal when` predicate with `reduce` over a `Bag` of references; a state constraint with a `fold` whose step is outside FR-145's catalog (it chooses an element). Then add two of them together.
+2. Add the invariant `forall p in config_history: p.parent = self implies p != self`, the atom `holds(c.parent = a.parent)` and a `fold<Tally>(acc, x in s: acc + 1, identity: 0)` over a `Set<Int[0, 3]>` field `s`, with `type Tally = Integer;`.
 
 Tag the tests `#[trace("TC-566", "FR-150-AC-n")]`.
 

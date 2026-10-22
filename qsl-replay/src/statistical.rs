@@ -9,18 +9,26 @@
 //! verdict type the settlement map and CG read in `qsl-replay`.
 
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::{ExpansionStop, SampledStep};
+use qsl_eval::simulation::model::{ClauseOutcome, NotMarkov};
+use qsl_eval::simulation::{ExpansionStop, RequiresBound, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
+use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Integer, Rational};
 
+use crate::proof_result::SymmetryRefusal;
 use crate::UndefinedEvaluation;
 
 mod settle;
+mod witness;
 
 pub use settle::{
     settle_statistical, settle_statistical_refusal, NotStatisticalRequest, StatisticalRecord,
-    SubjectLimits,
+    SubjectLimits, UnsettledRefusal,
+};
+pub use witness::{
+    replay_sampled_witness, SampledParity, SampledWitnessRefusal, SampledWitnessReplay,
+    WitnessReadStop, WitnessReader, WitnessReading, WitnessReplay,
 };
 
 /// How a request decides a claim from its samples (FR-189, FR-190;
@@ -297,6 +305,12 @@ pub struct TestResult {
     /// The interval, for Okamoto and the regenerative method; `None` for
     /// SPRT and for a test that ended before its method decided.
     pub interval: Option<(Rational, Rational)>,
+    /// A quantile claim's empirical nearest-rank `q`-quantile of the
+    /// measures of the activated samples counted (FR-192 "estimate"), the
+    /// `⌈q · n⌉`-th smallest of the `n` counted; censored when that rank
+    /// lies among the censored samples, which exceed every value. `None`
+    /// for any other form and for a test that counted no sample.
+    pub quantile: Option<MeasureValue>,
     /// Samples counted, or cycles closed.
     pub samples: u64,
     /// Samples drawn, or steps taken.
@@ -374,8 +388,21 @@ pub enum WitnessValue {
     /// A mean-of-fraction sample's fraction, below `θ` against a `>= θ`
     /// bound or above it against a `<= θ` bound.
     Fraction(Rational),
+    /// A quantile claim's activated sample whose measure is on the violating
+    /// side of its PF-4 event: the measure's value, or censored.
+    Measure(MeasureValue),
     /// The claim evaluated undefined on the sample (ADR-024 SV-11).
     Undefined(UndefinedEvaluation),
+}
+
+/// One activated sample's bounded measure (FR-189 "Per sample"; ADR-024
+/// PF-2): its value, or censored, with no end within the window.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MeasureValue {
+    /// The measure's value, in the reward's own unit for an `accumulate`.
+    Value(Rational),
+    /// Activated with no end position: exceeds every finite threshold.
+    Censored,
 }
 
 /// One sampled witness (FR-193; ADR-024 SV-6): a sample on the violating
@@ -405,6 +432,8 @@ pub struct StatisticalVerdict {
     pub estimate: Option<Rational>,
     /// The least favourable test's interval.
     pub interval: Option<(Rational, Rational)>,
+    /// The least favourable test's empirical quantile (FR-192).
+    pub quantile: Option<MeasureValue>,
     /// What the verdict rests on.
     pub basis: StatisticalBasis,
     /// What it reproduces from.
@@ -470,13 +499,22 @@ pub enum StatisticalStop {
     Expansion(ExpansionStop),
     /// The caller's `Cancel` handle was cancelled (FR-276).
     Cancelled(CancelCause),
+    /// The bounded event's automaton would exceed FR-126's
+    /// `max_automaton_states`, at the value it was set to: FR-126's
+    /// `ResourceExhausted`. EN-4 has no member of its own for the budget, so
+    /// the run reads FR-126's published default.
+    AutomatonStates {
+        /// The limit's value in the run.
+        value: u64,
+    },
 }
 
 /// Why a run is unsupported once sampling began (FR-189).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StatisticalUnsupported {
-    /// A drawn step broke the Markov condition (ADR-024 PM-3).
-    NotMarkov,
+    /// A drawn step broke the Markov condition (ADR-024 PM-3): the state,
+    /// the scheduled identity, the drawn vector and its post-state count.
+    NotMarkov(Box<NotMarkov>),
     /// A choice's scaled weight total exceeds `2^256`, so no draw is
     /// accepted (QSpec FR-181-AC-14).
     TotalAboveDrawRange {
@@ -512,6 +550,33 @@ pub enum StatisticalOutcome {
 /// Why EN-4 refuses a request with no outcome (FR-189 `StatisticalRefusal`).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum StatisticalRefusal {
+    /// A claim predicate's read was refused with no value undefined: its
+    /// truth at the state is not known (FR-196's `PredicateRefused`, which
+    /// EN-5 returns for the same read).
+    #[error("a claim predicate's read was refused: {0:?}")]
+    PredicateRefused(ClauseOutcome),
+    /// FR-120's admission of the subject's `ModelSystem` failed.
+    #[error("the subject's model system did not admit: {0:?}")]
+    Admission(Box<AdmissionFailure>),
+    /// A symmetry declaration of the request is malformed (FR-151 "Form").
+    #[error(transparent)]
+    Symmetry(SymmetryRefusal),
+    /// The claim's `over` type has an admitting population with no universe
+    /// (FR-101), so the subject's tests are not finitely many.
+    #[error("the subject has an unbounded population and requires a bound")]
+    RequiresBound(RequiresBound),
+    /// A claim `under every scheduler` has no sampling route (ADR-024 PM-8,
+    /// ADR-028 XF-7); only exact evidence decides it.
+    #[error("a claim under every scheduler is decided by exact evidence only")]
+    EveryScheduler,
+    /// A claim form only EN-5 decides: an unbounded reachability or an
+    /// expected-reward form (ADR-028 XF-4, XF-5, XF-7).
+    #[error("this claim form is decided by exact evidence only")]
+    ExactOnlyForm,
+    /// A claim that states no confidence parameters is decided by exact
+    /// evidence only (ADR-024 PF-10).
+    #[error("a claim with no confidence parameters is decided by exact evidence only")]
+    MissingConfidence,
     /// The method does not decide the claim's form (FR-189, FR-190).
     #[error("{method:?} does not decide a {form:?} claim")]
     NotStatistical {

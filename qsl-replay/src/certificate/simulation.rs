@@ -299,11 +299,13 @@ fn transition_wire(transition: &ModelTransition) -> Result<serde_json::Value, St
 fn locus_kind(locus: &UndefinedLocus) -> &'static str {
     match locus {
         UndefinedLocus::Atom(_) => "atom",
+        UndefinedLocus::Activation => "activation",
         UndefinedLocus::Contract(_) => "contract",
         UndefinedLocus::Terminal(_) => "terminal",
         UndefinedLocus::Constraint(_) => "constraint",
         UndefinedLocus::Protocol(_) => "protocol",
         UndefinedLocus::Mapping(_) => "mapping",
+        UndefinedLocus::ClaimPredicate(_) => "claim-predicate",
     }
 }
 
@@ -381,9 +383,11 @@ pub fn check_simulation_certificate(
     )
     .map_err(|refusal| match refusal {
         SubjectRefusal::Admission(failure) => ClosureRefusal::Admission(failure),
+        SubjectRefusal::ProtocolSubject => ClosureRefusal::ProtocolRefinement,
         SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
             Checker::Simulation.fault("the-subjects-of-a-refinement-open")
         }
+        SubjectRefusal::ProtocolAbstractSide => ClosureRefusal::ProtocolAbstractSide,
     })?;
     for system in [&concrete, &abstract_system] {
         check_model_bounds(system, BOUND_POSITIONS)

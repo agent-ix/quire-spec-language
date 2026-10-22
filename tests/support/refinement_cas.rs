@@ -364,11 +364,20 @@ fn unit_text(
             .map(|(digest, _)| hex(digest))
             .expect("the package is provisioned")
     };
+    // Leading `profile` lines of `refinement` are header selections.
+    let (profiles, refinement) = {
+        let split = refinement
+            .lines()
+            .take_while(|line| line.starts_with("profile "))
+            .map(|line| line.len() + 1)
+            .sum::<usize>();
+        refinement.split_at(split)
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
-         model Spec = \"{SPEC}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         {profiles}model Spec = \"{SPEC}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          model Impl = \"{CAS}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          model Third = \"{THIRD}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          pre CanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\

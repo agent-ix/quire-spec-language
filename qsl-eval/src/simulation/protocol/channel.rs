@@ -165,6 +165,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 payload: payload.clone(),
                 bytes: jcs(&enc)?,
                 enc,
+                carried: self.memory.send(&state.memory, path),
             };
             let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
             let fifo = key.fifo.is_some();
@@ -213,7 +214,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: payload,
+                    value: Some(payload),
                     enc: enc.clone(),
                 },
             );
@@ -233,7 +234,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     removal: Removal::Lost,
                 });
             }
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((transition, next));
             }
@@ -288,10 +291,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: payload,
+                    value: Some(payload),
                     enc: enc.clone(),
                 },
             );
+            if let Some(carried) = &entry.carried {
+                next.memory = self.memory.receive(&next.memory, path, carried);
+            }
             let transition =
                 ProtocolTransition::record(StepKind::Receive, path.clone(), text.clone(), enc)
                     .removing(QueueEvent {
@@ -300,7 +306,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         send: self.program.text(entry.send)?.to_owned(),
                         removal: Removal::Received,
                     });
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((transition, next));
             }

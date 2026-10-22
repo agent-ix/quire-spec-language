@@ -203,11 +203,8 @@ impl<'w> Oracle<'w> {
         let nodes = self.replayed(lasso);
         let steps = lasso.path.steps.len();
         let entry = lasso.loop_entry as usize;
-        if lasso.terminal_stutter {
-            assert_eq!(
-                entry, steps,
-                "a stutter loop re-enters at the terminal state"
-            );
+        let terminal = entry == steps;
+        if terminal {
             let last = nodes.last().expect("a state");
             assert!(
                 self.system
@@ -224,13 +221,7 @@ impl<'w> Oracle<'w> {
                 "the loop closes at its entry"
             );
         }
-        self.satisfies(
-            &nodes,
-            &lasso.path.steps,
-            entry,
-            lasso.terminal_stutter,
-            fairness,
-        )
+        self.satisfies(&nodes, &lasso.path.steps, entry, terminal, fairness)
     }
 
     /// Whether the lasso through `nodes` (one more than `steps`) that
@@ -368,7 +359,6 @@ fn settles(world: &World, witness: &LassoWitness, initial: usize, secret: i64) {
     let lasso = &witness.lasso;
     assert_eq!(lasso.path.initial as usize, initial);
     assert_eq!(lasso.loop_entry, 1);
-    assert!(!lasso.terminal_stutter);
     let inputs: Vec<i64> = lasso.path.steps.iter().map(input).collect();
     assert_eq!(inputs, [1, 1]);
     assert_eq!(
@@ -383,6 +373,8 @@ fn settles(world: &World, witness: &LassoWitness, initial: usize, secret: i64) {
 /// one lasso per initial state, in initial-state order, each the stem
 /// `step(1)` and the loop `step(1)` that the oracle reads back, source
 /// `Explored`; the product exploration completed with no open node.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn the_secure_vault_is_witnessed_by_a_step_1_loop_per_initial_state() {
@@ -408,6 +400,8 @@ fn the_secure_vault_is_witnessed_by_a_step_1_loop_per_initial_state() {
 /// sampled lassos that name their walk: the seed 0 and a trace index in the
 /// initial state's block of 64, and the record's sampled lassos are the
 /// outcome's.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn sampled_witnesses_name_their_walk_by_seed_and_trace_index() {
@@ -434,6 +428,8 @@ fn sampled_witnesses_name_their_walk_by_seed_and_trace_index() {
 
 /// The request's seed names phase 0's walks: another seed draws other walks,
 /// and the run is a function of the seed.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn the_seed_names_the_walks_and_the_run_is_reproducible() {
@@ -467,6 +463,8 @@ fn the_seed_names_the_walks_and_the_run_is_reproducible() {
 /// the output's type never allows, is `Trapped` at initial state 0 with an
 /// empty stem: each initial state's part of the product is closed and holds no
 /// fair accepting cycle, and the first in subject order is named.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-2")]
 #[test]
 fn an_unreachable_output_traps_the_first_initial_state() {
@@ -494,6 +492,8 @@ fn an_unreachable_output_traps_the_first_initial_state() {
 /// closed with no fair accepting cycle, not the first initial state: a start
 /// at `l = 1` has `always holds(v.l @ b = 0)` false at its position 0, and
 /// the start before it settles.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-2")]
 #[test]
 fn the_trap_is_the_first_initial_state_with_no_witness() {
@@ -533,6 +533,8 @@ fn the_trap_is_the_first_initial_state_with_no_witness() {
 /// `fair weak V::Vault::reset;` is `Trapped` at initial state 0, since a loop
 /// of `step(1)` leaves `reset` enabled and untaken, and a loop that takes
 /// `reset` has `l = 0`; the same clause with no fairness set is `Witnessed`.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-3")]
 #[test]
 fn a_fairness_set_on_the_existential_variable_changes_the_verdict() {
@@ -565,6 +567,8 @@ fn a_fairness_set_on_the_existential_variable_changes_the_verdict() {
 /// `eventually always holds(v.l @ b = 0)` holds under `fair weak reset` by the
 /// loop `reset`, and a fairness set on an operation the loop does not need
 /// does not hide a witness.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-3")]
 #[test]
 fn a_loop_that_takes_the_fair_operation_is_a_witness() {
@@ -586,6 +590,8 @@ fn a_loop_that_takes_the_fair_operation_is_a_witness() {
 /// is `NoDecision`: the run completed through depth 0 and the states at the
 /// horizon are open with cause `MaxDepth`, which the possible family's map
 /// settles `BoundReached{depth: 1}`.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-4")]
 #[test]
 fn a_horizon_of_one_leaves_the_states_at_depth_one_open() {
@@ -626,6 +632,8 @@ fn witnessed_or_unchecked(outcome: &ExistentialOutcome) -> &[LassoWitness] {
 /// 1, the atom and the division's cause. With sampling on, phase 0 found a
 /// witness lasso per initial state looping `step(0)` at `(h, 0)`, which does
 /// not settle the item.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn an_undefined_letter_refutes_although_every_initial_state_has_a_witness() {
@@ -671,6 +679,8 @@ fn an_undefined_letter_refutes_although_every_initial_state_has_a_witness() {
 /// An undefined letter at an initial position ends the instance at path length
 /// 0 although the start's part is also closed with no fair accepting cycle:
 /// the letter is read before the automaton steps, so it comes first.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn an_undefined_letter_at_a_trapped_start_is_undefined_not_trapped() {
@@ -688,6 +698,8 @@ fn an_undefined_letter_at_a_trapped_start_is_undefined_not_trapped() {
 /// A trap comes before an undefined letter later in canonical breadth-first
 /// order: `holds(l = 1)` is false at the starts, so no fair accepting cycle
 /// is left, and the division is undefined only after `step(1)`.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn a_trap_comes_before_a_later_undefined_letter() {
@@ -709,6 +721,8 @@ fn a_trap_comes_before_a_later_undefined_letter() {
 /// `witness_samples` is `Witnessed` only from a product exploration that
 /// completed with no open node; the same run under `max_depth` 2 has open
 /// states at the horizon and is not.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-615", "FR-181-AC-5")]
 #[test]
 fn a_witnessed_outcome_needs_a_completed_run_with_no_open_node() {
@@ -733,6 +747,8 @@ fn a_witnessed_outcome_needs_a_completed_run_with_no_open_node() {
 /// exploration stops at `max_states`, and the instance is `WitnessedUnchecked`
 /// with the run's end and open causes; with `witness_samples` 0 the same run
 /// is `NoDecision` with the same end.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-616", "FR-181-AC-6")]
 #[test]
 fn a_stopped_exploration_with_sampled_witnesses_is_witnessed_unchecked() {
@@ -775,6 +791,8 @@ fn a_stopped_exploration_with_sampled_witnesses_is_witnessed_unchecked() {
 /// A part the run did not finish is not a trap: `max_transitions` 1 stops the
 /// exploration inside initial state 0's part, and the second initial state's
 /// part is never discovered, so neither is closed.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-2")]
 #[test]
 fn an_unfinished_part_is_not_a_trap() {
@@ -810,6 +828,8 @@ fn an_unfinished_part_is_not_a_trap() {
 /// expansion of `(0, 0)` after its `reset` edge, which a cycle that ignored the
 /// missing enabledness would take for fair. The run with no limit finds the
 /// fair loop `step(0)`.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-3")]
 #[test]
 fn a_cycle_through_a_partly_expanded_state_is_not_a_witness() {
@@ -845,7 +865,7 @@ fn a_cycle_through_a_partly_expanded_state_is_not_a_witness() {
 /// The run's `max_states` is shared by its instances: two vaults in one start
 /// are two instances, each with a product of its own, and the budget the first
 /// uses is not the second's.
-#[trace("TC-606", "FR-181-AC-1")]
+#[trace("TC-606", "FR-181-AC-7")]
 #[test]
 fn instances_share_the_runs_limits() {
     let objects = [("v", (0, 0)), ("w", (0, 1))];
@@ -910,7 +930,7 @@ fn instances_share_the_runs_limits() {
 
 /// A start with no vault gives the clause no instance, and a subject with no
 /// initial state gives each instance `NoInitialState`.
-#[trace("TC-606", "FR-181-AC-1")]
+#[trace("TC-606", "FR-181-AC-7")]
 #[test]
 fn no_instance_and_no_initial_state_decide_nothing() {
     let none = World::with_vaults(Vault::Secure, &[], &clause("", SETTLES));
@@ -924,7 +944,7 @@ fn no_instance_and_no_initial_state_decide_nothing() {
 }
 
 /// The clause must be HP-5: a universal clause is refused, naming its form.
-#[trace("TC-606", "FR-181-AC-1")]
+#[trace("TC-606")]
 #[test]
 fn a_clause_that_is_not_single_existential_is_refused() {
     let world = World::new(Vault::Secure, false, &STARTS, &non_interference(""));
@@ -950,9 +970,10 @@ const GUARDED: Vault = Vault::Custom(
 );
 
 /// A state whose expansion evaluated a contract conjunction with no value is
-/// open with cause `UndecidedSuccessor` (ADR-022 GM-6), so the lasso that
-/// reaches the claim there is `WitnessedUnchecked`, never `Witnessed`.
-#[trace("TC-616", "FR-181-AC-6")]
+/// open with cause `UndecidedSuccessor` (ADR-022 GM-6): the lasso that reaches
+/// the claim there is not a witness, since what the state enables is unknown,
+/// and the instance is `NoDecision`, never `Witnessed`.
+#[trace("TC-616")]
 #[test]
 fn a_contract_with_no_value_leaves_its_state_open() {
     let world = World::new(
@@ -962,23 +983,22 @@ fn a_contract_with_no_value_leaves_its_state_open() {
         &clause("", "eventually holds(v.l @ b = 1)"),
     );
     let result = single(&world, unsampled());
-    let ExistentialOutcome::WitnessedUnchecked { lassos, end, open } = &result.outcome else {
-        panic!("expected WitnessedUnchecked, got {:?}", result.outcome);
-    };
-    assert_eq!(*end, RunEnd::Completed);
-    assert_eq!(*open, [OpenCause::UndecidedSuccessor].into());
-    assert_eq!(lassos.len(), 1);
-    let lasso = &lassos[0].lasso;
-    assert!(lasso.terminal_stutter, "the guard leaves `(0, 1)` terminal");
-    assert_eq!(lasso.path.steps.len(), 1);
-    assert_eq!(input(&lasso.path.steps[0]), 1);
+    // `(0, 1)` looks terminal, but whether its `step` is enabled is unknown,
+    // so the stutter loop there is no witness and nothing is decided.
+    assert_eq!(
+        result.outcome,
+        ExistentialOutcome::NoDecision {
+            end: RunEnd::Completed,
+            open: [OpenCause::UndecidedSuccessor].into(),
+        }
+    );
 }
 
 /// The run's limits and cancellation stop it: a witness-sample count whose
 /// trace indices overflow stops before the first walk naming
 /// `witness_samples`, a cancelled run is stopped as `Cancelled`, and
 /// `max_automaton_states` 1 stops the exploration naming that limit.
-#[trace("TC-616", "FR-181-AC-6")]
+#[trace("TC-616")]
 #[test]
 fn the_limits_and_cancellation_stop_the_run() {
     let world = World::new(Vault::Secure, false, &STARTS, &clause("", SETTLES));
@@ -1041,7 +1061,7 @@ fn the_limits_and_cancellation_stop_the_run() {
 /// walk, a walk that does not step back onto its state ends at the ceiling,
 /// and each initial state draws walks until one revisits, so the count is the
 /// walks before each success: the trace index less the initial state's base.
-#[trace("TC-616", "FR-181-AC-6")]
+#[trace("TC-616")]
 #[test]
 fn walks_the_step_ceiling_stopped_are_counted() {
     let world = World::new(
@@ -1070,9 +1090,11 @@ fn walks_the_step_ceiling_stopped_are_counted() {
 
 /// A terminal state is a lasso whose loop is the stutter step (ADR-018 SM-4):
 /// `step` is enabled only while `l = 0`, so `step(1)` ends in a terminal state
-/// and the witness is the path to it with `terminal_stutter` set and the loop
+/// and the witness is the path to it with the loop
 /// entry at its end. A walk reaching the terminal state revisits nothing, so
 /// it is explored.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-1")]
 #[test]
 fn a_terminal_state_is_a_stutter_lasso() {
@@ -1083,7 +1105,6 @@ fn a_terminal_state_is_a_stutter_lasso() {
     for (initial, witness) in lassos.iter().enumerate() {
         assert_eq!(witness.source, WitnessSource::Explored);
         let lasso = &witness.lasso;
-        assert!(lasso.terminal_stutter);
         assert_eq!(lasso.path.initial as usize, initial);
         assert_eq!(lasso.loop_entry, 1);
         assert_eq!(lasso.path.steps.len(), 1);
@@ -1095,6 +1116,8 @@ fn a_terminal_state_is_a_stutter_lasso() {
         assert!(is_witness(&world, lasso, Fairness::None));
     }
     assert_eq!(result.sampled, vec![None, None]);
+    // A walk that ends at the terminal state is not stopped by the ceiling.
+    assert_eq!(result.walks_stopped, 0);
 }
 
 /// The brute-force oracle: over the secure, leaky and terminal vaults, with and
@@ -1103,6 +1126,8 @@ fn a_terminal_state_is_a_stutter_lasso() {
 /// exactly when some lasso of at most three steps is a witness, and every
 /// lasso it returns is one the oracle reads back. Where an initial state has
 /// none, the trap names the first such, in subject order.
+///
+/// Engine half of the criterion: the outcome shape. Replay, the certificate and settlement are not built.
 #[trace("TC-606", "FR-181-AC-1", "FR-181-AC-2", "FR-181-AC-3")]
 #[test]
 fn the_engine_agrees_with_a_brute_force_search_of_lassos() {
@@ -1113,6 +1138,10 @@ fn the_engine_agrees_with_a_brute_force_search_of_lassos() {
         "eventually holds(v.l @ b = 1)",
         "always eventually holds(v.l @ b = 1)",
         "holds(v.l @ b = 0) and eventually always holds(v.l @ b = 1)",
+        "holds(v.l @ b = 1) or always holds(v.l @ b = 0)",
+        "holds(v.l @ b = 1) or eventually holds(v.l @ b = 0)",
+        "(not holds(v.l @ b = 1)) or ((holds(v.l @ b = 1) until holds(v.l @ b = 1)) \
+         or (holds(v.l @ b = 1) or holds(v.l @ b = 1)))",
     ];
     let mut witnesses = 0;
     let mut traps = 0;
@@ -1173,4 +1202,126 @@ fn the_engine_agrees_with_a_brute_force_search_of_lassos() {
         witnesses > 40 && traps > 40,
         "{witnesses} witnessed, {traps} trapped"
     );
+}
+
+/// The leaky-free `step` whose precondition has no value at `(h, l) = (0, 1)`,
+/// with a `reset` that keeps `l` at 1, so `(0, 1)` has a model loop whose
+/// state also enables a `step` the contracts cannot decide.
+const GUARDED_RESET: Vault = Vault::Custom(
+    "pre Guard using v on V::Vault::step { 1 div (1 - self.l + self.h) >= 0 }\n\
+     post Step using v on V::Vault::step { self.l = i }\n\
+     post Reset using v on V::Vault::reset { self.l = 1 }\n",
+);
+
+/// A loop through a state whose expansion evaluated a contract with no value
+/// is not shown fair: whether `step` is enabled at `(0, 1)` is unknown, so the
+/// `reset` loop there is no witness under `fair weak step`, in the explored
+/// product and in phase 0 alike. The state is open, the run completed, and
+/// nothing is decided.
+#[trace("TC-606", "FR-181-AC-3")]
+#[test]
+fn a_loop_through_an_undecided_state_is_not_a_witness() {
+    let world = World::new(
+        GUARDED_RESET,
+        true,
+        &[(0, 1)],
+        &clause("fair weak V::Vault::step;", "always holds(v.l @ b = 1)"),
+    );
+    let undecided = ExistentialOutcome::NoDecision {
+        end: RunEnd::Completed,
+        open: [OpenCause::UndecidedSuccessor].into(),
+    };
+    let result = single(&world, unsampled());
+    assert_eq!(result.outcome, undecided);
+    let result = single(&world, ModelCheckLimits::default());
+    assert_eq!(result.outcome, undecided);
+    assert_eq!(
+        result.sampled,
+        vec![None],
+        "phase 0 drops the candidate through the undecided state"
+    );
+}
+
+/// A run that stops before it has a product graph, here `max_automaton_states`
+/// 0, still returns the sampled witnesses it has: `WitnessedUnchecked`, with
+/// the stop and no open node.
+#[trace("TC-616")]
+#[test]
+fn a_run_with_no_graph_keeps_its_sampled_witnesses() {
+    let world = World::new(Vault::Secure, false, &STARTS, &clause("", SETTLES));
+    let limits = ModelCheckLimits {
+        max_automaton_states: 0,
+        ..ModelCheckLimits::default()
+    };
+    let result = single(&world, limits);
+    let ExistentialOutcome::WitnessedUnchecked { lassos, end, open } = &result.outcome else {
+        panic!("expected WitnessedUnchecked, got {:?}", result.outcome);
+    };
+    assert_eq!(
+        *end,
+        RunEnd::Stopped {
+            cause: IncompleteCause::ResourceExhausted,
+            limit: Some(ReachedLimit {
+                limit: ModelCheckLimit::MaxAutomatonStates,
+                value: 0,
+            }),
+        }
+    );
+    assert!(open.is_empty(), "{:?}", result.outcome);
+    assert_eq!(lassos.len(), 2);
+    for witness in lassos {
+        assert!(matches!(witness.source, WitnessSource::Sampled(_)));
+    }
+}
+
+/// The canonical lasso of FR-126 (CX-5), asserted where it matters. A part
+/// with two fair accepting components, `eventually always l = 1` and
+/// `eventually always l = 0`, gets the lasso of the one discovered first; and
+/// a loop of two vault states, which must visit both `l = 0` and `l = 1`,
+/// re-enters at the first state of its component.
+#[trace("TC-606")]
+#[test]
+fn the_explored_lasso_is_the_canonical_one() {
+    let two = World::new(
+        Vault::Secure,
+        false,
+        &[(0, 0)],
+        &clause(
+            "",
+            "(eventually always holds(v.l @ b = 1)) or (eventually always holds(v.l @ b = 0))",
+        ),
+    );
+    let result = single(&two, unsampled());
+    let lassos = witnessed(&result.outcome);
+    let lasso = &lassos[0].lasso;
+    assert_eq!(
+        (
+            lasso.loop_entry,
+            lasso.path.steps.iter().map(input).collect::<Vec<_>>()
+        ),
+        (0, vec![0]),
+        "{lasso:?}"
+    );
+
+    let both = World::new(
+        Vault::Secure,
+        false,
+        &[(0, 0)],
+        &clause(
+            "",
+            "(always eventually holds(v.l @ b = 1)) and (always eventually holds(v.l @ b = 0))",
+        ),
+    );
+    let result = single(&both, unsampled());
+    let lassos = witnessed(&result.outcome);
+    let lasso = &lassos[0].lasso;
+    assert_eq!(
+        (
+            lasso.loop_entry,
+            lasso.path.steps.iter().map(input).collect::<Vec<_>>()
+        ),
+        (0, vec![1, 0]),
+        "{lasso:?}"
+    );
+    assert!(is_witness(&both, lasso, Fairness::None));
 }

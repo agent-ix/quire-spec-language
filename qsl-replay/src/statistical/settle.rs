@@ -114,6 +114,31 @@ impl NotStatisticalRequest {
     }
 }
 
+/// A refusal FR-192 settles with no terminal record.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum UnsettledRefusal {
+    /// FR-192's `NotStatistical` row: a negotiation outcome.
+    #[error(transparent)]
+    NotStatistical(NotStatisticalRequest),
+    /// The subject requires a bound (FR-101): a disposition, not an outcome
+    /// (ADR-016 EX-8).
+    #[error("the subject requires a bound")]
+    RequiresBound,
+    /// A claim predicate's read was refused (FR-196's `PredicateRefused`):
+    /// FR-192's map has no row for it.
+    #[error("a claim predicate's read was refused")]
+    PredicateRefused,
+    /// The subject did not admit (FR-120): FR-192's map has no row for it,
+    /// so the refusal is the caller's to report as FR-106's admission
+    /// failure.
+    #[error("the subject did not admit")]
+    Admission,
+    /// A symmetry declaration of the request is malformed (FR-151): the
+    /// request is invalid, so the refusal is the caller's to report.
+    #[error("a symmetry declaration is malformed")]
+    Symmetry,
+}
+
 /// FR-192: settle `outcome` as one terminal record. `subject` supplies the
 /// configured bound an expansion stop naming a limit settles with.
 pub fn settle_statistical(
@@ -132,6 +157,12 @@ pub fn settle_statistical(
                 }))
             }
             StatisticalStop::Expansion(stop) => expansion_stop(stop, subject),
+            StatisticalStop::AutomatonStates { value } => {
+                StatisticalRecord::of(TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::MaxAutomatonStates,
+                    value: *value,
+                }))
+            }
             StatisticalStop::Cancelled(source) => {
                 StatisticalRecord::of(TerminalValue::Incomplete(IncompleteCause::Cancelled {
                     source: *source,
@@ -140,7 +171,7 @@ pub fn settle_statistical(
         },
         StatisticalOutcome::Unsupported { cause, .. } => {
             StatisticalRecord::of(TerminalValue::Unsupported(match cause {
-                StatisticalUnsupported::NotMarkov => UnavailabilityCause::NotMarkov,
+                StatisticalUnsupported::NotMarkov(_) => UnavailabilityCause::NotMarkov,
                 StatisticalUnsupported::TotalAboveDrawRange { total } => {
                     UnavailabilityCause::TotalAboveDrawRange {
                         total: total.clone(),
@@ -179,11 +210,11 @@ fn expansion_stop(stop: &ExpansionStop, subject: SubjectLimits<'_>) -> Statistic
 ///
 /// # Errors
 ///
-/// [`NotStatisticalRequest`] for a `NotStatistical` refusal, which settles
-/// no terminal record.
+/// [`UnsettledRefusal`] for a `NotStatistical`, `RequiresBound`,
+/// `Admission` or `Symmetry` refusal, which settles no terminal record.
 pub fn settle_statistical_refusal(
     refusal: &StatisticalRefusal,
-) -> Result<StatisticalRecord, NotStatisticalRequest> {
+) -> Result<StatisticalRecord, UnsettledRefusal> {
     let request = |refusal| {
         StatisticalRecord::of(TerminalValue::Unsupported(
             UnavailabilityCause::StatisticalRequest(refusal),
@@ -191,11 +222,15 @@ pub fn settle_statistical_refusal(
     };
     Ok(match refusal {
         StatisticalRefusal::NotStatistical { method, form } => {
-            return Err(NotStatisticalRequest {
+            return Err(UnsettledRefusal::NotStatistical(NotStatisticalRequest {
                 method: *method,
                 form: *form,
-            })
+            }))
         }
+        StatisticalRefusal::RequiresBound(_) => return Err(UnsettledRefusal::RequiresBound),
+        StatisticalRefusal::Admission(_) => return Err(UnsettledRefusal::Admission),
+        StatisticalRefusal::Symmetry(_) => return Err(UnsettledRefusal::Symmetry),
+        StatisticalRefusal::PredicateRefused(_) => return Err(UnsettledRefusal::PredicateRefused),
         StatisticalRefusal::GeneratorMismatch { .. } => {
             request(StatisticalRequestRefusal::GeneratorMismatch)
         }
@@ -205,6 +240,11 @@ pub fn settle_statistical_refusal(
         }
         StatisticalRefusal::FractionForEvent => {
             request(StatisticalRequestRefusal::FractionForEvent)
+        }
+        StatisticalRefusal::EveryScheduler => request(StatisticalRequestRefusal::EveryScheduler),
+        StatisticalRefusal::ExactOnlyForm => request(StatisticalRequestRefusal::ExactOnlyForm),
+        StatisticalRefusal::MissingConfidence => {
+            request(StatisticalRequestRefusal::MissingConfidence)
         }
         StatisticalRefusal::ConfidenceBeyondPrecision => StatisticalRecord::of(
             TerminalValue::Unsupported(UnavailabilityCause::ConfidenceBeyondPrecision),
@@ -249,6 +289,24 @@ mod tests {
         }
     }
 
+    /// A non-unique post-state of a `tick` with no argument.
+    fn not_markov() -> qsl_eval::simulation::model::NotMarkov {
+        qsl_eval::simulation::model::NotMarkov {
+            state: qsl_foundation::digest::DigestRecord::raw_artifact(b"healthy"),
+            transition: qsl_eval::simulation::model::ScheduledIdentity {
+                operation: "tick".to_owned(),
+                receiver: quire_exact::ObjectReference::new(
+                    quire_exact::UniverseId::from_digest([1; 32]),
+                    quire_exact::EffectiveId::from_digest([2; 32]),
+                    quire_exact::ObjectId::new("n").expect("a key"),
+                ),
+                arguments: Vec::new(),
+            },
+            random: Vec::new(),
+            post_states: 2,
+        }
+    }
+
     fn provenance() -> StatisticalProvenance {
         StatisticalProvenance {
             seed: 7,
@@ -263,6 +321,7 @@ mod tests {
             decision,
             estimate: Some(ratio(97, 100)),
             interval: Some((ratio(96, 100), ratio(98, 100))),
+            quantile: None,
             basis: basis(),
             provenance: provenance(),
             tests: Vec::new(),
@@ -400,6 +459,16 @@ mod tests {
         assert_eq!(own.diagnostic, Some(refused));
 
         assert_eq!(
+            settle(&stopped(StatisticalStop::AutomatonStates {
+                value: 1 << 20
+            }))
+            .value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::MaxAutomatonStates,
+                value: 1 << 20,
+            })
+        );
+        assert_eq!(
             settle(&stopped(StatisticalStop::Cancelled(CancelCause::Requested))).value,
             TerminalValue::Incomplete(IncompleteCause::Cancelled {
                 source: CancelCause::Requested
@@ -407,7 +476,7 @@ mod tests {
         );
 
         let not_markov = settle(&StatisticalOutcome::Unsupported {
-            cause: StatisticalUnsupported::NotMarkov,
+            cause: StatisticalUnsupported::NotMarkov(Box::new(not_markov())),
             provenance: provenance(),
         });
         assert_eq!(
@@ -476,6 +545,18 @@ mod tests {
                 StatisticalRefusal::FractionForEvent,
                 StatisticalRequestRefusal::FractionForEvent,
             ),
+            (
+                StatisticalRefusal::EveryScheduler,
+                StatisticalRequestRefusal::EveryScheduler,
+            ),
+            (
+                StatisticalRefusal::ExactOnlyForm,
+                StatisticalRequestRefusal::ExactOnlyForm,
+            ),
+            (
+                StatisticalRefusal::MissingConfidence,
+                StatisticalRequestRefusal::MissingConfidence,
+            ),
         ] {
             let record = settled(refusal);
             let TerminalValue::Unsupported(cause) = &record.value else {
@@ -486,6 +567,15 @@ mod tests {
             assert_eq!(cause.as_str(), "unsupported-requested-capability");
             let json = wire(record);
             assert_eq!(json["cause"]["refusal"], named.as_str());
+            if let Some(literal) = match named {
+                StatisticalRequestRefusal::EveryScheduler => Some("every-scheduler"),
+                StatisticalRequestRefusal::ExactOnlyForm => Some("exact-only-form"),
+                StatisticalRequestRefusal::MissingConfidence => Some("missing-confidence"),
+                _ => None,
+            } {
+                // FR-192's spellings, not the function under test's.
+                assert_eq!(json["cause"]["refusal"], literal);
+            }
             assert_eq!(json["cause"]["code"], "unsupported_projection");
         }
 
@@ -509,9 +599,28 @@ mod tests {
             form: ClaimForm::MeanOfFraction,
         })
         .expect_err("no terminal record");
+        let UnsettledRefusal::NotStatistical(negotiation) = negotiation else {
+            panic!("a negotiation outcome: {negotiation:?}")
+        };
         assert_eq!(
             negotiation.diagnostic(),
             CatalogCode::new("invalid_capability", "not-statistical")
+        );
+        let refused = StatisticalRefusal::Admission(Box::new(
+            qsl_semantics::model::observation::AdmissionFailure::Fault(InternalFault::new(
+                "statistical",
+                "admits",
+            )),
+        ));
+        assert_eq!(
+            settle_statistical_refusal(&refused),
+            Err(UnsettledRefusal::Admission)
+        );
+        assert_eq!(
+            settle_statistical_refusal(&StatisticalRefusal::PredicateRefused(
+                qsl_eval::simulation::model::ClauseOutcome::NotBoolean
+            )),
+            Err(UnsettledRefusal::PredicateRefused)
         );
     }
 

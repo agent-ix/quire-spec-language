@@ -178,14 +178,14 @@ pub fn evaluate_history_update(
     .run(row.body(), row.slots(), bindings)
 }
 
-/// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
-/// `package` with its `over` parameter bound to `over` (`None` for a claim
+/// FR-167 (ADR-022 GM-3): evaluate the state-graph or probabilistic-claim
+/// predicate `predicate` of `package` with its `over` parameter bound to `over` (`None` for a claim
 /// with no `over`) at the state whose objects are `current`, through the one
 /// clause evaluator (FR-107). The predicate is checked as an invariant body
 /// is, so every read observes `current`.
 pub fn evaluate_state_predicate(
     package: &CheckedPackage,
-    predicate: &qsl_semantics::check::CheckedPredicateBody,
+    predicate: &impl qsl_semantics::check::StatePredicate,
     current: &ObjectEnvironment,
     over: Option<quire_exact::ObjectReference>,
     meter: &mut Meter,
@@ -692,7 +692,9 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// the entries together with their combined outcome (FR-120).
     ///
     /// Invariants come first, then preconditions, then postconditions, each
-    /// group in ascending name order; postconditions are evaluated only
+    /// group in ascending name order. The preconditions stop at the first one
+    /// that is not `Completed(true)` (FR-006's short-circuit): the ones after
+    /// it are neither evaluated nor charged. Postconditions are evaluated only
     /// when every precondition is `Completed(true)`. Refuses as
     /// [`Self::evaluate_clause`] does for an unknown clause or mismatched
     /// observations, before evaluating any clause.

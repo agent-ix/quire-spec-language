@@ -35,7 +35,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     replay_hyper_trace_tuple, HyperCounterexample, HyperOutcome, HyperReplay, ModelCheckLimits,
-    ModelTraceSettlement, ReplayRefusal,
+    ModelTraceSettlement, ReplayRefusal, DEFAULT_MAX_WITNESS_SET,
 };
 use qsl_semantics::check::{
     check_hyper_clauses, CheckedHyper, CheckedHyperClause, FormulaNode, FormulaNodeId,
@@ -290,6 +290,7 @@ fn unit_text(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
          model V = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n{}{body}",
         hex(&digest),
@@ -430,7 +431,7 @@ pub(crate) struct World {
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     initial: Vec<DocumentRef>,
     pub(crate) max_candidates: u64,
-    /// The search horizon of an HP-6 run (`max_depth`).
+    /// The search horizon of an HP-2, HP-3 or HP-6 run (`max_depth`).
     pub(crate) max_depth: Option<usize>,
     /// The keys of the universe of `vaults`.
     pub(crate) universe: Vec<String>,
@@ -956,6 +957,16 @@ pub(crate) fn non_interference(matched: &str) -> String {
     )
 }
 
+/// ADR-023 section 8.2's `Opaque`, with `conjuncts` added to its `match`.
+pub(crate) fn opaque(conjuncts: &str) -> String {
+    format!(
+        "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V exists trace b of V \
+         match {{ a.step.Vault::step.i = b.step.Vault::step.i{conjuncts} }} \
+         {{ holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }}"
+    )
+}
+
 /// The `match` of `NonInterference`: equal operations with equal inputs.
 pub(crate) const EQUAL_INPUTS: &str =
     "match { a.step.op = b.step.op and a.step.Vault::step.i = b.step.Vault::step.i }";
@@ -988,17 +999,41 @@ impl World {
         &self,
         counterexample: &HyperCounterexample,
     ) -> Result<ModelTraceSettlement, ReplayRefusal> {
-        let system = ModelSystem::new(self.subject().simulation).expect("the subject admits");
+        self.replay_under(counterexample, DEFAULT_MAX_WITNESS_SET)
+    }
+
+    /// Replay `counterexample` with witness sets of at most `max_witness_set`
+    /// members (FR-184).
+    pub(crate) fn replay_under(
+        &self,
+        counterexample: &HyperCounterexample,
+        max_witness_set: u64,
+    ) -> Result<ModelTraceSettlement, ReplayRefusal> {
         let seams = self.seams();
+        self.replay_through(counterexample, &seams, &seams, max_witness_set)
+    }
+
+    /// Replay `counterexample` reading the atoms through `letters` and
+    /// `match` through `matcher`, with witness sets of at most
+    /// `max_witness_set` members.
+    pub(crate) fn replay_through(
+        &self,
+        counterexample: &HyperCounterexample,
+        letters: &dyn HyperLetters,
+        matcher: &dyn StepMatch,
+        max_witness_set: u64,
+    ) -> Result<ModelTraceSettlement, ReplayRefusal> {
+        let system = ModelSystem::new(self.subject().simulation).expect("the subject admits");
         let instance = instance();
         replay_hyper_trace_tuple(
             &HyperReplay {
                 clause: &self.clause,
                 systems: vec![&system; self.clause.quantifiers().len()],
                 instance: &instance,
-                letters: &seams,
-                matcher: &seams,
+                letters,
+                matcher,
                 meter: UNLIMITED,
+                max_witness_set,
                 cancel: &Cancel::new(),
             },
             counterexample,

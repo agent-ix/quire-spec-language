@@ -87,7 +87,7 @@ pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
 pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 ```
 
-`StatisticalRefusal` holds FR-120's `AdmissionFailure`, FR-101's
+`StatisticalRefusal` holds FR-120's `AdmissionFailure`, FR-151's `SymmetryRefusal` for a malformed symmetry declaration, FR-101's
 `RequiresBound` and `GeneratorMismatch`, `EveryScheduler` for a claim `under every scheduler` and
 `MissingConfidence` for a claim without confidence parameters,
 `NoTest` for a subject with no (initial state, binding) pair, `TooManyTests`
@@ -108,7 +108,7 @@ the claim's form does not admit (FR-190, SPRT below).
 - EN-4 SHALL run one statistical test per (initial state, `over` binding)
   pair of the subject, `m` tests in all, in subject order, and use
   `α' = α/m` and `β' = β/m` for each (Bonferroni).
-- **Symmetry.** Under an admitted symmetry declaration (ADR-021 SYM-5), when
+- **Symmetry.** Under a symmetry declaration whose form EN-4 admits (ADR-021 SYM-2; EN-4 does not check SYM-4's closure of the initial states, since it merges only pairs it was given), when
   the workload and every random parameter's distribution are invariant under
   its group, EN-4 SHALL run one test per orbit of (initial state, binding)
   pairs, on the least pair in key order, and `m` SHALL count orbits.
@@ -117,9 +117,20 @@ the claim's form does not admit (FR-190, SPRT below).
 
 ### Per sample
 
-- EN-4 SHALL sample `h + 1` positions for an event or bounded measure of
-  horizon or window `h` (FR-188), and evaluate the event, or the measure and
-  its comparison, with the layer-5 evaluator over those positions.
+- EN-4 SHALL sample at most `h + 1` positions for an event or bounded measure
+  of horizon or window `h` (FR-188), and evaluate the event, or the measure and
+  its comparison, with the layer-5 evaluator over those positions. A bounded
+  event stops when its monitor decides, and closes at a terminal model state
+  with the profile's false extension (ADR-018 SM-4, FR-126). A measure stops
+  at its end `b`. A weighted fraction draws `h + 1` steps, since the step that
+  leaves a position weighs it.
+- An `accumulate` or `steps` measure under a probability bound that never
+  activates on a sample SHALL count that sample on the side that violates the
+  bound, since ADR-024 PF-3's probability is over every behaviour.
+- A weighted fraction whose window has total weight 0 SHALL evaluate
+  `Undefined` by division by zero at the window's last position.
+- A claim predicate whose read is refused with no value undefined SHALL end
+  the run as the `PredicateRefused` refusal, as FR-196 does for EN-5.
 - An `accumulate` or `steps` measure SHALL find the first activation
   position `a <= h` and the first `b`, `a <= b <= h`, where the end
   predicate holds, and sum the reward of the steps into positions `a + 1` to

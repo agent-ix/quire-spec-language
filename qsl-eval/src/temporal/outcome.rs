@@ -102,7 +102,9 @@ pub enum TemporalRefusal {
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
     /// A lasso under a bounded profile: only the infinite-trace profile
-    /// reads one (FR-329).
+    /// reads one (FR-329), but for a lasso whose loop has no counted step
+    /// (ADR-027 PB-3, FR-338), which never leaves a bounded horizon. Remaining
+    /// work: STD-254 settles that exception against FR-329.
     #[error("a lasso is read under the infinite-trace profile only, not {profile:?}")]
     LassoUnderBoundedProfile {
         /// The clause's profile.
@@ -114,6 +116,35 @@ pub enum TemporalRefusal {
     ProfileNotEvaluated {
         /// The clause's profile.
         profile: TemporalProfile,
+    },
+    /// A clause handed to the timed evaluator that was not checked under the
+    /// timed profile (FR-234).
+    #[error("the timed evaluator reads a clause under the timed profile, not {profile:?}")]
+    NotTimedProfile {
+        /// The clause's profile.
+        profile: TemporalProfile,
+    },
+    /// A timed lasso whose loop has no positive total delay: the behaviour
+    /// would not be time-divergent (ADR-026 CT-2).
+    #[error("a timed lasso's loop has no positive total delay")]
+    NonPositiveLoopDelay,
+    /// A timed lasso whose loop re-enters its start before the last
+    /// represented position's stamp.
+    #[error("a timed lasso's loop re-enters its start before the last represented stamp")]
+    LoopReentersBeforeLastStamp,
+    /// A timed trace whose stamp is negative (FR-231: a stamp is a
+    /// non-negative exact rational).
+    #[error("the time stamp at {position:?} is negative")]
+    NegativeStamp {
+        /// The first position with a negative stamp.
+        position: TemporalPosition,
+    },
+    /// A timed trace whose stamp is below its predecessor's (FR-231: stamps
+    /// are non-decreasing).
+    #[error("the time stamp at {position:?} is below its predecessor's")]
+    DecreasingStamp {
+        /// The first position whose stamp decreases.
+        position: TemporalPosition,
     },
     /// A position is outside the represented trace (FR-327 "Positions").
     #[error(transparent)]
@@ -138,11 +169,16 @@ impl TemporalRefusal {
             | Self::EmptyLoop
             | Self::TraceTooLong
             | Self::TupleArity { .. }
+            | Self::NegativeStamp { .. }
+            | Self::DecreasingStamp { .. }
+            | Self::NonPositiveLoopDelay
+            | Self::LoopReentersBeforeLastStamp
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
             Self::AlignSkipNotLockstep
             | Self::NotProjectionAligned
             | Self::LassoUnderBoundedProfile { .. }
-            | Self::ProfileNotEvaluated { .. } => {
+            | Self::ProfileNotEvaluated { .. }
+            | Self::NotTimedProfile { .. } => {
                 CatalogCode::new("unsupported_construct", "expression-form")
             }
             Self::Position(refusal) => refusal.catalog_code(),

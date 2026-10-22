@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
     MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
@@ -118,6 +119,7 @@ pub(crate) fn document() -> Vec<u8> {
         ("object_type", meaning::OBJECT_TYPE),
         ("population", meaning::POPULATION),
         ("value_type", meaning::VALUE_TYPE),
+        ("record_value_type", meaning::RECORD_VALUE_TYPE),
     ]
     .into_iter()
     .map(|(name, meaning)| {
@@ -130,6 +132,14 @@ pub(crate) fn document() -> Vec<u8> {
     let value = ident("Cell/v");
     let weight = ident("Cell/w");
     let population = ident("cells");
+    let attempt = ident("Attempt");
+    let attempt_tally = ident("Attempt/n");
+    let attempt_field = json!({
+        "identity": attempt_tally, "name": "n", "typeRef": ident("Level"),
+        "presence": "required", "nullable": false, "defaultKind": "none",
+        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        "origin": origin(&attempt_tally),
+    });
     let fields: Vec<Json> = [("v", &value), ("w", &weight)]
         .into_iter()
         .map(|(name, field)| {
@@ -162,8 +172,14 @@ pub(crate) fn document() -> Vec<u8> {
                     operation("flag", &[], true, true),
                     operation("touch", &[], false, false),
                     operation("nudge", &["peer"], true, false),
+                    operation("dec", &[], true, false),
                 ],
                 "relationships": [],
+            })),
+            wire_type(&attempt, "record_value_type", json!({
+                "supertypes": [],
+                "fields": [attempt_field],
+                "operations": [],
             })),
         ],
         "populations": [{
@@ -196,12 +212,18 @@ pub(crate) fn contracts(two_pre: &str) -> String {
 }
 
 /// The unit selecting the domain package as `M`, with `body` after the
-/// header.
+/// header. The temporal profile is `t0`, infinite-trace, or `tb`, the
+/// bounded false-extension profile, when `body` has a clause `using tb`.
 pub(crate) fn unit_text(body: &str) -> String {
+    let (name, profile) = if body.contains(" using tb ") {
+        ("tb", "quire.temporal.event-position.false-extension/v1")
+    } else {
+        ("t0", "quire.temporal.infinite-trace/v1")
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
+         profile {name} = \"{profile}\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
         hex(&document_digest(&document()))
     )
@@ -307,11 +329,22 @@ impl Documents {
     /// An initialization snapshot named `name` of the cells `objects`, each
     /// `(key, v)` with `w = 0`, provisioned here.
     pub(crate) fn start(&mut self, name: &str, objects: &[(&str, i64)]) -> DocumentRef {
+        let cells: Vec<(&str, i64, i64)> = objects
+            .iter()
+            .map(|(key, value)| (*key, *value, 0))
+            .collect();
+        self.start_cells(name, &cells)
+    }
+
+    /// An initialization snapshot named `name` of the cells `objects`, each
+    /// `(key, v, w)`, provisioned here.
+    pub(crate) fn start_cells(&mut self, name: &str, objects: &[(&str, i64, i64)]) -> DocumentRef {
         let objects: Vec<Json> = objects
             .iter()
-            .map(|(key, value)| {
+            .map(|(key, value, weight)| {
                 json!({"key": key, "type": ident("Cell"),
-                    "fields": {"v": {"integer": value.to_string()}, "w": {"integer": "0"}}})
+                    "fields": {"v": {"integer": value.to_string()},
+                        "w": {"integer": weight.to_string()}}})
             })
             .collect();
         let header = json!({"identity": PACKAGE, "version": "1.0.0",
@@ -459,6 +492,16 @@ pub(crate) struct Reached<M: MemoryModel = Sc> {
     pub(crate) steps: Vec<(ProtocolTransition, usize)>,
 }
 
+/// The terminal class of `state` (FR-124, ADR-027 PD-1, PD-2, AE-4), read
+/// from its bounded expansion.
+pub(crate) fn class_of<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
+    state: &ProtocolState<M>,
+) -> TerminalClass {
+    let (expansion, cut) = system.successors_bounded(state).expect("the state expands");
+    SubjectSystem::terminal_class(system, state, &expansion, cut).expect("a class")
+}
+
 /// Every reachable state of `system`, breadth-first from its initial states,
 /// each once by its state key, successors in the engine's order.
 pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
@@ -536,7 +579,12 @@ pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec
                 | StepKind::Duplicate
                 | StepKind::Lose
                 | StepKind::Fence
-                | StepKind::Memory => None,
+                | StepKind::Memory
+                | StepKind::CAttempt
+                | StepKind::CEnd
+                | StepKind::Activate
+                | StepKind::Spawn
+                | StepKind::Retire => None,
             };
             if let Some(name) = &named {
                 prefix.push(name.clone());

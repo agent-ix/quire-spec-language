@@ -102,6 +102,12 @@ pub enum TransitionId {
 pub struct WeightedStep {
     /// The transition.
     pub transition: TransitionId,
+    /// The scheduled identity the transition applies; `None` for the
+    /// stutter step.
+    pub identity: Option<ScheduledIdentity>,
+    /// The drawn random values, in declared order; empty for the stutter
+    /// step and for an operation with no random parameter.
+    pub random: Vec<Value>,
     /// The post-state.
     pub post: ModelSimState,
     /// The step probability: the operation's weight share, times one over
@@ -135,6 +141,9 @@ impl PartialEq for NotMarkov {
             && self.post_states == other.post_states
     }
 }
+
+/// `same_values` is an equivalence: a drawn vector equals itself.
+impl Eq for NotMarkov {}
 
 /// A contract conjunction of an application or a postcondition candidate
 /// was undecided at the state (FR-120's `ContractUndetermined` finding), so
@@ -177,7 +186,7 @@ pub(crate) fn same_values(left: &[Value], right: &[Value]) -> bool {
 }
 
 /// Two reward lists are the same: equal names and values, in order.
-pub(crate) fn same_rewards(left: &[(Identifier, Value)], right: &[(Identifier, Value)]) -> bool {
+pub fn same_rewards(left: &[(Identifier, Value)], right: &[(Identifier, Value)]) -> bool {
     left.len() == right.len()
         && left
             .iter()
@@ -451,7 +460,7 @@ impl ModelSystem<'_> {
     }
 
     /// Every reward of the model at 0: the stutter step's rewards.
-    pub(crate) fn zero_rewards(&self) -> Vec<(Identifier, Value)> {
+    pub fn zero_rewards(&self) -> Vec<(Identifier, Value)> {
         self.probabilistic.names.clone()
     }
 
@@ -697,6 +706,8 @@ impl ModelSystem<'_> {
         if actions.is_empty() {
             return Ok(Ok(vec![WeightedStep {
                 transition: TransitionId::Stutter,
+                identity: None,
+                random: Vec::new(),
                 post: state.clone(),
                 probability: Rational::from_integer(Integer::one()),
                 rewards: self.zero_rewards(),
@@ -748,6 +759,8 @@ impl ModelSystem<'_> {
                     bytes,
                     WeightedStep {
                         transition: TransitionId::Operation(transition),
+                        identity: Some(action.identity.clone()),
+                        random: draw.random,
                         post,
                         probability: share.mul(&draw.probability),
                         rewards: draw.rewards,

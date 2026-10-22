@@ -34,9 +34,9 @@
 //! of the part to the first fair accepting component in the part's discovery
 //! order, and the loop is CX-5's greedy walk inside it. A lasso whose loop is
 //! the terminal stutter step is given as the path to the terminal state with
-//! `terminal_stutter` set (ADR-018 CX-1): the stutter steps of a path are all
-//! at its end and repeat the terminal state, so dropping them leaves the same
-//! infinite behaviour.
+//! `loop_entry` at the path's length (ADR-018 CX-1): the stutter steps of a
+//! path are all at its end and repeat the terminal state, so dropping them
+//! leaves the same infinite behaviour.
 //!
 //! Not built here, and absent rather than approximated: the product-closure
 //! certificate a `Witnessed` outcome carries (FR-163), the replay of a witness
@@ -280,9 +280,7 @@ impl<'a> Run<'_, 'a> {
             let mut mine = Totals::default();
             let explored = self.explore(binding, &mut totals, &mut mine)?;
             let outcome = match &explored {
-                Explored::Halted(end) => {
-                    Self::undecided(&sampled.witnesses, end.clone(), BTreeMap::new())
-                }
+                Explored::Halted(end) => Self::undecided(&sampled.witnesses, end.clone()),
                 Explored::Product(product, end) => {
                     let initials = self
                         .system
@@ -546,7 +544,6 @@ impl<'a> Run<'_, 'a> {
                     steps: candidate.steps.clone(),
                 },
                 loop_entry: entry,
-                terminal_stutter: false,
             },
             source: WitnessSource::Sampled(SampleProvenance {
                 stopped: StopReason::Reached,
@@ -763,12 +760,8 @@ impl<'a> Run<'_, 'a> {
     /// The outcome of a run that has no graph to decide from: a witness for
     /// every initial state, sampled, is not checked for well-definedness;
     /// anything else decides nothing.
-    fn undecided(
-        witnesses: &[Option<LassoWitness>],
-        end: RunEnd,
-        open: BTreeMap<ProductStateId, OpenCause>,
-    ) -> ExistentialOutcome {
-        let open = open.into_values().collect();
+    fn undecided(witnesses: &[Option<LassoWitness>], end: RunEnd) -> ExistentialOutcome {
+        let open = BTreeSet::new();
         match witnesses.iter().cloned().collect::<Option<Vec<_>>>() {
             Some(lassos) if !lassos.is_empty() => {
                 ExistentialOutcome::WitnessedUnchecked { lassos, end, open }
@@ -1058,6 +1051,7 @@ impl<'a> Decision<'_, '_, 'a> {
             .members
             .iter()
             .filter(|id| graph.state(**id).is_some_and(|state| state.expanded))
+            .filter(|id| !self.open.contains_key(id))
             .filter_map(|id| vertices.get(id.index()).copied())
             .collect();
         let analyses = match analyze(&fair.graph, &within, &fair.constraints, self.run.cancel) {
@@ -1115,7 +1109,6 @@ impl<'a> Decision<'_, '_, 'a> {
                     steps,
                 },
                 loop_entry: u32::try_from(loop_entry).map_err(|_| fault("loop-entry-fits-u32"))?,
-                terminal_stutter: terminal,
             },
             source: WitnessSource::Explored,
         })))

@@ -12,34 +12,45 @@
 //! event, the fraction, or that the sample was not activated; for the
 //! regenerative method it walks one behaviour from the test's initial state
 //! and receives, per position, whether `P` holds, the position's weight and
-//! whether the next position regenerates. The sampler drives FR-188's
-//! sampler and the layer-5 evaluator over the subject; this module owns the
+//! whether the next position regenerates. [`check_sampled`] decides at that
+//! seam; [`check_statistical`] is FR-189's entry point over a model subject
+//! and a checked claim, whose sampler draws FR-188's behaviours and reads the
+//! claim on each with the layer-5 evaluator (`model`). This module owns the
 //! statistics, the budgets, the trace-index assignment and the outcome.
+//!
+//! [`require_statistical`] is the negotiation gate before any of it: it
+//! refuses a checked claim only exact evidence decides, so no sample is drawn
+//! for it.
 
 mod bounds;
 mod claim;
 mod method;
+mod model;
 mod regenerative;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeMap;
+
 use qsl_eval::model_subject::ModelInstance;
+use qsl_eval::simulation::model::{ClauseOutcome, NotMarkov};
 use qsl_eval::simulation::{ExpansionStop, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
 use qsl_replay::statistical::{
-    ClaimForm, Decision, SampledUndefined, SampledWitness, StatisticalBasis, StatisticalLimit,
-    StatisticalLimits, StatisticalMethod, StatisticalOutcome, StatisticalProvenance,
-    StatisticalRefusal, StatisticalStop, StatisticalUnsupported, StatisticalVerdict,
-    TestProvenance, TestResult, TraceRange, UndecidedCause, WitnessValue,
+    ClaimForm, Decision, MeasureValue, SampledUndefined, SampledWitness, StatisticalBasis,
+    StatisticalLimit, StatisticalLimits, StatisticalMethod, StatisticalOutcome,
+    StatisticalProvenance, StatisticalRefusal, StatisticalStop, StatisticalUnsupported,
+    StatisticalVerdict, TestProvenance, TestResult, TraceRange, UndecidedCause, WitnessValue,
 };
 use qsl_replay::UndefinedEvaluation;
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 
 pub use claim::{
-    reduce_quantile, Bound, ClaimRefusal, Comparison, MeasureEvent, MeasureValue,
+    reduce_quantile, require_statistical, Bound, ClaimRefusal, Comparison, MeasureEvent,
     QuantileComparison, StatisticalClaim,
 };
+pub use model::{check_statistical, witness_reader, ModelWitnessReader, StatisticalRequest};
 
 use bounds::{int, normal_quantile_upper, quotient, QuantileFailure};
 use claim::Comparison as Cmp;
@@ -57,9 +68,11 @@ pub struct TestSubject {
     pub binding: Option<ModelInstance>,
 }
 
-/// A statistical request (FR-189 `StatisticalRequest`).
+/// A statistical request at the [`BehaviourSampler`] seam: FR-189's
+/// [`StatisticalRequest`] with its subject read into tests and its checked
+/// claim reduced to the [`StatisticalClaim`] the statistics decide.
 #[derive(Clone, Copy, Debug)]
-pub struct StatisticalRequest<'a> {
+pub struct SampledRequest<'a> {
     /// The claim's form, bound and confidence.
     pub claim: &'a StatisticalClaim,
     /// The tests to run, `m` in all, in subject order.
@@ -133,9 +146,17 @@ impl TryFrom<Rational> for Weight {
 /// One drawn sample, as the claim reads it (FR-189 "Per sample").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Sample {
-    /// The event, or a quantile claim's reduced event
-    /// ([`MeasureEvent::holds`]), on an activated sample.
+    /// The event, on a sample.
     Event(bool),
+    /// A quantile claim's activated sample: whether its reduced event
+    /// ([`MeasureEvent::holds`]) holds, and the measure it holds of, which a
+    /// witness keeps (FR-193).
+    Measured {
+        /// Whether the reduced event holds.
+        holds: bool,
+        /// The sample's measure.
+        value: MeasureValue,
+    },
     /// A mean-of-fraction claim's fraction.
     Fraction(UnitFraction),
     /// A quantile sample with no activation: drawn, not counted.
@@ -184,7 +205,7 @@ pub enum WalkStep {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SampleHalt {
     /// A drawn step broke the Markov condition.
-    NotMarkov,
+    NotMarkov(Box<NotMarkov>),
     /// A choice's scaled weight total exceeds `2^256`.
     TotalAboveDrawRange {
         /// The scaled total.
@@ -199,6 +220,14 @@ pub enum SampleHalt {
     },
     /// The sampler observed the run's `Cancel` handle cancelled.
     Cancelled(CancelCause),
+    /// The bounded event's automaton would exceed its state limit, at the
+    /// value it was set to (FR-126 `ResourceExhausted`).
+    AutomatonStates {
+        /// The limit's value.
+        value: u64,
+    },
+    /// A claim predicate's read was refused with no value undefined.
+    PredicateRefused(ClauseOutcome),
 }
 
 /// The behaviours EN-4 decides from: FR-188's sampler and the layer-5
@@ -257,6 +286,12 @@ struct Tally {
     counted: u64,
     draws: u64,
     sum: Rational,
+    /// The counted measures of a quantile claim by value, ascending: the
+    /// distinct values are few, so the tally holds counts, not samples.
+    measures: BTreeMap<Rational, u64>,
+    /// The counted samples whose measure is censored, which exceeds every
+    /// value.
+    censored: u64,
 }
 
 impl Tally {
@@ -265,7 +300,42 @@ impl Tally {
             counted: 0,
             draws: 0,
             sum: int(0),
+            measures: BTreeMap::new(),
+            censored: 0,
         }
+    }
+
+    /// Keep one counted sample's `measure`.
+    fn measured(&mut self, measure: &MeasureValue) {
+        match measure {
+            MeasureValue::Value(value) => {
+                let count = self.measures.entry(value.clone()).or_insert(0);
+                *count = count.saturating_add(1);
+            }
+            MeasureValue::Censored => self.censored = self.censored.saturating_add(1),
+        }
+    }
+
+    /// The nearest-rank `q`-quantile of the measures kept (ADR-024 WA-3):
+    /// the `⌈q · n⌉`-th smallest of the `n` counted. `None` when none was
+    /// kept.
+    fn quantile(&self, q: &Rational) -> Option<MeasureValue> {
+        let kept = self
+            .measures
+            .values()
+            .fold(self.censored, |sum, count| sum.saturating_add(*count));
+        if kept == 0 {
+            return None;
+        }
+        let rank = q.mul(&Rational::from_integer(Integer::from(kept)));
+        let mut seen = 0_u64;
+        for (value, count) in &self.measures {
+            seen = seen.saturating_add(*count);
+            if Rational::from_integer(Integer::from(seen)) >= rank {
+                return Some(MeasureValue::Value(value.clone()));
+            }
+        }
+        Some(MeasureValue::Censored)
     }
 
     fn estimate(&self) -> Option<Rational> {
@@ -332,6 +402,13 @@ fn violating(bound: &Bound, sample: &Sample) -> Option<WitnessValue> {
             };
             violates.then_some(WitnessValue::Event(*held))
         }
+        Sample::Measured { holds, value } => {
+            let violates = match bound.comparison {
+                Cmp::AtLeast => !holds,
+                Cmp::AtMost | Cmp::Below => *holds,
+            };
+            violates.then(|| WitnessValue::Measure(value.clone()))
+        }
         Sample::Fraction(UnitFraction(value)) => {
             let violates = match bound.comparison {
                 Cmp::AtLeast => *value < bound.threshold,
@@ -353,7 +430,7 @@ struct Regeneration {
 
 /// The per-test constants of one run (FR-189 "Tests").
 struct Plan<'r> {
-    request: StatisticalRequest<'r>,
+    request: SampledRequest<'r>,
     /// The run's cancellation handle, polled before each draw.
     cancel: &'r Cancel,
     tests: u32,
@@ -374,12 +451,20 @@ fn cancelled(cancel: &Cancel) -> Option<CancelCause> {
 /// the request's refusal for a generator mismatch.
 fn halted(halt: SampleHalt) -> Result<TestEnd, StatisticalRefusal> {
     Ok(match halt {
-        SampleHalt::NotMarkov => TestEnd::Unsupported(StatisticalUnsupported::NotMarkov),
+        SampleHalt::NotMarkov(cause) => {
+            TestEnd::Unsupported(StatisticalUnsupported::NotMarkov(cause))
+        }
         SampleHalt::TotalAboveDrawRange { total } => {
             TestEnd::Unsupported(StatisticalUnsupported::TotalAboveDrawRange { total })
         }
         SampleHalt::Expansion(stop) => TestEnd::Stopped(StatisticalStop::Expansion(stop)),
         SampleHalt::Cancelled(cause) => TestEnd::Stopped(StatisticalStop::Cancelled(cause)),
+        SampleHalt::AutomatonStates { value } => {
+            TestEnd::Stopped(StatisticalStop::AutomatonStates { value })
+        }
+        SampleHalt::PredicateRefused(outcome) => {
+            return Err(StatisticalRefusal::PredicateRefused(outcome))
+        }
         SampleHalt::GeneratorMismatch { supplied } => {
             return Err(StatisticalRefusal::GeneratorMismatch { supplied })
         }
@@ -502,8 +587,13 @@ impl Plan<'_> {
             }
             match sample {
                 Sample::NotActivated => {}
-                Sample::Event(held) => {
+                Sample::Event(held) | Sample::Measured { holds: held, .. } => {
                     tally.counted += 1;
+                    if let (Sample::Measured { value, .. }, ClaimForm::Quantile) =
+                        (&sample, claim.form())
+                    {
+                        tally.measured(value);
+                    }
                     if held {
                         tally.sum = tally.sum.add(&int(1));
                     }
@@ -644,7 +734,13 @@ impl Plan<'_> {
     }
 }
 
-fn test_result(index: u32, subject: &TestSubject, decided: Decided, tally: &Tally) -> TestResult {
+fn test_result(
+    index: u32,
+    subject: &TestSubject,
+    decided: Decided,
+    tally: &Tally,
+    quantile: Option<&Rational>,
+) -> TestResult {
     TestResult {
         index,
         initial: subject.initial,
@@ -652,6 +748,7 @@ fn test_result(index: u32, subject: &TestSubject, decided: Decided, tally: &Tall
         decision: decided.decision,
         estimate: decided.estimate,
         interval: decided.interval,
+        quantile: quantile.and_then(|q| tally.quantile(q)),
         samples: tally.counted,
         draws: tally.draws,
         undefined: decided.undefined,
@@ -727,8 +824,8 @@ fn claim_decision(tests: &[TestResult]) -> Decision {
 /// when the sampler returns a fraction for a Bernoulli test;
 /// [`StatisticalRefusal::Internal`] when an exact-arithmetic invariant
 /// breaks.
-pub fn check_statistical<S: BehaviourSampler>(
-    request: StatisticalRequest<'_>,
+pub fn check_sampled<S: BehaviourSampler>(
+    request: SampledRequest<'_>,
     sampler: &mut S,
     cancel: &Cancel,
 ) -> Result<StatisticalOutcome, StatisticalRefusal> {
@@ -792,6 +889,9 @@ pub fn check_statistical<S: BehaviourSampler>(
     let mut provenance = Vec::with_capacity(request.tests.len());
     let (mut samples, mut draws) = (0_u64, 0_u64);
     let mut witnesses = Witnesses::new(request.max_witnesses);
+    // A quantile claim's `q` is its reduced bound's threshold (ADR-024 PF-4).
+    let q = (request.claim.form() == ClaimForm::Quantile)
+        .then(|| request.claim.bound().threshold.clone());
     for (index, subject) in (0_u32..).zip(request.tests) {
         let mut tally = Tally::new();
         let end = match &regenerative {
@@ -824,9 +924,11 @@ pub fn check_statistical<S: BehaviourSampler>(
         samples = samples.saturating_add(tally.counted);
         draws = draws.saturating_add(tally.draws);
         match end {
-            TestEnd::Decided(decided) => results.push(test_result(index, subject, decided, &tally)),
+            TestEnd::Decided(decided) => {
+                results.push(test_result(index, subject, decided, &tally, q.as_ref()))
+            }
             TestEnd::Undefined(decided) => {
-                results.push(test_result(index, subject, decided, &tally));
+                results.push(test_result(index, subject, decided, &tally, q.as_ref()));
                 break;
             }
             TestEnd::Stopped(stop) => {
@@ -851,6 +953,7 @@ pub fn check_statistical<S: BehaviourSampler>(
             decision,
             estimate: chosen.and_then(|test| test.estimate.clone()),
             interval: chosen.and_then(|test| test.interval.clone()),
+            quantile: chosen.and_then(|test| test.quantile.clone()),
             basis: plan.basis(samples, draws),
             provenance: plan.provenance(provenance),
             tests: results,

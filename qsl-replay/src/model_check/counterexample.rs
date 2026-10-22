@@ -12,12 +12,12 @@
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelFinding;
 use qsl_eval::simulation::protocol::{BlockedThread, ThreadPath, WaitCause};
+use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Origin, Role};
-use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
@@ -58,6 +58,9 @@ pub struct ModelStep<T = ModelTransition> {
 pub enum UndefinedLocus {
     /// A `holds` atom of the authored clause.
     Atom(FormulaNodeId),
+    /// The `when` condition of the authored clause's guarded `on each`
+    /// activation.
+    Activation,
     /// A `pre` or `post` clause of an application's contract conjunction,
     /// by its name.
     Contract(String),
@@ -70,6 +73,22 @@ pub enum UndefinedLocus {
     Protocol(String),
     /// A refinement's mapping row or step-row argument (ADR-020 RE-5).
     Mapping(Box<MappingSite>),
+    /// A state predicate of a probabilistic claim's bounded measure,
+    /// fraction or long-run fraction (ADR-024 PF-2, PF-6), by its role;
+    /// a `holds` atom of a claim's temporal event is an [`Self::Atom`].
+    ClaimPredicate(ClaimPredicate),
+}
+
+/// Which state predicate of a probabilistic claim's measure an undefined
+/// evaluation names (ADR-024 PF-2, PF-6).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ClaimPredicate {
+    /// `A`: an `accumulate` or `steps` measure's activation.
+    From,
+    /// `B`: an `accumulate` or `steps` measure's end.
+    Until,
+    /// `P`: a fraction's or a long-run fraction's predicate.
+    Target,
 }
 
 /// The row and object a refinement's undefined mapping names.
@@ -136,7 +155,7 @@ pub struct Lasso {
 /// protocol transition identities (ADR-027 PX-1): a finite prefix, or with
 /// a [`Lasso`] the stem and loop of a liveness refutation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TemporalCounterexample<T = ModelTransition> {
+pub struct TemporalCounterexample<T: SubjectTransition = ModelTransition> {
     /// The index of the behaviour's initial state in the subject's ordered
     /// list of initial states.
     pub initial_state: usize,
@@ -146,8 +165,9 @@ pub struct TemporalCounterexample<T = ModelTransition> {
     /// population and key (FR-125 Instancing); `None` for the
     /// deadlock-freedom item.
     pub over_binding: Option<ModelInstance>,
-    /// The item's fairness set; empty for the deadlock-freedom item.
-    pub fairness: Vec<FairnessConstraint>,
+    /// The item's fairness set; empty for the deadlock-freedom item. Over a
+    /// protocol subject each member carries its target and origin (FR-212).
+    pub fairness: Vec<T::Fairness>,
     /// What the counterexample refutes.
     pub kind: CounterexampleKind,
     /// The loop of a liveness refutation; `None` for a finite prefix.
@@ -181,7 +201,7 @@ pub fn undefined_finding(
     })
 }
 
-impl<T> TemporalCounterexample<T> {
+impl<T: SubjectTransition> TemporalCounterexample<T> {
     /// The counterexample's length: its number of transitions, stem and loop
     /// together (ADR-018 "Length"). A terminal stutter loop is one transition
     /// (ADR-018 SM-4) that [`Self::prefix`] does not list.
@@ -213,7 +233,7 @@ impl<T> TemporalCounterexample<T> {
     }
 }
 
-impl<T: Clone + std::fmt::Debug + Eq> FamilyPayload for TemporalCounterexample<T> {
+impl<T: SubjectTransition> FamilyPayload for TemporalCounterexample<T> {
     /// The inline size plus each step's, each constraint's and each blocked
     /// thread's, its paths and names included.
     fn measured_bytes(&self) -> usize {
@@ -226,7 +246,7 @@ impl<T: Clone + std::fmt::Debug + Eq> FamilyPayload for TemporalCounterexample<T
             .saturating_add(
                 self.fairness
                     .len()
-                    .saturating_mul(std::mem::size_of::<FairnessConstraint>()),
+                    .saturating_mul(std::mem::size_of::<T::Fairness>()),
             )
             .saturating_add(
                 self.blocked
@@ -251,6 +271,8 @@ fn blocked_bytes(thread: &BlockedThread) -> usize {
         | WaitCause::FullQueue { channel }
         | WaitCause::Displaced { channel } => channel.len(),
         WaitCause::CheckFalse { node } => node.len(),
+        WaitCause::CommitClosed { template } => template.len(),
+        WaitCause::NoRoleInstance { role } => role.len(),
         WaitCause::NoPostState | WaitCause::Constraint | WaitCause::Gate => 0,
     };
     std::mem::size_of::<BlockedThread>()
@@ -266,7 +288,6 @@ fn path_bytes(path: &ThreadPath) -> usize {
         .fold(std::mem::size_of::<ThreadPath>(), |bytes, step| {
             bytes
                 .saturating_add(std::mem::size_of_val(step))
-                .saturating_add(step.node.len())
-                .saturating_add(step.branch.len())
+                .saturating_add(step.text_len())
         })
 }
