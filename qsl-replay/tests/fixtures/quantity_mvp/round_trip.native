@@ -1,0 +1,8 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+dimension Length;
+unit m : Length = rational(1, 1);
+unit km : Length = rational(1000, 1) * m;
+function quantity_round_trip using v(a: Quantity<m>, b: Quantity<m>): Boolean pure {
+    convert<Quantity<m>>(convert<Quantity<km>>(a + b)) = a + b
+}
