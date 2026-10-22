@@ -811,7 +811,7 @@ pub fn refusal_record(cause: &dyn CatalogCoded, locus: Option<Locus>) -> Option<
 /// value refusal carries what its record renders"), and
 /// `CardinalityOutOfBound`/`ForeignReference` keep their own fields.
 ///
-/// `None` for `CheckedInvariant`: it is an [`InternalFault`], never a
+/// `None` for `CheckedInvariant`: it is an [`quire_semantic_value::catalog::InternalFault`], never a
 /// refusal record (a record is always category refusal).
 #[deny(clippy::wildcard_enum_match_arm)]
 pub fn kernel_refusal_record(
