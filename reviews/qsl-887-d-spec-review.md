@@ -48,3 +48,12 @@ Not mergeable as written. FND-001 is high: the spec edit states a fact about QSp
 | --- | --- | --- |
 | FND-001 | fixed: The false Remaining-work paragraph is deleted from FR-147 | 3a5180722 |
 | FND-002 | fixed: No Remaining-work note survives in the SHALL bullet | 3a5180722 |
+
+### Reviewer disposition pass 1
+
+Re-checked by the reviewer at head 46b653ebd. `git diff origin/main...HEAD -- spec/` is empty: FR-147 is back to main's text, with the false paragraph gone and the one Remaining-work paragraph (dependency-package protocol clauses) in its own paragraph after the bullets. The other QSL-887 remainders (FR-147-AC-1/AC-3, AC-9/AC-10, FR-136, FR-137-AC-3) are stated in the PR body, as before.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3a5180722 |
+| FND-002 | fixed | 3a5180722 |

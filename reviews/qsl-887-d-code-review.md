@@ -59,3 +59,23 @@ No major code defect. The count check, the type check, their codes, causes, loci
 | --- | --- | --- |
 | FND-001 | fixed: Added `quad(x)` with a result and `Evt{p,q}` to the Spec fixture and tests asserting 3-field `a2` rows, count 3/2 and type mismatch at `true` | 3a5180722 |
 | FND-002 | fixed: The mismatch test asserts `expected` is `Reference` of the id `Twice`'s role `w` acts on (`Spec::Counter`) | 3a5180722 |
+
+### Reviewer disposition pass 1
+
+Re-checked by the reviewer at head 46b653ebd (fix commit 3a5180722, dispositions b49740b2d, then a merge of origin/main). These rows are the measured outcomes and supersede the coder's rows above where they differ.
+
+Measured: `cargo test -p qsl-semantics --all-features --test it refinement` 72 passed. Deleting the parameter and result `.chain` calls from `ProtocolClasses::of` now fails three tests (`the_binder_record_has_a_field_per_parameter_result_and_record_field`, `the_argument_count_is_the_field_count_of_every_node_kind`, `an_argument_of_the_wrong_type_is_refused_at_its_field`).
+
+The new `quad` fixture uses plain `Integer` where QSpec FR-432-AC-14 uses `Int[0, 9]` and `Int[0, 99]`. The bounds do not change any outcome the QSL tests assert: the field count is the same, and `true` against an integer field is a type mismatch either way. Only FR-432-AC-15's retained `expected` value (`Int[0, 9]`) depends on the bound, and that AC is QSpec's (TC-386); FR-147-AC-14 names only `a1` over `inc`. The bounded types are not needed here.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3a5180722 |
+| FND-002 | fixed | 3a5180722 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The `effect`, `commit` and `receive` records are untested. The `Rec` fixture declares no `effect` or `commit` node, and its only `receive` row is `rx(_)`, which is admitted with or without a record. Removing `Effect`, `Commit` or `Receive` from the match in `ProtocolClasses::of` leaves every `refinement_protocol` test green (measured; `event`, `finish`, `send` and the record-field expansion are each killed). Add an `effect` and a `commit` node to `rec()` with a count refusal each, and `rx(true, true)` refused 1/2. | qsl-semantics/src/check/refinement/internal_list.rs:479-488 |
+| FND-004 | low | The type-mismatch rows over `Rec` assert the position and locus but not `expected`/`actual` (`ev(true, true)` should retain the integer field type and `Boolean`), so a wrong field type with the same mismatch would pass. | qsl-semantics/tests/it/refinement_protocol.rs:1281 |

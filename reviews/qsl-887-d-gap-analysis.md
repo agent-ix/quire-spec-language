@@ -61,3 +61,11 @@ Not mergeable. FR-147-AC-14 is fully and strongly covered, and its checks are mu
 | FND | outcome | sha |
 | --- | --- | --- |
 | FND-001 | fixed: `ProtocolClasses::of` derives the record of effect, event, commit, finish (record fields or one field) and send, receive (over the channel's `carries`); tests for ev, eb, tx, rx and Done rows; the existing `Done(self)` row became `Done(true)` | 3a5180722 |
+
+### Reviewer disposition pass 1
+
+Re-checked by the reviewer at head 46b653ebd. `ProtocolClasses::of` now derives a record for `effect`, `event`, `commit`, `finish` (the record type's fields in order, else the one binder type, from `checked.slots.binders`, which collects the record binder of each of these kinds) and for `send`, `receive` (over the `via` channel's `carries`), as QSpec FR-432 states. FR-432-AC-15's rows are refused `operator-ineligible` with the right counts: `ev(true)` expected 2 actual 1, `eb(true, false)` expected 1 actual 2. Mutation: removing `event`, `finish` or `send` from the derivation fails a test; removing `effect`, `commit` or `receive` does not (SR-12310 FND-003, medium, not blocking).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3a5180722 |
