@@ -143,3 +143,40 @@ These items were checked and are clean:
 - In AC-12, literals carry no charge and `function.call` is the only `work_units` charge on that
   path (evaluate.rs:363-366, 1317-1320), so three calls cost 3 and the third is denied at 2.
   `x + 1` with 10 is refused by membership admission.
+
+## New findings (disposition pass 2)
+
+Head `b630594eb` (fix commit b630594eb), main 5a672d88a, which is an ancestor of the head.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-018 | high | major: FR-403 says a callable body the checker admitted can never contain an out-of-scope form. That is false for FR-308 protocol references. `Typer` builds `NodeKind::ProtocolReference` for `protocol <name>` in any expression context. Unlike `Indexed`, `StepLabel` and `Stutter`, it has no clause-only gate (typing.rs:1014, check.rs:2554-2570). `qsl-eval/tests/it/protocol_reference.rs` checks and links a unit with `function refers using v(): Boolean pure { protocol Fill }` and calls it through the Value-family `call`. The reference returns `FamilyResult::Refused(ProtocolReferenceUnsupported)`, which is `unknown_required_feature`/`unsupported-feature` with field `construct = protocol`, located at the node (evaluate.rs:1502-1508). FR-403 lists "the protocol-clause reads" as out of scope, keeps `ProtocolReferenceUnsupported` in `qsl-eval` as a clause cause, and promises parity for every Value-family input, so the `no_std` evaluator cannot return the reference's refusal. <br>Fix: treat `ProtocolReference` as a Value-family form. Move `ProtocolReferenceUnsupported` to E with the other Value-family causes (FR-403 table, X-16, AC-11), have the `no_std` evaluator refuse it exactly as the reference does, and add the `refers` vector to an AC. Then reword "the protocol-clause reads" so that it names only reads inside protocol-clause evaluation. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:121-131,292; qsl-semantics/src/check/check/typing.rs:1014; qsl-eval/src/value/expression/evaluate.rs:1502-1508; qsl-eval/tests/it/protocol_reference.rs |
+| FND-019 | low | FR-403 says the evaluator "SHALL accept only checked expressions that the checker's body entry produces" and lists "a postcondition-checked expression" as out of scope. But `CheckedExpression` records no entry kind: its fields are parameters, root, slots and effective limits (check/mod.rs:643-649). So `quire-eval` cannot tell a postcondition-checked expression apart, and the defined result is triggered by a node (`NodeKind::Pre`). A postcondition-checked expression with no `pre(...)` is evaluated normally. <br>Fix: state the rule by node kind (an expression containing `Pre`, `History`, `PopulationObjects` or a clause-only node). | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:110-128; qsl-semantics/src/check/mod.rs:643-649 |
+| FND-020 | low | FR-403-AC-13's second half ("the same expression without `pre(...)`, built by `check_expression`, evaluates to the reference's result") names no environment. Over the closure-only environment, both evaluators refuse the `Population` argument at admission, so the half passes without evaluating `allInstances`. <br>Fix: name an `ObjectEnvironment` with the population recorded (as in AC-5). | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:394; spec/test-cases/TC-1121-the-no-std-evaluator-in-quire-eval-matches-the-std-reference.md |
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-013 | fixed | The scope accepts only body-entry expressions and admitted callable bodies. A `Pre` node gets a defined Fault (stage quire-eval, invariant outside-value-family, no charge), parity is narrowed to Value-family inputs, and AC-13 and TC-1121 step 13 test it. AC-13 is constructible: `pre(allInstances<T>(p))` is an eligible `pre` operand under FR-042 (see the model_reference_queries fixtures). Residual issues are FND-019 and FND-020. |
+| FND-014 | fixed | Item 9 now records Observation::Current for field reads and Observation::Post for membership reads, and says the anchor starts at Post. |
+| FND-015 | fixed | FR-402-AC-6 and AC-7 and TC-1112 steps 6 and 7 now say "implementation". No "std build" wording remains in FR-402, TC-1112 or AD-001. |
+| FND-016 | fixed | Admission now uses its own run with a fresh Cancel, as the reference's call and evaluate do, and the session's Cancel is polled from the first charge. |
+| FND-017 | fixed | History and PopulationObjects are out of scope with the defined Fault. The history read is dropped (nine reads), and HistoryUnresolved stays in qsl-eval. FR-403 table, X-16 and AC-11 agree, and no history or item-10 reference remains. FR-401's list of items that stay names no causes, so it needs no change. |
+
+## Verdict (disposition pass 2)
+
+Not mergeable. FND-013 to FND-017 are fixed at `b630594eb`. One new major, FND-018, remains: a
+checker-admitted function body can hold a protocol reference (FR-308). The reference refuses it
+with `ProtocolReferenceUnsupported`, but FR-403 calls it out of scope and keeps that cause in
+`qsl-eval`, so the two evaluators would diverge on a Value-family input that QSL's own test suite
+exercises. The fix is small: move one cause and add one vector. FND-019 and FND-020 are lows for
+the same round.
+
+These parts of the scope claim were checked and hold:
+
+- `Pre` is refused in function bodies.
+- `History` (`with_history`) and `PopulationObjects` (`with_populations`) are built only by
+  refinement passes (refinement.rs:1913-1914).
+- FR-391 named populations are built only under `with_named_populations`, in state clauses and
+  temporal conditions (state_clause.rs:692, temporal_clause/condition.rs:77).

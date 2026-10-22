@@ -15,7 +15,7 @@ dependency set and reads checked terms without building them. It admits
 arguments itself and reads the environment only through its contract. It
 returns the std reference's results, refusal records, charges and orders,
 including FR-262-AC-1 to AC-8. Each moved item has one definition. Scope:
-FR-403-AC-1 to FR-403-AC-13.
+FR-403-AC-1 to FR-403-AC-14.
 
 ## Test Procedure
 
@@ -61,8 +61,12 @@ FR-403-AC-1 to FR-403-AC-13.
     of three calls at `work_units` `3` and at `2`.
 13. Build `pre(allInstances<T>(p))` with `p: Population<T>[3]` through
     `check_postcondition_expression` and begin it on the `no_std`
-    evaluator; build `allInstances<T>(p)` through `check_expression` and
-    evaluate it through both evaluators.
+    evaluator. Build `allInstances<T>(p)` through `check_expression` and
+    again through `check_postcondition_expression`. Evaluate each through
+    both evaluators over an `ObjectEnvironment` that records `p`'s
+    population with three members.
+14. Call `function refers(): Boolean pure { protocol Fill }` (the unit
+    declares `Fill`) through both evaluators.
 
 ## Expected Results
 
@@ -106,5 +110,8 @@ FR-403-AC-1 to FR-403-AC-13.
     `function.call`, with two calls in the counter and the log. Both
     evaluators agree on every item.
 13. The first is `CallFailure::Fault` with stage `quire-eval` and invariant
-    `outside-value-family`, with no charge; the second gives equal results
-    from both evaluators.
+    `outside-value-family`, with no charge. Each of the other two gives
+    equal results from both evaluators.
+14. Both return `FamilyResult::Refused` with
+    `unknown_required_feature`/`unsupported-feature`, `construct` =
+    `protocol`, located at the reference, with equal records and charges.
