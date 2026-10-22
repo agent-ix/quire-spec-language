@@ -84,7 +84,7 @@ pub struct TestResult { pub index: u32, pub initial: u32, pub binding: Option<Bi
     pub quantile: Option<MeasureValue>,         // a quantile claim's nearest-rank quantile of the counted samples
     pub samples: u64, pub draws: u64,
     pub undefined: Option<UndefinedEvaluation> }   // ADR-024 SV-11; `where` names the sample
-pub enum MeasureValue { Value(Rational), Censored }  // a quantity's Rational carries M's unit
+pub enum MeasureValue { Value(Rational), Censored }  // a quantity's Rational is its magnitude in the claim's threshold unit (QSpec FR-410)
 pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
 pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 ```
@@ -114,11 +114,11 @@ the claim's form does not admit (FR-190, SPRT below).
   the workload and every random parameter's distribution are invariant under
   its group, EN-4 SHALL run one test per orbit of (initial state, binding)
   pairs, on the least pair in key order, and `m` SHALL count orbits.
-  Workload weights are per operation, and a random parameter's support
-  values are literals or integers, never references (FR-185), so a workload
-  or a distribution cannot treat one object of a type differently from another:
-  both conditions hold for every declaration EN-4 admits, and it runs one test
-  per orbit.
+
+  Note: workload weights are per operation, and a random parameter's support
+  value is never a reference (FR-185 Random parameters, FR-185-AC-9), so a
+  workload or a distribution cannot treat one object of a type differently
+  from another; both conditions hold for every declaration EN-4 admits.
 - Sample `i` of test `j` SHALL use trace index `i · m + j` and start at test
   `j`'s initial state.
 
@@ -153,10 +153,13 @@ the claim's form does not admit (FR-190, SPRT below).
 - For a quantile claim, a test that has an estimate SHALL also set `quantile`
   to the empirical nearest-rank quantile of its counted samples: the
   `⌈q · n⌉`-th smallest of the `n` counted samples, a censored sample
-  ordered after every finite value. When that rank lies among the censored
-  samples, `quantile` SHALL be `Censored`. A test of any other claim form, and
-  a quantile test with no estimate, SHALL have `quantile` absent. The
-  quantile never decides the test.
+  ordered after every finite value. A quantity-typed `M` gives a `Value`
+  holding the magnitude in the unit of the claim's threshold `c` (QSpec FR-410).
+- When the rank `⌈q · n⌉` lies among the censored samples, the test's
+  `quantile` SHALL be `Censored`.
+- A test of any other claim form, and a quantile test with no estimate, SHALL
+  have `quantile` absent.
+- The decision of a test SHALL NOT read `quantile`.
 
 - If the event, the measure or its comparison evaluates `Undefined` on a
   sample, then EN-4 SHALL decide that test Rejected at once, stop the
@@ -246,7 +249,7 @@ the claim's form does not admit (FR-190, SPRT below).
 | FR-189-AC-12 | The activation variant of FR-189-AC-4 with the activation probability 0 and `max_draws` 1,000 stops `MaxDraws` with 0 samples counted and no decision. | Test (TC-624) |
 | FR-189-AC-13 | A sampler stub that returns event samples for a mean-of-fraction claim with Okamoto, `θ = 1/2`, `α = β = 1/3` and `ι = 2/5` and a non-strict bound (a strict `Below` bound on a mean of a fraction is refused `StrictBound`) (so `N = ⌈ln 3 / (2ι²)⌉ = ⌈3.43⌉ = 4`), 3 holding of the 4 counted, gives the estimate `3/4` and no refusal. | Test (TC-624) |
 | FR-189-AC-14 | A regenerative request over two tests with `max_draws` `u64::MAX` is not refused `TraceIndexRange`, and the same `max_draws` under Okamoto with two tests is. | Test (TC-624) |
-| FR-189-AC-15 | Through the `BehaviourSampler` seam, a quantile `<= 3` claim at `q = 1/2` over 4 counted samples with `M` values 1, 3, 2, 5 gives the test `quantile` `Value(2)`; at `q = 9/10` with the samples 1, 3, 2 and one censored sample, the rank `⌈36/10⌉ = 4` lies among the censored samples and `quantile` is `Censored`; at `q = 1/2` the same samples give `Value(2)`. A quantity-typed `M` gives a `Value` carrying `M`'s unit. A `P95` probability-bound test and a quantile test with no counted sample have `quantile` absent. | Test (TC-624) |
+| FR-189-AC-15 | Through the `BehaviourSampler` seam, a quantile `<= 3` claim at `q = 1/2` over 4 counted samples (the stub ends the test after exactly 4 counted samples) with `M` values 1, 3, 2, 5 gives the test `quantile` `Value(2)`; at `q = 9/10` with the samples 1, 3, 2 and one censored sample, the rank `⌈36/10⌉ = 4` lies among the censored samples and `quantile` is `Censored`; at `q = 1/2` the same samples give `Value(2)`. With `M` of type `Quantity<ms>`, the threshold `3 ms` and samples `1 ms`, `3 ms`, `2 ms`, `5 ms` at `q = 1/2`, the test `quantile` is `Value(2)`, the magnitude in `ms` (not `1/500`, the magnitude in `s`). A `P95` probability-bound test and a quantile test that has no estimate, because it counted no sample, have `quantile` absent. | Test (TC-624) |
 
 ## Dependencies
 

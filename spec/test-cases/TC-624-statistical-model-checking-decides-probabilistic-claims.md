@@ -16,7 +16,7 @@ Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7 to FR-189-AC-12, FR-189-AC-13 to 
 
 ## Test Procedure
 
-Fixtures: the `Undef` model and its two-initial-state variant (FR-189-AC-8), `BehaviourSampler` stubs giving FR-189-AC-10's (decision, estimate) pairs, an empty-subject request, the activation-probability-0 variant of FR-189-AC-4 with `max_draws` 1,000; `Service` and `P95` at `5 ms` and `2 ms`; a two-initial-state variant; a two-server variant with an admitted symmetry declaration and an asymmetric workload; the activation variant and the two-point `M` variant of FR-189-AC-4; `NoFault`; the `Health` variants; a `mean of` claim; the `Wide` model of FR-189-AC-7. Seed 7 throughout.
+Fixtures: the `Undef` model and its two-initial-state variant (FR-189-AC-8), `BehaviourSampler` stubs giving FR-189-AC-10's (decision, estimate) pairs, an empty-subject request, the activation-probability-0 variant of FR-189-AC-4 with `max_draws` 1,000; `Service` and `P95` at `5 ms` and `2 ms`; a two-initial-state variant; a two-server variant with an admitted symmetry declaration, run with a workload that weights each operation equally and with one whose operation weights differ from one another (FR-189-AC-3); `BehaviourSampler` stubs giving FR-189-AC-15's samples, a `Quantity<ms>` `M` variant of them and a quantile test whose stub returns no counted sample; the activation variant and the two-point `M` variant of FR-189-AC-4; `NoFault`; the `Health` variants; a `mean of` claim; the `Wide` model of FR-189-AC-7. Seed 7 throughout.
 
 1. `P95` at `5 ms` and `2 ms` with Okamoto, then with SPRT.
 2. Compute Okamoto's `N` for `m = 1` and `m = 2`, and the SPRT thresholds; run step 1's first request twice.
@@ -31,7 +31,7 @@ Fixtures: the `Undef` model and its two-initial-state variant (FR-189-AC-8), `Be
 
 11. Give a mean-of-fraction claim event samples from a stub: 3 holding of 4 (FR-189-AC-13).
 12. Run a two-test regenerative request and a two-test Okamoto request, each at `max_draws` `u64::MAX` (FR-189-AC-14).
-13. Give a quantile claim samples from a stub: 1, 3, 2, 5 at `q = 1/2`; 1, 3, 2 and a censored sample at `q = 9/10` and at `q = 1/2`; the `P95` test (FR-189-AC-15).
+13. Give a quantile claim samples from a stub that ends the test at exactly 4 counted samples: 1, 3, 2, 5 at `q = 1/2`; 1, 3, 2 and a censored sample at `q = 9/10` and at `q = 1/2`; the same 1, 3, 2, 5 as `1 ms`, `3 ms`, `2 ms`, `5 ms` of a `Quantity<ms>` `M` against the threshold `3 ms` at `q = 1/2`; a quantile test whose stub returns no counted sample; the `P95` test (FR-189-AC-15).
 
 Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 
@@ -49,4 +49,4 @@ Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 - Step 10: `NoTest`, settled `inconclusive`, `no-initial-state`; `Stopped` `Limit{MaxDraws, 1000}` with 0 counted.
 - Step 11: estimate `3/4`, no refusal.
 - Step 12: the regenerative request runs; the Okamoto request is refused `TraceIndexRange`.
-- Step 13: `quantile` `Value(2)`; `Censored`; `Value(2)`; absent for the `P95` test.
+- Step 13: `quantile` `Value(2)`; `Censored`; `Value(2)`; `Value(2)` (the magnitude in `ms`); absent for the no-sample test; absent for the `P95` test.
