@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The provider backend identity shared by routing and replay envelopes.
 
-use std::fmt;
+use alloc::string::String;
+use core::fmt;
 
 /// A provider's exact backend identity (FR-288, ADR-013 O-19).
 ///

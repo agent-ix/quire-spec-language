@@ -139,7 +139,8 @@ impl FamilyKind {
             // The arm below exists only in the probe's build of the crates
             // that depend on this one (`--cfg seam_probe --cfg
             // seam_probe_downstream`): they match over this crate's probe
-            // variants (`Capability`, `WrongSnapshotCause`, `FamilyOutcome`),
+            // variants (`Capability`, `FamilyOutcome`) and over
+            // `quire_semantic_value::call::WrongSnapshotCause`'s,
             // so this crate must compile there for their `E0004`s to be
             // reported at all (one crate's failed build stops every
             // crate above it).
