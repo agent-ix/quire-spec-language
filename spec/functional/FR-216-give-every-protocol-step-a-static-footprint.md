@@ -155,6 +155,11 @@ order gives the same answer.
 | FR-216-AC-6 | A `retire` predicate `w.done` over replicated role `w` of type `Worker`, with `Worker` declaring `done` and universe `{w1, w2}`, has a read footprint holding (`w1`, `done`) and (`w2`, `done`) and `role(w)`; a predicate that also reads `lookup<Job>(jobs, k)` holds the membership of the `Job` population; an `activate(T)` step under the guard `x.n > 0` over a record binder `x` has an enabling footprint holding no model location. A step that writes (`w2`, `done`) is dependent with `retire(w, w1)`, and a `send` from `w` reads `role(w)` and is dependent with `spawn(w, w2)`. | Test (TC-661) |
 | FR-216-AC-7 | In FR-205-AC-8's `attempts 2` variant with the retry relation `not e.ok`, `cattempt(Refund, r)` reads and writes the `ctl` of its thread, which holds the attempt record, and reads `reg(Refund, ·)`. The write footprint of the step of `Committed` holds `reg(Refund, ·)` and the `ctl` of thread `(0, Refund, 0)`, and in the variant with `attempts 1`, where no thread ever holds an attempt record, it holds the same `ctl`. In a model with a model type `Peer` and its population, and a template `Refund` whose attempt type `PeerAttempt` has one field `p: Reference<Peer>`, `cattempt(Refund, r)` reads the membership of the `Peer` population. | Test (TC-661) |
 
+Remaining work: QSL-968. FR-216-AC-6's record-binder guard and its
+`lookup` membership read are not yet tested: a record trigger refuses
+`UnenumerableRecord`, and S3 has no named population in a role predicate's
+scope.
+
 ## Dependencies
 
 - ADR-027 §5 FT-1 to FT-5; ADR-021 POR-1 to POR-5 (References).

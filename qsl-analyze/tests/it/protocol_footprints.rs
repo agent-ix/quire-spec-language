@@ -955,3 +955,128 @@ fn records_guards_and_channel_anchors_are_read() {
         .insert(AnchorName::Channel("P::ch".to_owned()));
     assert!(visible(duplicate, &footprint, &claim));
 }
+
+/// The footprint of the `kind` step of `reached[at]` that names `object`
+/// (a `spawn` or `retire`), and the state it reaches.
+fn role_step(
+    system: &ProtocolSystem<'_, Sc>,
+    reached: &[Reached],
+    at: usize,
+    kind: StepKind,
+    object: &ObjectReference,
+) -> (Footprint, usize) {
+    let found: Vec<(Footprint, usize)> = reached[at]
+        .steps
+        .iter()
+        .filter(|(step, _)| {
+            step.kind() == kind
+                && step
+                    .role_instance()
+                    .is_some_and(|(_, named, _)| named == object)
+        })
+        .map(|(step, next)| {
+            (
+                system
+                    .footprint(&reached[at].state, step)
+                    .expect("a footprint"),
+                *next,
+            )
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "one {kind:?} from {at}");
+    found.into_iter().next().expect("one step")
+}
+
+/// FR-216-AC-6 (TC-661): a `retire` predicate `r.v >= 0` over the replicated
+/// role `r` of `Cell`, which declares `v`, with universe `{c, d}`, has a
+/// read footprint holding (`c`, `v`), (`d`, `v`) and `role(r)`; a writer of
+/// (`d`, `v`) is dependent with `retire(r, c)`; a `send` from a replicated
+/// role reads `role(r)` and is dependent with a `spawn` of that role; an
+/// `activate` under the guard `x > 0` over a `Level` binder `x` has an
+/// enabling footprint holding no model location.
+///
+/// Partial: Remaining work: QSL-968. Two clauses of FR-216-AC-6 are not
+/// tested because they cannot run yet: a record-binder guard (record
+/// triggers refuse `UnenumerableRecord`, so the binder here is the `Int`
+/// range `Level`) and the population-membership read of a `lookup` in a role
+/// predicate (S3 has no named population in a role predicate's scope). The
+/// criterion id is therefore not cited; only the test case is.
+#[trace("TC-661")]
+#[test]
+fn predicate_reads_are_the_fields_of_the_universe_and_a_role_read_orders_spawns() {
+    let body = roles::unit(
+        roles::ORIGIN,
+        &roles::role(2, "until(r.v >= 0)"),
+        "",
+        "sequence Main { event E by r as (e: Boolean) { true }; }",
+    );
+    let unit = Cells::new(&body, &["c", "d"]);
+    let subject = unit.subject("R");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let (c, d) = (cell(&system, "c"), cell(&system, "d"));
+    let (_, spawned) = role_step(&system, &reached, 0, StepKind::Spawn, &c);
+    let (retire, _) = role_step(&system, &reached, spawned, StepKind::Retire, &c);
+    let role = Location::Protocol(ProtocolLocation::Role {
+        instance: 0,
+        role: "r".to_owned(),
+    });
+    for expected in [field(&c, "v"), field(&d, "v"), role.clone()] {
+        assert!(retire.reads.contains(&expected), "{expected:?}");
+    }
+    let writer = Footprint {
+        reads: BTreeSet::new(),
+        writes: BTreeSet::from([field(&d, "v")]),
+        enabling: BTreeSet::new(),
+    };
+    assert!(!independent(&retire, &writer));
+
+    // A `send` by an instance of `r` reads `role(r)`; a `spawn` of the other
+    // cell writes it.
+    let channel = "channel ch from r to w carries Boolean ordering unordered \
+                   delivery exactly-once-premise capacity 1 overflow block;";
+    let body = roles::unit(
+        roles::ORIGIN,
+        &roles::role(2, "workflow"),
+        channel,
+        "sequence Main { send Tx via ch as (tx: Boolean) { tx }; }",
+    );
+    let unit = Cells::new(&body, &["c", "d"]);
+    let subject = unit.subject("R");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let (c, d) = (cell(&system, "c"), cell(&system, "d"));
+    let (_, spawned) = role_step(&system, &reached, 0, StepKind::Spawn, &c);
+    let (send, sending, _) = step(&system, &reached, spawned, StepKind::Send, "Tx");
+    let _ = send;
+    let (spawn, _) = role_step(&system, &reached, spawned, StepKind::Spawn, &d);
+    assert!(sending.reads.contains(&role));
+    assert!(!independent(&sending, &spawn));
+
+    // The guard of an `activate` reads no model state. The fixture's record
+    // types are not enumerable as triggers (`UnenumerableRecord`, Remaining
+    // work: QSL-968), so the binder is the `Int` range `Level`.
+    let body = roles::unit(
+        "on each (x: M::Level) when (x > 0)",
+        "",
+        "",
+        "sequence Main { event E by w as (e: Boolean) { true }; }",
+    );
+    let unit = Cells::new(&body, &["c"]);
+    let subject = unit.subject("R");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let (activate, _) = &reached[0].steps[0];
+    assert_eq!(activate.kind(), StepKind::Activate);
+    let activating = system
+        .footprint(&reached[0].state, activate)
+        .expect("a footprint");
+    assert!(
+        activating
+            .enabling
+            .iter()
+            .all(|location| matches!(location, Location::Protocol(_))),
+        "{:?}",
+        activating.enabling
+    );
+}

@@ -11,7 +11,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
+use qsl_analyze::model_check::{
+    check_protocol, ModelCheckRefusal, ProtocolCheckRequest, SubjectContext, SubjectIdentity,
+};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState, TerminalClass};
 use qsl_eval::simulation::protocol::{
@@ -24,12 +26,14 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_protocol_trace, settle_protocol_check, InconclusiveCause, InstanceBound, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult,
-    ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits,
-    ReplayRefusal, ResultLabel, StatedInstanceBound, TemporalCounterexample, TerminalValue,
-    UndecidedCause,
+    node_occurrence, replay_protocol_trace, settle_protocol_check, InconclusiveCause,
+    InstanceBound, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord,
+    ModelTraceReplayResult, ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject,
+    ReplayLimits, ReplayRefusal, ResultLabel, StatedInstanceBound, TemporalCounterexample,
+    TerminalValue, UndecidedCause,
 };
+use qsl_route::deadlock::{ItemObligation, ObligationKind};
+use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, Incomplete, Meter};
@@ -606,7 +610,10 @@ fn retired_role_world(members: &str, run: &str) -> World {
 /// Part of FR-211-AC-5 (TC-656), the role part at an `attempt` and at a
 /// `send`: a node owned by a replicated role with every object retired
 /// deadlocks with `NoRoleInstance{r}`, a `send` owned by its channel's
-/// `from` role too.
+/// `from` role too. This is not FR-208-AC-5's empty-universe case: the
+/// world has one object, spawned and retired at once, because `over` needs a
+/// cell and the role's universe is the cells.
+#[trace("TC-653")]
 #[test]
 fn an_attempt_and_a_send_owned_by_a_role_with_no_instance_give_no_role_instance() {
     let attempt = retired_role_world(
@@ -1266,5 +1273,238 @@ fn an_each_fairness_member_over_a_role_owned_node_refuses_as_over_any_node() {
             qsl_semantics::check::TemporalCause::ProtocolFairnessNotEmitted { .. }
         ),
         "{refusal:?}"
+    );
+}
+
+/// The state the `kind` step of protocol instance `instance` naming `object`
+/// reaches from `reached[at]`.
+fn after_in(
+    system: &System<'_>,
+    reached: &[Reached],
+    at: usize,
+    kind: StepKind,
+    object: &str,
+    instance: &str,
+) -> usize {
+    let found: Vec<usize> = reached[at]
+        .steps
+        .iter()
+        .filter(|(step, _)| {
+            let identity = identity(system, step);
+            step.kind() == kind
+                && named(&identity["object"]) == object
+                && identity["instance"] == instance
+        })
+        .map(|(_, next)| *next)
+        .collect();
+    assert_eq!(found.len(), 1, "one {kind:?} of {object} in {instance}");
+    found[0]
+}
+
+/// FR-208-AC-4 (TC-653): under `activation on each` with protocol instances
+/// 0 and 1 live and `spawn` enabled for `c` in each, the two `spawn(r, c)`
+/// steps have different identities that differ in the instance ordinal and
+/// hold no `thread` member; so do the two `retire(r, c)` steps.
+#[trace("TC-653", "FR-208-AC-4")]
+#[test]
+fn spawn_and_retire_identities_carry_the_protocol_instance() {
+    let run = "sequence Main { attempt T by w on M::Cell::touch contracts [TouchPre] \
+               as (t: Boolean) { x = 0 }; }";
+    let world = World::new(
+        &unit(
+            "on each (x: M::Level) when (x = 0)",
+            &role(1, "until(r.v >= 0)"),
+            "",
+            run,
+        ),
+        &["c"],
+        &[0],
+    );
+    let subject = world.subject();
+    let system = sc_system(&subject).with_max_live_instances(2);
+    let reached = reachable(&system);
+    let activate = |at: usize| -> usize {
+        reached[at]
+            .steps
+            .iter()
+            .find(|(step, _)| step.kind() == StepKind::Activate)
+            .map(|(_, next)| *next)
+            .expect("an activate")
+    };
+    let both = activate(activate(0));
+
+    let identities = |at: usize, kind: StepKind| -> Vec<Json> {
+        reached[at]
+            .steps
+            .iter()
+            .filter(|(step, _)| step.kind() == kind)
+            .map(|(step, _)| identity(&system, step))
+            .collect()
+    };
+    let spawns = identities(both, StepKind::Spawn);
+    assert_eq!(spawns.len(), 2);
+    assert_ne!(spawns[0], spawns[1]);
+    let mut ordinals: Vec<&Json> = spawns.iter().map(|spawn| &spawn["instance"]).collect();
+    ordinals.sort_by_key(|ordinal| ordinal.as_str().map(str::to_owned));
+    assert_eq!(ordinals, ["0", "1"]);
+    assert!(spawns.iter().all(|spawn| spawn.get("thread").is_none()));
+    assert!(spawns.iter().all(|spawn| spawn.get("node").is_none()));
+
+    let spawned = after_in(&system, &reached, both, StepKind::Spawn, "c", "0");
+    let spawned = after_in(&system, &reached, spawned, StepKind::Spawn, "c", "1");
+    let retires = identities(spawned, StepKind::Retire);
+    assert_eq!(retires.len(), 2);
+    assert_ne!(retires[0], retires[1]);
+    let mut ordinals: Vec<&Json> = retires.iter().map(|retire| &retire["instance"]).collect();
+    ordinals.sort_by_key(|ordinal| ordinal.as_str().map(str::to_owned));
+    assert_eq!(ordinals, ["0", "1"]);
+    assert!(retires.iter().all(|retire| retire.get("thread").is_none()));
+}
+
+/// FR-208-AC-5 (TC-653): a channel `from r to w` with `r` replicated, `max 2`
+/// and two live instances gives two `send` steps naming `c` and `d`; a
+/// channel `from w to r` gives two `receive` steps likewise.
+#[trace("TC-653", "FR-208-AC-5")]
+#[test]
+fn a_send_and_a_receive_owned_by_a_replicated_role_are_taken_by_each_instance() {
+    let world_of = |channel: &str| {
+        let run = "parallel Both { branch s send Tx via ch as (tx: Boolean) { tx }; \
+                   branch q receive Rx via ch of s::Tx as (rx: Boolean) { true }; } \
+                   join all [s, q];";
+        World::new(
+            &unit(ORIGIN, &role(2, "workflow"), channel, run),
+            &["c", "d"],
+            &[0],
+        )
+    };
+    let first = |reached: &[Reached], at: usize, kind: StepKind| {
+        reached[at]
+            .steps
+            .iter()
+            .find(|(step, _)| step.kind() == kind)
+            .map(|(_, next)| *next)
+            .unwrap_or_else(|| panic!("a {kind:?} from {at}"))
+    };
+    // Both cells spawned, then the `parallel` forked.
+    let forked = |system: &System<'_>, reached: &[Reached]| {
+        let c = after(system, reached, 0, StepKind::Spawn, "c");
+        let both = after(system, reached, c, StepKind::Spawn, "d");
+        first(reached, both, StepKind::Fork)
+    };
+    let actors_of = |system: &System<'_>, reached: &[Reached], at: usize, kind: StepKind| {
+        let mut named: Vec<String> = reached[at]
+            .steps
+            .iter()
+            .filter(|(step, _)| step.kind() == kind)
+            .filter_map(|(step, _)| identity(system, step).get("actor").map(named))
+            .collect();
+        named.sort();
+        named
+    };
+
+    let sends = world_of(
+        "channel ch from r to w carries Boolean ordering unordered \
+         delivery exactly-once-premise capacity 1 overflow block;",
+    );
+    let subject = sends.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let at = forked(&system, &reached);
+    assert_eq!(actors_of(&system, &reached, at, StepKind::Send), ["c", "d"]);
+
+    let receives = world_of(
+        "channel ch from w to r carries Boolean ordering unordered \
+         delivery exactly-once-premise capacity 1 overflow block;",
+    );
+    let subject = receives.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let at = forked(&system, &reached);
+    let sent = first(&reached, at, StepKind::Send);
+    assert_eq!(
+        actors_of(&system, &reached, sent, StepKind::Receive),
+        ["c", "d"]
+    );
+}
+
+/// FR-209 "The bound" (TC-654, ADR-013 O-09, QSpec FR-428-AC-3): this test
+/// cannot fail today. The request writer and `ItemObligation` take no
+/// `max_live_instances`, so equality holds by their signatures; it pins the
+/// spec for the day a protocol bound is passed to the writer. Two
+/// protocol check requests that differ only in `max_live_instances` write
+/// one item with one obligation identity through the request writer, because
+/// the bound is a method bound outside the subject.
+#[trace("TC-654")]
+#[test]
+fn requests_differing_only_in_max_live_instances_share_one_obligation_identity() {
+    let run = format!("sequence Main {{ {} }}", touch("T"));
+    let world = World::new(
+        &(unit(EACH, "", "", &run) + &claim("k.v <= 3")),
+        &["c"],
+        &[0],
+    );
+    let letters = CellV { holds: |v| v <= 3 };
+    let request = |max_live_instances| ProtocolCheckRequest {
+        subject: world.subject(),
+        item: world.claim(&letters),
+        max_depth: None,
+        max_store_buffer: None,
+        max_live_instances,
+        limits: ModelCheckLimits::default(),
+    };
+    let [clause] = world.checked.graph().temporal_clauses() else {
+        panic!("one declared clause");
+    };
+    let obligation = |request: &ProtocolCheckRequest<'_>| ItemObligation {
+        subject: SubjectIdentity::of(&request.subject.model).expect("the package emits"),
+        kind: ObligationKind::Authored(node_occurrence(clause)),
+    };
+    let mut written = ModelRequest::new();
+    let mut indices = Vec::new();
+    let requests = [request(Some(1)), request(Some(5)), request(None)];
+    for each in &requests {
+        let context = SubjectContext::new(&each.subject.model).expect("the package emits");
+        indices.push(
+            context
+                .author_clause(&mut written, clause)
+                .expect("the clause has a record"),
+        );
+    }
+    assert_eq!(indices[0], indices[1]);
+    assert_eq!(indices[1], indices[2]);
+    assert_eq!(written.items().len(), 1);
+    assert_eq!(obligation(&requests[0]), obligation(&requests[1]));
+    assert_eq!(obligation(&requests[1]), obligation(&requests[2]));
+}
+
+/// FR-208-AC-5 (TC-653), the empty-universe clause: a `send` from a
+/// replicated role over the `Idle` objects, whose closed population `idles`
+/// has an empty universe, has no `spawn` ever, and a thread at the `send`
+/// waits with `NoRoleInstance{r}`. (`over` still binds the cell `c`.)
+#[trace("TC-653", "FR-208-AC-5")]
+#[test]
+fn a_send_from_a_role_over_an_empty_universe_waits_with_no_role_instance() {
+    let channel = "channel ch from r to w carries Boolean ordering unordered \
+                   delivery exactly-once-premise capacity 1 overflow block;";
+    let world = World::new(
+        &unit(
+            ORIGIN,
+            "role r each M::Idle from idles max 1 lifetime workflow;",
+            channel,
+            "sequence Main { send Tx via ch as (tx: Boolean) { tx }; }",
+        ),
+        &["c"],
+        &[0],
+    );
+    let subject = world.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    assert!(reached.iter().all(|state| state
+        .steps
+        .iter()
+        .all(|(step, _)| step.kind() != StepKind::Spawn)));
+    assert_eq!(
+        deadlocked_at(&system, &reached, "Main/Tx"),
+        [no_role_instance()]
     );
 }

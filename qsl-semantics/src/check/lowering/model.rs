@@ -528,6 +528,11 @@ impl AdmittedModel {
         })
     }
 
+    /// The declaration key of the type `id`, when this package declares it.
+    pub(crate) fn type_key(&self, id: EffectiveId) -> Option<&DeclarationKey> {
+        self.types.get(&id)
+    }
+
     /// The alias of the `model` declaration this package is admitted for,
     /// if any.
     pub(crate) fn alias(&self) -> Option<&str> {
