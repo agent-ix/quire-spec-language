@@ -1650,7 +1650,7 @@ fn a_concrete_protocol_refines_an_abstract_protocol() {
 
 /// An internal list entry that a step row also maps to a node refuses at the
 /// row (FR-147-AC-2).
-#[trace("TC-659", "FR-214-AC-4", "FR-147-AC-2")]
+#[trace("TC-659", "FR-147-AC-2")]
 #[test]
 fn an_internal_entry_beside_its_node_row_refuses() {
     let found = check_with_internals(
@@ -1666,7 +1666,7 @@ fn an_internal_entry_beside_its_node_row_refuses() {
 
 /// A node row on a step with no operation has no receiver to type its
 /// arguments over: unsupported, as an application is.
-#[trace("TC-541", "FR-214-AC-4")]
+#[trace("TC-541")]
 #[test]
 fn a_node_row_on_a_step_with_no_operation_is_unsupported() {
     let rows = COMBINED_ROWS.replace(
@@ -1687,21 +1687,21 @@ fn a_node_row_on_a_step_with_no_operation_is_unsupported() {
 
 /// The concrete rows are covered against the concrete clause: a missing
 /// `join` row refuses.
-#[trace("TC-659", "FR-214-AC-3", "FR-136-AC-4")]
+#[trace("TC-659", "FR-214-AC-2")]
 #[test]
 fn a_combined_refinement_needs_its_concrete_rows() {
     let rows = COMBINED_ROWS.replace("step join M::Fill::Both -> stutter;\n", "");
     let found = check_with_internals(&combined_unit(&rows), None).expect_err("refuses");
-    assert!(matches!(
+    assert_eq!(
         only(&found).refinement(),
-        RefinementCause::MissingRow { .. }
-    ));
+        &missing(RowClass::Node, "join M::Fill::Both")
+    );
 }
 
 /// An abstract protocol clause refused by its own checks reports its own
 /// refusals alone: no refinement refusal, whether or not the concrete rows
-/// are complete (FR-147 "Abstract side"; FR-136-AC-8).
-#[trace("TC-541", "FR-136-AC-8")]
+/// are complete (FR-147 "Abstract side"; FR-147-AC-13).
+#[trace("TC-541", "FR-147-AC-13")]
 #[test]
 fn a_refused_abstract_clause_reports_alone_over_a_concrete_protocol() {
     let refused_seq =
