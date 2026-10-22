@@ -16,7 +16,10 @@ use qsl_forms::{ActivationForm, ChannelDelivery, ProtocolDeclarationForm, Protoc
 use qsl_foundation::MemoryModelName;
 use serde_json::Value;
 
-use crate::check::protocol_clause::CheckedProtocol;
+use quire_exact::ValueType;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
+
+use crate::check::protocol_clause::{BoundAttempt, CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_slots::CheckedLifetime;
 
 /// Which kind of abstract step a class is (ADR-027 ST-1 to ST-15).
@@ -402,6 +405,22 @@ impl ParsedLists {
     }
 }
 
+/// The fields of a binder of type `binder_type`: one per field of a record
+/// type, in declaration order, and otherwise the one field of that type.
+fn binder_record(types: &TypeEnvironment, binder_type: &ValueType) -> Vec<ValueType> {
+    if let ValueType::Composite(key) = binder_type {
+        if let Some(CompositeShape::Record(fields)) =
+            types.composite(*key).map(|declared| declared.shape())
+        {
+            return fields
+                .iter()
+                .map(|field| field.value_type().clone())
+                .collect();
+        }
+    }
+    vec![binder_type.clone()]
+}
+
 /// What one node declaration is, as a step class (ADR-027 ST-1 to ST-12).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum NodeClass {
@@ -419,6 +438,9 @@ pub(crate) enum NodeClass {
 pub(crate) struct ProtocolClasses {
     pub(crate) protocol: String,
     nodes: BTreeMap<String, NodeClass>,
+    /// The binder record of each node that has one (QSpec FR-432 "The
+    /// binder record of an abstract node"): the field types in order.
+    records: BTreeMap<String, Vec<ValueType>>,
     /// Channel name to (admits `duplicate`, admits `lose`).
     channels: BTreeMap<String, (bool, bool)>,
     /// Replicated role name to whether its lifetime is `until`.
@@ -431,8 +453,57 @@ pub(crate) struct ProtocolClasses {
 }
 
 impl ProtocolClasses {
-    /// The classes of the clause `form`, checked as `checked`.
-    pub(crate) fn of(form: &ProtocolDeclarationForm, checked: &CheckedProtocol) -> Self {
+    /// The classes of the clause `form`, checked as `checked`, whose
+    /// attempts' operations are `attempts`, over the types `types`.
+    pub(crate) fn of(
+        form: &ProtocolDeclarationForm,
+        checked: &CheckedProtocol,
+        attempts: &[BoundAttempt],
+        types: &TypeEnvironment,
+    ) -> Self {
+        let mut records: BTreeMap<String, Vec<ValueType>> = BTreeMap::new();
+        for bound in attempts {
+            let Some(declaration) = form.declarations.get(bound.declaration) else {
+                continue;
+            };
+            let operation = &bound.operation.declaration;
+            let record = std::iter::once(ValueType::Reference(bound.receiver))
+                .chain(operation.parameters().iter().map(|(_, ty)| ty.clone()))
+                .chain(operation.result().cloned())
+                .collect();
+            records.insert(declaration.name.name.clone(), record);
+        }
+        for (index, declaration) in form.declarations.iter().enumerate() {
+            let node = ProtocolNodeId(index);
+            let binder_type = match declaration.kind {
+                ProtocolNodeKind::Effect
+                | ProtocolNodeKind::Event
+                | ProtocolNodeKind::Commit
+                | ProtocolNodeKind::Finish => checked
+                    .slots
+                    .binders
+                    .iter()
+                    .find(|binder| binder.node == Some(node))
+                    .map(|binder| &binder.value_type),
+                ProtocolNodeKind::Send | ProtocolNodeKind::Receive => checked
+                    .vias
+                    .iter()
+                    .find(|via| via.node == node)
+                    .and_then(|via| {
+                        checked
+                            .channels
+                            .iter()
+                            .find(|channel| channel.name == via.channel)
+                    })
+                    .map(|channel| &channel.carries),
+                _ => None,
+            };
+            if let Some(binder_type) = binder_type {
+                records
+                    .entry(declaration.name.name.clone())
+                    .or_insert_with(|| binder_record(types, binder_type));
+            }
+        }
         let mut nodes = BTreeMap::new();
         for declaration in &form.declarations {
             let class = match declaration.kind {
@@ -500,6 +571,7 @@ impl ProtocolClasses {
             protocol: form.name.name.clone(),
             state_names,
             nodes,
+            records,
             channels,
             roles,
             activates: matches!(form.activation, ActivationForm::Each { .. }),
@@ -510,6 +582,11 @@ impl ProtocolClasses {
     /// Whether `name` is a binder, node or queue of the protocol's state.
     pub(crate) fn has_state(&self, name: &str) -> bool {
         self.state_names.contains(name)
+    }
+
+    /// The field types of the binder record of the node `name`.
+    pub(crate) fn record(&self, name: &str) -> Option<&[ValueType]> {
+        self.records.get(name).map(Vec::as_slice)
     }
 
     /// What the node `name` is, when it has a step class.
