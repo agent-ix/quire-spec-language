@@ -65,3 +65,22 @@ relations, the lead defaults (a separate emission FR, reuse of
 `clause-root-unresolved`, the subject-free body) and the gate are clean.
 Merge only after #370. Merge main first; the merge is clean. Expect a
 `spec/spec.md` conflict with #1253.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-007 | low | [minor] Small items. FR-410-AC-1 still spells `from (x.phase != Lost)` while TC-1140 step 1 now uses `G::Phase::Lost`; use one spelling. The new `check_state_graph` rule does not say how the refusal settles (FR-338 states "FR-127 settles it `Failed`"), and `StateGraphCheck` has no refusal arm, so say the request is refused before the check. `make check-spec-validation` now warns `ears:unclassifiable` and `ears:missing-subject` at FR-410 line 95. Split the lookup bullet so each `SHALL` has its subject. | spec/functional/FR-410-emit-a-checked-state-graph-claim-as-a-v2-claim-node.md:95-102, :108; spec/test-cases/TC-1140-a-state-graph-claim-emits-a-v2-claim-node.md:25 | correct-requirement-no-evidence |
+
+## Dispositions
+
+Round 1, reviewed at agent-ix/quire-spec-language@783910e6 (fix commit 4e3d151f plus merges of main). Gate: `QSPEC_DIR=<#370 head afe6d822> make check-spec-validation` exits 0. origin/main (6fb751a) is not an ancestor, but the merge is clean. #1253 still conflicts on `spec/spec.md`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4e3d151f |
+| FND-002 | fixed | 4e3d151f |
+| FND-003 | fixed | 4e3d151f |
+| FND-004 | fixed | 4e3d151f |
+| FND-005 | fixed | 4e3d151f |
+| FND-006 | fixed | 4e3d151f |

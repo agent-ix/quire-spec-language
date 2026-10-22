@@ -30,8 +30,8 @@ Use ADR-022 §7's ConfigVersion and game units.
 3. Resolve `ReachesTwo`'s triple in the recompiled package through the
    state-graph lookup; resolve a triple with an unknown NodeId, with a
    `temporal`/`temporal_clause` node's NodeId, and with another ordinal; give
-   `ReachesTwo`'s triple to FR-337's temporal lookup; call `check_state_graph`
-   with a request whose claim triple is unresolved.
+   `ReachesTwo`'s triple to FR-337's temporal lookup; settle a state-graph
+   item whose request's claim triple is unresolved.
 4. Edit `ReachesTwo`'s node to `kind` `eventually-possible`, and separately
    to `target` a reference to `c`'s parameter node with `dependencies` set to
    the body's targets; after each edit recompute the node key, rewrite the
@@ -57,7 +57,7 @@ backs.
   fourth.
 - Step 3 (FR-410-AC-3): the claim is found; each other state-graph lookup
   returns `clause-root-unresolved` at its triple; the temporal lookup
-  returns `clause-root-unresolved`; `check_state_graph` refuses the request
-  with `clause-root-unresolved` and checks no certificate.
+  returns `clause-root-unresolved`; the unresolved item calls no
+  `check_state_graph` and settles `Failed`.
 - Step 4 (FR-410-AC-4): `invalid_package`/`invalid-value` at the `kind`
   binding; `ill_typed`/`operator-ineligible` at the target.
