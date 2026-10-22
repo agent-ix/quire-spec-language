@@ -40,8 +40,8 @@ EN-1 steps (not S3 results):
 12. Instantiate AC-8's branch and read EN-1's sharing (FR-220-AC-13).
 13. Run the pre-check on an instantiated `release` load, an `acq_rel` load, an
     `acquire` store, an `acq_rel` store and an RMW with no ordering, under
-    `tso`, under `ra` and under `sc`, on an instantiated local access with
-    `release`, and on an `acquire` attempt that reads a branch-local register
+    `tso`, under `ra` and under `sc`, on a `release` attempt that writes a
+    branch-local register and touches no shared location on instantiation, and on an `acquire` attempt that reads a branch-local register
     and writes two shared fields, under `tso` (FR-220-AC-14).
 14. Run the pre-check on FR-220-AC-15's `event` reader beside the storing
     branch under `tso` and under `sc`, on the `z.v` reader of the variant whose universe also holds an unaccessed `z`, and on the
