@@ -50,9 +50,16 @@ Disposition pass 1: both findings fixed; one new low finding (FND-003, minor).
 | --- | --- | --- | --- |
 | FND-003 | low | FR-331-AC-33 now also requires the process-provider item over an unemitted package to settle `unsupported` with `unsupported_projection`/`unsupported-requested-capability` naming the kind, the backend and that the package is not emitted. TC-220 LC-07, the row that traces AC-33, checks only that no frame is written; the diagnostic is checked in LC-06, which traces FR-300-AC-6 alone. Fix: add the diagnostic to LC-07's expected result, or list FR-331-AC-33 on LC-06. | quire-specification spec/test-cases/TC-220-rust-lifecycle-api-contract.md:29-30; quire-specification spec/objects/interfaces/FR-331-backend-provider-envelope.md:605 |
 
+## Disposition pass 2
+
+Disposition pass 2 at QSL 4744ca864 (merge of main 25c6f9615 carrying the fixes) and QSpec b6bbe0952 (fix 48c14bd8d, then a merge of main fdf9739 that touches none of FR-300, FR-331 or TC-220). `git diff origin/main...HEAD` holds only the STD-258 files in each repo (QSL: ADR-029, FR-280, TC-761, three reviews; QSpec: FR-300, FR-331, TC-220, three reviews), so the merges add no regression. Both PRs merge cleanly with current main. FR-280-AC-4 takes main's `descriptor_from_manifest` wording. Gates in detached worktrees: QSL `make check-spec-validation` exits 0 with no diagnostic on FR-280, TC-761 or ADR-029; QSpec `quire validate --scope . 'spec/**/*.md'` gives 86 fail lines, with FR-331's three diagnostics the ones main has; `cargo test --test checked_package_v2 --test backend_provider_v1` passes 118 and 23 (main's revert #363 removed the other eight checked_package_v2 tests; the PR changes no test).
+
+Disposition pass 2: FND-003 is fixed. Every finding in this file is now fixed, and no new finding came from the round-2 diffs.
+
 ## Dispositions
 
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-331-AC-33 states an observable: "two in-process requests of the same items run the engine twice and the second result comes from the second run"; the shape clause is now "holds ... as typed values"; TC-220 LC-07 counts the engine's runs. See FND-003 for a new coverage gap in LC-07. |
 | FND-002 | fixed | TC-761 step 4 expected result adds "The run holds no `EmittedPackage` of `Service`, and `emit_checked` over `Service` is refused after the entry returns as it was before." |
+| FND-003 | fixed | TC-220 LC-07, which traces FR-331-AC-33, now expects the process-provider item to settle `unsupported` with `unsupported_projection`/`unsupported-requested-capability` naming `probabilistic-satisfaction`, the backend and that the package is not emitted, with no frame written for it. |
