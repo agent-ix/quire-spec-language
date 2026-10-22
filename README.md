@@ -362,3 +362,5 @@ Contributions require the [CLA](CLA.md).
 
 QSL is licensed under [AGPL-3.0-or-later](LICENSE). Fixtures keep their
 `AGPL-3.0-only` headers. See [LICENSE-DECISION.md](LICENSE-DECISION.md).
+
+<!-- STD-30 language-boundary canary: inert README change. -->
