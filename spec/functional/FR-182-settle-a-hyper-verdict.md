@@ -25,6 +25,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-183
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-315
+    type: depends_on
 ---
 # FR-182: Settle a hyper or step-relation verdict and its causes
 
@@ -59,9 +61,12 @@ replayed pair of runs that the match accepts, reads `inconclusive`,
   (FR-163).
 - For `Violated`: the FR-072 replay result of its `HyperCounterexample`
   (FR-183), or the `ReplayRefusal` that stopped it.
-- For an SMT `Inductive{depth}` outcome for HP-2: the outcome's instance,
-  and an optional `MatchWitnessCheck` with the `MatchWitness` it checked
-  (FR-183), present when a non-vacuity witness came with the outcome.
+- For an SMT `Inductive{depth}` or `InductionNotClosed{depth}` outcome for
+  HP-2: the outcome's `HyperProductIdentity` (FR-315 "Product identity"),
+  whose `instance()` is the outcome's instance, and an optional
+  `MatchWitnessCheck` with the `MatchWitness` it checked (FR-183) and the
+  `HyperProductIdentity` of the clause, subjects and witness instance that
+  check replayed, present when a non-vacuity witness came with the outcome.
 - For an item negotiation did not route: its negotiation disposition.
 
 ## Outputs
@@ -73,6 +78,11 @@ replayed pair of runs that the match accepts, reads `inconclusive`,
 //                        // established: EN-1 found none (ADR-023 HM-7), or an
 //                        // SMT induction proof came with no accepted match
 //                        // witness for its instance (FR-183)
+
+// HyperSettleRefusal gains:
+//   ProductMismatch { member: ProductMember }, // an HP-2 SMT outcome whose
+//                        // HyperProductIdentity is not the item's
+pub enum ProductMember { Clause, Subjects, Instance }
 ```
 
 and the FR-331 terminal record with its QSpec FR-360 label,
@@ -124,6 +134,13 @@ FR-243 basis, O-16 category and method.
   limit.
 - A verdict SHALL hold for exactly its subjects; the obligation identity
   binds them as FR-172 states.
+- When settlement reads an SMT outcome for HP-2, it SHALL first, ahead of
+  choosing any row, compute the item's `HyperProductIdentity` for the instance it settles,
+  through `HyperProductIdentity::of` over the item's clause and subjects
+  and that instance, and compare it with the outcome's. When they differ,
+  the outcome is no evidence for the item: settlement SHALL write no record
+  and refuse `HyperSettleRefusal::ProductMismatch`, naming the first member
+  that differs in the order `clause`, `subjects`, `instance`.
 - An SMT `Inductive{depth: k}` outcome for HP-2 SHALL settle V-3 only when
   every subject has an initial state and either `μ_U` is empty or its
   `MatchWitnessCheck` is `Accepted` for a witness whose `instance` equals
@@ -136,7 +153,10 @@ FR-243 basis, O-16 category and method.
   - Otherwise, with a non-empty `μ_U` and no `Accepted` check for the
     outcome's instance, the outcome SHALL settle V-6 `VacuousMatch`: no
     matched fair tuple has been established. A `Refused` check, or an
-    `Accepted` check of a witness for another instance, counts as none.
+    `Accepted` check of a witness for another instance, counts as none. An
+    `Accepted` check counts only when the `HyperProductIdentity` it comes
+    with equals the outcome's; a check for another clause or other
+    subjects counts as none.
   - An empty `μ_U` needs no witness. A finite subject with an initial state
     has a fair behaviour under any fairness set (ADR-018 §4), and with no
     match constraint every tuple of fair behaviours is matched, so the
@@ -154,6 +174,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-6 | FR-179-AC-5's `Violated` outcome settles `refuted`, `decisive-counterexample`, after its `StepTuple` replays, with no `UndefinedEvaluation`: the false tuple is the first refuting evidence, ahead of the undefined tuples. | Test (TC-611) |
 | FR-182-AC-7 | §8.1's secure proof settles `proved`, certification `Certified`, after FR-163-AC-1's certificate is accepted; with FR-163-AC-2's member-removed certificate the item settles `inconclusive`, `CertificateRejected{Closure, …}`, never `proved`. An HP-2 `Inductive{depth: 1}` outcome from `k-induction`, with an empty `μ_U` or an `Accepted` `MatchWitnessCheck` (FR-182-AC-10), settles `proved`, `decisive-witness`, certification `Uncertified`. | Test (TC-607) |
 | FR-182-AC-10 | Over ADR-023 §8's secure vault, `NonInterference`'s `Inductive{depth: 1}` outcome with no `MatchWitnessCheck` settles `inconclusive`, `VacuousMatch`, never `proved`. With FR-183-AC-8's matched witness, whose check is `Accepted`, it settles `proved`, `decisive-witness`, `Uncertified`. With FR-183-AC-8's unmatched witness, whose check is `Refused`, it settles `inconclusive`, `VacuousMatch`. Over a vault whose `vaults` universe is `{v, w}`, the outcome for instance `w` with the matched witness for instance `v`, whose check is `Accepted`, settles `inconclusive`, `VacuousMatch`. The one-variable clause `forall trace a of V { always holds(v.l @ a <= 1) }`, whose `μ_U` is empty, settles its `Inductive{depth: 1}` outcome `proved`, `Uncertified`, with no witness. `NonInterference` over the secure vault with an empty initial list settles `inconclusive`, `NoInitialState`, never `proved`, with or without a witness. | Test (TC-607) |
+| FR-182-AC-11 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `NonInterference`'s `Inductive{depth: 1}` outcome carrying FR-315's identity for instance `v`, with FR-183-AC-8's matched witness for `v` whose check is `Accepted` and comes with an equal identity, settles `proved`, `decisive-witness`, `Uncertified` for the item at instance `v`. The same outcome settled for the item at instance `w` writes no record and refuses `ProductMismatch` naming `instance`. An outcome carrying the identity of the clause with `fair { weak V::Vault::step }` on `a`, settled for `NonInterference`, refuses `ProductMismatch` naming `clause`, and so does an `InductionNotClosed{depth: 1}` outcome carrying it. The `Inductive{depth: 1}` outcome for `v` with an `Accepted` check that comes with that fair clause's identity settles `inconclusive`, `VacuousMatch`. | Test (TC-1190) |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 | FR-182-AC-9 | ADR-023 §1's `NonInterference` over an empty `Vault` universe settles `inconclusive`, `NoInstance`, basis `unsettled`, before any state is explored, never `Proved` or `Refuted`; ADR-023 §1's `SavesPower` `(d: S::Device, e: N::Device)` with one empty universe and the other non-empty settles the same way, so the product is read over both parameters; the same clause over a population with no universe is `RequiresBound`, not `NoInstance`. | Test (TC-607) |
 
@@ -166,7 +187,9 @@ FR-243 basis, O-16 category and method.
   [FR-177](FR-177-check-a-forall-exists-safety-hyperproperty-by-witness-sets.md),
   [FR-178](FR-178-check-a-projection-aligned-hyperproperty.md),
   [FR-179](FR-179-check-a-step-relation-over-reachable-transitions.md),
-  [FR-183](FR-183-replay-a-hyper-counterexample.md).
+  [FR-183](FR-183-replay-a-hyper-counterexample.md),
+  [FR-315](FR-315-encode-the-smt-lib-transition-relation.md) (the HP-2
+  `HyperProductIdentity` an SMT outcome carries).
 - QSpec owns the verdict table onto FR-360 and FR-243 and the new
   inconclusive causes on the wire (ADR-023 QS-5).
 
