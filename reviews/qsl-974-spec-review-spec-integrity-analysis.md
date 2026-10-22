@@ -56,3 +56,14 @@ resolves. FR-185 and FR-195 probabilistic forms stay refused at S4. The gate
 Not mergeable: FND-001 (major) makes AC-33's conversion vector unsatisfiable. FND-002 to FND-004
 are minor wording and citation fixes. Everything else in the diff is consistent with QSpec FR-322,
 FR-142, IR FR-038 and the QSL FRs it cites.
+
+## Dispositions
+
+Round 1, reviewed QSL #1214 at 3fd9a7398 (fix commit over b155d3ea3); code facts re-verified in the QSL tree at that head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-33 and TC-483 step 6 now write `convert<Quantity<s>>(d) = 3 s` (QSpec FR-142 form) |
+| FND-002 | fixed | the unit and dimension rule now cites QSpec FR-142 Behavior; FR-094 is kept for the divisor only |
+| FND-003 | fixed | Typing now reads "by FR-185's measure, under the rational-bits ceiling NFR-011 applies to each quantity literal check types (NFR-011 Scope)" |
+| FND-004 | fixed | AC-33 names h2, h3 and h4 as separate bodies beside h; TC-483 step 6 uses the same names |
