@@ -47,8 +47,8 @@ call's harness bounds.
    - F-6: at `E` with `refinement: CeilingReached`, admitted operands, a
      `Completed` native and enough limits.
 3. Both entries, at `E`: call with an edited source; with an undeclared
-   `selected_function`; with a `node` the package does not hold; with the
-   node of `h`'s body while `selected_function` names `f`; with `operator`
+   `function` replay target; with a `node` the package does not hold; with
+   the node of `h`'s body while the `function` replay target names `f`; with `operator`
    `NotEqual`; with an `occurrence` the node does not have in `f`'s body and
    with one of another function; and with an `obligation_identity` over
    `[0, 9]` on the first `x` while the harness bound is `[0, 8]`.

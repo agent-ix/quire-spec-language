@@ -16,7 +16,7 @@ default or omitted value. A wrong implementation this test would catch: an
 envelope builder that treats `trace_position` as `Option<TracePosition>`
 with a silent `None` default when the family declares one, instead of
 requiring it, so a family that should always carry a trace position can
-silently lose it without a visible refusal. Scope: FR-070-AC-4.
+silently lose it without a visible refusal. Scope: FR-070-AC-4, FR-070-AC-18.
 
 ## Test Procedure
 
@@ -27,6 +27,11 @@ silently lose it without a visible refusal. Scope: FR-070-AC-4.
 4. Remove exactly one `RawSourceRef` digest from the package reference and
    attempt reconstruction.
 5. Remove exactly the obligation identity and attempt reconstruction.
+6. Reconstruct a function packet carrying `function`, a frame packet
+   carrying `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`)
+   and a state-clause packet carrying `state_clause` (`VersionUnchanged`),
+   and round-trip each envelope; remove each packet's replay target; add a
+   `function` member to the frame packet and to the state-clause packet.
 
 ## Expected Results
 
@@ -34,3 +39,10 @@ silently lose it without a visible refusal. Scope: FR-070-AC-4.
   naming the missing member.
 - No step produces an envelope with a defaulted, empty, or otherwise
   synthesized value standing in for the missing member.
+- Step 6: both packets reconstruct and round-trip with their one target
+  unchanged; the removed targets refuse
+  `WitnessRefusal::MissingMember("replay_target")`, the two-member packets
+  `WitnessRefusal::ConflictingTarget` naming `function` and
+  `frame_operation`, and `function` and `state_clause`, and none builds an
+  envelope. The envelope type has
+  no `selected_function` member (FR-070-AC-18).
