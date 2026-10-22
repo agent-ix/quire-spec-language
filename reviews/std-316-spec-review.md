@@ -55,3 +55,10 @@ Round 1, checked against fix commits c6c832ddd (SR-16150 fixes) and 234eea163 (s
 | --- | --- | --- |
 | FND-001 | fixed | AC-1, the Outputs line and TC-156 (description and step 1) say CG's normal dependency on `qsl-replay`. |
 | FND-002 | fixed | FR-059 cites FR-356-AC-1 and `tc_arch_lint_direction_004` as the same rule, adds a `references` edge and a Dependencies entry. |
+
+Round 2, checked against fix commit 19e2bac26 (head 19e2bac2; the branch also merged origin/main with #1277). `make check-spec-validation` exits 0; main is an ancestor; no textual conflict with any open PR above #1200.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | The sentence is limited to the types FR-401 moves (such as `Category`) and cites FR-401, with a `references` edge; it no longer claims anything about the SV items `qsl-replay` re-exports. |
+| FND-004 | fixed | The allowed set is stated among CG's QSL-owned dependencies only, and edges to `quire-exact` and `quire-walk` stay as ADR-011 FB-05 states. |
