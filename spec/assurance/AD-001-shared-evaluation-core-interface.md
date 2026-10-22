@@ -10,6 +10,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-294
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-400
+    type: references
   - target: ix://agent-ix/quire-spec-language/ADR-030
     type: references
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -152,7 +154,9 @@ here. The ordering rationale is as follows.
   `quire-semantic-value`, rebases the object environment on `ObjectClosure`
   and removes the obsolete consumer fields. It follows IR-583 and IR-269.
 - IR-586 (S2) separates checked IR from the checker, preserving checking
-  authority, source locations and identities.
+  authority, source locations and identities, under FR-400, in the
+  repository `agent-ix/quire-eval`. It does not wait for S1: when S1 has not moved `WrongSnapshotCause`, S2 moves it to
+  SV's `call` module (FR-400).
 - IR-587 (S3) makes `qsl-foundation` no_std + alloc capable with `std` on by
   default. NFR-015 gives its build contract, target and gate (closure tier,
   `thumbv7em-none-eabi`, `make build-no-std`). The foundation items the leaf
@@ -230,11 +234,28 @@ evidence that the RT target accepts the later implementation.
   versions are implementation choices not fixed by FR-262. The QSL owner must
   make them before the IR-583 implementation starts; license, CLA and content
   rights checks must precede publication of a new public repository.
-- Today's checked graph is still owned by the checker and contains QSL-specific
-  source/form dependencies. The interface must not solve this by importing the
-  checker into the leaf. IR-586 must provide the stable checked-term boundary
-  used by S6; the IR-583 public contract should keep the representation opaque
-  until then.
+- The checked-term boundary S6 builds on is FR-400: the checked terms live in
+  `quire-checked` (ADR-011 layer C, repository `agent-ix/quire-eval`), which
+  depends on SV, K and W only and carries SV `Location`s. Source spans,
+  form-derived fields and source-region resolution stay with the checker.
+  The interface must not import the checker into the leaf; it names checked
+  input through C's types, and the IR-583 public contract keeps the
+  representation opaque until X-13 lands.
+- `quire-checked` joins FB-05's shared-leaf class, so a backend may depend on
+  it. Only the `construct` feature exposes its constructors; in QSL, T12-G
+  limits their callers to `check`, plus `library` for `PackageId` and
+  `value::definition` for `AdmittedIntegerDivision`, and across repositories FR-059 refuses a
+  backend that enables the feature. Within one workspace, feature
+  unification makes the constructors visible to any crate that builds with
+  `qsl-semantics`; the caller rule, not the type system, closes that gap.
+- FR-400 moves the F and layer-2 values a checked term carries to SV, and S1
+  moves the evaluation vocabulary to SV. Whichever of S1 and S2 lands second
+  rebases onto the other's moves rather than moving an item twice.
+- The licence, CLA and content-rights checks of `agent-ix/quire-eval`
+  precede making that repository public. The evaluation-core crate in that
+  repository, its layer and the placement of the S6a result
+  vocabulary (`FamilyOutcome`, `FamilyResult`, `EvalOutcome`) belong to S0
+  and must stay consistent with layer C.
 - RT AD-004 predates FR-262 and describes a fixed call-depth guard and a
   different Q-1 fork. RT must amend that document and its FR-273 acceptance
   before claiming that the new interface completes the old port migration.

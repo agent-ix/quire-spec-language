@@ -64,6 +64,14 @@ The check SHALL combine normal and dev edges into one directed graph for
 FB-11, and SHALL report a cycle exactly once regardless of its rotation or
 which repository it started the search from.
 
+The checked-term leaf `quire-checked` (ADR-011 layer C, in the repository
+`agent-ix/quire-eval`) is also a shared leaf, sourced from no ecosystem
+repository, so an edge into it classifies as no ecosystem repository. When
+a resolved IR, RT or CG dependency on `quire-checked` has its `construct`
+feature enabled, the check SHALL report that edge as an FB-05 violation: a
+backend reads checked terms and never builds one ([FR-400](FR-400-separate-checked-terms-from-the-checker.md),
+ADR-011 FB-14).
+
 This check is crate-level only: it establishes that an edge into QSL exists at
 all, not that the edge's caller code stays inside the layer-6 `replay` facade.
 [FR-060](FR-060-check-qsl-api-surface-boundary.md) verifies the latter.

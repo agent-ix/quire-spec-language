@@ -67,14 +67,15 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 - Step 3 finds no edge.
 - Step 4 finds that none of the three manifests names the crate that defines
   the three types, or any crate at layer 3 or above. `qsl-foundation` may name
-  `quire-exact`, and `qsl-cst` may name `qsl-foundation` and `quire-exact`
+  `quire-exact`, plus `quire-semantic-value` once FR-400's X-13 lands, and `qsl-cst` may name `qsl-foundation` and `quire-exact`
   (ADR-011 §6.1). `qsl-package`'s `[dependencies]` name `qsl-semantics` and
   no workspace crate outside `qsl-semantics`, `qsl-foundation` and
   `quire-exact`, and `quire-contract-model` as their one ecosystem crate
-  outside the workspace; its `[dev-dependencies]` may also name
+  outside the workspace, plus `quire-checked` once FR-400's X-13 lands; its `[dev-dependencies]` may also name
   `qsl-forms`. `qsl-eval`'s `[dependencies]` are exactly
   `qsl-foundation`, `qsl-package`, `qsl-semantics`, `quire-canonical`,
-  `quire-exact`, `serde` and `thiserror` (ADR-011 X-8, FR-101), it has no `[build-dependencies]`, and its
+  `quire-exact`, `serde` and `thiserror` (ADR-011 X-8, FR-101), plus
+  `quire-checked` once FR-400's X-13 lands, it has no `[build-dependencies]`, and its
   `[dev-dependencies]` may also name `qsl-forms` and `qsl-cst`, and no other workspace
   crate. The root crate names
   `qsl-eval` in none of its tables: no root-crate code calls layer 5 yet.
