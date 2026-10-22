@@ -82,8 +82,10 @@ Checked against f5468187b by measuring it. The coder's draft table is replaced b
 | --- | --- | --- | --- |
 | FND-003 | medium | The shared walk cache keeps every candidate phase 0 draws until `sample` returns, in every run. That includes a run with one instance, which shares nothing. A candidate holds up to `max_walk_steps` (4096 by default) `ModelSimState` values. A body false on the sampled walks keeps every revisiting walk: up to `initial states x witness_samples` candidates (x 64 by default) instead of one at a time. Draw each `(initial, trace)` walk once and test it against every instance still pending, as `state_graph/sample.rs` does with `pending`. Or cache only when `bindings.len() > 1`. Then nothing is kept after a walk is read. | qsl-analyze/src/model_check/hyper/single.rs:342-380 |
 
-## Dispositions of SR-12304 (disposition pass 1)
+## Dispositions of SR-12304 (disposition pass 2, at 35187071b)
+
+Checked against 788ee9c55 by measuring it; this row replaces the coder's draft row.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-003 | fixed | 788ee9c55: `sample` draws each `(initial, trace)` walk once, tests it against every instance with no witness yet for that initial state, and drops it before the next walk; no candidate is kept. |
+| FND-003 | fixed | 788ee9c55: `sample` draws each `(initial, trace)` walk once in a local, tests it against every instance with no witness yet for that initial state, and drops it before the next walk, so at most one candidate is alive at a time. Results are identical: a probe of 24 runs with three instances under default sampling (secure, leaky and terminal vaults; four bodies; `max_walk_steps` 1 and 4096; non-zero `walks_stopped` 32 and 34 among them) gives byte-identical `SingleExistentialRun` debug output at c9e61a12d and at this head. `hyper_single` (26 tests, including the oracle) passes; clippy and fmt are clean. Of the 13 applicable mutants, all are killed except three new phase 0 ones that survive. M2, dropping the early `break` when no instance is pending, is equivalent: it only costs walks. M1, not skipping an instance that already has a witness, and M4, testing only the first instance, change multi-instance sampled runs only, and no test runs several instances with sampling on (`instances_share_the_runs_limits` is unsampled). That is a test gap, not a defect, and non-blocking under the majors-only rule. |
