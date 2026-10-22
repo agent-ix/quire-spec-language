@@ -257,16 +257,15 @@ fn invalid_native_spec_prevents_actual_cargo_calls_even_in_parallel() {
     // cargo-deny is probed for executable presence only; the real recipe's
     // `cargo deny` invocation goes through the Cargo recorder, with no install.
     std::os::unix::fs::symlink(bin.join("cargo"), bin.join("cargo-deny")).unwrap();
-    // The two non-Cargo prerequisites use native invocation seams. Their
-    // underlying binary/index audits are not qualified by this boundary test.
+    // The non-Cargo prerequisite uses a native invocation seam. Its
+    // underlying binary audit is not qualified by this boundary test.
     let tools = root.join("tools");
     std::fs::create_dir(&tools).unwrap();
-    for name in [
-        "check-no-committed-binaries.sh",
-        "check-index-completeness.sh",
-    ] {
-        std::os::unix::fs::symlink(bin.join("cargo"), tools.join(name)).unwrap();
-    }
+    std::os::unix::fs::symlink(
+        bin.join("cargo"),
+        tools.join("check-no-committed-binaries.sh"),
+    )
+    .unwrap();
     let path = std::env::join_paths(
         std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
