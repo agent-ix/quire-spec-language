@@ -44,3 +44,10 @@ No major gaps. Mergeable.
 | --- | --- | --- | --- |
 | FND-001 | low | The ticket and QSpec FR-323 say the declaring object may be a process or a state machine. `call_site` can select only object types (`model_objects` holds `ObjectType` records only), so a process or state-machine operation returns `UnknownOperation`. That limit was there before this PR, and no clause can name such an operation today, so CG gets a refusal, not a wrong pair. It is a reach gap to note for CG IR-958 and the driver IR-672 if they expect process frames. | qsl-semantics/src/check/lowering/model.rs:549; qsl-replay/src/call_site.rs:575 |
 | FND-002 | low | Same as the code review's FND-002: no multi-level-inheritance case. | qsl-replay/src/spine/clause/tests/call_site.rs |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed (FR-121 states the object-type limit) | f13d0e0f4 |
+| FND-002 | fixed | f13d0e0f4 |

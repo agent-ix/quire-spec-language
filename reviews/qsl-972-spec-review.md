@@ -35,3 +35,10 @@ No major findings. Mergeable.
 | --- | --- | --- | --- |
 | FND-001 | low | The added sentence is joined to the prior line, which makes line 172 136 characters long. The rest of the bullet wraps near 76 characters. This is cosmetic only. | FR-121 line 172 |
 | FND-002 | low | No acceptance criterion covers the Fault sentence. That is acceptable, because valid input cannot reach the case, but the sentence could say it is an invariant break, not a caller refusal. | FR-121 lines 172-174 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed | f13d0e0f4 |
+| FND-002 | accepted-no-change | f13d0e0f4 |

@@ -56,3 +56,11 @@ Mergeable. No major findings.
 | FND-001 | low | The `declaring_object` rustdoc says "the object type, process or state machine". `model_objects` holds only `DomainPackageRecord::ObjectType` records (`AdmittedModel::object_types`, qsl-semantics/src/check/lowering/model.rs:549), so a process or state machine never resolves. Clause resolution and `resolve_operation` use the same table, so no frame of a process or state-machine operation exists to hit this. The doc overclaims; it should say "object type". | qsl-semantics/src/check/mod.rs:3843 |
 | FND-002 | low | No test covers an operation inherited through two levels (A declares, B extends A, C extends B; select C). The value comes from the effective view and mutation 1 shows the selected-type mistake is caught, so this is coverage depth only. | qsl-replay/src/spine/clause/tests/call_site.rs |
 | FND-003 | low | `declaring_object` scans every type of the alias to match one `EffectiveId`. This is O(types) per call; it is fine at call-site rates. `field_domain` does the same reverse scan. | qsl-semantics/src/check/mod.rs:3848-3859 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed | f13d0e0f4 |
+| FND-002 | fixed | f13d0e0f4 |
+| FND-003 | accepted-no-change | f13d0e0f4 |
