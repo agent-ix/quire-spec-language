@@ -217,7 +217,7 @@ for non-atomic, relaxed, release and acquire accesses and fences, with
 | RA-4 | **RMW.** An RMW by `b` reads a message `m` at or after `cur_b(ℓ)` that has no attached successor, by RA-2 with the read part of its ordering, and inserts its message directly after `m`, attached, by RA-3 with the write part. Its message view also joins `m`'s view, so a release sequence continues through an RMW. Two RMWs never read one message. |
 | RA-5 | **Fences.** An `acquire` fence sets `cur_b` to `cur_b` joined with `acq_b`. A `release` fence sets `rel_b(ℓ)` to `cur_b` for every `ℓ`. An `acq_rel` fence does both. A `seq_cst` fence does both, then sets `cur_b` and `S` to `cur_b` joined with `S`, and is an SC event of §15. |
 | RA-6 | **Fork, join and channels.** Each branch starts with its parent's views. The `join` sets the parent's views to the join of its branches' views. A `send` carries the sender's `cur_b`, and its `receive` joins that view into the receiver's `cur` and `acq`: a channel synchronises as a release and an acquire. These are `ra`'s split, merge and channel rules through ADR-027 SE-1 (f), with no gate. Amended by ADR-027. |
-| RA-7 | **Garbage collection.** After every step, every message of `ℓ` earlier in mo than the earliest message any view points to at `ℓ` (every thread's three views, every message view, and `S`) is removed, with PSC-4's summary of the SC events on it. No step can read a removed message: a load reads at or after its thread's current view. Removal is part of the canonical state and makes loops finite. After a top-level `join all` only the parent's views remain, and each location keeps one message. |
+| RA-7 | **Garbage collection.** After every step, every message of `ℓ` earlier in mo than the earliest message that a running thread's current view `cur_b` points to at `ℓ` is removed, with PSC-4's summary of the SC events on it. Only the current views of running threads pin a message. A thread waiting at a `join` pins nothing, since the `join` replaces its views with the join of its branches' views. An acquire view, a release view, a message view, a view a `send` carries and `S` pin nothing: a pointer below every running thread's current view joins into a current view as nothing, and a view that points at a removed message reads as pointing at the earliest live message of its location. No step can read a removed message: a load reads at or after its thread's current view. Removal is part of the canonical state and makes loops finite: with no `seq_cst` fence, a location's initial message is removed once every running thread's current view has moved past it. After a top-level `join all` only the parent's views remain, and each location keeps one message. |
 | RA-8 | **What it admits.** Coherence holds per location: views only move forward in mo. Program order with reads-from is acyclic, so load buffering is excluded, as in RC11. Independent reads of independent writes (IRIW) and 2+2W are admitted with release and acquire accesses, and excluded with `seq_cst` accesses, as in RC11. The intended correspondence is RC11; the litmus vectors below fix it. |
 
 **Litmus outcomes.** "Allowed" means the weak outcome is reachable.
@@ -394,9 +394,9 @@ violate the claim.
 1, inserted after it (RA-3). The local states are `A`, `B`, `D0` and `D1`, as
 under `sc`, since a thread's views are determined by its program counter and
 what it read: `left` at `B` has `cur = (x: 1, y: 0)`, and reading `y`'s new
-message gives `(x: 1, y: 1)`. The initial messages stay readable, because the
-message view of `y`'s new message is `(x: 0, y: 1)` and pins `x`'s initial
-message (RA-7). A thread in `D1` needs the other past `A`; `D0` needs nothing,
+message gives `(x: 1, y: 1)`. The initial messages stay readable, because
+`right`'s current view still points at `x`'s initial message until `right`
+reads `x`, and `left`'s at `y`'s (RA-7). A thread in `D1` needs the other past `A`; `D0` needs nothing,
 since the initial message is always readable. That rules out (`D1`, `A`) and
 (`A`, `D1`): **14** states in the `parallel`, and 4 joined states: **18**. The
 state (`D0`, `D0`) and its joined state violate the claim.

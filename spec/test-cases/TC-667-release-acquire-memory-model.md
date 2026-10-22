@@ -12,7 +12,7 @@ relationships:
 
 Verify `Ra`'s loads, stores, RMWs, fences, fork, join and channel rules, garbage collection, and the litmus outcomes of its column against QSpec FR-437's expected outcomes.
 
-Scope: FR-222-AC-1 to FR-222-AC-4.
+Scope: FR-222-AC-1 to FR-222-AC-5.
 
 ## Test Procedure
 
@@ -23,6 +23,7 @@ Scope: FR-222-AC-1 to FR-222-AC-4.
 3. Run the two-thread `fetch_add`; read message counts after `SB`'s join and
    after each step.
 4. Run MP with fences and MP over a channel.
+5. Run the looping store and load of `x` under `ra` with `max_messages` 1.
 
 Tag the tests `#[trace("TC-667", "FR-222-AC-n")]`.
 
@@ -34,3 +35,4 @@ Tag the tests `#[trace("TC-667", "FR-222-AC-n")]`.
   RMWs; one message per location after the join; unreachable messages
   removed.
 - Step 4: `proved` twice.
+- Step 5: `proved`, bound not reached, one live message of `x` in every state.
