@@ -31,3 +31,11 @@ precedent for two carriers that disagree.
 ## Verdict
 
 Not mergeable: FND-001 (major). The lead defaults for the codes are sound.
+
+## Dispositions
+
+Round 1, reviewed QSL #1211 at ae5d7d83f.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fixed at ae5d7d83f (ordered checks after FR-071 decode and byte-provision rule; AC-8 precedence and missing-provision cases) |
