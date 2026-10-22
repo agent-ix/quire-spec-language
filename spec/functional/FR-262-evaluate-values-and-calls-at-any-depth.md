@@ -76,6 +76,10 @@ checked-term types and runtime model-admission dependencies from the checker
 precedes extraction of the no_std evaluator implementation, rather than
 definition of the interface. That separation SHALL preserve checking authority, source
 locations, declaration identities, model correspondence and proof closure.
+[FR-400](FR-400-separate-checked-terms-from-the-checker.md) states that
+separation: the `quire-checked` crate at ADR-011 layer C, the types it holds,
+the source-location representation, the checker's sole construction
+authority and the checks that prove each.
 
 When replacing RT's ported function-application implementation, RT SHALL
 consume an implementation of this interface that actually runs under its

@@ -10,6 +10,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-294
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-400
+    type: references
   - target: ix://agent-ix/quire-spec-language/ADR-030
     type: references
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -49,7 +51,6 @@ execution limits, staged ownership, and downstream consumer acceptance.
 
 ### Current source boundary
 
-The current source is QSL `origin/main` at `01b1b3396fbd18d821d8db544dabe883ff839b5e`.
 `CheckedGraph` and `CheckedExpression` are checker outputs in
 `qsl-semantics/src/check/mod.rs`; they are not yet an independent evaluator
 input crate. `CheckedPackage` is owned by `qsl-package`. The public evaluator
@@ -151,15 +152,16 @@ parallel to MVP:
 | --- | --- | --- | --- |
 | IR-583 interface | Backlog / unassigned | QSL-682 (Done) | Ready now. QSL owns the interface, leaf-crate contract, reference adapter plan, and this design. |
 | IR-585 S1 vocabulary | Backlog / unassigned | IR-583, IR-269 | After both blockers: move evaluation refusal/call-plan vocabulary into `quire-semantic-value`, rebase object environment on `ObjectClosure`, remove the obsolete consumer fields. |
-| IR-586 S2 checked terms | Backlog / unassigned | IR-583, IR-269 | After both blockers: separate checked IR from checker; preserve checking authority, source locations and identities. |
+| IR-586 S2 checked terms | Backlog / QSL lane | STD-297 (re-read 2026-10-22: the IR-583 and IR-269 edges were removed) | After FR-400 lands: create `quire-checked` (ADR-011 layer C, repository `agent-ix/quire-eval`) and move the checked terms into it under FR-400, so the evaluator reads them without the checker; preserve checking authority, source locations, declaration identities, model correspondence and proof closure. |
 | IR-587 S3 foundation | Backlog / unassigned | IR-583, IR-269 | After both blockers: make `qsl-foundation` no_std + alloc capable while keeping `std` on by default. |
 | IR-588 S4 semantics | Backlog / unassigned | IR-583, IR-586, IR-269 | After all blockers, especially S2: convert only evaluator-needed semantics; replace nondeterministic `HashMap` traversal in `model/population.rs` with `BTreeMap`. |
 | IR-589 S5 package | Backlog / unassigned | IR-583, IR-269 | After both blockers: make `qsl-package` no_std-capable and remove `serde_json` from checked-IR path; verify uncertain dependencies before choosing replacements. |
 | IR-590 S6 evaluator | Backlog / unassigned | IR-583, IR-585, IR-586, IR-587, IR-588, IR-589, IR-269 | Earliest only after interface, every S1-S5 slice, and the IR-269 MVP gate are complete. Convert `qsl-eval` to no_std + alloc behind the interface; keep std enabled by default until S9. |
 
-Consequently, no S1-S5 implementation slice can start under the current
-structured blockers: all are blocked by IR-269, which remains Backlog, and by
-IR-583; S4 additionally requires S2. The suggested owner lane is the
+Consequently, no S1, S3, S4 or S5 implementation slice can start under its
+listed structured blockers: each is blocked by IR-269 and by IR-583; S4
+additionally requires S2. S2 is blocked only by its boundary specification,
+FR-400. The suggested owner lane is the
 maintainer of each owning QSL crate, coordinated by the QSL architecture
 lead. After IR-269 and IR-583 clear, start S1, S2, S3 and S5 in their owning
 lanes as capacity allows; start S4 only after S2 lands. Do not schedule S6
@@ -221,11 +223,29 @@ evidence that the RT target accepts the later implementation.
   versions are implementation choices not fixed by FR-262. The QSL owner must
   make them before the IR-583 implementation starts; license, CLA and content
   rights checks must precede publication of a new public repository.
-- Today's checked graph is still owned by the checker and contains QSL-specific
-  source/form dependencies. The interface must not solve this by importing the
-  checker into the leaf. IR-586 must provide the stable checked-term boundary
-  used by S6; the IR-583 public contract should keep the representation opaque
-  until then.
+- The checked-term boundary S6 builds on is FR-400: the checked terms live in
+  `quire-checked` (ADR-011 layer C, repository `agent-ix/quire-eval`), which
+  depends on SV, K and W only, carries SV `Location`s, and leaves source-region
+  resolution, spans and form-derived fields with the checker. The interface
+  must not import the checker into the leaf; it names checked input through
+  C's types, and the IR-583 public contract keeps the representation opaque
+  until X-13 lands.
+- `quire-checked` joins FB-05's shared-leaf class, so a backend may depend on
+  it. Only the `construct` feature exposes its constructors; in QSL, T12-G
+  limits their callers to `check`, and across repositories FR-059 refuses a
+  backend that enables the feature. Within one workspace, feature
+  unification makes the constructors visible to any crate that builds with
+  `qsl-semantics`; the caller rule, not the type system, closes that gap.
+- The F and layer-2 values a checked term carries move to SV under FR-400.
+  S1 moves the evaluation vocabulary to SV as well; whichever of S1 and S2
+  lands second rebases onto the other's moves rather than moving an item
+  twice.
+- The repository `agent-ix/quire-eval` does not exist yet. Its creation,
+  licence, CLA and content-rights checks are an owner action that precedes
+  X-13; S2 cannot land before it. The evaluation-core crate in that
+  repository, its layer and the placement of the S6a result vocabulary
+  (`FamilyOutcome`, `FamilyResult`, `EvalOutcome`, `WrongSnapshotCause`) are
+  STD-298's to settle, consistently with layer C.
 - RT AD-004 predates FR-262 and describes a fixed call-depth guard and a
   different Q-1 fork. RT must amend that document and its FR-273 acceptance
   before claiming that the new interface completes the old port migration.
