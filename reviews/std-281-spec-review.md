@@ -40,4 +40,17 @@ The `code-review` method was skipped, because the diff contains no code.
 
 ## Verdict
 
-Not mergeable until FND-001 is fixed (a small type addition in FR-314 and the AC wording), and only after #1244 merges, because the two setting names are #1244's FR-255 rows. FND-002 to FND-004 are minor and cheap in the same round. The charge model, the V-7 settlement, the cancellation path, the setting names, the trial merge with #1246, id uniqueness and the gate are verified. Owner or planner decisions: choose FND-001's typed home for the certificate limits (extend `ModelCheckLimit`, which is the FR-166/FR-184 pattern, or restore FR-245's separate `CertificateLimit`, which FR-245 itself never defines); confirm merge order #1244 then #1254.
+Disposition pass 1: FND-001 to FND-004 are fixed, and there is no new finding. Mergeable after #1244, whose FR-255 rows define the two `certificate_check.*` setting names.
+
+Review pass: Not mergeable until FND-001 is fixed (a small type addition in FR-314 and the AC wording), and only after #1244 merges, because the two setting names are #1244's FR-255 rows. FND-002 to FND-004 are minor and cheap in the same round. The charge model, the V-7 settlement, the cancellation path, the setting names, the trial merge with #1246, id uniqueness and the gate are verified. Owner or planner decisions: choose FND-001's typed home for the certificate limits (extend `ModelCheckLimit`, which is the FR-166/FR-184 pattern, or restore FR-245's separate `CertificateLimit`, which FR-245 itself never defines); confirm merge order #1244 then #1254.
+
+## Dispositions
+
+Disposition pass 1, head b76dc2795 (matches `git ls-remote`), checked as a merge with origin/main 6fb751a31. `make check-spec-validation` exits 0 with no diagnostic on a touched file. The precedence vector was checked against FR-314's rule order: query comparison (rule 2) comes before the proof is read, so a budget of the carried plus the expected query bytes is exactly what is charged up to the first-byte mismatch, and the next charge (a proof byte) would be denied. A checker that returns `Stopped` ahead of the earlier rejection now fails. There is no regression and no new finding.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-314 extends `ModelCheckLimit` with `MaxCertificateBytes` and `MaxCertificateEdges` (limit names `max_certificate_bytes`, `max_certificate_edges`), as FR-166 and FR-184 extend it. FR-127's `LimitReached { limit: ModelCheckLimit, ... }` now carries the stop. The behavior text and AC-5 use the typed variants. |
+| FND-002 | fixed | AC-5's `QueryMismatch` vector now sets the budget to the carried query bytes plus the expected query bytes, leaving out the proof's bytes, so the next charge would be denied and the earlier rejection must win. TC-1165 step 2 follows. |
+| FND-003 | fixed | AC-5 and TC-1165 step 1 add the exact-count edge budget, which expects `Verified`. |
+| FND-004 | fixed | The frontmatter adds `depends_on` FR-276 and FR-255, and the Dependencies entry links FR-276. |
