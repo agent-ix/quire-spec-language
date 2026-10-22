@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-018
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-027
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-101
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
@@ -33,7 +35,10 @@ admitted trace, and evaluate a fair lasso exactly (ADR-014 §5 A-4). It SHALL
 read positions past the represented lasso by ADR-018 SM-8, including past
 operators and interval operators (IV-2). This lasso evaluation is the
 semantics that the model checker's refutations are replayed through
-(ADR-018 SM-1, SM-7).
+(ADR-018 SM-1, SM-7). Under a bounded profile, the evaluator SHALL read a
+lasso in one case only: a `Lasso::Model` over a protocol subject whose loop
+has no counted step (ADR-027 PB-3), with the same exact evaluation and the
+interval distance the protocol counts, and SHALL refuse every other lasso.
 
 ## Use case
 
@@ -47,7 +52,9 @@ loop is never reported as a violation.
 ## Inputs
 
 - A `CheckedTemporalClause` under infinite-trace (FR-326, FR-123), with its
-  fairness set.
+  fairness set; or one under a bounded profile, read only over a zero-counted
+  protocol lasso (Behavior, "Bounded-profile clause over a zero-counted
+  loop").
 - A lasso, one of:
   - `Lasso::Observed{prefix: Vec<Observation>, loop: Vec<Observation>}`:
     FR-106-admitted observations;
@@ -66,6 +73,9 @@ loop is never reported as a violation.
   point.
 - A refusal `invalid_runtime_input`/`invalid-value`, with no truth value,
   for a malformed lasso, or a `Lasso::Model` that is unfair.
+- A refusal `unsupported_construct`/`expression-form`, with no truth value,
+  for a lasso under a bounded profile other than a zero-counted protocol
+  lasso.
 - `MissingFairnessPremise{constraint}` (O-16 unsupported), with no truth
   value, for a `Lasso::Observed` and a non-empty fairness set.
 
@@ -126,6 +136,50 @@ loop is never reported as a violation.
 - Work SHALL be charged per (node, position) visit and exhausted as FR-327
   states.
 
+### Bounded-profile clause over a zero-counted loop
+
+- Under a bounded profile, the evaluator SHALL read a lasso only when the
+  lasso is a `Lasso::Model` over a protocol subject (ADR-027) and no step of
+  its loop, and no step that closes the loop, is counted (ADR-027 PB-3: an
+  operation, event, send or receive, or the terminal stutter step).
+- Under a bounded profile, the evaluator SHALL refuse every other lasso with
+  `unsupported_construct`/`expression-form` (`LassoUnderBoundedProfile`),
+  with no truth value: every `Lasso::Observed` (an observation carries no
+  step kind, so its steps are all counted), every `Lasso::Model` over a model
+  subject (every step of which is counted, ADR-027 PB-3), and every
+  `Lasso::Model` over a protocol subject whose loop has a counted step.
+- FR-217 states the replay of a protocol lasso under a bounded profile whose
+  loop has a counted step (the evaluator's refusal above settles it with no
+  truth value there).
+- A protocol-subject `Lasso::Model` is the lasso of FR-217: the evaluator
+  SHALL rebuild each position by re-executing its step through
+  `ProtocolSystem` (ADR-027 TS-1, PX-2) with FR-101 `replay` from the named initial
+  state, steps being protocol transition identities with post-state digests,
+  and SHALL refuse `invalid_runtime_input`/`invalid-value` when the loop's
+  last post-state is not its entry state or a step is not enabled. A caller
+  builds this lasso through FR-217's replay entry; the evaluator's own
+  `Lasso::Model` input names a model subject (FR-125).
+- The loop of a zero-counted lasso keeps the interval distance constant: the
+  distance from a position before or in the loop to any later position
+  reached through the loop does not grow.
+- For `eventually[a, b] p` with `a >= 1` at an activation from which only the
+  zero-counted loop remains, the evaluator SHALL evaluate the clause false,
+  because no position lies at a distance in `[a, b]`. It reads positions by
+  this FR's exact evaluation (SM-8 wrap, past reach and unrolling) with an
+  interval measured in counted steps.
+- The scheduler constraints of a protocol subject (ADR-027 PA-3, FR-212) apply
+  to a bounded clause over such a lasso, as they do to an infinite-trace
+  clause (FR-338): the evaluator SHALL read a scheduler constraint as taken at
+  a loop step and enabled at a loop position by ADR-027 PA-2. A bounded clause
+  carries no user fairness constraint (FR-123).
+- When the zero-counted lasso is unfair for a scheduler constraint, the
+  evaluator SHALL refuse `invalid_runtime_input`/`invalid-value`, naming the
+  constraint. A protocol that declares `scheduling adversarial` has no
+  scheduler constraint, so every zero-counted lasso is fair.
+- When a fair zero-counted lasso leaves a bounded interval clause unmet, the
+  evaluator SHALL return `Completed(false)` at the first activation that
+  evaluated false, which is the non-progress refutation FR-338 returns.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -137,6 +191,9 @@ loop is never reported as a violation.
 | FR-329-AC-5 | AC-1's first clause with a meter one unit short of its visit count returns `Incomplete` and no truth value. | Test (TC-839) |
 | FR-329-AC-6 | On the observed `Counter` lasso with an empty prefix and loop `c.value` 0, 1, 2, `always eventually holds(2 / (2 - c.value) = 2)` returns `Undefined{where: 2, cause: division-by-zero}`, category violation. | Test (TC-847) |
 | FR-329-AC-7 | The same clause with `fair weak attemptUpdate` over the lasso as `Lasso::Observed` returns `MissingFairnessPremise` naming `fair weak whole attemptUpdate`, O-16 unsupported, and evaluates no position; with an empty fairness set over the same observed lasso it is `Completed(false)` at position 0. | Test (TC-848) |
+| FR-329-AC-8 | Over a fair protocol-subject lasso (a `repeat` around a `parallel` whose loop is only `fork` and `join` steps), entered at interval distance 0, built through FR-217's replay, under a bounded profile: with `p` false at every position, `eventually[1,1] holds(p)` `on origin` is `Completed(false)` at position 0; with `p` true at position 0, `eventually[0,1] holds(p)` is `Completed(true)`; with `p` true only at a loop position, at distance 0, `eventually[0,1] holds(p)` is `Completed(true)`. | Test (TC-839) |
+| FR-329-AC-9 | Under a bounded profile, a `Lasso::Observed`, a `Lasso::Model` over a model subject, and a protocol-subject `Lasso::Model` whose loop has one counted step each refuse `unsupported_construct`/`expression-form` and return no truth value; FR-217-AC-7 states the replay of the last. | Test (TC-839) |
+| FR-329-AC-10 | Under a bounded profile, a zero-counted protocol-subject lasso that is unfair for a scheduler constraint refuses `invalid_runtime_input`/`invalid-value` naming the constraint and returns no truth value; the same lasso replayed against the package that declares `scheduling adversarial` is fair, and with `p` false at every position `eventually[1,1] holds(p)` is `Completed(false)` at position 0. | Test (TC-839) |
 
 ## Dependencies
 
