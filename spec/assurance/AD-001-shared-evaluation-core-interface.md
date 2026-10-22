@@ -22,6 +22,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-403
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-405
+    type: references
 ---
 # AD-001: Shared evaluation-core interface and staged evaluator replacement
 
@@ -46,8 +48,8 @@ interface during the migration. IR-583 delivers the shared interface and std
 reference adapter. It does not claim that the evaluator itself is no_std. The
 no_std + alloc implementation is IR-590, after S1-S5. During the bounded
 dual-implementation period, differential tests compare both implementations on the same checked inputs. IR-593 ends that
-period by selecting the no_std implementation as the default and retiring or
-demoting the std-only path.
+period by making the no_std implementation the only evaluator and deleting the
+std-only path (FR-405).
 
 ## Views
 
@@ -198,7 +200,7 @@ crate, coordinated by the QSL architecture lead.
 After S6, S7 runs differential tests over identical inputs through both
 implementations, S8 performs the unsafe/dependency audit (all newly authored
 crates still use `unsafe_code = forbid`), and S9 switches the default and
-retire/demotes the std path. S7-S9 remain separately gated slices, not part of
+retires the std path (FR-405). S7-S9 remain separately gated slices, not part of
 S6's claimed completion.
 
 FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, TC-069's
@@ -208,7 +210,7 @@ bundle), its case record, loader and compared record in the crate
 `qsl_replay::compile_package`, the zero-divergence pass criterion and the
 one runner build that runs both implementations. The harness joins `make ci` in IR-590,
 the first slice with a second implementation, and stays until IR-593 retires
-or demotes the std path; the run over CG's bundle passes in IR-593's switch.
+the std path; the run over CG's bundle passes in IR-593's switch.
 The `no_std` implementation the suite compares lives in `quire-eval`
 (`agent-ix/quire-eval`), and `qsl-eval` consumes it; the suite compares the
 std path with it until S9 retires that path. CG records expected evaluations
@@ -293,6 +295,14 @@ item moves once.
 - The leaf is `quire-eval` (ADR-011 layer E) in `agent-ix/quire-eval`, and
   the vocabulary its interface names lives in K, SV or E as FR-401 places
   it.
+- IR-593 retires the std path; it does not demote it (FR-405). The switch
+  is one change that routes every evaluation, clause families included, to
+  `quire-eval` and deletes the std reference evaluator, its adapter and the
+  differential run's std side. No feature, fallback or test oracle keeps it;
+  the reference's results stay as recorded corpus expectations. A second
+  evaluator kept beside the first would be the duplicated module the shared
+  core exists to remove, and keeping it reachable would be a compatibility
+  layer.
 
 ## Risks
 

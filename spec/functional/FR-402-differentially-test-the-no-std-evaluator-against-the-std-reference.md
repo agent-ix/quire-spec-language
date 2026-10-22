@@ -400,6 +400,10 @@ crate's loader, refusals and compared-record forms need no second
 implementation; their criteria run in `quire-eval-corpus`'s own tests and
 the admission criteria in QSL's `cargo test --workspace`.
 
+[FR-405](FR-405-retire-the-std-reference-evaluator-for-quire-eval.md)
+states the switch this suite's result allows and the regression harness
+that replaces the two-implementation run after it.
+
 ### What CG writes
 
 CG SHALL write its bundle with `quire-eval-corpus`: each case's source,
