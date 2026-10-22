@@ -67,3 +67,21 @@ ADR-018 as amended by ADR-028 and ADR-026 forbid. Rule 3's spelling of the
 vacuous cause matches FR-331, but PL-7 must say the reader matches wire
 spellings, and #1208 currently refuses the QSL `as_str` spelling instead.
 FND-003 and FND-004 are minor.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | "QSpec FR-331-AC-15 records each of these bases only after its checker accepts the certificate" overstates AC-15, which covers only `exact-value`, `value-bounds`, `zone-certified` (certificate) and `closed-form` (evidence), not `bounded-proof{checks}` or `witnessed{sources}`. Say "each certificate- or evidence-carrying basis". | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:634-635 |
+| FND-006 | low | The admitted list lets a plugin carry `bounded-solver{method, horizon, jumps}` with `trusted`, but ADR-026 HY-2 and FR-331's results bullet state a `BoundedSolver` proof as `uncertified` with no producer qualifier, and `qsl_replay::ProofBasis::BoundedSolver` documents "Always paired with `Certification::Uncertified` ... `SolverResult::terminal_value` is the only place that builds one". RU-4 and FR-331's `trusted` row make the plugin label `trusted` consistent, but PL-7 should say so for `bounded-solver` (that HY-2's `Uncertified` is the first-party solver's label), and #1208 must not reuse a constructor that enforces `Uncertified`. | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:616-619 |
+
+## Dispositions
+
+Disposition pass 1 at head `cd4a79867e4282166a30d899005e82b77b83043f` (fix commit plus a merge of `origin/main`). Gate `make check-spec-validation` exits 0 with no diagnostic on ADR-029 or the reviews.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The refused list now has `bounded-proof{checks}`, `closed-form{analysis}`, `witnessed{sources}`, `exact-value`, `value-bounds` and `zone-certified`, citing ADR-028 XV-1/XV-4 and ADR-026 CF-4 (CF-4 checked: `Proved{basis: ZoneCertified, certification: Certified}` only after the checker accepts). The admitted list (`exhaustive`, `bounded-complete`, `inductive`, `reduced`, `bounded-solver`) plus the refused list covers every FR-331 closed proof basis. After: A basis that only the core establishes is refused ("Refused plugin results"). Each such basis is the record of a core check or a core prove path. RU-4's `trusted` covers proofs the core runs no check of, so a plugin cannot claim one of these bases: ... `exact-value` and `value-bounds`, which are always `certified` (ADR-018 §1 as amended by ADR-028 XV-1, XV-4); `zone-certified`, a proof whose certificate the core checker accepted (ADR-026 CF-4). |
+| FND-002 | fixed | After: The typed reader matches the FR-331 wire spellings exactly: `replay-parity`, `replay-refused` and `kani_vacuous_proof`. `kani-vacuous-proof` is not a wire spelling. (#1208's FR-289-AC-11 and `read_plugin_cause_kind` still match `kani-vacuous-proof` and must change.) |
+| FND-003 | fixed | Codes verified in QSpec FR-272's `invalid_result` row (`measured-with-truth`, `missing-member`, `unknown-cause`; detail "the result item index and the offending member; for `unknown-cause`, the received spelling"). After: a QSL-only cause or a core-only basis is `invalid_result`/`unknown-cause` (QSpec FR-272). Its detail is the result item index, the offending member (`cause` or `basis`) and the received spelling ...; a `refuted` with nothing to replay is `invalid_result`/`missing-member`, with the result item index and the member `counterexample`. "Tool failure" is gone. |
+| FND-004 | fixed | After: A plugin `refuted` with nothing to replay as canonical assignments is refused ("Refused plugin results"). That covers a `refuted` entry that names no `counterexamples` entry, and an entry that names a transcript `artifacts` entry. It also covers an entry that carries an FR-364 `TemporalCounterexample`, an FR-413 `ProbabilisticCounterexample`, graph evidence or a hyperproperty counterexample. |

@@ -43,3 +43,12 @@ What holds:
 
 No integrity blocker. Both findings are minor. The blocking findings for
 this PR are in SR-15440.
+
+## Dispositions
+
+Disposition pass 1 at head `cd4a79867e4282166a30d899005e82b77b83043f`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | After: ADR-013 O-25, C-09, QC-8 and QC-20: a `ReplaySource::Input` counterexample is a corpus counterexample or a plugin's counterexample (PL-7). Each states its `Input`-sourced replay rule as: an `Input` replay settles `reproduced-without-witness`; a reproduced corpus counterexample never counts as backend evidence; a plugin's counterexample whose replay reproduces the violation settles `refuted` naming the plugin (PL-7) and is not CG backend evidence ... |
+| FND-002 | fixed | The sentence is removed from "Refused request body", which now ends "cause, not in the terminal record."; the rule is its own "Refused plugin results" bullet, which "Trusted proofs", "QSL-only causes" and "Counterexamples" each point to by name. |

@@ -630,23 +630,27 @@ kills the process.
   `Checks{success_checks}` count the plugin did not report. The bases a
   plugin proof can carry are `exhaustive`, `bounded-complete{depth}`,
   `inductive{depth}`, `reduced{reductions}` and
-  `bounded-solver{method, horizon, jumps}`.
+  `bounded-solver{method, horizon, jumps}`. Each carries `trusted` and the
+  plugin's `BackendId`, whatever certification the same basis carries from
+  a first-party engine. ADR-026 HY-2's `Uncertified` on a `BoundedSolver`
+  proof is the label of a solver QSL runs. A plugin-reported
+  `bounded-solver` is `trusted`, as QSpec FR-331's certification table
+  gives every plugin `proved`.
 
   A basis that only the core establishes is refused ("Refused plugin
   results"). Each such basis is the record of a core check or a core prove
   path. RU-4's `trusted` covers proofs the core runs no check of, so a plugin
   cannot claim one of these bases:
   - the Kani check count `bounded-proof{checks}`, which only CG's C-09 map
-    settles;
-  - `closed-form{analysis}`, whose evidence the core recomputes;
-  - `witnessed{sources}`, a replayed witness;
+    settles (ADR-013 C-09);
+  - `closed-form{analysis}`, whose evidence the core recomputes (ADR-026
+    RT-7, QSpec FR-331-AC-15);
+  - `witnessed{sources}`, a witness the core replayed for every initial
+    state (ADR-022 GV-1, QSL FR-169);
   - `exact-value` and `value-bounds`, which are always `certified` (ADR-018
-    §1 as amended by ADR-028 XV-1, XV-4);
+    §1 as amended by ADR-028 XV-1, XV-4; QSpec FR-331-AC-15);
   - `zone-certified`, a proof whose certificate the core checker accepted
-    (ADR-026 CF-4).
-
-  QSpec FR-331-AC-15 records each of these bases only after its checker
-  accepts the certificate.
+    (ADR-026 CF-4, QSpec FR-331-AC-15).
 - **QSL-only causes.** The causes `replay-parity` and `replay-refused` come
   from QSL's own S6a replay, and the Kani vacuous-proof cause
   `kani_vacuous_proof` comes from CG's C-09 map (ADR-013 C-09). No provider
