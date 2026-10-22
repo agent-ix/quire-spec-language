@@ -25,8 +25,10 @@ reserved intrinsics refuse. Scope: FR-397-AC-1 to FR-397-AC-8 (FR-397-AC-9 is TC
 4. Read the packages of steps 1 and 3 through the V2 reader.
 5. Compile a unit with the header `profile w` naming the `ieee_profile`
    identity, once with `add` and once with `plain`.
-6. Check `=`, `!=`, `<`, `<=`, `>`, `>=` over two `Float64[nearest-even]`
-   parameters, and `+` over a `Float32` and a `Float64`.
+6. Check `=`, `!=`, `<`, `<=`, `>`, `>=` with either parameter a float:
+   same and different widths, and float/exact pairs in either order. Check
+   `+`, `-`, `*`, `/` over unlike float widths and float/`Int` or
+   float/`Rational` pairs in either order.
 7. Check `quire::value::ieee::numericEqual(a, b)` and a call of each other
    reserved intrinsic over `Float64[nearest-even]` parameters.
 8. Check `convert<Float64[nearest-even]>(i)` over an `Int[0, 10]` parameter, and the two width conversions between `Float32[nearest-even]` and `Float64[nearest-even]` parameters.
@@ -40,7 +42,7 @@ reserved intrinsics refuse. Scope: FR-397-AC-1 to FR-397-AC-8 (FR-397-AC-9 is TC
    selection is present.
 4. The V2 reader admits each package.
 5. `unknown_profile`/`wrong-selection-role` both times.
-6. `ill_typed`/`operator-ineligible` six times; `ill_typed`/`type-mismatch` for
-   the mixed widths.
+6. Every comparison refuses `ill_typed`/`operator-ineligible`, including mixed
+   operands; every mixed arithmetic operation refuses `ill_typed`/`type-mismatch`.
 7. `missing_declaration`/`missing-name` naming each identity.
 8. `ill_typed`/`type-mismatch` three times.
