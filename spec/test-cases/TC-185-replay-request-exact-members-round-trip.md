@@ -19,7 +19,7 @@ implementation this test would catch: a request builder that fills a
 missing stage limit with a hard-coded default instead of requiring it from
 the proving run, so two requests built from different proving runs with
 different stage limits would silently converge on the same request identity.
-Scope: FR-071-AC-1, FR-071-AC-14.
+Scope: FR-071-AC-1, FR-071-AC-14, FR-071-AC-15.
 
 ## Test Procedure
 
@@ -42,6 +42,10 @@ Scope: FR-071-AC-1, FR-071-AC-14.
    wire forms with no target, with both `function` and `frame_operation`,
    with both `function` and `state_clause`, and with the frame request carrying
    `arguments`, each once more with a byte-provision entry removed.
+7. Round-trip a `function` request carrying its function's `declaration`
+   occurrence key and one carrying an `expression` occurrence key at
+   ordinal 1; read the same request with `occurrence_key` removed, then once
+   more with a byte-provision entry removed.
 
 ## Expected Results
 
@@ -56,3 +60,7 @@ Scope: FR-071-AC-1, FR-071-AC-14.
   same at `/replay/state_clause`, and
   `invalid_runtime_input`/`unknown-member` at `/replay/arguments`, the same
   with the provision entry removed (FR-071-AC-14).
+- Step 7: both round-trip with the key unchanged; the request without
+  `occurrence_key` refuses `invalid_runtime_input`/`missing-member` at
+  `/replay/occurrence_key`, the same with the provision entry removed
+  (FR-071-AC-15).

@@ -23,6 +23,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-364
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-062
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-016
+    type: depends_on
 ---
 # FR-098: Execute a replay request through the layer-6 replay facade
 
@@ -42,6 +46,16 @@ replay source's arguments to the function's parameters by parameter node
 id, calls the function through S6a (`CheckedPackage::call`), and settles
 an FR-072 replay result. The counterexample a request replays refuted its
 property, so the proved verdict is `violation`.
+
+A `function` request decides one of two claims, and its QSpec FR-323
+`occurrence_key` selects which (FR-071). At the function's `declaration`
+occurrence it decides the **predicate claim**: the function, whose declared
+result is `Boolean`, returns `true` on the arguments (ADR-013 O-09's
+function contract). At the `expression` occurrence of a scalar operation
+application that holds a `value-validity` requirement record owned by the
+function (FR-062) it decides the **application claim**: the application at
+that occurrence is defined and its result lies in the record's result bound.
+"The claim" below names the one the request selects.
 
 The spine compile is public only because `command`, another crate, calls
 it. It is not part of the facade CG may call: the FR-060 T12-A rule
@@ -148,9 +162,11 @@ list.
   request carrying two targets (`invalid-value`). A frame or a state-clause
   target replays through its own entry (FR-116, FR-122).
 - The executor SHALL resolve the `function` replay target by name lookup in the recompiled
-  package's declarations (OQ-5), and SHALL refuse a function whose declared
-  result is not `Boolean` before any call (predicate replay; FR-357's
-  value-parity entry replays a non-`Boolean` function). It SHALL convert each argument's
+  package's declarations (OQ-5), and then select the claim as "The claim a
+  function request decides" states. It SHALL refuse a predicate claim whose
+  function's declared result is not `Boolean` before any call (FR-357's
+  value-parity entry replays a non-`Boolean` function); an application
+  claim's function may declare any result type. It SHALL convert each argument's
   `WireNodeId` to a `NodeKey` only by lookup in the recompiled package, and
   order the arguments by the function's declared parameter positions.
   `Input` assignments, and the `WitnessBinding` list the executor builds,
@@ -403,14 +419,81 @@ before the next, with no charge to the call's meter:
    the reference. These are FR-364's names, and resolution decides no charge.
 5. **Call.** The executor SHALL call the function through S6a over the
    admitted environment, not over unresolved references. A `deref(r).f` of a
-   held reference completes the field's stored value and the call settles as
-   FR-072 states by the Boolean it completes. Every reference reachable from a
+   held reference completes the field's stored value and the replay settles as
+   FR-072 states by the claim's Boolean (below). Every reference reachable from a
    held object is held, by FR-106 checks 7 and 8, so the call decides no
    `dangling` or `undecidable` of its own; a read of an object the environment
    does not hold is an internal fault and never a `NoValue`.
 
 A request with no `object_environment` skips steps 1, 3 and 4 and runs as
 the first paragraph of the Description states.
+
+### The claim a function request decides
+
+A `function` request carries the occurrence key of the counterexample's
+failing node (ADR-013 O-25, QSpec FR-323 `occurrence_key`). The executor
+SHALL select the claim by that key after it resolves the `function` replay
+target and before the argument join. It converts the key's node, a
+`WireNodeId`, to a `NodeKey` only by lookup in the recompiled package
+(ADR-013 O-04), and then:
+
+1. **Predicate claim.** If the key is the resolved function's `declaration`
+   occurrence (its node, role `declaration`, ordinal 0), then the claim is
+   the predicate claim, and the executor SHALL refuse a function whose
+   declared result is not `Boolean` as `NotAPredicate` before any call.
+2. **Application claim.** If the key is an `expression` occurrence that
+   holds a `value-validity` record of the recompiled package's requirement
+   records (`CheckedPackage::graph().requirements()`, FR-062) and that
+   record's owner is the resolved function, then the claim is that record's
+   application claim. The record supplies the result bound; the executor
+   reads no bound from the request.
+3. **Otherwise** the executor SHALL refuse `ReplayRefusal::ClaimOccurrence`
+   (`stale_dependency`/`content-mismatch`), naming the request's occurrence
+   key and the resolved function, before any call and with no charge. That
+   covers a key whose node the recompiled package does not hold, another
+   function's `declaration` occurrence, an occurrence that holds no record,
+   a record of another kind, and a record another function owns.
+
+This selection runs after every refusal that precedes the resolution: the
+decode refusals (FR-071, QSpec FR-323 decode rule 1, which refuses an
+occurrence key on a frame or a state-clause request), the replay-target
+refusal, the dependency checks, the stale `package_id` and the unresolved
+function. A frame or a state-clause request never reaches it: `replay`
+refuses its target before the recompile, and its own entry (FR-116,
+FR-122) applies its envelope checks before the recompile and reads no
+`function` request occurrence key. FR-357's two entries decode the
+occurrence key with the request and do not read it.
+
+**Predicate claim.** The call settles by the Boolean the function
+completes: `false` reproduces the violation.
+
+**Application claim.** The executor SHALL call the resolved function
+through S6a as for a predicate claim (the same join, conversion, admission,
+object environment and limits) and SHALL observe each evaluation of the
+record's application at the record's occurrence in the call's own body.
+An evaluation of that occurrence inside a nested call, a recursive call of
+the same function included, is a different assignment of the claim's
+extent roots and is not observed. S6a evaluates an occurrence only on the
+path its guards select (left-to-right short circuit and the selected
+conditional branch, FR-016), so every observed evaluation is one under
+which the record's path condition holds.
+
+- When an observed evaluation of the application step is undefined at its
+  operands, or completes a value outside the record's result bound, the
+  claim fails there. The claim's Boolean is `false`, the replayed category
+  is `violation`, and the evaluation stops at that step. A stop inside an
+  operand is not the application step's own and is no observation.
+- When the call completes a value and no observed evaluation failed, the
+  claim's Boolean is `true` and the replayed category is `success`. That
+  includes a call that evaluated the occurrence on no path.
+- When the call completes no value before a failing observation (`refused`,
+  `incomplete`, an `undefined` outside the observed step, or a family
+  result), the replay settles `inconclusive` with cause `NoValue`, as for a
+  predicate claim.
+
+The result carries the claim's Boolean as its evaluated value, the charges
+the call consumed up to its stop, and no QSpec FR-351 record, as for a
+predicate claim (ADR-031 SW-7).
 
 ### Refusal and settlement
 
@@ -423,14 +506,15 @@ the first paragraph of the Description states.
   closure does not (`DependencySelections`), a dependency-input refusal
   (`DependencyInput`), a recompile
   refusal or stage limit (`stage_limit_exceeded`), a stale `package_id` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`), a
-  selection naming no function node, an argument naming no parameter, a
+  selection naming no function node, an occurrence key that selects no
+  claim of the selected function (`ClaimOccurrence`), an argument naming no parameter, a
   parameter bound twice or not at all, an `object_environment` the selected
   function cannot use (`UnusedObjectEnvironment`), an environment document or
   a reference argument that FR-106's admission or FR-364's `resolve` refuses
   (`ObjectEnvironment`), a witness that does not decode
   (naming the request's `obligation_identity`), an S6a
   admission refusal (wrong type, or a value outside the declared
-  domain), and a selected function whose declared result is not
+  domain), and a predicate claim whose function's declared result is not
   `Boolean`. Each has a catalog code (`ReplayRefusal::code`).
 - A replay whose verdict differs from `violation` SHALL settle
   `inconclusive` with both verdicts as its typed cause (`Verdicts`), and one
@@ -463,6 +547,9 @@ the first paragraph of the Description states.
 | FR-098-AC-19 | Against a complete population, a reference argument whose object the environment does not list refuses `dangling_reference`/`absent-target-in-complete-population` naming position 0 and the reference, and so does one whose `object_type` is another type's, within the same universe, from the held object of the same identity (a different universe refuses earlier, at conversion, as `foreign-universe`); against a population not marked `complete`, such a reference refuses `incomplete_population`/`incomplete-scope`. In a sequence of references the first one that is not present is named, and a present reference before it is not. | Test (TC-1042) |
 | FR-098-AC-20 | A request for a proved package whose refinement `CasTwice` has the internal list `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` carries it at `/package/refinement_internals` and recompiles to the proved `package_id`; the same request with the member removed refuses with `PackageIdMismatch` naming both identities; a request carrying a spelling that resolves to no class (`Spec::Twice::zz` at index 0) refuses `Recompile` with `missing_declaration`/`missing-name` located at `/package/refinement_internals/0/internal/0`, and the value `{}` refuses `invalid_model_binding`/`malformed-declaration` located at `/package/refinement_internals`; a defective value on `dependencies` entry 1 is located at `/package/dependencies/1/refinement_internals/<pointer>`; and a value on a `dependencies` entry applies to that dependency's refinements only. | Test (TC-444) |
 | FR-098-AC-21 | TC-444's `small` request with its replay target replaced by `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) given to `replay` refuses `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` naming the target, the entry `replay` and the member `function`, before the recompile: the same request with its source edited so it does not compile refuses the same way. With its source's byte-provision entry also removed it refuses by the byte-provision rule instead (`missing_import`/`missing-selection`), which decode applies first. | Test (TC-444) |
+| FR-098-AC-22 | Over a unit declaring `function p using v(x: Int[0, 9]): Boolean pure { x > 3 }`, `function q using v(x: Int[0, 9]): Integer pure { x + 1 }` and `function r using v(x: Int[0, 9]): Int[0, 9] pure { x + 1 }`, each request carrying an `Input` assignment: `p` at its `declaration` occurrence with `x = 0` settles `reproduced-without-witness` with value `false` (the predicate claim); `p` at the `expression` occurrence of its `x > 3` application with `x = 0` completes the application (`false`, inside its result bound `Boolean`) and settles `inconclusive` with cause `Verdicts` (`violation`/`success`) and value `true`; `r` at its `x + 1` occurrence with `x = 9` settles `reproduced-without-witness` with value `false`, the application completing `10` outside its result bound `Int[0, 9]`, and the same request from a `Witness` entry binding `x` to 9 settles `reproduced-with-evaluated-witness`; `r` there with `x = 3` (`4`, inside the bound) and `q` at its `x + 1` occurrence with `x = 9` (`10`, inside its result bound `Integer`) each settle `inconclusive` with cause `Verdicts` and value `true`. None carries a QSpec FR-351 record. | Test (TC-444) |
+| FR-098-AC-23 | Each of these refuses `ClaimOccurrence` (`stale_dependency`/`content-mismatch`) naming the request's occurrence key and the selected function, before any call and with no charge: `p` with the occurrence of `r`'s `x + 1` (a record `r` owns); `p` with `r`'s `declaration` occurrence; `r` with the `expression` occurrence of the narrow that wraps its `x + 1` (no record); and `p` with an occurrence key whose node is 64 `1` hex digits (no node of the package). `r` at its `declaration` occurrence refuses `NotAPredicate`, and `r` at its `x + 1` occurrence with `x = 12` refuses `WrongValueKind` naming position 0. | Test (TC-444) |
+| FR-098-AC-24 | Refusal order: the AC-23 request of `p` with `r`'s occurrence refuses `PackageIdMismatch` when its `package_id` is stale, and `UnknownFunction` when its `function` names no declaration, rather than `ClaimOccurrence`; AC-21's `frame_operation` request refuses at its target before the recompile and reads no occurrence key. | Test (TC-444) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
@@ -483,8 +570,12 @@ QSpec FR-142's `Quantity<u>`, S1's `Quantity<qualified-name>` production and FR-
   [FR-321](FR-321-admit-supplied-union-values.md): union argument admission;
   [FR-277](FR-277-bound-every-lifecycle-operation-by-caller-limits.md):
   `LimitExceeded`.
-- [FR-071](FR-071-implement-typed-replay-request.md): the request and its
-  decode-time refusals.
+- [FR-071](FR-071-implement-typed-replay-request.md): the request, its
+  occurrence key and its decode-time refusals.
+- [FR-062](FR-062-implement-checked-family-contract.md): the requirement
+  records, their owner and result bound, which the application claim reads;
+  [FR-016](FR-016-check-native-clauses.md): the short-circuit and
+  conditional evaluation order that keeps an observation on its path.
 - [FR-072](FR-072-implement-typed-replay-result.md): the result and its
   settlement.
 - [FR-027](FR-027-export-compiled-native-package.md): the spine compile.

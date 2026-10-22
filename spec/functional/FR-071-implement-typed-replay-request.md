@@ -65,7 +65,8 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   packet plus the FR-070 envelope members) and SHALL invent no additional
   member; a construct → serialize → read round trip SHALL preserve the
   package reference (`package_id`, every `RawSourceRef`
-  digest), the replay members (`ReplaySource`, `QualifiedName`, arguments
+  digest), the replay members (`ReplaySource`, `QualifiedName`, a `function`
+  request's occurrence key, arguments
   keyed by parameter node id, profile selections, proof bounds and declared
   domains, trace position, `backend`), the byte provision, and the limits
   exactly.
@@ -162,6 +163,15 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   replay target member, more than one, or a non-function target with
   `arguments` or an occurrence key), with FR-323's codes and pointers,
   before any byte-provision rule.
+- A request whose replay target is `function` SHALL carry QSpec FR-323's
+  `occurrence_key`: the occurrence key of the counterexample's failing node
+  (ADR-013 O-25), its node a `WireNodeId`, its role and its ordinal. The
+  executor selects the claim the request decides by it (FR-098). The reader
+  SHALL refuse a `function` request without it
+  `invalid_runtime_input`/`missing-member` at `/replay/occurrence_key`,
+  after FR-323's decode rule 1 and before any byte-provision rule. The
+  reader does not resolve the key: its node is looked up in the recompiled
+  package (FR-098).
 
 ## Acceptance Criteria
 
@@ -179,6 +189,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-12 | A request whose `object_environment` is `{"digest": <sha256-jcs digest>, "identity": {...}}` round-trips it exactly. Each of these refuses at decode with `invalid_runtime_input`, naming the member: a string for `object_environment` (`wrong-value-kind`); an object without `digest` (`missing-member` naming `object_environment.digest`); a third member (`unknown-member`); a `digest` in the `quire.source.bytes/v1` domain, and a `sha256-jcs` digest of 63 hex digits (each `invalid-value`). A request whose `object_environment` digest has no byte-provision entry constructs: the entry is read at admission, not at decode. | Test (TC-1042) |
 | FR-071-AC-13 | A request whose package reference carries `refinement_internals` `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` and whose `dependencies` entry carries its own value round-trips both exactly; a request with the member absent round-trips with it absent; the values `{}`, `null` and `7` decode and round-trip unchanged. | Test (TC-186) |
 | FR-071-AC-14 | A request whose replay target is `function`, one whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and one whose replay target is `state_clause` (`VersionUnchanged`) each round-trip with that one target unchanged. The reader refuses a request with no target `invalid_runtime_input`/`missing-member` at `/replay`, one with `function` and `frame_operation` `invalid_runtime_input`/`invalid-value` at `/replay/frame_operation`, one with `function` and `state_clause` the same at `/replay/state_clause`, and the frame request carrying `arguments` `invalid_runtime_input`/`unknown-member` at `/replay/arguments`, each with a byte-provision entry removed changing none of these refusals (QSpec FR-323-AC-19). | Test (TC-185) |
+| FR-071-AC-15 | A `function` request carrying the `declaration` occurrence key of its function, and one carrying an `expression` occurrence key at ordinal 1, each round-trip with the key unchanged; the same request without `occurrence_key` refuses `invalid_runtime_input`/`missing-member` at `/replay/occurrence_key`, and refuses so with a byte-provision entry removed. | Test (TC-185) |
 
 ## Dependencies
 

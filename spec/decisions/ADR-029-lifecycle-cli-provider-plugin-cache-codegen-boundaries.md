@@ -598,14 +598,21 @@ kills the process.
   The item settles `refuted` only when S6a replay reproduces it (PV-2
   item 4). Before replay the counterexample is the driver's FR-331
   `counterexamples` entry, the canonical assignments of a counterexample with
-  no transcript (ADR-013 QC-6). It is not a QSL type. Predicate replay
-  decides only a function-contract item, the `declaration` occurrence of a
-  Boolean function (QSL FR-290). For any other item, the driver does not
-  replay the counterexample, and the item settles `inconclusive` with cause
-  `replay-refused` and code `unknown_required_feature` (FR-290
-  `NotReplayable`). For a function-contract item, the driver replays those
+  no transcript (ADR-013 QC-6). It is not a QSL type. Replay decides the
+  claim at the item's own occurrence (QSL FR-098, FR-290), in one of two
+  modes. Predicate replay decides a function-contract item, the
+  `declaration` occurrence of a Boolean function: the function returns
+  `true`. Application-occurrence replay decides an application item, a
+  `value-validity` record at a scalar operation application whose owner is
+  a declared function: it calls the owner and checks that the application
+  at that occurrence is defined and its result lies in its result bound.
+  For any other item, the driver does not replay the counterexample, and
+  the item settles `inconclusive` with cause `replay-refused` and code
+  `unknown_required_feature` (FR-290 `NotReplayable`). For a
+  function-contract item or an application item, the driver replays those
   assignments through layer-6 `replay` as `ReplaySource::Input` (ADR-013
-  O-25), and the replay alone settles the item:
+  O-25), with the item's occurrence key, and the replay alone settles the
+  item:
   - an `Input`-arm result that settles `reproduced-without-witness` with
     category violation settles `refuted`, naming the plugin's `BackendId` and
     keeping that replay result;
