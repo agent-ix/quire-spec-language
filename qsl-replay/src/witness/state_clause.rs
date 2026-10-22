@@ -5,12 +5,11 @@
 //! carried on the FR-070 envelope as
 //! `WitnessEnvelope<StateClauseCounterexample>`.
 //!
-//! The payload names the clause and its one observation. The clause's
-//! checked identities travel once, as the envelope's `clause_node` and
-//! `occurrence_key` (ADR-017 PF-4, G-2). The replay reads it in
+//! The payload holds the clause's one observation and its separating
+//! witness; it names no clause. The clause is the request's `state_clause`
+//! replay target, and its checked identities travel once, as the envelope's
+//! `clause_node` and `occurrence_key` (ADR-017 PF-4, G-2). The replay reads it in
 //! `crate::execute` (`replay_state_clause`).
-
-use quire_exact::Identifier;
 
 use super::FamilyPayload;
 use crate::result::SeparatingWitnessRecord;
@@ -20,9 +19,6 @@ use qsl_semantics::model::observation::ClauseSelectionInput;
 /// member is typed; none is a `String`-keyed map.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StateClauseCounterexample {
-    /// The state clause's declared name, as FR-106's `ClauseSelection`
-    /// names it.
-    pub clause: Identifier,
     /// The observation, by the clause's kind: `PreCall` for a
     /// precondition, `Invocation` for a postcondition, `Current` for an
     /// invariant. Its documents are read from the replay request's byte

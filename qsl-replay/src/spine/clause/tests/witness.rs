@@ -1397,16 +1397,19 @@ fn replay_case(
 ) {
     let (label, bytes) = snapshot.document();
     let package_id = package_digest(unit.compiled.emitted.package_id());
+    let target = crate::ReplayTarget::state_clause(
+        crate::QualifiedName::new(vec![quire_exact::Identifier::new(clause).unwrap()]).unwrap(),
+    );
     let wire = request(
         &unit.bytes,
         &unit.domain_document,
         package_id,
         &[(label.clone(), bytes)],
+        target.clone(),
     );
     let declaration = unit.compiled.package.graph().state_clause(clause).unwrap();
     let node = WireNodeId::from_digest(*declaration.identity().as_bytes());
     let payload = StateClauseCounterexample {
-        clause: quire_exact::Identifier::new(clause).unwrap(),
         observation: config_version_current_selection(clause, label, self_key).input,
         witness,
     };
@@ -1418,6 +1421,7 @@ fn replay_case(
             node,
             OccurrenceKey::new(node, declaration.claim().clone()),
             payload,
+            target,
         ),
         crate::ReplayLimits::default(),
     );

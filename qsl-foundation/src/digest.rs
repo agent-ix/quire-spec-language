@@ -2,8 +2,9 @@
 //! FR-001/004: exact byte integrity, independent of semantic canonicalization
 //! ([`ByteDigest`]). ADR-013 O-18: one domain-labelled digest record for
 //! every digest QSL mints or reads ([`DigestRecord`]).
+use alloc::{borrow::ToOwned, format, string::String};
+use core::{fmt, str::FromStr};
 use sha2::{Digest, Sha256};
-use std::{fmt, str::FromStr};
 
 /// SHA-256 value with canonical lowercase, algorithm-prefixed text encoding.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -68,7 +69,7 @@ impl fmt::Display for InvalidDigest {
         f.write_str("expected sha256: followed by 64 lowercase hexadecimal digits")
     }
 }
-impl std::error::Error for InvalidDigest {}
+impl core::error::Error for InvalidDigest {}
 
 impl FromStr for ByteDigest {
     type Err = InvalidDigest;
@@ -285,7 +286,7 @@ impl fmt::Display for UnknownDigestDomain {
         write!(f, "{:?} is not an FR-201 digest domain", self.0)
     }
 }
-impl std::error::Error for UnknownDigestDomain {}
+impl core::error::Error for UnknownDigestDomain {}
 
 /// One domain-labelled digest (ADR-013 O-18): a [`DigestDomain`] and its
 /// 32-byte SHA-256 digest. The algorithm is a fixed invariant, not a stored
@@ -606,6 +607,7 @@ impl fmt::Debug for WireNodeId {
 #[cfg(test)]
 mod digest_record_tests {
     use super::*;
+    use alloc::string::ToString;
 
     fn bytes(fill: u8) -> [u8; 32] {
         [fill; 32]
