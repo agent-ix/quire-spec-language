@@ -875,3 +875,198 @@ fn quantity_typed_source_operations_are_admitted_by_the_strict_reader() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// QSL-974: the dimension and units quantity literals are written over.
+const QUANTITY_TIME: &str = "dimension Time;\n\
+     unit s : Time = rational(1, 1);\n\
+     unit ms : Time = rational(1, 1000) * s;\n\
+     function f using v(d: Quantity<ms>): Boolean pure { true }\n";
+
+/// The `(value, type digest)` of each `quantity` literal node of `wire`, and
+/// the digest of each unit node by name.
+fn quantity_literals(wire: &Value) -> (Vec<(String, Value)>, BTreeMap<String, Value>) {
+    let mut literals = Vec::new();
+    let mut units = BTreeMap::new();
+    for node in nodes(wire) {
+        let body = &node["body"];
+        if body["term"] == "literal" {
+            assert_eq!(node["semantic_form"], "literal");
+            // No literal of another kind is typed at a unit node.
+            if body["value_kind"] == "quantity" {
+                assert_eq!(node["semantic_type"], body["type"]);
+                literals.push((
+                    body["value"].as_str().expect("a spelled value").to_owned(),
+                    body["type"].clone(),
+                ));
+            } else {
+                assert_ne!(body["value_kind"], "rational", "{node}");
+            }
+        }
+        if node["semantic_form"] == "unit" {
+            let name = node["declaration"]["qualified_name"][0]
+                .as_str()
+                .expect("a unit name");
+            units.insert(name.to_owned(), node["node_id"].clone());
+        }
+    }
+    (literals, units)
+}
+
+/// FR-093-AC-33, FR-094, FR-322-AC-79 (TC-483 step 6): a quantity literal
+/// lowers to a `value`/`literal` node of `value_kind` `quantity` typed by its
+/// unit's node, equal literals in one unit share one node, a rational is
+/// never emitted for one, and IR's strict v2 reader admits each package.
+#[trace("FR-093-AC-33", "FR-094", "TC-483")]
+#[test]
+fn quantity_literals_lower_to_shared_quantity_literal_nodes_the_strict_reader_admits() {
+    // (functions beside f, expected (value, unit) literals in order)
+    let cases: [(&str, &[(&str, &str)]); 7] = [
+        ("function h using v(): Boolean pure { f(3 ms) }", &[("3", "ms")]),
+        // `h`, `h2`, `h3` and `h4` together: `h4` shares `h`'s node, and
+        // `0.5` and `rational(2, 4)` share one `1/2` node.
+        (
+            "function h using v(): Boolean pure { f(3 ms) }\n\
+             function h2 using v(): Boolean pure { f(0.5 ms) }\n\
+             function h3 using v(): Boolean pure { f(rational(2, 4) ms) }\n\
+             function h4 using v(): Boolean pure { f(3 ms) }",
+            &[("1/2", "ms"), ("3", "ms")],
+        ),
+        (
+            "function n using v(): Boolean pure { f(rational(-3, 1) ms) }",
+            &[("-3", "ms")],
+        ),
+        (
+            "function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }",
+            &[("1/1000", "s")],
+        ),
+        (
+            "function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }",
+            &[("3", "s")],
+        ),
+        // The same magnitude in two units is two nodes.
+        (
+            "function a using v(d: Quantity<s>, e: Quantity<ms>): Boolean pure { d = 3 s and e = 3 ms }",
+            &[("3", "ms"), ("3", "s")],
+        ),
+        ("function z using v(): Boolean pure { f(0 ms) }", &[("0", "ms")]),
+    ];
+    for (functions, expected) in cases {
+        let (_, package) = package_from_text(&format!("{QUANTITY_TIME}{functions}\n"));
+        let emitted = Emitted::placed(package, Vec::new());
+        let written = wire(&emitted.emission);
+        let (mut literals, units) = quantity_literals(&written);
+        let mut want: Vec<(String, Value)> = expected
+            .iter()
+            .map(|(value, unit)| ((*value).to_owned(), units[*unit].clone()))
+            .collect();
+        literals.sort_by_key(|(value, unit)| (value.clone(), unit.to_string()));
+        want.sort_by_key(|(value, unit)| (value.clone(), unit.to_string()));
+        assert_eq!(literals, want, "{functions}");
+        match read(&emitted) {
+            Ok(read) if read.package.package_id() == emitted.emission.package.package_id() => {}
+            other => panic!("{functions}: not admitted: {other:?}"),
+        }
+    }
+}
+
+/// The node of `wire` keyed `id`.
+fn node_of<'a>(wire: &'a Value, id: &Value) -> &'a Value {
+    nodes(wire)
+        .iter()
+        .find(|node| &node["node_id"] == id)
+        .unwrap_or_else(|| panic!("no node {id}"))
+}
+
+/// The node a `reference` term targets.
+fn target<'a>(wire: &'a Value, term: &Value) -> &'a Value {
+    assert_eq!(term["term"], "reference", "{term}");
+    node_of(wire, &term["target"])
+}
+
+/// The root body node of function `name`.
+fn function_body<'a>(wire: &'a Value, name: &str) -> &'a Value {
+    let function = nodes(wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "function" && node["declaration"]["qualified_name"][0] == name
+        })
+        .unwrap_or_else(|| panic!("no function {name}"));
+    let body = function["body"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["name"] == "body")
+        .expect("a body member");
+    target(wire, &body["value"])
+}
+
+/// Whether `node` is a `quantity` literal of `value`.
+fn is_quantity_literal(node: &Value, value: &str) -> bool {
+    node["body"]["term"] == "literal"
+        && node["body"]["value_kind"] == "quantity"
+        && node["body"]["value"] == value
+}
+
+/// FR-093-AC-33 (TC-483 step 6): the call's argument references the literal
+/// node; `k`'s equality is over `[ref(d), ref(literal)]`; `c`'s conversion
+/// has `rounding` = `exact` over `d` and its equality runs over the
+/// conversion node and the `3 s` literal.
+#[trace("FR-093-AC-33", "TC-483")]
+#[test]
+fn quantity_literal_nodes_are_referenced_by_their_operations() {
+    let (_, package) = package_from_text(&format!(
+        "{QUANTITY_TIME}function h using v(): Boolean pure {{ f(3 ms) }}\n\
+         function k using v(d: Quantity<s>): Boolean pure {{ d = rational(1, 1000) s }}\n\
+         function c using v(d: Quantity<ms>): Boolean pure {{ convert<Quantity<s>>(d) = 3 s }}\n"
+    ));
+    let emitted = Emitted::placed(package, Vec::new());
+    let written = wire(&emitted.emission);
+
+    let call = function_body(&written, "h");
+    assert_eq!(
+        call["body"]["operation"]["identity"],
+        "quire.op.function.call"
+    );
+    let arguments = call["body"]["arguments"].as_array().unwrap();
+    let literal = target(&written, arguments.last().unwrap());
+    assert!(is_quantity_literal(literal, "3"), "{literal}");
+
+    let equal = function_body(&written, "k");
+    assert_eq!(
+        equal["body"]["operation"]["identity"],
+        "quire.op.quantity.eq"
+    );
+    let arguments = equal["body"]["arguments"].as_array().unwrap();
+    assert_eq!(arguments.len(), 2);
+    let parameter = target(&written, &arguments[0]);
+    assert_eq!(parameter["semantic_form"], "parameter");
+    assert!(is_quantity_literal(
+        target(&written, &arguments[1]),
+        "1/1000"
+    ));
+
+    let equal = function_body(&written, "c");
+    assert_eq!(
+        equal["body"]["operation"]["identity"],
+        "quire.op.quantity.eq"
+    );
+    let arguments = equal["body"]["arguments"].as_array().unwrap();
+    assert_eq!(arguments.len(), 2);
+    let convert = target(&written, &arguments[0]);
+    assert_eq!(
+        convert["body"]["operation"]["identity"],
+        "quire.op.quantity.convert"
+    );
+    assert_eq!(
+        convert["body"]["operation"]["mode"],
+        json!({"kind": "rounding", "value": "exact"})
+    );
+    let converted = convert["body"]["arguments"].as_array().unwrap();
+    assert_eq!(converted.len(), 1);
+    assert_eq!(
+        target(&written, &converted[0])["semantic_form"],
+        "parameter"
+    );
+    assert!(is_quantity_literal(target(&written, &arguments[1]), "3"));
+    assert!(read(&emitted).is_ok());
+}

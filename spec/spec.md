@@ -62,6 +62,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-015
     type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-016
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-043
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-044
@@ -704,6 +706,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-262
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-402
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-263
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-264
@@ -761,6 +765,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-398
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-399
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-401
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
@@ -1265,6 +1271,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-260](functional/FR-260-admit-semantic-ir-documents-at-any-depth.md) | FR |
 | [FR-261](functional/FR-261-read-other-untrusted-json-at-any-depth.md) | FR |
 | [FR-262](functional/FR-262-evaluate-values-and-calls-at-any-depth.md) | FR |
+| [FR-402](functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md) | FR |
 | [FR-263](functional/FR-263-replay-at-any-depth-under-the-request-limits.md) | FR |
 | [FR-264](functional/FR-264-emit-and-read-v2-packages-at-schema-fixed-depth.md) | FR |
 | [FR-356](functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md) | FR |
@@ -1294,9 +1301,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-397](functional/FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md) | FR |
 | [FR-398](functional/FR-398-expose-the-admitted-unit-table-through-the-replay-facade.md) | FR |
 | [FR-399](functional/FR-399-set-a-named-stage-limit-through-the-replay-root.md) | FR |
+| [FR-401](functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [NFR-015](non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md) | NFR |
+| [NFR-016](non-functional/NFR-016-audit-unsafe-code-in-the-evaluator-closure.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR |
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR |

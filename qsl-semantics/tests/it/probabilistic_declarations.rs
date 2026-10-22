@@ -944,19 +944,13 @@ fn a_quantity_reward_checks_and_reward_names_are_per_operation() {
 }
 
 /// FR-185: a quantity literal types against the unit it names and refuses an
-/// unknown unit; in a function body it types, and S4 has no literal form to
-/// emit it as, so it refuses `not-yet-implemented`.
+/// unknown unit; in a function body it types and checks (FR-093-AC-33).
 #[trace("TC-620")]
 #[test]
 fn quantity_literals_type_against_the_declared_units() {
-    let refusals = refusals_of("function lag using v(): Boolean pure { 5 ms <= 3 ms }");
-    let [refusal] = &refusals[..] else {
-        panic!("one refusal: {refusals:?}");
-    };
-    assert_eq!(
-        (refusal.cause.code(), refusal.cause.cause()),
-        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
-    );
+    assemble("function lag using v(): Boolean pure { 5 ms <= 3 ms }")
+        .check(CheckingLimits::default())
+        .expect("a quantity literal in a function body checks");
     let refusals = refusals_of("function lag using v(): Boolean pure { 5 parsec <= 3 ms }");
     assert_eq!(
         refusals
@@ -975,10 +969,9 @@ fn quantity_literals_type_against_the_declared_units() {
 #[test]
 fn a_quantity_literal_is_bounded_by_the_configured_rational_bits() {
     let limits = CheckingLimits::default().with_rational_bits(8);
-    let within = assemble("function lag using v(): Boolean pure { 255 ms <= 3 ms }")
+    assemble("function lag using v(): Boolean pure { 255 ms <= 3 ms }")
         .check(limits)
-        .expect_err("a quantity literal has no S4 form yet");
-    assert_eq!(within[0].cause.cause(), Some("not-yet-implemented"));
+        .expect("eight bits is within the ceiling");
     let past = assemble("function lag using v(): Boolean pure { 256 ms <= 3 ms }")
         .check(limits)
         .expect_err("256 is nine bits");

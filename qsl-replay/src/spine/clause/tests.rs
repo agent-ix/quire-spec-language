@@ -1779,7 +1779,7 @@ fn config_version_domain_document_with_operations(
 /// at all ("Today QSL emits no `state` node",
 /// `spec/functional/FR-105-emit-state-nodes.md`). `VersionUnchanged` below
 /// is that postcondition, now reachable through `run_clause` end to end.
-fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(crate) fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     config_version_unit_and_packages_for(config_version_domain_document())
 }
 
