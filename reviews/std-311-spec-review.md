@@ -59,6 +59,14 @@ Head a43e3cad1 (main with STD-297 merged in; `origin/main` is an ancestor).
 | FND-009 | medium | minor: `MatchWitness.instance` is not tied to the outcome it vouches for. FR-315 reads results "for one instance", but FR-182's V-3 condition accepts any `Accepted` check, so a witness for one instance could license `proved` for another. `check_match_witness` also does not say that `μ_U` is evaluated under the witness's instance. <br>Fix: require the witness's instance to equal the `Inductive` outcome's instance, or state per instance how vacuity is read, and say that the check evaluates `μ_U` under `witness.instance`. | spec/functional/FR-182-settle-a-hyper-verdict.md:61-63, spec/functional/FR-183-replay-a-hyper-counterexample.md:100-111 |
 | FND-010 | low | minor: `pub fn check_match_witness(/* FR-098 request */, witness: &MatchWitness)` is not a signature: the request parameter has no name or type. FR-315's "charges it for each tuple's evaluation in the joint-step order" also leaves open whether `μ_U` is evaluated once per tuple or once per step `i`, and that changes when the meter runs out. | spec/functional/FR-183-replay-a-hyper-counterexample.md:111, spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:187-190 |
 
+## New findings (disposition pass 2)
+
+Head 1644e112b (`origin/main` is an ancestor).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | minor: The QSL meaning of `VacuousMatch` now differs from the QSpec wire meaning. QSL widens `VacuousMatch` to "no matched fair universal tuple established" in FR-182, ADR-023 HV-4 and HM-7, and FR-290 still maps it to the wire cause `vacuous-match`. QSpec FR-399 defines that cause as "A vacuous clause" (row at line 82, AC-5), and QSpec TC-340 VS-01 reads it the same way. ADR-023 QS-5 gives QSpec ownership of the inconclusive causes. The PR body says "the QSpec wire is unchanged". The token is unchanged, but a QSpec consumer will read an EN-3 `vacuous-match` as a proven-vacuous clause. <br>Fix: file an STD ticket to amend QSpec FR-399's `vacuous-match` row (and AC-5's wording) to the widened meaning, and cite it in the PR body beside the FND-007 lead default. No change is needed in this PR. | spec/functional/FR-182-settle-a-hyper-verdict.md:72-75, spec/decisions/ADR-023-hyperproperties-over-every-behaviour.md:290, spec/decisions/ADR-023-hyperproperties-over-every-behaviour.md:465 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -69,3 +77,7 @@ Head a43e3cad1 (main with STD-297 merged in; `origin/main` is an ancestor).
 | FND-004 | fixed | `instance: &[(Name, Key)]`, the `HyperCounterexample.instance` binding in `clause.parameters` order, drawn from FR-125's instancing. |
 | FND-005 | fixed | A satisfiable base now maps an undefined failure to an `Undefined` `HyperCounterexample` (HV-8, replayed) and a body violation to EN-2's `Lockstep` or `BoundReached{k}` (HV-3). |
 | FND-006 | fixed | The Property sentence is reworded; distinctness is over `0..=depth`; AC-11 says "not a `HyperCounterexample`"; TC-1120 step 5 reports a skip and never a pass. |
+| FND-007 | fixed | `VacuousMatch` is redefined once in FR-182's Outputs as "no matched fair universal tuple established". ADR-023 HV-4, HM-7 (amended) and HC-7, FR-176, FR-183, FR-315 and TC-607 are aligned, and every QSL reference was checked. The QSpec wire meaning remains: see FND-011. |
+| FND-008 | fixed | FR-182 states the order: `NoInitialState` first, whatever witness comes with the outcome, then `VacuousMatch`. |
+| FND-009 | fixed | The witness's instance must equal the outcome's instance. `μ_U` is evaluated under `witness.instance`. An instance that is not one of the clause's is `Refused` before re-execution. FR-182-AC-10 (the `{v, w}` vault) and FR-183-AC-8 carry vectors for both. |
+| FND-010 | fixed | `check_match_witness(wire: ReplayRequestWire, subjects: &[ModelTraceSubject], witness: &MatchWitness, replay_limits: ReplayLimits)` uses existing `qsl-replay` types. `μ_U` is evaluated and charged once per tuple, independent of `depth`, which is sound because HS-5 labels read no state. |
