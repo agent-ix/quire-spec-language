@@ -365,9 +365,9 @@ At S6a, a consumer SHALL build a record as follows:
 
   `CheckedInvariantCause::NativeIntegerCapacityBreach` is the kernel's report
   that an admitted native integer operation (Add, Subtract, Multiply or
-  Negate through `evaluate_native_integer_arithmetic`) produced a value
-  outside the capacity interval its `NativeIntegerPlan` derived at admission
-  ([FR-384](ix://agent-ix/quire-exact/FR-384)). Admission already checks the
+  Negate through `evaluate_native_integer_arithmetic`) whose exact result is
+  not inside the capacity interval its `NativeIntegerPlan` derived when the
+  plan was built ([FR-384](ix://agent-ix/quire-exact/FR-384)). Admission already checks the
   operand domains and the whole result image, so the cause names a broken
   kernel carrier invariant, not a property of the program or its inputs. QSL
   SHALL receive it on the same route as every other cause: an `InternalFault`
