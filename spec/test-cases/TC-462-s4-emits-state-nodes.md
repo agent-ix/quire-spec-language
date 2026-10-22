@@ -13,7 +13,7 @@ relationships:
 Verify the node set, bodies, types, dependencies and occurrences S4 emits for
 state clauses, and the totality of the clause-kind mapping.
 
-Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8.
+Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9.
 
 ## Test Procedure
 
@@ -29,6 +29,10 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8.
 5. Spine-compile a unit holding TC-459 step 7's `P`, `Q` and `I` against
    that step's package, and decode the emitted graph; then compile it with
    only `I`.
+6. Read the `source_map` entry of step 1's frame node's `generated`
+   occurrence; recompile with a second `post` clause naming `attemptUpdate`
+   placed before `VersionUnchanged`; compile TC-1043's fixture R; emit a package
+   whose frame occurrence has its region removed (FR-105-AC-9).
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 
@@ -64,3 +68,8 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
   package holds no anchor, frame node or frame record for `go`. As for step
   1, the emitted-node assertions wait on STD-111; the checked-graph
   assertions do not.
+- Step 6: one region, the span of `attemptUpdate`'s reference in
+  `VersionUnchanged`; with the earlier clause, that clause's span and the
+  same (node id, role, ordinal); in R, each operation's first naming span;
+  the regionless occurrence refuses
+  `UnlocatedOccurrence`.
