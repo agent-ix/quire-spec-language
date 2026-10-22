@@ -72,9 +72,14 @@ violation naming that package.
 
 The check SHALL report a *dev* dependency from CG on QSL, since a dev
 dependency is not the stated exception. CG's dependencies on the crates of
-`agent-ix/quire-eval` (`quire-eval`, `quire-eval-corpus`, `quire-checked`)
-and on the other shared leaves classify as no ecosystem repository, so they
-are no FB-05 edge (FR-060, "T12-A and the evaluator differential corpus").
+`agent-ix/quire-eval` (`quire-eval`, `quire-eval-corpus`, `quire-checked`),
+on the semantic-value leaf `quire-semantic-value` (SV, ADR-011 X-11) and on
+the other shared leaves classify as no ecosystem repository, so they are no
+FB-05 edge. CG depends on those leaves directly for the types it names, such
+as `Category`; `qsl-replay` does not re-export them. CG's allowed set of
+QSL-owned dependencies is therefore `qsl-replay`, the one QSL crate, plus
+the shared leaves `quire-semantic-value` and the `agent-ix/quire-eval`
+crates, and nothing else (FR-060, "T12-A and the evaluator differential corpus").
 
 The check SHALL combine normal and dev edges into one directed graph for
 FB-11, and SHALL report a cycle exactly once regardless of its rotation or
@@ -104,8 +109,8 @@ all, not that the edge's caller code stays inside the layer-6 `replay` facade.
 | FR-059-AC-6 | Run against the real, current-head resolution of quire-contract-ir's manifest, the check reports no FB-05 edge from IR into QSL and no FB-11 cycle between QSL and IR, since neither IR manifest declares a QSL dependency (ADR-011 OBS-029). Resolving QSL's own workspace manifest through the same edge-resolution path the check uses for `--qsl` yields QSL's normal edge on the git-sourced `quire-contract-model`, classified as QSL → IR, the permitted direction. | Test (TC-156) |
 | FR-059-AC-8 | A resolved RT dependency on the git-sourced `quire-exact` yields no edge and no finding; a resolved RT dependency on another crate sourced from the QSL repository, such as `qsl-eval`, yields an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
 | FR-059-AC-9 | A resolved RT dependency on the git-sourced `quire-semantic-value` yields no edge and no finding; resolved RT dependencies on `qsl-eval` and on `qsl-semantics`, from the same QSL source, each yield an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
-| FR-059-AC-10 | A graph in which CG has normal dependencies on `qsl-replay` and on `qsl-eval`, both sourced from the QSL repository, and on `quire-eval-corpus` sourced from `agent-ix/quire-eval`, reports exactly one FB-05 violation, the CG → QSL edge via `qsl-eval`; the same graph without the `qsl-eval` dependency reports FB-05 clean. | Test (TC-156) |
-| FR-059-AC-11 | Run against the real, current-head resolution of quire-contract-codegen's manifest, the check's CG → QSL normal edges name the package `qsl-replay` only, and it reports no FB-05 edge from CG. | Test (TC-156) |
+| FR-059-AC-10 | A graph in which CG has normal dependencies on `qsl-replay` and on `qsl-eval`, both sourced from the QSL repository, on `quire-semantic-value` sourced from `agent-ix/quire-semantic-value`, and on `quire-eval` and `quire-eval-corpus` sourced from `agent-ix/quire-eval`, reports exactly one FB-05 violation, the CG → QSL edge via `qsl-eval`; the same graph without the `qsl-eval` dependency reports FB-05 clean. | Test (TC-156) |
+| FR-059-AC-11 | Run against the real, current-head resolution of quire-contract-codegen's manifest, every CG normal dependency sourced from the QSL repository, `agent-ix/quire-semantic-value` or `agent-ix/quire-eval` is `qsl-replay`, `quire-semantic-value` or a crate of `agent-ix/quire-eval`; its only CG → QSL normal edge is via `qsl-replay`, and the check reports no FB-05 edge from CG. | Test (TC-156) |
 
 ## Dependencies
 

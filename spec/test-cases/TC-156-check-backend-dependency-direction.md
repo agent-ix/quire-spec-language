@@ -48,11 +48,15 @@ through FR-059-AC-6 and FR-059-AC-8 through FR-059-AC-11.
    url, and on `qsl-semantics` and `qsl-eval`, sourced from the QSL
    repository's git url, and run the check on the resulting edges.
 9. Build a graph in which CG has normal dependencies on `qsl-replay` and
-   `qsl-eval`, sourced from the QSL repository's git url, and on
-   `quire-eval-corpus`, sourced from the `agent-ix/quire-eval` git url. Run
-   the check, then run it on the same graph without `qsl-eval`.
+   `qsl-eval`, sourced from the QSL repository's git url, on
+   `quire-semantic-value`, sourced from the `agent-ix/quire-semantic-value`
+   git url, and on `quire-eval` and `quire-eval-corpus`, sourced from the
+   `agent-ix/quire-eval` git url. Run the check, then run it on the same
+   graph without `qsl-eval`.
 10. Run `arch-lint direction` against real `cargo metadata` output for a
-    local checkout of quire-contract-codegen's current head.
+    local checkout of quire-contract-codegen's current head, and list CG's
+    normal dependencies sourced from the QSL repository,
+    `agent-ix/quire-semantic-value` or `agent-ix/quire-eval`.
 
 ## Expected Results
 
@@ -81,10 +85,13 @@ through FR-059-AC-6 and FR-059-AC-8 through FR-059-AC-11.
   the FB-05 report names exactly those two; the `quire-semantic-value`
   dependency contributes no edge.
 - Step 9: the FB-05 report names exactly the CG → QSL edge via `qsl-eval`;
-  the `qsl-replay` and `quire-eval-corpus` dependencies are not reported.
+  the `qsl-replay`, `quire-semantic-value`, `quire-eval` and
+  `quire-eval-corpus` dependencies are not reported.
   Without `qsl-eval`, the FB-05 report is empty (FR-059-AC-10).
-- Step 10: every CG → QSL normal edge is via `qsl-replay`, and the FB-05
-  report names no CG edge (FR-059-AC-11). This output is captured for the
+- Step 10: the listed dependencies are only `qsl-replay`,
+  `quire-semantic-value` and crates of `agent-ix/quire-eval`; every CG → QSL
+  normal edge is via `qsl-replay`, and the FB-05 report names no CG edge
+  (FR-059-AC-11). This output is captured for the
   PR body as real evidence, as step 6's is.
 
 ## Metadata
