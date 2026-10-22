@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-294
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/NFR-015
+    type: references
 ---
 # FR-262: Evaluate, key and handle values and calls at any depth
 
@@ -228,6 +230,9 @@ and JIT preparation retain their existing contracts.
   `ix://agent-ix/quire-contract-runtime/FR-273` (IR-512); its resumable-body
   implementation is downstream work.
 
+- The `std` feature, target, toolchain and `make build-no-std` gate for the
+  QSL crates on the evaluator path:
+  [NFR-015](../non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md).
 - [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
   D-4.7 and D-6.
 - [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
