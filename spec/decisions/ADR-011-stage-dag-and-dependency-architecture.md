@@ -891,9 +891,11 @@ Rules that close the ADR-010 OBS-016 cycles:
   `quire-contract-model` only under `std`, so its v2 emitter and I2 reader
   are `std` items while the checked package itself is not. NFR-015's
   per-crate table records each crate's class (closure or crate tier).
-  `make build-no-std` checks it for `thumbv7em-none-eabi`, one package at a
-  time. No `std` feature changes a layer edge: the "Depends on" column holds
-  in both configurations.
+  `make build-no-std` runs each row's tier command, one package at a time:
+  a `thumbv7em-none-eabi` build for the closure tier, a host check for the
+  crate tier. No `std` feature changes a layer edge: the "Depends on" column
+  holds in both configurations, so a layer crate reaches the closure tier
+  only when the lower layers it depends on are `no_std`-capable.
 - **Families are modules, not crates.** Every family (ADR-012 §1) is a set of
   modules inside its layers' crates: a form builder under `forms` in
   `qsl-forms`, a checker under `check` in `qsl-semantics`, an emission arm

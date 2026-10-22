@@ -21,12 +21,23 @@ NFR-015-AC-4 to NFR-015-AC-7.
 2. Run `cargo check --locked -p qsl-package --no-default-features` on the
    host.
 3. Run `cargo tree --locked -p qsl-package --no-default-features -e normal
-   --depth 1`.
-4. From a test target built with `--no-default-features`, name
-   `CheckedPackage` and call `graph`, `shared_graph`, `dependencies`,
-   `dependency_selections` and `abstraction`; in a compile-fail case, name
-   `qsl_package::emit_checked`, `qsl_package::read_import_view` and
-   `CheckedPackage::emitted_package_id`.
+   -i quire-contract-model` over the whole closure.
+4. From a test target built with `--no-default-features`, name every export
+   in the "With `std` disabled" column of NFR-015's `qsl-package` surface
+   table: `CheckedPackage` with `link`, `bind_abstraction`,
+   `bind_abstraction_at`, `abstraction`, `graph`, `shared_graph`,
+   `dependencies` and `dependency_selections`; `ResolvedDependency`;
+   `export_bindings`, `BoundItem`, `ExportRefusal` and `UnboundElement`. In
+   one compile-fail case per export, name each export in its "Behind `std`"
+   column: `CheckedPackage::link_with`, `CheckedPackage::emitted_package_id`,
+   `Import`, `LinkRefusal`, `EmittedPackage`; `emit_checked`,
+   `emit_checked_with_cancel`, `emit_package`, `checked_node_id`,
+   `checked_occurrence`, `Emission`, `EmitRefusal`, `OmissionCause`,
+   `OmittedNode`; `read_import_view`, `supply_closure`, `clause_roots`,
+   `resolve_clause_root`, `AdmittedPackages`, `ClauseRoot`,
+   `ClauseRootUnresolved`, `ImportViewRefusal`, `SourceMapDefect`,
+   `UnsupportedWire`, `V2ReadLimits` and `V2ReadRefusal`. Call `link` on a
+   checked graph and read `dependencies` and `dependency_selections`.
 5. With default features and `QSPEC_DIR` set, run `cargo test --locked -p
    qsl-package --lib checked_v2` and the FR-091 round-trip test.
 6. Search the shipped source of each crate in NFR-015's per-crate table, with
@@ -40,8 +51,9 @@ NFR-015-AC-4 to NFR-015-AC-7.
    `qsl-foundation` is declared with `default-features = false`; the crate
    root has `#![cfg_attr(not(feature = "std"), no_std)]`.
 2. The check succeeds.
-3. Neither `quire-contract-model` nor `serde_json` is listed.
-4. The accessor calls compile; each named emitter, reader and
-   `emitted_package_id` item fails to resolve.
+3. Cargo reports no path to `quire-contract-model`.
+4. Every "With `std` disabled" export resolves; each "Behind `std`" export
+   fails to resolve; the package `link` builds has empty `dependencies` and
+   `dependency_selections`.
 5. Both pass: the emitted bytes and `package_id` match the FR-322 vectors.
 6. No match; the canonical-encoder check passes.

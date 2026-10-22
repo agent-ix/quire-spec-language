@@ -20,6 +20,8 @@ gate. Scope: NFR-015-AC-1, NFR-015-AC-2, NFR-015-AC-3 and NFR-015-AC-8.
    --target thumbv7em-none-eabi` with the toolchain `rust-toolchain.toml`
    pins.
 3. Run `cargo tree --locked -p qsl-foundation --no-default-features -e
+   normal --depth 1 --target thumbv7em-none-eabi`, then the full
+   `cargo tree --locked -p qsl-foundation --no-default-features -e
    normal,features --target thumbv7em-none-eabi`.
 4. Run `cargo test --locked -p qsl-foundation` and `cargo test --locked -p
    qsl-foundation --no-default-features` on the host.
@@ -35,10 +37,12 @@ gate. Scope: NFR-015-AC-1, NFR-015-AC-2, NFR-015-AC-3 and NFR-015-AC-8.
    declared with `default-features = false` and `std` enables their `std`
    features; the crate root has `#![cfg_attr(not(feature = "std"), no_std)]`.
 2. The build succeeds.
-3. Normal dependencies are exactly `quire-exact`, `serde`, `sha2`,
-   `thiserror` and the `ix-trace-rs` proc macro, and no `std` feature of
-   `serde`, `sha2` or `thiserror` is listed.
+3. The depth-1 tree lists exactly `quire-exact`, `serde`, `sha2`,
+   `thiserror` and the `ix-trace-rs` proc macro; the full feature tree lists
+   no `std` feature of `serde`, `sha2` or `thiserror`.
 4. Both runs pass.
-5. The recipe runs step 2's command with `-p` in its own `no-std` target
-   directory; `CI_CHECKS` lists `build-no-std`; the run passes.
+5. The recipe runs step 2's command and `cargo clippy --locked -p
+   qsl-foundation --no-default-features --target thumbv7em-none-eabi -- -D
+   warnings`, each with `-p` in its own `no-std` target directory;
+   `CI_CHECKS` lists `build-no-std`; the run passes.
 6. The run fails at the `qsl-foundation` build.
