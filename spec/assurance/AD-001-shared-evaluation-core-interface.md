@@ -205,8 +205,9 @@ evidence that the RT target accepts the later implementation.
   interpreted checked expressions and registered generated bodies.
 - QSL's std evaluator is the semantic reference until the no_std implementation
   passes the shared differential suite; only then may IR-593 switch defaults.
-- Checked-term separation follows the interface contract (IR-583 before
-  IR-586), while the no_std implementation still waits for S1-S5.
+- Checked-term separation (IR-586) can proceed after STD-297 independently of
+  IR-583. The no_std implementation (IR-590) still waits for S1-S5 and the
+  shared interface (IR-583).
 - The evaluator has no fixed depth cap. Resource limits and `work_units` fuel
   are the only bounds; scheduler steps are not a second fuel or externally
   visible outcome.
