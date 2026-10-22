@@ -79,7 +79,7 @@ CG call sites to find). T12-B, T12-C and T12-D are QSL-role: each protects a
 constructor QSL itself calls.
 
 At the time of this requirement, the rule set SHALL contain exactly these
-six rules:
+seven rules:
 
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
@@ -89,6 +89,7 @@ six rules:
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `qsl-semantics/src/model/population.rs` |
 | T12-E | Qsl | The ADR-011 §4 condition-1 witness minter `library::SupportedV2Wire::attest_ir_admitted_v2` (ADR-013 T-1, FR-087-AC-1), `pub` only for the `qsl-semantics` crate boundary | `qsl-package`'s `checked_v2` (layer-4 v2 reader, allow-listed by crate and module); no debt list | `qsl-semantics/src/library/witness.rs` |
 | T12-F | Qsl | The kernel `NodeKey::decode_admitted` decoder (ADR-011 T-12, "Decoding an admitted key"): it re-reads a key `check` minted from an admitted package's bytes, after the admitted-package identity check | none in QSL: QSL has no decode site, so any QSL call fails the rule (FR-087-AC-6, AC-11); a backend has no allowed caller, and generated or emitted code is never a reader (a key literal there is a `WireNodeId` resolved by lookup without holding a key); no debt list | none |
+| T12-G | Qsl | The checked-term constructors: every function of the `quire_checked::construct` module (ADR-011 FB-14, [FR-400](FR-400-separate-checked-terms-from-the-checker.md)), compiled only under the `construct` feature that only `qsl-semantics` enables | `qsl-semantics`' `check` and every descendant module; `library` for the `PackageId` constructor and `value::definition` for the `AdmittedIntegerDivision` constructor; no debt list | the `construct` module's source in the resolved `quire-checked` checkout |
 
 A rule's call patterns SHALL include every textual spelling that constructs
 the protected value, not only its primary constructor name.
@@ -99,7 +100,9 @@ value. T12-E's pattern is the bare name `attest_ir_admitted_v2`, which
 matches it through the type, through `Self` or as a function value; its own
 definition is not a call. T12-F's pattern matches `NodeKey::decode_admitted`, called or
 passed as a function value; it is not a T12-B mint, and T12-B's pattern stays
-`NodeKey::from_digest`. T12-E runs on the repository's own tree in `cargo
+`NodeKey::from_digest`. T12-G's pattern is any path through `quire_checked::construct`, as a `use`
+tree leaf, a call or a function value; a crate alias or glob import of the
+module counts as a reference. T12-E runs on the repository's own tree in `cargo
 test --workspace` (`tc_arch_lint_api_surface_024`), and T12-F likewise
 (`tc_arch_lint_api_surface_028`), since the `arch-lint`
 binary is not yet part of `make ci`.
