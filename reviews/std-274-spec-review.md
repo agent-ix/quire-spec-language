@@ -57,3 +57,19 @@ Round 1 checked head a99777f9d, which contains main 6fb751a31 and merges cleanly
 | FND-003 | fixed | The uncited FR-425 parenthesis is removed, and FR-205-AC-1 now carries the vectors for the by-construction binding and the supplied binding. |
 | FND-004 | fixed | The fixture is `role r each M from M::cells max 2 lifetime workflow`, which refuses at `M` first with no population refusal. |
 | FND-005 | fixed | Only the alias of the `over` type is admitted, and `role u on N` refuses at `N`. The asymmetry with object-type roles (FR-114) is recorded as a planner note. |
+
+## New findings (disposition pass 2)
+
+Round 2 checked head 17118b04e, which contains main 4c3562eaa and merges cleanly with main and with #1258. `make check-spec-validation` on the merge exits 0. S3 behaviour is now main's: `role w on M` refuses at `M`, so FND-006 is resolved. The role rule on main already refuses a model alias ("not an object type, a process, ..."), so the interim refusal states main's behaviour explicitly.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | high | [major] The PR contradicts itself on one fixture. FR-218-AC-24 says that in ADR-027 §7's `Fill` unit, `role w on M` refuses at `M` and "the unit produces no package". But FR-205-AC-1 and FR-205-AC-2, which this PR rewrites, say the same `Fill` subject "builds", with `w` bound by construction and its key's `roles` entry holding `{"type":"null"}`. TC-650 steps 1 and 2 test that. No test can pass both: under the PR's own S3 rule the FR-205 vectors never run. The same unit also feeds FR-214, FR-215, TC-651 and US-024. On main that conflict is implicit; this PR states it outright. Planner decision: either (a) change the `Fill` fixture's role to `role w on M::Cell` (ADR-027 §7 and its dependents, with QSpec TC-376 following) and leave the model-alias binding vectors to STD-331, or (b) revert the FR-205 and TC-650 edits so FR-205 keeps main's text, and let STD-331 bring the binding rule together with the admission. | spec/functional/FR-205-define-the-protocol-subject-and-its-state-key.md:81-87,124-125; spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md:461; spec/test-cases/TC-650-protocol-subject-and-state-key.md:21-24,57-59 |
+| FND-009 | medium | [minor] The new section ties its rules to tracker state: "While QSpec's checked-package v2 contract has no representation ... (Linear STD-331)", "When that representation exists, S3 SHALL instead check ...", and in FR-205 "once FR-218's 'Role on a model alias' admits one". That is status or plan wording in normative text. The target rules also have no AC that can fail today, since AC-24 tests only the refusal. State the refusal as behaviour with its reason: S4 cannot emit such a role, because QSpec FR-322 has no form for it and FR-465 step 1 admits none. Keep the target rules and the binding rule in STD-331 or the QSpec ticket, not in the spec. | spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md:172-196; spec/functional/FR-205-define-the-protocol-subject-and-its-state-key.md:81-87 |
+
+## Dispositions (round 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-006 | fixed | S3 admits no role on a model alias: the interim rule refuses `role w on M` at `M`, and AC-24 and TC-1065 row 8 test it. Nothing now reaches S4 without a node form. |
+| FND-007 | fixed | FR-205-AC-2 now says the key's `roles` entry holds `{"type":"null"}` for `w`. That rule depends on the conditional admission (see FND-008 and FND-009). |
