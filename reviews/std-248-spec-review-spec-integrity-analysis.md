@@ -68,3 +68,24 @@ merge cleanly onto main and onto the other part-C branches.
 Mergeable once FND-001 is fixed, or as is if the lead accepts it. The
 counterexample content is correct, the two halves agree, and the PR bodies
 contain no review-finding paraphrase.
+
+## Dispositions
+
+Round 1. Against QSL #1196 head 707e611 (fix commit 01fb31a, then a merge of
+origin/main) and QSpec #335 head 0c25e8c (fix commit 5a258e3, then a merge of
+origin/main). Both heads contain origin/main and add no id. Gates as in the
+review pass: QSL `make check-spec-validation` exit 0 with no diagnostic on a
+touched file, `tools/check-index-completeness.sh` passes; QSpec `quire
+validate` 134 failing documents, none touched; `cargo test --test
+checked_package_v2 --test backend_provider_v1` 14 and 117 passed. #1196 merges
+cleanly with #1195, #1189 and #1192 to #1194; #335 merges cleanly with #334
+and #336. The litmus order was recomputed for the rule as now stated. Under
+`tso` the first depth-1 state is `Sx`; its first successor is `Sy` (no
+argument before an argument); then `Lx` (attempt before flush, `x` before
+`y`), then `Ly`, which violates. Under `ra`, `(Sx, Sy, Lx@0)` has no violating
+successor. The first violating successor of `(Sx, Sy, Lx@1)` is `Ly@1`,
+whichever depth sorts first, so the tables stand.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | ADR-025 §10: "where attempts sort before flushes; an attempt with no argument (`Sx`, `Sy`) sorts before one with an argument (`Lx`, `Ly`); attempts with equal arguments sort by their node, `left` before `right`, so `Sx` sorts before `Sy`; and `Lx` sorts before `Ly`." TC-390 SB-02: "(attempts before flushes; an attempt with no argument before one with an argument; equal arguments by node, `left` before `right`; `Lx` before `Ly`)"; SB-03: "canonical counterexample, in the same order". |
