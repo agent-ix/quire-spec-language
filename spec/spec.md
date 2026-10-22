@@ -772,6 +772,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-430
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -1361,4 +1363,5 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-296](functional/FR-296-select-the-execution-backend-in-the-request.md) | FR |
 | [FR-277](functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md) | FR |
 | [FR-284](functional/FR-284-keep-the-qualified-core-separable-by-crate.md) | FR |
+| [FR-430](functional/FR-430-check-refinement-reductions-and-strong-fairness-over-timed-subjects.md) | FR |
 | [ADR-030](decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md) | ADR |
