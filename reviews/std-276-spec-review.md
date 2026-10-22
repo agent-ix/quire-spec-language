@@ -31,3 +31,23 @@ The deviation from the ticket's fixed `unbounded` is the right call. It classifi
 | FND-002 | medium | [minor] The rule says it classifies "as FR-104 does for a clause's record", but its root list is different. FR-104 takes the context population that covers `T` and each population a `reaches` walks. FR-146 takes "each population of the concrete model". For a concrete model with two populations, a `Step` record on `Impl::Counter` gets both population domains, where FR-104 would give one. That may be correct, because the step map reads the whole concrete state, but then the sentence should state the rule instead of claiming FR-104's, and AC-10 should include a second-population case. The current single-population fixture cannot tell the two readings apart. | spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:150-164,224 |
 | FND-003 | medium | [minor] The ticket asks how negotiation routes these records to the SMT candidate. The PR adds only "routed by their kind and extent". Under FR-075 and ADR-012 §1.1, candidates are matched by kind alone ("Mode ... SHALL NOT affect which backends are candidates"), and extent is compared against the candidate's mode only at `negotiate_*`. An `Unbounded` record settles `requires-bound` or `unsupported` unless its candidate advertises `operation-contract` in unbounded mode. Nothing states that the EN-2 SMT candidate does. Since FR-146-AC-8 expects all eight `Unbounded` records proved, state the candidate's advertised mode and the resulting disposition, or the expected `requires-bound` with a `Cardinality` bound. Reword "routed by" so it does not read as extent affecting candidacy. | spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:168-170,222 |
 | FND-004 | low | [minor] QSpec follow-up: the PR body says FR-468 or FR-290 need the root list "if QSpec wants the per-record extent normative on the IR side". That is a fair statement of the open question. Record it as a planner item (a QSpec ticket or an explicit no-change), so it does not stay only in a PR body. | spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:148-164 |
+
+## New findings (disposition pass 1)
+
+Round 1 checked head 26314aa42, which contains main 6fb751a31 and merges cleanly with main 879c3bf73. `make check-spec-validation` on the merge exits 0. Hand checks:
+- The `audits` population is read by nothing, so it adds no domain.
+- A `peek` result of `Integer` adds one domain.
+- Under a bounded-only backend, an `Unbounded` record whose domains are all boundable settles `requires-bound`, as ADR-012 §1.1 states.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | [minor] The context population is "the one population that covers the receiver's type (FR-104)". FR-104 refuses `ambiguous_declaration`/`ambiguous-name` when two populations cover the type, but FR-146 does not say what a step record does in that case. A row for an operation with no contract clause would hit it with no clause-level refusal first. State the outcome, or say that the FR-104 refusal applies at the row. | spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:154-158 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | A `Step` record's roots now include the receiver, result and parameter types, and FR-146-AC-10 has an `Integer`-result variant. |
+| FND-002 | fixed | The root list is now FR-104's: the context population plus the populations a `reaches` walks. FR-146-AC-10 has an unread `audits` population that adds no domain. |
+| FND-003 | fixed | Routing now says candidates are chosen by kind alone, and that extent meets the candidate's mode only at negotiation. FR-146-AC-8 is conditioned on an unbounded-mode backend, and FR-146-AC-10 gives `requires-bound` under a bounded-only backend. |
+| FND-004 | deferred | The QSpec FR-468/FR-290 extent follow-up stays a planner item (a QSpec ticket or an explicit no-change). It is outside this QSL PR. |
