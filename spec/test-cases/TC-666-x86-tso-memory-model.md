@@ -28,9 +28,8 @@ Tag the tests `#[trace("TC-666", "FR-221-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: 34 + 4 = 38 states; `refuted` with a four-step
-  counterexample of the attempts `Sx`, `Sy`, `Lx` and `Ly` and no `flush`,
-  and the position-4 state FR-221-AC-1 gives.
+- Step 1: 34 + 4 = 38 states; `refuted` with §10's four-step
+  counterexample.
 - Step 2: `proved` twice.
 - Step 3: the buffer `[x := 1, y := 1]`, `x` flushed first, own load 1,
   other load 0, `fetch_add` disabled until empty.

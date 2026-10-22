@@ -35,8 +35,9 @@ Scope: FR-206-AC-1 to FR-206-AC-10.
 8. Run FR-206-AC-8's fence protocols under `sc` and `tso`.
 9. Run FR-206-AC-9's nested-cancel protocol to the `join(Outer)` step and
    explore every later state.
-10. Run FR-206-AC-10's protocol with the `effect` after the `all` join and
-    read `event(E)`'s enabledness and the root's environment after `join`.
+10. Run FR-206-AC-10's protocol, whose `effect` anchors on the qualified
+    `Main::P::left::A` after the `all` join, and read `event(E)`'s enabledness
+    and the root's environment after `join`.
 
 Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 
