@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-391
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-382
     type: traces_to
 ---
@@ -85,6 +87,18 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
   invariants use (FR-104). If `P` reads a parameter, a result or a
   pre-state, then the checker SHALL refuse as FR-104 refuses that read in
   an invariant.
+- The checker SHALL give `self` in `P` a type from the model alone, adding no
+  syntax to the declaration (QSpec owns the `terminal` grammar). When the
+  model declares exactly one object type, `self` SHALL be `Reference<M::T>`
+  for that type `T`, `P` SHALL hold at a state when it holds for every object
+  of `T`'s population there (as an invariant on `T` does, FR-104), and a state
+  with no object of `T` satisfies `P`. When the model declares no object type
+  or several, `self` in `P` SHALL be refused `missing_declaration`/
+  `missing-name` at `self`, and `P` names its objects through a quantifier
+  over a population of the model (`forall(o in M::P : ...)`,
+  `exists(o in M::P : ...)`, FR-104, FR-391), which types each bound
+  variable by its population. A `P` that does not read `self` SHALL check
+  for a model with any number of object types.
 - When a state model has no `terminal` declaration, the checker SHALL check it
   to `TerminalDeclaration::None`.
 - The checker SHALL include the `TerminalDeclaration` in the checked
@@ -132,6 +146,9 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
 | FR-124-AC-2 | A request with two temporal items over the same `Counter` subject (universe `{c}`, initial value 0) and the `None` declaration carries exactly one `DeadlockFreedom` item, with property form `ReachableInvariant`, requirement (`temporal-satisfaction`, `Unbounded`) and an obligation identity distinct from both authored items. With the `When` declaration it carries one; with the `Any` declaration it carries none. | Test (TC-519) |
 | FR-124-AC-3 | Over the `Counter` subject, state `value = 3` is terminal; it is deadlocked under `None` and intended under `When` and `Any`. States `value = 0` to `2` are not terminal under any declaration. Adding `fair weak inc` to a request's items changes none of these classifications. | Test (TC-519) |
 | FR-124-AC-4 | `terminal Done using Complete on M when { true };` and `terminal Halt using Complete on M any;` each parse to one `TerminalDeclaration` node whose text is the declaration; only the `when` declaration holds a `Block`. `terminal Done using Complete on M;` fails at `;`, `... on M when true;` fails at `true`, `terminal Done using Complete when { true };` fails at `when`, and `terminal using Complete on M any;` fails at `using`, each as `invalid_syntax`. | Test (TC-1060) |
+| FR-124-AC-5 | In a model with exactly one object type `Counter` (`value: Int[0, 3]`, universe `{c1, c2}`), `terminal when { self.value = 3 }` checks to `When`, and a terminal state is intended exactly when both counters hold 3. | Test (TC-519) |
+| FR-124-AC-6 | In a model with two object types `Counter` (`value: Int[0, 3]`, population `counters`) and `Gate` (`open: Boolean`, population `gates`), `terminal when { forall(c in M::counters : c.value = 3) and forall(g in M::gates : g.open) }` checks to `When` and classifies a terminal state as intended exactly when every counter holds 3 and every gate is open. | Test (TC-519) |
+| FR-124-AC-7 | In the AC-6 model, `terminal when { self.value = 3 }` refuses `missing_declaration`/`missing-name` at `self`; in a model with no object type, `terminal when { self.value = 3 }` refuses the same way, and `terminal when { true }` checks to `When`. | Test (TC-519) |
 
 ## Dependencies
 
