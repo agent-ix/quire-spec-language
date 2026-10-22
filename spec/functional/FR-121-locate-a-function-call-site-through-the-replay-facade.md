@@ -194,7 +194,11 @@ QSL-345.
   `CallSiteRefusal::NotAnOperationOwner`, pairing
   the `OperationName` with the compiled package's own `package_id`; its
   code is `invalid_model_binding`, cause `malformed-declaration`, as QSpec
-  FR-323 refuses such an `object`.
+  FR-323 refuses such an `object`. This differs on purpose from FR-104 and FR-115,
+  which report `missing_declaration`/`missing-name` for a clause or
+  `Frame` selection whose owner is not an object type, a process or a
+  state machine: `call_site` builds the FR-323 replay target, so it
+  mirrors FR-323's refusal of such an `object`.
 - If the operation name resolves in the owner's effective view to
   declarations of two supertypes, neither hiding the other, then
   `call_site` SHALL refuse `CallSiteRefusal::AmbiguousOperation`, pairing
