@@ -70,6 +70,8 @@ mod bundle_tests;
 mod package_identity;
 mod witness;
 
+#[cfg(any(test, feature = "test-support"))]
+pub use package_identity::node_tags;
 pub use package_identity::PACKAGE_ID_VERSION;
 use package_identity::{project_declarations, ProjectedDeclarations};
 pub use package_identity::{NodeDefect, PreimageDefect};

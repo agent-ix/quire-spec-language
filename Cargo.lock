@@ -1455,6 +1455,7 @@ name = "qsl-package"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "jsonschema 0.17.1",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
