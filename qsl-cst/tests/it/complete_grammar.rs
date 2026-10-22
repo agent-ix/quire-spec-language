@@ -240,6 +240,7 @@ fn corpus() -> Vec<(&'static str, String)> {
                     "ordered enum Color { Red = \"red\", Blue, }\n",
                     "record Reading { amount: Decimal[-2, 4; 18, 4; nearest-even]; label: Option<Text[0, 32; nfc]>?; }\n",
                     "tuple Pair(Integer, Reference<M::Thing>);\n",
+                    "record Elapsed { span: Quantity<M::ms>; }\n",
                     "type Readings = Sequence<Reading>[0, 100];\n",
                     "function choose using Complete (x: Integer): Integer pure decreases (x) { if true then x else 0 }\n",
                     "function FloatBits using Complete (): Float32[nearest-away] pure { float32(bits: 0x7fc00001) }\n",

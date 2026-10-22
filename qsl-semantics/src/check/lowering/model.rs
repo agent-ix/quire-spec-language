@@ -80,6 +80,28 @@ pub(crate) fn bound_origin(label: &str) -> String {
     format!("bound {label}")
 }
 
+/// The `Origin::TypeDeclaration` name the declaration of the dimension or
+/// unit `name` is located under (FR-091-AC-44: dimensions, units and types
+/// are namespaces of their own). Spaced, so it names no declared type. The
+/// position is namespaced, the node's `declaration` name is not: a unit and
+/// a record of one name emit a package the strict reader refuses
+/// (Remaining work: QSL-950).
+pub(crate) fn quantity_origin(kind: QuantityKind, name: &str) -> String {
+    match kind {
+        QuantityKind::Dimension => format!("dimension {name}"),
+        QuantityKind::Unit => format!("unit {name}"),
+    }
+}
+
+/// Which quantity declaration namespace a [`quantity_origin`] names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum QuantityKind {
+    /// A `dimension` declaration.
+    Dimension,
+    /// A `unit` declaration.
+    Unit,
+}
+
 /// An authored finite maximum of one domain-package population (FR-380):
 /// part of the population's meaning, never a resource limit (ADR-014 B-1).
 /// A population the unit does not bound has none.
@@ -1167,9 +1189,8 @@ impl<'a> Lowering<'a> {
                 qualified_declaration: qualified,
                 preimage: bytes,
             } = node.declaration;
-            let site = type_declaration(&qualified.join("."));
             let own = |rebuilt: Result<Vec<u8>, _>| rebuilt.is_ok_and(|rebuilt| rebuilt == bytes);
-            let (semantic_form, semantic_type, nominal) = match node.form {
+            let (kind, semantic_form, semantic_type, nominal) = match node.form {
                 NominalUnitForm::Unit {
                     dimension,
                     target,
@@ -1189,6 +1210,7 @@ impl<'a> Lowering<'a> {
                     .ok()
                     .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
                     (
+                        QuantityKind::Unit,
                         "unit",
                         Some(dimension),
                         NominalNode::Unit(preimage.map(Box::new)),
@@ -1199,9 +1221,15 @@ impl<'a> Lowering<'a> {
                     let preimage = DimensionPreimage::new(owner.clone(), qualified.clone(), terms)
                         .ok()
                         .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
-                    ("dimension", None, NominalNode::Dimension(preimage))
+                    (
+                        QuantityKind::Dimension,
+                        "dimension",
+                        None,
+                        NominalNode::Dimension(preimage),
+                    )
                 }
             };
+            let site = type_declaration(&quantity_origin(kind, &qualified.join(".")));
             let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
             let inserted = self.insert_nominal(
                 &site,

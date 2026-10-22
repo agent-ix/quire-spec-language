@@ -254,7 +254,7 @@ model Service = "example/service" …;   // object s: Server { phase: Phase, att
 operation Server::request
   pre  self.phase = Idle
   post self.phase = Busy and self.attempts = 0;
-operation Server::attempt(d: Quantity<Time>, outcome: Outcome)
+operation Server::attempt(d: Quantity<ms>, outcome: Outcome)
   pre  self.phase = Busy
   post self.attempts = pre(self.attempts) + 1 and
        self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy);

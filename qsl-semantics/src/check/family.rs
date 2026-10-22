@@ -730,6 +730,7 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
                 BuiltinType::Text => "Text",
                 BuiltinType::Option => "Option",
                 BuiltinType::Reference => "Reference",
+                BuiltinType::Quantity => "Quantity",
                 BuiltinType::Clock => "Clock",
             },
         });

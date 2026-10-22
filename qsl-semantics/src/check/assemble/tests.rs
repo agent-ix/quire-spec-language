@@ -2235,6 +2235,166 @@ fn each_unit_graph_topology_error_refuses_alone() {
     }
 }
 
+const TIME_UNITS: &str = "dimension Time;\n\
+     unit s : Time = rational(1, 1);\n\
+     unit ms : Time = rational(1, 1000) * s;\n";
+
+/// FR-091-AC-44 (TC-483 step 5): `Quantity<ms>` resolves to the type of the
+/// unit node `ms` and introduces no declaration; a dimension or an unknown
+/// name refuses `missing_declaration`/`missing-name` at the name.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
+    let accepted =
+        format!("{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}");
+    let package = assemble(&accepted).1.expect("Quantity<ms> assembles");
+    let (parameters, _) = package
+        .resolved_signatures
+        .get(0)
+        .expect("f's resolved signature");
+    let ms = match parameters.as_slice() {
+        [(name, ValueType::Quantity(unit))] if name == "d" => *unit,
+        other => panic!("d is a quantity: {other:?}"),
+    };
+    let declared = package
+        .units
+        .units()
+        .find(|unit| unit.id() == ms)
+        .expect("the type names a unit of the admitted graph");
+    assert_ne!(
+        declared.root(),
+        declared.key(),
+        "ms is the derived unit, not the root s"
+    );
+    package
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+
+    for name in ["Time", "nothing"] {
+        let source =
+            format!("{TIME_UNITS}function f using v(d: Quantity<{name}>): Boolean pure {{ true }}");
+        let (text, found) = errors(&source);
+        let [error] = found.as_slice() else {
+            panic!("{name}: one error, not {found:?}")
+        };
+        assert!(
+            matches!(&error.cause, AssemblyCause::UnresolvedTypeName { name: found } if found == name),
+            "{name}: {error:?}"
+        );
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "missing_declaration/missing-name"
+        );
+        assert_eq!(error.span, last(&text, name));
+    }
+}
+
+/// FR-091-AC-44: `f(3 s)` where `f` takes `Quantity<ms>` refuses
+/// `ill_typed`/`type-mismatch`.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
+    let source = format!(
+        "{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}\n\
+         function g using v(): Boolean pure {{ f(3 s) }}"
+    );
+    let (text, assembled) = assemble(&source);
+    let package = assembled.expect("the unit assembles");
+    let regions = assemble(&source).1.expect("the unit assembles");
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a Quantity<s> argument is not a Quantity<ms>");
+    let argument = last(&text, "3 s");
+    let located = |refusal: &crate::check::CheckRefusal| {
+        regions.region(&refusal.location).is_some_and(|region| {
+            (region.start(), region.end()) == (argument.start as u64, argument.end as u64)
+        })
+    };
+    assert!(
+        refusals.iter().any(|refusal| located(refusal)
+            && refusal
+                .cause
+                .catalog_code()
+                .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
+        "the mismatch is located at the argument: {refusals:?}"
+    );
+    // A `3 ms` argument has the right type; the checked package has no
+    // literal form to emit a quantity as (`ProbabilisticCause::QuantityLiteral`),
+    // so the only refusal left is that named gap (Remaining work: QSL-949),
+    // not a type mismatch.
+    let ok = format!(
+        "{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}\n\
+         function g using v(): Boolean pure {{ f(3 ms) }}"
+    );
+    let refusals = assemble(&ok)
+        .1
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("a quantity literal has no emitted form yet");
+    assert!(
+        matches!(
+            refusals.as_slice(),
+            [refusal] if matches!(&refusal.cause, CheckCause::Probabilistic(cause)
+                if matches!(**cause, crate::check::ProbabilisticCause::QuantityLiteral))
+        ),
+        "{refusals:?}"
+    );
+}
+
+/// FR-091-AC-44: the unit namespace is its own: a unit and a record both
+/// named `ms` check, and two units named `ms` refuse at both declarations.
+/// The strict checked-package reader refuses the emitted package of a unit
+/// and a record that share a name (`AmbiguousDeclaration`); that is
+/// Remaining work: QSL-950, so this test asserts `check` only.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_unit_and_a_record_share_a_name_and_two_units_do_not() {
+    let both = format!(
+        "{TIME_UNITS}record ms {{ x: Boolean; }}\n\
+         function f using v(a: Quantity<ms>, r: ms): Boolean pure {{ r.x }}"
+    );
+    let package = assemble(&both)
+        .1
+        .expect("a unit and a record named ms assemble");
+    package
+        .check(CheckingLimits::default())
+        .expect("Quantity<ms> means the unit and ms the record");
+
+    let (text, found) = errors(
+        "dimension Time;\n\
+         unit ms : Time = rational(1, 1);\n\
+         unit ms : Time = rational(1, 1);",
+    );
+    let at = |start: usize| Span {
+        start,
+        end: start + "ms".len(),
+    };
+    let first = text.find("unit ms").expect("first") + "unit ".len();
+    let second = text.rfind("unit ms").expect("second") + "unit ".len();
+    assert!(found.iter().any(|error| matches!(
+        &error.cause,
+        AssemblyCause::DuplicateQuantityName { name, spans }
+            if name == "ms" && *spans == vec![at(first), at(second)]
+    ) && error.cause.catalog_code().to_string()
+        == "ambiguous_declaration/ambiguous-name"));
+}
+
+/// FR-091-AC-44 (QSpec FR-142-AC-13): a declaration named `Quantity` is
+/// refused at S1.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_declaration_named_quantity_is_invalid_syntax() {
+    let source = text(PROFILE_V, "record Quantity { x: Boolean; }");
+    let admissible = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .is_ok_and(|parsed| parsed.is_admissible());
+    assert!(!admissible, "`Quantity` is reserved");
+}
+
 #[trace("FR-091-AC-21", "TC-406")]
 #[test]
 fn the_dimension_and_unit_causes_have_their_catalog_codes() {
