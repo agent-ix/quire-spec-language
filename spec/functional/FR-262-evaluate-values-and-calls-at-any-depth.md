@@ -236,6 +236,9 @@ and JIT preparation retain their existing contracts.
 - The `std` feature, target, toolchain and `make build-no-std` gate for the
   QSL crates on the evaluator path:
   [NFR-015](../non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md).
+- The `no_std` implementation in `quire-eval`, its environment contract and
+  its rerun of AC-1 to AC-8:
+  [FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md).
 - [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
   D-4.7 and D-6.
 - [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
