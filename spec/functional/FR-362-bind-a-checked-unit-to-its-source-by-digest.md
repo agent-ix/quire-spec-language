@@ -66,9 +66,12 @@ bind a graph, a type report and a selected formal source only when the
    type phase runs in S3 over S2 forms. S2 builds a form for a `relation`
    clause and for a `hyper` clause over `behaviours`, and S3 checks them
    (FR-171, FR-172); S2 refuses neither with `NoDispatchEntry` or
-   `UnrepresentedConstruct`. A checked clause is refused only as not emitted,
-   the typed temporal cause `NotEmitted` that a checked `temporal` clause is
-   refused with, because no S4 emission writes it. A clause with a fault keeps
+   `UnrepresentedConstruct`. A checked `relation` clause over model
+   operations, a step relation (FR-173), is emitted as one QSpec FR-477
+   `claim`/`step_relation` node (FR-180) and is never refused `NotEmitted`.
+   A checked `hyper` clause is refused only as not emitted, the typed
+   temporal cause `NotEmitted` that a checked `temporal` clause is refused
+   with, because no S4 emission writes it. A clause with a fault keeps
    the refusal of its own fault (FR-172, FR-173), a typed hyper cause or, for
    its temporal operators, fairness and profile selection, a typed temporal
    cause, and is never refused `NotEmitted`. A `hyper` clause over a finite
@@ -107,7 +110,7 @@ bind a graph, a type report and a selected formal source only when the
 | FR-362-AC-4 | A checked unit built from a graph and a type report of the same bytes yields the inventory rows of the producer's own unit. | Test (TC-1026) |
 | FR-362-AC-5 | No type or function compares only the authority and identity of a graph, a type report or a formal source: the label-only types and the label-only constructor do not exist. | Inspection (TC-1027) |
 | FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. Retiring those symbols and the composed linker and checker is open work tracked as QSL-868. | Inspection (TC-1027) |
-| FR-362-AC-7 | A unit that holds a `predicate` and a `relation` clause whose body checks is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span), and produces no graph and no type report; the same unit without the `relation` clause yields both. A `hyper` clause whose body checks is refused the same way. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test (TC-1026) |
+| FR-362-AC-7 | A unit that holds a `predicate` and a `relation` clause over model operations whose body checks yields both a graph and a type report, the graph holding the clause's `claim`/`step_relation` node (FR-180). A unit that holds a `hyper` clause whose body checks is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span), and produces no graph and no type report; the same unit without the `hyper` clause yields both. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test (TC-1026) |
 | FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose type phase stops on `TypeWorkExhausted` or `TypeAdmissionUnfinished` yields an `Incomplete` inventory that retains the partial rows and carries the typed cause. | Test (TC-1026) |
 
 ## Dependencies

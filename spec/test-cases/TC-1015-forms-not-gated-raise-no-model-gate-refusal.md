@@ -21,5 +21,5 @@ Verify that only the families of FR-361 item 5 are gated. Scope: FR-361-AC-4 and
 ## Expected Results
 
 1. The unit compiles.
-2. Under `quire.model.complete/v1` no unit is refused by the model-profile gate (a `hyper` or `relation` clause is refused only as `NotEmitted`). Under `quire.value.complete/v1` each unit is admitted or refused by FR-110's layer rule naming `quire.value.complete/v1`; no refusal retains a family of item 5 or the required layer `quire.model.complete/v1`.
+2. Under `quire.model.complete/v1` no unit is refused by the model-profile gate (a `hyper` clause is refused only as `NotEmitted`, and a `relation` clause over model operations is emitted, FR-180). Under `quire.value.complete/v1` each unit is admitted or refused by FR-110's layer rule naming `quire.value.complete/v1`; no refusal retains a family of item 5 or the required layer `quire.model.complete/v1`.
 3. With the value-profile alias each declaration is refused once by FR-110's layer rule naming that layer, retaining no family of item 5; with the other two aliases each compiles; with the value-profile alias in the multi-profile unit each declaration is still refused by the layer rule.

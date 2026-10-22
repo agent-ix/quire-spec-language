@@ -78,7 +78,20 @@ body, with no reachability path.
   the model claim alone.
 - S4 SHALL emit the relation node with the members listed under Outputs, so
   the harness generator reads every premise and the body from the checked
-  package.
+  package. The node is one QSpec FR-477 `claim`/`step_relation` node: its
+  `subjects`, its `executions` (per variable: alias, the operation's
+  `state`/`operation_anchor` node, the execution's own parameter nodes, with
+  binder levels continuing from the previous execution's so that two
+  executions of one operation have distinct binders, its precondition
+  and postcondition nodes and its abstraction relation node, or none), the
+  `invariants` of each model and the `body`, each premise reached by
+  reference.
+- S4 SHALL emit the node whether or not the code claim is recorded; an
+  operation with no binding has an empty `implementation`.
+- QSL's I2 reader SHALL admit an emitted step-relation node and SHALL refuse
+  a node that breaks an FR-477 rule with FR-477's code at FR-477's locus.
+  TC-1143 step 2 feeds QSpec TC-962's mutations RN-07 to RN-12 and RN-14 to
+  the I2 reader.
 - The code claim's meaning, which the generated harness must prove, SHALL
   be: for all pre-states `s_1 … s_n` of the declared types, each satisfying
   every declared invariant of its model, and all argument vectors in the
@@ -114,6 +127,7 @@ body, with no reachability path.
 | FR-180-AC-1 | `Det` over a vault whose `step` is bound to an implementation records a `temporal-satisfaction` model claim and an `operation-contract` code claim with different identities; the checked package's relation node holds `x` and `y` naming `step`, the lowered body, `Vault`'s declared invariants, `step`'s effective precondition, frame and postcondition, and its binding. `Det` over a vault with no binding records the model claim alone. | Test (TC-605) |
 | FR-180-AC-2 | A code-claim counterexample with two executions of `step` from equal pre-states and equal inputs giving `l = 0` and `l = 1` replays to `reproduced-with-evaluated-witness`; the same counterexample with equal post-states settles `inconclusive`, `ReplayParity`. | Test (TC-605) |
 | FR-180-AC-3 | Over a vault variant that declares the invariant `self.l <= self.h`, a counterexample with pre-state `(h, l) = (0, 1)` refuses `invalid_runtime_input`/`invalid-value` naming the execution and the invariant; one whose pre-state fails FR-106 admission refuses with FR-106's record. | Test (TC-605) |
+| FR-180-AC-4 | AC-1's `Det` with the binding emits one `claim`/`step_relation` node whose body has QSpec FR-477's `subjects`, `executions`, `invariants` and `body` in order, each `executions` entry referencing `step`'s operation anchor, its precondition and postcondition nodes and the abstraction relation node; without the binding the `implementation` members are empty; `x`'s and `y`'s `self` nodes are different nodes, as are their `i` nodes (levels 0 and 1 for `x`, 2 and 3 for `y`), and the body reads `pre(x.self.l)` and `pre(y.self.l)` through those different nodes, so an emitter that shares one set of binders between `x` and `y` fails; neither unit is refused `NotEmitted`. Fed to QSL's I2 reader, the node with `x`'s precondition removed from `preconditions` refuses `invalid_model_binding`/`malformed-declaration` at that aggregate, and each of QSpec TC-962's RN-07 to RN-12 and RN-14 refuses as TC-962 states. | Test (TC-1143) |
 
 ## Dependencies
 
@@ -132,3 +146,4 @@ body, with no reachability path.
 ## References
 
 - ADR-023. QSpec half: QSpec FR-397 (Linear STD-136; ADR-023 QS-4, QS-6).
+- QSpec FR-477 (checked-package step-relation claim body; Linear STD-291).

@@ -61,7 +61,7 @@ refuted, with its trap evidence.
 //   BoundedSolver { method: SolverMethod, horizon: ExactRational, jumps: u64 }, // FR-250
 // InconclusiveCause gains:
 //   NoAdmittedBehaviour, LassoNotConcretized, CertificateRejected,
-//   SufficientTestFailed, SolverInconclusive
+//   SufficientTestFailed, SolverInconclusive { trace: Option<HybridTrace> }, // FR-250
 // UnsupportedCause gains: PunctualInterval, StopwatchRequired
 // CounterexampleKind gains: TimeLock
 ```
