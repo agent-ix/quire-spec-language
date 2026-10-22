@@ -30,6 +30,7 @@
 pub(crate) mod support;
 
 mod assessment_artifact_kinds;
+mod call_replay_context_items;
 mod call_requirements_items;
 mod clause_kind_canonical;
 mod cli;

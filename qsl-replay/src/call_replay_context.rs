@@ -202,7 +202,6 @@ pub fn run_with_replay_context(
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
     use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
     use qsl_foundation::digest::WireNodeId;
     use qsl_foundation::source::provenance::OccurrenceKey;
@@ -320,11 +319,8 @@ mod tests {
         context
     }
 
-    /// FR-404-AC-2, -5, -6: a member's request carries the run's package, its
+    /// A member's request carries the run's package, its
     /// source and the run's limits, and replays and settles.
-    #[trace("TC-1173", "FR-404-AC-2")]
-    #[trace("TC-1173", "FR-404-AC-5")]
-    #[trace("TC-1173", "FR-404-AC-6")]
     #[test]
     fn a_member_request_carries_the_run_and_replays() {
         let limits = CallerLimits::from_operands([
@@ -386,9 +382,8 @@ mod tests {
         ));
     }
 
-    /// FR-404-AC-5: two packages that hold `p` hold equal keys for it, and
+    /// Two packages that hold `p` hold equal keys for it, and
     /// each context's request carries its own package and source.
-    #[trace("TC-1173", "FR-404-AC-5")]
     #[test]
     fn equal_keys_in_two_packages_carry_each_their_own_package() {
         let other = format!("{SOURCE}function s using v(x: Int[0, 9]): Integer pure {{ x + 2 }}\n");

@@ -20,8 +20,8 @@ use qsl_replay::{
     compile_package, run_with_replay_context, run_with_requirements, BackendId, Call, CallArgument,
     CallOutcome, CallerLimits, DependencyInput, DomainKey, DomainKind, FiniteBound, Integer,
     ObjectEnvironment, PluginReplayContext, PluginReplayRefusal, ProofBound, ReplayLimits,
-    RequestIndex, RunRefusal, RunWithReplayContext, SourceIdentity, SuppliedLimits, TerminalValue,
-    Value, WireNodeId,
+    RequestIndex, RunRefusal, RunWithReplayContext, SourceIdentity, SpineLimits, SuppliedLimits,
+    TerminalValue, Value, WireNodeId,
 };
 use quire_exact::Cancel;
 
@@ -194,10 +194,12 @@ fn the_entry_returns_what_run_with_requirements_returns() {
     assert_eq!(compiled.package_id().hex(), result.package_id().hex());
 }
 
-/// FR-404-AC-2 and AC-3: for each member, the context's answer is the
-/// oracle's, whatever the outcome of the call.
-#[trace("TC-1173", "FR-404-AC-2")]
-#[trace("TC-1173", "FR-404-AC-3")]
+/// For each member of a completed, undefined and incomplete call, the
+/// context's answer is the oracle's. Every such answer is `NotReplayable`
+/// today, since a member is an application record; the `Ok` arm is not
+/// reached. FR-404-AC-2 and AC-3 (replay completes `10`, settles `refuted`)
+/// are met only when application claims replay (QSL-980), so this test
+/// carries neither tag and `Ok` is compared field by field for then.
 #[test]
 fn a_member_request_equals_the_oracles_whatever_the_outcome() {
     let source = unit("");
@@ -281,9 +283,8 @@ fn an_index_that_is_no_members_is_not_a_call_item() {
     }
 }
 
-/// FR-404-AC-5: two packages holding `q` have different ids and equal member
+/// Two packages holding `q` have different ids and equal member
 /// keys; one run's context refuses the other's pairing key.
-#[trace("TC-1173", "FR-404-AC-5")]
 #[test]
 fn another_runs_package_is_a_foreign_run() {
     let first = run_q(&unit(""));
@@ -314,23 +315,42 @@ fn another_runs_package_is_a_foreign_run() {
     assert_eq!(record.backend(), Some(&plugin()));
 }
 
-/// FR-404-AC-6: `CallerLimits.spine` bounds the run.
-#[trace("TC-1173", "FR-404-AC-6")]
+/// `CallerLimits.spine` bounds the run: `s1.tokens` of 1 refuses at the S1
+/// token limit while `run_with_requirements` over the same inputs under
+/// `SpineLimits::default()` completes. (The request's `stage_limits` are
+/// asserted in the in-crate tests.)
 #[test]
 fn only_the_spine_limits_bound_the_run() {
     let source = unit("");
     let call = call("q", integer(3), 1_000_000);
     let tight = CallerLimits::from_operands(["s1.tokens=1"]).unwrap();
     let refusal = run(&source, &call, tight, &Cancel::new()).expect_err("refuses");
-    assert!(matches!(*refusal, RunRefusal::Compile(_)), "{refusal:?}");
+    let RunRefusal::Compile(compile) = &*refusal else {
+        panic!("a compile refusal, not {refusal:?}");
+    };
+    assert!(
+        format!("{compile:?}").contains("setting: S1Tokens, configured_bound: 1"),
+        "{compile:?}"
+    );
+    run_with_requirements(
+        identity(),
+        "unit.native",
+        source.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &call,
+        &ObjectEnvironment::default(),
+        &Cancel::new(),
+    )
+    .expect("the same inputs under the default SpineLimits complete");
     let roomy =
         CallerLimits::from_operands(["s1.tokens=200000", "library.definitions=9000"]).unwrap();
     run(&source, &call, roomy, &Cancel::new()).expect("completes");
 }
 
-/// FR-404-AC-7: the refusal order is `ForeignRun`, `NotACallItem`, then
+/// The refusal order is `ForeignRun`, `NotACallItem`, then
 /// FR-290's, whatever the proof bounds.
-#[trace("TC-1173", "FR-404-AC-7")]
 #[test]
 fn foreign_run_comes_before_not_a_call_item() {
     let first = run_q(&unit(""));
@@ -359,6 +379,11 @@ fn foreign_run_comes_before_not_a_call_item() {
     assert!(matches!(
         refusal(first.package_id(), r_index),
         PluginReplayRefusal::NotACallItem { .. }
+    ));
+    // A foreign package is refused before the index is looked at.
+    assert!(matches!(
+        refusal(second.package_id(), RequestIndex::new(99)),
+        PluginReplayRefusal::ForeignRun { .. }
     ));
 }
 

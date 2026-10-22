@@ -8,11 +8,13 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_replay::CanonicalAssignment;
 use qsl_replay::ScalarLimits;
 use qsl_replay::{
     run_with_replay_context, BackendId, Call, CallArgument, CallerLimits, Cancel, DependencyInput,
-    Integer, ObjectEnvironment, PluginReplayRefusal, RequestIndex, SourceIdentity, SuppliedLimits,
-    TerminalValue, Value,
+    DomainKey, DomainKind, FiniteBound, Integer, ObjectEnvironment, PluginReplayRefusal,
+    ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, SuppliedLimits, TerminalValue,
+    Value, WireNodeId, WitnessValue,
 };
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -59,10 +61,20 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
     assert_eq!(requirements.members().len(), 1);
     let plugin = BackendId::new("acme");
     let index = RequestIndex::new(99);
-    let refusal = context
-        .request(package_id, index, &[], &plugin, Vec::new())
-        .err()
-        .expect("no such item");
+    let node = WireNodeId::from_digest([7; 32]);
+    let bounds = [ProofBound::new(
+        DomainKey::Node { node, path: vec![] },
+        Some(DomainKind::Integer),
+        FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64)).unwrap(),
+    )
+    .unwrap()];
+    let assignments = vec![CanonicalAssignment {
+        parameter: node,
+        value: WitnessValue::Integer(9),
+    }];
+    let built: Result<ReplayRequestWire, PluginReplayRefusal> =
+        context.request(package_id, index, &bounds, &plugin, assignments);
+    let refusal = built.err().expect("no such item");
     assert_eq!(
         refusal,
         PluginReplayRefusal::NotACallItem {
