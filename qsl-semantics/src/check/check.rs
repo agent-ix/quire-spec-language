@@ -1424,6 +1424,79 @@ impl Scope {
         self.ieee_profile.as_ref()
     }
 
+    /// Select the catalog's IEEE policy when a resolved declaration contains
+    /// a float, including unused fields and nested option/collection types.
+    pub(crate) fn select_declared_ieee_profile(
+        &mut self,
+        signatures: &[Signature],
+    ) -> Result<(), CheckRefusal> {
+        if self.ieee_profile.is_some() {
+            return Ok(());
+        }
+        let mut declared: Vec<&ValueType> = self.index.types.values().flatten().collect();
+        for signature in signatures {
+            declared.extend(signature.parameters.iter().map(|(_, ty)| ty));
+            declared.push(&signature.result);
+        }
+        for declaration in self.types.composites() {
+            match declaration.shape() {
+                CompositeShape::Record(fields) => {
+                    declared.extend(fields.iter().map(FieldDeclaration::value_type));
+                }
+                CompositeShape::Tuple(positions) => declared.extend(positions),
+                CompositeShape::Union(members) => {
+                    declared.extend(members.iter().flat_map(|member| member.positions()));
+                }
+            }
+        }
+        declared.extend(self.types.object_types().flat_map(|declaration| {
+            declaration
+                .attributes()
+                .iter()
+                .map(FieldDeclaration::value_type)
+        }));
+        let has_float = declared.into_iter().any(|mut ty| loop {
+            match ty {
+                ValueType::Float(_) => return true,
+                ValueType::Option(payload) => ty = payload,
+                ValueType::Collection(collection) => ty = collection.element(),
+                ValueType::Boolean
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Quantity(_)
+                | ValueType::Text(_)
+                | ValueType::String
+                | ValueType::Uuid
+                | ValueType::Timestamp
+                | ValueType::Enum(_)
+                | ValueType::Composite(_)
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => return false,
+            }
+        });
+        if has_float {
+            use crate::value::definition::{CatalogRole, DefinitionLock};
+            let lock = DefinitionLock::pinned();
+            let definition = lock.entry(CatalogRole::IeeeProfile).reference();
+            self.ieee_profile = Some(lock.admit_ieee_profile(&[definition], &[]).map_err(
+                |_| CheckRefusal {
+                    location: Location::root(quire_semantic_value::location::Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(
+                        super::refusal::KeyFault::StageFault(
+                            qsl_foundation::diagnostic::InternalFault::new(
+                                "S3",
+                                "catalog-ieee-profile-admitted",
+                            ),
+                        ),
+                    )),
+                },
+            )?);
+        }
+        Ok(())
+    }
+
     /// The package's FR-151 dispatch operations, indexed by a checked
     /// `NodeKind::Dispatch`'s `operation`.
     pub fn dispatch_operations(&self) -> &[DispatchOperation] {

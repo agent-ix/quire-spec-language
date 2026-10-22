@@ -1642,8 +1642,9 @@ impl<'a> Typer<'a> {
     /// A typed equality operand and the type its peer is hinted with. A
     /// `convert<T>(e)` operand that changes the type is a `ConvertScalar`
     /// node of type `T`, which the stored equality compares as typed; the
-    /// pair is first checked with the operand naming the conversion. A
-    /// converted operand's IEEE source is refused.
+    /// pair is first checked with the operand naming the conversion. IEEE
+    /// conversion is its own checked operation rather than an exact equality
+    /// coercion.
     fn equality_typed(
         &mut self,
         typed: Node,
@@ -1662,7 +1663,8 @@ impl<'a> Typer<'a> {
                     }
                 }
                 if matches!(typed.value_type, ValueType::Float(_)) {
-                    return Err(mismatch(&location));
+                    let converted = self.convert(&target, typed, &location)?;
+                    return Ok(((converted, EqualityOperand::typed(target.clone())), target));
                 }
                 let source = typed.value_type.clone();
                 let operand = EqualityOperand::converted(source.clone(), target.clone());
