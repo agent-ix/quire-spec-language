@@ -113,7 +113,9 @@ public outputs differ.
   it at every joint step, the engine SHALL return `Undecided(VacuousMatch)`
   and never `Holds` (ADR-023 HM-7): the explored product has no fair cycle
   under the scoped fairness filter, the stutter loop at terminal components
-  included.
+  included. From EN-1, `VacuousMatch` means that no matched fair tuple
+  exists; FR-182 states the cause's full meaning, which also covers an EN-3
+  proof that came with no accepted match witness.
 
 ### Limits
 
@@ -141,7 +143,8 @@ public outputs differ.
   [FR-175](FR-175-evaluate-a-body-over-a-tuple-of-behaviours.md),
   [FR-184](FR-184-bound-hyper-runs-with-caller-budgets.md).
 - EN-2 refutation and EN-3 induction of HP-2 are the SMT backend's on the
-  IR side (ADR-023 HC-6, HC-7, DS-3); FR-182 settles their outcomes.
+  IR side (ADR-023 HC-6, HC-7, DS-3); EN-3's base and step queries over
+  this product are FR-315's hyper queries; FR-182 settles their outcomes.
 - QSpec owns the `μ_U`/`μ_E` relativisation and vacuity (ADR-023 QS-2).
 
 ## References
