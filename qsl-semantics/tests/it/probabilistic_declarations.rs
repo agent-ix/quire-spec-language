@@ -146,6 +146,12 @@ fn service_document() -> Vec<u8> {
 /// [`service_document`], with `requires` as `attempt`'s domain-package
 /// `requires` clauses.
 fn service_document_with(requires: &[&str]) -> Vec<u8> {
+    service_document_full(requires, Vec::new())
+}
+
+/// [`service_document_with`], with `extra` operations on `Server` after
+/// `reset`.
+fn service_document_full(requires: &[&str], extra: Vec<Value>) -> Vec<u8> {
     let mut attempt = operation(
         "attempt",
         vec![
@@ -159,6 +165,14 @@ fn service_document_with(requires: &[&str]) -> Vec<u8> {
         .map(|text| json!({"language": "quire", "text": text, "origin": attempt["origin"].clone()}))
         .collect();
     attempt["pre"] = json!(clauses);
+    let operations: Vec<Value> = [
+        operation("request", vec![], &["phase", "attempts"]),
+        attempt,
+        operation("reset", vec![], &["phase"]),
+    ]
+    .into_iter()
+    .chain(extra)
+    .collect();
     let server = definition(
         "Server",
         "object_type",
@@ -168,11 +182,7 @@ fn service_document_with(requires: &[&str]) -> Vec<u8> {
                 wire_field(&id("Server/phase"), "phase", &id("Phase"), "required", 1),
                 wire_field(&id("Server/attempts"), "attempts", &id("Attempts"), "required", 1),
             ],
-            "operations": [
-                operation("request", vec![], &["phase", "attempts"]),
-                attempt,
-                operation("reset", vec![], &["phase"]),
-            ],
+            "operations": operations,
             "relationships": [],
         }),
     );
@@ -575,6 +585,43 @@ fn a_precondition_that_reads_a_random_parameter_refuses_at_the_read() {
         refusal.operation_member().map(|member| member.to_string()),
         Some("Operation.pre[0]".to_owned())
     );
+}
+
+/// FR-185-AC-9 (TC-620 step 9): a random parameter typed as a reference to
+/// `Server` is refused at S3 `value-outside-type`, naming the parameter,
+/// whatever support value is listed; a parameter typed `Int[1, 12]` with the
+/// integer support value `3` checks.
+#[trace("TC-620", "FR-185-AC-9")]
+#[test]
+fn a_reference_valued_random_parameter_refuses_value_outside_type() {
+    let document = service_document_full(
+        &[],
+        vec![operation(
+            "assign",
+            vec![parameter("assign", "target", &id("Server"))],
+            &["phase"],
+        )],
+    );
+    let steady = "workload Steady on Service { weight Server::request = 1; \
+         weight Server::attempt = 1; weight Server::reset = 1; weight Server::assign = 1; }";
+    let body = |random: &str| format!("{D}\n{OUTCOME}\n{DURATION}\n{steady}\n{random}\n");
+    let refused = body("random Server::assign(target) ~ { 3: 1 };");
+    let refusals = assemble_over(&document, &refused)
+        .check(CheckingLimits::default())
+        .expect_err("a reference-typed support is refused");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert_eq!(refusal.cause.cause(), Some("value-outside-type"));
+    let CheckCause::Probabilistic(cause) = &refusal.cause else {
+        panic!("a probabilistic refusal: {refusal:?}");
+    };
+    assert!(names_parameter(cause, "target"), "{cause:?}");
+
+    // The `Int[1, 12]` parameter with the integer value `3` checks.
+    assemble_over(&document, &body(""))
+        .check(CheckingLimits::default())
+        .expect("the integer-typed parameter checks");
 }
 
 /// TC-620 step 2: an operation or parameter the declaration names that does

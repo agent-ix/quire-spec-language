@@ -2113,6 +2113,224 @@ fn the_violating_side_follows_the_bound_direction() {
     }
 }
 
+/// A claim of `form` at threshold `theta` whose Okamoto sample count is 4:
+/// `α = β = alpha` and `ι = iota` give `N = ⌈ln(1/α) / (2 ι²)⌉ = 4`, so the
+/// test ends after exactly 4 counted samples.
+fn four_sample_claim(
+    form: ClaimForm,
+    at_most: i64,
+    theta: Rational,
+    alpha: Rational,
+    iota: Rational,
+) -> StatisticalClaim {
+    let confidence = Confidence::new(alpha.clone(), alpha, iota).expect("confidence");
+    let bound = match form {
+        ClaimForm::Quantile => reduce_quantile(theta, QuantileComparison::AtMost, int(at_most)).1,
+        _ => Bound {
+            comparison: Comparison::AtLeast,
+            threshold: theta,
+        },
+    };
+    StatisticalClaim::new(form, bound, confidence).expect("claim")
+}
+
+/// A stub whose sample at trace index `i` is the `i`-th of `measures`, a
+/// censored sample for `None`.
+struct Measures(&'static [Option<i64>]);
+
+impl ClaimSampler for Measures {
+    type Walk = UndefinedWalk;
+
+    fn read(&mut self, _test: &TestSubject, _seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+        let measure = usize::try_from(trace)
+            .ok()
+            .and_then(|index| self.0.get(index))
+            .copied()
+            .flatten();
+        Ok(Sample::Measured {
+            holds: true,
+            value: measure.map_or(MeasureValue::Censored, |v| MeasureValue::Value(ratio(v, 1))),
+        })
+    }
+
+    fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> UndefinedWalk {
+        UndefinedWalk
+    }
+}
+
+/// The only test of a completed run over `claim`.
+fn only_test(claim: &StatisticalClaim, sampler: &mut impl BehaviourSampler) -> TestResult {
+    let tests = one_test();
+    let reference = sampler_ref();
+    let verdict = completed(run(
+        request(claim, &tests, StatisticalMethod::Okamoto, &reference),
+        sampler,
+    ));
+    verdict.tests.into_iter().next().expect("one test")
+}
+
+/// FR-189-AC-15: through the sampler seam, a quantile test over 4 counted
+/// samples reports the nearest-rank quantile (the `⌈q · n⌉`-th smallest, a
+/// censored sample after every value), `Censored` when that rank is among
+/// the censored samples, and none for a probability-bound test or a test
+/// that counted no sample.
+#[trace("TC-624", "FR-189-AC-15")]
+#[test]
+fn a_quantile_test_reports_its_nearest_rank_quantile() {
+    const FINITE: &[Option<i64>] = &[Some(1), Some(3), Some(2), Some(5)];
+    const CENSORED: &[Option<i64>] = &[Some(1), Some(3), Some(2), None];
+    let half = four_sample_claim(
+        ClaimForm::Quantile,
+        3,
+        ratio(1, 2),
+        ratio(3, 10),
+        ratio(2, 5),
+    );
+    let test = only_test(&half, &mut Measures(FINITE));
+    assert_eq!(test.samples, 4);
+    assert_eq!(test.quantile, Some(MeasureValue::Value(ratio(2, 1))));
+
+    // `⌈9/10 · 4⌉ = 4` lies among the censored samples.
+    let ninety = four_sample_claim(
+        ClaimForm::Quantile,
+        3,
+        ratio(9, 10),
+        ratio(981, 1000),
+        ratio(1, 20),
+    );
+    let test = only_test(&ninety, &mut Measures(CENSORED));
+    assert_eq!(test.samples, 4);
+    assert_eq!(test.quantile, Some(MeasureValue::Censored));
+    // `⌈1/2 · 4⌉ = 2` is the 2nd smallest, 2.
+    let test = only_test(&half, &mut Measures(CENSORED));
+    assert_eq!(test.quantile, Some(MeasureValue::Value(ratio(2, 1))));
+
+    // A probability-bound test has no quantile.
+    let probability = four_sample_claim(
+        ClaimForm::Probability,
+        3,
+        ratio(1, 2),
+        ratio(3, 10),
+        ratio(2, 5),
+    );
+    let test = only_test(&probability, &mut fixed(Ok(Sample::Event(true))));
+    assert_eq!(test.samples, 4);
+    assert_eq!(test.quantile, None);
+
+    // A quantile test that counted no sample has no estimate and no quantile.
+    let subject = &one_test()[0];
+    let decided = Decided {
+        decision: Decision::Undecided(UndecidedCause::IndifferenceRegion),
+        estimate: None,
+        interval: None,
+        undefined: None,
+    };
+    let empty = test_result(0, subject, decided, &Tally::new(), Some(&ratio(1, 2)));
+    assert_eq!(empty.estimate, None);
+    assert_eq!(empty.quantile, None);
+}
+
+/// A stub with one constant measure per test, by the test's initial state.
+struct PerInitial {
+    event: MeasureEvent,
+    measures: [Option<i64>; 2],
+}
+
+impl ClaimSampler for PerInitial {
+    type Walk = UndefinedWalk;
+
+    fn read(&mut self, test: &TestSubject, _seed: u64, _trace: u64) -> Result<Sample, SampleHalt> {
+        let measure = usize::try_from(test.initial)
+            .ok()
+            .and_then(|index| self.measures.get(index))
+            .copied()
+            .flatten();
+        let value = measure.map_or(MeasureValue::Censored, |v| MeasureValue::Value(ratio(v, 1)));
+        Ok(Sample::Measured {
+            holds: self.event.holds(&value),
+            value,
+        })
+    }
+
+    fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> UndefinedWalk {
+        UndefinedWalk
+    }
+}
+
+/// FR-192-AC-6: a quantile claim's verdict carries the least favourable
+/// test's `quantile` -- a value, or censored -- and the verdict of a
+/// probability-bound claim carries none.
+#[trace("TC-627", "FR-192-AC-6")]
+#[test]
+fn the_verdict_carries_the_least_favourable_tests_quantile() {
+    let two_tests = [
+        TestSubject {
+            initial: 0,
+            binding: None,
+        },
+        TestSubject {
+            initial: 1,
+            binding: None,
+        },
+    ];
+    let reference = sampler_ref();
+    // `m = 2` at `α = β = 3/5`, `ι = 2/5`: `α' = 3/10` and `N = 4` per test.
+    let verdict_of = |claim: &StatisticalClaim, event, measures| {
+        completed(run(
+            request(claim, &two_tests, StatisticalMethod::Okamoto, &reference),
+            &mut PerInitial { event, measures },
+        ))
+    };
+    let claim_at = |at_most: i64| {
+        four_sample_claim(
+            ClaimForm::Quantile,
+            at_most,
+            ratio(1, 2),
+            ratio(3, 5),
+            ratio(2, 5),
+        )
+    };
+
+    // `quantile 1/2 of M <= 3`: test 0 measures 2 and holds, test 1 is
+    // censored and fails, so the censored test is least favourable.
+    let claim = claim_at(3);
+    let (event, _) = reduce_quantile(ratio(1, 2), QuantileComparison::AtMost, int(3));
+    let verdict = verdict_of(&claim, event, [Some(2), None]);
+    assert_eq!(
+        verdict.tests[0].quantile,
+        Some(MeasureValue::Value(ratio(2, 1)))
+    );
+    assert_eq!(verdict.tests[1].decision, Decision::Rejected);
+    assert_eq!(verdict.quantile, Some(MeasureValue::Censored));
+
+    // `quantile 1/2 of M <= 1`: test 0 measures 2 and fails, test 1 measures
+    // 0 and holds, so test 0 is least favourable and its value is carried.
+    let claim = claim_at(1);
+    let (event, _) = reduce_quantile(ratio(1, 2), QuantileComparison::AtMost, int(1));
+    let verdict = verdict_of(&claim, event, [Some(2), Some(0)]);
+    assert_eq!(verdict.tests[0].decision, Decision::Rejected);
+    assert_eq!(verdict.quantile, Some(MeasureValue::Value(ratio(2, 1))));
+
+    // A probability-bound claim carries no quantile.
+    let probability = four_sample_claim(
+        ClaimForm::Probability,
+        3,
+        ratio(1, 2),
+        ratio(3, 5),
+        ratio(2, 5),
+    );
+    let verdict = completed(run(
+        request(
+            &probability,
+            &two_tests,
+            StatisticalMethod::Okamoto,
+            &reference,
+        ),
+        &mut fixed(Ok(Sample::Event(true))),
+    ));
+    assert_eq!(verdict.quantile, None);
+}
+
 /// A tally of `values` and `censored` censored measures.
 fn tally_of(values: &[i64], censored: u64) -> Tally {
     let mut tally = Tally::new();

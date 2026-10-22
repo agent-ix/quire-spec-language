@@ -283,6 +283,13 @@ quire-contract-codegen reads through `BackendDescriptor::domains()` for FR-290's
 domain-kind routing step. That routing step is quire-contract-codegen's, not
 QSL's.
 
+The registry SHALL judge a backend's evidence-kind labels
+(FR-075-AC-11) last, after every advertised pair, `domains` and
+`fairness_kinds`, and only for a backend that advertises
+`probabilistic-satisfaction`: evidence-kind labels supplied by any other
+backend are ignored and the admitted descriptor holds none. A label repeated
+within the set is one member.
+
 A second registration under an identity the registry already holds
 is judged against the held descriptor (FR-075-AC-4, FR-075-AC-7,
 quire-specification FR-290 "Candidate set and negotiation"): an equal

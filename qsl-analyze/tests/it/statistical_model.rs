@@ -572,6 +572,42 @@ fn two_symmetric_servers_run_one_test() {
     assert!(settle_statistical_refusal(&refusal).is_err());
 }
 
+/// Checks FR-189-AC-3's symmetry clause under each workload: workload
+/// weights are per operation, so two interchangeable servers run `m = 1`
+/// both under a workload that weights each operation equally and under one
+/// whose operation weights differ from one another.
+#[trace("TC-624", "FR-189-AC-3")]
+#[test]
+fn two_symmetric_servers_run_one_test_under_any_operation_weights() {
+    let claims = |workload: &str| {
+        format!(
+            "workload Skew on M {{ weight Server::request = 3; weight Server::attempt = 1; \
+                 weight Server::reset = 2; }}\n\
+             probabilistic Busy using ev on M over (s: M::Server) under {workload} on origin \
+             with alpha 0.1, beta 0.1, indifference 0.1 \
+             {{ probability >= 0.5 [ eventually[0,10] holds(s.phase = 1) ] }}"
+        )
+    };
+    for workload in ["Steady", "Skew"] {
+        let world = World::symmetric_objects(&prob_world::service(&claims(workload)), &["a", "b"]);
+        let verdict = completed(check_statistical(
+            StatisticalRequest {
+                subject: world.subject(),
+                claim: world.claim("Busy"),
+                method: StatisticalMethod::Okamoto,
+                seed: 7,
+                sampler: sampler(),
+                limits: StatisticalLimits::default(),
+                max_witnesses: DEFAULT_MAX_WITNESSES,
+                symmetry: interchangeable(),
+            },
+            &Cancel::new(),
+        ));
+        assert_eq!(verdict.basis.tests, 1, "{workload}");
+        assert_eq!(verdict.tests.len(), 1, "{workload}");
+    }
+}
+
 /// Checks FR-189-AC-3's symmetry clause across initial states: two initial
 /// states that are images of each other under the class (`a` busy and `b`
 /// idle, then the reverse), with an `over` binding, are four pairs in two
