@@ -61,13 +61,17 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   admission recorded for it), its evidence kind when its capability is
   `probabilistic-satisfaction`, and, optionally, a named `BackendId`.
 - For the request builder: a checked package's requirement records
-  (FR-062-AC-13) and, optionally, one named `BackendId` for the request.
+  (FR-062-AC-13), optionally one named `BackendId` for the request, and
+  optionally the request's evidence selection for probabilistic records:
+  one evidence kind, or both.
 - The registry's current contents at the moment candidates are computed.
 
 ## Outputs
 
 - From the request builder: one `RequirementItem` per requirement record,
-  in record key order, each with its request index, occurrence key, node,
+  in record key order, followed, when the request names both evidence
+  kinds, by one second-kind item per `probabilistic-satisfaction` record,
+  in record key order; each with its request index, occurrence key, node,
   kind, extent classification, unbounded domains, result bound, direct
   conversion context and candidate outcome.
 - A candidate set per item: zero, one or more `BackendId`s, ordered
@@ -121,11 +125,15 @@ comparing a candidate's advertised mode against the item's extent is
 `qsl_route::request::items_from_requirements`; the implementing ticket
 chooses the Rust spelling) SHALL take a checked package's requirement
 records (`CheckedPackage::graph().requirements()`, FR-062-AC-13), the
-registry, and at most one `BackendId` the request names. It SHALL return
+registry, at most one `BackendId` the request names, and the request's
+evidence selection for probabilistic records, when it names one. It SHALL
+return
 one `RequirementItem` (design name) per record, in the records' bytewise
-occurrence-key order. Each `RequirementItem` SHALL carry:
+occurrence-key order, followed by the second-kind items of "Evidence kind
+of a probabilistic item" when the request names both evidence kinds. Each `RequirementItem` SHALL carry:
 
-- its request index, its position in that order (ADR-012 §13.5);
+- its request index, its position in that order (ADR-012 §13.5); a
+  second-kind item's index is past the last record's (below);
 - the record's occurrence key, and that key's node (`WireNodeId`);
 - the record's capability kind;
 - its extent classification, as `RequestWriter::item` computes it from the
@@ -139,8 +147,41 @@ occurrence-key order. Each `RequirementItem` SHALL carry:
   record's result bound is the application's own result type;
 - the record's path condition, as the same ordered sequence of canonical
   `PathGuard` values returned by `RequirementRecord::path_condition()`;
+- for a `probabilistic-satisfaction` record, its evidence kind, by the
+  rule of "Evidence kind of a probabilistic item" below;
 - its candidate outcome, `Registry::candidates(kind, evidence kind when
   probabilistic, named backend)` by this requirement's candidate rules.
+
+#### Evidence kind of a probabilistic item
+
+- When the request names no evidence selection, the request builder SHALL
+  write one item for a `probabilistic-satisfaction` record, carrying the
+  record's evidence kind (FR-195: `exact` for an exact-only claim,
+  `statistical` otherwise).
+- When the request names one evidence kind, the request builder SHALL
+  write one item for each `probabilistic-satisfaction` record, carrying
+  that kind, whatever the record's evidence kind.
+- When the request names both evidence kinds, the request builder SHALL
+  write each `probabilistic-satisfaction` record's item at the record's own
+  request index carrying the record's evidence kind, and SHALL then append,
+  after the item of the last record, one second-kind item per such record
+  in record key order, carrying the other evidence kind, the record's
+  occurrence key and node, and the next request index (QSpec FR-290: "One
+  claim may be requested twice, once per evidence kind"). With `n` records
+  and the `j`-th probabilistic record (from 0) in key order, its
+  second-kind item's request index is `n + j`. The two items of one claim
+  settle separately.
+- The evidence selection SHALL leave the request index of every record's
+  item unchanged: the item at index `i` is the item of the record at
+  position `i` in key order under every selection, so FR-395's pairing key
+  names the same item whichever evidence kinds a request names.
+- The request builder SHALL write no evidence kind on an item of any other
+  capability kind, and the evidence selection SHALL leave those items
+  unchanged.
+- An item the request builder writes SHALL always carry exactly one of the
+  labels `statistical` and `exact`; the absent and unknown evidence-kind
+  refusals of FR-290 arise only for an item a caller builds without the
+  request builder.
 
 An item whose candidate set is empty or whose extent is unbounded is
 written like any other and settles at negotiation (`unsupported` or
@@ -148,7 +189,9 @@ written like any other and settles at negotiation (`unsupported` or
 application) are two items with their own request indices and occurrence
 keys.
 
-An item's request index is its position in the package order. FR-395's call
+An item's request index is its position in the package order; a
+second-kind item's index follows every record's (see "Evidence kind of a
+probabilistic item"). FR-395's call
 association names an item by the package's `package_id` and this request
 index (FR-395, "Pairing key"), and the item written at that index carries the member's key.
 
@@ -315,6 +358,7 @@ were added.
 | FR-075-AC-15 | For every request item, `conversion_context()` returns the record's direct conversion context as `Option<&OccurrenceKey>`, separate from `result_bound()`. In FR-062 RR-16, the two requirement records share the `+` node but have distinct occurrence keys and directly wrapping narrow occurrence keys; the builder returns two items in occurrence-key order, and each item's `conversion_context()` equals its own record's narrow occurrence key while its `result_bound()` is respectively `Int[0, 10]` or `Int[0, 20]`. A record with no directly wrapping narrow returns `None`; when the same application node occurs multiple times, each item retains its own site's context and no context is selected by the shared expression node key. The two narrow contexts add no `RequirementItem`, routed item or claim. | Test (TC-449) |
 | FR-075-AC-16 | For `function f using v(a: Int[0, 9]): Int[0, 10] pure { a + 1 }`, the driver's IR call includes roots `[item.node(), conversion_context.node()]` (or the equivalent contextual entry point), with context paired to the item by request index and occurrence key. For RR-16, the driver makes this mapping independently for both items, which share the `+` node but have different request indices and conversion contexts: each item passes its own narrow context root, and neither context is swapped or selected by node key. In both vectors, the narrow is context only; it creates no additional requirement item, routed item or claim, and the routed claim remains the scalar application occurrence. A bare `lower([add])` call still returns the behavior specified by Contract IR and is not changed by this criterion. | Test (TC-449) |
 | FR-075-AC-17 | For every `CallRequirement` of FR-395 over fixture K, `items_from_requirements` over the package's records yields at the member's request index an item whose `occurrence()` equals the member's key. | Test (TC-1089) |
+| FR-075-AC-18 | Over a registry holding one registration advertising `probabilistic-satisfaction` with `{statistical}` (EN-4's manifest) and one with `{exact}` (EN-5's), and a package whose records in key order are FR-186's `P95` claim (index 0, record evidence kind `statistical`), FR-195's `FairTerminates` (index 1, record evidence kind `exact`) and a `value-validity` record (index 2): with no evidence selection the builder writes three items, `P95`'s naming `statistical` with candidates the EN-4 registration only and `FairTerminates`'s naming `exact` with candidates the EN-5 registration only; with the selection `exact` it writes three items, `P95`'s and `FairTerminates`'s each naming `exact` with candidates the EN-5 registration only, `statistical` never substituting; with both kinds it writes five items, indices 0 to 2 equal to the no-selection items, index 3 `P95`'s `exact` item (EN-5 only) and index 4 `FairTerminates`'s `statistical` item (EN-4 only), each with its record's occurrence key. The `value-validity` item is at index 2 and carries no evidence kind under every selection, and no written item settles `absent-evidence-kind` or `unknown-evidence-kind`. Each probabilistic item's unbounded domains are its record's, naming its claim, under every selection. | Test (TC-1163) |
 
 ## Dependencies
 
