@@ -143,9 +143,13 @@ belong to the interface implementation.
 | Operation | Inputs | Result and responsibility |
 | --- | --- | --- |
 | Register host body | Open or sealed checked-closure-bound registry; admitted callable identity and signature; resumable body factory | Typed internal admission result under the ordered policy above; accepted factory supplies fresh invocation state for each call |
-| Begin application | The registry, which holds its one selected checked closure; exact callable and completed arguments, or checked expression and parameters; admitted object environment; one `Meter`; `Cancel` | Pre-charge input failure, or one opaque session bound to these inputs and the sealed registry |
+| Begin application | The registry, which holds its one selected checked closure; exact callable and completed arguments, or checked expression and parameters; admitted object environment; one `Meter`, whose installed `Cancel` handle, if it has one, is the session's handle | Pre-charge input failure, or one opaque session bound to these inputs and the sealed registry |
 | Step session | Exclusive access to that live session | Still runnable, or terminal `Evaluation` / `CallFailure` under the existing S6a contract |
 | Resume body | Invocation state; initial arguments or the matching child's evaluation; scoped access to the session meter | Continue with saved state, request a child application, or return an evaluation |
+
+Begin SHALL take no `Cancel` of its own. Cancellation reaches a session
+only through its meter's installed handle, which is the handle the caller
+cancels; a session whose meter has no installed handle cannot be cancelled.
 
 A session SHALL retain its task stack, call frames, lexical bindings,
 package/import context, source locations, losses and accounting across steps.
@@ -157,7 +161,20 @@ input-refusal contracts.
 When requesting a nested application, a body SHALL return the exact admitted
 callee, completed arguments, call-site location and saved caller continuation
 to the scheduler. The scheduler SHALL validate the request, charge the call
-and push the callee frame without native recursion. While the child is active,
+and push the callee frame without native recursion. Validation checks that the
+callee is admitted in the session's checked closure, that the argument count
+equals its admitted signature's parameter count, and that each argument is
+admitted against its parameter's `ValueType`. A request that fails any of
+these checks is a broken invariant of the requesting body, not caller input:
+the session SHALL terminate with `CallFailure::Fault` carrying an
+`InternalFault` whose stage is `quire-eval` and whose invariant is
+`child-request-not-admitted`, category `internal failure`
+([FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md)). It
+terminates before the child's `function.call` charge, invokes no callee body,
+does not resume the requesting body, and keeps earlier spend. Such a request
+SHALL NOT end the session with `CallFailure::Input`. A validation that cannot
+decide for want of storage keeps the `CallFailure::Storage` arm that admission
+reports. While the child is active,
 the caller SHALL remain suspended. When the child completes, the scheduler
 SHALL deliver its evaluation to the matching continuation exactly once.
 Non-completed outcomes SHALL propagate under existing expression rules without
@@ -190,15 +207,24 @@ with the existing located incomplete result at that charge, leaving the denied
 charge's counters unchanged and retaining earlier successful spend. A fresh
 invocation is required after raising limits; static totality stays unchanged.
 
-The core SHALL poll `Cancel` at every charge, as
-[FR-276](FR-276-cancel-a-lifecycle-operation.md) requires, as well as before
-each scheduler transition. When cancellation is observed before the next transition, the core SHALL
-terminate with the existing `CallFailure::Cancelled`, without executing another
-body, child or charge. A transition already in progress SHALL save its committed
-state at its end before control returns to the caller; cancellation SHALL NOT
-replay it. When the session terminates with completion, refusal, undefinedness,
-incomplete, fault or cancellation, the core SHALL release suspended frames
-without executing continuations.
+The meter SHALL poll its installed handle at every charge, as
+[FR-276](FR-276-cancel-a-lifecycle-operation.md) requires, and the core SHALL
+observe cancellation only there. A charge the handle denies is a denied charge
+like any other: the session SHALL terminate with that charge's located
+incomplete result, with `limit_kind: work_units` and `limit` equal to
+`consumed`, the denied charge unrecorded and earlier spend retained, whichever
+frame, body or `function.call` made the charge. The handle's `tripped()`
+then reports the cause. The core SHALL NOT turn that result into
+`CallFailure::Cancelled`; it is the result the reference evaluator's `call`
+and `evaluate` return for the same charge. The lifecycle operation that holds
+the handle reads `tripped()` and returns its own cancelled failure, as FR-276
+states. A cancellation made between two steps is observed at the next charge;
+a transition that makes no charge runs to its end. The core returns
+`CallFailure::Cancelled` only as a pre-charge Begin failure from the
+supplied-value run ([FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md)).
+When the session terminates with completion, refusal, undefinedness,
+incomplete or fault, the core SHALL release suspended frames without executing
+continuations.
 Locations, loss records and outcome propagation SHALL match the reference
 evaluator; a scheduling yield is never an evaluation result.
 
@@ -221,9 +247,11 @@ and JIT preparation retain their existing contracts.
 | FR-262-AC-4 | A generated body calls a second generated body that calls an interpreted function. Stepping between every handoff and return produces the reference result and charge sequence, resumes each caller once, preserves locals and call-site locations, and never recursively invokes the evaluator. | Test |
 | FR-262-AC-5 | A source call with two argument applications charges them left to right before its own call charge and body work. Steps add no charge; a standalone literal charges no `function.call`; rejected root inputs cause no charge or body invocation. | Test |
 | FR-262-AC-6 | For AC-4's mixed-body chain let `w` be reference work spend. Limit `w` completes; `w - 1` returns the reference located incomplete result and denied charge, keeps earlier spend and leaves the denied charge unrecorded. No subsequent step can run a suspended body; a fresh invocation at `w` completes with static totality unchanged. | Test |
-| FR-262-AC-7 | Cancelling after a child request is saved, before the next transition, returns `CallFailure::Cancelled` with no further charge or body execution. In a direct-return caller, a child refusal or undefined outcome propagates with reference location/loss behavior and runs no subsequent body work; dropping the session executes no continuation. | Test |
+| FR-262-AC-7 | A body saves a child request, and the meter's handle is cancelled with `Requested` before the next step. That step returns the located incomplete result at the child's `function.call` charge, with `limit_kind: work_units`, `limit` equal to `consumed` and the request's call-site location. The charge is not recorded, no child body is invoked, no later charge is made, and `tripped()` returns `Requested`. In two further runs, a child returns a refusal in one and an undefined outcome in the other, to a body that returns its child's outcome unchanged. In each, the requesting body is resumed exactly once with that outcome, and it returns the outcome with the reference's location and losses. The body is not resumed again, and no transition follows its return. Dropping a runnable session executes no continuation. | Test |
 | FR-262-AC-8 | A body performs charged work, saves a local, requests a child and continues with its returned value. Each body transition and child occurs exactly once across steps; prepared-entry execution matches the synchronous reference, including a kernel loss record, and unsupported preparation stays a pre-application disposition. | Test |
 | FR-262-AC-9 | An interface crate with only a std reference adapter does not satisfy RT's complete evaluator migration. That migration consumes the shared implementation with std disabled on RT's governed no_std target, supplies checked-input and generated-body evaluation through this interface, and leaves no RT-local evaluator copy or compatibility re-export. | Inspection |
+| FR-262-AC-10 | Begin takes no `Cancel` argument. With a meter whose installed handle is cancelled with `Deadline` at the first kernel charge a registered body makes, the session terminates with that charge's located incomplete result (`limit_kind: work_units`, `limit` equal to `consumed`), not `CallFailure::Cancelled`; `tripped()` returns `Deadline`. With the handle cancelled at a `function.call` charge, the result has the same form at that charge. When a caller cancels between two steps and the next transition makes no charge, that transition runs and the session terminates at the first charge after it. | Test |
+| FR-262-AC-11 | A registered body requests, in three runs: a `NodeKey` that no function of the closure has; the admitted `f(x: Int[0, 9]): Boolean` with two arguments; and `f` with the argument `10`. Each run terminates with `CallFailure::Fault` whose `InternalFault` has stage `quire-eval` and invariant `child-request-not-admitted`, category `internal failure`. The run makes no `function.call` charge for the child, invokes no callee body, does not resume the requesting body, and keeps the charges made before the request. Begin of `f` with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, and Begin of `f` with `10` returns `CallFailure::Input` from argument admission, each with no charge. | Test |
 
 ## Dependencies
 
