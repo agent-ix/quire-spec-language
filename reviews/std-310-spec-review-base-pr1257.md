@@ -42,3 +42,15 @@ PASS WITH MINOR FINDINGS, but merge it after QSpec #376: FR-230 relies on #376's
 | FR-230-AC-5 | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md | examined |
 | TC-685 | spec/test-cases/TC-685-s3-checks-time-declarations-and-clock-constraints.md | examined |
 | TC-685 | spec/test-cases/TC-685-s3-checks-time-declarations-and-clock-constraints.md | examined |
+
+## Dispositions
+
+Round 1 at 1032ae3.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+
+Round 1 verdict: MERGEABLE once QSpec #376 lands (or with it): all three round-0 findings fixed at 1032ae3. TC-685 has the Rate variant and acme/flow, AC-5 and step 6 cover the two-package Time conflict at /lock/model_selections/1, and FR-230's package-unit wording matches #376's declaration-less nodes reached by M::name. #376 FND-005 (preimage schema) does not change any FR-230 text. Gate: QSPEC_DIR=<#376 head aea3033> make check-spec-validation exits 0 with no FR-230 or TC-685 diagnostic. Main bc6c446 is 3 commits ahead of the head and merges cleanly.
