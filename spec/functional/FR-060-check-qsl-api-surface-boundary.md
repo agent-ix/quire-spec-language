@@ -223,7 +223,7 @@ QSL output, calls this entry and never names `qsl_replay::spine`.
 ### T12-A and the evaluator differential corpus
 
 T12-A protects the `qsl-replay` facade, the QSL crate through which CG
-calls into QSL; its patterns match only `qsl_replay`. A crate from its own
+calls into QSL; its call patterns name only `qsl_replay`. A crate from its own
 repository is not a QSL crate for T12-A, even when QSL owns it: the
 evaluation leaf `quire-eval`, the evaluator corpus crate
 `quire-eval-corpus` and the checked-term leaf `quire-checked` (all in

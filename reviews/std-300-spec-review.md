@@ -112,6 +112,23 @@ The reviewer checked the following and found them sound:
 | FND-020 | low | minor: The relayed owner direction assumes an implementation CG can run will exist in `agent-ix/quire-eval`. AD-001's S6 bullet says IR-590 "converts `qsl-eval`", which lives in the QSL repository, while the RT acceptance asks for "the shared evaluator ... without a QSL-local evaluator dependency". Until the owner confirms where IR-590's implementation lands, CG's non-null `expected` path may never open. The direction is labelled relayed and unverified, which is correct, and needs Peter's confirmation. | spec/assurance/AD-001-shared-evaluation-core-interface.md:199-200 |
 | FND-021 | low | minor: Wording nits. TC-069's fourteen vectors are listed in `tests/runtime_evaluation_cases/scalars.rs`, not in TC-069, so name that file. `ModelOperationClause.kind` is an enum with no stated encoding (snake case?). "`f0` to `fn`" reads as a keyword; write "`f0` to `f2`". | spec/functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md:235-237, spec/functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md:285-286, spec/functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md:289-293 |
 
+## New findings (disposition pass 2)
+
+Head 9e808875f (main 3763e5b7d is an ancestor). The changes since 2664e72bc fix FND-014 to FND-021. They also place IR-590's `no_std` implementation in `quire-eval`, consumed by `qsl-eval` (a planner answer, labelled a lead default rather than an owner answer). AD-001's S7 paragraph is updated to match; its S6 bullet is not.
+
+The reviewer checked the following against the code and found them sound:
+
+- `RawSourceRef` and `CheckedSourceRef` carry `authority`, `identity` and the digest, so AC-2's mutations behave as stated: a changed authority or identity refuses `package_mismatch`, and a changed revision admits.
+- `quire-exact` is `#![no_std]` with `alloc`, and its `test-support` log is an `alloc` `Vec`, so the `no_std` test build can keep the charge log that AC-9 requires.
+- The new `package_id` vector is an object, so it reaches `invalid_package_id`.
+- The key, the `gen/NNN` ids and the std-only admission are consistent across FR-402, AC-5, AC-7, AC-8, AC-9 and TC-1112.
+- FR-060-AC-8 can fail, since a `compile_package` call outside `replay` fails today's rule data.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-022 | low | minor: "its patterns match only `qsl_replay`" is not exact. T12-A's rule data also carries the forbidden pattern `quire_spec_language::replay::` (`tools/arch-lint/api_surface.rs`, the T12-A `forbidden_patterns`). <br>Fix: "its call patterns name only `qsl_replay`". | spec/functional/FR-060-check-qsl-api-surface-boundary.md:225-226 |
+| FND-023 | medium | minor: AD-001 now contradicts itself. Its S6 bullet says "IR-590 (S6) converts `qsl-eval` to no_std + alloc behind the interface", while the new S7 paragraph says the `no_std` implementation "lives in `quire-eval` ... and `qsl-eval` consumes it". NFR-015 also places `qsl-eval` at S6. The PR leaves the S6 bullet to "STD-299's S4/S6 author", but STD-299 is Done, so no open ticket owns the amendment. <br>Fix: amend the S6 bullet in this PR, or file an open Linear ticket for AD-001 S6 and NFR-015's `qsl-eval` row and name it in the PR body. | spec/assurance/AD-001-shared-evaluation-core-interface.md:177, spec/assurance/AD-001-shared-evaluation-core-interface.md:199-205 |
+
 ## Dispositions
 
 Round 1, reviewed at 2664e72bce43f4f2b8036a5f651db296cc70820e (after 51b3fc048 and the rework).
@@ -133,3 +150,18 @@ Round 1, reviewed at 2664e72bce43f4f2b8036a5f651db296cc70820e (after 51b3fc048 a
 | FND-013 | fixed | The std and `no_std` runs are two separate builds that pair their records by `case_id`. The new admission gap is FND-017, and the pairing gap is FND-016. |
 
 Verdict after round 1: not mergeable. One major finding is open: FND-014 (AC-2 contradicts the emitter). FND-015 to FND-021 are minor.
+
+Round 2, reviewed at 9e808875f2e24a120c277cb1fcf60a97e0c266c3.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-014 | fixed | FR-402 says the source references carry `authority`, `identity` and the digest, and that `revision_namespace` and `revision` do not bind `package_id`. In AC-2, a changed authority or identity refuses `package_mismatch` and a changed revision admits. TC-1112 step 2 matches. |
+| FND-015 | fixed | AC-4's vector is `{"algorithm": "sha256", "digest": "zz"}`, an object, so it reaches `invalid_package_id`. |
+| FND-016 | fixed | Generated ids are `gen/000` to `gen/255`. A case's key is (bundle, `case_id`) over the bundles `checked-in`, `generated` and `external`. Admission, pairing and reports use the key. AC-8 runs an external bundle that reuses `fr402/count-3`. |
+| FND-017 | fixed | Admission runs once, in the std build. The `no_std` build compiles nothing and evaluates the admitted cases through its own checked-input contract. A case it cannot take is a divergence. The handoff is IR-590's contract (AD-001 S7). AC-9 tests a `no_std` record set that lacks a case. |
+| FND-018 | fixed | The runner is a Cargo test target whose dev-dependency on `quire-eval-corpus` enables `charge-log`. The xtask command evaluates nothing itself. AC-9 requires non-null `charges` for `fr402/count-3` in both builds. |
+| FND-019 | accepted-no-change | This is main's state (FR-059 at repository granularity, T12-A matching `qsl_replay::`). The section no longer claims that `qsl-replay` is CG's only QSL dependency; it now states what T12-A matches. The owner can open a ticket if the hole should be closed. |
+| FND-020 | fixed | FR-402 and AD-001 S7 place the `no_std` implementation in `quire-eval`, consumed by `qsl-eval`. The PR body labels this a lead default from the planner's answer, not an owner answer. The S6 bullet left behind is FND-023. |
+| FND-021 | fixed | FR-402 names `tests/runtime_evaluation_cases/scalars.rs`, encodes `OperationClauseKind` in snake case (`requires`, `ensures`) and names the functions `f0`, `f1` and `f2`. |
+
+Verdict after round 2: no major finding is open. FND-022 (low) and FND-023 (medium) are new minor findings. The PR is mergeable once both are fixed, or once FND-023 is deferred to an open Linear ticket.
