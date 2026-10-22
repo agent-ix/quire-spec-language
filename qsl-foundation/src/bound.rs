@@ -25,8 +25,9 @@
 //! `selection`: `selection` because an [`IntervalKey`] names its profile by
 //! [`DefinitionRef`].
 
-use std::fmt;
-use std::num::NonZeroU64;
+use alloc::{string::String, vec::Vec};
+use core::fmt;
+use core::num::NonZeroU64;
 
 use quire_exact::{EmptyInterval, Integer, IntegerInterval, Rational};
 
@@ -499,11 +500,11 @@ impl TimedInterval {
             return Err(InvalidTimedInterval::NegativeLower);
         }
         match lower.cmp(&upper) {
-            std::cmp::Ordering::Greater => return Err(InvalidTimedInterval::Inverted),
-            std::cmp::Ordering::Equal if !(lower_closed && upper_closed) => {
+            core::cmp::Ordering::Greater => return Err(InvalidTimedInterval::Inverted),
+            core::cmp::Ordering::Equal if !(lower_closed && upper_closed) => {
                 return Err(InvalidTimedInterval::EmptyOpenEnd)
             }
-            std::cmp::Ordering::Equal | std::cmp::Ordering::Less => {}
+            core::cmp::Ordering::Equal | core::cmp::Ordering::Less => {}
         }
         Ok(Self {
             lower,
@@ -543,9 +544,9 @@ impl TimedInterval {
     /// read with each end's openness, in exact arithmetic.
     pub fn contains(&self, offset: &Rational) -> bool {
         let above = match offset.cmp(&self.lower) {
-            std::cmp::Ordering::Greater => true,
-            std::cmp::Ordering::Equal => self.lower_closed,
-            std::cmp::Ordering::Less => false,
+            core::cmp::Ordering::Greater => true,
+            core::cmp::Ordering::Equal => self.lower_closed,
+            core::cmp::Ordering::Less => false,
         };
         above && self.admits_at_most(offset)
     }
@@ -553,17 +554,17 @@ impl TimedInterval {
     /// Whether some offset of the interval is at least `offset`.
     pub fn reaches(&self, offset: &Rational) -> bool {
         match self.upper.cmp(offset) {
-            std::cmp::Ordering::Greater => true,
-            std::cmp::Ordering::Equal => self.upper_closed,
-            std::cmp::Ordering::Less => false,
+            core::cmp::Ordering::Greater => true,
+            core::cmp::Ordering::Equal => self.upper_closed,
+            core::cmp::Ordering::Less => false,
         }
     }
 
     fn admits_at_most(&self, offset: &Rational) -> bool {
         match offset.cmp(&self.upper) {
-            std::cmp::Ordering::Less => true,
-            std::cmp::Ordering::Equal => self.upper_closed,
-            std::cmp::Ordering::Greater => false,
+            core::cmp::Ordering::Less => true,
+            core::cmp::Ordering::Equal => self.upper_closed,
+            core::cmp::Ordering::Greater => false,
         }
     }
 
@@ -608,6 +609,7 @@ impl TimedIntervalKey {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
     /// FR-097-AC-9: a proof bound exists only with the kind its variant
     /// pairs with; `None` is for a `Variants` bound alone.
     #[trace("TC-436", "FR-097-AC-9")]
