@@ -273,9 +273,11 @@ fn bit_level_float_constructors_remain_unrepresented_source_forms() {
 #[trace("TC-1091", "FR-397-AC-1", "FR-397-AC-3")]
 #[test]
 fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source_spine() {
-    use qsl_replay::spine::{self, Call, CallArgument, CallOutcome, CallValue, SpineLimits};
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use qsl_replay::spine::{self, ParseRequest, SpineLimits};
+    use qsl_semantics::family::FamilyOutcome;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
-    use quire_exact::{Cancel, IeeeValue, Integer, Rational, Value as KernelValue};
+    use quire_exact::{Cancel, IeeeValue, Integer, Meter, Outcome, Rational, Value as KernelValue};
 
     for (width, left, right) in [
         (
@@ -298,40 +300,53 @@ fn admitted_float_arithmetic_and_rational_conversion_evaluate_through_the_source
                 Rational::new(Integer::from(expected), Integer::one()).unwrap()
             };
             let text = format!("{HEADER}function agrees using v(a: {width}[nearest-even], b: {width}[nearest-even], expected: Rational[-100, 100; 1, 16]): Boolean pure {{ convert<Rational[-100, 100; 1, 16]>(a {operator} b) = expected }}");
-            let call = Call {
-                function: "agrees".to_owned(),
-                arguments: vec![
-                    CallArgument {
-                        parameter: "a".to_owned(),
-                        value: KernelValue::Float(left),
-                    },
-                    CallArgument {
-                        parameter: "b".to_owned(),
-                        value: KernelValue::Float(right),
-                    },
-                    CallArgument {
-                        parameter: "expected".to_owned(),
-                        value: KernelValue::Rational(expected),
-                    },
-                ],
-                accounting: spine::default_accounting(1_000_000),
-                supplied: Default::default(),
-            };
-            let (_, outcome) = spine::run(
-                SourceIdentity::new("a", "ieee", "git", "1"),
-                "ieee.native",
-                text.as_bytes(),
-                &Default::default(),
-                &DependencyInput::default(),
-                SpineLimits::default(),
-                &call,
-                &ObjectEnvironment::default(),
-                &Cancel::new(),
+            let source = SourceIdentity::new("a", "ieee", "git", "1");
+            let limits = SpineLimits::default();
+            let cancel = Cancel::new();
+            let parsed = spine::parse(
+                &ParseRequest {
+                    source: &source,
+                    path: "ieee.native",
+                    bytes: text.as_bytes(),
+                },
+                limits.source,
+                &cancel,
             )
-            .expect("the genuine float source runs");
+            .expect("source parses")
+            .into_value();
+            let models = spine::select(&parsed, &Default::default(), limits.model, &cancel)
+                .expect("models select")
+                .into_value();
+            let checked = spine::check(
+                &parsed,
+                &models,
+                &DependencyInput::default(),
+                &spine::LockEvidence::default(),
+                limits,
+                &cancel,
+            )
+            .expect("source checks without an injected IEEE profile")
+            .into_value();
+            let evaluation = checked
+                .package()
+                .call(
+                    &QualifiedName::unqualified("agrees").unwrap(),
+                    vec![
+                        KernelValue::Float(left),
+                        KernelValue::Float(right),
+                        KernelValue::Rational(expected),
+                    ],
+                    &ObjectEnvironment::default(),
+                    &mut Meter::new(spine::default_accounting(1_000_000)),
+                )
+                .expect("the admitted float call runs");
             assert!(
-                matches!(outcome, CallOutcome::Completed(CallValue::Boolean(true))),
-                "{width} {operator}: {outcome:?}"
+                matches!(
+                    evaluation.outcome,
+                    FamilyOutcome::Evaluated(Outcome::Completed(KernelValue::Boolean(true)))
+                ),
+                "{width} {operator}: {:?}",
+                evaluation.outcome,
             );
         }
     }
