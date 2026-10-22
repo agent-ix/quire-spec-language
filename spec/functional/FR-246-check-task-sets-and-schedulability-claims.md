@@ -67,17 +67,17 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 - Every time value SHALL be an exact rational time quantity converted to
   one unit per task set (QSpec FR-142); a value of another dimension SHALL
   refuse `ill_typed`/`type-mismatch` at its span.
-- The checker SHALL refuse, each with `invalid_model_binding`/
-  `malformed-declaration` at the span: a period or minimum inter-arrival
-  time that is not positive; a deadline that is not positive; a WCET that is
-  not positive; a `HI` task whose `C(LO)` exceeds `C(HI)`; a `LO` task with
-  dual budgets.
+- The checker SHALL refuse, each with `invalid_timed_model`/
+  `invalid-task-set` at the span, naming the task (QSpec FR-419): a period or
+  minimum inter-arrival time that is not positive; a deadline that is not
+  positive; a WCET that is not positive; a `HI` task whose `C(LO)` exceeds
+  `C(HI)`; a `LO` task with dual budgets.
 - Two tasks with one name SHALL refuse `conflicting_declaration`/
   `duplicate-declaration`.
 - A `fixed-priority` or `amc` claim over a task set where two tasks share a
-  priority, or a task has none, SHALL refuse `invalid_model_binding`/
-  `malformed-declaration`, naming the tasks. An `edf` claim SHALL ignore
-  priorities.
+  priority, or a task has none, SHALL refuse `invalid_timed_model`/
+  `invalid-task-set`, naming the tasks (QSpec FR-419). An `edf` claim SHALL
+  ignore priorities.
 - A `response` claim SHALL name a task of the set, refusing
   `missing_declaration`/`missing-name` otherwise.
 - The task set, including every WCET, blocking term and jitter, SHALL be
@@ -91,7 +91,7 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-246-AC-1 | ADR-026 §12's `Ctl` (periodic, `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms, priorities by period) checks; `schedulable Ctl under fixed-priority` and `under edf` route to EN-7 under `schedulability`. The `Ctl` with the third WCET 6 gives a different obligation identity. | Test (TC-701) |
-| FR-246-AC-2 | Refusals at the span: a period of 0 ms; a `HI` task with `C(LO)` 3 and `C(HI)` 2; two tasks named `a`; two tasks with priority 1 under `fixed-priority`; `response Ctl.zz <= 5 ms`; a deadline of `3 m`. The same priority clash under `edf` checks. | Test (TC-701) |
+| FR-246-AC-2 | Refusals at the span: a period of 0 ms, a `HI` task with `C(LO)` 3 and `C(HI)` 2, and two tasks with priority 1 under `fixed-priority` each refuse `invalid_timed_model`/`invalid-task-set` naming the task; two tasks named `a` refuse `conflicting_declaration`/`duplicate-declaration`; `response Ctl.zz <= 5 ms` refuses `missing_declaration`/`missing-name`; a deadline of `3 m` refuses `ill_typed`/`type-mismatch`. The same priority clash under `edf` checks. | Test (TC-701) |
 
 ## Dependencies
 
