@@ -63,9 +63,9 @@ Plan completion: not assessed.
 
 ## Dispositions
 
-Author fix round; the original review findings and verdict above are preserved.
+Round 1, reviewed at 8e935d42e (PR head 7bd96771a after a merge of main).
 
-| Finding | Disposition | Evidence |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | Fixed | FR-397 Comparison explicitly applies `operator-ineligible` when either operand is a float, including unlike widths and exact types. A separate arithmetic clause specifies `type-mismatch`. AC-6 and TC-1091 describe both cases; comparison tests assert the refusal and operator region in both operand orders. The new tests exposed mixed float/exact ordering returning `type-mismatch`; the ordering checker now applies the float operator refusal to either operand. |
-| FND-002 | Fixed | The AC-6 mixed-arithmetic test covers `+`, `-`, `*` and `/` for both float widths paired with `Int` and `Rational` in both operand orders, as well as unlike float widths. Every case must refuse `ill_typed`/`type-mismatch`. |
+| FND-001 | fixed | 94e5e489e, 8e935d42e: the FR-397 Comparison clause now applies `operator-ineligible` when either operand is a float, and arithmetic `type-mismatch` is a separate clause. AC-6 and TC-1091 match. `Typer::ordering` now refuses `(Float, _) \| (_, Float)` as ineligible, so `a < r` with a float operand refuses `operator-ineligible`. It previously refused `type-mismatch`, so ordering now agrees with equality and the new spec. Mutation: restoring `(Float, Float)` fails `float_comparisons_refuse_before_mixed_operand_type_checks`. |
+| FND-002 | fixed | 94e5e489e: `mixed_float_widths_and_exact_arithmetic_refuse_type_mismatch` pins `+ - * /` over unlike widths, float with Int and float with Rational, in both operand orders. It passes at 8e935d42e. |

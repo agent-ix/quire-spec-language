@@ -90,11 +90,11 @@ Mergeable. There is no major and no medium finding. All four findings are low.
 
 ## Dispositions
 
-Author fix round; the original review findings and verdict above are preserved.
+Round 1, reviewed at 8e935d42e (PR head 7bd96771a after a merge of main). The reviewer checked each row against the fix commits 94e5e489e and 8e935d42e. The `compile_ieee_profile` tests pass (12 of 12), clippy with all features is clean on qsl-semantics and qsl-replay, and quire validate passes on FR-397 and TC-1091.
 
-| Finding | Disposition | Evidence |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | Fixed | The bit-constructor S2 control retains TC-1091 and drops FR-397-AC-8; it no longer claims conversion coverage. |
-| FND-002 | Fixed | The evaluation test additionally asserts one selected IEEE row, arithmetic and conversion laws, the arithmetic identity and rounding mode before evaluating each source. |
-| FND-003 | Fixed | `KeyFault::IeeeProfileAdmission` retains the owner's typed `PackageRefusal` and the existing invariant identifier. Catalog, location and fault imports are at module scope. |
-| FND-004 | Fixed | The trigger field and FR-397 Inputs document why declaration scanning covers all body float sources today and require any future source to extend the trigger. |
+| FND-001 | fixed | 94e5e489e: `bit_level_float_constructors_remain_unrepresented_source_forms` is now traced `TC-1091` only, with a comment that it does not claim AC-8. |
+| FND-002 | fixed | 94e5e489e: the evaluation test now also asserts that the emitted arithmetic identity, its law, `rounding nearest-even` and the `to_rational` law match the selected row before it evaluates, so its AC-1/AC-3 tags are backed by assertions. |
+| FND-003 | fixed | 94e5e489e: `KeyFault::IeeeProfileAdmission(PackageRefusal)` keeps the typed cause under the same invariant id `catalog-ieee-profile-admitted`. The function-local `use` and long inline paths are now module imports. |
+| FND-004 | fixed | 94e5e489e: the `ieee_operation` doc and FR-397 Inputs state that every body float comes from a declaration, and that any new float source must extend the trigger. |
