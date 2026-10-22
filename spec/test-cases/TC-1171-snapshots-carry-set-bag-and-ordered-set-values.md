@@ -16,7 +16,7 @@ Scope: FR-106-AC-50, FR-106-AC-51, FR-106-AC-52.
 
 ## Test Procedure
 
-Fixture: a package with object type `Tagged` (fields `ids: Set<UUID>[0, 3]`, `counts: Bag<Int[0, 9]>[0, 4]`, `order: OrderedSet<Int[0, 9]>[0, 3]`, `stamps: OrderedSet<Timestamp>[0, 2]`, `peers: Set<Reference<Tagged>>[0, 2]`), populations `ix://test/tagged/T` of `Tagged` holding `t1` and `z1` and `ix://test/tagged/U` of `Tagged` holding `a1`, and an operation `retag` whose frame grants no field.
+Fixture: a package with object type `Tagged` (fields `ids: Set<UUID>[0, 3]`, `counts: Bag<Int[0, 9]>[0, 4]`, `order: OrderedSet<Int[0, 9]>[0, 3]`, `stamps: OrderedSet<Timestamp>[0, 2]`, `peers: Set<Reference<Tagged>>[0, 2]`), populations `ix://test/tagged/T` of `Tagged` holding `t1` and `z1` and `ix://test/tagged/U` of `Tagged` holding `a1`, and an operation `retag` whose frame grants no field. In every snapshot, `z1` and `a1` hold an empty value of each of the five fields (`{"set": []}`, `{"bag": []}`, `{"ordered-set": []}`).
 
 1. Admit the current snapshot FR-106-AC-50 writes and read the written order of `peers`; then the same document with the `ids`, `counts` and `peers` elements reversed, and with the `order` elements reversed. Compare the typed observations and the document digests.
 2. Admit each FR-106-AC-51 mutation of that snapshot, then the same mutations in a `retag` parameter of the same type and in a state-machine context field.
