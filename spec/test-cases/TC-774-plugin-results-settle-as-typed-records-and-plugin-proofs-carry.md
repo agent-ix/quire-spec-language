@@ -38,7 +38,7 @@ Tag the tests `#[trace("TC-774", "<AC id>")]`.
 - Step 4: the plugin text shows `proved` with `trusted` beside it and the JSON holds certification `trusted`; the `uncertified` text shows `proved` with `uncertified` beside it; the Kani text shows `proved` with `certified` beside it.
 - Step 5: each accepted vector reads as the value FR-290-AC-5, AC-7 or AC-8 names and settles as stated; each refused vector returns the refusal and pointer FR-290-AC-6, AC-7 or AC-9 names.
 - Step 6: the assignments and refusals of FR-290-AC-10.
-- Step 7: each diagnostic carries the code and cause of FR-290's diagnostics table, the item index, the member or pointer and the received spelling; each record is `failed` naming the plugin.
+- Step 7: each diagnostic carries the code and cause of FR-290's diagnostics table, the item index and the received spelling, every `invalid_result` diagnostic its refusal's pointer as `document_pointer`, and `CertificationNotTrusted`'s `expected` `trusted` and `actual` the received value; each record is `failed` naming the plugin.
 - Step 8: the request's members are those FR-290-AC-12 names; `x = 0` settles `refuted` naming the plugin, `x = 5` settles `inconclusive` with `replay-parity`, and the `q` request selects `q` at the item's occurrence and settles `inconclusive` with `replay-parity`.
 - Step 9: the encodings and digests FR-290-AC-13 gives; the step 8 request carries its item's identity.
 - Step 10: `s1.tokens` 200000 and `library.definitions` 9000 with every other carried stage setting at its bound, and `work_units` 5000; the refusals of FR-290-AC-14 in its order, `NotReplayable` settling `inconclusive` and each other `failed` naming the plugin.
