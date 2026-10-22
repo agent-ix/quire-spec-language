@@ -46,11 +46,19 @@ No constructor the driver needs is missing. The changelog line is in the PR body
 
 The ticket's items 1, 2 and 4 are met, and item 3 is met in code. Its ADR prose is pending in draco's lane. There are no high gaps. The one medium is a missing test for a soundness guard, and it is cheap to add.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-289-AC-11 says "every other `InconclusiveCause` kind is not refused by the cause-kind reader". The test iterates 10 of the 15 other variants. It omits `CertificateRejected`, `ScalarAgrees`, `WellDefinednessUnchecked`, `ReductionNotPreserving` and `SymmetryBroken`. Add them, or narrow the AC to the listed kinds. | qsl-replay/tests/terminal_record_facade.rs:422-435 |
+
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at f1df350ca (code fix 5acdfbc3d). The rows were checked by the reviewer and replace the coder's self-reported table.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: reproduced_non_violation_settles_failed (FR-289-AC-8) | 5acdfbc3d |
-| FND-002 | fixed: from_plugin_proof refuses Checks, ClosedForm and Witness (CoreOnlyBasis); FR-289-AC-10 | 5acdfbc3d |
-| FND-003 | fixed: test iterates ten other InconclusiveCause spellings (FR-289-AC-11) | 5acdfbc3d |
-| FND-004 | fixed in spec: FR-289 states the driver carries the cause in the outcome document; PluginResultRefusal::record documents it | 5acdfbc3d |
+| FND-001 | fixed | 5acdfbc3d |
+| FND-002 | fixed | 5acdfbc3d |
+| FND-003 | fixed | 5acdfbc3d |
+| FND-004 | fixed | 5acdfbc3d |

@@ -42,11 +42,19 @@ Rust idioms: the enums are exhaustive, `Copy`, derive `thiserror`, and are re-ex
 
 Mergeable. There are no high findings. Every path to `Refuted` requires a QSL-side S6a replay that completed a `Violation` value. A plugin proof can never be `Certified` or carry `Checks`. The `ReplayParity` payload is derived on the QSL side. The fault and non-fault refusal split is correct. FND-001 is a small, cheap test addition and should ride in a fix round if one happens. FND-002 to FND-004 can follow.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The `ProofBasis::ClosedForm` refusal in `from_plugin_proof` has no test. A mutation that removes `ClosedForm` from the core-only `matches!` survives; the `Checks` and `Witness` removals are caught. Add one `ClosedForm` case to `plugin_proof_is_trusted_and_names_the_plugin`. | qsl-replay/src/proof_result/plugin.rs:125-130 |
+
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at f1df350ca (code fix 5acdfbc3d). The rows were checked by the reviewer, by measurement where cheap. They replace the coder's self-reported table. Mutation probes at this head: dropping the `category() == Violation` guard and changing the `None => Failed` arm are both now caught by `reproduced_non_violation_settles_failed`. `from_plugin_inconclusive` accepting either QSL-only cause is caught. The facade suite passes 15 tests.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: tests reproduced_non_violation_settles_failed cover both arms; removing the category guard fails it | 5acdfbc3d |
-| FND-002 | fixed: TerminalRecord::from_plugin_inconclusive refuses ReplayParity/ReplayRefused by type; the kind reader refuses the three spellings, kani-vacuous-proof having no InconclusiveCause value | 5acdfbc3d |
-| FND-003 | fixed: one set of spelling constants shared by InconclusiveCause::as_str, ReportedInconclusiveCause::as_str and the reader | 5acdfbc3d |
-| FND-004 | accepted-no-change: whichever of #1181 and this PR lands second updates the marker | 5acdfbc3d |
+| FND-001 | fixed | 5acdfbc3d |
+| FND-002 | fixed | 5acdfbc3d |
+| FND-003 | fixed | 5acdfbc3d |
+| FND-004 | accepted-no-change | Merge-order note only; whichever of #1181 and #1208 lands second updates the one marker. |

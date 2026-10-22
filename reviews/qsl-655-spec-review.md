@@ -37,10 +37,19 @@ What was checked:
 
 The spec edits are sound and match the code and the ADR. There are no high or medium findings, and the PR is not blocked on spec. Coordinate with draco so that PL-7's QSL-only cause wording, and any FR text draco adds, matches FR-289's bullets.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | TC-773's scope now reads AC-1 to AC-11, but step 4 and its expected result still describe the round-0 cases. They omit the witness-arm `failed` case (AC-7), the reproduced non-violation (AC-8), the closed-form and witness bases (AC-10), and the typed `from_plugin_inconclusive` refusal (AC-11). Extend step 4 so each new AC has a stated procedure and expected result. | spec/test-cases/TC-773-installing-removing-or-reordering-providers-changes-nothing-outside.md:22,31 |
+| FND-005 | low | FR-289-AC-11 makes three claims in one row: the reader refuses the three kinds, the typed constructor refuses two causes, and the reader accepts every other kind. The QSL-only bullet also says "draco's PL-7 text states the rule", which is not yet true on main; PL-7 has no such text. Split AC-11 into two, and drop the lane note in favour of a plain PL-7 anchor once the text lands. | spec/functional/FR-289-keep-results-unchanged-by-provider-installation.md:85-90,106 |
+
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at f1df350ca (spec fix 5acdfbc3d). The rows were checked by the reviewer and replace the coder's self-reported table. `quire validate` passes on FR-289 and TC-773.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: FR-289 states witness-arm and reproduced non-violation settle failed (AC-7, AC-8) | 5acdfbc3d |
-| FND-002 | fixed: bullets cite ADR-029 PL-7 by name; draco text lands later | 5acdfbc3d |
-| FND-003 | fixed: AC-4 split into AC-4 to AC-8 and AC-9 to AC-11, TC-773 renumbered | 5acdfbc3d |
+| FND-001 | fixed | 5acdfbc3d |
+| FND-002 | fixed | 5acdfbc3d |
+| FND-003 | fixed | 5acdfbc3d |
