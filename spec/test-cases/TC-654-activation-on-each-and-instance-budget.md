@@ -22,8 +22,7 @@ Scope: FR-209-AC-1 to FR-209-AC-4.
    the refuted claim with bound 1.
 3. With bound 2, read instance ordinals across activation, finishing and
    reactivation; run the deadlock-freedom item.
-4. Run FR-209-AC-4's combined-bound cases and compare obligation
-   identities across bounds.
+4. Run FR-209-AC-4's combined-bound cases.
 
 Tag the tests `#[trace("TC-654", "FR-209-AC-n")]`.
 
@@ -36,4 +35,4 @@ Tag the tests `#[trace("TC-654", "FR-209-AC-n")]`.
 - Step 3: ordinals 0 and 1, then 0 reused; no instance-limited state
   reported as a deadlock.
 - Step 4: `MemoryBoundReached` first, then `InstanceBoundReached` over
-  `BoundReached`; equal identities.
+  `BoundReached`.
