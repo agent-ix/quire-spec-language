@@ -270,7 +270,7 @@ pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
-    ReplayRequestWire, StageLimits, StateEnvironment,
+    ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, InputArmResult,
