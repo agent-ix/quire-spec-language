@@ -84,12 +84,10 @@ timed model treats an operation enabled only between positions as enabled.
 - A delay of the concrete model SHALL map to no abstract step: `check_step`
   (FR-141) SHALL be called only for discrete steps, and the abstract state
   SHALL be unchanged across a delay.
-- Negotiation SHALL route the refinement's TP-5 record (FR-144) whose
-  concrete subject declares `time dense` to EN-6's provider, and EN-6's
-  provider manifest SHALL advertise (`temporal-satisfaction`, TP-5) for a
-  `time dense` concrete subject. A refinement record over an untimed or
-  `time tick` concrete subject keeps FR-144's route to the explicit-state
-  engine.
+- Negotiation SHALL route the refinement's record (FR-144) whose concrete
+  subject declares `time dense` to EN-6's provider, as FR-144 states. A
+  refinement record over an untimed or `time tick` concrete subject keeps
+  FR-144's route to the explicit-state engine.
 - The safety half SHALL be decided by EN-6 on the symbolic product whose
   states are (discrete product state of FR-142, zone), with successors by
   FR-239's symbolic successor relation and `check_step` run on each

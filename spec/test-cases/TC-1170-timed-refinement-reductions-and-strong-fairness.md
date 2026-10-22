@@ -1,16 +1,16 @@
 ---
 id: TC-1170
-title: "Timed refinement, symmetry with clocks, partial-order refusal and strong fairness over time"
+title: "Timed refinement, symmetry with clocks, reductions settled at negotiation and strong fairness over time"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-430
     type: verifies
 ---
-# TC-1170: Timed refinement, symmetry with clocks, partial-order refusal and strong fairness over time
+# TC-1170: Timed refinement, symmetry with clocks, reductions settled at negotiation and strong fairness over time
 
 ## Description
 
-Verify the ADR-026 §15 interactions: a timed model refining an untimed one with delays as abstract stutters, symmetry permuting objects with their clocks on EN-6, partial-order reduction and state constraints settling at pre-check over a timed subject, and strong fairness read over time.
+Verify the ADR-026 §15 interactions: a timed model refining an untimed one with delays as abstract stutters, symmetry permuting objects with their clocks on EN-6, partial-order reduction and state constraints over a `time dense` subject settling V-8 at negotiation, and strong fairness read over time.
 
 Scope: FR-430-AC-1 to FR-430-AC-4.
 
