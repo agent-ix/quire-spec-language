@@ -2916,8 +2916,7 @@ fn extension_definition_absent_from_selections_refuses_missing_selection() {
         rows.retain(|row| row["identity"] != "retention");
         assert_eq!(rows.len(), before - 1, "the fixture selects retention once");
     }
-    mutated["package_id"]["digest"] =
-        json!(PackageId::of_preimage(&jcs(&mutated["identity_preimage"])).hex());
+    mutated["package_id"]["digest"] = json!(derived_package_id(&mutated).hex());
     let index = mutated["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
