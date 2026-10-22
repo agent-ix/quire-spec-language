@@ -13,7 +13,7 @@ relationships:
 Verify that `check_closure` accepts a safety proof's closure and rejects a
 missing initial state, a missing successor and a bad state.
 
-Scope: FR-338-AC-1 to FR-338-AC-7. Canonical translation-state cases below
+Scope: FR-338-AC-1 to FR-338-AC-7 and FR-338-AC-10. Canonical translation-state cases below
 are prospective qualification procedures; this artifact claims no execution.
 
 ## Test Procedure
@@ -60,6 +60,20 @@ are prospective qualification procedures; this artifact claims no execution.
    meter separately; cancel through FR-276 first with requested, then with
    deadline. Pass each typed stop through FR-127 and through the FR-339
    closure call; compare exact limit/value/setting or cancellation source.
+9. Over the `Counter` subject with no `terminal` declaration, build a
+   checked package of its unit carrying each guarded clause's
+   `temporal_clause` node in QSpec FR-370's shape (`kind` `each`, `trigger`
+   the `over` parameter's node, `guard` the clause's guard term); use it as
+   the engine's clause source and as the request's recompiled package, and
+   read each `when` condition by the test's own letters. Check the
+   certificates of FR-338-AC-10: `always holds(c.value <= 1)` infinite-trace
+   `on each` when `c.value = 7`; `eventually[0,1] holds(c.value = 3)`
+   false-extension `on each` when `c.value >= 2`, then with its value-2 body
+   replaced by the obligation-free body, then with that misread state added
+   beside the true one, then with every key's activation replaced by
+   `"each"`; then, with the condition false at values 0 and 1 and undefined
+   at value 2, the certificate of exactly the value-0 and value-1
+   obligation-free `"each-when"` states.
 
 Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 
@@ -92,3 +106,8 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   The typed Stopped result preserves the exact configured limit, charged
   value/setting or cancellation source; FR-127 settles Incomplete with
   those fields, never Accepted or CertificateRejected.
+- Step 9: accepted with every body `["safety",[[[],[],[],[]]]]` and
+  activation `"each-when"`, settling `proved`; accepted with the value-2
+  deadline body; `SuccessorMissing` at the value-2 deadline state; accepted
+  with the extra misread state; `ShapeMismatch` at the least refused state;
+  `BadState` at the value-1 product state.
