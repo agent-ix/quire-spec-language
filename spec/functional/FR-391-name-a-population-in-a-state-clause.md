@@ -36,7 +36,8 @@ relationships:
 binding `p` (QSpec FR-153). A function names one through a
 `Population<T>[N]` parameter. A **population position** is the body of a
 unit-level state clause (an invariant, a precondition, a postcondition or a
-step's clause, FR-102) or a `holds` atom of a temporal clause. The invariant
+step's clause, FR-102), the predicate of a `terminal when` declaration
+(FR-124), which reads `current`, or a `holds` atom of a temporal clause. The invariant
 of a record value type or an event type (FR-366) is not a population
 position: it keeps FR-366's refusal of a population read, since such a value
 is evaluated with no object universe. In a population
@@ -47,12 +48,11 @@ and `P` is a population of `M`'s domain package. The name is the same
 
 "QSpec unchanged" holds for syntax only: the complete-V1 `primary` already
 derives `qualified-name` without a call, and FR-091 builds it as a `Name`,
-so S1 and S2 need no new production. The meaning is QSL's own. QSpec
-FR-153 and `shared-grammar.md` state that no population binding is ambient,
-and QSpec FR-383-AC-13 still writes `forall o in counters`. Here the binding
-of `M::P` comes from the admitted observation (FR-106), not from the
-environment. QSpec needs a follow-up that states this name-to-binding rule and
-the spelling of a population in a state clause, so the two specifications agree.
+so S1 and S2 need no new production. The meaning is QSL's own, and it agrees
+with QSpec FR-153: the name selects the population declaration and the
+binding is not ambient. Here the binding of `M::P` comes from the admitted
+observation (FR-106), and in a checked package the name is the population
+reference of QSpec FR-322 ("Population references").
 
 A population is a binding, not a value. The name therefore denotes the
 population only where a population is read: as the population operand of
@@ -143,7 +143,8 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
   when `P` has an authored maximum `N` (FR-380) and the unbounded
   `Set<Reference<T>>` otherwise, as FR-084 states for a parameter.
 - Every read through the name takes the clause's observation (FR-104,
-  "Observations of reads"): `current` in an invariant and in a `holds` atom,
+  "Observations of reads"): `current` in an invariant, in a `holds` atom and in the predicate of a
+  `terminal when` declaration,
   `pre` in a precondition, `post` in a postcondition and `pre` inside
   `pre(e)`.
 
@@ -160,17 +161,19 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
   `Population<U>[N]` type node is anonymous, keyed by `(U, N)` alone (FR-094),
   so the type node cannot identify the population. `allInstances<Counter>(M::counters)`
   and `allInstances<Counter>(M::archive)` therefore check to different terms.
-  The IR encoding of the population-reference term (an FR-322 extension) is
-  tracked as a follow-up ticket; this requirement fixes only that the checked
-  term carries the declaration key. Until that encoding exists, package
-  emission (S4) SHALL refuse a unit whose checked clause contains the term,
-  as an operand or as a domain, with `unsupported_construct`/`not-yet-implemented`, as for any other
-  form it does not yet emit.
+  Package emission (S4) SHALL emit the term as QSpec FR-322's population
+  reference, the `relation`/`population` node keyed by the declaration key
+  alone, as operand 0 of the `quire.op.model.all_instances` or
+  `quire.op.model.lookup` application, with the authored maximum `N` entering
+  through the application's `result_type` and not through the population
+  reference. A population read as a domain emits the population reference, the
+  `all_instances` application over it and the quantifier or population form
+  over that application, as FR-322 "Quantifier domain" states.
 
 ### Evaluation
 
 - The `ProtocolClause` evaluator SHALL evaluate `allInstances`, `lookup` and
-  a population domain in a state clause (FR-107) and in a `holds` atom, reading the population named by the operand
+  a population domain in a state clause (FR-107), in a `holds` atom and in the predicate of a `terminal when` declaration (FR-124), reading the population named by the operand
   term's declaration key from the snapshot of the clause's observation: the
   `pre` snapshot for `pre` and the `post` snapshot for `post` (a `current`
   invariant reads the current snapshot), and under `pre(e)` the `pre`
@@ -186,7 +189,7 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 ### Requirements
 
 - The named population SHALL be a domain of the clause's requirement record
-  (FR-104, "Requirements"; for a `holds` atom, of its temporal clause's record), keyed as FR-104 keys it. A clause that names its
+  (FR-104, "Requirements"; for a `holds` atom, of its temporal clause's record; for a `terminal when` predicate, of the model subject's deadlock-freedom item, FR-124), keyed as FR-104 keys it. A clause that names its
   context population adds no second domain. A clause that names a different
   population adds that one, so a bound on it (FR-380) makes it a bounded
   domain.
@@ -208,9 +211,10 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 | FR-391-AC-3 | `M::counters = M::counters`, `let q = M::counters in allInstances<M::Counter>(q)`, `size(M::counters)` and a clause body that is `M::counters` each refuse `ill_typed`/`operator-ineligible` at the name, because a population is no value; `M::Counter = M::Counter` refuses `missing_declaration`/`missing-name` at `Counter`, since `Counter` is a type. | Test (TC-1076) |
 | FR-391-AC-4 | With `bound B on M::counters [3]` the operand is `Population<Counter>[3]` and `allInstances<M::Counter>(M::counters)` is `Set<Reference<Counter>>[0,3]`; the record's `counters` domain is `Population(Some(3))`. With a second population `archive` of `Counter`, a clause on `M::Counter` refuses `ambiguous_declaration`/`ambiguous-name` at its `on` (FR-104-AC-5) whichever population its body names. With a type `Widget` that only a population `widgets` covers, a clause on `M::Widget` whose body names `M::counters` records `widgets` (the context population) and `counters` as its two domains. | Test (TC-1076) |
 | FR-391-AC-5 | Evaluated at S6a over a snapshot whose `counters` holds `a`, `b` and `c`, the precondition of AC-1 decides over exactly those three, in canonical reference-key order; over a snapshot in which `counters` is not marked `complete`, it returns `Incomplete` with `incomplete_population`/`incomplete-scope`, as for a parameter operand; `allInstances<M::Other>(M::counters)` with `Other` uncovered by the population is FR-084's typed incomplete result. | Test (TC-1076) |
-| FR-391-AC-6 | With populations `counters` and `archive` of `Counter` and an operation `grow` on `Widget`, a type covered only by `widgets`, the preconditions `pre A using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` and `pre B using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::archive) : true) }` check to two different terms, each carrying its own population's declaration key, and of the populations `A` reads `AnyMembership{counters}` and not `AnyMembership{archive}`, and `B` the reverse (each footprint also holds the receiver's own `Membership` per FR-155); the precondition of FR-155-AC-2 over `counters` holds `AnyField{v}` and `AnyMembership{counters}`. A package with such a clause refuses at emission with `unsupported_construct`/`not-yet-implemented` until the IR encoding exists. | Test (TC-1076) |
+| FR-391-AC-6 | With populations `counters` and `archive` of `Counter` and an operation `grow` on `Widget`, a type covered only by `widgets`, the preconditions `pre A using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` and `pre B using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::archive) : true) }` check to two different terms, each carrying its own population's declaration key, and of the populations `A` reads `AnyMembership{counters}` and not `AnyMembership{archive}`, and `B` the reverse (each footprint also holds the receiver's own `Membership` per FR-155); a third precondition `pre C using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` in the same unit reads `counters` a second time; the precondition of FR-155-AC-2 over `counters`, in the same unit and emitted package, holds `AnyField{v}` and `AnyMembership{counters}`. The emitted package holds one population reference per declared population read, so `A` and `B` reference two nodes and `C` references the same node as `A`; the package is admitted by the full reader (QSpec FR-322-AC-83). | Test (TC-1076) |
 | FR-391-AC-7 | On the `Counter` unit with `bound B on M::counters [3]` and a `Watch` type with population `watchers`: `post P using v on M::Counter::bump { forall(o in M::counters : o.v < 2) }` checks as a `Postcondition` reading `post`; `pre Q using v on M::Counter::bump { exists(o in M::counters : o.v = 2) }` checks as a `Precondition` reading `pre`; `invariant Cap using v on M::Counter at current { count(o in M::counters where o.v = 0) < 4 }` checks with the `count` result typed `Int[0,3]`, and without the bound the result is unbounded above; `temporal C using t0 over (w: M::Watch) clock "model-steps" on origin { eventually holds(forall(x in M::counters : x.v < 2)) }` checks with `counters` a domain of the temporal clause's record. Each is evaluated at S6a over a snapshot whose `counters` is `complete` to the same result as its `allInstances<M::Counter>(M::counters)` spelling, and over a `counters` that is not `complete` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. | Test (TC-1076) |
 | FR-391-AC-8 | `M::counters` in a function body and in the type-level invariant of an object type refuses `missing_declaration`/`missing-name` at `counters`, and `seq(i in 0 .. 2: i)` in an invariant refuses `unsupported_construct`/`expression-form` at its span. | Test (TC-1076) |
+| FR-391-AC-9 | On the `Counter` unit, `terminal Done using v on M when { forall(c in M::counters : c.v = 2) };` checks to `When` with `counters` as a domain read at `current`, and is evaluated over the snapshot's population as the `allInstances` spelling is; `M::counters` in a record-value invariant still refuses as AC-8 states. | Test (TC-1076) |
 
 ## Dependencies
 

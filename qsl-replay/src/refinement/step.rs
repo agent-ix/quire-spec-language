@@ -511,7 +511,10 @@ fn step_row<'r>(
     transition: &ModelTransition,
 ) -> Option<&'r StepRow> {
     refinement.steps().iter().find(|row| {
-        let StepClass::Operation(operation) = &row.class;
+        // A protocol step row maps no operation transition.
+        let StepClass::Operation(operation) = &row.class else {
+            return false;
+        };
         operation_identity_text(operation).is_ok_and(|text| text == transition.operation())
     })
 }

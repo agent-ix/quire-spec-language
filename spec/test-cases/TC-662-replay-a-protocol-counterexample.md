@@ -12,7 +12,7 @@ relationships:
 
 Verify replay of protocol counterexamples: digest, enabledness and package checks, the deadlock check with blocked threads, and lasso fairness over scheduler constraints.
 
-Scope: FR-217-AC-1 to FR-217-AC-6.
+Scope: FR-217-AC-1 to FR-217-AC-7.
 
 ## Test Procedure
 
@@ -26,6 +26,8 @@ Scope: FR-217-AC-1 to FR-217-AC-6.
 5. Replay FR-217-AC-5's counterexample, then with the recorded `outcome`
    changed, with the `send_record` removed, and with one added to an
    `attempt` step.
+6. Under a bounded profile, replay a fair protocol lasso whose loop has one
+   counted step, and the same lasso unfair for a scheduler constraint.
 
 Tag the tests `#[trace("TC-662", "FR-217-AC-n")]`.
 
@@ -43,3 +45,4 @@ Tag the tests `#[trace("TC-662", "FR-217-AC-n")]`.
   the identity, and replayed; `stale_dependency`/`content-mismatch` naming
   the step and both records; a pre-replay `invalid_runtime_input`/`invalid-value` refusal for the missing
   and for the extra member, with no step run.
+- Step 6: `inconclusive` with cause `NoValue`; then `invalid_runtime_input`/`invalid-value` as unfair.

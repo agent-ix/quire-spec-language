@@ -301,8 +301,6 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
         "-o",
         "check-no-committed-binaries",
         "-o",
-        "check-index-completeness",
-        "-o",
         "ci-all-features",
         "-o",
         "ci-clean-build",

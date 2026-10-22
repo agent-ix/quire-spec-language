@@ -59,11 +59,13 @@ use super::ir::{
 use super::navigation::Relationships;
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
-    IdentityObserving, Obligation, StageLimitCause,
+    IdentityObserving, KeyFault, Obligation, StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
-use crate::value::definition::{AdmittedIeeeProfile, AdmittedIntegerDivision};
+use crate::value::definition::{
+    AdmittedIeeeProfile, AdmittedIntegerDivision, CatalogRole, DefinitionLock,
+};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
@@ -88,7 +90,7 @@ use quire_semantic_value::declaration::{
     FieldDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumValue};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
@@ -789,6 +791,11 @@ pub struct Scope {
     /// The model object types' own declared operations (FR-103).
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The IEEE package-selection trigger recorded from resolved declarations.
+    /// Every body float originates in a declaration: constants and conversion
+    /// into floats are unavailable, and model float intake is refused. Any new
+    /// source of floats must also extend this trigger before checking its body.
+    ieee_operation: bool,
     pub(crate) integer_division: Option<AdmittedIntegerDivision>,
     pub(crate) complete_value: bool,
     /// The names of the concrete populations of the unit's models, which
@@ -1001,6 +1008,7 @@ impl Scope {
             variant_types: Vec::new(),
             operations,
             ieee_profile,
+            ieee_operation: false,
             integer_division: None,
             complete_value: false,
             known_populations: Vec::new(),
@@ -1422,6 +1430,77 @@ impl Scope {
     /// The package's admitted IEEE profile, if it selects one.
     pub fn ieee_profile(&self) -> Option<&AdmittedIeeeProfile> {
         self.ieee_profile.as_ref()
+    }
+
+    /// The admitted policy selected by this package's declared-float trigger.
+    /// An available policy alone does not select a row for a float-free package.
+    pub fn ieee_profile_selection(&self) -> Option<&AdmittedIeeeProfile> {
+        self.ieee_profile.as_ref().filter(|_| self.ieee_operation)
+    }
+
+    /// Select the catalog's IEEE policy when a resolved declaration contains
+    /// a float, including unused fields and nested option/collection types.
+    pub(crate) fn select_declared_ieee_profile(
+        &mut self,
+        signatures: &[Signature],
+    ) -> Result<(), CheckRefusal> {
+        let mut declared: Vec<&ValueType> = self.index.types.values().flatten().collect();
+        for signature in signatures {
+            declared.extend(signature.parameters.iter().map(|(_, ty)| ty));
+            declared.push(&signature.result);
+        }
+        for declaration in self.types.composites() {
+            match declaration.shape() {
+                CompositeShape::Record(fields) => {
+                    declared.extend(fields.iter().map(FieldDeclaration::value_type));
+                }
+                CompositeShape::Tuple(positions) => declared.extend(positions),
+                CompositeShape::Union(members) => {
+                    declared.extend(members.iter().flat_map(|member| member.positions()));
+                }
+            }
+        }
+        declared.extend(self.types.object_types().flat_map(|declaration| {
+            declaration
+                .attributes()
+                .iter()
+                .map(FieldDeclaration::value_type)
+        }));
+        let has_float = declared.into_iter().any(|mut ty| loop {
+            match ty {
+                ValueType::Float(_) => return true,
+                ValueType::Option(payload) => ty = payload,
+                ValueType::Collection(collection) => ty = collection.element(),
+                ValueType::Boolean
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Quantity(_)
+                | ValueType::Text(_)
+                | ValueType::String
+                | ValueType::Uuid
+                | ValueType::Timestamp
+                | ValueType::Enum(_)
+                | ValueType::Composite(_)
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => return false,
+            }
+        });
+        self.ieee_operation = has_float;
+        if has_float && self.ieee_profile.is_none() {
+            let lock = DefinitionLock::pinned();
+            let definition = lock.entry(CatalogRole::IeeeProfile).reference();
+            self.ieee_profile = Some(lock.admit_ieee_profile(&[definition], &[]).map_err(
+                |cause| CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::IeeeProfileAdmission(
+                        cause,
+                    ))),
+                },
+            )?);
+        }
+        Ok(())
     }
 
     /// The package's FR-151 dispatch operations, indexed by a checked
@@ -2649,7 +2728,8 @@ impl<'a> Typer<'a> {
             }
             // FR-148 selects IEEE ordering only through the `totalOrder`
             // intrinsic; the grammar's orderings select none.
-            (ValueType::Float(_), ValueType::Float(_))
+            (ValueType::Float(_), _)
+            | (_, ValueType::Float(_))
             | (ValueType::Boolean, ValueType::Boolean)
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))

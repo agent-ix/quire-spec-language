@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-234
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-193
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-237
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-253
@@ -25,7 +27,7 @@ repeating the race (FR-253) from the initial state, with every delay an
 exact rational drawn on a grid of `2^-q` in the uniform value, and read
 timed events and measures over the samples (ADR-026 SS-1 to SS-7). A
 `measured` verdict is a measurement of the quantised model and records `q`.
-Each sample replays by FR-237 plus draw recomputation. Exact probabilistic
+A sampled witness replays through `replay_sampled_witness` (FR-193), which applies FR-237's timed steps and recomputes each draw. Exact probabilistic
 checking over a timed model routes to EN-5.
 
 ## Use case
@@ -87,7 +89,10 @@ server is available. Each estimate comes with its confidence and the grid
   `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`, as
   ADR-024 ST-7 does.
 - **Witnesses.** A sampled witness SHALL carry each step's delay and replay
-  by FR-237, plus recomputation of each draw from the seed, trace index,
+  through `replay_sampled_witness` (FR-193) over the checked subject the sampler
+  ran over, with no recompile since S4 does not emit a timed package that has a
+  workload, applying FR-237's timed steps (delay admissibility, enabledness,
+  successor selection, resets and time invariants), plus recomputation of each draw from the seed, trace index,
   step, choice index and `q`.
 - **Exact route.** The request writer SHALL route a request for `exact`
   evidence over a timed subject to EN-5, whose digital route (ADR-028 TA-1,
@@ -100,7 +105,7 @@ server is available. Each estimate comes with its confidence and the grid
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-254-AC-1 | `RareLate` (`probability <= 0.01 [eventually[0 ms, 3 ms] holds(c.late)]`) over FR-253-AC-1's model, whose exact event probability is `1/20`, settles `measured`, `Rejected`, with `q` 64 in its basis; with `reply` under `uniform` it settles `measured`, `Accepted`. Two runs with one seed give equal verdicts. | Test (TC-709) |
-| FR-254-AC-2 | Every sampled delay is an exact rational; a sampled witness replays by FR-237 and its draws recompute from the seed; the same witness with one delay changed fails draw recomputation. With `q` 8, the basis records 8 and each sampled `uniform` or `exponential` delay equals the rounded-up conditioned inverse distribution function at a multiple of `2^-8`. | Test (TC-709) |
+| FR-254-AC-2 | Every sampled delay is an exact rational; a sampled witness replays through `replay_sampled_witness` (FR-193) with FR-237's timed steps, and its draws recompute from the seed; the same witness with one delay changed fails draw recomputation. With `q` 8, the basis records 8 and each sampled `uniform` or `exponential` delay equals the rounded-up conditioned inverse distribution function at a multiple of `2^-8`. | Test (TC-709) |
 | FR-254-AC-3 | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `incomplete`, `limit-reached` naming `statistical.max_cycle_steps` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. `RareLate` with no `delay` member on `timeout` settles `unsupported`, `NotStochastic`, naming the state just after `send` and `timeout`. `RareLate` with `max_sample_steps` 1 stops `Incomplete(LimitReached{limit, value, setting})` naming `max_sample_steps`, 1 and `TimedSampling.max_sample_steps`. | Test (TC-709) |
 | FR-254-AC-4 | A stochastic `Lock` variant (one object `c` with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with `delay ~ discrete { 1/2 ms: 1 }`; `time invariant when phase = B { x <= 1 ms }`; no operation enabled in `B`) samples `go` at `1/2`, delays to `(B, x = 1)`, where no positive delay is admissible and no identity is enabled, and settles `unsupported`, `TimeLockedSample` naming that state, with no witness kept. | Test (TC-709) |
 
@@ -109,6 +114,7 @@ server is available. Each estimate comes with its confidence and the grid
 - ADR-026 §10 SS-1 to SS-7.
 - [FR-231](FR-231-read-a-timed-subject-s-behaviours-as-timed-traces.md),
   [FR-234](FR-234-check-timed-intervals-and-classify-timed-property-forms.md),
+  [FR-193](FR-193-keep-and-replay-sampled-witnesses.md),
   [FR-237](FR-237-replay-a-timed-counterexample.md),
   [FR-253](FR-253-check-delay-distributions-and-define-the-race.md).
 - The statistical design (ADR-024 PF-1 to PF-6, ST-1 to ST-9, SV-1 to

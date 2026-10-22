@@ -146,6 +146,40 @@ pub enum StepClassKeyword {
     Activate,
 }
 
+impl StepClassKeyword {
+    const ALL: [Self; 8] = [
+        Self::Fork,
+        Self::Join,
+        Self::Cend,
+        Self::Duplicate,
+        Self::Lose,
+        Self::Spawn,
+        Self::Retire,
+        Self::Activate,
+    ];
+
+    /// The keyword's spelling in source.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fork => "fork",
+            Self::Join => "join",
+            Self::Cend => "cend",
+            Self::Duplicate => "duplicate",
+            Self::Lose => "lose",
+            Self::Spawn => "spawn",
+            Self::Retire => "retire",
+            Self::Activate => "activate",
+        }
+    }
+
+    /// The keyword spelled `spelling`, when it is one.
+    fn of_spelling(spelling: &[u8]) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|keyword| keyword.as_str().as_bytes() == spelling)
+    }
+}
+
 /// The concrete side of a step row, as written (QSpec FR-432).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepSourceForm {
@@ -454,16 +488,8 @@ fn step_source_form(cst: &LosslessCst, source: &CstNode) -> Result<StepSourceFor
             name: name_form(cst, name)?,
         }),
         [Item::Token(keyword), Item::Node(name)] => {
-            let kind = match keyword.spelling() {
-                b"fork" => StepClassKeyword::Fork,
-                b"join" => StepClassKeyword::Join,
-                b"cend" => StepClassKeyword::Cend,
-                b"duplicate" => StepClassKeyword::Duplicate,
-                b"lose" => StepClassKeyword::Lose,
-                b"spawn" => StepClassKeyword::Spawn,
-                b"retire" => StepClassKeyword::Retire,
-                b"activate" => StepClassKeyword::Activate,
-                _ => return Err(unexpected(source)),
+            let Some(kind) = StepClassKeyword::of_spelling(keyword.spelling()) else {
+                return Err(unexpected(source));
             };
             Ok(StepSourceForm::Named {
                 kind: Some(kind),

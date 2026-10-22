@@ -62,6 +62,16 @@ different order does not count as a different state.
 - The protocol system SHALL give an event step `by r` once per live
   instance of `r`, with its binder and transition identity naming the
   acting instance.
+- The transition identity of `spawn(r, o)` and `retire(r, o)` SHALL hold the
+  role, the object's reference and the ordinal of the protocol instance the
+  step acts in, so the same object's `spawn` in two protocol instances has two
+  identities (ADR-027 TS-2, QSpec FR-426). No thread owns a `spawn` or a
+  `retire`, so its identity holds no `thread` member.
+- A `send` node SHALL be owned by the `from` role of its channel and a
+  `receive` node by the `to` role of its channel.
+- While the role that owns a `send` or `receive` node is replicated, the
+  protocol system SHALL give the node once per live instance, naming the
+  acting instance in its transition identity.
 - The `roles` member SHALL key instances by protocol instance ordinal and
   object reference, keep a retired instance with status `retired` while its
   protocol instance is live, and treat QSpec FR-171's spawn ordinal as trace
@@ -74,6 +84,8 @@ different order does not count as a different state.
 | FR-208-AC-1 | A role `r each Worker from workers max 1 lifetime until(p)`, universe `{w1, w2}`, a body `event Work by r …` and `p` true once the instance has worked: `spawn(r, w1)` and `spawn(r, w2)` are both enabled initially; after `spawn(r, w1)` neither spawn is enabled until `retire(r, w1)`; after it `spawn(r, w2)` is enabled and `spawn(r, w1)` never is again, and `w1` stays in `roles` as `retired`. | Test (TC-653) |
 | FR-208-AC-2 | With `max 2`, spawning `w1` then `w2` and spawning `w2` then `w1` reach states with equal keys. With two live instances, `event(Work)` gives two steps whose identities name `w1` and `w2`. | Test (TC-653) |
 | FR-208-AC-3 | With lifetime `workflow`, every live instance retires in the `finish` step, which removes the protocol instance with its role instances, so the state after `finish` holds none. With lifetime `scope`, an instance retires in the step after which the last `by r` node of its region is unreachable from every live thread, and no `retire` step exists. | Test (TC-653) |
+| FR-208-AC-4 | Under `activation on each` with protocol instances 0 and 1 live and `spawn` enabled for `w1` in each, the two `spawn(r, w1)` steps have different transition identities that differ in the instance ordinal and hold no `thread` member; the same holds for the two `retire(r, w1)` steps. | Test (TC-653) |
+| FR-208-AC-5 | A channel `from r to c` with `r` replicated, `max 2` and two live instances gives two `send` steps whose identities name `w1` and `w2`; a channel `from c to r` gives two `receive` steps likewise; with an empty universe a thread at the `send` waits with `NoRoleInstance{r}`. | Test (TC-653) |
 
 ## Dependencies
 
