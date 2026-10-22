@@ -41,3 +41,9 @@ Ticket: QSL-869. PR quire-spec-language#1203, fix commit 50605a374, head b8d4723
 ## Verdict
 
 **Clean apart from one low wording finding. Nothing blocks the merge.** Both edits are correct and consistent with QSpec FR-322, FR-391-AC-4 and the tests.
+
+## Dispositions
+
+| FND | Outcome | Sha |
+| --- | --- | --- |
+| FND-001 | fixed | 0f21c85a1 |
