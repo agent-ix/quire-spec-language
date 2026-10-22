@@ -20,7 +20,7 @@
 use std::process::ExitCode;
 use std::time::Instant;
 
-use qsl_attrs::string_edge;
+use ix_trace_rs::string_edge;
 use qsl_bench::check::{self, call_head, completed_with_five, linked_chain};
 use qsl_bench::model::{self, ModelShape};
 use qsl_bench::parse::{self, ParseOutcome};

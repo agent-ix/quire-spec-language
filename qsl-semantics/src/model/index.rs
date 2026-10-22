@@ -912,7 +912,7 @@ impl RecordIndex {
     }
 
     /// Authored quire invariants directly owned by this type, ascending by key.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub(crate) fn sorted_direct_clauses<'r>(
         &self,
         records: &'r [DomainPackageRecord],

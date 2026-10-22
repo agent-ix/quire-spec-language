@@ -8,6 +8,7 @@ mod command;
 mod consumer;
 mod library;
 mod links;
+mod marker;
 mod rules;
 
 use std::fs;

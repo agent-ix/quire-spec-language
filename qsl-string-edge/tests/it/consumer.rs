@@ -58,7 +58,7 @@ fn the_worked_consumer_crate_passes_clean_and_fails_on_an_unmarked_dispatch() {
 }
 
 /// FR-064-AC-10, marker: a consumer that marks its intake with the
-/// qualified `#[qsl_attrs::string_edge]` attribute passes.
+/// qualified `#[ix_trace_rs::string_edge]` attribute passes.
 #[trace("TC-162", "FR-064-AC-10")]
 #[test]
 fn a_consumer_intake_marked_with_the_qualified_attribute_passes() {
@@ -66,7 +66,7 @@ fn a_consumer_intake_marked_with_the_qualified_attribute_passes() {
     consumer(&tree);
     tree.write(
         "src/lib.rs",
-        "#[qsl_attrs::string_edge]\n\
+        "#[ix_trace_rs::string_edge]\n\
          pub fn parse(kind: &str) -> Option<u8> { match kind { \"accepted\" => Some(1), _ => None } }\n",
     );
     let output = Command::new(env!("CARGO_BIN_EXE_qsl-string-edge"))

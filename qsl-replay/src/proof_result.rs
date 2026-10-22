@@ -1340,7 +1340,7 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
 /// [`ProofResultEnvelope`], refusing before any `results`/`dispositions`/
 /// `counterexamples`/`accounting` member is read if the encoded size is over
 /// the configured reader bound (FR-069-AC-4).
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 pub fn read_backend_provider_envelope(
     source: &BackendProviderSource,
     limits: ReplayLimits,

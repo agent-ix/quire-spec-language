@@ -174,7 +174,7 @@ impl Aliases {
     }
 
     /// Whether `name` is `NodeKey` or an alias of it.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn is_node_key(&self, name: &str) -> bool {
         self.close(&BTreeSet::from([name.to_owned()]))
             .contains("NodeKey")
@@ -286,7 +286,7 @@ struct BodyScan<'a> {
 impl BodyScan<'_> {
     /// Whether `path` is `NodeKey::from_digest` under any alias,
     /// `Self::from_digest` in an `impl NodeKey`, or a `node_key_of` helper.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn is_mint_path(&self, path: &syn::Path) -> bool {
         let segments: Vec<String> = path
             .segments
@@ -338,7 +338,7 @@ impl<'ast> Visit<'ast> for BodyScan<'_> {
         syn::visit::visit_path_segment(self, node);
     }
 
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
         let tokens = node.tokens.to_string().replace(' ', "");
         let mut owners = self
@@ -698,9 +698,8 @@ pub const LAYER_CRATES: [&str; 4] = [
 /// crate and every workspace library crate. Not scanned: `xtask` and
 /// `tools/arch-lint` (developer tooling) and `qsl-bench` (the benchmark
 /// harness, which builds its fixture keys directly and ships nothing).
-pub const QSL_CRATES: [&str; 12] = [
+pub const QSL_CRATES: [&str; 11] = [
     "src",
-    "qsl-attrs/src",
     "qsl-foundation/src",
     "qsl-cst/src",
     "qsl-source/src",

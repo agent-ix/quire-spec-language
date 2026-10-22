@@ -95,7 +95,7 @@ pub struct DimensionPreimage {
 
 impl DimensionPreimage {
     /// Read a preimage object; any schema violation is non-canonical.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidSemanticGraph> {
         let non_canonical = refuse(SemanticGraphCause::NonCanonicalPreimage);
         let document: DimensionDocument =
@@ -276,7 +276,7 @@ impl UnitPreimage {
     }
 
     /// Read a preimage object; any schema violation is non-canonical.
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidSemanticGraph> {
         let non_canonical = refuse(SemanticGraphCause::NonCanonicalPreimage);
         let document: UnitDocument = serde_json::from_value(value).map_err(|_| non_canonical)?;

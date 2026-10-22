@@ -670,7 +670,7 @@ impl WitnessValue {
     }
 
     /// The value text `escaped`, read as one value (FR-070 "Decode").
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     pub(crate) fn from_value_text(escaped: &str) -> Result<Self, EntryFault> {
         let bytes = unescape(escaped)?;
         let document = read(&bytes, u64::MAX).map_err(|_| EntryFault::Json)?;
@@ -1107,7 +1107,7 @@ fn build(root: NodeRef<'_>) -> Result<WitnessValue, EntryFault> {
 /// FR-056's closed native wire object at `node`: `{"kind":"uuid","text":..}`,
 /// `{"kind":"string","text":..}` or `{"kind":"timestamp","nanoseconds":..}`. The form is read; the payload
 /// text is admitted when the executor converts the argument.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn visit_native<'d>(
     node: NodeRef<'d>,
     mut members: impl Iterator<Item = (&'d str, NodeRef<'d>)>,
@@ -1146,7 +1146,7 @@ fn visit_native<'d>(
 
 /// Read the form at `node`: a leaf is pushed as a value, a composite pushes
 /// its parts' visits and then the step that assembles them.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn visit<'d>(
     node: NodeRef<'d>,
     pending: &mut Vec<Step<'d>>,
@@ -1338,7 +1338,7 @@ fn visit<'d>(
 
 /// Whether the object `slot` is a `{"type":"null"}` slot rather than a value.
 /// A `null`-tagged object with any other member is a shape fault.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn is_null_slot(slot: NodeRef<'_>) -> Result<bool, EntryFault> {
     let Some(tag) = slot.get("type") else {
         return Ok(false);

@@ -25,7 +25,7 @@ const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-ed
                      cargo xtask ci\n       cargo xtask refinement versioning <corpus>\n       \
                      cargo xtask canonical-types [<workspace>]";
 
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn run(arguments: &[OsString]) -> Result<Outcome> {
     let Some((command, operands)) = arguments.split_first() else {
         return Err(Error::Usage(USAGE));

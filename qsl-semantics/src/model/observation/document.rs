@@ -171,7 +171,7 @@ enum ContextMember {
 }
 
 impl ContextMember {
-    #[qsl_attrs::string_edge]
+    #[ix_trace_rs::string_edge]
     fn read(name: &str) -> Option<Self> {
         match name {
             "machine" => Some(Self::Machine),
@@ -525,7 +525,7 @@ pub(super) fn read_document(
 /// [`check_model`] would then merely fail to match against any package's
 /// model selection, misreporting `wrong-model-selection` for what is
 /// actually a missing- or malformed-member document defect.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
     let model = object
         .member("model")
@@ -599,7 +599,7 @@ fn read_object_ref(
 /// [`read_model`]. `strip_prefix`, not `trim_start_matches` (SR-750
 /// FND-003): a digest with no `sha256-jcs:` prefix, or a doubled one,
 /// refuses rather than being silently accepted or kept whole.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_document_ref(
     value: Json<'_>,
     field: &'static str,
@@ -667,7 +667,7 @@ fn hex_bytes(text: &str) -> Option<Vec<u8>> {
 /// `wrong_snapshot`/`wrong-observation`, the same cause every caller of
 /// this document already reports for the "wrong role for this call" case,
 /// since an unrecognized spelling is exactly that, one level earlier.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn read_snapshot_body(
     object: Object<'_>,
     model: ModelHeader,
@@ -1436,7 +1436,7 @@ fn admit_leaf(
 /// (`missing-member`), an unknown member (`unknown-member`, the first in
 /// document order), and a payload that is not text (`wrong-value-kind`).
 /// Each names the member.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), AdmissionRecord> {
     let refuse = |cause: &'static str, member: &str| {
         admission_record(Code::InvalidRuntimeInput, cause).with("member", member.to_owned())
@@ -1525,7 +1525,7 @@ fn admit_native(
 /// outside `[min, max]`, measured on the retained sequence, refuses
 /// `invalid-value` naming `text`, the declared type (`expected`) and the
 /// measured length (`actual`). Nothing is trimmed, truncated or repaired.
-#[qsl_attrs::string_edge]
+#[ix_trace_rs::string_edge]
 fn admit_text(payload: &str, declared: &quire_exact::TextType) -> Result<Value, AdmissionRecord> {
     let profile = declared.profile();
     let retained = super::retained_text(declared, payload);
