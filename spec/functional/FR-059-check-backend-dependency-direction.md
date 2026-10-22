@@ -7,6 +7,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-356
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-401
+    type: references
 ---
 # FR-059: Check the backend dependency direction across QSL, Contract IR, Runtime and Codegen
 
@@ -75,11 +77,16 @@ dependency is not the stated exception. CG's dependencies on the crates of
 `agent-ix/quire-eval` (`quire-eval`, `quire-eval-corpus`, `quire-checked`),
 on the semantic-value leaf `quire-semantic-value` (SV, ADR-011 X-11) and on
 the other shared leaves classify as no ecosystem repository, so they are no
-FB-05 edge. CG depends on those leaves directly for the types it names, such
-as `Category`; `qsl-replay` does not re-export them. CG's allowed set of
-QSL-owned dependencies is therefore `qsl-replay`, the one QSL crate, plus
-the shared leaves `quire-semantic-value` and the `agent-ix/quire-eval`
-crates, and nothing else (FR-060, "T12-A and the evaluator differential corpus").
+FB-05 edge. CG names the types FR-401 moves to those leaves, such as
+`Category`, from the leaves directly
+([FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md));
+`qsl-replay` does not re-export the types FR-401 moves. Among CG's
+QSL-owned dependencies, the allowed set is `qsl-replay`, the one QSL crate,
+plus the shared leaves `quire-semantic-value` and the `agent-ix/quire-eval`
+crates, and no other QSL-owned crate (FR-060, "T12-A and the evaluator
+differential corpus"). CG's edges to the other shared leaves, such as
+`quire-exact` and `quire-walk`, are not QSL-owned and remain as ADR-011
+FB-05 states.
 
 The check SHALL combine normal and dev edges into one directed graph for
 FB-11, and SHALL report a cycle exactly once regardless of its rotation or
