@@ -2291,7 +2291,7 @@ fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
 
 /// FR-091-AC-44: `f(3 s)` where `f` takes `Quantity<ms>` refuses
 /// `ill_typed`/`type-mismatch`.
-#[trace("FR-091-AC-44", "FR-093-AC-33", "TC-483")]
+#[trace("FR-091-AC-44", "FR-093-AC-34", "TC-483")]
 #[test]
 fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
     let source = format!(
@@ -2318,24 +2318,174 @@ fn a_quantity_argument_of_another_unit_is_a_type_mismatch() {
                 .is_some_and(|code| code.to_string() == "ill_typed/type-mismatch")),
         "the mismatch is located at the argument: {refusals:?}"
     );
-    // FR-093-AC-33: `3 ms` has the right type but retains the V1
-    // quantity-literal refusal until the IR reader admits QSpec's kind.
-    let ok = format!(
-        "{TIME_UNITS}function f using v(d: Quantity<ms>): Boolean pure {{ true }}\n\
-         function g using v(): Boolean pure {{ f(3 ms) }}"
-    );
-    let refusals = assemble(&ok)
-        .1
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
-        .expect_err("quantity literals are outside V1 scope");
-    assert!(
-        matches!(
-            refusals.as_slice(),
-            [refusal] if matches!(&refusal.cause, CheckCause::Probabilistic(cause)
-                if matches!(**cause, crate::check::ProbabilisticCause::QuantityLiteral))
+}
+
+/// The catalog code of each refusal `check` gives `declarations` (after the
+/// shared units and `f`) under `limits`, and whether it is located at the
+/// source text `at`.
+fn quantity_refusals(declarations: &str, limits: CheckingLimits, at: &str) -> Vec<(String, bool)> {
+    let source = format!("{TIME_UNITS}{QUANTITY_F}{declarations}");
+    let (text, assembled) = assemble(&source);
+    let package = assembled.expect("the unit assembles");
+    let regions = package.regions();
+    let span = last(&text, at);
+    package
+        .check(limits)
+        .expect_err("the quantity literal refuses")
+        .iter()
+        .map(|refusal| {
+            let located = regions.refusal_region(refusal).is_some_and(|region| {
+                (region.start(), region.end()) == (span.start as u64, span.end as u64)
+            });
+            (
+                refusal
+                    .cause
+                    .catalog_code()
+                    .map_or_else(|| format!("{:?}", refusal.cause), |code| code.to_string()),
+                located,
+            )
+        })
+        .collect()
+}
+
+const QUANTITY_F: &str = "function f using v(d: Quantity<ms>): Boolean pure { true }\n";
+
+/// FR-093-AC-33: every admitted quantity literal checks (the lowering and
+/// the strict reader are exercised in `qsl-package`).
+#[trace("FR-093-AC-33", "TC-483")]
+#[test]
+fn admitted_quantity_literals_check() {
+    for body in [
+        "function h using v(): Boolean pure { f(3 ms) }",
+        "function h2 using v(): Boolean pure { f(0.5 ms) }",
+        "function h3 using v(): Boolean pure { f(rational(2, 4) ms) }",
+        "function n using v(): Boolean pure { f(rational(-3, 1) ms) }",
+        "function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }",
+        "function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }",
+    ] {
+        let source = format!("{TIME_UNITS}{QUANTITY_F}{body}");
+        assemble(&source)
+            .1
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    }
+}
+
+/// FR-093-AC-34: each refusal, with its code and location. A refused
+/// literal yields no graph, so no literal node.
+#[trace("FR-093-AC-34", "TC-483")]
+#[test]
+fn quantity_literal_refusals_carry_their_codes_and_locations() {
+    let ceiling = CheckingLimits::default().with_rational_bits(16);
+    let default = CheckingLimits::default();
+    let cases: [(&str, CheckingLimits, &str, &str); 9] = [
+        (
+            "function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }",
+            default,
+            "d < 3 s",
+            "ill_typed/type-mismatch",
         ),
-        "{refusals:?}"
+        (
+            "function g2 using v(x: Integer): Boolean pure { x = 3 ms }",
+            default,
+            "x = 3 ms",
+            "ill_typed/type-mismatch",
+        ),
+        (
+            "function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }",
+            default,
+            "-3 ms",
+            "ill_typed/operator-ineligible",
+        ),
+        (
+            "function g using v(): Boolean pure { f(3 ghost) }",
+            default,
+            "3 ghost",
+            "missing_declaration/missing-name",
+        ),
+        (
+            "function g using v(): Boolean pure { f(3 Time) }",
+            default,
+            "3 Time",
+            "missing_declaration/missing-name",
+        ),
+        (
+            "function g using v(): Boolean pure { f(rational(1, 0) ms) }",
+            default,
+            "rational(1, 0)",
+            "undefined_expression/unproved-nonzero",
+        ),
+        (
+            "function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }",
+            default,
+            "d / 3 ms",
+            "undefined_expression/unproved-nonzero",
+        ),
+        (
+            "function g using v(): Boolean pure { f(rational(1, 100000) ms) }",
+            ceiling,
+            "rational(1, 100000) ms",
+            "stage_limit_exceeded/rational-bits-exceeded",
+        ),
+        (
+            "function g using v(): Boolean pure { f(rational(1, 0) ghost) }",
+            default,
+            "rational(1, 0)",
+            "undefined_expression/unproved-nonzero",
+        ),
+    ];
+    for (declarations, limits, at, code) in cases {
+        let refusals = quantity_refusals(declarations, limits, at);
+        assert!(
+            refusals
+                .iter()
+                .any(|(found, located)| found == code && *located),
+            "{declarations}: expected {code} at {at:?}: {refusals:?}"
+        );
+        assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+    }
+}
+
+/// FR-093-AC-34 order: a literal that violates several conditions gets the
+/// first in order (ceiling, zero denominator, unit name, position type).
+#[trace("FR-093-AC-34", "TC-483")]
+#[test]
+fn a_quantity_literal_refuses_with_the_first_violated_condition_in_order() {
+    let ceiling = CheckingLimits::default().with_rational_bits(16);
+    let default = CheckingLimits::default();
+    let only = |declarations: &str, limits, at: &str| -> String {
+        let refusals = quantity_refusals(declarations, limits, at);
+        assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+        assert!(refusals[0].1, "{declarations}: located at {at:?}");
+        refusals[0].0.clone()
+    };
+    // Over the ceiling, zero denominator, unknown unit and wrong position.
+    assert_eq!(
+        only(
+            "function g using v(x: Integer): Boolean pure { x = rational(100000, 0) ghost }",
+            ceiling,
+            "rational(100000, 0) ghost"
+        ),
+        "stage_limit_exceeded/rational-bits-exceeded"
+    );
+    // Zero denominator, unknown unit and wrong position.
+    assert_eq!(
+        only(
+            "function g using v(x: Integer): Boolean pure { x = rational(1, 0) ghost }",
+            default,
+            "rational(1, 0)"
+        ),
+        "undefined_expression/unproved-nonzero"
+    );
+    // Unknown unit and wrong position.
+    assert_eq!(
+        only(
+            "function g using v(x: Integer): Boolean pure { x = 3 ghost }",
+            default,
+            "3 ghost"
+        ),
+        "missing_declaration/missing-name"
     );
 }
 

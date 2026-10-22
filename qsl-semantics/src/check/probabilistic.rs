@@ -103,7 +103,7 @@ pub enum ConfidenceFault {
 }
 
 /// Why the `Probabilistic` family's check refused a declaration (FR-185,
-/// FR-186). Each variant but [`Self::QuantityLiteral`] carries its own span,
+/// FR-186). Each variant but `RandomReadInPrecondition` carries its own span,
 /// which `region::DeclarationRegions::refusal_region` reads directly.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProbabilisticCause {
@@ -310,10 +310,6 @@ pub enum ProbabilisticCause {
         /// `related`.
         related: [Span; 2],
     },
-    /// A quantity literal in a function body or clause: it types, but the
-    /// checked package has no literal form for a quantity to emit it as.
-    /// `unsupported_construct`/`not-yet-implemented`.
-    QuantityLiteral,
     /// A claim's `on` subject that names no `model` alias and declares no
     /// type. `missing_declaration`/`missing-name`.
     UnresolvedSubject {
@@ -524,7 +520,7 @@ impl ProbabilisticCause {
             | Self::OverNotObjectType { span, .. }
             | Self::NotStatePredicate { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
-            Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
+            Self::RandomReadInPrecondition { .. } => None,
         }
     }
 
@@ -577,7 +573,7 @@ impl ProbabilisticCause {
                 Code::AmbiguousDeclaration
             }
             Self::DuplicateWorkload { .. } => Code::ConflictingDeclaration,
-            Self::QuantityLiteral | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
+            Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -619,7 +615,7 @@ impl ProbabilisticCause {
             Self::OverNotObjectType { .. } => "over-not-object-type",
             Self::NotStatePredicate { .. } => "not-state-predicate",
             Self::DuplicateWorkload { .. } => "duplicate-declaration",
-            Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
+            Self::NotYetImplemented { .. } => "not-yet-implemented",
         }
     }
 }
@@ -689,14 +685,6 @@ pub(crate) fn quantity_magnitude(
 ) -> Result<quire_exact::Rational, CheckRefusal> {
     exact::value(magnitude, ceiling)
         .map_err(|fault| exact_refusal(fault, ceiling, magnitude.span, location.clone()))
-}
-
-/// The refusal of a quantity literal S4 cannot emit, at `location`.
-pub(crate) fn quantity_literal(location: Location) -> CheckRefusal {
-    CheckRefusal {
-        location,
-        cause: CheckCause::Probabilistic(Box::new(ProbabilisticCause::QuantityLiteral)),
-    }
 }
 
 fn refusal(cause: ProbabilisticCause) -> CheckRefusal {
