@@ -128,9 +128,18 @@ clause's emitted `temporal_clause` node, its `over` node the first
 argument's parameter node), rederives its checked formula and rejects a
 foreign occurrence. For the derived deadlock item, root is the closed
 alternative `["deadlock-freedom"]`, selecting the fixed formula below.
-`binding` is the ordered vector of `[parameter_node,typed_value]` for the
-item's actual concrete over/argument binding, with NodeId as above and
-QSpec FR-181's complete typed canonical value. Parameter order is the
+`binding` is the ordered vector of `[parameter_node,bound_value]` for the
+item's actual concrete over/argument binding, with NodeId as above.
+For a parameter bound to an instance (an `over` parameter, FR-125
+"Instancing"), `bound_value` is the closed array `["instance",population,key]`:
+`population` is the JSON string whose value is the instance's population's
+declaration identity text (FR-120 "Identities") and `key` the JSON string
+whose value is the instance's key in that population's universe. It
+carries no object type and no `UniverseId`, so two populations that share
+a key give two contexts, and the key's object changing its most-specific
+type across states leaves the context unchanged. For every other
+parameter, `bound_value` is QSpec FR-181's complete typed canonical
+value. Parameter order is the
 checked item's binding order; a genuinely parameter-free item uses `[]`.
 No absent/default binding is synthesized. The property state is separate
 from the model state; its context does not copy the model subject or hash
@@ -627,6 +636,7 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 | FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
+| FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]`, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has two instances, and each instance's `context` is `[root, profile, "infinite", [[N, ["instance", T, "a"]]]]` with `N` the `over` parameter's NodeId and `T` the JSON string of `P1`'s, respectively `P2`'s, declaration identity text; the two contexts' octets differ exactly in `T`, and a certificate state carrying `P1`'s context is not admitted under `P2`'s instance (a foreign context, AC-5). Replacing the instance array with FR-181's `{"type":"reference",...}` value of the key's object, or adding an object type member to it, refuses `ShapeMismatch` at `ProductState`. | Test (TC-1164) |
 
 ## Dependencies
 
