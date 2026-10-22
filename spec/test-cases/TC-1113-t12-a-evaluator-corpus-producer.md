@@ -20,28 +20,32 @@ FR-060-AC-9.
 
 1. Run `arch-lint api-surface` with a QSL fixture tree whose
    `qsl-replay/src/lib.rs` exists and a CG fixture tree holding
-   `use qsl_replay::corpus::reference_record;` and a
+   `use qsl_replay::corpus::encode;` and a
    `qsl_replay::compile_package(..)` call in `src/evaluator_corpus/mod.rs`.
 2. Add a `qsl_replay::corpus` reference to `src/replay/mod.rs`, then
    separately a `qsl_replay::corpus::load` path to `src/oracle/mod.rs`, and
    rerun.
-3. Separately add a `qsl_eval::`, a `qsl_semantics::` and a
-   `qsl_package::` reference, each once in `src/evaluator_corpus/mod.rs`
-   and once in `src/replay/mod.rs`, and rerun.
-4. Add a workspace member `qsl-extra` to the QSL fixture's manifest and a
-   `qsl_extra::` reference to `src/evaluator_corpus/mod.rs`, and rerun.
-5. Add a `quire_exact::` reference to `src/evaluator_corpus/mod.rs` and
-   rerun.
+3. Separately add a `qsl_eval::`, a `qsl_semantics::`, a `qsl_package::`
+   and a `quire_spec_language::` reference and a `use qsl_eval as e;`
+   alias, each once in `src/evaluator_corpus/mod.rs` and once in
+   `src/replay/mod.rs`, and rerun.
+4. Add the member path `crates/extra` to the QSL fixture's workspace
+   manifest, with its own `Cargo.toml` naming the package `qsl-extra`, and
+   a `qsl_extra::` reference to `src/evaluator_corpus/mod.rs`, and rerun.
+5. Add `qsl_eval::` inside a comment and inside a string literal, and a
+   `quire_exact::` reference, to `src/evaluator_corpus/mod.rs`, and rerun.
 
 ## Expected Results
 
 - Step 1: T12-A passes.
 - Step 2: each run fails T12-A, naming the file, line and module of the
   `qsl_replay::corpus` reference.
-- Step 3: each run fails T12-A, naming the crate, file, line and module.
+- Step 3: each run fails T12-A, naming the crate, file, line and module;
+  `quire_spec_language` is derived from the root member `.`.
 - Step 4: the run fails T12-A on `qsl_extra::` with no change to the rule
   data.
-- Step 5: T12-A reports no finding for the `quire_exact::` reference.
+- Step 5: T12-A reports no finding for the comment, the string literal or
+  the `quire_exact::` reference.
 
 ## Metadata
 

@@ -188,13 +188,16 @@ crates still use `unsafe_code = forbid`), and S9 switches the default and
 retire/demotes the std path. S7-S9 remain separately gated slices, not part of
 S6's claimed completion.
 
-FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, QSL's
-runtime evaluation vectors, fixed-seed generated cases and CG's exported
-generated-closure bundle), its case encoding and loader refusals in the
-facade module `qsl_replay::corpus`, the compared record (result, location,
-losses, ordered charges and meter counters), the zero-divergence pass
-criterion and the harness's place in `make ci` from S6 to S9. CG produces its
-bundle through that facade module only (FR-060 T12-A).
+FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, TC-069's
+vectors, deterministic generated cases and CG's exported generated-closure
+bundle), its case encoding and loader refusals in the facade module
+`qsl_replay::corpus`, the compared record (result, location, losses, meter
+counters and, where the test build keeps it, the charge log), the
+zero-divergence pass criterion and the two separate std and `no_std`
+builds. The harness joins `make ci` in IR-590, the first slice with a second
+implementation, and stays until IR-593 retires or demotes the std path; the
+run over CG's bundle passes in IR-593's switch. CG only encodes its cases
+through that facade module, with no expected evaluation (FR-060 T12-A).
 
 ### RT and CG acceptance
 

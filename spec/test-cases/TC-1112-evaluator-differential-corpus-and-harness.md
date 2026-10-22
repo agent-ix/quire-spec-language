@@ -10,67 +10,84 @@ relationships:
 
 ## Description
 
-Verify the FR-402 evaluator corpus: the facade's reference entry and the
-loader agree on one encoding, the loader refuses a defective bundle whole
-with the stated code, the harness reports every divergence with its pointer
-and tolerates none, the generated cases are reproducible, and the harness
-runs in `make ci` and over CG's bundle. Scope: FR-402-AC-1 to FR-402-AC-8.
+Verify the FR-402 evaluator corpus: the facade's encoder and loader agree on
+one encoding that binds the source identity and dependencies, the loader
+refuses a defective bundle whole with the stated code and position, the
+compared record carries the defined forms, the harness reports every
+divergence with its pointer and tolerates none, the corpus holds exactly
+its listed cases and reproducible generated cases, and the harness runs in
+`make ci` and over CG's bundle. Scope: FR-402-AC-1 to FR-402-AC-9.
 
 ## Test Procedure
 
-1. Build a `CaseInput` for the FR-262-AC-1 `count` program with argument
-   `3` and default limits; call `corpus::reference_record`; write the
-   record's `line()` as a one-line bundle and load it (AC-1).
-2. Rerun step 1 with the `work_units` limit at `w - 1` and at `w`, `w` being
-   step 1's consumed `work_units`, and with the argument
-   `WitnessValue::Boolean(true)` (AC-2).
-3. Apply each single mutation AC-3 lists to step 1's bundle and load it;
-   also load a two-line bundle repeating step 1's line. Count evaluator
-   invocations during each load (AC-3).
-4. Apply each member mutation of step 3 to step 1's `CaseInput` and call
-   `reference_record`; list the public items of `qsl_replay::corpus` (AC-4).
-5. Run the harness over a bundle holding step 1's record with one
-   `function.call` entry removed from `expected.charges`, together with the
-   QSL-owned corpus; then over step 1's unmodified record (AC-5).
-6. Generate the corpus's generated cases twice with seed `0x5153_4C37` and
-   count 256, compare the bytes and load each output (AC-6).
-7. In the change that adds the `no_std` implementation, run `make ci` and
-   inspect the harness's lanes and options (AC-7).
-8. Build CG against the QSL revision under test, run CG's
+1. Build the `fr402/count-3` `CaseInput`, call `corpus::encode`, compare
+   its `package_id` with `compile_package`'s for the same inputs, write
+   `line()` as a one-line bundle and load it; encode again with a changed
+   `source.identity.revision` (AC-1).
+2. Encode and load a case whose source imports a library given in
+   `dependencies`; encode it without the entry; load a record with two
+   entries out of `identity` order (AC-2).
+3. Load each bundle AC-3 lists, counting evaluator invocations (AC-3).
+4. Call `encode` on each `CaseInput` built from AC-3's member mutations;
+   list the public items of `qsl_replay::corpus` (AC-4).
+5. Run the harness's std build over `fr402/count-3`,
+   `fr402/count-3-short`, `fr402/count-3-boolean` and
+   `fr262/ac1/count-100000` and read their compared records (AC-5).
+6. Run the harness over a bundle holding `fr402/count-3` with an `expected`
+   whose `consumed.work_units` is one less than the std record's, then with
+   the std record as `expected`; feed the comparator two record sets
+   differing in one `charges` entry's `sizes`, and two sets one of which
+   lacks a `case_id` (AC-6).
+7. Load the checked-in bundle and list its `case_id`s; generate the
+   generated cases twice with seed `0x5153_4C37` and count 256, compare the
+   bytes, load and compile each; diff `Cargo.lock` for new random-number or
+   property-testing crates (AC-7).
+8. Run `make ci` in a tree that ships both implementations; run FR-262-AC-3,
+   AC-4, AC-6, AC-7 and AC-8's tests against each build; inspect the
+   harness's command line, environment and configuration (AC-8).
+9. Build CG against the QSL revision under test, run CG's
    `make evaluator-corpus`, then
-   `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>` (AC-8).
+   `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>` (AC-9).
 
 ## Expected Results
 
-- Step 1: `expected.result` is an `evaluation`, `outcome` `completed`,
-  `value` `3`; exactly four `charges` entries have `point` `function.call`;
-  the line is the record's JCS bytes plus `\n`; the loaded record equals the
-  produced one.
-- Step 2: `w - 1` gives `incomplete` with `limit_kind` `work_units`, at most
-  `w - 1` consumed and no recorded denied charge; `w` gives step 1's record;
-  the Boolean argument gives `call_failure` arm `input` with a
-  `WrongValueKind` record and loads without refusal.
-- Step 3: each mutation refuses the whole bundle with the code AC-3 states,
-  naming line 1 and the member pointer; the repeated line refuses
-  `case_order` at line 2; no evaluation runs during any load.
-- Step 4: each `CaseInput` refuses with the loader's code for the same
-  record; `qsl_replay::corpus` has no public checked-closure, evaluator or
-  session type.
-- Step 5: the run fails and reports the case with pair `expected/std` and a
-  pointer under `/charges`, and reports every other case's result; the
-  unmodified record passes.
-- Step 6: the two outputs are byte-identical and both load.
-- Step 7: `make ci` runs `evaluator-differential` over the QSL-owned corpus
-  with zero `std/no_std` divergences, and the harness has no tolerance or
-  skip setting.
-- Step 8: every CG record loads and the run reports zero `std/no_std` and
-  zero `expected/std` divergences.
+- Step 1: `expected` is `null`, `package_id` equals `compile_package`'s, the
+  line is the `quire-canonical` text plus `\n`, the loaded record equals the
+  encoded one, and the changed revision gives a different `package_id`.
+- Step 2: the case encodes and loads with `compile_package`'s `package_id`;
+  without the entry `encode` refuses `compile_refused` carrying
+  `missing_import`; the misordered record refuses `dependency_order`.
+- Step 3: each bundle refuses with AC-3's code; bundle refusals name no
+  line, `malformed_line` and `noncanonical_line` name line 1 and no
+  pointer, member refusals name line 1 and AC-3's pointer, the repeated
+  line refuses `case_order` at line 2, and no load evaluates.
+- Step 4: each input refuses with the loader's code; the module has no
+  evaluating function and no checked-closure, evaluator, session or
+  compared-record type.
+- Step 5: `fr402/count-3` is `completed` with `3`'s canonical JSON form,
+  four `function.call` charges and ten decimal-string counters;
+  `fr402/count-3-short` is `incomplete` with `limit_kind` `work_units` and
+  no denied-charge entry; `fr402/count-3-boolean` is `call_failure` `input`
+  with the `WrongValueKind` code; `fr262/ac1/count-100000` has `charges`
+  `null` and value `100000`.
+- Step 6: the first run fails with pair `expected/std` and pointer
+  `/consumed/work_units` and reports every other case; the second passes for
+  that case; the comparator reports `std/no_std` under `/charges` and names
+  the missing case and the build that produced no record.
+- Step 7: the `case_id`s are exactly FR-402's list; the two generations are
+  byte-identical and every unit loads and compiles; `Cargo.lock` gains no
+  such crate.
+- Step 8: `make ci` runs both builds with zero divergences; each FR-262
+  test passes against both builds; no tolerance, skip or exclusion setting
+  exists.
+- Step 9: every CG record loads with `expected` `null`, and the run reports
+  zero divergences.
 
 ## Metadata
 
 - Priority: P1
 - Target Integration: `qsl-replay/src/corpus.rs`, `xtask` `evaluator-differential`
-- Automation: Automated Rust tests (steps 1-7); cross-repository run (step 8)
+- Automation: Automated Rust tests (steps 1-8); cross-repository run (step 9)
 
 ## Dependencies
 
