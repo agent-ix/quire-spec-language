@@ -37,3 +37,12 @@ Units examined (role, id, path):
 ## Verdict
 
 Every new AC has a TC row except FR-223-AC-10 in TC-668 (FND-001). LT-17 recomputes as stated.
+
+## Dispositions
+
+Round 1, reviewed at QSL b84ca6c3081eae373223c0e8712129d8244f1de5 (#1194, own diff against origin/std-ra-246-qsl f12e88a34; fix commit b84ca6c30) and QSpec eadbce6aa1d4dce3908a8242acc4be9f07574a3d (#333, own diff against origin/std-ra-246-qspec 0943c2c; fix commit eadbce6). The RA-5 change FND-001 and FND-002 rest on landed in the stack base, QSL 15786c00f (#1192, STD-239) and QSpec 84dc697 (#331).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-668 step 9 runs both fixtures of FR-223-AC-10 with no other thread, and the expected results cover presence and absence. After: 9. Run a thread that fences twice with `seq_cst`, with no other thread; then a thread running `fence seq_cst; Y := 1; fence seq_cst` with `Y := 1` a `release` store, with no other thread. List the live fences after the second fence of each. - Step 9: in the first run the first fence is absent after the second fence; in the second it is present while `Y`'s message is live and its view covers the first fence and not the second. |
+| FND-002 | fixed | MB-12's second fixture has no second thread, so only `Y`'s message view (and `u`'s own views until its second fence) can keep the first fence. After: \| MB-12 \| a thread `u` running `fence seq_cst; fence seq_cst` with no other thread; then `u` running `fence seq_cst; Y := 1; fence seq_cst` with `Y := 1` a release store, with no other thread \| in the first, the first fence is absent from the SC event graph after the second fence; in the second, it is present after the second fence while `Y`'s message is live, because the message view covers the first fence and not the second (FR-437-AC-13) \| |

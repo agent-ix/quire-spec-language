@@ -43,3 +43,12 @@ The expected cells were recomputed by script (see SR-14050) and match.
 Every new or changed AC has a TC row. Two low coverage gaps remain on
 secondary clauses. The test bindings come with the code lane, so there are
 none to check here.
+
+## Dispositions
+
+Disposition pass 1, against QSL PR #1192 head `985acb35d010c8b1c20f0e24cf2b9ff17412c80d` and QSpec PR #331 head `7e7a8e09af7a696cc0df776047fb8c7ba16648ec`. Both heads contain `origin/main`. Litmus cells and the soundness claims were recomputed by script (scratchpad rv-std239-d1/litmus/: lt2.py, fuzz2.py, econ.py, eco3n.py), with `ra` run by RA-1 to RA-6 and PSC-1 to PSC-3 as now worded.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The sentence now names a checkable property, and TC-668 step 5 runs the RC11 checker with a matching expected result. After: Every outcome that an independent RC11 execution-graph checker allows for the two programs is reachable under `ra`. - Step 5: both outcomes reachable under `ra` only; every outcome the checker allows is reachable under `ra`. |
+| FND-002 | fixed | The AC is reduced to the outcome, which TC-391 checks. After: \| FR-437-AC-9 \| TC-391 LT-14 and LT-18 do not reach their weak outcomes under `ra`. \| |

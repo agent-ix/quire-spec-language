@@ -33,3 +33,11 @@ check-spec-validation` reports no EARS diagnostic on FR-223.
 
 One low finding. The description and the `Ra SHALL NOT build` bullet are
 well-formed ubiquitous statements with `Ra` as their subject.
+
+## Dispositions
+
+Disposition pass 1, against QSL PR #1192 head `985acb35d010c8b1c20f0e24cf2b9ff17412c80d` and QSpec PR #331 head `7e7a8e09af7a696cc0df776047fb8c7ba16648ec`. Both heads contain `origin/main`. Litmus cells and the soundness claims were recomputed by script (scratchpad rv-std239-d1/litmus/: lt2.py, fuzz2.py, econ.py, eco3n.py), with `ra` run by RA-1 to RA-6 and PSC-1 to PSC-3 as now worded.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Both clauses now have `Ra` as subject, the `since` rationale is gone, and the enlargement is a property verified by FR-223-AC-5 and FR-437-AC-6. After: - `Ra` SHALL record a `seq_cst` fence in the frontier of its thread's current view, of `S` and of its release views as the fence becomes an SC event. - `Ra` SHALL build no edge for the `eco` part of RC11's fence clause. |

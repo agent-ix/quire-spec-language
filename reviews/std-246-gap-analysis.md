@@ -36,3 +36,11 @@ Units examined (role, id, path):
 ## Verdict
 
 Every new AC has a TC row in its own repo, and both vectors recompute as stated. One low test-intent finding.
+
+## Dispositions
+
+Round 1, reviewed at QSL f12e88a3497a28fb244da5be4ba41fbb3676c8ad (#1193, own diff against origin/std-ra-239-qsl 985acb35d; fix commit f12e88a34) and QSpec 0943c2cc67912ebd3039134e8fb85ddad23241c7 (#332, own diff against origin/std-ra-239-qspec 7e7a8e0; fix commit 0943c2c).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | LT-16 adds `y: L := 4 relaxed` and `d` reads it, so `d`'s message view does not cover `L := 2` and the pair must reach `d` through `acq_b` and the acquire fence. Recomputed (litmus2.py, rv-ra-b2): LT-16 forbidden under `sc`, `tso`, RC11 and the PSC-3 edge set; the same program without the fence is allowed under RC11 and the PSC-3 edge set, so the fence is load-bearing. FR-223-AC-8, FR-437-AC-11 and the TC-391 note agree. After: \| LT-16 \| `u`, `t` as in LT-15 without `X := 2`. `y`: `L := 4` relaxed. `w`: `c := L` relaxed; fence acquire; `d := L` seq_cst; `X := 2` seq_cst \| a = 2, b = 3, c = 3, d = 4, final X = 1 \| forbidden \| forbidden \| forbidden (RC11 forbids it; `L := 2` happens before `w`'s fence through `L := 3`, and without the fence the outcome is allowed) \| |

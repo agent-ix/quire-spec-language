@@ -29,3 +29,11 @@ Units examined (role, id, path):
 ## Verdict
 
 One low finding. The key bullet is a well-formed ubiquitous statement with one subject and one SHALL.
+
+## Dispositions
+
+Round 1, reviewed at QSL f12e88a3497a28fb244da5be4ba41fbb3676c8ad (#1193, own diff against origin/std-ra-239-qsl 985acb35d; fix commit f12e88a34) and QSpec 0943c2cc67912ebd3039134e8fb85ddad23241c7 (#332, own diff against origin/std-ra-239-qspec 7e7a8e0; fix commit 0943c2c).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | The statement names later SC writes and the current view's frontier; `make check-spec-validation` reports no EARS warning on FR-223 at f12e88a34. After: - When garbage collection removes an SC event, `Ra` SHALL keep its live predecessors as predecessors of every later SC event of its thread; of every later SC write to its location; and of every later SC event on its location by a thread whose current view's frontier covers the removed event, by QSpec FR-437's collection rule. |

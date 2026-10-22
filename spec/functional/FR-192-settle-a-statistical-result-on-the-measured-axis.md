@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-189
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-280
+    type: references
 ---
 # FR-192: Settle a statistical result on the measured axis
 
@@ -77,8 +79,8 @@ pub enum Coverage { FiniteSample, Asymptotic }
 
 ### EN-4's capability and refusals
 
-- EN-4's provider manifest SHALL advertise (`probabilistic-satisfaction`,
-  `statistical`) only. Routing an item by its evidence kind, and never
+- EN-4's provider manifest SHALL be the one FR-280 states, which lists the evidence
+  kind `statistical` only. Routing an item by its evidence kind, and never
   substituting one kind for the other, is QSpec FR-290's negotiation rule,
   which QSL does not restate.
 - When EN-4's negotiation gate refuses a claim (FR-195, which owns the
@@ -137,7 +139,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with setting `statistical.max_samples`; an `Unsupported` outcome with cause `NotMarkov`; a `NoTest` refusal settling `inconclusive`, `no-initial-state`; a `ConfidenceBeyondPrecision` refusal settling `unsupported`, `confidence-beyond-precision`; an `Internal` refusal settling `failed`; a `Stopped` by an expansion naming `EvaluationMeter` settling `incomplete`, `limit-reached` with that limit, its configured value and setting `meter`, and one naming `MaxCandidates` with that limit, its configured value and setting `max_candidates` (the FR-120 settings under their registered names, with no `model_check.` prefix and no second setting), one by an internal-failure expansion naming no limit settling `failed`, `runtime_invariant`/`established-invariant-broken`, and one by a non-internal expansion naming no limit settling `failed` with the stop's own `ExpansionStop.cause` (QSL FR-120) as its one diagnostic. None of the measured, stopped and unsupported records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
 | FR-192-AC-2 | FR-189-AC-1's Okamoto result at `5 ms` settles `measured`, `accepted`, with `interval` present, `coverage: FiniteSample`, `samples = 23,026`, `tests = 1`, `alpha_per_test = 1/100`; the SPRT result at `2 ms` settles `measured`, `rejected` with no `interval`; FR-190-AC-1's result settles `accepted` with `coverage: Asymptotic`. | Test (TC-627) |
 | FR-192-AC-3 | A request with `P95` accepted and the `2 ms` claim rejected fails the pipeline gate with the same status as a request holding one O-16 violation; the same request without the rejected item passes. Its proof summary counts 0 proved items. | Test (TC-627) |
-| FR-192-AC-4 | EN-4's manifest lists exactly (`probabilistic-satisfaction`, `statistical`). EN-4's gate given a checked claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |
+| FR-192-AC-4 | EN-4's manifest is the one FR-280-AC-4 fixes. EN-4's gate given a checked claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |
 | FR-192-AC-5 | FR-189-AC-6's result settles `measured`, `rejected`, category violation, with the test's `UndefinedEvaluation` in the record, and fails the pipeline gate as a violation does. | Test (TC-640) |
 
 ## Dependencies
@@ -148,7 +150,9 @@ pub enum Coverage { FiniteSample, Asymptotic }
   and category map), [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
   (the same terminal record for temporal items),
-  [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md).
+  [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md),
+  [FR-280](FR-280-serve-the-driver-s-lower-generate-and-prove-operations.md)
+  (EN-4's provider manifest).
 
 ## References
 

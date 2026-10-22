@@ -28,3 +28,25 @@ Units examined (role, id, path):
 ## Verdict
 
 One low finding.
+
+## New findings (disposition pass 1)
+
+Reviewed at QSL b84ca6c3081eae373223c0e8712129d8244f1de5 (#1194, own diff against origin/std-ra-246-qsl f12e88a34; fix commit b84ca6c30) and QSpec eadbce6aa1d4dce3908a8242acc4be9f07574a3d (#333, own diff against origin/std-ra-246-qspec 0943c2c; fix commit eadbce6). The RA-5 change FND-001 and FND-002 rest on landed in the stack base, QSL 15786c00f (#1192, STD-239) and QSpec 84dc697 (#331).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The new fence statement draws two warnings from `make check-spec-validation` at b84ca6c30, which the base f12e88a34 does not have: FR-223 line 84 `[ears:unclassifiable]` and `[ears:missing-subject]`. The cause is the line wrap between `` `Ra` `` and `SHALL`: the same text with `` `Ra` SHALL keep the fence in `P`, and no longer. `` on one line validates clean (checked on a scratch copy). The #1194 body's "no diagnostics on touched files" is therefore not true at this head. Rewrap so `` `Ra` `` begins the line that carries `SHALL`. | spec/functional/FR-223-order-seq-cst-events-by-the-rc11-partial-sc-order.md:82-84 |
+
+## Dispositions
+
+Round 1, reviewed at QSL b84ca6c3081eae373223c0e8712129d8244f1de5 (#1194, own diff against origin/std-ra-246-qsl f12e88a34; fix commit b84ca6c30) and QSpec eadbce6aa1d4dce3908a8242acc4be9f07574a3d (#333, own diff against origin/std-ra-246-qspec 0943c2c; fix commit eadbce6). The RA-5 change FND-001 and FND-002 rest on landed in the stack base, QSL 15786c00f (#1192, STD-239) and QSpec 84dc697 (#331).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | One state-driven statement with one SHALL. Its line wrap trips the EARS lint, recorded as FND-002. After: - While some view, at rest or in flight on a channel, has a `seq_cst` fence as the latest live fence of its thread that the view's frontier covers, `Ra` SHALL keep the fence in `P`, and no longer. |
+
+## Dispositions (pass 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-002 | fixed | FR-223's fence-lifetime statement is rewrapped so `Ra` and `SHALL` are on one line. `make check-spec-validation` reports no diagnostic on FR-223 at the new head. |
