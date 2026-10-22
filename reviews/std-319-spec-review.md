@@ -56,6 +56,15 @@ Head 6c2f9a772 (`origin/main` 48108c9c1 is an ancestor; `git ls-remote` confirms
 | --- | --- | --- | --- |
 | FND-006 | medium | major: The FND-001 fix decides child-argument membership "in the type environment of the session's checked closure" and says "No other failure arises from validation". That check cannot admit a `Population` argument. `TypeEnvironment::admits` (quire-semantic-value ac0e137, declaration.rs:44-52 and 2709) uses kernel `ValueType::admits`, which "refuses every `(ValueType::Population(_), Value::Population(_))` pair outright" (quire-exact 1c6cbcb value.rs:24-31, FR-089-AC-6). Begin handles this with a caller-layer check that resolves the `PopulationId` through the object environment and compares its declared maximum (FR-403 Begin check 2; qsl-eval expression/mod.rs:431-439). As written, a well-formed child request that passes a `Population` to a `Population<T>[N]` parameter (FR-153) ends the session with the `child-request-not-admitted` fault. <br>Fix: for a `Population<T>[N]` parameter, decide membership through the environment contract's population resolution and declared maximum, as Begin check 2 does. That check also charges nothing and polls no handle. An unresolved or mismatched population is the same fault. Optionally add a `Population` child vector to AC-11. | spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:166-171 |
 
+## New findings (disposition pass 2)
+
+Head c4543768c (fix commit 3ef49e5be plus a merge of `origin/main` 43f4e2086, which is an ancestor). `make check-spec-validation` exits 0 with no finding on a touched file.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | minor: FR-262-AC-11 says "in three runs" but now lists four fault requests, followed by a "fifth run". The declared-maximum branch the prose adds ("whose binding's declared maximum differs") has no vector: the only fault vector for `h` is an unresolved `PopulationId`. <br>Fix: say "four runs", and add a run in which `h` is requested with a `Population` the environment resolves to a binding whose declared maximum is not `3`, ending with the same fault. | spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:269 |
+| FND-008 | low | minor: `CallFailure::Storage` now covers "the storage failure ... of the environment read", but the FR-403 environment contract's read 6 (whether a binding is recorded, and its declared maximum) returns C/SV/K values or boxed coded causes and defines no storage failure. The reference's Begin check (`resolve_population(..).is_some_and(..)`) has none either. The clause names a failure that no read can produce. <br>Fix: drop "or of the environment read". A storage failure then comes only from the type-environment check. | spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:186-191 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -65,8 +74,11 @@ Head 6c2f9a772 (`origin/main` 48108c9c1 is an ancestor; `git ls-remote` confirms
 | FND-003 | fixed | AD-001:138 now says "Cancellation is observed only at a charge", with the located incomplete result and the lifecycle `tripped()` report. |
 | FND-004 | fixed | FR-403 (the rerun sentence, AC-7 and Dependencies), FR-262 Dependencies and TC-1121 (description and step 7) include AC-10 and AC-11. Both can run on the `no_std` evaluator through its registry (FR-403-AC-3) and the `quire-eval` entry. #1237's FR-405-AC-2 range still says AC-1 to AC-8, which is a planner note for that PR. |
 | FND-005 | fixed | The release list includes storage failure. The `Storage` termination comes before the child's `function.call`, keeps earlier spend, and `parameter` is the callee's parameter index. |
+| FND-006 | fixed | Disposition pass 2: FR-262 now decides a `Population<T>[N]` child argument as Begin check 2 does, through the environment contract's population resolution and declared maximum (FR-403 contract read 6), with no run, no charge and no poll. An unresolved population or a different declared maximum gives the `child-request-not-admitted` fault. FR-262-AC-11 adds an unresolved `h` fault run and a resolved `h` run applied with one `function.call` charge, and TC-1121 steps 7 cover both. The remaining nits are FND-007 and FND-008. |
 
 ## Verdict
+
+Disposition pass 2: FND-006 is fixed and there is no new major finding. FND-007 and FND-008 are low-severity wording and coverage nits. The PR is mergeable once they are fixed, or with them deferred to the S0 coder's test pass if the lead accepts that.
 
 Disposition pass 1: FND-001 to FND-005 are fixed, but FND-006 is a new major regression from the FND-001 fix, so the PR is not mergeable until it is fixed.
 

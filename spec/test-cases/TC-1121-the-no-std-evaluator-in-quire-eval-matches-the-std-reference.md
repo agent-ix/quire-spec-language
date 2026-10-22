@@ -45,7 +45,7 @@ FR-403-AC-1 to FR-403-AC-14.
    same call on the reference over `ObjectEnvironment::new` of the same
    closure.
 7. Run FR-262-AC-1 to FR-262-AC-8, AC-10 and AC-11 (including AC-11's
-   unresolved and resolved `Population` child requests) through `qsl-eval`'s `quire-eval` entry,
+   unresolved, mismatched-maximum and resolved `Population` child requests) through `qsl-eval`'s `quire-eval` entry,
    with AC-1 and AC-2 on a thread with a 512 KiB stack.
 8. Admit a population document ten times in each of two member orders. It
    has three members, two of which violate a subsetting edge.
@@ -96,7 +96,7 @@ FR-403-AC-1 to FR-403-AC-14.
    two `ReadLog` sets are equal.
 6. Both return `CallFailure::Input(InputRefusal::WrongValueKind)` naming
    parameter `0`, with no charge.
-7. Each criterion passes with the reference's expected values. AC-11's unresolved `Population` child request ends with `CallFailure::Fault` (`quire-eval`, `child-request-not-admitted`) and no child charge, and the resolved one is applied with one `function.call` charge. No depth
+7. Each criterion passes with the reference's expected values. AC-11's unresolved `Population` child request and its request resolving to declared maximum `4` each end with `CallFailure::Fault` (`quire-eval`, `child-request-not-admitted`) and no child charge, and the resolved one is applied with one `function.call` charge. No depth
    refusal and no stack overflow occur.
 8. Every run refuses, naming the violating member with the lowest reference
    key.
