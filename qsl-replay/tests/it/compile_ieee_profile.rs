@@ -264,7 +264,7 @@ fn bit_level_float_constructors_remain_unrepresented_source_forms() {
         assert!(matches!(
             failure.cause,
             qsl_forms::FormsCause::UnrepresentedConstruct {
-                production: qsl_cst::grammar::Production::FloatValue,
+                production: qsl_cst::Production::FloatValue,
             }
         ));
     }
