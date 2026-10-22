@@ -70,3 +70,27 @@ Owner and planner decisions:
 - The basis per temporal kind: closed-scope for holds, violated and undefined; `unavailable` or FR-243 `unsettled` for pending (FND-006).
 - Whether the temporal rows follow FR-352's evaluate `outcome` vocabulary or QSpec changes to admit `refusal` at evaluate and the inconclusive category (FND-003); a Linear ticket for the QSpec FR-352/TC-255 follow-up.
 - How a `TemporalRefusal` variant is told apart on the wire (FND-002).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | minor: FR-330-AC-7 now names the clause twice: "a `Counter` clause `always[0,1] holds(...)` under event-position false-extension, `always[0,1] holds(InUnit(c.value))` with `function InUnit ...`". It reads as two clauses, one of them a placeholder. <br>Fix: drop the `holds(...)` placeholder and keep only `always[0,1] holds(InUnit(c.value))`. | spec/functional/FR-330-run-a-temporal-clause-through-the-spine.md:128 |
+| FND-012 | low | minor: FR-267-AC-15's window vectors cite FR-194-AC-3, a monitor vector. Its second case stops as the monitor's `Incomplete(LimitReached{…})`, not as FR-330's `WindowLimitReached`, so it does not show which temporal clause the run selects. The `absent-key` vector names no clause or atom. <br>Fix: name the TC-629 window clause that FR-330 runs for both cases, and give the `absent-key` case a concrete atom (a stub atom as in FR-327-AC-6, or a source lookup on a missing key). | spec/functional/FR-267-write-run-results-as-native-run-result-2.md:399 |
+
+## Dispositions
+
+Round 1, reviewed at 62f5b4811323d20c2b034d9fcbc6ad6ba60a913e.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-330 Outputs: the violation disposition carries the `TemporalCounterexample` that the entry builds (document digests, fairness set, interval, the undefined atom's locus and document). FR-267: "The writer writes it as the report holds it and derives none of its members." |
+| FND-002 | fixed | New kind `trace-refused` with a `variant` table that covers every spine `TemporalTraceRefusal` variant except `Fault`. AC-14 round-trips `EmptyLoop` and `EmptyTrace` as distinct values. |
+| FND-003 | fixed | Every row uses FR-100 `outcome`, with no `refusal` at evaluate. The remaining QSpec departures (temporal member, inconclusive/unsettled, closed-scope undefined, insufficient-data reason, max_window_values limit, TC-255 vectors) are listed as a precondition gating QSL-902 conformance. The QSpec ticket is still to be filed by the lead. |
+| FND-004 | fixed | The reader rules are shape rules (stage, co-occurrence, the row's category, truth, basis and outcome). The AC-14 edit adds `temporal` to the FR-109-AC-3 stage `admit` document. |
+| FND-005 | fixed | The opening paragraph limits `temporal` to an FR-327 outcome, a refused condition or a trace refusal. Internal failures, `CheckedInvariant` included, carry `internal_fault`. |
+| FND-006 | fixed | FR-266 Temporal bullet and FR-266-AC-4: closed-scope for holds, violated and undefined; unsettled for pending; unavailable otherwise. The code impact on `temporal.rs:102` and its test is named in the PR body. |
+| FND-007 | fixed | FR-267-AC-15 adds insufficient-data, window-limit-reached, a family `absent-key` undefined and the FR-328 prefix violation, plus drop-member edits. Vector grounding is in FND-012. |
+| FND-008 | fixed | FR-330-AC-7 is grounded with `InUnit(x: Int[0, 1])`, a Coerce refusing `integer_out_of_domain`/`outside-domain`, `expected` `Int[0, 1]` (FR-096-AC-8, TC-428). Wording is in FND-011. |
+| FND-009 | fixed | FR-327: the evaluator returns `CheckedInvariant` as a refused condition, not `TemporalRefusal::Fault`, and FR-330 reports internal-failure. AC-6 asserts this. |
+| FND-010 | fixed | FR-312-AC-7 introduces `s2` (2). TC-1160 cites TC-848 for `Fair`. |

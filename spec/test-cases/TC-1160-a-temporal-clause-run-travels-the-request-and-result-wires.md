@@ -30,7 +30,7 @@ FR-327-AC-6, FR-330-AC-7.
 ## Test Procedure
 
 Use TC-840's `Counter` unit (clauses `Bounded` and `Reaches`), TC-848's
-clause `Fair`, TC-847's undefined clause, TC-629's window clauses and
+clause `Fair`, TC-847's undefined clause, FR-267-AC-15's `Windowed` and `lookup` clauses and
 snapshots with `c.value` 0, 1, 2.
 
 1. Through `run`, send FR-312-AC-7's temporal request over the lasso with
