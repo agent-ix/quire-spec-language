@@ -159,13 +159,15 @@ points are the only places admission observes cancellation. Admission
 charges the meter nothing. A handle that is already cancelled, or is
 cancelled at one of those points, ends Begin with the pre-charge
 `CallFailure::Cancelled` carrying the handle's cause, with no session and no
-`function.call` charge. With no installed handle, the run polls a handle no
-caller holds.
+`function.call` charge. When the meter has no installed handle, the run
+Begin builds for itself, used when the caller passes none, polls a handle no
+caller holds; a run the caller passes keeps its own `Cancel` (FR-277).
 
 A caller MAY pass its own supplied-value run, and SHALL build it over the
 handle it installed in the meter. When the run's `Cancel` is a different
 handle, admission SHALL poll both at each of FR-277's poll points, the run's
-handle first, and the first handle found cancelled ends Begin with
+handle first (when the meter has no installed handle, the run's handle
+alone), and the first handle found cancelled ends Begin with
 `CallFailure::Cancelled` carrying that handle's cause.
 
 A session SHALL retain its task stack, call frames, lexical bindings,
@@ -284,7 +286,7 @@ and JIT preparation retain their existing contracts.
 | FR-262-AC-9 | An interface crate with only a std reference adapter does not satisfy RT's complete evaluator migration. That migration consumes the shared implementation with std disabled on RT's governed no_std target, supplies checked-input and generated-body evaluation through this interface, and leaves no RT-local evaluator copy or compatibility re-export. | Inspection |
 | FR-262-AC-10 | Begin takes no `Cancel` argument. With a meter whose installed handle is cancelled with `Deadline` at the first kernel charge a registered body makes, the session terminates with that charge's located incomplete result (`limit_kind: work_units`, `limit` equal to `consumed`), not `CallFailure::Cancelled`; `tripped()` returns `Deadline`. With the handle cancelled at a `function.call` charge, the result has the same form at that charge. When a caller cancels between two steps and the next transition makes no charge, that transition runs and the session terminates at the first charge after it. | Test |
 | FR-262-AC-11 | A registered body requests, in five runs: a `NodeKey` that no function of the closure has; the admitted `f(x: Int[0, 9]): Boolean` with two arguments; `f` with the argument `10`; a function `h(p: Population<T>[3]): Boolean` with a `Population` value whose `PopulationId` the environment does not resolve; and `h` with a `Population` value the environment resolves to a binding of declared maximum `4`. Each run terminates with `CallFailure::Fault` whose `InternalFault` has stage `quire-eval` and invariant `child-request-not-admitted`, category `internal failure`. The run makes no `function.call` charge for the child, invokes no callee body, does not resume the requesting body, and keeps the charges made before the request. In a sixth run, `h` requested with a `Population` value the environment resolves to a binding of declared maximum `3` is applied, with one `function.call` charge for it. Begin of `f` with two arguments returns `CallFailure::Input(InputRefusal::Arity)`, and Begin of `f` with `10` returns `CallFailure::Input` from argument admission, each with no charge. | Test |
-| FR-262-AC-12 | Begin of the admitted `g(x: Int[0, 9], y: Int[0, 9]): Boolean` with arguments `3` and `4`, and Begin of a checked expression with those two parameter values, each return `CallFailure::Cancelled` with no session, all of the meter's consumed counters zero and no `function.call` charge recorded, in four runs: the meter's installed handle cancelled with `Requested` before Begin (cause `Requested`); the meter's handle tripping with `Deadline` at the supplied-value run's first poll point for the second argument (cause `Deadline`); a caller-supplied run over a different handle cancelled with `Requested`, the meter's handle not cancelled (cause `Requested`); and that run's handle not cancelled, the meter's handle cancelled with `Deadline` (cause `Deadline`). With no handle cancelled, both Begins return a session; with a meter that has no installed handle and the caller's run over an uncancelled handle, both Begins return a session. | Test |
+| FR-262-AC-12 | Begin of the admitted `g(x: Int[0, 9], y: Int[0, 9]): Boolean` with arguments `3` and `4`, and Begin of a checked expression with those two parameter values, each return `CallFailure::Cancelled` with no session, all of the meter's consumed counters zero and no `function.call` charge recorded, in four runs: the meter's installed handle cancelled with `Requested` before Begin (cause `Requested`); the meter's handle tripping with `Deadline` at the supplied-value run's first poll point for the second argument (cause `Deadline`); a caller-supplied run over a different handle cancelled with `Requested`, the meter's handle not cancelled (cause `Requested`); and that run's handle not cancelled, the meter's handle cancelled with `Deadline` (cause `Deadline`). With no handle cancelled, both Begins return a session; with a meter that has no installed handle and the caller's run over an uncancelled handle, both Begins return a session. With a meter that has no installed handle and a caller-supplied run whose handle is cancelled with `Requested`, both Begins return `CallFailure::Cancelled` with cause `Requested`, no session and zero consumption. | Test |
 
 ## Dependencies
 

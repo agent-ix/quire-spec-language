@@ -77,3 +77,31 @@ as lead defaults, not owner answers.
 | FND-006 | medium | "A caller that passes its own run builds it over the handle it installed in the meter" is a description, not a requirement: no SHALL, no outcome when the run's Cancel differs from the meter's handle (which one admission polls, or a refusal), and FR-262-AC-12 does not test it. AC-12 also tests only a handle cancelled before Begin, not the statement's "cancelled during admission" case. Make the caller-supplied run rule normative with its mismatch outcome, and extend AC-12 to a cancel at a later argument's admission event and to a caller-supplied run. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:227-229; spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:159-163,280 |
 | FND-007 | low | FR-262 says "concrete Rust item names belong to the interface implementation", but the new statement names `admit_call` and `admit_expression` in `quire-eval`, and AC-12 asserts "`admit_call` received that meter", an internal call observation. Keep the item names in FR-403 or FR-401 and state AC-12's observable outcome only. | spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:153-154,280 |
 | FND-008 | low | FR-262-AC-12 is inserted above FR-262-AC-11; append it after AC-11. | spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:280-281 |
+
+## Dispositions
+
+Round 1, checked against fix head 4bcce502 (`git diff origin/main...4bcce502`,
+spec files only). The fix drops the `qsl-replay` re-export exception: FR-401
+has no exception, FR-401-AC-3's compile-fail list gains `qsl_replay::Category`,
+FR-401-AC-9 is removed, and ADR-011 is byte-identical to origin/main.
+`make check-spec-validation` exits 0 with 19 warnings, none on a touched
+file. The head still merges cleanly with #1277 (`git merge-tree`), and
+origin/main is an ancestor.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The exception and its false T12-A premise are gone; FR-401 now says SV and quire-eval are not QSL crates for FR-059 or T12-A and CG names `quire_semantic_value::catalog::Category`, matching FR-060 and ADR-011 X-11. |
+| FND-002 | fixed | FR-403 Argument admission's first sentence now reads "taking the session's meter but charging it nothing". |
+| FND-003 | fixed | With no exception, FR-401 and ADR-011 (reverted to main) both forbid every QSL re-export of a moved type; X-11 and X-14 rows agree. |
+| FND-004 | fixed | AC-9 is removed; the rule is tested by FR-401-AC-3's compile-fail list, which now includes `qsl_replay::Category`. |
+| FND-005 | fixed | FR-262 and FR-403 item 5 both defer to "FR-277's poll points"; neither restates them. |
+| FND-006 | fixed | FR-262 makes the caller-supplied run normative (MAY pass, SHALL build over the meter's handle), defines the differing-handle outcome (both polled, run's first), and AC-12 tests a mid-admission trip at the second argument and both differing-handle directions. |
+| FND-007 | fixed | FR-262's statement and AC-12 no longer name `admit_call` or `admit_expression`. |
+| FND-008 | fixed | FR-262-AC-12 now follows FR-262-AC-11. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | With no installed handle and a caller-supplied run whose own `Cancel` is cancelled, FR-262 gives two answers: "With no installed handle, the run polls a handle no caller holds" (Begin returns a session, and the run's original Cancel is replaced, which FR-277 forbids: "SHALL NOT replace it with a fresh token") versus the differing-handle rule, which polls the run's handle (Begin returns `Cancelled`). AC-12 covers only the uncancelled case. Scope the no-handle sentence to Begin's own run and state the outcome for a caller's cancelled run with no installed handle in AC-12. | spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md:162-169,287; spec/functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md:154-156 |
+| FND-010 | low | FR-401-AC-8 is inserted above FR-401-AC-7; append it after AC-7. | spec/functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md:265-266 |
