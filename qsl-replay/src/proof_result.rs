@@ -34,7 +34,7 @@ use serde::Serialize;
 mod plugin;
 mod plugin_read;
 mod plugin_replay;
-pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause};
+pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause, ValueFault};
 pub use plugin_read::{
     read_plugin_assignments, read_plugin_basis, read_plugin_certification,
     read_plugin_inconclusive_cause,

@@ -196,7 +196,7 @@ pub use proof_result::{
     ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind,
     ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
     StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
-    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

@@ -14,7 +14,7 @@ use std::cmp::Ordering;
 
 use serde_json::{Map, Value};
 
-use super::plugin::{read_plugin_cause_kind, PluginResultRefusal};
+use super::plugin::{read_plugin_cause_kind, PluginResultRefusal, ValueFault};
 use super::{
     AppliedReduction, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, ProofBasis,
     Proviso, ReductionKind,
@@ -99,8 +99,25 @@ fn at_index(base: &str, index: usize) -> String {
     format!("{base}/{index}")
 }
 
-fn malformed(pointer: String) -> PluginResultRefusal {
-    PluginResultRefusal::Malformed { pointer }
+/// A value outside its domain: `wrong-value-kind` when `kind_ok` is false
+/// (the JSON kind is not the kind the domain takes), else `invalid-value`.
+fn malformed(kind_ok: bool, pointer: String) -> PluginResultRefusal {
+    PluginResultRefusal::Malformed {
+        pointer,
+        cause: if kind_ok {
+            ValueFault::InvalidValue
+        } else {
+            ValueFault::WrongValueKind
+        },
+    }
+}
+
+fn wrong_kind(pointer: String) -> PluginResultRefusal {
+    malformed(false, pointer)
+}
+
+fn invalid(pointer: String) -> PluginResultRefusal {
+    malformed(true, pointer)
 }
 
 fn missing(pointer: String) -> PluginResultRefusal {
@@ -140,7 +157,7 @@ fn member<'a>(
 fn count_of(value: &Value, positive: bool, pointer: String) -> Result<u64, PluginResultRefusal> {
     match value.as_u64() {
         Some(count) if count <= MAX_COUNT && (!positive || count >= 1) => Ok(count),
-        _ => Err(malformed(pointer)),
+        _ => Err(malformed(value.is_u64() || value.is_i64(), pointer)),
     }
 }
 
@@ -157,7 +174,7 @@ fn count(
 fn text_of(value: &Value, pointer: String) -> Result<&str, PluginResultRefusal> {
     match value.as_str() {
         Some(text) if !text.is_empty() => Ok(text),
-        _ => Err(malformed(pointer)),
+        _ => Err(malformed(value.is_string(), pointer)),
     }
 }
 
@@ -173,13 +190,13 @@ fn check_member<'a>(
 ) -> Result<(&'a Map<String, Value>, &'static Spelling), PluginResultRefusal> {
     let base = child("", member_name);
     let Value::Object(members) = value else {
-        return Err(malformed(base));
+        return Err(wrong_kind(base));
     };
     let type_pointer = child(&base, "type");
     let kind = match members.get("type") {
         None => return Err(missing(type_pointer)),
         Some(Value::String(kind)) => kind.as_str(),
-        Some(_) => return Err(malformed(type_pointer)),
+        Some(_) => return Err(wrong_kind(type_pointer)),
     };
     refuse_spelling(kind)?;
     let Some(entry) = table.iter().find(|entry| entry.name == kind) else {
@@ -298,9 +315,9 @@ fn canonical_integer(text: &str) -> Option<Integer> {
 /// A checked-package v2 `Rational` `{numerator, denominator}` in lowest
 /// terms, with a non-negative numerator and a positive denominator.
 fn read_horizon(value: &Value, pointer: String) -> Result<SolverHorizon, PluginResultRefusal> {
-    let refuse = || malformed(pointer.clone());
+    let refuse = || invalid(pointer.clone());
     let Value::Object(members) = value else {
-        return Err(refuse());
+        return Err(wrong_kind(pointer));
     };
     if members.len() != 2 {
         return Err(refuse());
@@ -331,7 +348,7 @@ fn read_reductions(
             .enumerate()
             .map(|(index, entry)| read_reduction(entry, at_index(&pointer, index)))
             .collect(),
-        _ => Err(malformed(pointer)),
+        _ => Err(malformed(value.is_array(), pointer)),
     }
 }
 
@@ -340,7 +357,7 @@ fn read_reductions(
 fn read_reduction(value: &Value, pointer: String) -> Result<AppliedReduction, PluginResultRefusal> {
     const MEMBERS: [&str; 3] = ["parameters", "reduction", "row"];
     let Value::Object(members) = value else {
-        return Err(malformed(pointer));
+        return Err(wrong_kind(pointer));
     };
     if let Some(absent) = MEMBERS.iter().find(|name| !members.contains_key(**name)) {
         return Err(missing(child(&pointer, absent)));
@@ -364,7 +381,7 @@ fn read_reduction(value: &Value, pointer: String) -> Result<AppliedReduction, Pl
         }
         "partial-order" => read_proviso(parameters, parameters_pointer)?,
         "copy-swap" => read_classes(parameters, parameters_pointer)?,
-        _ => return Err(malformed(reduction_pointer)),
+        _ => return Err(invalid(reduction_pointer)),
     };
     text_of(member(members, "row", &pointer)?, child(&pointer, "row"))?;
     Ok(applied)
@@ -376,7 +393,7 @@ fn read_proviso(
     pointer: String,
 ) -> Result<AppliedReduction, PluginResultRefusal> {
     let Value::Object(members) = parameters else {
-        return Err(malformed(pointer));
+        return Err(wrong_kind(pointer));
     };
     let proviso = member(members, "proviso", &pointer)?;
     if let Some(extra) = first_undefined(members, &["proviso"]) {
@@ -386,7 +403,7 @@ fn read_proviso(
         Some("breadth-first-revisit") => Ok(AppliedReduction::PartialOrder {
             proviso: Proviso::BreadthFirstRevisit,
         }),
-        _ => Err(malformed(child(&pointer, "proviso"))),
+        other => Err(malformed(other.is_some(), child(&pointer, "proviso"))),
     }
 }
 
@@ -395,7 +412,7 @@ fn read_classes(
     pointer: String,
 ) -> Result<AppliedReduction, PluginResultRefusal> {
     let Value::Object(members) = parameters else {
-        return Err(malformed(pointer));
+        return Err(wrong_kind(pointer));
     };
     let classes = member(members, "classes", &pointer)?;
     if let Some(extra) = first_undefined(members, &["classes"]) {
@@ -403,7 +420,7 @@ fn read_classes(
     }
     let classes_pointer = child(&pointer, "classes");
     let Some(entries) = classes.as_array() else {
-        return Err(malformed(classes_pointer));
+        return Err(wrong_kind(classes_pointer));
     };
     let classes = entries
         .iter()
@@ -415,21 +432,23 @@ fn read_classes(
 
 /// A class of two or more distinct non-empty strings.
 fn read_class(value: &Value, pointer: String) -> Result<Vec<String>, PluginResultRefusal> {
-    let Some(entries) = value.as_array().filter(|entries| entries.len() >= 2) else {
-        return Err(malformed(pointer));
+    let Some(entries) = value.as_array() else {
+        return Err(wrong_kind(pointer));
     };
     let class = entries
         .iter()
-        .map(|entry| entry.as_str().filter(|name| !name.is_empty()))
-        .collect::<Option<Vec<&str>>>()
-        .ok_or_else(|| malformed(pointer.clone()))?;
+        .map(|entry| match entry.as_str() {
+            Some(name) if !name.is_empty() => Ok(name),
+            other => Err(malformed(other.is_some(), pointer.clone())),
+        })
+        .collect::<Result<Vec<&str>, _>>()?;
     let mut distinct = class.clone();
     distinct.sort_unstable();
     distinct.dedup();
-    if distinct.len() == class.len() {
+    if class.len() >= 2 && distinct.len() == class.len() {
         Ok(class.into_iter().map(str::to_owned).collect())
     } else {
-        Err(malformed(pointer))
+        Err(invalid(pointer))
     }
 }
 
@@ -448,10 +467,12 @@ pub fn read_plugin_certification(certification: Option<&Value>) -> Result<(), Pl
     match certification {
         None => Err(missing(POINTER.to_owned())),
         Some(Value::String(label)) if label == "trusted" => Ok(()),
-        Some(Value::String(label)) => Err(PluginResultRefusal::CertificationNotTrusted {
-            received: label.clone(),
-        }),
-        Some(_) => Err(malformed(POINTER.to_owned())),
+        Some(Value::String(label)) if matches!(label.as_str(), "certified" | "uncertified") => {
+            Err(PluginResultRefusal::CertificationNotTrusted {
+                received: label.clone(),
+            })
+        }
+        Some(other) => Err(malformed(other.is_string(), POINTER.to_owned())),
     }
 }
 
@@ -563,7 +584,7 @@ fn read_reduction_kind(
         Some("symmetry") => Ok(ReductionKind::Symmetry),
         Some("partial-order") => Ok(ReductionKind::PartialOrder),
         Some("constraint") => Ok(ReductionKind::StateConstraint),
-        _ => Err(malformed(pointer)),
+        other => Err(malformed(other.is_some(), pointer)),
     }
 }
 
@@ -575,7 +596,7 @@ fn read_memory_limit(
     match member(members, "limit", base)?.as_str() {
         Some("max_store_buffer") => Ok(MemoryBoundMember::MaxStoreBuffer),
         Some("max_messages") => Ok(MemoryBoundMember::MaxMessages),
-        _ => Err(malformed(child(base, "limit"))),
+        other => Err(malformed(other.is_some(), child(base, "limit"))),
     }
 }
 
@@ -586,7 +607,7 @@ fn read_instance_limit(
 ) -> Result<(), PluginResultRefusal> {
     match member(members, "limit", base)?.as_str() {
         Some("max_live_instances") => Ok(()),
-        _ => Err(malformed(child(base, "limit"))),
+        other => Err(malformed(other.is_some(), child(base, "limit"))),
     }
 }
 
@@ -594,7 +615,7 @@ fn read_instance_limit(
 fn check_state_key(value: &Value, pointer: String) -> Result<(), PluginResultRefusal> {
     match value.as_str().and_then(WireNodeId::from_hex) {
         Some(_) => Ok(()),
-        None => Err(malformed(pointer)),
+        None => Err(malformed(value.is_string(), pointer)),
     }
 }
 
@@ -602,7 +623,7 @@ fn check_state_key(value: &Value, pointer: String) -> Result<(), PluginResultRef
 /// (FR-364): `transition` and `post_state`, plus `delay` when present.
 fn check_prefix(value: &Value, pointer: String) -> Result<(), PluginResultRefusal> {
     let Some(steps) = value.as_array() else {
-        return Err(malformed(pointer));
+        return Err(wrong_kind(pointer));
     };
     steps
         .iter()
@@ -613,7 +634,7 @@ fn check_prefix(value: &Value, pointer: String) -> Result<(), PluginResultRefusa
 #[ix_trace_rs::string_edge]
 fn check_model_step(step: &Value, pointer: String) -> Result<(), PluginResultRefusal> {
     let Value::Object(members) = step else {
-        return Err(malformed(pointer));
+        return Err(wrong_kind(pointer));
     };
     for required in ["post_state", "transition"] {
         if !members.contains_key(required) {
@@ -647,25 +668,26 @@ fn check_model_step(step: &Value, pointer: String) -> Result<(), PluginResultRef
     if well_formed {
         Ok(())
     } else {
-        Err(malformed(transition_pointer))
+        Err(malformed(transition.is_object(), transition_pointer))
     }
 }
 
 /// A step's `delay`: an exact rational `{numerator, denominator}`.
 fn check_delay(value: &Value, pointer: String) -> Result<(), PluginResultRefusal> {
-    let refuse = || malformed(pointer.clone());
-    let members = value.as_object().filter(|members| members.len() == 2);
+    let Some(members) = value.as_object() else {
+        return Err(wrong_kind(pointer));
+    };
     let part = |name: &str| {
         members
-            .and_then(|members| members.get(name))
+            .get(name)
             .and_then(Value::as_str)
             .and_then(canonical_integer)
     };
-    match (part("numerator"), part("denominator")) {
-        (Some(_), Some(denominator)) if !denominator.is_zero() && !denominator.is_negative() => {
+    match (members.len(), part("numerator"), part("denominator")) {
+        (2, Some(_), Some(denominator)) if !denominator.is_zero() && !denominator.is_negative() => {
             Ok(())
         }
-        _ => Err(refuse()),
+        _ => Err(invalid(pointer)),
     }
 }
 
@@ -677,36 +699,52 @@ fn check_delay(value: &Value, pointer: String) -> Result<(), PluginResultRefusal
 /// # Errors
 ///
 /// [`PluginResultRefusal`]: `Malformed` at `""` for a non-object entry,
-/// `MissingCounterexample` for an entry with no assignments to replay,
-/// `UnknownMember` and `MissingMember` and `Malformed` for the members of the
-/// counterexample and its values, in the order the requirement gives.
+/// `MissingCounterexample` at `/counterexample` or `/counterexample/type`
+/// for an entry with no assignments to replay, `UnknownMember`,
+/// `MissingMember` and `Malformed` for the members of the counterexample and
+/// its values, in the order QSpec FR-331 reads them.
 #[ix_trace_rs::string_edge]
 pub fn read_plugin_assignments(
     entry: &Value,
 ) -> Result<Vec<CanonicalAssignment>, PluginResultRefusal> {
+    const BASE: &str = "/counterexample";
     let Value::Object(members) = entry else {
-        return Err(malformed(String::new()));
+        return Err(wrong_kind(String::new()));
     };
-    let counterexample = match (members.get("transcript"), members.get("counterexample")) {
-        (None, Some(Value::Object(counterexample)))
-            if counterexample.get("type").and_then(Value::as_str) == Some("assignments") =>
-        {
-            counterexample
-        }
-        _ => return Err(PluginResultRefusal::MissingCounterexample),
+    let Some(counterexample) = members.get("counterexample") else {
+        return Err(PluginResultRefusal::MissingCounterexample {
+            pointer: BASE.to_owned(),
+            cause: ValueFault::MissingMember,
+        });
     };
     if let Some(extra) = first_undefined(members, &["backend", "counterexample", "request_index"]) {
         return Err(unknown_member(child("", extra)));
     }
-    const BASE: &str = "/counterexample";
+    let not_assignments = |cause| PluginResultRefusal::MissingCounterexample {
+        pointer: child(BASE, "type"),
+        cause,
+    };
+    let Value::Object(counterexample) = counterexample else {
+        return Err(PluginResultRefusal::MissingCounterexample {
+            pointer: BASE.to_owned(),
+            cause: ValueFault::WrongValueKind,
+        });
+    };
+    match counterexample.get("type") {
+        None => return Err(not_assignments(ValueFault::MissingMember)),
+        Some(Value::String(kind)) if kind == "assignments" => {}
+        Some(Value::String(_)) => return Err(not_assignments(ValueFault::InvalidValue)),
+        Some(_) => return Err(not_assignments(ValueFault::WrongValueKind)),
+    }
+    let values_pointer = child(BASE, "values");
+    let Some(values) = counterexample.get("values") else {
+        return Err(missing(values_pointer));
+    };
     if let Some(extra) = first_undefined(counterexample, &["type", "values"]) {
         return Err(unknown_member(child(BASE, extra)));
     }
-    let values_pointer = child(BASE, "values");
-    let values = match counterexample.get("values") {
-        None => return Err(missing(values_pointer)),
-        Some(Value::Array(values)) => values,
-        Some(_) => return Err(malformed(values_pointer)),
+    let Value::Array(values) = values else {
+        return Err(wrong_kind(values_pointer));
     };
     let mut assignments: Vec<CanonicalAssignment> = Vec::with_capacity(values.len());
     for (index, element) in values.iter().enumerate() {
@@ -716,7 +754,7 @@ pub fn read_plugin_assignments(
             .iter()
             .any(|earlier| earlier.parameter == assignment.parameter)
         {
-            return Err(malformed(child(&pointer, "parameter")));
+            return Err(invalid(child(&pointer, "parameter")));
         }
         assignments.push(assignment);
     }
@@ -728,7 +766,7 @@ fn read_assignment(
     pointer: &str,
 ) -> Result<CanonicalAssignment, PluginResultRefusal> {
     let Value::Object(members) = element else {
-        return Err(malformed(pointer.to_owned()));
+        return Err(wrong_kind(pointer.to_owned()));
     };
     for required in ["parameter", "value"] {
         if !members.contains_key(required) {
@@ -739,11 +777,12 @@ fn read_assignment(
         return Err(unknown_member(child(pointer, extra)));
     }
     let parameter_pointer = child(pointer, "parameter");
-    let parameter = member(members, "parameter", pointer)?
+    let text = member(members, "parameter", pointer)?;
+    let parameter = text
         .as_str()
         .and_then(WireNodeId::from_hex)
-        .ok_or_else(|| malformed(parameter_pointer))?;
+        .ok_or_else(|| malformed(text.is_string(), parameter_pointer))?;
     let value = WitnessValue::from_wire_json(member(members, "value", pointer)?)
-        .map_err(|_| malformed(child(pointer, "value")))?;
+        .map_err(|_| invalid(child(pointer, "value")))?;
     Ok(CanonicalAssignment { parameter, value })
 }

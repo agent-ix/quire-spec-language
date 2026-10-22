@@ -63,9 +63,15 @@ pub enum PluginResultRefusal {
     /// `zone-certified`.
     #[error("a plugin proof reports a basis only the core establishes")]
     CoreOnlyBasis,
-    /// A `refuted` result with nothing to replay as canonical assignments.
-    #[error("a plugin `refuted` result has no counterexample to replay")]
-    MissingCounterexample,
+    /// A `refuted` result with nothing to replay as canonical assignments:
+    /// no `counterexample`, or one that is not `assignments` (ADR-029 PL-7).
+    #[error("a plugin `refuted` result has no counterexample to replay at {pointer}")]
+    MissingCounterexample {
+        /// `/counterexample` or `/counterexample/type`.
+        pointer: String,
+        /// Which `invalid_result` cause applies.
+        cause: ValueFault,
+    },
     /// The `type` is no spelling FR-331 lists for the member.
     #[error("the plugin result spells a `type` FR-331 does not list at {pointer}")]
     UnknownSpelling {
@@ -90,6 +96,10 @@ pub enum PluginResultRefusal {
     Malformed {
         /// The pointer of the value.
         pointer: String,
+        /// Which `invalid_result` cause applies: `WrongValueKind` when the
+        /// member's JSON kind is not the kind its domain takes, otherwise
+        /// `InvalidValue`.
+        cause: ValueFault,
     },
     /// A valid FR-331 value that QSL's type cannot hold for a plugin.
     #[error("QSL cannot hold the plugin result feature `{feature}` at {pointer}")]
@@ -99,8 +109,8 @@ pub enum PluginResultRefusal {
         /// The received spelling.
         feature: String,
     },
-    /// A `certification` other than `trusted`: only the core and first-party
-    /// engines may claim `certified` and `uncertified`.
+    /// A `certification` of `certified` or `uncertified`: only the core and
+    /// first-party engines may claim them.
     #[error("a plugin proof claims the certification `{received}`, not `trusted`")]
     CertificationNotTrusted {
         /// The received string.
@@ -108,36 +118,63 @@ pub enum PluginResultRefusal {
     },
 }
 
+/// The `invalid_result` cause of a value that is absent or outside its FR-331
+/// domain (QSpec FR-272).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ValueFault {
+    /// `missing-member`.
+    MissingMember,
+    /// `wrong-value-kind`: the JSON kind is not the kind the domain takes.
+    WrongValueKind,
+    /// `invalid-value`: the right kind, outside the domain.
+    InvalidValue,
+}
+
+impl ValueFault {
+    /// The FR-272 cause spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingMember => "missing-member",
+            Self::WrongValueKind => "wrong-value-kind",
+            Self::InvalidValue => "invalid-value",
+        }
+    }
+}
+
 impl PluginResultRefusal {
     /// The outcome-document diagnostic for this refusal (FR-290
-    /// "Diagnostics", ADR-029 CB-4), with the FR-272 code the table gives:
-    /// `invalid_result`/`unknown-cause` for a QSL-only cause, a core-only
-    /// basis or an unknown spelling, `invalid_result`/`missing-member` for a
-    /// missing member or counterexample, `unknown_member`, `malformed_wire`
-    /// and `unknown_required_feature`/`unsupported-feature`. `item_index` is
-    /// the result item's index and `received` the spelling or JSON kind the
-    /// plugin sent, which the driver holds as wire text.
+    /// "Diagnostics", ADR-029 CB-4), with the FR-272 code and cause the table
+    /// gives. Every `invalid_result` cause names `document_pointer`, the
+    /// refusal's pointer, and `CertificationNotTrusted`
+    /// (`certification-mismatch`) also names `expected` `trusted` and
+    /// `actual`. `Unsupported` is `unknown_required_feature`/
+    /// `unsupported-feature`. `item_index` is the result item's index and
+    /// `received` the spelling or JSON kind the plugin sent, which the driver
+    /// holds as wire text.
     pub fn diagnostic(&self, item_index: usize, received: &str) -> OutcomeDiagnostic {
-        let at = |member: &str| {
-            format!("result item {item_index}: member `{member}`, received `{received}`")
+        let invalid = |cause: &'static str, pointer: &str, extra: &str| {
+            OutcomeDiagnostic::new(
+                Some(cause),
+                "invalid_result",
+                None,
+                format!(
+                    "result item {item_index}: document_pointer `{pointer}`, \
+                     received `{received}`{extra}"
+                ),
+            )
         };
         match self {
-            Self::QslOnlyCause(_) => invalid_result("unknown-cause", at("cause")),
-            Self::CoreOnlyBasis => invalid_result("unknown-cause", at("basis")),
-            Self::UnknownSpelling { pointer } => invalid_result("unknown-cause", at(pointer)),
-            Self::MissingMember { pointer } => invalid_result("missing-member", at(pointer)),
-            Self::MissingCounterexample => invalid_result("missing-member", at("counterexample")),
-            Self::UnknownMember { pointer } => {
-                OutcomeDiagnostic::new(None, "unknown_member", None, at(pointer))
-            }
-            Self::Malformed { pointer } => {
-                OutcomeDiagnostic::new(None, "malformed_wire", None, at(pointer))
-            }
-            Self::CertificationNotTrusted { received } => OutcomeDiagnostic::new(
-                None,
-                "malformed_wire",
-                None,
-                format!("result item {item_index}: member `/certification`, received `{received}`"),
+            Self::QslOnlyCause(_) => invalid("unknown-cause", "/cause/type", ""),
+            Self::CoreOnlyBasis => invalid("unknown-cause", "/basis/type", ""),
+            Self::UnknownSpelling { pointer } => invalid("unknown-cause", pointer, ""),
+            Self::MissingMember { pointer } => invalid("missing-member", pointer, ""),
+            Self::MissingCounterexample { pointer, cause } => invalid(cause.as_str(), pointer, ""),
+            Self::UnknownMember { pointer } => invalid("unknown-member", pointer, ""),
+            Self::Malformed { pointer, cause } => invalid(cause.as_str(), pointer, ""),
+            Self::CertificationNotTrusted { received: actual } => invalid(
+                "certification-mismatch",
+                "/certification",
+                &format!(", expected `trusted`, actual `{actual}`"),
             ),
             Self::Unsupported { pointer, feature } => OutcomeDiagnostic::new(
                 Some("unsupported-feature"),
@@ -157,10 +194,6 @@ impl PluginResultRefusal {
     pub fn record(self, request_index: RequestIndex, plugin: BackendId) -> TerminalRecord {
         TerminalRecord::failed(request_index, plugin)
     }
-}
-
-fn invalid_result(cause: &'static str, message: String) -> OutcomeDiagnostic {
-    OutcomeDiagnostic::new(Some(cause), "invalid_result", None, message)
 }
 
 /// Read the cause kind a plugin's `inconclusive` result names: a QSL-only

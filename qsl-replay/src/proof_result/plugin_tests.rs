@@ -22,9 +22,24 @@ use crate::spine::{
 };
 use crate::witness::{CanonicalAssignment, WitnessValue};
 
-fn malformed(pointer: &str) -> PluginResultRefusal {
+fn wrong(pointer: &str) -> PluginResultRefusal {
     PluginResultRefusal::Malformed {
         pointer: pointer.to_owned(),
+        cause: ValueFault::WrongValueKind,
+    }
+}
+
+fn invalid(pointer: &str) -> PluginResultRefusal {
+    PluginResultRefusal::Malformed {
+        pointer: pointer.to_owned(),
+        cause: ValueFault::InvalidValue,
+    }
+}
+
+fn no_counterexample(pointer: &str, cause: ValueFault) -> PluginResultRefusal {
+    PluginResultRefusal::MissingCounterexample {
+        pointer: pointer.to_owned(),
+        cause,
     }
 }
 
@@ -138,9 +153,9 @@ fn tc_774_basis_reader_refuses_in_order() {
             json!({"type": "bounded_complete", "depth": 4}),
             spelling("/basis/type"),
         ),
-        (json!("exhaustive"), malformed("/basis")),
+        (json!("exhaustive"), wrong("/basis")),
         (json!({"depth": 4}), missing("/basis/type")),
-        (json!({"type": 7}), malformed("/basis/type")),
+        (json!({"type": 7}), wrong("/basis/type")),
         (json!({"type": "inductive"}), missing("/basis/depth")),
         (
             json!({"type": "exhaustive", "depth": 3}),
@@ -148,15 +163,15 @@ fn tc_774_basis_reader_refuses_in_order() {
         ),
         (
             json!({"type": "inductive", "depth": "3"}),
-            malformed("/basis/depth"),
+            wrong("/basis/depth"),
         ),
         (
             json!({"type": "inductive", "depth": -1}),
-            malformed("/basis/depth"),
+            invalid("/basis/depth"),
         ),
         (
             json!({"type": "inductive", "depth": 9_007_199_254_740_992_u64}),
-            malformed("/basis/depth"),
+            invalid("/basis/depth"),
         ),
         (
             solver(one.clone(), "dreal"),
@@ -165,20 +180,20 @@ fn tc_774_basis_reader_refuses_in_order() {
                 feature: "dreal".to_owned(),
             },
         ),
-        (solver(one, ""), malformed("/basis/method")),
+        (solver(one, ""), invalid("/basis/method")),
         (
             solver(
                 json!({"denominator": "1", "numerator": "-1"}),
                 "delta-complete",
             ),
-            malformed("/basis/horizon"),
+            invalid("/basis/horizon"),
         ),
         (
             solver(
                 json!({"denominator": "4", "numerator": "2"}),
                 "delta-complete",
             ),
-            malformed("/basis/horizon"),
+            invalid("/basis/horizon"),
         ),
         (
             json!({"type": "reduced", "reductions": [
@@ -191,7 +206,7 @@ fn tc_774_basis_reader_refuses_in_order() {
         (
             json!({"type": "reduced", "reductions": [
                 {"parameters": {"classes": [["a", "a"]]}, "reduction": "copy-swap", "row": "r"}]}),
-            malformed("/basis/reductions/0/parameters/classes/0"),
+            invalid("/basis/reductions/0/parameters/classes/0"),
         ),
     ];
     for (basis, expected) in cases {
@@ -209,10 +224,14 @@ fn tc_774_certification_reader_accepts_only_trusted() {
         Err(missing("/certification"))
     );
     assert_eq!(
-        read_plugin_certification(Some(&json!(7))),
-        Err(malformed("/certification"))
+        read_plugin_certification(Some(&json!("vouched"))),
+        Err(invalid("/certification"))
     );
-    for received in ["certified", "uncertified", "vouched"] {
+    assert_eq!(
+        read_plugin_certification(Some(&json!(7))),
+        Err(wrong("/certification"))
+    );
+    for received in ["certified", "uncertified"] {
         assert_eq!(
             read_plugin_certification(Some(&json!(received))),
             Err(PluginResultRefusal::CertificationNotTrusted {
@@ -364,15 +383,15 @@ fn tc_774_cause_reader_refuses_in_order() {
         ),
         (
             json!({"type": "constraint-reached", "boundary_states": 0}),
-            malformed("/cause/boundary_states"),
+            invalid("/cause/boundary_states"),
         ),
         (
             json!({"type": "memory-bound-reached", "limit": "max_store", "states": 1, "value": 1}),
-            malformed("/cause/limit"),
+            invalid("/cause/limit"),
         ),
         (
             json!({"type": "mapping-undetermined", "row": "r", "state_key": "abc", "prefix": []}),
-            malformed("/cause/state_key"),
+            invalid("/cause/state_key"),
         ),
         (
             json!({"type": "mapping-undetermined", "row": "r", "state_key": "ab".repeat(32),
@@ -417,19 +436,34 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
     with_extra["extra"] = json!(1);
     let element = |parameter: &str, value: Value| json!({"parameter": parameter, "value": value});
     let cases: Vec<(Value, PluginResultRefusal)> = vec![
-        (json!([]), malformed("")),
+        (json!([]), wrong("")),
+        (
+            json!({"transcript": {}}),
+            no_counterexample("/counterexample", ValueFault::MissingMember),
+        ),
+        (
+            json!({}),
+            no_counterexample("/counterexample", ValueFault::MissingMember),
+        ),
         (
             json!({"transcript": {}, "counterexample": {"type": "assignments", "values": []}}),
-            PluginResultRefusal::MissingCounterexample,
+            unknown("/transcript"),
         ),
-        (json!({}), PluginResultRefusal::MissingCounterexample),
+        (
+            counterexample(json!(7)),
+            no_counterexample("/counterexample", ValueFault::WrongValueKind),
+        ),
         (
             counterexample(json!({"values": []})),
-            PluginResultRefusal::MissingCounterexample,
+            no_counterexample("/counterexample/type", ValueFault::MissingMember),
+        ),
+        (
+            counterexample(json!({"type": 7, "values": []})),
+            no_counterexample("/counterexample/type", ValueFault::WrongValueKind),
         ),
         (
             counterexample(json!({"type": "temporal", "values": []})),
-            PluginResultRefusal::MissingCounterexample,
+            no_counterexample("/counterexample/type", ValueFault::InvalidValue),
         ),
         (with_extra, unknown("/extra")),
         (
@@ -438,7 +472,7 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
         ),
         (
             counterexample(json!({"type": "assignments", "values": {}})),
-            malformed("/counterexample/values"),
+            wrong("/counterexample/values"),
         ),
         (
             entry(json!([{"parameter": parameter}])),
@@ -446,25 +480,25 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
         ),
         (
             entry(json!([element(&"1".repeat(63), value.clone())])),
-            malformed("/counterexample/values/0/parameter"),
+            invalid("/counterexample/values/0/parameter"),
         ),
         (
             entry(json!([element(&"A1".repeat(32), value.clone())])),
-            malformed("/counterexample/values/0/parameter"),
+            invalid("/counterexample/values/0/parameter"),
         ),
         (
             entry(json!([element(
                 &parameter,
                 json!({"type": "integer", "value": "07"})
             )])),
-            malformed("/counterexample/values/0/value"),
+            invalid("/counterexample/values/0/value"),
         ),
         (
             entry(json!([
                 element(&parameter, value.clone()),
                 element(&parameter, value)
             ])),
-            malformed("/counterexample/values/1/parameter"),
+            invalid("/counterexample/values/1/parameter"),
         ),
     ];
     for (body, expected) in cases {
@@ -476,42 +510,79 @@ fn tc_774_assignment_reader_reads_and_refuses_in_order() {
 #[trace("TC-774", "FR-290-AC-11")]
 #[test]
 fn tc_774_refusal_diagnostics_carry_the_table_codes() {
+    use ValueFault::{InvalidValue, MissingMember, WrongValueKind};
+    let spelling = PluginResultRefusal::UnknownSpelling {
+        pointer: "/cause/type".to_owned(),
+    };
+    // (refusal, code, cause, the document_pointer its detail names)
     let expectations = [
         (
             PluginResultRefusal::CoreOnlyBasis,
             "invalid_result",
             Some("unknown-cause"),
+            "/basis/type",
         ),
         (
             PluginResultRefusal::QslOnlyCause(QslOnlyCause::ReplayParity),
             "invalid_result",
             Some("unknown-cause"),
+            "/cause/type",
         ),
         (
-            PluginResultRefusal::UnknownSpelling {
-                pointer: "/cause/type".to_owned(),
-            },
+            spelling,
             "invalid_result",
             Some("unknown-cause"),
+            "/cause/type",
         ),
         (
             missing("/basis/depth"),
             "invalid_result",
             Some("missing-member"),
+            "/basis/depth",
         ),
         (
-            PluginResultRefusal::MissingCounterexample,
+            unknown("/basis/depth"),
+            "invalid_result",
+            Some("unknown-member"),
+            "/basis/depth",
+        ),
+        (
+            wrong("/basis/depth"),
+            "invalid_result",
+            Some("wrong-value-kind"),
+            "/basis/depth",
+        ),
+        (
+            invalid("/basis/depth"),
+            "invalid_result",
+            Some("invalid-value"),
+            "/basis/depth",
+        ),
+        (
+            no_counterexample("/counterexample", MissingMember),
             "invalid_result",
             Some("missing-member"),
+            "/counterexample",
         ),
-        (unknown("/basis/depth"), "unknown_member", None),
-        (malformed("/basis/depth"), "malformed_wire", None),
+        (
+            no_counterexample("/counterexample", WrongValueKind),
+            "invalid_result",
+            Some("wrong-value-kind"),
+            "/counterexample",
+        ),
+        (
+            no_counterexample("/counterexample/type", InvalidValue),
+            "invalid_result",
+            Some("invalid-value"),
+            "/counterexample/type",
+        ),
         (
             PluginResultRefusal::CertificationNotTrusted {
                 received: "certified".to_owned(),
             },
-            "malformed_wire",
-            None,
+            "invalid_result",
+            Some("certification-mismatch"),
+            "/certification",
         ),
         (
             PluginResultRefusal::Unsupported {
@@ -520,14 +591,29 @@ fn tc_774_refusal_diagnostics_carry_the_table_codes() {
             },
             "unknown_required_feature",
             Some("unsupported-feature"),
+            "/basis/method",
         ),
     ];
-    for (refusal, code, cause) in expectations {
+    for (refusal, code, cause, pointer) in expectations {
         let diagnostic = refusal.diagnostic(3, "received-text");
-        assert_eq!(diagnostic.code(), code);
-        assert_eq!(diagnostic.cause(), cause);
+        assert_eq!(diagnostic.code(), code, "{refusal:?}");
+        assert_eq!(diagnostic.cause(), cause, "{refusal:?}");
         let message = diagnostic.message();
         assert!(message.contains("result item 3"), "{message}");
+        assert!(message.contains(pointer), "{message}");
+        if code == "invalid_result" {
+            assert!(
+                message.contains(&format!("document_pointer `{pointer}`")),
+                "{message}"
+            );
+            assert!(message.contains("received `received-text`"), "{message}");
+        }
+        if cause == Some("certification-mismatch") {
+            assert!(
+                message.contains("expected `trusted`, actual `certified`"),
+                "{message}"
+            );
+        }
         let record = refusal.record(RequestIndex::new(3), plugin());
         assert_eq!(record.value(), &TerminalValue::Failed);
         assert_eq!(record.backend(), Some(&plugin()));

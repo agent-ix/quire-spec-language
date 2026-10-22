@@ -29,6 +29,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-057
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-070
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-071
@@ -132,11 +134,12 @@ this order, and return the first refusal:
    `basis`, a core-only basis (`bounded-proof`, `closed-form`, `witnessed`,
    `exact-value`, `value-bounds`, `zone-certified`) is `CoreOnlyBasis`. For a
    `cause`, a QSL-only cause (`replay-parity`, `replay-refused`,
-   `kani_vacuous_proof`) is `QslOnlyCause`. Each check applies only to its
+   `kani_vacuous_proof`) is `QslOnlyCause`. Each is at `/<member>/type`.
+   Each check applies only to its
    own member. A `basis` that spells a QSL-only cause, or a `cause` that
    spells a core-only basis, is caught at step 4.
 4. The `type` is not in FR-331's closed set for this member:
-   `UnknownSpelling`. That covers every spelling outside FR-331, including
+   `UnknownSpelling` at `/<member>/type`. That covers every spelling outside FR-331, including
    `kani-vacuous-proof`. It also covers QSL's own outcome-document
    spellings that FR-331 does not list, such as `scalar-agrees` and
    `state-constraint`.
@@ -146,8 +149,9 @@ this order, and return the first refusal:
    first absent one in member-name order.
 7. A member the spelling does not define is present: `UnknownMember` at its
    pointer, the first such member in member-name order.
-8. A payload member is outside its FR-331 domain: `Malformed` at its pointer.
-   This covers a wrong JSON kind and an out-of-range number. A payload
+8. A payload member is outside its FR-331 domain: `Malformed` at its pointer,
+   the payload members read in member-name order. This covers a wrong JSON
+   kind and an out-of-range number. A payload
    string inside FR-331's domain that names something QSL's type cannot
    hold is `Unsupported` at its pointer, for the same reason as step 5. The
    two such strings are `basis` `method` and `cause` `form`.
@@ -193,43 +197,48 @@ no value, because an accepted entry's record carries `trusted`
 
 1. The member is absent: `MissingMember` at `/certification`.
 2. The member is not a string: `Malformed` at `/certification`.
-3. The string is not `trusted`: `CertificationNotTrusted` at
-   `/certification`, retaining the received string. That covers the FR-331
-   values `certified` and `uncertified`, which only the core and
-   first-party engines may claim, and every other string.
+3. The string is not one of FR-331's three values `certified`,
+   `uncertified` and `trusted`: `Malformed` at `/certification`.
+4. The string is `certified` or `uncertified`, which only the core and
+   first-party engines may claim: `CertificationNotTrusted` at
+   `/certification`, retaining the received string.
 
 #### Assignments
 
-`read_plugin_assignments` checks a `counterexamples` entry in this order:
+`read_plugin_assignments` checks a `counterexamples` entry in this order,
+which is QSpec FR-331's reading order ("Result entries"):
 
 1. The entry is not a JSON object: `Malformed` at `""`.
-2. The entry has nothing to replay as canonical assignments:
-   `MissingCounterexample` (ADR-029 PL-7). That covers three cases: an entry
-   that names a `transcript`; an entry with no `counterexample`; and an
-   entry whose `counterexample` is not an object whose `type` is the string
-   `assignments`, such as a `TemporalCounterexample`, a
-   `ProbabilisticCounterexample`, graph evidence or a hyperproperty
-   counterexample.
-3. A member that FR-331 does not define is present: `UnknownMember`. At the
-   entry, FR-331 defines `request_index`, `backend` and `counterexample`; in
-   the counterexample, it defines `type` and `values`. The reader names the
-   first such member in member-name order, the entry before the
-   counterexample.
-4. `values` is absent: `MissingMember` at `/counterexample/values`. If
-   `values` is not an array: `Malformed` there.
-5. Each element `i`, in array order, is checked in turn:
+2. The entry has no `counterexample`, including an entry that names a
+   `transcript` instead: `MissingCounterexample` at `/counterexample`
+   (ADR-029 PL-7: a plugin's counterexample is canonical assignments).
+3. A member that FR-331 does not define for a plugin's entry is present:
+   `UnknownMember`. At the entry, that is every member but `request_index`,
+   `backend` and `counterexample`, so a `transcript` beside a
+   `counterexample` is one. The reader names the first such member in
+   member-name order.
+4. The `counterexample` is not canonical assignments: `MissingCounterexample`
+   at `/counterexample` when it is not an object, and at
+   `/counterexample/type` when it has no `type`, its `type` is not a string,
+   or its `type` is a string other than `assignments`, such as a
+   `TemporalCounterexample`, a `ProbabilisticCounterexample`, graph evidence
+   or a hyperproperty counterexample.
+5. `values` is absent: `MissingMember` at `/counterexample/values`.
+6. A member of the counterexample other than `type` and `values` is
+   present: `UnknownMember`, the first in member-name order.
+7. `values` is not an array: `Malformed` at `/counterexample/values`.
+8. Each element `i`, in array order, is checked in turn:
    - an element that is not an object is `Malformed` at
      `/counterexample/values/<i>`;
    - an absent `parameter` or `value` is `MissingMember`, `parameter`
      first;
    - any other member is `UnknownMember`;
-   - a `parameter` that is not an FR-331 `NodeId` (64 lowercase hex digits)
-     is `Malformed` at `/counterexample/values/<i>/parameter`;
+   - a `parameter` that is not an FR-331 `NodeId` (64 lowercase hex digits),
+     or that equals an earlier element's, is `Malformed` at
+     `/counterexample/values/<i>/parameter`;
    - a `value` that the FR-070 witness-value-text decode refuses, when it
      reads the value's RFC 8785 encoding as an FR-181 typed value, is
-     `Malformed` at `/counterexample/values/<i>/value`;
-   - a `parameter` equal to an earlier element's is `Malformed` at
-     `/counterexample/values/<i>/parameter`.
+     `Malformed` at `/counterexample/values/<i>/value`.
 
 An empty `values` is a call with no arguments. The reader reads each
 `parameter` as a `WireNodeId` and each `value` as a `WitnessValue`. It does
@@ -248,12 +257,18 @@ spelling or JSON kind. Every code comes from QSpec FR-272's closed table:
 
 | Refusal | Code / cause |
 | --- | --- |
-| `QslOnlyCause`, `CoreOnlyBasis`, `UnknownSpelling` | `invalid_result`/`unknown-cause` (member `cause` or `basis`) |
+| `QslOnlyCause`, `CoreOnlyBasis`, `UnknownSpelling` | `invalid_result`/`unknown-cause` at `/basis/type` or `/cause/type`: a spelling outside FR-331's closed set, or a core-only basis or cause, which QSpec FR-331 "Result entries" excludes from a plugin's entry (its core-only causes are this requirement's QSL-only causes) |
 | `MissingMember` | `invalid_result`/`missing-member` |
-| `MissingCounterexample` | `invalid_result`/`missing-member` (member `counterexample`) |
-| `UnknownMember` | `unknown_member`, with `document_pointer` |
-| `Malformed`, `CertificationNotTrusted` | `malformed_wire`, with `document_pointer` |
-| `Unsupported` | `unknown_required_feature`/`unsupported-feature`: the feature is the received spelling, and the consumer is plugin settlement |
+| `MissingCounterexample` | at `/counterexample`: `invalid_result`/`missing-member` for an absent one, `invalid_result`/`wrong-value-kind` for one that is not an object; at `/counterexample/type`: `missing-member` for an absent `type`, `wrong-value-kind` for a `type` that is not a string, `invalid-value` for any other `type`, since a plugin's counterexample is assignments (QSpec FR-305, FR-331 "Result entries") |
+| `UnknownMember` | `invalid_result`/`unknown-member` |
+| `Malformed` | `invalid_result`/`wrong-value-kind` when the member's JSON kind is not the kind its domain takes (a non-object `basis`, a string `depth`, a non-string `certification`); otherwise `invalid_result`/`invalid-value` |
+| `CertificationNotTrusted` | `invalid_result`/`certification-mismatch`, with `expected` `trusted` and `actual` the received value |
+| `Unsupported` | `unknown_required_feature`/`unsupported-feature`: the feature is the received spelling, and the consumer is plugin settlement (QSpec FR-331 "Result entries") |
+
+Every refusal but `Unsupported` carries its pointer, which the steps above
+give, and its `invalid_result` diagnostic names that pointer as
+`document_pointer` (QSpec FR-272, FR-331-AC-34). `Malformed` and
+`MissingCounterexample` carry which of their causes applies.
 
 `read_plugin_cause_kind` keeps its narrower contract (FR-289-AC-11,
 FR-289-AC-13). `read_plugin_inconclusive_cause` applies it at step 3.
@@ -264,25 +279,47 @@ They take the values these readers return.
 ### Replay context
 
 A plugin counterexample settles only through its S6a replay (FR-289 item 4).
-FR-098's `replay` decides one claim: that a Boolean function returns `true`
-on the given arguments (`Claim::Predicate`; a `false` result reproduces the
-violation). So QSL replays a plugin's canonical assignments only for a
-**function-contract item**: an item whose occurrence key is the
-`declaration` occurrence (the function's node, role `declaration`, ordinal 0)
-of a checked function declaration whose result type is `Boolean`. That is
-ADR-013 O-09's function-contract subject, which FR-121's `call_site`
-locates.
+FR-098's `replay` decides, for a `function` request, the claim its occurrence
+key selects. QSL replays a plugin's canonical assignments for two kinds of
+item, each at the item's own occurrence:
 
-Every other item is a **non-replayable item**. That includes a
-`value-validity` item at a scalar operation application (FR-062), whose claim
-is that the application is defined and its result lies in its result bound.
-Predicate replay of the owning function would not test that claim: the
-function can return `false` while the claim holds, and a real violation
-replays as `NoValue`. A non-replayable item's counterexample is not
-replayed. The item settles `inconclusive` with cause `replay-refused`
-(FR-331's closed cause, ADR-029 PL-7) and the catalog code
-`unknown_required_feature`. That is the code FR-098 gives a construct its
-replay does not support. The record keeps no replay result.
+- A **function-contract item**: an item whose occurrence key is the
+  `declaration` occurrence (the function's node, role `declaration`,
+  ordinal 0) of a checked function declaration whose result type is
+  `Boolean`. That is ADR-013 O-09's function-contract subject, which
+  FR-121's `call_site` locates. Its replay decides FR-098's predicate claim:
+  a `false` result reproduces the violation.
+- An **application item**: an item whose occurrence holds a
+  `value-validity` record at a scalar operation application (FR-062) whose
+  owner is a function declaration of the checked unit. Its claim is that
+  the application is defined and its result lies in its result bound. Its
+  replay calls the owner and decides FR-098's application claim at the
+  item's occurrence, so the item is refuted only when the application is
+  undefined or out of its bound under the assignments. Predicate replay of
+  the owner would not test that claim: `p(x: Int[0, 9])` returning `x > 3`
+  returns `false` at `x = 0` while the claim of its `>` application holds.
+  The assignments join the owner's declared parameters by FR-098's rules.
+  `replay` binds an owner parameter the record reads nowhere and the
+  assignments leave unbound, when its type is `Boolean` or an integer type
+  (FR-098 "unread parameters"). An assignment to a binder root of the
+  record's extent, and one that leaves unbound an owner parameter that is an
+  extent root, is a replay refusal.
+
+QSL's request writer writes no item at a `declaration` occurrence: a `Value`
+function declaration carries no claim of its own, and its claims are its
+scalar operation applications (FR-057 claim-form table, FR-062 part 4).
+So the plugin counterexamples that QSL's own routing produces replay as
+application items.
+
+Every other item is a **non-replayable item**: an `operation-contract` or
+`temporal-satisfaction` record, which has no owner (FR-062), and a
+`value-validity` record whose owner is a function the checker synthesizes
+from an operation `body` or a `pre` clause, which `replay` cannot select by
+name (FR-062). A non-replayable item's counterexample is not replayed. The
+item settles `inconclusive` with cause `replay-refused` (FR-331's closed
+cause, ADR-029 PL-7) and the catalog code `unknown_required_feature`. That
+is the code FR-098 gives a construct its replay does not support. The record
+keeps no replay result.
 
 `PluginReplayContext`, in `qsl-replay` and re-exported at the crate root,
 holds the package-wide members of the request. The driver supplies no member
@@ -313,7 +350,8 @@ builds the `ReplayRequestWire` for one counterexample. It takes:
 | `package_id` | the emitted package's `package_id`, in `quire.package.semantic/v2` | FR-071, FR-098 |
 | `source_digests` | the unit's own source reference, the one source the recompile reads | FR-071, FR-098 |
 | `dependencies` | one entry per resolved library selection of the checked package (the lock's direct `dependency_selections` and the libraries they import in turn, which the replay's recompile also needs), in ascending identity order: its `identity`, its `package_id`, and as `sources` the reference of the library source that `check` resolved for it (`CheckedUnit::libraries`) | FR-071, ADR-015 D-4 |
-| `selected_function` | the qualified name of the function whose `declaration` occurrence the item names | ADR-013 O-09, FR-098, FR-121 |
+| `selected_function` | for a function-contract item, the qualified name of the function whose `declaration` occurrence the item names; for an application item, its record's owner | ADR-013 O-09, FR-062, FR-098, FR-121 |
+| `occurrence_key` | the routed item's `OccurrenceKey`, its node as a `WireNodeId` | ADR-013 O-25, FR-071, FR-098 |
 | `source` | `ReplaySource::Input(assignments)` | ADR-029 PL-7, ADR-013 O-25 |
 | `obligation_identity` | the `process-provider` obligation identity below | ADR-013 O-09 |
 | `backend` | the plugin's `BackendId` string | ADR-013 O-19, ADR-029 PL-5 |
@@ -388,9 +426,6 @@ through `ReplayRequest::decode` (FR-071). Every later FR-071 and FR-098
 refusal settles through `TerminalRecord::from_plugin_counterexample`
 (FR-289).
 
-An application-occurrence replay mode, which would check a value-validity
-item's own claim at its occurrence, is a future extension (STD-264).
-
 ## Inputs
 
 An FR-331 result from a process provider, the items routed to it, and the
@@ -407,8 +442,9 @@ One QSL terminal record per routed item.
 - QSL shall read every process-provider result with the typed FR-331 reader
   before it builds a terminal record from it.
 - When a process provider reports a counterexample for a function-contract
-  item, QSL shall replay it through layer-6 `replay` (FR-098) and settle the
-  item `refuted` only if the replay reproduces it.
+  item or an application item, QSL shall replay it through layer-6 `replay`
+  (FR-098) at the item's occurrence and settle the item `refuted` only if
+  the replay reproduces it.
 - If the replay does not reproduce the counterexample, then QSL shall settle
   the item `inconclusive` with cause `replay_parity`, or with cause
   `replay_refused` and the refusal's catalog code when the replay refuses.
@@ -464,15 +500,16 @@ One QSL terminal record per routed item.
 | FR-290-AC-3 | A process-provider result that fails the FR-331 reader builds no terminal record from its body, and its items settle as FR-291 states. | Test (TC-774) |
 | FR-290-AC-4 | The text rendering (FR-298) of AC-1's plugin record shows `proved` with the label `trusted` beside it, and its JSON outcome document holds the certification `trusted`; the `uncertified` record renders with the label `uncertified` beside `proved`; the AC-1 Kani record renders `proved` with the label `certified` beside it. | Test (TC-774) |
 | FR-290-AC-5 | `read_plugin_basis` reads `{"type":"exhaustive"}` as `Exhaustive`, `{"type":"bounded-complete","depth":4}` as `BoundedComplete{depth:4}`, `{"type":"inductive","depth":0}` as `Inductive{depth:0}`, `{"type":"bounded-solver","horizon":{"denominator":"2","numerator":"5"},"jumps":3,"method":"delta-complete"}` as `BoundedSolver{DeltaComplete, 5/2, 3}`, the same basis with `method` `"flowpipe-unrounded"` as `BoundedSolver{FlowpipeUnrounded, 5/2, 3}`, and `{"type":"reduced","reductions":[{"parameters":{"proviso":"breadth-first-revisit"},"reduction":"partial-order","row":"invariant"},{"parameters":{"classes":[["a","b"]]},"reduction":"copy-swap","row":"hyper"}]}` as `Reduced` holding `PartialOrder{BreadthFirstRevisit}` then `CopySwap{[["a","b"]]}`. Each value it reads, passed to `TerminalRecord::from_plugin_proof`, settles `proved` with `trusted`, naming the plugin. | Test (TC-774) |
-| FR-290-AC-6 | `read_plugin_basis` refuses each of these, with the refusal and pointer given: <br>- each of the six core-only spellings with its valid FR-331 payload, and `{"type":"closed-form","extra":1}`: `CoreOnlyBasis` (the spelling is read before the members); <br>- `{"type":"replay-parity"}` and `{"type":"bounded_complete","depth":4}`: `UnknownSpelling`; <br>- `"exhaustive"`: `Malformed` at `/basis`; <br>- `{"depth":4}`: `MissingMember` at `/basis/type`; <br>- `{"type":7}`: `Malformed` at `/basis/type`; <br>- `{"type":"inductive"}`: `MissingMember` at `/basis/depth`; <br>- `{"type":"exhaustive","depth":3}`: `UnknownMember` at `/basis/depth`; <br>- `{"type":"inductive","depth":"3"}`, `{"type":"inductive","depth":-1}` and `{"type":"inductive","depth":9007199254740992}`: `Malformed` at `/basis/depth`; <br>- a `bounded-solver` with `method` `"dreal"`: `Unsupported` at `/basis/method`; with `method` `""`: `Malformed` at `/basis/method`; <br>- a `bounded-solver` with horizon `{"denominator":"1","numerator":"-1"}` or `{"denominator":"4","numerator":"2"}`: `Malformed` at `/basis/horizon`; <br>- a `reduced` whose first reduction is `symmetry` with one valid FR-382 declaration: `Unsupported` at `/basis/reductions/0/reduction`; <br>- a `reduced` whose first reduction is a `copy-swap` with the class `["a","a"]`: `Malformed` at `/basis/reductions/0/parameters/classes/0`. | Test (TC-774) |
-| FR-290-AC-7 | `read_plugin_certification` accepts `"trusted"`. It refuses an absent member with `MissingMember` at `/certification`, `7` with `Malformed` at `/certification`, and `"certified"`, `"uncertified"` and `"vouched"` each with `CertificationNotTrusted` at `/certification`. For a `proved` entry with `certification` `"certified"` and basis `{"type":"bounded-proof","checks":3}`, the driver's reading order returns `CertificationNotTrusted`. | Test (TC-774) |
+| FR-290-AC-6 | `read_plugin_basis` refuses each of these, with the refusal and pointer given: <br>- each of the six core-only spellings with its valid FR-331 payload, and `{"type":"closed-form","extra":1}`: `CoreOnlyBasis` at `/basis/type` (the spelling is read before the members); <br>- `{"type":"replay-parity"}` and `{"type":"bounded_complete","depth":4}`: `UnknownSpelling` at `/basis/type`; <br>- `"exhaustive"`: `Malformed` at `/basis`; <br>- `{"depth":4}`: `MissingMember` at `/basis/type`; <br>- `{"type":7}`: `Malformed` at `/basis/type`; <br>- `{"type":"inductive"}`: `MissingMember` at `/basis/depth`; <br>- `{"type":"exhaustive","depth":3}`: `UnknownMember` at `/basis/depth`; <br>- `{"type":"inductive","depth":"3"}`, `{"type":"inductive","depth":-1}` and `{"type":"inductive","depth":9007199254740992}`: `Malformed` at `/basis/depth`; <br>- a `bounded-solver` with `method` `"dreal"`: `Unsupported` at `/basis/method`; with `method` `""`: `Malformed` at `/basis/method`; <br>- a `bounded-solver` with horizon `{"denominator":"1","numerator":"-1"}` or `{"denominator":"4","numerator":"2"}`: `Malformed` at `/basis/horizon`; <br>- a `reduced` whose first reduction is `symmetry` with one valid FR-382 declaration: `Unsupported` at `/basis/reductions/0/reduction`; <br>- a `reduced` whose first reduction is a `copy-swap` with the class `["a","a"]`: `Malformed` at `/basis/reductions/0/parameters/classes/0`. | Test (TC-774) |
+| FR-290-AC-7 | `read_plugin_certification` accepts `"trusted"`. It refuses an absent member with `MissingMember` at `/certification`, `7` and `"vouched"` each with `Malformed` at `/certification`, and `"certified"` and `"uncertified"` each with `CertificationNotTrusted` at `/certification`. For a `proved` entry with `certification` `"certified"` and basis `{"type":"bounded-proof","checks":3}`, the driver's reading order returns `CertificationNotTrusted`. | Test (TC-774) |
 | FR-290-AC-8 | `read_plugin_inconclusive_cause` reads: <br>- each payload-free spelling of its table as its variant; <br>- `{"type":"bound-reached","depth":7}` as `BoundReached{7}`; <br>- `{"type":"reduction-not-preserving","form":"liveness","reduction":"constraint"}` as `ReductionNotPreserving{StateConstraint, Liveness}`; <br>- `{"type":"constraint-reached","boundary_states":2}`; <br>- `{"type":"reduction-horizon","max_depth":5}`; <br>- `{"type":"memory-bound-reached","limit":"max_messages","states":3,"value":2}` as `MemoryBoundReached{MaxMessages 2, 3}`; <br>- `{"type":"instance-bound-reached","limit":"max_live_instances","states":1,"value":4}`; <br>- a `mapping-undetermined` with `row` `"r"`, a 64-hex `state_key` and an empty `prefix` as `MappingUndetermined`. <br>Each value it reads, passed to `TerminalRecord::from_plugin_inconclusive`, settles `inconclusive` with it. | Test (TC-774) |
-| FR-290-AC-9 | `read_plugin_inconclusive_cause` refuses each of these, with the refusal and pointer given: <br>- `replay-parity`, `replay-refused` and `kani_vacuous_proof`, each also with an extra member: `QslOnlyCause`; <br>- `{"type":"closed-form","analysis":"edf"}`, `kani-vacuous-proof`, `scalar-agrees` and `bound_reached`: `UnknownSpelling`; <br>- each of the eight causes of its `Unsupported` list, each with its valid FR-331 payload: `Unsupported`; <br>- a `reduction-not-preserving` with `form` `"fairness"`: `Unsupported` at `/cause/form`; <br>- `{"type":"constraint-reached","boundary_states":0}`: `Malformed` at `/cause/boundary_states`; <br>- `{"type":"memory-bound-reached","limit":"max_store","states":1,"value":1}`: `Malformed` at `/cause/limit`; <br>- a `mapping-undetermined` whose `state_key` is `"abc"`: `Malformed` at `/cause/state_key`; <br>- a `mapping-undetermined` whose `prefix` is `[{"transition":{"type":"terminal-stutter"}}]`: `MissingMember` at `/cause/prefix/0/post_state`; <br>- `{"type":"no-instance","depth":1}`: `UnknownMember` at `/cause/depth`. | Test (TC-774) |
-| FR-290-AC-10 | `read_plugin_assignments` reads `{"backend":"acme","counterexample":{"type":"assignments","values":[{"parameter":"<64 hex>","value":{"type":"integer","value":"0"}}]},"request_index":0}` as one `CanonicalAssignment` of that `WireNodeId` and `ExactInteger(0)`, and an empty `values` as no assignment. It refuses each of these, with the refusal and pointer given: <br>- `[]`: `Malformed` at `""`; <br>- an entry naming `transcript`, an entry with no `counterexample`, one whose `counterexample` has no `type`, and one whose `counterexample` is a `TemporalCounterexample`: `MissingCounterexample`; <br>- an entry with an `extra` member: `UnknownMember` at `/extra`; <br>- a counterexample with no `values`: `MissingMember` at `/counterexample/values`; <br>- a counterexample whose `values` is `{}`: `Malformed` at `/counterexample/values`; <br>- an element with no `value`: `MissingMember` at `/counterexample/values/0/value`; <br>- a `parameter` of 63 hex digits or with an uppercase digit: `Malformed` at `/counterexample/values/0/parameter`; <br>- a value `{"type":"integer","value":"07"}`: `Malformed` at `/counterexample/values/0/value`; <br>- a second element repeating the first's parameter: `Malformed` at `/counterexample/values/1/parameter`. | Test (TC-774) |
-| FR-290-AC-11 | The diagnostic of each refusal kind in AC-6 to AC-10 carries the code and cause the diagnostics table gives. Its detail names the result item index, the member or pointer, and the received spelling or JSON kind. A refused member's item settles `failed`, naming the plugin, with no diagnostic in the record. | Test (TC-774) |
-| FR-290-AC-12 | Take a unit compiled through `parse`, `select`, `check` and `package` whose Boolean function `p(x: Int[0, 9])` returns `x > 3`, and whose `Integer` function `q(x: Int[0, 9])` returns `x + 1`. Build the context from its units and limits. <br>- For the function-contract item at `p`'s `declaration` occurrence with assignment `x = 0`, `request` gives a `ReplayRequestWire` whose members are those of the replay-context table: `source_digests` the unit's one source, `selected_function` `p`, `backend` the plugin's identity, `declared_domains` the item's proof bounds, an empty state environment, no object environment, and a byte provision holding the unit's source. `replay` of it settles the input arm reproduced with category violation, and `TerminalRecord::from_plugin_counterexample` settles `refuted`, naming the plugin. <br>- The same item with `x = 5` settles `inconclusive` with cause `replay-parity`. <br>- For the value-validity item of `q`'s application `x + 1` with assignment `x = 9`, `request` refuses `NotReplayable`, builds no request, and the item settles `inconclusive` with `ReplayRefused(unknown_required_feature)`, naming the plugin, with no replay result. | Test (TC-774) |
+| FR-290-AC-9 | `read_plugin_inconclusive_cause` refuses each of these, with the refusal and pointer given: <br>- `replay-parity`, `replay-refused` and `kani_vacuous_proof`, each also with an extra member: `QslOnlyCause` at `/cause/type`; <br>- `{"type":"closed-form","analysis":"edf"}`, `kani-vacuous-proof`, `scalar-agrees` and `bound_reached`: `UnknownSpelling` at `/cause/type`; <br>- each of the eight causes of its `Unsupported` list, each with its valid FR-331 payload: `Unsupported`; <br>- a `reduction-not-preserving` with `form` `"fairness"`: `Unsupported` at `/cause/form`; <br>- `{"type":"constraint-reached","boundary_states":0}`: `Malformed` at `/cause/boundary_states`; <br>- `{"type":"memory-bound-reached","limit":"max_store","states":1,"value":1}`: `Malformed` at `/cause/limit`; <br>- a `mapping-undetermined` whose `state_key` is `"abc"`: `Malformed` at `/cause/state_key`; <br>- a `mapping-undetermined` whose `prefix` is `[{"transition":{"type":"terminal-stutter"}}]`: `MissingMember` at `/cause/prefix/0/post_state`; <br>- `{"type":"no-instance","depth":1}`: `UnknownMember` at `/cause/depth`. | Test (TC-774) |
+| FR-290-AC-10 | `read_plugin_assignments` reads `{"backend":"acme","counterexample":{"type":"assignments","values":[{"parameter":"<64 hex>","value":{"type":"integer","value":"0"}}]},"request_index":0}` as one `CanonicalAssignment` of that `WireNodeId` and `ExactInteger(0)`, and an empty `values` as no assignment. It refuses each of these, with the refusal and pointer given: <br>- `[]`: `Malformed` at `""`; <br>- an entry naming `transcript` with no `counterexample`, and an entry with no `counterexample`: `MissingCounterexample` at `/counterexample`; <br>- an entry with a valid `counterexample` and a `transcript`: `UnknownMember` at `/transcript`; <br>- one whose `counterexample` is `7`: `MissingCounterexample` at `/counterexample`; <br>- one whose `counterexample` has no `type`, and one whose `counterexample` is a `TemporalCounterexample`: `MissingCounterexample` at `/counterexample/type`; <br>- an entry with an `extra` member: `UnknownMember` at `/extra`; <br>- a counterexample with no `values`: `MissingMember` at `/counterexample/values`; <br>- a counterexample whose `values` is `{}`: `Malformed` at `/counterexample/values`; <br>- an element with no `value`: `MissingMember` at `/counterexample/values/0/value`; <br>- a `parameter` of 63 hex digits or with an uppercase digit: `Malformed` at `/counterexample/values/0/parameter`; <br>- a value `{"type":"integer","value":"07"}`: `Malformed` at `/counterexample/values/0/value`; <br>- a second element repeating the first's parameter: `Malformed` at `/counterexample/values/1/parameter`. | Test (TC-774) |
+| FR-290-AC-11 | The diagnostic of each refusal kind in AC-6 to AC-10 carries the code and cause the diagnostics table gives, `Malformed` and `MissingCounterexample` the cause of their case. Its detail names the result item index, the received spelling or JSON kind, and, for every `invalid_result` cause, `document_pointer`: the refusal's pointer, such as `/basis/type` for `CoreOnlyBasis`; `CertificationNotTrusted`'s also names `expected` `trusted` and `actual` the received value. A refused member's item settles `failed`, naming the plugin, with no diagnostic in the record. | Test (TC-774) |
+| FR-290-AC-12 | Take a unit compiled through `parse`, `select`, `check` and `package` whose Boolean function `p(x: Int[0, 9])` returns `x > 3`, and whose `Integer` function `q(x: Int[0, 9])` returns `x + 1`. Build the context from its units and limits. <br>- For the function-contract item at `p`'s `declaration` occurrence with assignment `x = 0` (a hand-built item: QSL's request writer writes no item at a `declaration` occurrence), `request` gives a `ReplayRequestWire` whose members are those of the replay-context table: `source_digests` the unit's one source, `selected_function` `p`, `occurrence_key` `p`'s `declaration` occurrence, `backend` the plugin's identity, `declared_domains` the item's proof bounds, an empty state environment, no object environment, and a byte provision holding the unit's source. `replay` of it settles the input arm reproduced with category violation, and `TerminalRecord::from_plugin_counterexample` settles `refuted`, naming the plugin. <br>- The same item with `x = 5` settles `inconclusive` with cause `replay-parity`. <br>- For the application item of `q`'s `x + 1` with assignment `x = 9`, `request` gives a request whose `selected_function` is `q` and whose `occurrence_key` is the item's; `replay` completes `10`, inside the result bound `Integer`, and the item settles `inconclusive` with cause `replay-parity`, naming the plugin. | Test (TC-774) |
 | FR-290-AC-13 | The `process-provider` preimage for node `11` repeated 32 times, occurrence `{"ordinal":0,"role":"declaration"}`, and one bound `integer_range` 0 to 9 at `DomainKey::Node` `22` repeated 32 times with an empty path, encodes to `{"declared_domains":{"entries":[{"bound":{"lower":"0","tag":"integer_range","upper":"9"},"key":{"node_id":"2222222222222222222222222222222222222222222222222222222222222222","path":[],"tag":"node"}}],"tag":"bounds"},"node":"1111111111111111111111111111111111111111111111111111111111111111","obligation_kind":"value-validity","occurrence_key":{"ordinal":0,"role":"declaration"},"subject_kind":"process-provider"}`, whose SHA-256 is `3df483b143782f27840dd0d42eca97ba51fdb60c01cb3ddbc48db020de6ac899`. With no bound, the digest is `95905de0c8797755b51edf13b26a4fcdb41908a1e55f43b60784e280fa8e3a1c`. AC-12's request for `p` carries the identity of its item's preimage. | Test (TC-774) |
 | FR-290-AC-14 | The context built with `CallerLimits` whose `s1.tokens` is 200000, whose `library.definitions` is 9000, and whose accounting `work_units` is 5000, gives a request whose `stage_limits` holds `s1.tokens` 200000 and `library.definitions` 9000. Every other stage setting except `replay.input_bytes` and `format.output_bytes` is at its bound, and `accounting_limits` has `work_units` 5000. `request` refuses each of these, in this order: <br>- an occurrence key that is no function declaration and no record of the package: `UnknownOccurrence` (`missing_declaration`/`missing-name`), which comes before `NotReplayable` for the same call; <br>- a state clause's `operation-contract` record: `NotReplayable`; <br>- for `p` with two proof bounds at one `DomainKey`: `DuplicateBoundKey` (`invalid_runtime_input`/`duplicate-member`). <br>Each refusal other than `NotReplayable` settles the item `failed`, naming the plugin. | Test (TC-774) |
+| FR-290-AC-15 | Take FR-290-AC-12's unit with `function r using v(x: Int[0, 9]): Integer pure { 10 mod x }` added. <br>- For the application item of `r`'s `10 mod x` with assignment `x = 0`, `request` gives a request whose `selected_function` is `r`, whose `occurrence_key` is the item's `expression` occurrence and whose `obligation_identity` is the `process-provider` identity of that node and occurrence; `replay` finds the application undefined, settles the input arm reproduced with category violation, and `TerminalRecord::from_plugin_counterexample` settles `refuted`, naming the plugin. <br>- The same item with `x = 3` (`1`) settles `inconclusive` with cause `replay-parity`. <br>- For the application item of `p`'s `x > 3` with assignment `x = 0`, the item settles `inconclusive` with cause `replay-parity`, while AC-12's function-contract item of `p` with the same assignment settles `refuted`. <br>- The same item of `r` with `x = 12` settles `inconclusive` with cause `replay-refused` and the code `invalid_runtime_input` (`WrongValueKind`). <br>- Over a unit holding FR-395-AC-12's operation `body` (`body renamed using v on Config::ConfigVersion::add(n) { n + deref(self).versionNumber }`), `request` for the `value-validity` item of its `+`, whose owner is the function the checker synthesizes from the `body`, refuses `NotReplayable`, and the item settles `inconclusive` with `ReplayRefused(unknown_required_feature)`, naming the plugin. | Test (TC-774) |
 
 ## Dependencies
 
@@ -484,7 +521,8 @@ One QSL terminal record per routed item.
 - [FR-289](FR-289-keep-results-unchanged-by-provider-installation.md): the meaning invariant.
 - [FR-098](FR-098-execute-a-replay-request.md): replay.
 - [FR-298](FR-298-render-outcomes-and-views-from-typed-values.md): rendering.
-- [FR-062](FR-062-implement-checked-family-contract.md): requirement records.
+- [FR-062](FR-062-implement-checked-family-contract.md): requirement records and their owner.
+- [FR-057](FR-057-admit-shared-capability-kinds.md): the claim-form table, under which a `Value` function declaration carries no claim of its own.
 - [FR-121](FR-121-locate-a-function-call-site-through-the-replay-facade.md): the function-contract subject.
 - [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md): witness value text.
 - [FR-071](FR-071-implement-typed-replay-request.md): the replay request the context builds.
