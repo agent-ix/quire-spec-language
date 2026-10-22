@@ -170,6 +170,15 @@ reaches S4 (FR-383).
   name. S3 SHALL NOT compare a `send` or `receive` binder, or a FIFO binder,
   with a refused `carries` type.
 
+### Role on a model alias
+
+S3 SHALL refuse `role w on M`, `M` a model alias, by the role rule above,
+with `invalid_model_binding`/`malformed-declaration` at `M`. S4 cannot emit
+such a role: QSpec FR-322 has no `model` node form for a whole model alias,
+and QSpec FR-465 reader step 1 admits a role only on an `object_type`,
+`process`, `state_machine`, `systems_interface` or `persistence_interface`
+node (Admission for emission).
+
 ### Channels
 
 A channel declares its two roles, its payload type, its ordering, its delivery
@@ -450,7 +459,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
 | FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each fail at the parser with a syntax diagnostic and build no form; two cases and two branches check. | Test (TC-1065) |
 | FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
-| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
+| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`), `role w on M` refuses `invalid_model_binding`/`malformed-declaration` at `M` and the unit produces no package (Role on a model alias); a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 | FR-218-AC-27 | The unit of TC-1056 with a second protocol `Billing` that also declares `channel Pay` with the same premises checks, and the checked clauses hold two channels: `Pipeline`'s `Pay` and `Billing`'s `Pay`. Each is recorded under its protocol's qualified identity and the handle `Pay`; the two have different qualified names and equal handles. | Test (TC-1056) |

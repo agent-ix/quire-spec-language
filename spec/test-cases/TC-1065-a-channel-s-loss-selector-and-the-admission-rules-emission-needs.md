@@ -38,7 +38,7 @@ or the stated construct.
 | 5 | a `choice` with one case; a `parallel` with one branch; two of each | a parser syntax diagnostic and no form for the first two; the last two check |
 | 6 | `join all [east]`; `join quorum(0) [east, west]`; `join quorum(3) [east, west]`; `join any []` | `invalid_package`/`invalid-value` at the list, and at the count for `quorum` |
 | 7 | `join all [east, west]`; `join quorum(2) [east, west]`; `join any [east]`; `join all [east, west, east]` | each checks; the last joins each label once |
-| 8 | `role Seller on M::Pt` where `Pt` is a record type; roles on an object type, a process and a state machine | `invalid_model_binding`/`malformed-declaration` at `M::Pt`; the others check |
+| 8 | `role Seller on M::Pt` where `Pt` is a record type; roles on an object type, a process and a state machine; `role w on M` in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`) | `invalid_model_binding`/`malformed-declaration` at `M::Pt`; the object type, process and state machine check; `role w on M` refuses the same at `M`, with no package |
 | 9 | `channel Pay ... carries M::Node` where `Node` is an object type; channels carrying a record, an event type, a variant type and a scalar type | `invalid_model_binding`/`malformed-declaration` at `M::Node` and no refusal at the `send` and `receive` binders, which are not compared with a refused `carries` type; the others check |
 | 10 | `requires temporal Due;` where `Due` holds `protocol Fill` and the requiring protocol is `Fill`; the same through a second temporal clause; a protocol `Drain` no clause names | `invalid_package`/`definition-cycle` at the requirement, naming the protocol and the clause, for the first two; `Drain` checks |
 
