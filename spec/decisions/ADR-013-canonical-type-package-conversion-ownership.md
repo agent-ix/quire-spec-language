@@ -519,6 +519,9 @@ Amended by ADR-025 MV-1 (weak memory models). `InconclusiveCause` gains
 causes gain `WeakAccessShape{site, transition, shape}`, category
 unsupported.
 
+Amended by ADR-027 ST-12 (protocol transition system). The `Unsupported`
+causes gain `RecoveryView{predicate}`, category unsupported.
+
 Invariants: no category collapses into a boolean, string or another category
 through any conversion; missing anchors, exhausted limits and false predicates
 stay distinct (FR-323-AC-3); a timeout and a cancellation keep their cause. The
