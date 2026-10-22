@@ -34,6 +34,14 @@ use serde::Serialize;
 mod plugin;
 pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause};
 
+/// The wire spelling of `replay-parity`, one definition for the cause's own
+/// spelling and the plugin reader's refusal of it.
+pub(crate) const REPLAY_PARITY_KIND: &str = "replay-parity";
+/// The wire spelling of `replay-refused`.
+pub(crate) const REPLAY_REFUSED_KIND: &str = "replay-refused";
+/// The wire spelling of `kani-vacuous-proof`.
+pub(crate) const KANI_VACUOUS_PROOF_KIND: &str = "kani-vacuous-proof";
+
 /// FR-127: how a proof established its claim, independently of certification.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -735,8 +743,8 @@ impl InconclusiveCause {
             Self::VacuousMatch => "vacuous-match",
             Self::MappingUndetermined => "mapping-undetermined",
             Self::CertificateRejected { .. } => "certificate-rejected",
-            Self::ReplayParity(_) => "replay-parity",
-            Self::ReplayRefused(_) => "replay-refused",
+            Self::ReplayParity(_) => REPLAY_PARITY_KIND,
+            Self::ReplayRefused(_) => REPLAY_REFUSED_KIND,
             Self::ScalarAgrees(_) => "scalar-agrees",
             Self::SolverInconclusive => "solver-inconclusive",
             Self::SufficientTestFailed => "sufficient-test-failed",
@@ -874,7 +882,7 @@ impl ReportedInconclusiveCause {
     /// The cause's wire spelling: a vacuous proof's, or the cause's own.
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::KaniVacuousProof => "kani-vacuous-proof",
+            Self::KaniVacuousProof => KANI_VACUOUS_PROOF_KIND,
             Self::Cause(cause) => cause.as_str(),
         }
     }

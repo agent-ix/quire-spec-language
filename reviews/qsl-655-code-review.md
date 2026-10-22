@@ -41,3 +41,12 @@ Rust idioms: the enums are exhaustive, `Copy`, derive `thiserror`, and are re-ex
 ## Verdict
 
 Mergeable. There are no high findings. Every path to `Refuted` requires a QSL-side S6a replay that completed a `Violation` value. A plugin proof can never be `Certified` or carry `Checks`. The `ReplayParity` payload is derived on the QSL side. The fault and non-fault refusal split is correct. FND-001 is a small, cheap test addition and should ride in a fix round if one happens. FND-002 to FND-004 can follow.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: tests reproduced_non_violation_settles_failed cover both arms; removing the category guard fails it | HEAD |
+| FND-002 | fixed: TerminalRecord::from_plugin_inconclusive refuses ReplayParity/ReplayRefused by type; the kind reader refuses the three spellings, kani-vacuous-proof having no InconclusiveCause value | HEAD |
+| FND-003 | fixed: one set of spelling constants shared by InconclusiveCause::as_str, ReportedInconclusiveCause::as_str and the reader | HEAD |
+| FND-004 | accepted-no-change: whichever of #1181 and this PR lands second updates the marker | HEAD |

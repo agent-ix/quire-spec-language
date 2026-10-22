@@ -45,3 +45,12 @@ No constructor the driver needs is missing. The changelog line is in the PR body
 ## Verdict
 
 The ticket's items 1, 2 and 4 are met, and item 3 is met in code. Its ADR prose is pending in draco's lane. There are no high gaps. The one medium is a missing test for a soundness guard, and it is cheap to add.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: reproduced_non_violation_settles_failed (FR-289-AC-8) | HEAD |
+| FND-002 | fixed: from_plugin_proof refuses Checks, ClosedForm and Witness (CoreOnlyBasis); FR-289-AC-10 | HEAD |
+| FND-003 | fixed: test iterates ten other InconclusiveCause spellings (FR-289-AC-11) | HEAD |
+| FND-004 | fixed in spec: FR-289 states the driver carries the cause in the outcome document; PluginResultRefusal::record documents it | HEAD |

@@ -6,7 +6,10 @@
 //! failure. The pre-replay counterexample is the driver's wire record, not a
 //! QSL type; this module sees only its replay.
 
-use super::{Certification, InconclusiveCause, ProofBasis, TerminalRecord, TerminalValue};
+use super::{
+    Certification, InconclusiveCause, ProofBasis, TerminalRecord, TerminalValue,
+    KANI_VACUOUS_PROOF_KIND, REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND,
+};
 use crate::execute::ReplayRefusal;
 use crate::result::{InputSettlement, ReplayResult};
 use qsl_foundation::diagnostic::Category;
@@ -29,9 +32,9 @@ impl QslOnlyCause {
     /// The cause kind's wire spelling.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::ReplayParity => "replay-parity",
-            Self::ReplayRefused => "replay-refused",
-            Self::KaniVacuousProof => "kani-vacuous-proof",
+            Self::ReplayParity => REPLAY_PARITY_KIND,
+            Self::ReplayRefused => REPLAY_REFUSED_KIND,
+            Self::KaniVacuousProof => KANI_VACUOUS_PROOF_KIND,
         }
     }
 }
@@ -42,14 +45,16 @@ pub enum PluginResultRefusal {
     /// The result claims a cause only QSL settles.
     #[error("a plugin result claims the QSL-only cause {}", .0.as_str())]
     QslOnlyCause(QslOnlyCause),
-    /// The `proved` result reports the Kani check-count basis, which is
-    /// Kani-only; a plugin has no SUCCESS checks to count.
-    #[error("a plugin proof reports the Kani-only check-count basis")]
-    KaniOnlyBasis,
+    /// The `proved` result reports a basis only the core establishes: the
+    /// Kani check count, a core-recomputed closed form or a replayed witness.
+    #[error("a plugin proof reports a basis only the core establishes")]
+    CoreOnlyBasis,
 }
 
 impl PluginResultRefusal {
-    /// The item's terminal record: `failed`, naming the plugin.
+    /// The item's terminal record: `failed`, naming the plugin. The record
+    /// carries no diagnostic; the driver carries the refusal in the outcome
+    /// document (`OutcomeDiagnostic::new`).
     pub fn record(self, request_index: RequestIndex, plugin: BackendId) -> TerminalRecord {
         TerminalRecord::failed(request_index, plugin)
     }
@@ -60,9 +65,9 @@ impl PluginResultRefusal {
 #[qsl_attrs::string_edge]
 pub fn read_plugin_cause_kind(kind: &str) -> Result<(), PluginResultRefusal> {
     let claimed = match kind {
-        "replay-parity" => QslOnlyCause::ReplayParity,
-        "replay-refused" => QslOnlyCause::ReplayRefused,
-        "kani-vacuous-proof" => QslOnlyCause::KaniVacuousProof,
+        REPLAY_PARITY_KIND => QslOnlyCause::ReplayParity,
+        REPLAY_REFUSED_KIND => QslOnlyCause::ReplayRefused,
+        KANI_VACUOUS_PROOF_KIND => QslOnlyCause::KaniVacuousProof,
         _ => return Ok(()),
     };
     Err(PluginResultRefusal::QslOnlyCause(claimed))
@@ -117,8 +122,11 @@ impl TerminalRecord {
         plugin: BackendId,
         basis: ProofBasis,
     ) -> Result<Self, PluginResultRefusal> {
-        if matches!(basis, ProofBasis::Checks { .. }) {
-            return Err(PluginResultRefusal::KaniOnlyBasis);
+        if matches!(
+            basis,
+            ProofBasis::Checks { .. } | ProofBasis::ClosedForm { .. } | ProofBasis::Witness { .. }
+        ) {
+            return Err(PluginResultRefusal::CoreOnlyBasis);
         }
         Ok(Self::with_backend(
             request_index,
@@ -128,5 +136,30 @@ impl TerminalRecord {
                 certification: Certification::Trusted,
             },
         ))
+    }
+
+    /// A plugin's `inconclusive` result with the typed cause the driver read
+    /// from the wire. `replay-parity` and `replay-refused` are QSL's own and
+    /// are refused (the cause `kani-vacuous-proof` has no
+    /// [`InconclusiveCause`] value; [`read_plugin_cause_kind`] refuses its
+    /// spelling).
+    pub fn from_plugin_inconclusive(
+        request_index: RequestIndex,
+        plugin: BackendId,
+        cause: InconclusiveCause,
+    ) -> Result<Self, PluginResultRefusal> {
+        match cause {
+            InconclusiveCause::ReplayParity(_) => Err(PluginResultRefusal::QslOnlyCause(
+                QslOnlyCause::ReplayParity,
+            )),
+            InconclusiveCause::ReplayRefused(_) => Err(PluginResultRefusal::QslOnlyCause(
+                QslOnlyCause::ReplayRefused,
+            )),
+            other => Ok(Self::with_backend(
+                request_index,
+                plugin,
+                TerminalValue::Inconclusive(other),
+            )),
+        }
     }
 }

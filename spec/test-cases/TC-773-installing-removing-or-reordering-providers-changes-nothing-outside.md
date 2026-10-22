@@ -12,7 +12,7 @@ relationships:
 
 Verify FR-289's front-end, locality and meaning invariants. Order invariance is TC-194's.
 
-Scope: FR-289-AC-1 to FR-289-AC-6.
+Scope: FR-289-AC-1 to FR-289-AC-11.
 
 ## Test Procedure
 

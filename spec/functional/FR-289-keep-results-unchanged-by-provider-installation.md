@@ -69,17 +69,25 @@ Candidate sets (FR-075) and FR-331 terminal records.
   S6a replay result that reproduced its counterexample.
 - QSL's terminal record shall hold the value `proved` only together with the
   producing provider's `BackendId`.
-- A process provider's counterexample is canonical assignments. Its item
-  settles `refuted`, naming the provider's `BackendId`, only when the S6a
-  replay of those assignments reproduces the violation; a replay that does
-  not reproduce it settles `inconclusive` with cause `replay-parity`, and a
-  replay refusal settles as `TerminalValue::from_replay_refusal` does.
+- A process provider's counterexample is canonical assignments (ADR-029
+  PL-7, "Counterexamples"). Its item settles `refuted`, naming the provider's
+  `BackendId`, only when the S6a replay of those assignments reproduces the
+  violation; a replay that does not reproduce it settles `inconclusive` with
+  cause `replay-parity`, and a replay refusal settles as
+  `TerminalValue::from_replay_refusal` does. A replay that reproduced
+  something other than a violation, and a witness-arm replay result, settle
+  `failed`.
 - A process provider's `proved` result settles `proved` with the certification
-  `trusted`, the provider's `BackendId` and the basis the provider reports,
-  except the Kani check-count basis, which only a Kani proof carries.
+  `trusted`, the provider's `BackendId` and the basis the provider reports
+  (ADR-029 PL-7, "Trusted proofs"), except the bases only the core
+  establishes: the Kani check count, a core-recomputed closed form and a
+  replayed witness.
 - The causes `replay-parity`, `replay-refused` and `kani-vacuous-proof` are
-  settled by QSL's own replay and Kani mapping. A provider result that names
-  one is refused, and its item settles `failed`.
+  settled by QSL's own replay and Kani mapping (ADR-029 PL-7; draco's PL-7
+  text states the rule). A provider result that names one is refused, and
+  its item settles `failed`. The `failed` record carries no diagnostic: the
+  driver carries the refusal in the outcome document
+  (`OutcomeDiagnostic::new`).
 
 ## Acceptance Criteria
 
@@ -88,9 +96,14 @@ Candidate sets (FR-075) and FR-331 terminal records.
 | FR-289-AC-1 | Compiling `tests/fixtures/spine-compile.native` in a test that also builds an empty registry, and in one that builds a registry from three manifests, gives byte-equal `package` output and equal `check` outcomes. | Test (TC-773) |
 | FR-289-AC-2 | For a property-generated set of manifests and items, adding a manifest that advertises none of an item's matching requirements leaves that item's candidate set equal, and adding one that advertises the required capability adds exactly that backend to it; for a probabilistic item, the manifest must also advertise its exact evidence kind. | Test (TC-773) |
 | FR-289-AC-3 | A terminal record built with the value `refuted` and no reproducing replay result, or with the value `proved` and no `BackendId`, cannot be constructed through QSL's public API (`compile_fail` doctests with compiling controls); a record built from a reproducing replay result reads back `refuted` with that replay result. | Test (TC-773) |
-| FR-289-AC-4 | A process provider's counterexample whose replay as canonical assignments reproduces the violation settles `refuted` with the provider's `BackendId` and that replay result; one whose replay settles `inconclusive` settles `inconclusive` with cause `replay-parity`; a replay refusal settles as `TerminalValue::from_replay_refusal` does, a fault `failed`. | Test (TC-773) |
-| FR-289-AC-5 | A process provider's `proved` result settles `proved` with certification `trusted`, the provider's `BackendId` and the reported basis; the Kani check-count basis is refused. | Test (TC-773) |
-| FR-289-AC-6 | A provider result naming the cause kind `replay-parity`, `replay-refused` or `kani-vacuous-proof` is refused by the cause-kind reader and its item settles `failed`; every other kind is not refused by it. | Test (TC-773) |
+| FR-289-AC-4 | A process provider's counterexample whose replay as canonical assignments reproduces the violation settles `refuted` with the provider's `BackendId` and that replay result. | Test (TC-773) |
+| FR-289-AC-5 | A process provider's counterexample whose replay settles `inconclusive` settles `inconclusive` with cause `replay-parity` and keeps no replay result. | Test (TC-773) |
+| FR-289-AC-6 | A replay refusal of a process provider's counterexample settles as `TerminalValue::from_replay_refusal` does, a fault `failed`. | Test (TC-773) |
+| FR-289-AC-7 | A witness-arm replay result for a process provider's counterexample settles `failed`. | Test (TC-773) |
+| FR-289-AC-8 | An input-arm replay that reproduced something other than a violation settles `failed` with no replay result. | Test (TC-773) |
+| FR-289-AC-9 | A process provider's `proved` result settles `proved` with certification `trusted`, the provider's `BackendId` and the reported basis. | Test (TC-773) |
+| FR-289-AC-10 | A process provider's `proved` result reporting the Kani check-count basis, a closed-form basis or a witness basis is refused. | Test (TC-773) |
+| FR-289-AC-11 | A provider result naming the cause kind `replay-parity`, `replay-refused` or `kani-vacuous-proof`, or carrying the typed cause `ReplayParity` or `ReplayRefused`, is refused and its item settles `failed`; every other `InconclusiveCause` kind is not refused by the cause-kind reader. | Test (TC-773) |
 
 ## Dependencies
 
