@@ -22,10 +22,12 @@ Scope: FR-223-AC-1 to FR-223-AC-6.
    fences, under `ra`.
 3. Run FR-223-AC-3's looping protocol and measure `P` at each state.
 4. Run steps 1 and 3 twice and compare.
-5. Run ADR-025 §15's LT-12 and LT-13 under `sc`, `tso` and `ra`.
+5. Run ADR-025 §15's LT-12 and LT-13 under `sc`, `tso` and `ra`, and under
+   an independent RC11 execution-graph checker.
 6. Run ADR-025 §15's LT-14 under `ra` and list `w`'s load of `X` at the
    state after `u` has run, `v` has stored `P := 1` after reading `Y = 1`, and
-   `w` has stored `P := 2` after it in modification order.
+   `w` has stored `P := 2` after it in modification order. Run LT-18 under
+   `ra`.
 
 Tag the tests `#[trace("TC-668", "FR-223-AC-n")]`.
 
@@ -36,5 +38,7 @@ Tag the tests `#[trace("TC-668", "FR-223-AC-n")]`.
 - Step 3: live SC events at most messages times threads; none on removed
   messages.
 - Step 4: equal counts and byte-equal keys.
-- Step 5: both outcomes reachable under `ra` only.
-- Step 6: the outcome unreachable; the load enabled for `X = 1` only.
+- Step 5: both outcomes reachable under `ra` only; every outcome the checker
+  allows is reachable under `ra`.
+- Step 6: the LT-14 outcome unreachable and the load enabled for `X = 1` only;
+  the LT-18 outcome unreachable.
