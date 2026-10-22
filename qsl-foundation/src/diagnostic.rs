@@ -3,6 +3,10 @@
 //!
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
+use alloc::{
+    borrow::ToOwned, boxed::Box, collections::BTreeMap, format, string::String, string::ToString,
+    vec::Vec,
+};
 
 mod budget;
 mod locus;
@@ -10,8 +14,6 @@ mod stage;
 pub use budget::{BudgetDenial, BudgetOwner, DeniedCharge};
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
-
-use std::collections::BTreeMap;
 
 /// Native processing phase; successful syntax does not imply later execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -355,8 +357,8 @@ impl Code {
     }
 }
 
-impl std::fmt::Display for Code {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Code {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -415,8 +417,8 @@ pub enum SyntaxLimit {
     },
 }
 
-impl std::fmt::Display for SyntaxLimit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for SyntaxLimit {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Tokens { bound } => write!(f, "token ceiling of {bound} tokens exhausted"),
             Self::Nodes { bound } => write!(f, "syntax node ceiling of {bound} nodes exhausted"),
@@ -462,13 +464,13 @@ pub fn resource_exhausted(
 
 // FR-010: thiserror infers `source` as an Error cause, but this public field
 // carries source identity. Preserve the API and implement standard traits.
-impl std::fmt::Display for Diagnostic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", self.code, self.message)
     }
 }
 
-impl std::error::Error for Diagnostic {}
+impl core::error::Error for Diagnostic {}
 
 impl Diagnostic {
     /// The resource ceiling a `resource_exhausted` refusal names; `None`
@@ -775,8 +777,8 @@ impl Category {
     }
 }
 
-impl std::fmt::Display for Category {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Category {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -805,9 +807,9 @@ impl PartialEq for CatalogCode {
 
 impl Eq for CatalogCode {}
 
-impl std::hash::Hash for CatalogCode {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(&(self.code, self.cause), state);
+impl core::hash::Hash for CatalogCode {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        core::hash::Hash::hash(&(self.code, self.cause), state);
     }
 }
 
@@ -846,8 +848,8 @@ impl CatalogCode {
     }
 }
 
-impl std::fmt::Display for CatalogCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for CatalogCode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if let Some(prefix) = self.prefix {
             write!(f, "{prefix}/")?;
         }
@@ -1065,7 +1067,7 @@ pub fn catalog_category(code: &str) -> Option<Category> {
 /// make a `FamilyResult`/`FamilyOutcome` built from a `Box<dyn CatalogCoded>`
 /// `Debug`, able to cross a thread, and free of any borrow (ADR-013 O-16
 /// "Representation").
-pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
+pub trait CatalogCoded: core::fmt::Debug + Send + Sync + 'static {
     /// This cause's catalog code (O-17's method); its O-16 category is
     /// always `Category::Refusal`.
     fn catalog_code(&self) -> CatalogCode;
@@ -1263,7 +1265,7 @@ impl RefusalRecord {
 /// ADR-013 O-16: a family-owned evaluation-time undefined cause,
 /// held only through this trait -- the undefined-category counterpart of
 /// [`CatalogCoded`].
-pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
+pub trait UndefinedCoded: core::fmt::Debug + Send + Sync + 'static {
     /// This cause's [`UndefinedRecord`]; its O-16 category is always
     /// `Category::Undefined`.
     fn undefined_record(&self) -> UndefinedRecord;
@@ -1316,8 +1318,8 @@ impl UndefinedReason {
     }
 }
 
-impl std::fmt::Display for UndefinedReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for UndefinedReason {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -1335,11 +1337,12 @@ pub struct UndefinedRecord {
     pub reason: UndefinedReason,
     /// The catalog's structured payload for `reason`, keyed by the
     /// catalog's own field names.
-    pub fields: std::collections::BTreeMap<&'static str, String>,
+    pub fields: BTreeMap<&'static str, String>,
 }
 
 #[cfg(test)]
 mod foundation_tests {
+    use alloc::{string::ToString, vec, vec::Vec};
 
     use super::{
         category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
@@ -1403,7 +1406,7 @@ mod foundation_tests {
                 "{codes:?} reversed"
             );
         }
-        assert_eq!(Category::most_severe(std::iter::empty()), None);
+        assert_eq!(Category::most_severe(core::iter::empty()), None);
     }
 
     /// `Code::from_code` is the typed reverse lookup of `Code::as_str`,
