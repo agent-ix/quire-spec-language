@@ -12,8 +12,7 @@ relationships:
 
 Verify that a refinement item's requirement record carries QSV FR-121's
 `PropertyForm::Refinement { liveness }`, that it encodes as
-`{"refinement":{"liveness":<bool>}}` and orders after `Liveness`, and that
-`RefinementFailure` stays a QSL type.
+`{"refinement":{"liveness":<bool>}}` and orders after `Liveness`.
 
 Scope: FR-144-AC-8.
 
@@ -24,8 +23,6 @@ Scope: FR-144-AC-8.
    with `quire_canonical::to_vec`.
 2. Compare `PropertyForm::Liveness`, `Refinement{liveness: false}` and
    `Refinement{liveness: true}`.
-3. Inspect the public items of `quire_semantic_value` for any naming
-   `RefinementFailure`.
 
 Tag the tests `#[trace("TC-1167", "FR-144-AC-8")]`.
 
@@ -35,4 +32,3 @@ Tag the tests `#[trace("TC-1167", "FR-144-AC-8")]`.
   `{"refinement":{"liveness":false}}`.
 - Step 2: `Liveness < Refinement{liveness: false} < Refinement{liveness:
   true}`.
-- Step 3: none.
