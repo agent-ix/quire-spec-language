@@ -20,9 +20,18 @@ use qsl_package::{
     emit_checked_with_cancel, read_import_view, resolve_clause_root, AdmittedPackages,
     CheckedPackage, ClauseRootUnresolved, EmitRefusal, V2ReadLimits,
 };
-use qsl_semantics::check::CheckedTemporalClause;
+use qsl_semantics::check::{CheckedTemporalClause, TemporalClauseNode};
 use qsl_semantics::library::LibraryName;
 use quire_exact::{Cancel, CancelCause};
+
+/// The `claim` occurrence of a checked clause `node`: its node id and claim
+/// origin (ADR-013 O-07).
+pub fn node_occurrence(node: &TemporalClauseNode) -> OccurrenceKey {
+    OccurrenceKey::new(
+        WireNodeId::from_digest(*node.identity().as_bytes()),
+        node.claim().clone(),
+    )
+}
 
 /// A clause's identity in its package: the checked occurrence and the node of
 /// its `over` parameter, `None` for a clause with no `over`.
@@ -69,10 +78,7 @@ impl ClauseIdentity {
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: clause.name().to_owned(),
             })?;
-        let triple = OccurrenceKey::new(
-            WireNodeId::from_digest(*node.identity().as_bytes()),
-            node.claim().clone(),
-        );
+        let triple = node_occurrence(node);
         let emission =
             emit_checked_with_cancel(package, cancel).map_err(|refusal| match refusal {
                 EmitRefusal::Cancelled { cause } => ClauseRootRefusal::Cancelled(cause),
