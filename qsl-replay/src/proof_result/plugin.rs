@@ -8,7 +8,7 @@
 
 use super::{
     Certification, InconclusiveCause, ProofBasis, TerminalRecord, TerminalValue,
-    KANI_VACUOUS_PROOF_KIND, REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND,
+    REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND,
 };
 use crate::execute::ReplayRefusal;
 use crate::result::{InputSettlement, ReplayResult};
@@ -24,17 +24,25 @@ pub enum QslOnlyCause {
     ReplayParity,
     /// `replay-refused`.
     ReplayRefused,
-    /// `kani-vacuous-proof`.
+    /// `kani_vacuous_proof`, spelled as the plugin wire spells it.
     KaniVacuousProof,
 }
 
+/// The plugin wire's spelling of the vacuity cause. QSpec FR-331 keeps the
+/// AD-016 underscore spelling for it (`kani_vacuous_proof` is outside the
+/// hyphenated cause table), whereas QSL's outcome document writes
+/// `kani-vacuous-proof` ([`super::KANI_VACUOUS_PROOF_KIND`]). The hyphenated
+/// spelling is no cause FR-331 lists for a plugin, so it is an ordinary
+/// unknown kind here.
+const PLUGIN_WIRE_KANI_VACUOUS_PROOF: &str = "kani_vacuous_proof";
+
 impl QslOnlyCause {
-    /// The cause kind's wire spelling.
+    /// The cause kind's spelling on the plugin wire (QSpec FR-331).
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ReplayParity => REPLAY_PARITY_KIND,
             Self::ReplayRefused => REPLAY_REFUSED_KIND,
-            Self::KaniVacuousProof => KANI_VACUOUS_PROOF_KIND,
+            Self::KaniVacuousProof => PLUGIN_WIRE_KANI_VACUOUS_PROOF,
         }
     }
 }
@@ -67,7 +75,7 @@ pub fn read_plugin_cause_kind(kind: &str) -> Result<(), PluginResultRefusal> {
     let claimed = match kind {
         REPLAY_PARITY_KIND => QslOnlyCause::ReplayParity,
         REPLAY_REFUSED_KIND => QslOnlyCause::ReplayRefused,
-        KANI_VACUOUS_PROOF_KIND => QslOnlyCause::KaniVacuousProof,
+        PLUGIN_WIRE_KANI_VACUOUS_PROOF => QslOnlyCause::KaniVacuousProof,
         _ => return Ok(()),
     };
     Err(PluginResultRefusal::QslOnlyCause(claimed))
@@ -140,7 +148,7 @@ impl TerminalRecord {
 
     /// A plugin's `inconclusive` result with the typed cause the driver read
     /// from the wire. `replay-parity` and `replay-refused` are QSL's own and
-    /// are refused (the cause `kani-vacuous-proof` has no
+    /// are refused (the cause `kani_vacuous_proof` has no
     /// [`InconclusiveCause`] value; [`read_plugin_cause_kind`] refuses its
     /// spelling).
     pub fn from_plugin_inconclusive(

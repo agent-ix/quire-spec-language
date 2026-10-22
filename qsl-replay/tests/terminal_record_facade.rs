@@ -415,7 +415,7 @@ fn plugin_result_claiming_a_qsl_only_cause_fails() {
         ("replay-parity", qsl_replay::QslOnlyCause::ReplayParity),
         ("replay-refused", qsl_replay::QslOnlyCause::ReplayRefused),
         (
-            "kani-vacuous-proof",
+            "kani_vacuous_proof",
             qsl_replay::QslOnlyCause::KaniVacuousProof,
         ),
     ] {
@@ -445,6 +445,12 @@ fn plugin_result_claiming_a_qsl_only_cause_fails() {
     }
     // The remaining `InconclusiveCause` kinds carry payloads built elsewhere;
     // their spellings are listed so every kind but the three is covered.
+    // FR-331 spells the vacuity cause with an underscore on the plugin wire;
+    // QSL's outcome-document spelling is no plugin cause and is not refused.
+    assert_eq!(
+        qsl_replay::read_plugin_cause_kind("kani-vacuous-proof"),
+        Ok(())
+    );
     for kind in [
         "certificate-rejected",
         "scalar-agrees",
