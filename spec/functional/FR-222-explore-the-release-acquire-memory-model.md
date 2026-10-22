@@ -56,11 +56,12 @@ readers may disagree on the order of independent writes.
   as the component (a), a load's message choice as observe (b), a store's
   inserted message as write (c), the view split and join as split and merge
   (f), and the views a `send` carries as the channel effect.
-- `Ra` SHALL remove a message once it is earlier in mo than the message every
-  running thread's current view points at, and SHALL NOT let an acquire view,
-  a release view, a message view, a view carried by a `send` or `S` keep one;
-  a view pointing at a removed message SHALL read as pointing at its
-  location's earliest live message.
+- `Ra` SHALL remove a message once it is earlier in mo than the earliest
+  message that any running thread's current view points at.
+- `Ra` SHALL NOT let an acquire view, a release view, a message view, a view
+  carried by a `send` or `S` keep a message.
+- `Ra` SHALL read, and encode in the state key, a view that points at a removed
+  message as pointing at its location's earliest live message.
 - `Ra` SHALL name the message a load reads, or the slot a store inserts at,
   by its depth from the mo-last message in the step's transition identity.
 - `Ra` SHALL serialize its component, FR-223's graph and FR-224's race
@@ -74,7 +75,7 @@ readers may disagree on the order of independent writes.
 | FR-222-AC-2 | Each litmus test of ADR-025 §3.3's table, run under `ra`, reaches its weak outcome exactly when its `ra` column says allowed: SB allowed; SB with `seq_cst` fences forbidden; MP with `release`/`acquire` flag forbidden; MP with `relaxed` flag allowed; LB forbidden; IRIW with `release`/`acquire` allowed; 2+2W with `release` stores allowed; CoRR forbidden. Each verdict equals the expected outcome of QSpec FR-437's litmus vectors. | Test (TC-667) |
 | FR-222-AC-3 | Two threads each `fetch_add(1)` with `ordering relaxed` on a location at 0: every joined state holds 2, and no state has two RMWs reading one message. After `SB`'s `join all`, each location holds one message. A message earlier in mo than every running thread's current view at its location is absent from the next state, whatever its acquire, release and message views and `S` point at. | Test (TC-667) |
 | FR-222-AC-4 | MP with `relaxed` flag accesses, a `release` fence before the flag store and an `acquire` fence after the flag load, settles `proved` under `ra`. MP whose flag is passed by a channel `send` and `receive` in place of the flag location settles `proved` under `ra`. | Test (TC-667) |
-| FR-222-AC-5 | One branch repeating, with no maximum and a guard that stays true, a `relaxed` store of `x` and then a `relaxed` load of `x`, with no fence, under `ra` with `max_messages` 1: the claim `always holds(true)` settles `proved`, the run states `max_messages` 1 not reached, and every state holds one live message of `x`. | Test (TC-667) |
+| FR-222-AC-5 | One branch repeating, with no maximum and a guard that stays true, a `relaxed` store of the constant `x := 1` and then a `relaxed` load of `x`, with no fence, under `ra` with `max_messages` 1: the claim `always holds(true)` settles `proved`, the run states `max_messages` 1 not reached, and every state holds one live message of `x`. | Test (TC-667) |
 
 ## Dependencies
 
