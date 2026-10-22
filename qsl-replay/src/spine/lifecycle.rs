@@ -404,6 +404,8 @@ pub struct CheckedUnit {
     package: pkg::CheckedPackage,
     source: Source,
     libraries: Vec<Source>,
+    /// The library identity of each entry of `libraries`, in the same order.
+    library_names: Vec<LibraryName>,
 }
 
 impl CheckedUnit {
@@ -425,6 +427,15 @@ impl CheckedUnit {
     /// and carries no source here.
     pub fn libraries(&self) -> &[Source] {
         &self.libraries
+    }
+
+    /// The source `check` resolved for the library `identity`, if it
+    /// resolved one.
+    pub(crate) fn library_source(&self, identity: &LibraryName) -> Option<&Source> {
+        self.library_names
+            .iter()
+            .position(|name| name == identity)
+            .and_then(|index| self.libraries.get(index))
     }
 }
 
@@ -542,14 +553,16 @@ pub fn check(
         };
         let package = resolution.check_unit(parsed, models.models.clone(), lock)?;
         *work = resolution.work;
+        let (library_names, libraries) = resolution
+            .compiled
+            .into_iter()
+            .map(|(name, library)| (name, library.source.clone()))
+            .unzip();
         Ok(CheckedUnit {
             package,
             source: parsed.source().clone(),
-            libraries: resolution
-                .compiled
-                .into_values()
-                .map(|library| library.source.clone())
-                .collect(),
+            libraries,
+            library_names,
         })
     })
 }
