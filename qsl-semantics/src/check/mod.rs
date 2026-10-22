@@ -158,10 +158,11 @@ pub mod stratum;
 mod termination;
 pub use refinement::{
     observation, AbstractSide, AbstractStepClass, AbstractStepKind, ChannelStepKind,
-    CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, LabelStep, ListDefect, ListDefectKind,
-    MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue, ProtocolStepKind,
-    RefinementCause, RefinementDeclaration, RefinementRefusal, RefinementSupport, RoleStepKind,
-    RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget, UnsupportedFeature,
+    CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, LabelStep, ListDefect,
+    ListDefectKind, MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue,
+    ProtocolStepKind, RefinementCause, RefinementDeclaration, RefinementRefusal, RefinementSupport,
+    RoleStepKind, RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget,
+    UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -1703,10 +1704,9 @@ impl PackageDeclarations {
                 })),
             });
         }
-        let mut refinement_slots: Vec<Option<CheckedRefinement>> =
-            std::iter::repeat_with(|| None)
-                .take(self.refinements.len())
-                .collect();
+        let mut refinement_slots: Vec<Option<CheckedRefinement>> = std::iter::repeat_with(|| None)
+            .take(self.refinements.len())
+            .collect();
         let mut protocol_refinements = Vec::new();
         // One refinement checked over the protocol clauses given: none
         // before the clauses are checked.

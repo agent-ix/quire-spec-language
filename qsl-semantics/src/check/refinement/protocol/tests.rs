@@ -15,10 +15,10 @@ use quire_semantic_value::checking::CheckingLimits;
 use qsl_foundation::Span;
 
 use crate::check::{
-    observation, step_row_refs, step_simulation_records, CheckCause, CheckRefusal, CheckedGraph,
-    CheckedRefinement, LabelStep, MemoryStepKind, PackageDeclarations, ProtocolStepKind, RefinementCause,
-    RefinementRefusal, RowClass, RowObservation, StepClass, StepLabel, StepRowRefusal,
-    UnsupportedFeature,
+    observation, step_row_refs, step_simulation_records, AbstractSide, CheckCause, CheckRefusal,
+    CheckedGraph, CheckedRefinement, LabelStep, MemoryStepKind, PackageDeclarations,
+    ProtocolStepKind, RefinementCause, RefinementRefusal, RowClass, RowObservation, StepClass,
+    StepLabel, StepRowRefusal, UnsupportedFeature,
 };
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -192,6 +192,14 @@ impl Refused {
 }
 
 fn check_text(text: &str) -> Result<CheckedGraph, Vec<Refused>> {
+    check_with_internals(text, None)
+}
+
+/// `check_text` with the unit's `refinement_internals` value (FR-147).
+fn check_with_internals(
+    text: &str,
+    internals: Option<serde_json::Value>,
+) -> Result<CheckedGraph, Vec<Refused>> {
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -201,7 +209,7 @@ fn check_text(text: &str) -> Result<CheckedGraph, Vec<Refused>> {
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
     let unit = build_unit(&parsed).expect("S2 builds the unit");
-    let assembled = PackageDeclarations::assemble(
+    let mut assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
         vec![concrete_model(), abstract_model()],
@@ -209,6 +217,9 @@ fn check_text(text: &str) -> Result<CheckedGraph, Vec<Refused>> {
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
     .with_unwritten_refinements();
+    if let Some(internals) = internals {
+        assembled = assembled.with_refinement_internals(internals);
+    }
     let regions = assembled.regions();
     assembled
         .check(CheckingLimits::default())
@@ -755,10 +766,11 @@ impl Refused {
     }
 }
 
-/// Row half of FR-214-AC-4; the abstract-protocol half (the internal list,
-/// FR-147) is not built. A row's target gives its observation: `-> any` gives
-/// `Either`, `stutter` `Internal` and an abstract application `Visible` with
-/// the operation and the arguments the row leaves open as its label.
+/// Row half of FR-214-AC-4; the abstract-protocol half (the internal list and
+/// the node label) is `a_concrete_protocol_refines_an_abstract_protocol`. A
+/// row's target gives its observation: `-> any` gives `Either`, `stutter`
+/// `Internal` and an abstract application `Visible` with the operation and
+/// the arguments the row leaves open as its label.
 #[trace("TC-659", "FR-214-AC-4")]
 #[test]
 fn a_row_target_gives_its_observation() {
@@ -1441,6 +1453,8 @@ fn a_protocol_row_refuses_a_node_target_and_an_application_without_an_operation(
             name: "A::P::x".to_owned()
         }
     );
+    // The node's name, as on an operation row (`a_model_subject_refuses_...`).
+    assert_eq!(only(&found).at, "A::P::x");
 
     let applied = ROWS.replace(finish, "step M::Fill::Done -> A::Acc::add(self);");
     let found = refused(&unit(&fill(""), &applied));
@@ -1549,5 +1563,158 @@ fn a_refinement_is_covered_against_the_clause_it_selects() {
     for protocols in [fill("") + solo, solo.to_owned() + &fill("")] {
         checks(&(header(true) + &protocols + &named_refinement("OverSolo", solo_rows)));
         checks(&(header(true) + &protocols + &named_refinement("OverFill", ROWS)));
+    }
+}
+
+/// An abstract protocol `Seq` over `A::Acc`: the attempt `x` of `add` and the
+/// `finish` node `F`.
+const SEQ: &str = "protocol Seq using v over (k: A::Acc) on origin {\n\
+     role r on A::Acc;\n\
+     run sequence S {\n\
+     attempt x by r on A::Acc::add contracts [] as (p: Boolean) { true };\n\
+     }\n\
+     finish F as (f: Boolean) { true };\n\
+     }\n";
+
+/// The rows of a refinement of `Seq` by `Fill`: the attempt `A` maps to the
+/// abstract node `x`.
+const COMBINED_ROWS: &str = "step M::Fill::A -> node A::Seq::x(self);\n\
+    step M::Node::undo -> stutter;\n\
+    step fork M::Fill::Both -> stutter;\n\
+    step join M::Fill::Both -> stutter;\n\
+    step M::Fill::Done -> stutter;";
+
+/// A refinement whose rows select the concrete protocol `Fill` and whose
+/// abstract side is the protocol `Seq`.
+fn combined_unit(rows: &str) -> String {
+    header(true)
+        + &fill("")
+        + SEQ
+        + &format!(
+            "refinement FillRefinesSeq using t abstract A::Seq concrete M {{\n\
+             population A::accs from M::nodes;\n\
+             object A::Acc from M::Node {{ total = self.total; }}\n\
+             {rows}\n\
+             }}\n"
+        )
+}
+
+fn internal_list(entry: &str) -> serde_json::Value {
+    serde_json::json!([{"refinement": "FillRefinesSeq", "internal": [entry]}])
+}
+
+/// FR-214-AC-4 over a concrete protocol subject and an abstract protocol: a
+/// node row to an abstract node is `Visible` with that node as its label, and
+/// the internal list makes exactly the steps it names internal.
+#[trace("TC-659", "FR-214-AC-4")]
+#[test]
+fn a_concrete_protocol_refines_an_abstract_protocol() {
+    let text = combined_unit(COMBINED_ROWS);
+    let graph = check_with_internals(&text, None).unwrap_or_else(|found| panic!("{found:?}"));
+    let refinement = only_refinement(&graph);
+    assert_eq!(
+        refinement.abstract_side(),
+        &AbstractSide::Protocol {
+            clause: "Seq".to_owned()
+        }
+    );
+    assert!(refinement.concrete_protocol().is_some());
+    assert!(refinement.abstract_internal().is_empty());
+    let observed: Vec<RowObservation> = refinement.steps().iter().map(observation).collect();
+    let node = RowObservation::Visible {
+        label: StepLabel {
+            step: LabelStep::Node {
+                protocol: "Seq".to_owned(),
+                node: "x".to_owned(),
+            },
+            open_arguments: Vec::new(),
+            binds_result: false,
+        },
+    };
+    assert_eq!(
+        observed.iter().filter(|seen| **seen == node).count(),
+        1,
+        "{observed:?}"
+    );
+    assert!(observed
+        .iter()
+        .filter(|seen| **seen != node)
+        .all(|seen| *seen == RowObservation::Internal));
+
+    let graph = check_with_internals(&text, Some(internal_list("A::Seq::F")))
+        .unwrap_or_else(|found| panic!("{found:?}"));
+    let listed = only_refinement(&graph).abstract_internal();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].spelling(), "Seq::F");
+}
+
+/// An internal list entry that a step row also maps to a node refuses at the
+/// row (FR-147-AC-2).
+#[trace("TC-659", "FR-214-AC-4", "FR-147-AC-2")]
+#[test]
+fn an_internal_entry_beside_its_node_row_refuses() {
+    let found = check_with_internals(
+        &combined_unit(COMBINED_ROWS),
+        Some(internal_list("A::Seq::x")),
+    )
+    .expect_err("the entry conflicts with the row");
+    assert!(matches!(
+        only(&found).refinement(),
+        RefinementCause::ListEntryConflict { .. }
+    ));
+}
+
+/// A node row on a step with no operation has no receiver to type its
+/// arguments over: unsupported, as an application is.
+#[trace("TC-541", "FR-214-AC-4")]
+#[test]
+fn a_node_row_on_a_step_with_no_operation_is_unsupported() {
+    let rows = COMBINED_ROWS.replace(
+        "step M::Fill::Done -> stutter;",
+        "step M::Fill::Done -> node A::Seq::F;",
+    );
+    let found = check_with_internals(&combined_unit(&rows), None).expect_err("refuses");
+    let unsupported = only(&found);
+    assert!(matches!(
+        unsupported.refinement(),
+        RefinementCause::Unsupported {
+            feature: UnsupportedFeature::ProtocolStepApplication,
+            ..
+        }
+    ));
+    assert_eq!(unsupported.at, "node A::Seq::F");
+}
+
+/// The concrete rows are covered against the concrete clause: a missing
+/// `join` row refuses.
+#[trace("TC-659", "FR-214-AC-3", "FR-136-AC-4")]
+#[test]
+fn a_combined_refinement_needs_its_concrete_rows() {
+    let rows = COMBINED_ROWS.replace("step join M::Fill::Both -> stutter;\n", "");
+    let found = check_with_internals(&combined_unit(&rows), None).expect_err("refuses");
+    assert!(matches!(
+        only(&found).refinement(),
+        RefinementCause::MissingRow { .. }
+    ));
+}
+
+/// An abstract protocol clause refused by its own checks reports its own
+/// refusals alone: no refinement refusal, whether or not the concrete rows
+/// are complete (FR-147 "Abstract side"; FR-136-AC-8).
+#[trace("TC-541", "FR-136-AC-8")]
+#[test]
+fn a_refused_abstract_clause_reports_alone_over_a_concrete_protocol() {
+    let refused_seq =
+        |rows: &str| combined_unit(rows).replace("role r on A::Acc;", "role r on A::Nope;");
+    let missing_join = COMBINED_ROWS.replace("step join M::Fill::Both -> stutter;\n", "");
+    for rows in [COMBINED_ROWS, missing_join.as_str()] {
+        let found = check_with_internals(&refused_seq(rows), None).expect_err("refuses");
+        assert!(!found.is_empty());
+        assert!(
+            found
+                .iter()
+                .all(|refused| refused.refinement_or_none().is_none()),
+            "the clause's refusals alone: {found:?}"
+        );
     }
 }

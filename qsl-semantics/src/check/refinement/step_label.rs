@@ -24,8 +24,8 @@ pub enum LabelStep {
 }
 
 /// The abstract step a visible row maps its concrete step to (ADR-027 PR-2's
-/// observation label): the abstract operation and the binder record the
-/// row's arguments give.
+/// observation label): the abstract operation or protocol node and the
+/// binder record the row's arguments give.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StepLabel {
     /// The abstract step: an operation or a protocol node.
@@ -40,7 +40,7 @@ pub struct StepLabel {
 /// What a concrete step is to the abstract side (ADR-027 PR-2).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RowObservation {
-    /// A row to an abstract operation: the step passes when an abstract step
+    /// A row to an abstract operation or node: the step passes when an abstract step
     /// with this label is enabled.
     Visible {
         /// The abstract step's label.

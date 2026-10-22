@@ -829,7 +829,7 @@ impl<'a> Checker<'_, 'a> {
                     // as an application is, which only a step with an
                     // operation has.
                     if !self.protocol_subject {
-                        self.findings.malformed(&node.name, row.span);
+                        self.findings.malformed(&node.name, node.span);
                         continue;
                     }
                     let applied = applied_operation(&entry.class, clause).and_then(|applied| {
