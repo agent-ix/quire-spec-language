@@ -31,3 +31,12 @@ nothing on these lines.
 ## Verdict
 
 Mergeable on EARS grounds. Both findings are minor wording fixes.
+
+## Dispositions
+
+Round 1, reviewed QSL #1214 at 3fd9a7398 (fix commit over b155d3ea3); code facts re-verified in the QSL tree at that head.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | "`check` SHALL type a quantity literal ... as `Quantity<u>` and lower it"; the SHALL NOT on substituting a rational scalar type is restored |
+| FND-002 | fixed | each refusal is now an "If ..., then `check` SHALL refuse ..." unwanted-behaviour statement |
