@@ -75,6 +75,7 @@ mod composite_parity;
 mod composite_site;
 mod operator_parity;
 mod parity_identity;
+pub(crate) use parity_identity::process_provider_obligation;
 pub use parity_identity::{
     parity_obligation, BoundEntries, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
 };
