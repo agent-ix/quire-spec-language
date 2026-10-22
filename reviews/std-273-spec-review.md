@@ -39,4 +39,15 @@ The `code-review` method was skipped, because the diff contains no code.
 
 ## Verdict
 
-Mergeable as is; both findings are minor and cheap to fix in one round (FND-001 is a wording fix to AC-9 and TC-1164 step 4). The encoding, its agreement with FR-125 Instancing, the vector shape, the failure modes of AC-9, id uniqueness and the gate are verified. Owner or planner decisions: none required. The lead default (QSL-owned tagged array with plain JSON strings, no QSpec FR-181 change) is consistent with FR-338 and QSpec FR-331 and needs only acknowledgement.
+Disposition pass 1: FND-001 and FND-002 are fixed, and there is no new finding. Mergeable.
+
+Review pass: Mergeable as is; both findings are minor and cheap to fix in one round (FND-001 is a wording fix to AC-9 and TC-1164 step 4). The encoding, its agreement with FR-125 Instancing, the vector shape, the failure modes of AC-9, id uniqueness and the gate are verified. Owner or planner decisions: none required. The lead default (QSL-owned tagged array with plain JSON strings, no QSpec FR-181 change) is consistent with FR-338 and QSpec FR-331 and needs only acknowledgement.
+
+## Dispositions
+
+Disposition pass 1, head bace9ba62 (matches `git ls-remote`), checked as a merge with origin/main 6fb751a31. `make check-spec-validation` exits 0 with no diagnostic on a touched file. The delta touches only FR-338-AC-9 and TC-1164. There is no regression and no new finding.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-9 and TC-1164 step 4 now name the three negatives exactly: FR-181's reference value, the four-element `["instance", T, "a", O]` with `O` the JSON string of `Counter`'s declaration identity text, and `["instance", T, {"type":"text","value":"a"}]`. |
+| FND-002 | fixed | AC-9 and new TC-1164 step 5 add a vector: two initial states hold a `Counter` and a `Fast` (a subtype) under key `a` of `P1`, and the context octets are equal in both. A checker that folds the object type into the context now fails. |
