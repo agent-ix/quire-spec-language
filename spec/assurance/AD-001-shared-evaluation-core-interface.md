@@ -20,6 +20,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-015
     type: references
+  - target: ix://agent-ix/quire-spec-language/NFR-016
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-403
     type: references
 ---
@@ -216,6 +218,18 @@ through `quire-eval` once it carries that implementation; until then CG's
 cases carry no expectation. Admission compiles each case once, and both
 implementations evaluate the same admitted checked package in the runner's
 process (FR-403).
+
+NFR-016 defines the unsafe half of S8's audit: `make audit-unsafe` in
+`agent-ix/quire-eval` resolves the closure that links into the `no_std`
+evaluator, `quire-eval`'s normal dependencies for `thumbv7em-none-eabi`
+without proc-macro crates, and scans it. It fails on unsafe code in a
+first-party crate's shipped source, on a first-party crate that does not
+forbid `unsafe_code`, and on a third-party crate with unsafe code (counted
+by `cargo-geiger`) that the repository's `unsafe-inventory.toml` does not
+name. An inventory entry names the crate, what its unsafe code does and why
+the evaluator may link it, and no version or dependency path. The dependency
+half of S8 (allowed sources, licences and advisories) is that repository's
+existing `make deny` gate. `make ci` in that repository runs both.
 
 ### RT and CG acceptance
 
