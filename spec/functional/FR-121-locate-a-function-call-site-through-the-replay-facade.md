@@ -21,6 +21,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-116
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-323
+    type: depends_on
 ---
 # FR-121: Locate a function's, an operation's or a state clause's call site through the replay facade
 
@@ -105,7 +107,9 @@ QSL-345.
     the function declaration's `function` node, FR-092), `declaration`
     (`OccurrenceKey`, that node's `declaration` occurrence) and
     `parameters`, `Vec<(Identifier, WireNodeId)>`, in declared order;
-  - for an `OperationName`, an `OperationSite`: `anchor` and `frame`
+  - for an `OperationName`, an `OperationSite`: `frame_operation`
+    (`FrameOperation`: `object`, the declaring object's `QualifiedName`,
+    and `operation`, the operation's `Identifier`), `anchor` and `frame`
     (`WireNodeId`), `frame_occurrence` (`OccurrenceKey`) and `clauses`
     (`Vec<ClauseSite>`, each `name: Identifier`, `node: WireNodeId` and
     `occurrence: OccurrenceKey`, in declaration order);
@@ -152,6 +156,17 @@ QSL-345.
   `operation_anchor` and `frame` node ids and the frame's `generated`
   occurrence key (FR-104-AC-5) -- the identities an FR-116 frame
   counterexample carries.
+- For an operation selection, `call_site` SHALL return the resolved
+  operation's `frame_operation`: as `object`, the object type, process or
+  state machine whose own declaration of the operation the selected type's
+  effective view resolves to, found through that view's AD-006 effective
+  declaration and its original declaration keys (for an operation the
+  selected type only inherits, the supertype that declares it), named by
+  its `QualifiedName` under the unit's model alias for its domain package;
+  as `operation`, the operation's `Identifier`. This pair is the QSpec
+  FR-323 `frame_operation` replay target that CG FR-024 copies into a frame
+  packet. The selection's own object type is not authority for the
+  declaring object, and no `OperationSite` is returned without the pair.
 - For an operation selection, `call_site` SHALL return every `pre` and
   `post` clause of the unit whose operation resolves to the same
   (declaring object type, operation) as the selected frame, in declaration
@@ -246,6 +261,7 @@ QSL-345.
 | FR-121-AC-20 | For the ConfigVersion unit, the field key of `parent` (ordinal 0 under `ConfigVersion`) differs from the `config_history` population key its clauses' requirement records carry (ordinal 0, member type `ConfigVersion`), which is a `DomainKey::Population` on the same node. | Test (TC-516) |
 | FR-121-AC-21 | For the AC-18 domain package with a second population `aaa_subs` of `Sub` declared after `config_history`, a population selection returns `DomainKey::Population` with `ConfigVersion`'s node and ordinal 1 for `config_history` -- equal to the one population key every requirement record of the unit's `ConfigVersion` clauses carries -- and with `Sub`'s node and ordinal 0 for `aaa_subs`. | Test (TC-516) |
 | FR-121-AC-22 | `Config::nope`, `Nope::config_history` and `Config::ConfigVersion` (an object type, not a population) each refuse `CallSiteRefusal::UnknownPopulation` (code `missing_declaration`), pairing the `PopulationName` with the compiled package's own `package_id`. | Test (TC-516) |
+| FR-121-AC-23 | For FR-121-AC-18's domain package (`Sub` a subtype of `ConfigVersion` declaring no `attemptUpdate` of its own) and the ConfigVersion unit, the `Config::ConfigVersion::attemptUpdate` selection's `frame_operation` is `{Config::ConfigVersion, attemptUpdate}`, and the `Config::Sub::attemptUpdate` selection's is the same `{Config::ConfigVersion, attemptUpdate}`, not `Config::Sub`, with `anchor`, `frame` and `frame_occurrence` equal to the `ConfigVersion` selection's. | Test (TC-516) |
 
 ## Dependencies
 
@@ -263,7 +279,11 @@ QSL-345.
   typed `OperationName` resolution an operation selection shares.
 - [FR-116](FR-116-replay-a-frame-counterexample.md): the frame
   counterexample whose anchor, frame and occurrence an `Operation`
-  selection supplies.
+  selection supplies, and the `frame_operation` replay target it reads.
+- QSpec AD-006 (original and effective declaration identities) and QSpec
+  FR-323 (the `frame_operation` replay target); CG FR-024 builds a frame
+  packet's `frame_operation` from the `OperationSite` and refuses without
+  it.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1, §3 FB-05, T-12 rule (a).
 - ADR-013 O-07, O-09 (the function-contract obligation identity whose

@@ -67,6 +67,10 @@ compiled package.
    with the value `{}`; with the spelling `Spec::Twice::zz`; and with a list
    on a `dependencies` entry, valid and defective.
 
+9. Replay step 1's `small` request with its replay target replaced by
+   `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`); again with
+   its source edited so it does not compile.
+
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
 ## Expected Results
@@ -125,3 +129,5 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `/package/refinement_internals/0/internal/0`; the dependency entry's list
   applies to that dependency's refinements only, and its defect is located at
   `/package/dependencies/<n>/refinement_internals/<pointer>` (FR-098-AC-20).
+- Step 9: `invalid_runtime_input`/`invalid-value` at
+  `/replay/frame_operation` naming the target, both times (FR-098-AC-21).

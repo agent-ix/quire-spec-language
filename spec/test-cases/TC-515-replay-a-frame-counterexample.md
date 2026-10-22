@@ -16,7 +16,7 @@ stale identity
 refuses before admission, and an envelope whose `clause_node` or
 `occurrence_key` is not its payload's refuses before the recompile.
 
-Scope: FR-116-AC-1 to FR-116-AC-6.
+Scope: FR-116-AC-1 to FR-116-AC-6, FR-116-AC-8.
 
 ## Test Procedure
 
@@ -31,7 +31,7 @@ the domain package and the invocation documents in the byte provision.
    invocation whose `created` lists `child`.
 3. forbidden-parent-change with the frame identity taken from a package
    whose `attemptUpdate` frame also modifies `parent`; with a source edit
-   that changes the `package_id`; with `operation` naming `missing`; with
+   that changes the `package_id`; with the request's `frame_operation` naming operation `missing`; with
    a request whose source does not compile, once with a consistent
    envelope, once with the envelope's `clause_node` replaced by the other
    package's frame node, and once with its `occurrence_key` at another
@@ -39,6 +39,13 @@ the domain package and the invocation documents in the byte provision.
 4. forbidden-parent-change with its pre snapshot removed from the provision;
    with its invocation bytes edited under the same digest.
 5. Step 1's envelope twice.
+6. Over FR-121-AC-18's domain package (`Sub` inherits `attemptUpdate`),
+   step 1's envelope with the request's `frame_operation` taken from the
+   `OperationSite` `call_site` returns for `Config::Sub::attemptUpdate`;
+   with `{Config::Sub, attemptUpdate}`; with a `function` target; with
+   the envelope's target `{Config::ConfigVersion, probe}` against the
+   request's `{Config::ConfigVersion, attemptUpdate}`, the last two again
+   with a request whose source does not compile.
 
 Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
 
@@ -62,3 +69,10 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
   settles a result.
 - Step 5: equal results. `FrameCounterexample: FamilyPayload` compiles, and
   the envelope has no string-keyed field.
+- Step 6: `reproduced-with-evaluated-witness` with the target
+  `{Config::ConfigVersion, attemptUpdate}`; `invalid_model_binding`/
+  `malformed-declaration` naming `{Config::Sub, attemptUpdate}`;
+  `invalid_runtime_input`/`invalid-value` at `/replay/function`;
+  `stale_dependency`/`content-mismatch` naming both targets; the same two
+  refusals with the source that does not compile. `FrameCounterexample`
+  has no member naming the operation (FR-116-AC-8).

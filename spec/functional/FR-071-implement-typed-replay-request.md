@@ -13,6 +13,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: traces_to
+  - target: ix://agent-ix/quire-specification/FR-323
+    type: depends_on
 ---
 # FR-071: Implement the typed replay request
 
@@ -29,8 +31,11 @@ byte provision (QSpec FR-323 `byte_provision`, ADR-013 QC-1) and SHALL have
 no field, accessor or constructor argument typed as a filesystem path,
 environment variable name, or search location.
 
-The request selects the function to replay by a typed `QualifiedName`
-(ADR-013 O-11, OQ-5 ruling), never by a bare string. This requirement builds
+The request selects the item to replay by its replay target: exactly one
+QSpec FR-323 replay target member, typed as FR-323 types that member (a
+function's `QualifiedName`, ADR-013 O-11 and the OQ-5 ruling; a frame's
+`{object, operation}`, a `QualifiedName` and an `Identifier`), never by a
+bare string. This requirement builds
 the request type and its round trip only; it does not build the executor
 that consumes it (ADR-013 C-13, TK-01 executor entry, is #243's), and it
 performs no recompilation, no `package_id` recomputation, and no function
@@ -148,10 +153,15 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - The reader SHALL refuse a request whose encoded size exceeds the
   configured reader bound, and SHALL NOT return a truncated or
   partially-populated request in that case.
-- The function-selection member SHALL be a typed `QualifiedName`; the
-  request's public constructors and decoders SHALL NOT accept a bare `&str`
-  or `String` in the function-selection position, and no implicit
-  string-to-`QualifiedName` conversion SHALL exist.
+- The replay target SHALL hold typed names only (`QualifiedName`,
+  `Identifier`); the request's public constructors and decoders SHALL NOT
+  accept a bare `&str` or `String` in any replay target position, and no
+  implicit string-to-`QualifiedName` or string-to-`Identifier` conversion
+  SHALL exist.
+- The reader SHALL refuse a request by QSpec FR-323's decode rule 1 (no
+  replay target member, more than one, or a non-function target with
+  `arguments` or an occurrence key), with FR-323's codes and pointers,
+  before any byte-provision rule.
 
 ## Acceptance Criteria
 
@@ -168,6 +178,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-11 | A `sha256-jcs` byte-provision entry holding a repeated member name refuses `invalid_model_binding`/`malformed-declaration`; an entry intake refuses at one of its limits refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound; an allocation failure of 4096 requested bytes while reading or digesting an entry refuses `resource_exhausted`/`allocation-failed` carrying 4096; and an entry holding `18446744073709551616` at `/package/count` refuses `noncanonical_wire`/`inexact-integer` with `document_pointer` `/package/count`, and one holding `0.1000000000000000000001` at `/a~1b/0` refuses `noncanonical_wire`/`inexact-number` with `document_pointer` `/a~1b/0`. | Test (TC-186) |
 | FR-071-AC-12 | A request whose `object_environment` is `{"digest": <sha256-jcs digest>, "identity": {...}}` round-trips it exactly. Each of these refuses at decode with `invalid_runtime_input`, naming the member: a string for `object_environment` (`wrong-value-kind`); an object without `digest` (`missing-member` naming `object_environment.digest`); a third member (`unknown-member`); a `digest` in the `quire.source.bytes/v1` domain, and a `sha256-jcs` digest of 63 hex digits (each `invalid-value`). A request whose `object_environment` digest has no byte-provision entry constructs: the entry is read at admission, not at decode. | Test (TC-1042) |
 | FR-071-AC-13 | A request whose package reference carries `refinement_internals` `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` and whose `dependencies` entry carries its own value round-trips both exactly; a request with the member absent round-trips with it absent; the values `{}`, `null` and `7` decode and round-trip unchanged. | Test (TC-186) |
+| FR-071-AC-14 | A request whose replay target is `function` and one whose replay target is `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) each round-trip with that one target unchanged. The reader refuses a request with no target `invalid_runtime_input`/`missing-member` at `/replay`, one with `function` and `frame_operation` `invalid_runtime_input`/`invalid-value` at `/replay/frame_operation`, and the frame request carrying `arguments` `invalid_runtime_input`/`unknown-member` at `/replay/arguments`, each with a byte-provision entry removed changing none of these refusals (QSpec FR-323-AC-19). | Test (TC-185) |
 
 ## Dependencies
 
