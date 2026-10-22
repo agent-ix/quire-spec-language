@@ -15,7 +15,7 @@ dependency set and reads checked terms without building them. It admits
 arguments itself and reads the environment only through its contract. It
 returns the std reference's results, refusal records, charges and orders,
 including FR-262-AC-1 to AC-8. Each moved item has one definition. Scope:
-FR-403-AC-1 to FR-403-AC-11.
+FR-403-AC-1 to FR-403-AC-12.
 
 ## Test Procedure
 
@@ -56,6 +56,9 @@ FR-403-AC-1 to FR-403-AC-11.
 11. Through each evaluator, run a `lookup<T>(p, r) absent undefined` whose
     `r` is absent from the population. Read the undefined result's catalog
     code and fields, and read `FamilyKind::StateModel.catalog_code_prefix()`.
+12. Through each evaluator with the charge log: evaluate the checked
+    expression `x + 1` (`x: Int[0, 9]`) with `10` and with `3`; run a chain
+    of three calls at `work_units` `3` and at `2`.
 
 ## Expected Results
 
@@ -93,3 +96,8 @@ FR-403-AC-1 to FR-403-AC-11.
 11. Both results carry the prefix `state-model` and the `binding` and `key`
     fields that `render_identity` gives. The prefix is SV's constant, and
     `qsl-eval`'s source defines none of the moved cause types.
+12. `10` is `CallFailure::Input` with no charge; `3` completes with `4` and
+    no `function.call`. At `3` the chain completes with three `function.call`
+    charges; at `2` it is `Incomplete` naming `work_units` at the third
+    `function.call`, with two calls in the counter and the log. Both
+    evaluators agree on every item.

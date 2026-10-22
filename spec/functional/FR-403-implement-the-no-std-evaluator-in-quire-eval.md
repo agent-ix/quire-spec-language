@@ -139,21 +139,31 @@ report or runtime value path, so it names none of them.
 4. The implementation SHALL read checked terms only through
    `quire-checked`'s public read accessors.
 
-In QSL, the checked input is the admitted `CheckedPackage`'s checked graph,
-handed over in the process that admitted it. No byte form carries an
-evaluable checked graph: the `quire.checked-package/v2` wire's I2 reader
-yields an import view, not a checked graph. A `no_std` backend (RT or CG)
-cannot build a checked graph itself, because FR-400 and ADR-011 FB-14 forbid
-a backend from enabling `quire-checked`'s `construct` feature. A wire-borne,
-evaluable checked graph that a `no_std` backend can read is a separate
-surface that this requirement does not specify. It belongs to RT's consumer
-acceptance (RT FR-273-AC-12) and the IR-590 deliverable; a QSL ticket for it
-is to be filed.
+The checked input SHALL reach `quire-eval` in process: the consumer holds
+the checked graph and passes it to the registry. In QSL it is the admitted
+`CheckedPackage`'s checked graph. RT and CG take `quire-eval` as an
+in-process crate dependency and need no wire form of a checked graph; CG's
+only wire form for evaluation is the `quire-eval-corpus` case (FR-402).
+This requirement therefore specifies the in-process handoff only. A
+backend never builds a checked term: FR-400 and ADR-011 FB-14 forbid a
+backend from enabling `quire-checked`'s `construct` feature.
+
+### What the evaluator serves for RT and CG
+
+The `Value`-family scope is what RT's ported function application covered:
+checked function application over `Value`-family expression bodies,
+argument planning before any charge (RT's `plan_call` and
+`plan_evaluation`), resumable bodies whose calls run on explicit call
+frames (RT's `Frame` and `Body`, FR-262's session, body contract and child
+request), and the `work_units` charge sequence with its ordered admitted
+charges. RT and CG evaluate no state clause, operation frame or other
+clause, so no clause entry is part of `quire-eval`.
 
 ### Argument admission
 
-`quire-eval` SHALL admit a callable's completed arguments before the
-application's first charge. Both evaluators run this one admission: the
+`quire-eval` SHALL admit a callable's completed arguments, and a checked
+expression's completed parameter values, before the application's first
+charge, with no meter in scope. Both evaluators run this one admission: the
 reference evaluator calls it in place of its own. For the declared
 parameter `ValueType`s of the callee, in order, it decides:
 
@@ -359,6 +369,7 @@ repository, and nothing else.
 | FR-403-AC-9 | `qsl-eval`'s manifest declares no `std` feature. `CheckedPackageEvaluation::call` and `evaluate` run the reference evaluator. `qsl-eval` re-exports no `quire-eval` item and defines no argument admission of its own. `quire-eval`'s source contains no name resolution, FR-098 conversion phase, model admission, simulation, or clause, frame, separation or value-invariant entry. | Inspection (TC-1121) |
 | FR-403-AC-10 | On each of ten runs, the `no_std` evaluator's results equal the reference's in order: the members of AC-5's `allInstances` over a population recorded with its members in descending reference-key order, which both return ascending; and the loss list of FR-262-AC-8's kernel-loss case. | Test (TC-1121) |
 | FR-403-AC-11 | The `StateModel` undefined result of a `lookup<T>(p, r) absent undefined` with an absent key, raised by each evaluator, has the catalog code prefix `state-model` and the `binding` and `key` fields `render_identity` gives. `FamilyKind::StateModel.catalog_code_prefix()` returns SV's constant, and `qsl-eval`'s source defines no `StateModelUndefined`, `PreconditionFailure`, `NavigationRefusal`, `ReferenceUnresolved` or `HistoryUnresolved`. | Test (TC-1121) |
+| FR-403-AC-12 | Through each evaluator, a checked expression `x + 1` with one parameter `x: Int[0, 9]`, given `10`, returns `CallFailure::Input` from argument admission with no charge; given `3`, it completes with `4` and no `function.call` among its admitted charges. A chain of three functions with no parameters, whose bodies call the next or, for the last, return a literal, admits exactly three `function.call` charges with `work_units` spend `3`; with `work_units` `2` it returns `Incomplete` naming `work_units` at the third `function.call`, with two calls in the counter and the log. | Test (TC-1121) |
 
 ## Dependencies
 

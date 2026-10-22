@@ -184,9 +184,8 @@ here. The ordering rationale is as follows.
 - IR-590 (S6) implements the no_std + alloc evaluator in `quire-eval`
   behind the FR-401 interface, over `quire-checked`'s checked terms and an
   environment contract, for the `Value` family, with argument admission in
-  `quire-eval` (FR-403). A wire-borne evaluable checked graph for a
-  `no_std` backend is a separate surface FR-403 does not specify (RT
-  FR-273-AC-12). `qsl-eval` depends on it, stays `std`, and
+  `quire-eval` (FR-403). The checked input reaches `quire-eval` in
+  process; RT and CG need no wire form of a checked graph. `qsl-eval` depends on it, stays `std`, and
   keeps the std reference evaluator as its default until S9. The S7
   differential suite (FR-402) compares that std path with `quire-eval`. It
   follows the interface and S1-S5. IR-269 is reached through S1, not
