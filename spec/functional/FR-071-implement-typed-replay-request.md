@@ -163,8 +163,8 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   replay target member, more than one, or a non-function target with
   `arguments` or an occurrence key), with FR-323's codes and pointers,
   before any byte-provision rule.
-- A request whose replay target is `function` SHALL carry QSpec FR-323's
-  `occurrence_key`: the occurrence key of the counterexample's failing node
+- The request type SHALL carry, for a `function` replay target, QSpec
+  FR-323's `occurrence_key`: the occurrence key of the counterexample's failing node
   (ADR-013 O-25), its node a `WireNodeId`, its role and its ordinal. The
   executor selects the claim the request decides by it (FR-098). The reader
   SHALL refuse a `function` request without it
