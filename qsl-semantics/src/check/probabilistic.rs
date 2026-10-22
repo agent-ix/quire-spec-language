@@ -54,7 +54,9 @@ use quire_exact::Integer;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::layer::visit_located;
-use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, StageLimitCause};
+use super::refusal::{
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
+};
 
 /// The largest scale a decimal is expanded at when a confidence range is
 /// compared. A larger scale leaves the range unchecked here.
@@ -676,15 +678,24 @@ fn exact_refusal(
     }
 }
 
-/// A quantity literal's magnitude, reduced, or the refusal it is at
-/// `location` (FR-185 "Exact values").
+/// A quantity literal's magnitude in a value expression, reduced, or the
+/// refusal it is at `location`, the whole literal (FR-093 "Refusals"). A
+/// zero denominator is the value expression's own unproved-nonzero cause,
+/// not a probabilistic one, so it is located like the ceiling refusal.
 pub(crate) fn quantity_magnitude(
     magnitude: &ExactValueForm,
     ceiling: u64,
     location: &Location,
 ) -> Result<quire_exact::Rational, CheckRefusal> {
-    exact::value(magnitude, ceiling)
-        .map_err(|fault| exact_refusal(fault, ceiling, magnitude.span, location.clone()))
+    exact::value(magnitude, ceiling).map_err(|fault| match fault {
+        exact::ExactFault::ZeroDenominator => CheckRefusal {
+            location: location.clone(),
+            cause: CheckCause::Unproved(Obligation::Nonzero),
+        },
+        exact::ExactFault::AboveCeiling { bits } => {
+            limit_refusal(Excess { bits, ceiling }, location.clone())
+        }
+    })
 }
 
 fn refusal(cause: ProbabilisticCause) -> CheckRefusal {

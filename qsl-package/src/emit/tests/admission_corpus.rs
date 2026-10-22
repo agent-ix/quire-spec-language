@@ -958,28 +958,104 @@ fn quantity_literals_lower_to_shared_quantity_literal_nodes_the_strict_reader_ad
     }
 }
 
-/// FR-093-AC-33: the conversion and the comparison apply their quantity
-/// operations over the literal's node.
+/// The node of `wire` keyed `id`.
+fn node_of<'a>(wire: &'a Value, id: &Value) -> &'a Value {
+    nodes(wire)
+        .iter()
+        .find(|node| &node["node_id"] == id)
+        .unwrap_or_else(|| panic!("no node {id}"))
+}
+
+/// The node a `reference` term targets.
+fn target<'a>(wire: &'a Value, term: &Value) -> &'a Value {
+    assert_eq!(term["term"], "reference", "{term}");
+    node_of(wire, &term["target"])
+}
+
+/// The root body node of function `name`.
+fn function_body<'a>(wire: &'a Value, name: &str) -> &'a Value {
+    let function = nodes(wire)
+        .iter()
+        .find(|node| {
+            node["node_tag"] == "function" && node["declaration"]["qualified_name"][0] == name
+        })
+        .unwrap_or_else(|| panic!("no function {name}"));
+    let body = function["body"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["name"] == "body")
+        .expect("a body member");
+    target(wire, &body["value"])
+}
+
+/// Whether `node` is a `quantity` literal of `value`.
+fn is_quantity_literal(node: &Value, value: &str) -> bool {
+    node["body"]["term"] == "literal"
+        && node["body"]["value_kind"] == "quantity"
+        && node["body"]["value"] == value
+}
+
+/// FR-093-AC-33 (TC-483 step 6): the call's argument references the literal
+/// node; `k`'s equality is over `[ref(d), ref(literal)]`; `c`'s conversion
+/// has `rounding` = `exact` over `d` and its equality runs over the
+/// conversion node and the `3 s` literal.
 #[trace("FR-093-AC-33", "TC-483")]
 #[test]
-fn a_converted_quantity_is_compared_with_a_quantity_literal() {
+fn quantity_literal_nodes_are_referenced_by_their_operations() {
     let (_, package) = package_from_text(&format!(
-        "{QUANTITY_TIME}function c using v(d: Quantity<ms>): Boolean pure {{ convert<Quantity<s>>(d) = 3 s }}\n"
+        "{QUANTITY_TIME}function h using v(): Boolean pure {{ f(3 ms) }}\n\
+         function k using v(d: Quantity<s>): Boolean pure {{ d = rational(1, 1000) s }}\n\
+         function c using v(d: Quantity<ms>): Boolean pure {{ convert<Quantity<s>>(d) = 3 s }}\n"
     ));
     let emitted = Emitted::placed(package, Vec::new());
-    let outcome = Outcome {
-        families: families(&emitted.package),
-        read: read(&emitted),
-        emitted,
-    };
-    for identity in ["quire.op.quantity.convert", "quire.op.quantity.eq"] {
-        assert!(
-            outcome
-                .families
-                .values()
-                .flatten()
-                .any(|node| outcome.applies(node, identity)),
-            "{identity}"
-        );
-    }
+    let written = wire(&emitted.emission);
+
+    let call = function_body(&written, "h");
+    assert_eq!(
+        call["body"]["operation"]["identity"],
+        "quire.op.function.call"
+    );
+    let arguments = call["body"]["arguments"].as_array().unwrap();
+    let literal = target(&written, arguments.last().unwrap());
+    assert!(is_quantity_literal(literal, "3"), "{literal}");
+
+    let equal = function_body(&written, "k");
+    assert_eq!(
+        equal["body"]["operation"]["identity"],
+        "quire.op.quantity.eq"
+    );
+    let arguments = equal["body"]["arguments"].as_array().unwrap();
+    assert_eq!(arguments.len(), 2);
+    let parameter = target(&written, &arguments[0]);
+    assert_eq!(parameter["semantic_form"], "parameter");
+    assert!(is_quantity_literal(
+        target(&written, &arguments[1]),
+        "1/1000"
+    ));
+
+    let equal = function_body(&written, "c");
+    assert_eq!(
+        equal["body"]["operation"]["identity"],
+        "quire.op.quantity.eq"
+    );
+    let arguments = equal["body"]["arguments"].as_array().unwrap();
+    assert_eq!(arguments.len(), 2);
+    let convert = target(&written, &arguments[0]);
+    assert_eq!(
+        convert["body"]["operation"]["identity"],
+        "quire.op.quantity.convert"
+    );
+    assert_eq!(
+        convert["body"]["operation"]["mode"],
+        json!({"kind": "rounding", "value": "exact"})
+    );
+    let converted = convert["body"]["arguments"].as_array().unwrap();
+    assert_eq!(converted.len(), 1);
+    assert_eq!(
+        target(&written, &converted[0])["semantic_form"],
+        "parameter"
+    );
+    assert!(is_quantity_literal(target(&written, &arguments[1]), "3"));
+    assert!(read(&emitted).is_ok());
 }

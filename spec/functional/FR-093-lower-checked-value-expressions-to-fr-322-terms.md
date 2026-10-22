@@ -219,7 +219,8 @@ such a form is refused at S4 as FR-185 "Package emission" states.
 the magnitude against the ceiling, reduces it, resolves the unit name, then
 types the literal's operand position. The first refusal reached is the one
 reported, so `rational(1, 0) ghost` refuses for its zero denominator, not
-for its unit name. In each case `check` emits no literal node.
+for its unit name. In each case `check` emits no literal node, and a
+ceiling, zero-denominator or unit-name refusal is located at the whole literal.
 
 - If a quantity literal's written magnitude exceeds the rational-bits
   ceiling, then `check` SHALL refuse it

@@ -2413,7 +2413,7 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
         (
             "function g using v(): Boolean pure { f(rational(1, 0) ms) }",
             default,
-            "rational(1, 0)",
+            "rational(1, 0) ms",
             "undefined_expression/unproved-nonzero",
         ),
         (
@@ -2431,7 +2431,7 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
         (
             "function g using v(): Boolean pure { f(rational(1, 0) ghost) }",
             default,
-            "rational(1, 0)",
+            "rational(1, 0) ghost",
             "undefined_expression/unproved-nonzero",
         ),
     ];
@@ -2445,6 +2445,43 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
         );
         assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
     }
+}
+
+/// FR-093-AC-34: the refusals name the unit name and the limit.
+#[trace("FR-093-AC-34", "TC-483")]
+#[test]
+fn quantity_literal_refusals_name_the_name_and_the_limit() {
+    let refuse = |declarations: &str, limits| {
+        let source = format!("{TIME_UNITS}{QUANTITY_F}{declarations}");
+        let mut refusals = assemble(&source)
+            .1
+            .expect("the unit assembles")
+            .check(limits)
+            .expect_err("the quantity literal refuses");
+        assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+        refusals.remove(0).cause
+    };
+    for name in ["ghost", "Time"] {
+        let cause = refuse(
+            &format!("function g using v(): Boolean pure {{ f(3 {name}) }}"),
+            CheckingLimits::default(),
+        );
+        assert!(
+            matches!(&cause, CheckCause::MissingName(found) if found == name),
+            "{name}: {cause:?}"
+        );
+    }
+    let cause = refuse(
+        "function g using v(): Boolean pure { f(rational(1, 100000) ms) }",
+        CheckingLimits::default().with_rational_bits(16),
+    );
+    let CheckCause::ResourceExhausted(limit) = &cause else {
+        panic!("a limit refusal: {cause:?}");
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit),
+        ("s3.rational_bits", 16)
+    );
 }
 
 /// FR-093-AC-34 order: a literal that violates several conditions gets the
@@ -2474,7 +2511,7 @@ fn a_quantity_literal_refuses_with_the_first_violated_condition_in_order() {
         only(
             "function g using v(x: Integer): Boolean pure { x = rational(1, 0) ghost }",
             default,
-            "rational(1, 0)"
+            "rational(1, 0) ghost"
         ),
         "undefined_expression/unproved-nonzero"
     );
