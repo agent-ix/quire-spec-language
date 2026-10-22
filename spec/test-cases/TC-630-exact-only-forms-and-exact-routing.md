@@ -32,4 +32,4 @@ Tag the tests `#[trace("TC-630", "FR-195-AC-n")]`.
 - Step 2: `ExpectedReward` over `cost` with threshold `6/5`, refused for `6/5` written with `/`; thresholds 3, 0 and `-1/2` check for the integer reward, `5 ms` is `unit-mismatch`; `0.005 s` records 5, `5 m` is `unit-mismatch`, the bare `3` is `type-mismatch`; `missing-name` for the undeclared reward; `MeanTime` and the other `expected elapsed` claim refused `not-yet-implemented`.
 - Step 3: true for all but `P95` with confidence.
 - Step 4: `EveryScheduler`; `ExactOnlyForm`; `MissingConfidence`; the `P95` claim passes; no sample drawn for any refusal.
-- Step 5: exactly (`probabilistic-satisfaction`, `exact`); each refusal settles `unsupported` with `every-scheduler`, `exact-only-form` or `missing-confidence`.
+- Step 5: `probabilistic-satisfaction` with the evidence kind `exact` only; each refusal settles `unsupported` with `every-scheduler`, `exact-only-form` or `missing-confidence`.
