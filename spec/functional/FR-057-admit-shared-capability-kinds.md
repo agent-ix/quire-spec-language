@@ -283,13 +283,6 @@ quire-contract-codegen reads through `BackendDescriptor::domains()` for FR-290's
 domain-kind routing step. That routing step is quire-contract-codegen's, not
 QSL's.
 
-The registry SHALL judge a backend's evidence-kind labels
-(FR-075-AC-11) last, after every advertised pair, `domains` and
-`fairness_kinds`, and only for a backend that advertises
-`probabilistic-satisfaction`: evidence-kind labels supplied by any other
-backend are ignored and the admitted descriptor holds none. A label repeated
-within the set is one member.
-
 A second registration under an identity the registry already holds
 is judged against the held descriptor (FR-075-AC-4, FR-075-AC-7,
 quire-specification FR-290 "Candidate set and negotiation"): an equal
@@ -404,7 +397,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it, or is inapplicable to all current QSL declaration families where the table says `none`. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration and a `probabilistic-satisfaction` or `schedulability` request on any current declaration are inapplicable, name the declaration family, and leave its body reaching its family checker. | Test (TC-115, TC-971) |
 | FR-057-AC-12 | A registration whose `domains` is present but empty, holds `quantity`, `loop`, `infinite-trace` or a label not byte-equal to an FR-331 domain kind (such as `Collection`), or repeats a kind, is refused `invalid_capability`/`invalid-domains`, keyed by backend identity, both when it advertises a `bounded` pair and when it advertises only `unbounded` pairs; a refusal for an unknown or non-boundable label names the received bytes. A registration with no `domains` is refused `invalid-domains` when it advertises a `bounded` pair and is admitted when it advertises only `unbounded` pairs. A registration with both a pair defect and a `domains` defect refuses with the pair's cause. A registration whose `domains` holds each of `collection`, `population`, `integer` and `recursive` once is admitted, and its descriptor's `domains()` returns those four kinds. | Test (TC-155) |
 | FR-057-AC-13 | The family projection for each capability label equals the FR-290 family column in this requirement's table, including `probabilistic-satisfaction` → `probabilistic` and `schedulability` → `real-time`; it introduces no QSL alias. | Test (TC-971) |
-| FR-057-AC-14 | The composed admission stage projection preserves this requirement's stage ownership for every kind: requested labels are admitted by the composed linker without registry input; advertised labels are admitted by `BackendDescriptor::admit`; and candidate sets are computed by the registry only after descriptor admission. | Test (TC-973) |
+| FR-057-AC-14 | The composed admission stage projection preserves this requirement's stage ownership for every kind: requested labels are admitted by the composed linker without registry input; advertised labels are admitted by `descriptor_from_manifest`; and candidate sets are computed by the registry only after descriptor admission. | Test (TC-973) |
 
 ## Dependencies
 

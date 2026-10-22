@@ -806,13 +806,7 @@ impl Pass<'_, '_> {
                     .typer(nodes, cx)
                     .check_as(&pair.value.expression, value_type, &location);
             let value = match typed {
-                // A support value is never a reference, whatever the declared
-                // type (FR-185 "Random parameters"): a reference into a
-                // population is an identity, which a distribution must not
-                // weigh.
-                Ok(body) => {
-                    literal(body.root()).filter(|literal| !matches!(literal.0, Value::Reference(_)))
-                }
+                Ok(body) => literal(body.root()),
                 Err(refusal) if refusal.cause.code() == Code::IllTyped => None,
                 Err(refusal) => {
                     refusals.extend(weight.err());

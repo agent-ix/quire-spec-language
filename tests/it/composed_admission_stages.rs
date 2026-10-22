@@ -615,8 +615,27 @@ fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_a
                     capability: Capability::FiniteReplay,
                     required: false,
                 },
+                // The two kinds no current declaration form belongs to.
+                Request {
+                    declaration: healthy,
+                    capability: Capability::ProbabilisticSatisfaction,
+                    required: false,
+                },
+                Request {
+                    declaration: due,
+                    capability: Capability::Schedulability,
+                    required: false,
+                },
             ];
             let requests = requests::report(report, &assessment, &asked);
+            assert_eq!(
+                requests.disposition(healthy, Capability::ProbabilisticSatisfaction),
+                Some(Disposition::InapplicableCapability(Family::State))
+            );
+            assert_eq!(
+                requests.disposition(due, Capability::Schedulability),
+                Some(Disposition::InapplicableCapability(Family::Temporal))
+            );
 
             // Each kind applicable to its declaration's own family is
             // admitted; only the structurally inapplicable claim is refused.

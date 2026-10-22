@@ -345,3 +345,97 @@ fn every_one_of_the_twelve_kinds_registers_and_routes() {
         assert_eq!(got, [format!("backend-{index}")], "{kind:?}");
     }
 }
+
+/// FR-075-AC-11 (evidence judged for a probabilistic backend only): labels
+/// supplied by a backend that advertises no probabilistic kind are ignored,
+/// so its descriptor holds none, defective or not.
+#[test]
+#[trace("FR-075-AC-11")]
+fn another_backends_evidence_labels_are_ignored() {
+    let ignored = admit("p", 1, "value-validity", Some(&["bogus", "exact"]))
+        .expect("a non-probabilistic backend is never refused over evidence");
+    assert!(ignored.evidence_kinds().is_empty());
+    let typed = BackendDescriptor::new(
+        Candidate::new(BackendId::new("p")),
+        ProviderOrigin::Linked,
+        ManifestDigest::from_digest([1; 32]),
+        [(Capability::ValueValidity, Mode::Unbounded)],
+        None,
+        Some(kinds(&[EvidenceKind::Exact])),
+    )
+    .expect("admitted");
+    assert!(typed.evidence_kinds().is_empty());
+    assert_eq!(typed, ignored);
+}
+
+/// A label repeated in the set is one member.
+#[test]
+#[trace("FR-075-AC-11")]
+fn a_repeated_evidence_label_is_one_member() {
+    let once = probabilistic("p", &["exact", "exact", "statistical", "exact"]);
+    assert_eq!(
+        once.evidence_kinds(),
+        &kinds(&[EvidenceKind::Exact, EvidenceKind::Statistical])
+    );
+}
+
+/// FR-075-AC-11: evidence is judged last, after every advertised pair,
+/// `domains` and `fairness_kinds`, so a registration with an earlier defect
+/// and an evidence defect refuses with the earlier cause.
+#[test]
+#[trace("FR-075-AC-11")]
+fn evidence_is_judged_after_pairs_domains_and_fairness() {
+    let convert = |advertised: Vec<(Option<&str>, Option<&str>)>,
+                   domains: Option<&[&str]>,
+                   fairness: Option<FairnessKindsMember<'_>>| {
+        descriptor_from_manifest(
+            Candidate::new(BackendId::new("p")),
+            ProviderOrigin::Linked,
+            ManifestDigest::from_digest([1; 32]),
+            advertised,
+            domains,
+            fairness,
+            // Always defective: absent for a probabilistic backend.
+            None,
+        )
+        .expect_err("refused")
+    };
+    // A pair defect wins over an evidence defect.
+    let refusal = convert(
+        vec![
+            (Some(PROBABILISTIC), Some("unbounded")),
+            (Some("not-a-kind"), Some("unbounded")),
+        ],
+        None,
+        None,
+    );
+    assert_eq!(
+        refusal.cause(),
+        &RegistrationCause::UnknownKind("not-a-kind".to_owned())
+    );
+    // A `domains` defect (absent while a bounded pair is advertised) wins.
+    let refusal = convert(vec![(Some(PROBABILISTIC), Some("bounded"))], None, None);
+    assert_eq!(
+        refusal.catalog_code().to_string(),
+        "invalid_capability/invalid-domains"
+    );
+    // A fairness defect (a temporal backend with no member) wins.
+    let refusal = convert(
+        vec![
+            (Some(PROBABILISTIC), Some("unbounded")),
+            (Some("temporal-satisfaction"), Some("unbounded")),
+        ],
+        None,
+        None,
+    );
+    assert_eq!(
+        refusal.catalog_code().to_string(),
+        "invalid_capability/invalid-fairness-kinds"
+    );
+    // With every earlier check passing, the evidence defect is reported.
+    let refusal = convert(vec![(Some(PROBABILISTIC), Some("unbounded"))], None, None);
+    assert_eq!(
+        refusal.cause(),
+        &RegistrationCause::UnknownEvidenceKind(EvidenceKindsDefect::Absent)
+    );
+}

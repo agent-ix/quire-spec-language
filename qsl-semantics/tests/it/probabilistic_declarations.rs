@@ -587,11 +587,13 @@ fn a_precondition_that_reads_a_random_parameter_refuses_at_the_read() {
     );
 }
 
-/// FR-185-AC-9 (TC-620 step 9): a random parameter typed as a reference to
-/// `Server` is refused at S3 `value-outside-type`, naming the parameter,
-/// whatever support value is listed; a parameter typed `Int[1, 12]` with the
-/// integer support value `3` checks.
-#[trace("TC-620", "FR-185-AC-9")]
+/// TC-620 step 9, the ill-typed clause only: an integer support value for a
+/// random parameter typed as a reference to `Server` is refused
+/// `value-outside-type`, naming the parameter, and the `Int[1, 12]` variant
+/// checks. FR-185-AC-9's refused case is a reference *literal* naming a
+/// `Server` key; S3 has no reference-literal form yet, so that clause is
+/// untested (QSL-971).
+#[trace("TC-620")]
 #[test]
 fn a_reference_valued_random_parameter_refuses_value_outside_type() {
     let document = service_document_full(

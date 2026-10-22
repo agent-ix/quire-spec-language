@@ -208,14 +208,24 @@ capability-kind labels.
 ### Probabilistic evidence kinds are checked at descriptor admission
 
 When a `BackendDescriptor` advertises `probabilistic-satisfaction`,
-`BackendDescriptor::admit` SHALL require a nonempty evidence-kind set whose
+`descriptor_from_manifest` (and `BackendDescriptor::new` for already-typed
+input) SHALL require a nonempty evidence-kind set whose
 members are each byte-equal to `statistical` or `exact` (FR-290, "Evidence
 kinds"). If the set is absent or empty, or any member is not one of those two
-labels, `BackendDescriptor::admit` SHALL refuse the registration with
+labels, `descriptor_from_manifest` SHALL refuse the registration with
 `invalid_capability`/`unknown-evidence-kind`, keyed by the descriptor's
 `BackendId`. This check SHALL finish before the descriptor is inserted into the
 registry or used for candidate computation. The refused descriptor contributes
 no registration, and any registration already held under that identity stands.
+
+`descriptor_from_manifest` SHALL judge the evidence-kind labels after every
+advertised pair, `domains` and `fairness_kinds`, so a registration with an
+earlier defect and an evidence defect refuses with the earlier cause. It SHALL
+ignore evidence-kind labels supplied for a backend that advertises no
+`probabilistic-satisfaction` kind, so the descriptor holds none, defective or
+not. It SHALL read a label repeated within the labels as one member, because
+QSpec FR-290 states the evidence kinds as a set; this differs from `domains`
+and `fairness_kinds`, whose repeat FR-057 and FR-134 refuse.
 
 A descriptor that advertises no `probabilistic-satisfaction` kind SHALL NOT
 require evidence-kind labels for admission. QSL SHALL preserve the accepted
@@ -297,7 +307,7 @@ were added.
 | FR-075-AC-8 | Given the checked package of FR-062's RR-5 (`function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }`) and a registry holding one backend advertising `value-validity` in `bounded` mode, and no named backend, the request builder returns exactly one `RequirementItem` per requirement record, in bytewise occurrence-key order with request indices 0, 1, 2: the two `+` records are two items with the same node and distinct occurrence keys, and every item is `value-validity`, classified `bounded`, with no unbounded domain, its record's result bound, and that one backend as its candidate set. With RR-6 (`n + 1` over `n: Integer`), the one item is classified `unbounded` with `finite_bound_available` true and carries one unbounded domain, `Integer` at `n`'s parameter node, and a bounded follow-up that supplies an `IntegerRange` for that key is a new request whose single item has request index 0, is classified `bounded` and carries the occurrence key passed to `bounded_item`, the original item's, and the follow-up request holds exactly one item for that occurrence key. With RR-16, the two `+` items carry result bounds `Int[0, 10]` and `Int[0, 20]`. With a registry advertising no `value-validity`, every item is still returned, each with an empty candidate set. With a named unregistered backend, every item carries the unknown-backend marker. A package with no records gives no items. | Test (TC-449) |
 | FR-075-AC-9 | For the checked function `function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }`, the two `x + 1` requirement records have the same application node and distinct occurrence keys, and the builder returns two items in occurrence-key order. Each item's `path_condition()` equals its own record's canonical path-condition sequence: both contain the `if p` guard occurrence, with `holds` true for the then occurrence and false for the else occurrence. Neither sequence is replaced by the other, flattened, or deduplicated. An unguarded record's item carries an empty path condition. | Test |
 | FR-075-AC-10 | A descriptor advertising `probabilistic-satisfaction` with evidence kinds `{statistical}`, `{exact}` or `{statistical, exact}` is admitted and retains exactly the supplied set on the descriptor. | Test |
-| FR-075-AC-11 | A descriptor advertising `probabilistic-satisfaction` with an absent evidence-kind set, an empty set, or any member other than the exact labels `statistical` and `exact` is refused by `BackendDescriptor::admit` with `invalid_capability`/`unknown-evidence-kind`, keyed by `BackendId`, before registry insertion; it contributes no candidate and leaves any earlier registration under that identity standing. | Test |
+| FR-075-AC-11 | A descriptor advertising `probabilistic-satisfaction` with an absent evidence-kind set, an empty set, or any member other than the exact labels `statistical` and `exact` is refused by `descriptor_from_manifest` with `invalid_capability`/`unknown-evidence-kind`, keyed by `BackendId`, before registry insertion; it contributes no candidate and leaves any earlier registration under that identity standing. The same conversion judges the labels after every advertised pair, `domains` and `fairness_kinds` (a registration with an earlier defect refuses with the earlier cause), ignores labels supplied for a backend advertising no probabilistic kind, and reads a repeated label as one member. | Test |
 | FR-075-AC-12 | A descriptor that advertises no `probabilistic-satisfaction` kind is admitted without evidence-kind labels, and its admission is unaffected by whether it advertises any of the other eleven kinds. | Test |
 | FR-075-AC-13 | For a probabilistic item naming `statistical` or `exact`, the candidate set contains exactly registrations advertising that same evidence kind; a registration advertising only the other evidence kind is excluded, including when it is the only registration. Missing or unknown evidence remains available to downstream negotiation for the corresponding invalid-request refusal and is not substituted. | Test (TC-980, TC-983) |
 | FR-075-AC-14 | Two registrations identical in every descriptor member except that their evidence-kind sets differ are conflicting descriptors: the registry refuses the identity with `invalid_capability`/`duplicate-backend`, withdraws its registration, and reports no candidate for it; equal complete descriptors remain idempotent under FR-075-AC-7. A request naming a registered backend with the nonmatching evidence kind has an empty candidate set. | Test (TC-981, TC-983) |

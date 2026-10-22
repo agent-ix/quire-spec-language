@@ -218,6 +218,29 @@ fn a_quantile_claim_reports_its_empirical_quantile() {
     assert_eq!(verdict.quantile, None);
 }
 
+/// FR-189-AC-15's unit property at the model sampler: a quantity-typed
+/// reward gives its magnitude in the claim's threshold unit, so a latency of
+/// `1 ms` per attempt is the measure `1`, not `1/1000`. (The quantity-typed
+/// *parameter* value of the clause is not encodable: see the module doc of
+/// `prob_world.rs`.)
+#[trace("TC-624", "FR-189-AC-15")]
+#[test]
+fn a_quantity_reward_is_measured_by_its_magnitude_in_the_threshold_unit() {
+    let claims = "dimension Time;\nunit ms : Time = rational(1, 1);\n\
+         reward latency on Server::attempt = 1 ms;\n\
+         probabilistic Lat using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.5 of (accumulate latency from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 3 ms }\n";
+    let world = World::new(&prob_world::service(claims));
+    let verdict = decided(&world, "Lat", StatisticalMethod::Okamoto);
+    assert_eq!(
+        verdict.quantile,
+        Some(MeasureValue::Value(ratio(1, 1))),
+        "{verdict:?}"
+    );
+}
+
 /// Checks FR-189-AC-4 (TC-624 step 4), the activation clause: over a
 /// `Service` whose `request` starts the server with probability `1/2`, an
 /// Okamoto `P95` counts only activated samples, `23,026` of them, and draws
@@ -467,7 +490,7 @@ fn exact_only_claims_are_refused_before_any_sample() {
 /// `Health` whose `tick` sets `healthy` to a fair coin, a long-run fraction
 /// is decided by the regenerative method, which keeps no witness
 /// (FR-193-AC-3's `LongRun` clause).
-#[trace("TC-624", "TC-625")]
+#[trace("TC-624", "TC-625", "TC-627", "FR-192-AC-6")]
 #[test]
 fn fractions_are_decided_over_the_models_behaviours() {
     let mean = "probabilistic Mean using ev on M over (s: M::Server) under Steady on origin \
@@ -478,6 +501,8 @@ fn fractions_are_decided_over_the_models_behaviours() {
     assert_eq!(mean.decision, Decision::Accepted);
     // `N = ⌈ln 10 / (2 · 1/100)⌉`.
     assert_eq!(mean.tests[0].samples, 116);
+    // FR-192-AC-6: a mean of a fraction carries no `quantile`.
+    assert_eq!(mean.quantile, None);
     let healthy = "probabilistic Up using ev on M over (n: M::Node) under Steady on origin \
          with alpha 0.1, beta 0.1, indifference 0.1 \
          { long_run_fraction holds(n.healthy) >= 0.3 }";
@@ -501,6 +526,8 @@ fn fractions_are_decided_over_the_models_behaviours() {
     );
     assert!(long_run.tests[0].samples >= 10, "min_cycles cycles closed");
     assert!(long_run.witnesses.is_empty());
+    // FR-192-AC-6: a long-run fraction carries no `quantile`.
+    assert_eq!(long_run.quantile, None);
 }
 
 /// A declaration that the servers `a` and `b` of `Service` are interchangeable.

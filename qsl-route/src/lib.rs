@@ -496,22 +496,12 @@ impl BackendDescriptor {
     /// for the other), and an absent or unknown item evidence matches no
     /// backend (FR-075-AC-13); any other kind ignores evidence.
     fn serves_evidence(&self, kind: Capability, evidence: &ItemEvidence) -> bool {
-        match kind {
-            Capability::ProbabilisticSatisfaction => match evidence {
-                ItemEvidence::Kind(wanted) => self.evidence_kinds.contains(wanted),
-                ItemEvidence::Absent | ItemEvidence::Unknown(_) => false,
-            },
-            Capability::ValueValidity
-            | Capability::OperationContract
-            | Capability::FiniteReplay
-            | Capability::TemporalSatisfaction
-            | Capability::GlobalConformance
-            | Capability::Monitorability
-            | Capability::LocalProjection
-            | Capability::Refinement
-            | Capability::Realizability
-            | Capability::Composition
-            | Capability::Schedulability => true,
+        if !matches!(kind, Capability::ProbabilisticSatisfaction) {
+            return true;
+        }
+        match evidence {
+            ItemEvidence::Kind(wanted) => self.evidence_kinds.contains(wanted),
+            ItemEvidence::Absent | ItemEvidence::Unknown(_) => false,
         }
     }
 
@@ -948,8 +938,9 @@ impl Registry {
     ///   the identity's recorded conflict digests, and `held` is left
     ///   untouched (it already holds nothing for this identity).
     /// - When the identity is held with an equal descriptor (same identity,
-    ///   manifest digest, advertised pairs and fairness kinds), the repeat is one
-    ///   registration and is not refused (FR-290-AC-9).
+    ///   manifest digest, origin, advertised pairs, `domains`, fairness kinds,
+    ///   memory models and evidence kinds), the repeat is one registration and
+    ///   is not refused (FR-290-AC-9).
     /// - When the identity is held with a descriptor that differs in any
     ///   member, the two conflict: the held registration is withdrawn, both
     ///   registrations' manifest digests are recorded, and every refusal
@@ -1096,8 +1087,11 @@ impl Registry {
     /// its evidence-kind set contains the item's exact evidence kind, so
     /// `statistical` never stands for `exact` or the reverse. An absent or
     /// unknown `evidence` gives no candidate and is preserved on the set
-    /// ([`CandidateSet::evidence`]). A `kind` other than
-    /// `probabilistic-satisfaction` matches by kind alone.
+    /// ([`CandidateSet::evidence`]). This entry applies neither the fairness
+    /// nor the memory-model filter, which a probabilistic item has none of: a
+    /// `temporal-satisfaction` item goes through
+    /// [`Self::candidates_for_models`], and any other `kind` here matches by
+    /// kind alone.
     pub fn candidates_for_evidence(
         &self,
         kind: Capability,

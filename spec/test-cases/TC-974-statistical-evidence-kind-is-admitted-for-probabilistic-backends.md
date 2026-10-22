@@ -16,7 +16,7 @@ kind and that descriptor admission retains it. Scope: FR-075-AC-10.
 ## Test Procedure
 
 Pass a descriptor advertising `probabilistic-satisfaction` and the singleton
-evidence-kind set `{statistical}` to `BackendDescriptor::admit`; inspect the
+evidence-kind set `{statistical}` to `descriptor_from_manifest`; inspect the
 admitted descriptor.
 
 ## Expected Results

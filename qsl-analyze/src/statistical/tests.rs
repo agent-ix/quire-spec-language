@@ -2331,6 +2331,81 @@ fn the_verdict_carries_the_least_favourable_tests_quantile() {
     assert_eq!(verdict.quantile, None);
 }
 
+/// A stub for `m = 2` tests of a `>= 3` quantile claim: test `j` draws a
+/// measure below 3 on its first `below[j]` samples and 4 after, so its
+/// estimate of `Pr(M < 3 | activated)` is `below[j] / N`.
+struct BelowThree {
+    event: MeasureEvent,
+    below: [u64; 2],
+}
+
+impl ClaimSampler for BelowThree {
+    type Walk = UndefinedWalk;
+
+    fn read(&mut self, _test: &TestSubject, _seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+        let (index, test) = (trace / 2, usize::try_from(trace % 2).unwrap_or(0));
+        let value = MeasureValue::Value(ratio(if index < self.below[test] { 2 } else { 4 }, 1));
+        Ok(Sample::Measured {
+            holds: self.event.holds(&value),
+            value,
+        })
+    }
+
+    fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> UndefinedWalk {
+        UndefinedWalk
+    }
+}
+
+/// FR-192-AC-6: for `quantile 1/2 of (M) >= 3` over two tests whose
+/// estimates of `Pr(M < 3 | activated)` are `2/5` and `9/20`, the verdict's
+/// `estimate` is `9/20`.
+#[trace("TC-627", "FR-192-AC-6")]
+#[test]
+fn an_at_least_quantile_claims_estimate_is_its_strict_probability() {
+    let (event, bound) = reduce_quantile(ratio(1, 2), QuantileComparison::AtLeast, int(3));
+    // `m = 2`: `α' = 21/100`, `ι = 1/5` give `N = ⌈ln(100/21) / (2/25)⌉ = 20`.
+    let confidence =
+        Confidence::new(ratio(21, 50), ratio(21, 50), ratio(1, 5)).expect("confidence");
+    let claim = StatisticalClaim::new(ClaimForm::Quantile, bound, confidence).expect("claim");
+    let tests = [
+        TestSubject {
+            initial: 0,
+            binding: None,
+        },
+        TestSubject {
+            initial: 1,
+            binding: None,
+        },
+    ];
+    let reference = sampler_ref();
+    let verdict = completed(run(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &reference),
+        &mut BelowThree {
+            event,
+            below: [8, 9],
+        },
+    ));
+    assert_eq!(verdict.tests[0].estimate, Some(ratio(2, 5)));
+    assert_eq!(verdict.tests[1].estimate, Some(ratio(9, 20)));
+    assert_eq!(verdict.estimate, Some(ratio(9, 20)));
+}
+
+/// FR-192-AC-6: the verdict copies the least favourable test's `quantile`;
+/// when that test has no estimate (and so no quantile) the verdict carries
+/// none, even beside a test that has one.
+#[trace("TC-627", "FR-192-AC-6")]
+#[test]
+fn a_least_favourable_test_without_an_estimate_gives_no_quantile() {
+    let (_, bound) = reduce_quantile(ratio(1, 2), QuantileComparison::AtMost, int(3));
+    let mut with_quantile = finished(0, Decision::Accepted, Some(ratio(3, 5)));
+    with_quantile.quantile = Some(MeasureValue::Value(ratio(2, 1)));
+    let without = finished(1, Decision::Accepted, None);
+    let tests = [with_quantile, without];
+    let chosen = least_favourable(&tests, bound.comparison).expect("a test");
+    assert_eq!(chosen.index, 1);
+    assert_eq!(chosen.quantile, None);
+}
+
 /// A tally of `values` and `censored` censored measures.
 fn tally_of(values: &[i64], censored: u64) -> Tally {
     let mut tally = Tally::new();
