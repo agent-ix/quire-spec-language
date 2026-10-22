@@ -32,3 +32,9 @@ Examined units:
 ## Verdict
 
 Changes requested for FND-001. The edited table, IR-269 reachability, and S1/S4/S6 ordering otherwise match the measured structured relations. This review covers the Markdown diff and the directly conflicting existing decision only.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | At PR head 6afd1149f, the Decisions text now says IR-586 can proceed after STD-297 independently of IR-583 and IR-590 waits for S1-S5 plus IR-583. This matches the measured incoming Linear edges. |
