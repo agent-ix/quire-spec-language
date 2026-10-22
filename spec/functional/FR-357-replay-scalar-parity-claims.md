@@ -33,7 +33,7 @@ request the default refuses (TC-904).
 - Operator level: the original proving context as an FR-071 replay request
   (the call site's `package_id`, package reference, dependencies and byte
   provision; the enclosing function, which may be non-`Boolean`, as its
-  `selected_function`; the opaque `ObligationIdentity` the caller minted from
+  `function` replay target (QSpec FR-323); the opaque `ObligationIdentity` the caller minted from
   the owning obligation's preimage as its `obligation_identity`, which QSL
   recomputes and checks; its `source` is not read); the
   scalar node the catalog operator is tied to, with its occurrence key and the
@@ -71,7 +71,8 @@ request the default refuses (TC-904).
 - The operator entry SHALL recompile the context's source by FR-098's
   rules and require the recompiled `package_id` to equal the request's; a
   mismatch refuses `PackageIdMismatch` (`stale_dependency`/`content-mismatch`).
-  It SHALL resolve `selected_function` in the recompiled package (a name the
+  A request whose replay target is not `function` SHALL refuse as FR-098
+  does. It SHALL resolve the `function` replay target in the recompiled package (a name the
   package does not declare refuses `UnknownFunction`,
   `missing_declaration`/`missing-name`), and SHALL require the claim's scalar
   node to be a node of the package, to lie in that function's body, and to be

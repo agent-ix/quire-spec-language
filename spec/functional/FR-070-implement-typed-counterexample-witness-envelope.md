@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-069
     type: traces_to
+  - target: ix://agent-ix/quire-specification/FR-323
+    type: depends_on
 ---
 # FR-070: Implement the typed counterexample/witness envelope
 
@@ -26,8 +28,11 @@ AD-016 Replay-ownership row's five `Witness` fields collapse to this one
 stored field plus four derived ones).
 
 The envelope carries, for deterministic replay, every ADR-013 O-25 member:
-the obligation identity and clause occurrence key; the selected function's
-`QualifiedName`; the `package_id` and `RawSourceRef`
+the obligation identity and clause occurrence key; the replay target, exactly
+one QSpec FR-323 replay target member, typed as FR-323 types that member (a
+function packet's `function`, the selected function's `QualifiedName`; a
+frame packet's `frame_operation`, `{object, operation}`; a state-clause
+packet's `state_clause`, the clause's own declared `QualifiedName`); the `package_id` and `RawSourceRef`
 digests of the package the harness was generated from; the semantic profile
 selections; the `run_limits` and declared domains; the `backend` member
 (O-19); the trace position where the family has one; and the `ReplaySource`
@@ -72,6 +77,12 @@ admits union arguments (QSL-503).
   and `Canonical` as a witness value text (below). It SHALL return one
   `WitnessValue` per binding, in binding order, or one `DecodeRefusal`
   with no partial result.
+- Reconstruction SHALL refuse a packet that carries no replay target member
+  with `WitnessRefusal::MissingMember("replay_target")`, and one that carries
+  more than one with `WitnessRefusal::ConflictingTarget` naming the members
+  it carries, and SHALL build no envelope in either case. No target is
+  defaulted, inferred from the payload or taken from a `selected_function`
+  member, which the packet does not have.
 - Envelope construction SHALL refuse a transcript that is not the exact,
   single, trimmed assertion block `Witness::parse` selects (a cover
   transcript, an untrimmed transcript, or a transcript with zero or more
@@ -258,6 +269,7 @@ length of its escaped value text.
 | FR-070-AC-15 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: `{"kind":"string"}` and `{"kind":"string","nanoseconds":"0"}` (a missing member); `{"extra":"y","kind":"string","text":"x"}` (an extra member); `{"kind":"string","text":5}` and `{"kind":"string","text":null}` (a payload that is not a JSON string); `{"kind":"String","text":"x"}` and `{"kind":"blob","text":"x"}` (a `kind` outside the three); `{"text":"x","kind":"string"}` (members out of JCS order); a String whose JSON text writes U+00E9 as the escape `\u00e9` where JCS writes the literal scalar; a String whose JSON text holds the lone surrogate escape `\ud800`; and a raw `%` that does not begin one of the four escapes inside a String. | Test (TC-905) |
 | FR-070-AC-16 | A `Canonical` entry holding the reference `{"identity":"61","object_type":"<64 hex>","type":"reference","universe":"<64 hex>"}` decodes to one `WitnessValue::Reference` carrying the universe, the object type and the identity bytes `61`; the same entry with the empty `identity` `""` decodes too (FR-098 refuses it at conversion, not decode). | Test (TC-1042) |
 | FR-070-AC-17 | Each of these reference entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: a `universe` of 63 hex digits; an `object_type` written with an uppercase hex digit; an `identity` of odd length; an entry written `{"type":"reference","universe":...,"object_type":...,"identity":...}` (members in the table's reading order, not JCS order); a missing `identity`; an extra member; and a `universe` that is a JSON number. | Test (TC-1042) |
+| FR-070-AC-18 | A function packet carrying `function`, a frame packet carrying `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) and a state-clause packet carrying `state_clause` (`VersionUnchanged`) each reconstruct, and the envelope returns that one target unchanged through a construct → serialize → read round trip. The same packets with the target removed refuse `WitnessRefusal::MissingMember("replay_target")`; a packet carrying `function` and `frame_operation` refuses `WitnessRefusal::ConflictingTarget` naming those two, and one carrying `function` and `state_clause` naming those two; the two refusals are distinct variants and neither builds an envelope, though every other member is present. The envelope type has no `selected_function` member. | Test (TC-183) |
 
 ## Dependencies
 
