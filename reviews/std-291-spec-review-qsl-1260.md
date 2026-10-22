@@ -40,3 +40,12 @@ The `code-review` method was skipped: the diff holds no code.
 ## Verdict
 
 The QSL text is consistent with FR-477 and with the FR-361/FR-362 refusal changes. It is not mergeable until #377's FND-001 is settled and FND-001 here is updated to match. Merge #377 first, then this PR (with main merged in).
+
+## Dispositions
+
+Head 7f8f6fbe2. Main has one commit not on the head (6fb751a31); `git merge-tree` is clean. The fix round adds no new finding.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-180's S4 bullet and AC-4 require distinct per-execution binders (`x` at 0 and 1, `y` at 2 and 3) and body reads through them, so an emitter that shares binders fails; TC-1143 step 1 compares the binder nodes. This agrees with QSpec FR-477 at 2ea9d5a7e and with QSL FR-092's positional levels. |
+| FND-002 | fixed | FR-180 and TC-1143 step 2 feed TC-962's RN-07 to RN-12 and RN-14 to the I2 reader, re-keying each edit. |
