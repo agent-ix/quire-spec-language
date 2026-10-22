@@ -516,6 +516,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         "arch-lint-canonical-encoder",
         "arch-lint-api-surface-qsl",
         "arch-lint-qualified-core",
+        "build-no-std",
     ];
     let overrides: Vec<&str> = other_checks
         .iter()

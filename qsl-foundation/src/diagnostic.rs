@@ -3,7 +3,10 @@
 //!
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
-use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToString, vec::Vec};
+use alloc::{
+    borrow::ToOwned, boxed::Box, collections::BTreeMap, format, string::String, string::ToString,
+    vec::Vec,
+};
 
 mod budget;
 mod locus;
@@ -11,8 +14,6 @@ mod stage;
 pub use budget::{BudgetDenial, BudgetOwner, DeniedCharge};
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
-
-use alloc::collections::BTreeMap;
 
 /// Native processing phase; successful syntax does not imply later execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1336,7 +1337,7 @@ pub struct UndefinedRecord {
     pub reason: UndefinedReason,
     /// The catalog's structured payload for `reason`, keyed by the
     /// catalog's own field names.
-    pub fields: alloc::collections::BTreeMap<&'static str, String>,
+    pub fields: BTreeMap<&'static str, String>,
 }
 
 #[cfg(test)]

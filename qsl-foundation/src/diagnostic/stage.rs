@@ -10,7 +10,7 @@
 //! `quire.native.diagnostics/v1`. It carries the T-5 [`Locus`] where the limit was reached, absent
 //! only where FR-096 says no producer can know one.
 
-use alloc::{borrow::ToOwned, boxed::Box, string::String, string::ToString};
+use alloc::{borrow::ToOwned, boxed::Box, collections::BTreeMap, string::String, string::ToString};
 use quire_exact::CancelCause;
 
 use super::{CatalogCode, CatalogCoded, Category, Code, InternalFault, Locus};
@@ -174,8 +174,8 @@ impl CatalogCoded for LimitExceeded {
     /// The catalog row's payload: the exceeded limit kind (its cause tag),
     /// the configured bound, the actual counter and the setting that raises
     /// the limit (FR-096, FR-255). Its position is its locus.
-    fn catalog_fields(&self) -> Option<alloc::collections::BTreeMap<&'static str, String>> {
-        Some(alloc::collections::BTreeMap::from([
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([
             ("kind", self.kind().catalog_cause().to_owned()),
             ("bound", self.configured_bound.to_string()),
             ("actual", self.actual.to_string()),
@@ -210,7 +210,9 @@ impl core::fmt::Display for LimitExceeded {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{borrow::ToOwned, string::String, string::ToString, vec::Vec};
+    use alloc::{
+        borrow::ToOwned, collections::BTreeMap, string::String, string::ToString, vec::Vec,
+    };
     use ix_trace_rs::trace;
 
     use quire_exact::CancelCause;
@@ -228,7 +230,7 @@ mod tests {
             CatalogCode::new(self.0, "cause")
         }
 
-        fn catalog_fields(&self) -> Option<alloc::collections::BTreeMap<&'static str, String>> {
+        fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
             None
         }
     }

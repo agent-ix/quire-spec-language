@@ -609,7 +609,6 @@ impl TimedIntervalKey {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
     /// FR-097-AC-9: a proof bound exists only with the kind its variant
     /// pairs with; `None` is for a `Variants` bound alone.
     #[trace("TC-436", "FR-097-AC-9")]
@@ -676,6 +675,7 @@ mod tests {
     }
 
     use super::*;
+    use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
     use ix_trace_rs::trace;
 
     fn node(fill: u8) -> WireNodeId {
