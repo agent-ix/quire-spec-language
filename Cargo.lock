@@ -1463,7 +1463,6 @@ dependencies = [
  "quire-contract-model",
  "quire-exact",
  "quire-semantic-value",
- "serde",
  "serde_json",
  "sha2",
  "thiserror",

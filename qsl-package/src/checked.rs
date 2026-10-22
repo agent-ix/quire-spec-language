@@ -212,7 +212,7 @@ impl ResolvedDependency {
 /// How a selection's first dependency path reaches its library.
 // Only `link_with` builds a selection, so without `std` no variant is
 // constructed; the type stays because `ResolvedDependency` is public.
-#[cfg_attr(not(feature = "std"), allow(dead_code))]
+#[cfg_attr(not(feature = "std"), expect(dead_code))]
 #[derive(Clone)]
 enum DependencyPath {
     /// The linking package imports the library itself.

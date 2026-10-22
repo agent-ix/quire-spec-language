@@ -12,7 +12,14 @@ description = "ADR-011 §6.1 layer 4: the S4 checked-package typestate, the quir
 # and keeps the in-memory checked-IR path; the v2 wire (emitter, I2 reader,
 # `link_with`) needs `quire-contract-model` and is behind `std`.
 default = ["std"]
-std = ["dep:quire-contract-model", "serde/std", "thiserror/std"]
+std = [
+    "dep:quire-contract-model",
+    "dep:quire-canonical",
+    "dep:quire-exact",
+    "dep:thiserror",
+    "qsl-foundation/std",
+    "thiserror/std",
+]
 # `emit_checked_with_fault` and `checked_node_id_of`, the FR-105-AC-6
 # fault-injection seam, are public only under `test-support` (the same
 # pattern qsl-semantics uses, see its Cargo.toml), so a dependent crate's own
@@ -35,20 +42,17 @@ qsl-foundation = { path = "../qsl-foundation", default-features = false }
 qsl-semantics = { path = "../qsl-semantics" }
 # K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`
 # (ADR-013 O-07).
-quire-exact = { workspace = true }
+quire-exact = { workspace = true, optional = true }
 # The v2 wire vocabulary: the identity-preimage types the emitter builds and
 # IR's `checked_package` v2 reader the I2 byte reader delegates to.
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main", optional = true }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation; the
 # `package_id` preimage encodes through it.
-quire-canonical = { workspace = true }
+quire-canonical = { workspace = true, optional = true }
 # ADR-011 §6.1 layer SV: the expression `Location` and the `CheckingLimits`
 # the emitter reads, and the `UnitTable` the emitter's tests build.
 quire-semantic-value = { workspace = true }
-# The emitter writes its wire envelope as a `Serialize` struct over IR's
-# types; it encodes through `quire-canonical` only.
-serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
-thiserror = { version = "2.0.20", default-features = false }
+thiserror = { version = "2.0.20", default-features = false, optional = true }
 
 [dev-dependencies]
 # The emitter's tests build a one-function `PackageDeclarations`, whose

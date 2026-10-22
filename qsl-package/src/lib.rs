@@ -168,5 +168,4 @@ pub use emit::{checked_node_id_of, emit_checked_with_fault};
 /// ```
 ///
 #[cfg(not(feature = "std"))]
-#[allow(dead_code)] // carries the compile-fail docs above; nothing calls it
 mod behind_std {}

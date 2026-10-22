@@ -398,7 +398,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // I2 reader keys the v2 source map by, ADR-013 O-07),
             // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
             // RFC 8785 encoder, for the `package_id` preimage),
-            // `serde` (the emitter's wire envelope) and `thiserror`.
+            // and `thiserror`; the last three and `quire-exact` are optional,
+            // enabled by `std` (NFR-015).
             // `serde_json` and `sha2` are used by its tests only. `ix-trace-rs`
             // (ADR-012 section 9) owns the `#[string_edge]` marker and is
             // exempt from the layer order below (FR-064): it is a
@@ -416,7 +417,6 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "quire-contract-model",
                     "quire-exact",
                     "quire-semantic-value",
-                    "serde",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"

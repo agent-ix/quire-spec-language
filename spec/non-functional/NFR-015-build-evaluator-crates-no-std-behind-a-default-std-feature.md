@@ -113,7 +113,7 @@ feature unification would turn it back on.
 | Crate | Slice | Tier | Normal dependencies with `std` disabled | Behind `std` | Closure-tier condition |
 | --- | --- | --- | --- | --- | --- |
 | `qsl-foundation` | S3 (IR-587) | closure | `quire-exact` (no features; `#![no_std]`), `quire-semantic-value` (`#![no_std]`; from ADR-011 X-13 or X-14, whichever lands first), `serde` with `derive` and `alloc`, `sha2`, `thiserror`, each with default features off; the `ix-trace-rs` proc macro, which runs on the host | no item: every `std::` path the crate uses (`cmp`, `fmt`, `str`, `hash`, `marker`, `num`, `iter`, `slice`, `error::Error`, `collections::{BTreeMap, BTreeSet, btree_map}`, `sync::Arc`) has a `core::` or `alloc::` equivalent on this target | holds: every dependency listed is `no_std`-capable |
-| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-exact`, `quire-semantic-value`, `quire-canonical` (without `std` in the workspace table), `serde`, `thiserror`, and `ix-trace-rs` | `quire-contract-model` (optional, enabled by `std`) and the items listed in "`qsl-package` surface with `std` disabled" | none in AD-001's slices: `qsl-package` stays crate tier. The evaluator path is `quire-eval`, `quire-checked` and the foundation items moved to SV (FR-403), so no slice makes `qsl-semantics`, `qsl-forms` or `qsl-cst` build with `std` disabled |
+| `qsl-package` | S5 (IR-589) | crate | `qsl-foundation` with default features off, `qsl-semantics`, `quire-checked` with default features off (from FR-400's X-13), `quire-semantic-value` and `ix-trace-rs` | `quire-contract-model`, `quire-canonical` (without `std` in the workspace table), `quire-exact` and `thiserror`, each optional and enabled by `std` because only `std` items use them (`serde` is not a dependency: nothing in the crate uses it), and the items listed in "`qsl-package` surface with `std` disabled" | none in AD-001's slices: `qsl-package` stays crate tier. The evaluator path is `quire-eval`, `quire-checked` and the foundation items moved to SV (FR-403), so no slice makes `qsl-semantics`, `qsl-forms` or `qsl-cst` build with `std` disabled |
 
 `qsl-semantics` and `qsl-eval` have no row. The `no_std` evaluator is
 `quire-eval`'s (S6, IR-590, FR-403), gated in its own repository. S4
@@ -185,7 +185,9 @@ The `make` target `build-no-std` runs, for each row, its tier's command and
 in a target directory of its own (`$CARGO_TARGET_DIR/no-std`, else
 `target/no-std`, so it reuses no other lane's artifacts, NFR-013). The
 Makefile's `CI_CHECKS` lists it, so `make ci` runs it. It needs no network
-and no tool beyond the pinned toolchain.
+and no tool beyond the pinned toolchain. For `qsl-package` it also runs
+`cargo test --locked -p qsl-package --no-default-features`, the only run of the
+std-disabled surface tests and the compile-fail cases of AC-5 (NFR-015-AC-8).
 
 ## Rationale
 
@@ -225,7 +227,7 @@ ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
 | NFR-015-AC-5 | With `std` disabled, every export in the "With `std` disabled" column of the `qsl-package` surface table resolves, and every export in its "Behind `std`" column does not. | Test (TC-1111) |
 | NFR-015-AC-6 | With default features, the `quire.checked-package/v2` bytes and `package_id` that `qsl-package` emits match the QSpec FR-322 conformance vectors (`cargo test -p qsl-package --lib checked_v2` against `QSPEC_DIR`), and the FR-091 S1-to-S4 round trip passes. | Test (TC-1111) |
 | NFR-015-AC-7 | With `std` disabled, no shipped source of a crate in the per-crate table names `serde_json`, `HashMap` or `HashSet`, and the `arch-lint canonical-encoder` check passes. | Inspection (TC-1111) |
-| NFR-015-AC-8 | `make build-no-std` runs AC-1's build for each closure-tier row and AC-4's host check for each crate-tier row, each with `-p`, plus `cargo clippy --no-default-features -D warnings` per row, in its own `no-std` target directory, and `build-no-std` is listed in the Makefile's `CI_CHECKS`; a shipped `std::` path added to a closure-tier crate outside `#[cfg(feature = "std")]` makes the target fail. | Test (TC-1110) |
+| NFR-015-AC-8 | `make build-no-std` runs AC-1's build for each closure-tier row and AC-4's host check for each crate-tier row, each with `-p`, plus `cargo clippy --no-default-features -D warnings` per row, `cargo test --no-default-features` for `qsl-package` (AC-5's evidence), in its own `no-std` target directory, and `build-no-std` is listed in the Makefile's `CI_CHECKS`; a shipped `std::` path added to a closure-tier crate outside `#[cfg(feature = "std")]` makes the target fail. | Test (TC-1110) |
 | NFR-015-AC-9 | With default features, after `emit_checked` records an emission, `bind_abstraction` with valid bindings leaves `emitted_package_id` `None`. | Test (TC-1111) |
 
 ## Verification

@@ -1398,7 +1398,7 @@ fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
 ///
 /// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
 /// requires it. Nothing of QSpec is copied into this repository.
-#[trace("TC-421", "FR-095-AC-3")]
+#[trace("TC-421", "FR-095-AC-3", "TC-1111", "NFR-015-AC-6")]
 #[test]
 fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
     let Some((_, paths)) = qspec_v2_fixtures() else {
@@ -1550,7 +1550,7 @@ fn qspec_union_value_application_keys_are_admitted_by_i2() {
 ///
 /// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
 /// requires it. Nothing of QSpec is copied into this repository.
-#[trace("TC-253", "FR-087-AC-3")]
+#[trace("TC-253", "FR-087-AC-3", "TC-1111", "NFR-015-AC-6")]
 #[test]
 fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
     let Some((directory, paths)) = qspec_v2_fixtures() else {

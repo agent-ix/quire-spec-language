@@ -53,9 +53,9 @@ fn bind_abstraction_with_no_bindings_gives_the_package_a_relation() {
 
 #[trace("TC-1111", "NFR-015-AC-5")]
 #[test]
-fn export_bindings_answers_each_requested_item_in_order() {
+fn export_surface_resolves_without_std() {
     let package = CheckedPackage::link(empty_graph());
     let none: Vec<Result<BoundItem, ExportRefusal>> = export_bindings(&package, &[]);
     assert!(none.is_empty());
-    let _: Option<UnboundElement> = None;
+    let _: Option<UnboundElement> = None; // the type resolves
 }
