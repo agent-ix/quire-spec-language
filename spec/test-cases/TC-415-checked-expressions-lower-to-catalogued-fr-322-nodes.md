@@ -26,7 +26,8 @@ walk that runs a recursive composite past its first reentry, and an
 optional field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-AC-10,
-FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-CON-1.
+FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-AC-31,
+FR-093-AC-32, FR-093-CON-1.
 
 ## Test Procedure
 
@@ -103,6 +104,10 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     `x * 2`, `-5`, `x == 1`, `2 * (x + 1)`, `x > 0` and `a == true`, over
     `x: Integer` check `x == 1` and `1 != x`, and check the function whose
     body is `1`.
+13. Lower the converted equalities of FR-093-AC-31, read the convert and
+    equality nodes and their argument positions, read each package back
+    through IR's v2 reader, and evaluate each equality. Check the guards of
+    FR-093-AC-32.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
@@ -158,3 +163,7 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   application of the literal's node, a `graph_child` operand under
   FR-358 step 6; `x > 0` and `a == true` reference
   their literal nodes; the body `1` gives L6.
+- Step 13: each converted equality lowers a convert node and the equality of
+  the converted type with the convert node at the converted operand's
+  position, each package reads back Verified, and each evaluation equals the
+  comparison of the converted values. The conversion guards check.

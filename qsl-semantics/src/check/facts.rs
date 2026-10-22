@@ -634,6 +634,27 @@ impl<'a> Definedness<'a> {
         Some(Rc::new(facts))
     }
 
+    /// `node` read through a chain of `convert<..>` forms down to an
+    /// integer-typed operand, when `node` is itself integer-typed. A
+    /// `ConvertScalar` is exact wherever it is defined (a rounding
+    /// conversion is a `ConvertDecimal`), so such a chain denotes the same
+    /// integer as its innermost operand. A chain whose end is not an
+    /// integer has no integer subject and is left as it is.
+    fn through_conversion(node: CheckedNode<'_>) -> CheckedNode<'_> {
+        if !is_integer(node) {
+            return node;
+        }
+        let mut inner = node;
+        while let NodeKind::ConvertScalar(_, operand) = inner.kind() {
+            inner = inner.at(*operand);
+        }
+        if is_integer(inner) {
+            inner
+        } else {
+            node
+        }
+    }
+
     fn comparison(
         &self,
         left: CheckedNode<'_>,
@@ -641,6 +662,10 @@ impl<'a> Definedness<'a> {
         relation: Relation,
         facts: &Rc<Facts>,
     ) -> Outcomes {
+        let (left, right) = (
+            Self::through_conversion(left),
+            Self::through_conversion(right),
+        );
         let (subject, relation, literal) = match (Self::literal(left), Self::literal(right)) {
             (None, Some(literal)) => (left, relation, literal),
             (Some(literal), None) => (right, relation.flipped(), literal),

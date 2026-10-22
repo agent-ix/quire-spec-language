@@ -2807,3 +2807,51 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
     );
 }
+
+/// FR-093-AC-31: a converted equality operand is checked as its own typed
+/// conversion node, so evaluation converts it once and compares the
+/// converted values: `=` and `!=`, the converted operand on either side,
+/// equal and unequal values, across the numeric families.
+#[trace("FR-093-AC-31", "TC-415")]
+#[test]
+fn a_converted_equality_operand_is_converted_once_and_compared() {
+    let package = plain_package();
+    let dec = decimal_type(-1000, 1000, 0, 2);
+    let rat = rational_type(-100, 100, 1, 1);
+    let wide = int_type(-200, 200);
+    let source = int_type(-100, 100);
+    let convert = |target: &ValueType| {
+        Expression::convert(crate::support::type_form::type_form(target), operand("a"))
+    };
+    // (peer type, peer equal to 3, peer not equal to 3)
+    let peers = [
+        (dec.clone(), decimal(300, 2), decimal(301, 2)),
+        (rat.clone(), rational(3, 1), rational(4, 1)),
+        (wide.clone(), int(3), int(4)),
+    ];
+    for (peer_type, same, other) in peers {
+        let parameters = [("a", source.clone()), ("b", peer_type.clone())];
+        for operator in [BinaryOperator::Equal, BinaryOperator::NotEqual] {
+            for converted_first in [true, false] {
+                let (left, right) = if converted_first {
+                    (convert(&peer_type), operand("b"))
+                } else {
+                    (operand("b"), convert(&peer_type))
+                };
+                let expression = Expression::binary(operator, left, right);
+                for (peer, equal) in [(&same, true), (&other, false)] {
+                    let (outcome, _, _) = run_in_losses(
+                        &package,
+                        &parameters,
+                        &expression,
+                        None,
+                        vec![int(3), peer.clone()],
+                        UNLIMITED,
+                    );
+                    let expected = equal == (operator == BinaryOperator::Equal);
+                    completed_as(&outcome, &Value::Boolean(expected));
+                }
+            }
+        }
+    }
+}
