@@ -49,9 +49,11 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
 9. K2 with a record value type `Pair` given an optional `Reference<Order>`
    field `buddy` and the invariant `Peer`
    (`present(self.buddy) implies value(self.buddy).total.amount_minor >= 0`).
-10. Step 9's `Pair` with `Peer` reading through the one-level call
-    `total_of`, then through the two-level call `checked`, then calling only
-    `linked` (FR-366-AC-10).
+10. Step 9's `Pair`, compiled in a unit that also declares the `pure`
+    functions `total_of`, `checked`, `linked`, `same` and `wrap` of
+    FR-366-AC-10, with `Peer` reading through each of them in turn; then, in
+    a unit selecting `quire.state.queries/v1`, through the named predicate
+    `positive` (FR-366-AC-10).
 
 ## Expected Results
 
@@ -76,7 +78,7 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
 8. The refusal of `NonNegative` is located at `TypeDefinition.clauses[1]`.
 9. The compile refuses `unsupported_construct`/`expression-form` naming
    `ix://test/orders/Pair/Peer` at `TypeDefinition.clauses[0]`.
-10. The one-level and two-level calls each refuse
+10. The `total_of`, `checked` and `positive` compiles each refuse
     `unsupported_construct`/`expression-form` naming
-    `ix://test/orders/Pair/Peer` at `TypeDefinition.clauses[0]`; the `linked`
-    compile succeeds.
+    `ix://test/orders/Pair/Peer` at `TypeDefinition.clauses[0]`; the
+    `linked`, `same` and `wrap` compiles succeed.
