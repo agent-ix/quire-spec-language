@@ -1059,9 +1059,6 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProbabilisticCause::DuplicateWorkload { workload, .. } => {
                     format!("{message}: a workload `{workload}` is already declared")
                 }
-                ProbabilisticCause::QuantityLiteral => {
-                    format!("{message}: a quantity literal is not emitted in this position yet")
-                }
                 ProbabilisticCause::UnresolvedSubject { claim, subject, .. } => format!(
                     "{message}: claim `{claim}` is over `{subject}`, which names no model"
                 ),
