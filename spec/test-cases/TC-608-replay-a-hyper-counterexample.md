@@ -23,7 +23,7 @@ Fixtures: the counterexamples of TC-601, TC-602, TC-603 and TC-604, and the edit
 3. Replay each FR-183-AC-3 edited envelope.
 4. Replay FR-183-AC-4's hand-built envelopes; §8.2's leaky one with `max_witness_set` 0; one envelope twice.
 5. Replay FR-178-AC-9's `Undefined` counterexample.
-6. Check FR-183-AC-8's matched and unmatched `MatchWitness`es, each twice.
+6. Check FR-183-AC-8's matched and unmatched `MatchWitness`es, each twice, and the witness whose instance key is outside the universe.
 
 Tag the tests `#[trace("TC-608", "FR-183-AC-n")]`.
 
@@ -34,4 +34,4 @@ Tag the tests `#[trace("TC-608", "FR-183-AC-n")]`.
 - Step 3: each refuses with no result.
 - Step 4: `inconclusive`, `Verdicts` for each hand-built envelope; the replay result stopped with `max_witness_set` and value 0; equal results.
 - Step 5: refused `unsupported_construct`/`not-yet-implemented`, no result.
-- Step 6: `Accepted`, the body not evaluated; `Refused` with `invalid_runtime_input`/`invalid-value` at joint step 1; equal results.
+- Step 6: `Accepted`, the body not evaluated; `Refused` with `invalid_runtime_input`/`invalid-value` at joint step 1; equal results; `Refused` with `invalid_runtime_input`/`invalid-value` for the outside key before any re-execution.

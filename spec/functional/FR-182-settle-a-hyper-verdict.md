@@ -47,8 +47,9 @@ checker settles `proved` labelled `Uncertified` (ADR-023 HV-1, HX-7).
 A verification operator reads the result of a noninterference check. A
 proof says it covered every matched pair exhaustively, or under copy-swap.
 A refutation counts only after its tuple of traces replays. A clause whose
-match no pair of runs satisfies reads `inconclusive`, `VacuousMatch`, never
-`proved`, and a run that hit `max_witness_set` names that limit.
+match no pair of runs satisfies, or whose induction proof came with no
+replayed pair of runs that the match accepts, reads `inconclusive`,
+`VacuousMatch`, never `proved`, and a run that hit `max_witness_set` names that limit.
 
 ## Inputs
 
@@ -58,9 +59,9 @@ match no pair of runs satisfies reads `inconclusive`, `VacuousMatch`, never
   (FR-163).
 - For `Violated`: the FR-072 replay result of its `HyperCounterexample`
   (FR-183), or the `ReplayRefusal` that stopped it.
-- For an SMT `Inductive{depth}` outcome for HP-2: an optional
-  `MatchWitnessCheck` (FR-183), present when a non-vacuity witness came
-  with the outcome.
+- For an SMT `Inductive{depth}` outcome for HP-2: the outcome's instance,
+  and an optional `MatchWitnessCheck` with the `MatchWitness` it checked
+  (FR-183), present when a non-vacuity witness came with the outcome.
 - For an item negotiation did not route: its negotiation disposition.
 
 ## Outputs
@@ -68,7 +69,10 @@ match no pair of runs satisfies reads `inconclusive`, `VacuousMatch`, never
 ```rust
 // InconclusiveCause gains:
 //   MatchUndetermined,   // μ refused or incomplete at a reachable joint step
-//   VacuousMatch,        // non-empty μ_U that no fair universal tuple satisfies
+//   VacuousMatch,        // non-empty μ_U with no matched fair universal tuple
+//                        // established: EN-1 found none (ADR-023 HM-7), or an
+//                        // SMT induction proof came with no accepted match
+//                        // witness for its instance (FR-183)
 ```
 
 and the FR-331 terminal record with its QSpec FR-360 label,
@@ -82,11 +86,11 @@ FR-243 basis, O-16 category and method.
 | Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
 | V-1 | `Holds{Exhaustive}` or `Holds{Reduced{…}}` (copy-swap named, FR-174), proof basis `exhaustive` or `reduced` (QSpec FR-399), whose certificate check is `Accepted` | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}` or `Proved{basis: Reduced{…}, certification: Certified}` | success |
-| V-3 | SMT `k`-inductive for HP-2 with a safety body, every subject with an initial state, and an empty `μ_U` or an `Accepted` `MatchWitnessCheck` | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}, certification: Uncertified}` | success |
+| V-3 | SMT `k`-inductive for HP-2 with a safety body, every subject with an initial state, and an empty `μ_U` or an `Accepted` `MatchWitnessCheck` for the outcome's instance | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}, certification: Uncertified}` | success |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with an `Undefined` counterexample (QSpec FR-400) whose replay reproduces the undefined value at `trace_position` (FR-183) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
-| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `NoInstance` (an item with zero instances, FR-125), `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected{rule, at}`, ADR-018 PC-2); SMT `InductionNotClosed{depth}`; SMT `k`-inductive for HP-2 with a non-empty `μ_U` and no `Accepted` `MatchWitnessCheck` (`VacuousMatch`); `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `NoInstance` (an item with zero instances, FR-125), `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected{rule, at}`, ADR-018 PC-2); SMT `InductionNotClosed{depth}`; SMT `k`-inductive for HP-2 with a non-empty `μ_U` and no `Accepted` `MatchWitnessCheck` for the outcome's instance (`VacuousMatch`); `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | `Stopped(ResourceExhausted, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
 | V-7 | `Stopped(Cancelled, None)` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` (FR-127) | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
@@ -122,13 +126,17 @@ FR-243 basis, O-16 category and method.
   binds them as FR-172 states.
 - An SMT `Inductive{depth: k}` outcome for HP-2 SHALL settle V-3 only when
   every subject has an initial state and either `μ_U` is empty or its
-  `MatchWitnessCheck` is `Accepted`. FR-315's induction queries are also
+  `MatchWitnessCheck` is `Accepted` for a witness whose `instance` equals
+  the outcome's instance. FR-315's induction queries are also
   unsatisfiable when no fair tuple matches `μ_U`, and ADR-023 HM-7 settles
-  such a clause `VacuousMatch`, never `proved`.
-  - With a non-empty `μ_U` and no `Accepted` check, the outcome SHALL
-    settle V-6 `VacuousMatch`. A `Refused` check counts as none.
-  - Over a subject with no initial state, the outcome SHALL settle V-6
-    `NoInitialState` (FR-125).
+  such a clause `VacuousMatch`, never `proved`. The checks run in this
+  order:
+  - First, over a subject with no initial state, the outcome SHALL settle
+    V-6 `NoInitialState` (FR-125), whatever witness comes with it.
+  - Otherwise, with a non-empty `μ_U` and no `Accepted` check for the
+    outcome's instance, the outcome SHALL settle V-6 `VacuousMatch`: no
+    matched fair tuple has been established. A `Refused` check, or an
+    `Accepted` check of a witness for another instance, counts as none.
   - An empty `μ_U` needs no witness. A finite subject with an initial state
     has a fair behaviour under any fairness set (ADR-018 §4), and with no
     match constraint every tuple of fair behaviours is matched, so the
@@ -145,7 +153,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-5 | FR-179-AC-4's outcome settles `refuted`, `decisive-counterexample`, category violation, after FR-183 replay reproduces the undefined value at its tuple, with a record carrying `UndefinedEvaluation` naming that tuple, its two executions and the division-by-zero cause; it never settles `proved`. | Test (TC-610) |
 | FR-182-AC-6 | FR-179-AC-5's `Violated` outcome settles `refuted`, `decisive-counterexample`, after its `StepTuple` replays, with no `UndefinedEvaluation`: the false tuple is the first refuting evidence, ahead of the undefined tuples. | Test (TC-611) |
 | FR-182-AC-7 | §8.1's secure proof settles `proved`, certification `Certified`, after FR-163-AC-1's certificate is accepted; with FR-163-AC-2's member-removed certificate the item settles `inconclusive`, `CertificateRejected{Closure, …}`, never `proved`. An HP-2 `Inductive{depth: 1}` outcome from `k-induction`, with an empty `μ_U` or an `Accepted` `MatchWitnessCheck` (FR-182-AC-10), settles `proved`, `decisive-witness`, certification `Uncertified`. | Test (TC-607) |
-| FR-182-AC-10 | Over ADR-023 §8's secure vault, `NonInterference`'s `Inductive{depth: 1}` outcome with no `MatchWitnessCheck` settles `inconclusive`, `VacuousMatch`, never `proved`. With FR-183-AC-8's matched witness, whose check is `Accepted`, it settles `proved`, `decisive-witness`, `Uncertified`. With FR-183-AC-8's unmatched witness, whose check is `Refused`, it settles `inconclusive`, `VacuousMatch`. The one-variable clause `forall trace a of V { always holds(v.l @ a <= 1) }`, whose `μ_U` is empty, settles its `Inductive{depth: 1}` outcome `proved`, `Uncertified`, with no witness. `NonInterference` over the secure vault with an empty initial list settles `inconclusive`, `NoInitialState`, never `proved`, with or without a witness. | Test (TC-607) |
+| FR-182-AC-10 | Over ADR-023 §8's secure vault, `NonInterference`'s `Inductive{depth: 1}` outcome with no `MatchWitnessCheck` settles `inconclusive`, `VacuousMatch`, never `proved`. With FR-183-AC-8's matched witness, whose check is `Accepted`, it settles `proved`, `decisive-witness`, `Uncertified`. With FR-183-AC-8's unmatched witness, whose check is `Refused`, it settles `inconclusive`, `VacuousMatch`. Over a vault whose `vaults` universe is `{v, w}`, the outcome for instance `w` with the matched witness for instance `v`, whose check is `Accepted`, settles `inconclusive`, `VacuousMatch`. The one-variable clause `forall trace a of V { always holds(v.l @ a <= 1) }`, whose `μ_U` is empty, settles its `Inductive{depth: 1}` outcome `proved`, `Uncertified`, with no witness. `NonInterference` over the secure vault with an empty initial list settles `inconclusive`, `NoInitialState`, never `proved`, with or without a witness. | Test (TC-607) |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 | FR-182-AC-9 | ADR-023 §1's `NonInterference` over an empty `Vault` universe settles `inconclusive`, `NoInstance`, basis `unsettled`, before any state is explored, never `Proved` or `Refuted`; ADR-023 §1's `SavesPower` `(d: S::Device, e: N::Device)` with one empty universe and the other non-empty settles the same way, so the product is read over both parameters; the same clause over a population with no universe is `RequiresBound`, not `NoInstance`. | Test (TC-607) |
 

@@ -113,7 +113,9 @@ public outputs differ.
   it at every joint step, the engine SHALL return `Undecided(VacuousMatch)`
   and never `Holds` (ADR-023 HM-7): the explored product has no fair cycle
   under the scoped fairness filter, the stutter loop at terminal components
-  included.
+  included. From EN-1, `VacuousMatch` means that no matched fair tuple
+  exists; FR-182 states the cause's full meaning, which also covers an EN-3
+  proof that came with no accepted match witness.
 
 ### Limits
 

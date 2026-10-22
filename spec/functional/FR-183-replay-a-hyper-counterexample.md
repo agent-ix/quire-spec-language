@@ -108,7 +108,12 @@ pub enum MatchWitnessCheck {
     Refused(ReplayRefusal),
 }
 
-pub fn check_match_witness(/* FR-098 request */, witness: &MatchWitness) -> MatchWitnessCheck;
+pub fn check_match_witness(
+    wire: ReplayRequestWire,           // FR-098's request
+    subjects: &[ModelTraceSubject],    // one per alias, in `clause.aliases` order (FR-128)
+    witness: &MatchWitness,
+    replay_limits: ReplayLimits,
+) -> MatchWitnessCheck;
 ```
 
 ## Outputs
@@ -204,17 +209,24 @@ pub fn check_match_witness(/* FR-098 request */, witness: &MatchWitness) -> Matc
 
 ### Match witness (HP-2 non-vacuity)
 
-- `check_match_witness` SHALL re-execute each trace through its alias's
-  `ModelSystem` as for `Lockstep`, with the same step, loop and
-  step-count refusals.
+- `check_match_witness` SHALL return `Refused` with
+  `invalid_runtime_input`/`invalid-value` when `witness.instance` is not an
+  instance of the clause: not exactly one `(parameter, key)` pair per
+  member of `clause.parameters` in parameter order, each key in its
+  population's universe (FR-125).
+- It SHALL re-execute each trace through its alias's `ModelSystem` as for
+  `Lockstep`, with the same step, loop and step-count refusals.
 - It SHALL then check `μ_U` at every joint step, the loop's closing step
-  included, and each trace's fairness set on its own loop (ADR-023 HX-2).
+  included, evaluated under `witness.instance`, and each trace's fairness
+  set on its own loop (ADR-023 HX-2).
   It SHALL NOT evaluate the body.
 - It SHALL return `Accepted` when every check passes. A joint step at which
   `μ_U` is false, undefined, refused or incomplete, or an unfair trace,
   SHALL return `Refused` with `invalid_runtime_input`/`invalid-value`.
 - An `Accepted` witness is a tuple of fair behaviours that `μ_U` matches at
-  every joint step, so the clause is not vacuous (ADR-023 HM-7).
+  every joint step under `witness.instance`. It establishes a matched fair
+  tuple for that instance only, so FR-182 does not settle that instance
+  `VacuousMatch` (ADR-023 HM-7).
 - Building a witness is the SMT backend's work, an EN-2 lasso query with no
   body (ADR-018 DS-3). This requirement states only the check.
 
@@ -238,7 +250,7 @@ pub fn check_match_witness(/* FR-098 request */, witness: &MatchWitness) -> Matc
 | FR-183-AC-5 | FR-179-AC-4's `Undefined` counterexample, with one path per execution variable, replays to `reproduced-with-evaluated-witness` with its `UndefinedEvaluation` as the value; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `Verdicts`. | Test (TC-610) |
 | FR-183-AC-6 | FR-177-AC-5's `Undefined` counterexample, whose traces include the existential variable's path to the state where `μ_E` has no value, replays to `reproduced-with-evaluated-witness`; with the existential trace removed the reader refuses it as `invalid_runtime_input`/`invalid-value` before replay. | Test (TC-602) |
 | FR-183-AC-7 | FR-178-AC-9's `Undefined` counterexample, whose paths each hold a skipped `mix` and a visible `step(0)`, is refused with `unsupported_construct`/`not-yet-implemented` and settles no result; it is not replayed as a lockstep counterexample. | Test (TC-608) |
-| FR-183-AC-8 | Over ADR-023 §8's secure vault and `NonInterference` at instance `v`, the matched witness, with `a` and `b` each from initial `(0, 0)` taking `step(0)` twice and `loop_entry` 0, is `Accepted` without evaluating the body. The unmatched witness, with `a` the same and `b` from `(0, 0)` taking `step(1)` then `step(0)` and `loop_entry` 0, re-executes, since each loop closes, and is `Refused` with `invalid_runtime_input`/`invalid-value` at joint step 1, where `μ_U` is false. Checking either witness twice gives equal results. | Test (TC-608) |
+| FR-183-AC-8 | Over ADR-023 §8's secure vault and `NonInterference` at instance `v`, the matched witness, with `a` and `b` each from initial `(0, 0)` taking `step(0)` twice and `loop_entry` 0, is `Accepted` without evaluating the body. The unmatched witness, with `a` the same and `b` from `(0, 0)` taking `step(1)` then `step(0)` and `loop_entry` 0, re-executes, since each loop closes, and is `Refused` with `invalid_runtime_input`/`invalid-value` at joint step 1, where `μ_U` is false. A witness whose `instance` binds `v` to a key outside the `vaults` universe is `Refused` with `invalid_runtime_input`/`invalid-value` before any trace is re-executed. Checking either witness twice gives equal results. | Test (TC-608) |
 
 ## Dependencies
 

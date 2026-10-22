@@ -186,8 +186,10 @@ holds one `(parameter, key)` pair per member of `clause.parameters`, in
 parameter order, each key drawn from FR-125's instancing of a hyper clause.
 It is the same binding FR-183's `HyperCounterexample.instance` carries.
 `meter` is the budget for evaluating `μ_U` while the query is encoded. The
-caller sets it, and the encoding charges it for each tuple's evaluation in
-the joint-step order below. `depth` counts joint steps, the length ADR-023
+caller sets it. The encoding evaluates `μ_U` once per tuple, in the
+joint-step order below, and charges `meter` for each of those evaluations.
+`μ_U` reads no state, so one evaluation serves every step `i`, and the
+charge does not depend on `depth`. `depth` counts joint steps, the length ADR-023
 HV-3 reads.
 
 - **Copies.** The query SHALL declare, for each position `0..=depth` and
@@ -255,9 +257,10 @@ HV-3 reads.
     The pair alone is therefore not enough for V-3 while `μ_U` is
     non-empty. FR-182 settles `Inductive{depth: k}` as V-3 `proved`,
     `decisive-witness`, `Uncertified` only when `μ_U` is empty or an
-    accepted `MatchWitness` (FR-183) comes with it. Otherwise it settles
-    V-6 `VacuousMatch`, and over a subject with no initial state it
-    settles V-6 `NoInitialState`.
+    accepted `MatchWitness` (FR-183) for the same instance comes with it.
+    Over a subject with no initial state it settles V-6 `NoInitialState`.
+    Otherwise it settles V-6 `VacuousMatch`, whose meaning FR-182 states:
+    no matched fair tuple has been established.
   - An unsatisfiable base and a satisfiable step is `InductionNotClosed{depth:
     k}`, V-6.
   - A satisfiable base gives no outcome by itself. Its model is a matched
@@ -288,8 +291,8 @@ HV-3 reads.
     per alias of `clause.aliases` with that alias's model, at the first
     alias that has none or the wrong one;
   - `match-conjunct`, when a `μ_U` conjunct evaluates refused on some tuple,
-    or is incomplete because `meter` ran out during its evaluation, at the
-    conjunct, naming the tuple;
+    or is incomplete because `meter` ran out during its one evaluation for
+    some tuple, at the conjunct, naming the tuple;
   - and this requirement's field-sort and out-of-fragment refusals, per
     copy.
 - Equal requests, with meters of equal budget, and equal kinds SHALL give
