@@ -79,9 +79,13 @@ Candidate sets (FR-075) and FR-331 terminal records.
   `failed`.
 - A process provider's `proved` result settles `proved` with the certification
   `trusted`, the provider's `BackendId` and the basis the provider reports
-  (ADR-029 PL-7, "Trusted proofs"), except the bases only the core
-  establishes: the Kani check count, a core-recomputed closed form and a
-  replayed witness.
+  (ADR-029 PL-7, "Trusted proofs"), except the bases whose certificate or
+  evidence only the core establishes (ADR-018 §1, ADR-026, ADR-028; QSpec
+  FR-331 "Certification"): the Kani check count (`bounded-proof`), a
+  core-recomputed closed form (`closed-form`), a replayed witness
+  (`witnessed`), `exact-value`, `value-bounds` and `zone-certified`. QSL has no
+  `ProofBasis` variant for the last three today, so the code refuses the
+  first three, and a variant added later must be refused too.
 - The causes `replay-parity`, `replay-refused` and `kani_vacuous_proof` (the
   plugin wire's spellings; QSpec FR-331 keeps the AD-016 underscore spelling
   for the last, whereas QSL's outcome document writes `kani-vacuous-proof`) are
@@ -103,7 +107,7 @@ Candidate sets (FR-075) and FR-331 terminal records.
 | FR-289-AC-7 | A witness-arm replay result for a process provider's counterexample settles `failed`. | Test (TC-773) |
 | FR-289-AC-8 | An input-arm replay that reproduced something other than a violation settles `failed` with no replay result. | Test (TC-773) |
 | FR-289-AC-9 | A process provider's `proved` result settles `proved` with certification `trusted`, the provider's `BackendId` and the reported basis. | Test (TC-773) |
-| FR-289-AC-10 | A process provider's `proved` result reporting the Kani check-count basis, a closed-form basis or a witness basis is refused. | Test (TC-773) |
+| FR-289-AC-10 | A process provider's `proved` result reporting any of the six bases only the core establishes (`bounded-proof`, `closed-form`, `witnessed`, `exact-value`, `value-bounds`, `zone-certified`) is refused; for the three with a `ProofBasis` variant today the test checks each. | Test (TC-773) |
 | FR-289-AC-11 | A provider result naming the cause kind `replay-parity`, `replay-refused` or `kani_vacuous_proof` (QSpec FR-331 spellings) is refused by the cause-kind reader, and its item settles `failed`. | Test (TC-773) |
 | FR-289-AC-12 | A provider `inconclusive` result carrying the typed cause `ReplayParity` or `ReplayRefused` is refused, and its item settles `failed`. | Test (TC-773) |
 | FR-289-AC-13 | Every other `InconclusiveCause` kind, and the hyphenated `kani-vacuous-proof` that FR-331 lists for no plugin, is not refused by the cause-kind reader. | Test (TC-773) |

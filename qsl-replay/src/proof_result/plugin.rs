@@ -54,7 +54,10 @@ pub enum PluginResultRefusal {
     #[error("a plugin result claims the QSL-only cause {}", .0.as_str())]
     QslOnlyCause(QslOnlyCause),
     /// The `proved` result reports a basis only the core establishes: the
-    /// Kani check count, a core-recomputed closed form or a replayed witness.
+    /// Kani check count (`bounded-proof`), a core-recomputed closed form or
+    /// a replayed witness. `exact-value`, `value-bounds` and `zone-certified`
+    /// are core-checked too but have no `ProofBasis` variant yet; one added
+    /// later is refused here.
     #[error("a plugin proof reports a basis only the core establishes")]
     CoreOnlyBasis,
 }
@@ -130,11 +133,20 @@ impl TerminalRecord {
         plugin: BackendId,
         basis: ProofBasis,
     ) -> Result<Self, PluginResultRefusal> {
-        if matches!(
-            basis,
-            ProofBasis::Checks { .. } | ProofBasis::ClosedForm { .. } | ProofBasis::Witness { .. }
-        ) {
-            return Err(PluginResultRefusal::CoreOnlyBasis);
+        // Exhaustive on purpose: a new `ProofBasis` variant must be decided
+        // here. A basis whose certificate or evidence the core checks
+        // (ADR-018 §1, ADR-026, ADR-028) is never a plugin's to claim.
+        match basis {
+            ProofBasis::Checks { .. }
+            | ProofBasis::ClosedForm { .. }
+            | ProofBasis::Witness { .. } => {
+                return Err(PluginResultRefusal::CoreOnlyBasis);
+            }
+            ProofBasis::Exhaustive
+            | ProofBasis::BoundedComplete { .. }
+            | ProofBasis::Inductive { .. }
+            | ProofBasis::BoundedSolver { .. }
+            | ProofBasis::Reduced { .. } => {}
         }
         Ok(Self::with_backend(
             request_index,

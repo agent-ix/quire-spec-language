@@ -1,3 +1,3 @@
 
 
-Round 2 (coordinator finding, QSpec FR-331 lines 246, 452, 465): the plugin wire spells the vacuity cause `kani_vacuous_proof`; `read_plugin_cause_kind` matched the outcome-document spelling `kani-vacuous-proof`. Fixed with a separate plugin-wire constant, FR-289 and TC-773 updated, tests per cause; the hyphenated spelling is an ordinary unknown kind (FR-331 lists it for no plugin). Fix commit b073ffe2c.
+Round 3 (coordinator, from draco's review of #1210): the core-only basis list is six. `exact-value`, `value-bounds` and `zone-certified` have no `ProofBasis` variant in qsl-replay, so nothing to refuse in code; the basis match in `from_plugin_proof` is now exhaustive, so a variant added later forces a decision. FR-289-AC-10 and TC-773 list the six. Built against #1210 head 1892b87 (lists three bases). Fix commit SHA.
