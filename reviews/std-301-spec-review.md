@@ -48,3 +48,26 @@ Evidence: I ran cargo-geiger 0.13.0 over `agent-ix/quire-eval` main 57712bd93 wi
 | FND-009 | low | [minor] "`quire-eval` has no features (FR-401)" overstates FR-401. FR-401 Behavior 3 forbids a `std` feature, and FR-403-AC-1 forbids a feature that adds or removes the evaluator. Say "has no `std` feature" or cite both. | NFR-016.md:46-47 |
 | FND-010 | low | [minor] The gate scans `quire-eval`, which does not exist yet in agent-ix/quire-eval main 57712bd93 (members: quire-checked only), so AC-1 depends on FR-403 (S6) landing. NFR-016 lists FR-403 as `references`. Make it `depends_on`. | NFR-016.md:14-15 |
 | FND-011 | low | [minor] AD-001 calls S8 "the unsafe/dependency audit". NFR-016 specifies only the unsafe half and says nothing about the dependency half: the sources, licences and advisories that quire-eval's existing `make deny` gates. State that S8's dependency audit is that existing gate, or place it out of scope. | spec/assurance/AD-001-shared-evaluation-core-interface.md:201,222-230 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | [minor] The first-party shipped-source scan counts "every module file those roots declare", but does not say how the checker resolves a `#[path = "..."]` module attribute or a source-file `include!` (not under `OUT_DIR`). `#[path]` is used in the agent-ix ecosystem today (quire-contract-ir's corpus generator binary). A checker that follows only default `mod` file resolution would miss a `#[path]` file or an included file, and could hold unsafe code without a finding. Fix: say that a `#[path]` module's file and an `include!`d source file outside `OUT_DIR` are shipped source, or that either one is an `unscanned` finding; add one fixture. | spec/non-functional/NFR-016-audit-unsafe-code-in-the-evaluator-closure.md:85-88 |
+| FND-013 | medium | [minor] TC-1131 fixes the closure input in `cargo tree --prefix none` form. That form prints a flat package list with no depth or parent, so it carries no edges. `unlisted-unsafe` must name "the first-party crates that reach it through third-party crates only, read from the closure" (NFR-016 Gate 3; AC-4 expects `quire-exact` to be named for `big`). That set cannot be computed from the specified input. Fix: specify the closure as `cargo tree --prefix depth` (depth-annotated lines give the parent edges), or another form that carries edges. Use it in TC-1131's fixture definition and the checker's input. | spec/test-cases/TC-1131-audit-unsafe-checker-refuses-each-finding-kind.md:20; spec/non-functional/NFR-016-audit-unsafe-code-in-the-evaluator-closure.md:189-192,258 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | First-party crates are judged by the checker's own parse of the shipped targets (library, binary and build-script roots plus declared modules, whatever the `cfg`); `tests/`, `benches/` and `examples/` are not counted. Third-party crates are counted per package by geiger. `quire-canonical`'s unsafe code is only in tests/memory.rs and tests/drop_value.rs; its src/ holds only `#![forbid(unsafe_code)]`; so it passes. Lead default, flagged in the PR body. |
+| FND-002 | fixed | The scan is specified by its inputs: the package's manifest by absolute path (the root is a virtual manifest), target, `--locked`, JSON. TC-1130 step 3 uses `--manifest-path <absolute path>`. |
+| FND-003 | fixed | The closure is `cargo tree --locked -p quire-eval -e normal,no-proc-macro --target thumbv7em-none-eabi`; `cargo metadata` only locates files; a closure package absent from the scan's `packages` is `unscanned`. |
+| FND-004 | fixed | Build-script `OUT_DIR` code is placed outside the claim, and AC-7 and TC-1131 step 8 pin "no finding". Lead default, flagged in the PR body. |
+| FND-005 | fixed | The probe is `#[cfg(any())] mod probe;` with `unsafe {}` in probe.rs. The build compiles nothing new, so the gate fails through `first-party-unsafe quire-eval` naming probe.rs. |
+| FND-006 | fixed | Fixtures carry first-party source trees (manifest, workspace root, sources). TC-1131 step 2 covers the own forbid, the table form with `priority`, `workspace = true` inheritance from a git-checkout root, `workspace = true` plus a crate-root attribute, `deny` only, and nothing. |
+| FND-007 | fixed | An entry naming a first-party crate is `malformed-entry` (Gate 5, AC-6, TC-1131 step 6). |
+| FND-008 | fixed | `reached_through` and `reached-through-mismatch` are removed; entries are exactly name, purpose and acceptance, and a `reached_through` key is `malformed-entry`. Lead default, flagged in the PR body. |
+| FND-009 | fixed | Now "no `std` feature (FR-401) and no feature that adds or removes the evaluator (FR-403)". |
+| FND-010 | fixed | The FR-403 relationship is now `depends_on`, and Dependencies says the gate passes only once quire-eval exists. |
+| FND-011 | fixed | Scope and AD-001 place S8's dependency half in quire-eval's existing `make deny` gate. |

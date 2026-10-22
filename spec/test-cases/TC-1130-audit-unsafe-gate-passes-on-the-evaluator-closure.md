@@ -21,7 +21,7 @@ evaluator closure and inventory. Scope: NFR-016-AC-1 and NFR-016-AC-8.
    prerequisites.
 2. Run `make audit-unsafe`.
 3. Run `cargo tree --locked -p quire-eval -e normal,no-proc-macro --target
-   thumbv7em-none-eabi --prefix none` and `cargo geiger --manifest-path
+   thumbv7em-none-eabi --prefix depth` and `cargo geiger --manifest-path
    <absolute path of crates/quire-eval/Cargo.toml> --target
    thumbv7em-none-eabi --output-format Json --locked`. List the third-party
    packages of the tree whose scan entry has at least one unsafe function,

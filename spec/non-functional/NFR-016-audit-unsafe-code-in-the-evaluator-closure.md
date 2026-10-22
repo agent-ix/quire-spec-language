@@ -84,8 +84,11 @@ impls and unsafe traits.
 
 - **First-party crate.** The checker parses the crate's shipped source: the
   root file of each library, binary and build-script target in its manifest,
-  and every module file those roots declare, whatever `cfg` guards the
-  declaration. The crate has unsafe code when that source holds at least one
+  every module file those roots declare, whatever `cfg` guards the
+  declaration, resolved through a `#[path = "..."]` attribute where one is
+  given, and every file a shipped file brings in with `include!` from a path
+  that is not under `OUT_DIR`, which the checker parses as the code it
+  inserts. The crate has unsafe code when that source holds at least one
   unsafe item. Files reached only from test, bench or example targets
   (`tests/`, `benches/`, `examples/`) are not shipped source and are not
   counted.
@@ -163,7 +166,9 @@ date or approval field.
 binary crate of the workspace outside the closure that itself forbids unsafe
 code. The checker takes four inputs:
 
-1. **The closure**, from the `cargo tree` resolution above.
+1. **The closure**, from the `cargo tree` resolution above, in a form that
+   keeps each package's dependency edges (`--prefix depth`), so the checker
+   can name the first-party crates that reach a third-party crate.
 2. **The scan report**, from `cargo-geiger` run on the package `quire-eval`
    through its own manifest given by absolute path (the repository root is a
    virtual manifest), for the target `thumbv7em-none-eabi`, with `--locked`
@@ -199,8 +204,9 @@ target SHALL fail when any of these holds:
    first-party crate.
 6. **`unscanned`**: the scan lists a closure package under
    `packages_without_metrics`, a closure package is absent from the scan's
-   `packages`, a first-party source file the shipped source declares cannot
-   be read or parsed, or `cargo tree`, `cargo-geiger` or `cargo metadata`
+   `packages`, a first-party source file the shipped source declares or
+   includes (by module declaration, `#[path]` or `include!`) cannot be
+   resolved, read or parsed, or `cargo tree`, `cargo-geiger` or `cargo metadata`
    exits non-zero.
 7. `cargo-geiger` is not installed. The target prints the install command
    and exits non-zero; no variable, flag or file skips the gate, a crate or
@@ -254,7 +260,7 @@ workspace cannot reproduce.
 | --- | --- | --- |
 | NFR-016-AC-1 | `make audit-unsafe` in `agent-ix/quire-eval` runs the checker over the closure `cargo tree --locked -p quire-eval -e normal,no-proc-macro --target thumbv7em-none-eabi` reports and a `cargo-geiger` JSON scan of `quire-eval` through its absolute manifest path for that target with `--locked`, and passes on the repository's main branch; `make ci` lists `audit-unsafe` as a prerequisite; and `unsafe-inventory.toml` holds an entry for each third-party closure crate the scan reports with unsafe code and for no other crate. | Test (TC-1130) |
 | NFR-016-AC-2 | Every first-party crate in the closure declares `unsafe_code` at level `forbid` in a place the first-party rule lists. Over fixture crates, the checker accepts a crate's own `[lints.rust]` forbid, its table form with a `priority`, `[lints] workspace = true` under a git-checkout workspace root whose `[workspace.lints.rust]` forbids it, and `workspace = true` under a root that does not, with `#![forbid(unsafe_code)]` at the crate root; it reports `first-party-not-forbidden` for a crate declaring `unsafe_code = "deny"` only and for a crate declaring nothing, and fails. | Test (TC-1131) |
-| NFR-016-AC-3 | Over fixture crates that declare `forbid`, the checker reports `first-party-unsafe` naming the crate and file for an unsafe block in a module the library root declares, including a module declared under `#[cfg(any())]`, and reports nothing for an unsafe block in a file under `tests/`. In a scratch copy of `agent-ix/quire-eval`, adding `#[cfg(any())] mod probe;` to `quire-eval`'s library root with `probe.rs` holding `unsafe {}` makes `make audit-unsafe` print `first-party-unsafe quire-eval` and fail. | Test (TC-1131) |
+| NFR-016-AC-3 | Over fixture crates that declare `forbid`, the checker reports `first-party-unsafe` naming the crate and file for an unsafe block in a module the library root declares, in a module declared with `#[path = "gen/raw.rs"]`, in a file the library root brings in with `include!("gen/table.rs")`, and in a module declared under `#[cfg(any())]`; it reports `unscanned` for a `#[path]` module whose file is missing, and fails; and it reports nothing for an unsafe block in a file under `tests/`. In a scratch copy of `agent-ix/quire-eval`, adding `#[cfg(any())] mod probe;` to `quire-eval`'s library root with `probe.rs` holding `unsafe {}` makes `make audit-unsafe` print `first-party-unsafe quire-eval` and fail. | Test (TC-1131) |
 | NFR-016-AC-4 | Given a fixture closure in which `quire-exact` reaches a third-party crate whose scan reports unsafe code and the inventory has no entry for it, the checker reports `unlisted-unsafe` naming the crate and `quire-exact` and fails; adding a well-formed entry for it makes the same fixture pass. | Test (TC-1131) |
 | NFR-016-AC-5 | Given an inventory entry for a crate that is not in the fixture closure, and separately for a closure crate whose scan reports no unsafe code, the checker reports `stale-entry` naming the crate and fails. | Test (TC-1131) |
 | NFR-016-AC-6 | Given an entry with a `version` key, an entry with a `reached_through` key, an entry with an empty `acceptance`, two entries with the same `name`, two entries out of `name` order, and an entry naming the first-party crate `quire-checked`, the checker reports `malformed-entry` for each and fails. | Test (TC-1131) |

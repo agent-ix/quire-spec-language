@@ -17,7 +17,8 @@ NFR-016-AC-7.
 
 Each fixture holds the checker's four inputs:
 
-- a closure in `cargo tree --prefix none` form;
+- a closure in `cargo tree --prefix depth` form, which keeps each
+  package's dependency edges;
 - a scan report in `cargo geiger --output-format Json` form;
 - for each first-party crate, a source tree: its `Cargo.toml`, the root
   manifest of the workspace it belongs to, and its source files;
@@ -47,8 +48,13 @@ closure.
    (e) no `unsafe_code` declaration and no crate-root attribute.
 3. Add `mod raw;` to `quire-checked`'s `src/lib.rs` with `src/raw.rs` holding
    `fn f() { unsafe {} }`, and run the checker; separately declare it as
-   `#[cfg(any())] mod raw;` and run it; separately put the same function in
-   `quire-checked`'s `tests/raw.rs` only and run it.
+   `#[cfg(any())] mod raw;` and run it; separately declare it as
+   `#[path = "gen/raw.rs"] mod raw;` with the file at `src/gen/raw.rs` and
+   run it; separately add `include!("gen/table.rs");` to `src/lib.rs` with
+   `src/gen/table.rs` holding the function and run it; separately declare
+   `#[path = "gen/missing.rs"] mod missing;` with no such file and run it;
+   separately put the same function in `quire-checked`'s `tests/raw.rs` only
+   and run it.
 4. Remove the entry for `big` and run the checker; then restore it and run
    it again.
 5. Add an entry for a crate `absent` that is not in the closure and run it;
@@ -73,7 +79,10 @@ closure.
 2. (a), (b) and (c): no finding and exit zero. (d) and (e):
    `first-party-not-forbidden quire-walk` and a non-zero exit.
 3. `first-party-unsafe quire-checked` naming `src/raw.rs` for the first two
-   runs, each with a non-zero exit; no finding and exit zero for the third.
+   runs, `src/gen/raw.rs` for the third and `src/gen/table.rs` for the
+   fourth, each with a non-zero exit; `unscanned quire-checked` naming
+   `src/gen/missing.rs` and a non-zero exit for the fifth; no finding and
+   exit zero for the sixth.
 4. `unlisted-unsafe big` naming `quire-exact` and a non-zero exit; then no
    finding and exit zero.
 5. `stale-entry absent`; `stale-entry plain`; each with a non-zero exit.
