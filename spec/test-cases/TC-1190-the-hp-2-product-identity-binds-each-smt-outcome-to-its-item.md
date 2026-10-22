@@ -72,7 +72,8 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
    post-state digest altered, then the same lasso with its `instance`
    binding `w`; FR-315-AC-9's undefined-match base model as an `Undefined`
    counterexample (method `KInduction`); `Unknown{depth: 1, method:
-   KInduction}`; `Cancelled{source: Requested}`; and
+   KInduction}`; `Cancelled{source: Requested, method:
+   KInduction}`; and
    `EncodingRefused` with `match-conjunct`, `hyper-body` and `query-kind`.
    Repeat each with the identity for instance `w`.
 
