@@ -49,3 +49,9 @@ Round 1, reviewed at 0ad0f348b592ce17dfbb9fafbdacdbc65d2db1ed (fix commit c91133
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-004 | high | The new second half of FR-411-AC-3 cannot settle as stated. It replays the `when` unit's counterexample "in a request for the unit with `terminal Halt ... any;`" and expects `inconclusive`, `Verdicts`. But the envelope carries the `when` unit's `package_id`, and FR-128 refuses on a recompiled `package_id` mismatch (FR-098's stale rule) before any evaluation. A unit with `terminal any` also has no deadlock-freedom item (FR-124-AC-2, QSpec FR-366), so the envelope's item resolves to nothing. And under FR-128's own Deadlock rule, an absent predicate settles `reproduced-with-evaluated-witness`, not `inconclusive`. Replace the half with an outcome FR-128 actually produces, such as the stale `package_id` refusal, or drop it and keep the bullet as a design constraint. | spec/functional/FR-411-emit-a-checked-model-terminal-declaration-as-a-v2-terminal-node.md:96 |
+
+Round 2, reviewed at 317677c4319b23fd2190166499fc8f1b004a7b95 (FND-001 to FND-003 stay fixed from round 1).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | AC-3's second case now expects `PackageIdMismatch` (`stale_dependency`/`content-mismatch`, naming both `package_id`s) before any step re-executes, which is FR-098's stale `package_id` rule and FR-128's first step. TC-1142 step 3 matches. |
