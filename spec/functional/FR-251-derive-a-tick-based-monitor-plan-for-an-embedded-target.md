@@ -180,9 +180,13 @@ may repair such a disagreement by inventing another evaluation rule.
   limit of the monitor.
 - **Overflow.** An event that would exceed a buffer SHALL never be dropped:
   the obligations it affects SHALL settle `Incomplete(LimitReached{limit, value, setting})`
-  with `limit` `event_buffer`, `value` the buffer capacity (an unsigned count)
-  the rate gave, and `setting` `monitor.max_event_rate`, the monitor target
-  member that raises it (FR-255 does not list it, as it is an exact fraction).
+  with `limit` the monitor limit kind `EventBuffer`, written `event_buffer`,
+  `value` the buffer capacity (an unsigned count) the rate gave, and `setting`
+  the monitor setting `monitor.max_event_rate`, the monitor target member that
+  raises it (FR-255's setting table does not list it, as it is an exact
+  fraction). `EventBuffer` and `monitor.max_event_rate` extend FR-127's
+  `limit` and `setting` fields for a monitor run, which has no model-check
+  request.
 - **Counter width.** If `max_reading_gap` is at least `2^width_bits`, then
   the plan SHALL refuse with `MonitorPlanRefusal::GapExceedsWidth{
   max_reading_gap, width_bits}`, since wraparound could not be decided.

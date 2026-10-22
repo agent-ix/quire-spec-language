@@ -219,8 +219,8 @@ to `x`'s node.
 | `Contains` | `collection` | `quire.op.collection.contains` | leaves `inner:0` | `[ref(c), ref(v)]` |
 | `Attribute{reference, name}` (`deref(r).f`) | `deref`, then `query` | the node `quire.op.model.deref` over `[ref(r)]`, whose `result_type` is the model node of `r`'s object type `T`, and over it `quire.op.record.project` | the projection's member `field{declaration: T's model node, name: f}` | the projection's `[ref(deref node)]` |
 | `Navigate{reference, relationship, role}` (`r.name` over a relationship end, FR-363) | `query` | `quire.op.model.navigate` | member `relationship_end{declaration: the relationship's model node, name: role}`; `result_type` is the type node of the checked `Reference<U>`, `Option<Reference<U>>`, `Set<Reference<U>>[l,u]` or `Bag<Reference<U>>[l,u]` | `[ref(r)]`, with no `deref` node |
-| `AllInstances` | `query` | `quire.op.model.all_instances` | member `type_argument` of the queried type's model node | `[ref(p)]` |
-| `Lookup{absence}` | `query` | `quire.op.model.lookup` | mode `absence` = the authored mode; member `type_argument` of the queried type's model node | `[ref(p), ref(r)]` |
+| `AllInstances` | `query` | `quire.op.model.all_instances` | member `type_argument` of the queried type's model node | `[ref(p)]`, `p` a population parameter or, for a named population `M::P`, the population reference of FR-391 |
+| `Lookup{absence}` | `query` | `quire.op.model.lookup` | mode `absence` = the authored mode; member `type_argument` of the queried type's model node | `[ref(p), ref(r)]`, `p` as for `AllInstances` |
 | `Dispatch{receiver, arguments}` | `call` | `quire.op.model.dispatch_call` | member `operation{declaration: the model node of the receiver's static object type, name: member}` | `[ref(receiver), ref(a0), ...]` |
 | `Pre` | `pre` | `quire.op.state.pre` | | `[ref(e)]` |
 

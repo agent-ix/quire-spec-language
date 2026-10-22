@@ -103,7 +103,7 @@ S2 has no limit of its own (FR-257). `replay.input_bytes` bounds the replay
 request and envelope bytes themselves, so it is raised from the library and
 the CLI, and a request's own `stage_limits` does not carry it. A configurable
 limit QSL adds later takes a name by the same rule and a row in this table.
-The one exception is the monitor target's event rate, an exact fraction owned by
+Another exception, besides the supplied-value ceilings of FR-277, is the monitor target's event rate, an exact fraction owned by
 FR-251 under the setting name `monitor.max_event_rate`: it is a member of the
 monitor target and not a table row, because every table row is an unsigned
 integer.
