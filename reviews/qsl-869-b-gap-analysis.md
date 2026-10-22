@@ -71,8 +71,10 @@ The coder's account of the timing/monitor remainder is honest. None of that code
 
 ## Dispositions
 
-| FND | Outcome | Sha |
+Disposition pass 1 at head b8d4723ef (fix commit 50605a374, plus a merge of main). Each row was checked by measurement.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: PR body now says Remaining work: QSL-587 | 50605a374 |
-| FND-002 | fixed: the AC-6 unit, the lookup+allInstances case, the domain form and the holds atom are read through the full reader; FR-391-AC-6's "same unit" FR-155-AC-2 clause is unsatisfiable (AC-4 ambiguity) and now says a unit without archive | 50605a374 |
-| FND-003 | fixed: FR-094 now says the node carries the model owner (FR-322) | 50605a374 |
+| FND-001 | deferred | The PR body is fixed: it now reads "Remaining work: QSL-587 (E22a, blocked by QSL-580)" and lists `event_buffer`/`monitor.max_event_rate`, `agreement_horizon`, `timestamp_parameters` and timing-clause recognition. Two tracker actions remain, and they are the lead's, not code: QSL-587's description does not list the STD-234 changes yet, and QSL-869 is still Done while #1203 is open. Neither blocks the merge |
+| FND-002 | fixed | 50605a374: `the_ac_6_unit_is_admitted_by_the_full_reader` (the A/B/C unit, `Read::Verified`, owners archive and counters) and `lookup_domain_and_holds_forms_share_one_admitted_node` (lookup plus allInstances one node, domain form, holds atom, each `Read::Verified`) pass. Both fail under both mutations (owner varied per read; all populations merged) |
+| FND-003 | fixed | 50605a374: FR-094 now reads "with no `N`, whose `owner` is the model owner of that key (QSpec FR-322)" (spec review SR-12320) |

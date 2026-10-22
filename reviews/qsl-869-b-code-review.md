@@ -48,7 +48,9 @@ What is sound:
 
 ## Dispositions
 
-| FND | Outcome | Sha |
+Disposition pass 1 at head b8d4723ef (fix commit 50605a374, plus a merge of main). Each row was checked by measurement.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 50605a374 |
-| FND-002 | fixed: one `population_node_content` shared by lowering and the abstraction target | 50605a374 |
+| FND-001 | fixed | 50605a374: `cargo fmt --all -- --check` exits 0 at b8d4723ef |
+| FND-002 | fixed | 50605a374: `population_node_content(owner)` in lowering/model.rs is the one builder, and `Lowering::population_reference_node` and `abstraction::population_node` both call it. A probe re-keyed P7/P8 through it and they are unchanged |
