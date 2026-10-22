@@ -1321,3 +1321,43 @@ fn the_explored_lasso_is_the_canonical_one() {
     );
     assert!(is_witness(&both, lasso, Fairness::None));
 }
+
+/// Phase 0 with several instances: each walk is drawn once and tested against
+/// every instance that has no witness yet, so each instance keeps its own first
+/// sampled witness (or none) and its own stopped count. The first instance
+/// (`w`, starting at `l = 1`) never has a witness, so every walk is tested
+/// against the later ones.
+#[trace("TC-606", "FR-181-AC-7")]
+#[test]
+fn sampling_gives_each_instance_its_own_first_witness() {
+    let objects = [("v", (0, 0)), ("w", (0, 1)), ("x", (1, 0))];
+    let world = World::with_vaults(Vault::Secure, &objects, &clause("", SETTLES));
+    let run = world
+        .run_single(ModelCheckLimits::default(), None, &Cancel::new())
+        .expect("not refused");
+    assert_eq!(run.instances.len(), 3);
+    // The first walk (trace 0) is a witness for `w`, which starts at `l = 1`;
+    // `x` and `v` need a walk that steps to `l = 1`, the third and the fourth.
+    let traces: Vec<_> = run
+        .instances
+        .iter()
+        .map(|instance| {
+            let witness = instance.sampled[0].as_ref().expect("a sampled witness");
+            let WitnessSource::Sampled(provenance) = &witness.source else {
+                panic!("expected a sampled witness");
+            };
+            (instance.instance[0].1.clone(), provenance.trace)
+        })
+        .collect();
+    assert_eq!(
+        traces,
+        [
+            ("v".to_owned(), 3),
+            ("w".to_owned(), 0),
+            ("x".to_owned(), 2)
+        ]
+    );
+    for instance in &run.instances {
+        assert_eq!(instance.walks_stopped, 0);
+    }
+}
