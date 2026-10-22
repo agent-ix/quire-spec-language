@@ -188,6 +188,22 @@ crates still use `unsafe_code = forbid`), and S9 switches the default and
 retire/demotes the std path. S7-S9 remain separately gated slices, not part of
 S6's claimed completion.
 
+FR-402 defines S7's suite: the evaluator corpus (FR-262's programs, TC-069's
+vectors, deterministic generated cases and CG's exported generated-closure
+bundle), its case record, loader and compared record in the crate
+`quire-eval-corpus` beside `quire-eval`, QSL's case admission through
+`qsl_replay::compile_package`, the zero-divergence pass criterion and the
+two separate std and `no_std` builds. The harness joins `make ci` in IR-590,
+the first slice with a second implementation, and stays until IR-593 retires
+or demotes the std path; the run over CG's bundle passes in IR-593's switch.
+The `no_std` implementation the suite compares lives in `quire-eval`
+(`agent-ix/quire-eval`), and `qsl-eval` consumes it; the suite compares the
+std path with it until S9 retires that path. CG records expected evaluations
+through `quire-eval` once it carries that implementation; until then CG's
+cases carry no expectation. Admission compiles each case once, on the std side; how an
+admitted case's checked input reaches the `no_std` build is part of IR-590's
+contract.
+
 ### RT and CG acceptance
 
 IR-583 can serve std consumers once the interface and QSL reference adapter
