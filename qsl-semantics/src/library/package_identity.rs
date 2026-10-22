@@ -286,7 +286,7 @@ fn wire_node_id(value: NodeRef<'_>) -> Option<WireNodeId> {
 }
 
 /// The node tags of the V2 semantic graph.
-const NODE_TAGS: [&str; 13] = [
+const NODE_TAGS: [&str; 14] = [
     "scalar_type",
     "composite_type",
     "bounded_domain",
@@ -300,7 +300,15 @@ const NODE_TAGS: [&str; 13] = [
     "protocol",
     "claim",
     "correspondence",
+    "extension",
 ];
+
+/// The node tags [`projected_node`] admits, for a dependent crate's test that
+/// they equal IR's `CheckedNodeTag` wire spellings.
+#[cfg(any(test, feature = "test-support"))]
+pub fn node_tags() -> &'static [&'static str] {
+    &NODE_TAGS
+}
 
 fn qualified(segments: Vec<String>) -> Result<String, NodeDefect> {
     if is_qualified_name(&segments) {
@@ -614,6 +622,25 @@ mod tests {
 
     use super::fixtures::{hex, one_node_preimage};
     use super::*;
+
+    /// An `extension`-tagged projection node (QSpec FR-469) passes the node
+    /// tag check, and a tag outside the V2 set is refused as `NodeTag`.
+    #[trace("QSpec-FR-469-AC-1")]
+    #[test]
+    fn an_extension_tagged_node_passes_the_node_tag_check() {
+        let mut preimage: Value =
+            serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
+        preimage["identity_projection"][0]["node_tag"] = Value::from("extension");
+        assert!(project_declarations(&serde_json::to_vec(&preimage).unwrap()).is_ok());
+        preimage["identity_projection"][0]["node_tag"] = Value::from("not_a_tag");
+        assert!(matches!(
+            project_declarations(&serde_json::to_vec(&preimage).unwrap()),
+            Err(PreimageDefect::Node {
+                defect: NodeDefect::NodeTag,
+                ..
+            })
+        ));
+    }
 
     /// The canonicity check is the `quire-canonical`
     /// encoder's own output, so it admits a member name outside ASCII

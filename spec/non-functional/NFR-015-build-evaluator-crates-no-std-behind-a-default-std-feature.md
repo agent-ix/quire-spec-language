@@ -173,9 +173,14 @@ Every public export of `qsl-package`, by module:
 | `checked_v2` | none | the whole module: `read_import_view`, `supply_closure`, `clause_roots`, `resolve_clause_root`, `AdmittedPackages`, `ClauseRoot`, `ClauseRootUnresolved`, `ImportViewRefusal`, `SourceMapDefect`, `UnsupportedWire`, `V2ReadLimits`, `V2ReadRefusal` |
 
 `bind_abstraction` and `bind_abstraction_at` behave the same with `std`
-disabled. With `std` enabled, `bind_abstraction` also clears the remembered
-emission, so a later `emitted_package_id` is `None` until the package is
-emitted again; `bind_abstraction_at` does not clear it.
+disabled. With `std` enabled, each of them also clears the remembered
+emission when it binds a relation, so a later `emitted_package_id` is `None`
+until the package is emitted again. A bound relation changes what the
+emitter writes (the relation node and, for `bind_abstraction_at`, one
+`declaration` occurrence of it at each site, QSpec FR-451), so an emission
+remembered before the binding no longer identifies the package's content. A
+refused binding leaves the package, its remembered emission included,
+unchanged.
 
 ### Gate
 
@@ -229,6 +234,7 @@ ADR-030 RU-2 require, and keeps `package_id` computed, never supplied
 | NFR-015-AC-7 | With `std` disabled, no shipped source of a crate in the per-crate table names `serde_json`, `HashMap` or `HashSet`, and the `arch-lint canonical-encoder` check passes. | Inspection (TC-1111) |
 | NFR-015-AC-8 | `make build-no-std` runs AC-1's build for each closure-tier row and AC-4's host check for each crate-tier row, each with `-p`, plus `cargo clippy --no-default-features -D warnings` per row, `cargo test --no-default-features` for `qsl-package` (AC-5's evidence), in its own `no-std` target directory, and `build-no-std` is listed in the Makefile's `CI_CHECKS`; a shipped `std::` path added to a closure-tier crate outside `#[cfg(feature = "std")]` makes the target fail. | Test (TC-1110) |
 | NFR-015-AC-9 | With default features, after `emit_checked` records an emission, `bind_abstraction` with valid bindings leaves `emitted_package_id` `None`. | Test (TC-1111) |
+| NFR-015-AC-10 | With default features, after `emit_checked` records an emission of a package with no abstraction relation, `bind_abstraction_at` with valid bindings and one site leaves `emitted_package_id` `None`, and emitting the package again records a `package_id` different from the first. After an emission, `bind_abstraction_at` with one binding whose key names a declaration the package does not hold, which it refuses with `AbstractionRefusal::MissingDeclaration`, leaves `emitted_package_id` equal to the emitted `package_id`. | Test (TC-1111) |
 
 ## Verification
 

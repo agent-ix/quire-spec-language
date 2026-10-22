@@ -106,10 +106,11 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 ```
 
 The certificate types and checkers are FR-338's and FR-339's. Their closed
-`TemporalCertificateCheck` result has three alternatives: `Accepted`,
-`Rejected(CertificateRejection)` and `Stopped(IncompleteCause)`. The last
-carries only the existing `LimitReached{limit,value,setting}` or
-`Cancelled{source}`; it adds no kernel or wire cause.
+`TemporalCertificateCheck` result has four alternatives: `Accepted`,
+`Rejected(CertificateRejection)`, `Stopped(IncompleteCause)` and
+`PackageMismatch{certificate, recompiled}` (FR-282). `Stopped` carries only
+the existing `LimitReached{limit,value,setting}` or `Cancelled{source}`; it
+adds no kernel or wire cause.
 
 and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label, its QSpec FR-243 basis and its O-16 category.
 
@@ -123,6 +124,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | --- | --- | --- | --- | --- | --- |
 | V-1 | `Holds{Exhaustive}` whose certificate the core checker accepts | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}` | success |
 | V-6 | `Holds{Exhaustive}` whose certificate the core checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})` | inconclusive |
+| V-6 | `Holds{Exhaustive}` whose certificate the core checker returns `PackageMismatch{certificate, recompiled}` (FR-338, FR-339) | `inconclusive` | `unsettled` | `Inconclusive(StaleDependency{requested, recompiled})`, `requested` the certificate's `package_id`, written `stale-dependency{requested, recompiled}` | inconclusive |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with `kind: UndefinedEvaluation{where, cause}` whose replay reproduces the undefined value at `where` (FR-128) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
@@ -170,6 +172,9 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
   core checker for its certificate, `check_closure` or `check_components`,
   and settle `Proved{Exhaustive, Certified}` when it accepts and
   `Inconclusive(CertificateRejected{rule, at})` when it returns `Rejected`.
+  A `PackageMismatch{certificate, recompiled}` SHALL settle
+  `Inconclusive(StaleDependency{requested, recompiled})` with `requested`
+  the certificate's `package_id` (QSpec FR-331), never `CertificateRejected`.
   A `Stopped(cause)` SHALL settle V-7, execution `resource-incomplete`,
   basis `unavailable`, `TerminalValue::Incomplete(cause)`, category
   incomplete. The map SHALL preserve the exact checker limit, consumed
@@ -226,12 +231,12 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-4 | FR-126-AC-6's `max_automaton_states` run settles FR-360 `failed`, execution `resource-incomplete`, result `incomplete`, `unavailable`, `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`, category incomplete, its record naming `max_automaton_states` with value 50 as the member that raises it; a cancelled run settles `incomplete`, `Incomplete(Cancelled{source})`, written `cancelled{source}`, `source` `requested` for a caller's cancellation and `deadline` for a deadline; every record, AC-3's proof included, states the three limits used and whether one was reached; FR-126-AC-5's `max_depth` 2 run settles `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth `pending`; its evaluation-meter run names `EvaluationMeter` with value 0. | Test (TC-522) |
 | FR-127-AC-5 | FR-126-AC-3's deadlock-freedom violation settles `refuted` after replay, with a record whose counterexample `kind` is `Deadlock`, and the record's obligation identity differs from the authored claims' over the same subject. | Test (TC-522) |
 | FR-127-AC-6 | FR-126-AC-9's undefined-evaluation counterexample settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, after FR-128 replay reproduces it, and the record's counterexample carries `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`. The same payload with its cause changed to another undefined reason settles `inconclusive`, `ReplayParity`. | Test (TC-538) |
-
 | FR-127-AC-7 | FR-338-AC-1's TP-1 proof with its accepted certificate settles `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; with FR-338-AC-2's `(1, 0)`-removed certificate it settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{SuccessorMissing, (1, 0)})`. Exhausting the auxiliary checker graph budget returns `Stopped(LimitReached{MaxStates,value,max_states})` and settles `Incomplete` with those exact members; evaluation-meter exhaustion retains its actual meter value/setting, and caller/deadline cancellation retains `requested`/`deadline`. Neither settles `CertificateRejected` or `WitnessFails`. | Test (TC-522) |
 | FR-127-AC-8 | FR-339-AC-1's weak `each` proof with its accepted certificate settles `Proved{Exhaustive, Certified}`; with FR-339-AC-2's `upd(a)` witness it settles `Inconclusive(CertificateRejected{WitnessFails, ...})` naming that component's first state. | Test (TC-522) |
 | FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, Certified}`, `Proved{BoundedComplete{depth: 5}, Certified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}`, `Proved{Inductive{depth: 2}, Uncertified}` and a plugin's `Proved{Exhaustive, Trusted}`, as CG's maps and the settlement map construct them, each read `proved` with category success, never `inconclusive`, and each keeps its one certification. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the QSpec FR-331 record. | Test (TC-522) |
 | FR-127-AC-12 | FR-127-AC-3's counterexample replayed with a request whose `package_id` is another package's refuses `PackageIdMismatch` and settles `inconclusive`, `Inconclusive(StaleDependency{requested, recompiled})` naming the request's and the recompiled `package_id`, written `stale-dependency{requested, recompiled}` on the FR-331 record, not `ReplayRefused`. | Test (TC-1141) |
+| FR-127-AC-13 | FR-338-AC-11's stale closure certificate and FR-339-AC-4's stale component certificate each settle `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id` and `recompiled` the recompiled one, written `stale-dependency{requested, recompiled}` on the FR-331 record, never `certificate-rejected` and never `proved`. | Test (TC-1141) |
 
 ## Dependencies
 

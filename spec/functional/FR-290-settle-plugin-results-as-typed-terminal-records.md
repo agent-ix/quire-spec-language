@@ -37,6 +37,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-278
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-404
+    type: references
   - target: "ix://agent-ix/quire-specification/FR-272"
     type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-305"
@@ -47,6 +49,8 @@ relationships:
     type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-462"
     type: depends_on
+  - target: "ix://agent-ix/quire-spec-language/FR-447"
+    type: references
 ---
 # FR-290: Settle plugin results as typed terminal records, with plugin proofs labelled trusted
 
@@ -166,7 +170,8 @@ this order, and return the first refusal:
 
 | Wire inconclusive `cause` | `InconclusiveCause` | Payload rules |
 | --- | --- | --- |
-| `undecided-successor`, `no-initial-state`, `no-instance`, `sufficient-test-failed`, `solver-inconclusive`, `match-undetermined`, `vacuous-match` | the variant of the same name | no payload member |
+| `undecided-successor`, `no-initial-state`, `no-instance`, `sufficient-test-failed`, `match-undetermined`, `vacuous-match` | the variant of the same name | no payload member |
+| `solver-inconclusive{trace}` | `SolverInconclusive { trace }` | `trace` is optional, and absent reads as `None`. On an item whose claim is a hybrid claim (FR-447), a present `trace` reads in QSpec FR-193's "Hybrid trace" form into `Some(HybridTrace)`, its names resolved to indices against the claim's `CheckedHybridModel`, and each correspondence failure FR-250 lists is `Malformed` at its member. On any other item a present `trace` is `Malformed` at `/cause/trace`. The reader keeps the trace and neither replays it nor reads a counterexample from it (FR-250). |
 | `bound-reached{depth}`, `induction-not-closed{depth}` | `BoundReached { depth }`, `InductionNotClosed { depth }` | `depth` is a count |
 | `reduction-not-preserving{reduction, form}` | `ReductionNotPreserving { reduction, form }` | `reduction` is `symmetry`, `partial-order` or `constraint`, read as `ReductionKind::Symmetry`, `PartialOrder` or `StateConstraint`; any other value is `Malformed`. `form` is a non-empty string, and an empty or non-string `form` is `Malformed`. A `PropertyForm` canonical spelling (quire-semantic-value FR-121) reads as that form. Any other non-empty string is `Unsupported` at `/cause/form`, as an unknown `method` is. |
 | `constraint-reached{boundary_states}` | `ConstraintReached { boundary_states }` | `boundary_states` is a positive count |
@@ -334,6 +339,10 @@ of its own. `PluginReplayContext::new` takes:
 It copies what it needs and refuses nothing. A pair of units that do not
 match is caught by the replay's own recompile, which requires the recompiled
 `package_id` to equal the request's (FR-098).
+
+A consumer that runs a call through the replay facade names none of these
+units: it takes the context of that same run from `run_with_replay_context`
+(FR-404), which builds requests only for the call's own items.
 
 `PluginReplayContext::request(occurrence, proof_bounds, plugin, assignments)`
 builds the `ReplayRequestWire` for one counterexample. It takes:
