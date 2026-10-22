@@ -39,8 +39,16 @@ No major findings. One medium: FR-398's refusal bullet contradicts its own Outpu
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at 2c1c71756 (fix commit 66a821ff2). The coder's claimed rows were checked against the fix commit and replaced by these reviewer-checked rows.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: FR-398 refusal order restated; unused unit found, dimension no unit names is Unknown; AC-3 and TC-1092 step 4 test it | 66a821ff2 |
-| FND-002 | fixed: FR-398 states the enum-lookup exception | 66a821ff2 |
-| FND-003 | fixed: FR-398 states a package cannot name a dependency's unit in source | 66a821ff2 |
+| FND-001 | fixed 66a821ff2 | Reviewer-verified: FR-398 refusal bullet now says an unused unit is found by unit_declaration and WrongKind to other WrongKind-refusing lookups, and a dimension no unit names is unlisted and Unknown; matches code. |
+| FND-002 | fixed 66a821ff2 | Reviewer-verified: FR-398 states the FR-394 enum lookups never refuse WrongKind. |
+| FND-003 | fixed 66a821ff2 | Reviewer-verified: FR-398 states a package cannot name a dependency unit in source, so Foreign fires only for ids from the dependency package. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | TC-1092 Description still says "Scope: FR-398-AC-1 to FR-398-AC-3" though steps 4-6 now cover AC-5 too, and FR-398's AC table lists AC-5 before AC-4. Update the scope line and order the rows. | spec/test-cases/TC-1092-the-replay-facade-returns-the-admitted-unit-table.md:15 |

@@ -40,8 +40,10 @@ No major findings. The table is the checker's own (`scope().types().units()`), i
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at 2c1c71756 (fix commit 66a821ff2). The coder's claimed rows were checked against the fix commit and replaced by these reviewer-checked rows.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: enum lookup keeps never refusing WrongKind by FR-394; asymmetry stated in the WrongKind rustdoc and FR-398 and tested (enum lookup of an unused unit is Unknown) | 66a821ff2 |
-| FND-002 | fixed: dependencies now collect only unit and dimension keys (unit_keys); no unit table clone or name building | 66a821ff2 |
-| FND-003 | fixed: AdmittedDimension::terms() exposes a derived dimension's parts and exponents; tested on Speed | 66a821ff2 |
+| FND-001 | fixed 66a821ff2 | Reviewer-verified: WrongKind rustdoc states that enum lookups never refuse WrongKind (a unit id is Unknown to enum_declaration); FR-398 states it; an_unused_unit_is_found_and_a_dimension_no_unit_names_is_not_listed asserts enum lookup Unknown. Asymmetry kept by design (FR-394). |
+| FND-002 | fixed 66a821ff2 | Reviewer-verified: dependencies go through unit_keys(), which borrows the dependency table (declared_nodes(&UnitTable)) and collects only keys; no clone, no names. |
+| FND-003 | fixed 66a821ff2 | Reviewer-verified: AdmittedDimension::terms() returns (NodeKey, Integer) parts; derived_dimensions_chains_and_offsets_convert asserts Speed = {Length:1, Time:-1}, each part a listed dimension. |
