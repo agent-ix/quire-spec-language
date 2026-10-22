@@ -2728,7 +2728,8 @@ impl<'a> Typer<'a> {
             }
             // FR-148 selects IEEE ordering only through the `totalOrder`
             // intrinsic; the grammar's orderings select none.
-            (ValueType::Float(_), ValueType::Float(_))
+            (ValueType::Float(_), _)
+            | (_, ValueType::Float(_))
             | (ValueType::Boolean, ValueType::Boolean)
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))

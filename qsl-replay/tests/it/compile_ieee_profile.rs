@@ -68,7 +68,7 @@ fn refusal(text: &str, code: Code, cause: &str) -> Box<qsl_replay::spine::Compil
         panic!("expected {code:?}/{cause} from {text}");
     };
     assert_eq!(refusal.code(), code, "{refusal:?}");
-    assert_eq!(refusal.cause(), Some(cause), "{refusal:?}");
+    assert_eq!(refusal.cause(), Some(cause), "{text}: {refusal:?}");
     refusal
 }
 
