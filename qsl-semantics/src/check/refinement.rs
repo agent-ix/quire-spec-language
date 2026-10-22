@@ -28,28 +28,34 @@
 
 mod history;
 mod internal_list;
+mod protocol;
+mod step_label;
 
 use std::collections::BTreeMap;
 
 pub use history::{HistoryRow, HistoryUpdate};
 pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
 pub(crate) use internal_list::{NodeClass, ParsedLists, ProtocolClasses};
+pub use protocol::{ChannelStepKind, MemoryStepKind, ProtocolStepKind, RoleStepKind};
+pub(crate) use protocol::{ProtocolClause, ProtocolRefinement, SelectedProtocol};
 use qsl_forms::{
     AbstractSideForm, ArgumentForm, ExpressionForm, FairnessConstraintForm,
     FairnessGranularity as FormGranularity, FairnessKind as FormKind, FairnessSide,
-    ProtocolNodeKind, RefinementForm, RefinementRowForm, StepSourceForm, StepTargetForm,
+    ProtocolDeclarationForm, ProtocolNodeKind, RefinementForm, RefinementRowForm, StepRowForm,
+    StepSourceForm, StepTargetForm,
 };
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, InternalFault, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IllTypedCause, Integer,
-    IntegerInterval, Presence, ValueType,
+    IntegerInterval, NodeKey, Presence, ValueType,
 };
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
 use quire_semantic_value::location::{Location, Origin};
+pub use step_label::{observation, LabelStep, RowObservation, StepLabel};
 
 use super::check::{
     bind_parameters, PopulationScope, ScopedHistory, ScopedPopulation, StateContext, Typer,
@@ -58,6 +64,7 @@ use super::ir::{static_integer_range, CheckedBody, CheckedNode, NodeKind, Visit}
 use super::lowering::AdmittedModel;
 use super::observation::Observations;
 use super::profile::TemporalProfile;
+use super::protocol_clause::ProtocolNodeId;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::state_clause::{observation_of, ClauseDeclarations, ClauseOperation};
 use crate::family::CheckContext;
@@ -86,6 +93,20 @@ pub enum RowClass {
     Object,
     /// A `step` row for a concrete operation.
     Step,
+    /// A `step` row for a protocol node: an `event`, `send`, `receive`,
+    /// `timeout` or `finish` node, an attempt node no operation row covers,
+    /// or a `parallel`'s `fork` or `join` (FR-136).
+    Node,
+    /// A `step` row for a compensation template's `cattempt` or `cend`.
+    Template,
+    /// A `step` row for a channel's `duplicate` or `lose`.
+    Channel,
+    /// A `step` row for a replicated role's `spawn` or `retire`.
+    Role,
+    /// A `step` row for the `activation on each` trigger.
+    Trigger,
+    /// A `step` row for a memory step kind.
+    Memory,
 }
 
 /// A spelling of a refinement declaration that S3 has no checker for yet.
@@ -101,6 +122,10 @@ pub enum UnsupportedFeature {
     /// canonical form (an enum or a decimal), which a product state could not
     /// key (FR-138).
     HistoryRow,
+    /// An abstract-operation application as the right side of a protocol
+    /// step row: FR-136 binds `self` to the concrete receiver, and a
+    /// protocol step has none that the requirement names.
+    ProtocolStepApplication,
 }
 
 impl UnsupportedFeature {
@@ -110,6 +135,7 @@ impl UnsupportedFeature {
             Self::ProtocolAbstractSide => "protocol-abstract-side",
             Self::RefinementInternalList => "refinement-internal-list",
             Self::HistoryRow => "history-row",
+            Self::ProtocolStepApplication => "protocol-step-application",
         }
     }
 }
@@ -539,11 +565,47 @@ pub struct ObjectRow {
     pub hidden: Vec<DeclarationKey>,
 }
 
-/// The concrete step a `step` row maps.
+/// The concrete step a `step` row maps (FR-136 Outputs).
+///
+/// FR-383's minting of the protocol nodes' keys is not built, so a class
+/// names a node by its identity in the clause, and a template, channel or
+/// role by its declared name, where FR-136 has `NodeKey`s. They become
+/// `NodeKey`s with the sort key (FR-136-AC-7, FR-146-AC-5).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepClass {
     /// A concrete operation.
     Operation(DeclarationKey),
+    /// An `attempt` node, whose row takes precedence over its operation's.
+    AttemptNode(ProtocolNodeId),
+    /// A compensation template's `cattempt`, written as the template's name.
+    CompensationAttempt(String),
+    /// A compensation template's `cend`.
+    CompensationEnd(String),
+    /// A protocol node's step.
+    ProtocolNode {
+        /// Which step of the node.
+        kind: ProtocolStepKind,
+        /// The node.
+        node: ProtocolNodeId,
+    },
+    /// A channel's `duplicate` or `lose`.
+    Channel {
+        /// Which step.
+        kind: ChannelStepKind,
+        /// The channel's declared name.
+        channel: String,
+    },
+    /// A replicated role's `spawn` or `retire`.
+    Role {
+        /// Which step.
+        kind: RoleStepKind,
+        /// The role's declared name.
+        role: String,
+    },
+    /// The `activation on each` trigger's `activate`.
+    Trigger,
+    /// A step of the memory model of an outermost `parallel`.
+    MemoryStep(MemoryStepKind),
 }
 
 /// The right side of a `step` row, resolved.
@@ -604,6 +666,10 @@ pub struct CheckedRefinement {
     pub(crate) concrete_fairness: Vec<FairnessConstraint>,
     pub(crate) abstract_fairness: Vec<FairnessConstraint>,
     pub(crate) concrete_object_types: Vec<EffectiveId>,
+    /// The protocol clause the step rows select; absent for a model subject.
+    /// The clause's node exists once the unit's protocol nodes are minted
+    /// (FR-092), so the pipeline fills it after the check.
+    pub(crate) concrete_protocol: Option<NodeKey>,
 }
 
 impl CheckedRefinement {
@@ -653,6 +719,12 @@ impl CheckedRefinement {
     /// The step rows, in source order.
     pub fn steps(&self) -> &[StepRow] {
         &self.steps
+    }
+
+    /// The protocol clause the step rows select (FR-136 "Selecting the
+    /// concrete protocol"); `None` for a model subject.
+    pub fn concrete_protocol(&self) -> Option<NodeKey> {
+        self.concrete_protocol
     }
 
     /// The history rows, in source order (FR-138).
@@ -827,6 +899,53 @@ impl Findings {
             },
         );
     }
+
+    fn fault(&mut self, invariant: &'static str) {
+        self.refusals.push(CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(InternalFault::new(
+                "check.refinement",
+                invariant,
+            )))),
+        });
+    }
+}
+
+/// A qualified name split at its `::` separators, with the span of each
+/// segment.
+struct NameSegments<'n> {
+    parts: Vec<&'n str>,
+    span: Span,
+    /// Whether the name's span covers exactly its spelling, so that a
+    /// segment's span follows from its offset; with trivia between the
+    /// tokens a segment is located by the whole name.
+    exact: bool,
+}
+
+impl<'n> NameSegments<'n> {
+    fn of(name: &'n qsl_forms::NameForm) -> Self {
+        Self {
+            parts: name.name.split("::").collect(),
+            span: name.span,
+            exact: name.span.end - name.span.start == name.name.len(),
+        }
+    }
+
+    fn parts(&self) -> &[&'n str] {
+        &self.parts
+    }
+
+    /// The span of the segment at `index`.
+    fn span(&self, index: usize) -> Span {
+        if !self.exact {
+            return self.span;
+        }
+        let offset: usize = self.parts[..index].iter().map(|part| part.len() + 2).sum();
+        Span {
+            start: self.span.start + offset,
+            end: self.span.start + offset + self.parts[index].len(),
+        }
+    }
 }
 
 /// The object type name and member of `Alias::Type::member`.
@@ -874,14 +993,28 @@ fn lift(lifting: &BTreeMap<EffectiveId, EffectiveId>, value_type: &ValueType) ->
     }
 }
 
-/// Checks the refinement `declaration` and returns it with the package's
-/// running expression-node total after it, or every refusal of it.
-pub(crate) fn check_refinement<'a, 'c>(
-    declaration: &'c RefinementDeclaration,
+/// What the check of one refinement declaration found.
+pub(crate) enum RefinementCheck<'f> {
+    /// Every part checked.
+    Checked(Box<CheckedRefinement>),
+    /// The rows select a protocol clause: everything that depends on the
+    /// models only is checked, and the rest waits for the checked clause
+    /// (FR-136 "Order of the checks").
+    Protocol(Box<ProtocolRefinement<'f>>),
+    /// Every refusal of the declaration.
+    Refused(Vec<CheckRefusal>),
+}
+
+/// Checks the refinement `declaration` against the unit's models and the
+/// names of its `protocols`, and returns what it found with the package's
+/// running expression-node total after it.
+pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
+    declaration: &'f RefinementDeclaration,
+    protocols: &'c [ProtocolDeclarationForm],
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     env: &RefinementEnv<'_>,
-) -> Result<(CheckedRefinement, u64), (Vec<CheckRefusal>, u64)> {
+) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
     let mut findings = Findings {
         refinement: form.name.name.clone(),
@@ -934,7 +1067,7 @@ pub(crate) fn check_refinement<'a, 'c>(
                 findings.unresolved(&alias.name, alias.span, None);
             }
         }
-        return Err((findings.refusals, nodes));
+        return (RefinementCheck::Refused(findings.refusals), nodes);
     };
     let subject = match &form.abstract_side {
         AbstractSideForm::Model(_) => ListSubject::Model,
@@ -956,6 +1089,7 @@ pub(crate) fn check_refinement<'a, 'c>(
     let clause_refused = matches!(subject, ListSubject::Refused);
     let mut checker = Checker {
         declarations,
+        protocols,
         abstract_side,
         concrete_side,
         findings,
@@ -976,7 +1110,11 @@ pub(crate) fn check_refinement<'a, 'c>(
     let headers = checker.history_headers(form, &declaration.selection.identity);
     let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
-    let steps = checker.steps(form, cx);
+    let StepRows {
+        operations,
+        written,
+        protocol,
+    } = checker.steps(form, cx);
     let history = checker.history_rows(headers, cx);
     let concrete_fairness = checker.fairness(form, FairnessSide::Assume);
     let abstract_fairness = checker.fairness(form, FairnessSide::Ensure);
@@ -986,39 +1124,89 @@ pub(crate) fn check_refinement<'a, 'c>(
         .object_types()
         .map(|(_, id)| id)
         .collect();
-    let internal = checker.internal;
-    let findings = checker.findings;
-    if !findings.refusals.is_empty() || clause_refused {
-        return Err((findings.refusals, nodes));
-    }
-    Ok((
-        CheckedRefinement {
-            name: form.name.name.clone(),
-            profile: declaration.selection.clone(),
-            abstract_model: abstract_alias.name.clone(),
-            abstract_side: match &form.abstract_side {
-                AbstractSideForm::Model(_) => AbstractSide::Model,
-                AbstractSideForm::Protocol { clause, .. } => AbstractSide::Protocol {
-                    clause: clause.name.clone(),
-                },
+    let Checker {
+        findings,
+        lifting,
+        maps_complete,
+        history: scoped_history,
+        internal,
+        protocol_subject,
+        protocol: abstract_classes,
+        ..
+    } = checker;
+    let checked = CheckedRefinement {
+        name: form.name.name.clone(),
+        profile: declaration.selection.clone(),
+        abstract_model: abstract_alias.name.clone(),
+        abstract_side: match &form.abstract_side {
+            AbstractSideForm::Model(_) => AbstractSide::Model,
+            AbstractSideForm::Protocol { clause, .. } => AbstractSide::Protocol {
+                clause: clause.name.clone(),
             },
-            abstract_internal: {
-                let mut classes: Vec<AbstractStepClass> =
-                    internal.into_iter().map(|(class, _)| class).collect();
-                classes.sort();
-                classes
-            },
-            concrete_model: form.concrete.name.clone(),
-            populations,
-            objects,
-            steps,
-            history,
-            concrete_fairness,
-            abstract_fairness,
-            concrete_object_types,
         },
-        nodes,
-    ))
+        abstract_internal: {
+            let mut classes: Vec<AbstractStepClass> =
+                internal.iter().map(|(class, _)| class.clone()).collect();
+            classes.sort();
+            classes
+        },
+        concrete_model: form.concrete.name.clone(),
+        populations,
+        objects,
+        steps: Vec::new(),
+        history,
+        concrete_fairness,
+        abstract_fairness,
+        concrete_object_types,
+        concrete_protocol: None,
+    };
+    // A protocol abstract side refused by its own clause checks reported
+    // those refusals (FR-147 "Abstract side"); the refinement gives no check.
+    let check = match protocol {
+        _ if clause_refused => RefinementCheck::Refused(findings.refusals),
+        // A protocol subject keeps every refusal found so far beside the
+        // clause's, whichever part they come from: the clause check does
+        // not wait on them (FR-136 "Order of the checks").
+        Some((selection, rows)) => RefinementCheck::Protocol(Box::new(ProtocolRefinement {
+            checked,
+            operations,
+            written,
+            selection,
+            rows,
+            profile: declaration.selection.identity.clone(),
+            refusals: findings.refusals,
+            name_span: form.name.span,
+            typing: protocol::Typing {
+                lifting,
+                maps_complete,
+                history: scoped_history,
+                protocol_subject,
+                abstract_classes,
+                internal: internal.clone(),
+            },
+        })),
+        None if findings.refusals.is_empty() => {
+            RefinementCheck::Checked(Box::new(CheckedRefinement {
+                steps: operations.into_iter().map(|(_, row)| row).collect(),
+                ..checked
+            }))
+        }
+        None => RefinementCheck::Refused(findings.refusals),
+    };
+    (check, nodes)
+}
+
+/// The rows of a declaration after its operation rows are checked.
+struct StepRows<'f> {
+    /// The operation rows that checked, each with its position among the
+    /// declaration's rows.
+    operations: Vec<(usize, StepRow)>,
+    /// The operation of every operation row written, whether or not its
+    /// right side checked: a refused right side is that row's refusal, and
+    /// the operation still has its row.
+    written: Vec<DeclarationKey>,
+    /// The selected protocol and the rows that wait for its checked clause.
+    protocol: Option<(protocol::Selection, Vec<(usize, &'f StepRowForm)>)>,
 }
 
 /// What the check of a refinement reads beyond the unit's models.
@@ -1166,6 +1354,8 @@ fn internal_list(
 
 struct Checker<'c, 'a> {
     declarations: &'c ClauseDeclarations<'a>,
+    /// The unit's protocol declarations, which a step row may select.
+    protocols: &'c [ProtocolDeclarationForm],
     abstract_side: Side<'c>,
     concrete_side: Side<'c>,
     findings: Findings,
@@ -1636,13 +1826,7 @@ impl<'c, 'a> Checker<'c, 'a> {
     }
 
     fn fault(&mut self, invariant: &'static str) {
-        self.findings.refusals.push(CheckRefusal {
-            location: Location::root(Origin::Expression),
-            cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(InternalFault::new(
-                "check.refinement",
-                invariant,
-            )))),
-        });
+        self.findings.fault(invariant);
     }
 
     /// Types `expression` where `required` is expected, over `context`, and
@@ -1758,13 +1942,15 @@ impl<'c, 'a> Checker<'c, 'a> {
         }
     }
 
-    /// FR-136: one `step` row per concrete operation, each right side
-    /// checked.
-    fn steps(
+    /// FR-136: the operation rows, each right side checked, and, over a
+    /// model subject, one row per concrete operation. The rows that select
+    /// a protocol clause are classified here and resolved once the clause is
+    /// checked (`ProtocolRefinement::complete`).
+    fn steps<'f>(
         &mut self,
-        form: &RefinementForm,
+        form: &'f RefinementForm,
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
-    ) -> Vec<StepRow> {
+    ) -> StepRows<'f> {
         let scope = self.declarations.scope;
         let types = self.types();
         let abstract_types = {
@@ -1775,25 +1961,37 @@ impl<'c, 'a> Checker<'c, 'a> {
             let found = self.concrete_side.object_types(types);
             self.or_fault(found)
         };
+        let protocol::Classified { rows, selection } =
+            protocol::classify(form, self.protocols, &concrete_types, &mut self.findings);
         let mut first_rows: BTreeMap<(EffectiveId, String), Span> = BTreeMap::new();
         let mut steps = Vec::new();
-        for row in &form.rows {
-            let RefinementRowForm::Step(row) = row else {
-                continue;
-            };
-            // FR-136: over a model subject a row's left side names a concrete
-            // operation; a step-class keyword or a `memory` kind names none.
-            let source = match &row.source {
-                StepSourceForm::Named { kind: None, name } => name,
-                StepSourceForm::Named {
-                    kind: Some(_),
-                    name,
-                } => {
-                    self.findings.unresolved(&name.name, name.span, None);
+        let mut written = Vec::new();
+        let mut deferred = Vec::new();
+        for (index, row, sort) in rows {
+            let source = match (&row.source, sort) {
+                (_, protocol::RowSort::Refused) => continue,
+                (_, protocol::RowSort::Unresolved) => {
+                    self.fault("an-unresolved-row-is-settled-by-classify");
                     continue;
                 }
-                StepSourceForm::Memory(kind) => {
+                (_, protocol::RowSort::Protocol) => {
+                    deferred.push((index, row));
+                    continue;
+                }
+                // A `memory <kind>` row names a kind of the selected
+                // protocol's memory models, and with no protocol selected
+                // it names none.
+                (StepSourceForm::Memory(_), _) if selection.is_some() => {
+                    deferred.push((index, row));
+                    continue;
+                }
+                (StepSourceForm::Memory(kind), _) => {
                     self.findings.unresolved(&kind.name, kind.span, None);
+                    continue;
+                }
+                (StepSourceForm::Named { kind: None, name }, _) => name,
+                (StepSourceForm::Named { kind: Some(_), .. }, _) => {
+                    self.fault("a-keyworded-row-names-a-protocol");
                     continue;
                 }
             };
@@ -1829,6 +2027,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                 self.fault("concrete-operation-has-a-declaration-key");
                 continue;
             };
+            written.push(key.clone());
             let target = match &row.target {
                 StepTargetForm::Stutter { .. } => Some(StepTarget::Stutter),
                 StepTargetForm::Any { .. } => Some(StepTarget::Any),
@@ -1849,26 +2048,37 @@ impl<'c, 'a> Checker<'c, 'a> {
                 ),
             };
             if let Some(target) = target {
-                steps.push(StepRow {
-                    class: StepClass::Operation(key.clone()),
-                    target,
-                });
+                steps.push((
+                    index,
+                    StepRow {
+                        class: StepClass::Operation(key.clone()),
+                        target,
+                    },
+                ));
             }
         }
-        for object in &concrete_types {
-            for operation in scope.operations().declared_by(object.id) {
-                if !first_rows.contains_key(&(object.id, operation.name().to_owned())) {
-                    self.findings.refuse(
-                        form.name.span,
-                        RefinementCause::MissingRow {
-                            class: RowClass::Step,
-                            name: format!("{}::{}", object.name, operation.name()),
-                        },
-                    );
+        // Over a protocol subject an operation needs a row only where an
+        // attempt of it has no node row, which coverage decides.
+        if selection.is_none() {
+            for object in &concrete_types {
+                for operation in scope.operations().declared_by(object.id) {
+                    if !first_rows.contains_key(&(object.id, operation.name().to_owned())) {
+                        self.findings.refuse(
+                            form.name.span,
+                            RefinementCause::MissingRow {
+                                class: RowClass::Step,
+                                name: format!("{}::{}", object.name, operation.name()),
+                            },
+                        );
+                    }
                 }
             }
         }
-        steps
+        StepRows {
+            operations: steps,
+            written,
+            protocol: selection.map(|selection| (selection, deferred)),
+        }
     }
 
     /// The operation `name` (`Alias::Type::operation`) spells among the
