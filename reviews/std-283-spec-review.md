@@ -59,8 +59,11 @@ FR-209-AC-7 was hand-checked. The body `repeat { attempt set }` with no maximum 
 | FND-002 | fixed | The sentence now reads "A fair run may leave an enabled `activate` untaken while other steps run." This agrees with PB-1/PB-4. |
 | FND-003 | fixed | The repeated FR-212 bullet is gone. The Classes bullet now ends "at an instance-limited state (FR-209) as anywhere else". |
 | FND-004 | fixed | FR-209-AC-5 now reads "...with `max_live_instances` 1; with 2 it settles V-6 with `bound: max_live_instances 2`". |
+| FND-005 | fixed | Disposition pass 2, head aa33eeee1. FR-209-AC-7 and TC-654 step 7 now write `repeat R by p visible() while { true } attempt Done on set`. This matches the QSpec shared grammar's `repetition` (proposals/quire-v1/shared-grammar.md:532-535): `'repeat', ident, 'by', ident, visibility, [ loop-proof ], 'while', block, control`. The no-`max` arm is valid, `visible()` is an empty `visibility`, and the grammar is unchanged on QSpec origin/main. `attempt Done on set` shortens the `attempt` event node the same way FR-212-AC-1 does. The lasso is unchanged. With no maximum, PS-6 keeps no counter, and FR-206-AC-5 says a `repeat` adds no step. After the first `attempt(set)`, each pass settles back through the `{ true }` guard to the same rest point at `v = 1`. That gives the self-loop at the instance-limited state, with the root class taken and `activate` enabled and never taken: V-4 at bound 1. A checker that counts `activate` as fair finds no fair lasso and settles V-6. |
 
 ## Verdict
+
+Disposition pass 2: head aa33eeee1 merges cleanly with `origin/main` 59ba94503, and `make check-spec-validation` exits 0 on that merge, with no finding on a touched file. FND-001 to FND-005 are all fixed, and the delta has no new finding. Mergeable.
 
 Disposition pass 1: FND-001 to FND-004 are fixed. FND-005 is a new low-severity spelling nit: the `repeat` guard is unstated. The PR is mergeable, either with FND-005 fixed in a one-line edit or with it deferred to the QSL-559 coder's test, if the lead accepts that. No regression was found in the delta. Lead default (1) still needs owner awareness, as before.
 
