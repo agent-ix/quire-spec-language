@@ -68,3 +68,15 @@ in-PR; FND-004 and FND-005 are wording.
 | FND-003 | medium | The PR deletes FR-002-AC-3, FR-256-AC-4 and TC-749, but tests on main still carry those ids: `tests/it/parser.rs:167` is tagged `#[trace("TC-012", "FR-002-AC-3")]` and `tests/it/deep_sources.rs` is tagged with TC-749/FR-256-AC-4. After merge they trace to criteria that do not exist. Either delete or retag those tests in this PR, or name the follow-up that does (QSL-837) in the PR body, so the computed matrix does not carry orphan tags. | tests/it/parser.rs:167; tests/it/deep_sources.rs |
 | FND-004 | low | FR-002-AC-7 says the `a < b < c` document has one `invalid_syntax` diagnostic "at that operator", but the unit holds two comparison operators. Say "at the second `<`", as FR-002-AC-2 does. | spec/functional/FR-002-parse-native-units.md:87 |
 | FND-005 | low | "or another limit flag is given" leaves the set of limit flags open; FR-002-AC-8 lists only `--source-bytes`, `--tokens` and `--nodes`. Name the refused flags, or refuse every option other than `--limit` in this position. | spec/functional/FR-002-parse-native-units.md:69-72 |
+
+## Dispositions
+
+Round 1, checked against fix commit 5ed1a4cb5. `make check-spec-validation` exits 0; main is an ancestor; no textual conflict with any current open PR. No spec file on the head names `quire-spec parse` any more (outside `spec/reviews/`). FR-002 now states only the library contract (the `parse` operation, `OutcomeDocument::from_parse`, FR-285's exit code) and assigns the frontend's arguments and their refusal to the driver (FR-287 Overlap), so FR-002-AC-7 and #1274's FR-287-AC-1 can both pass: the #1273/#1274 contradiction is resolved. TC-750 keeps its id in a renamed file; no other file links the old name. FR-010's surviving CLI clauses (AC-2/3/4/7/9/10, AC-11's second half) are on main unchanged and outside this PR's change.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-002 drops every `quire-spec` clause; the frontend paragraph assigns arguments to the driver; AC-7 is stated over `OutcomeDocument::from_parse` and FR-285, with `ci-clean-build` running a library test; AC-8 and FR-256-AC-5 are stated over the `parse` operation and FR-255's settings operation. |
+| FND-002 | fixed | FR-010-AC-11's first clause and AC-6 now read the `ParsedSource` the `parse` operation returns in process. |
+| FND-003 | deferred | QSL-837 (the code ticket that deletes the 0-draft parser): the PR body now states that QSL-837 must delete or retag `tests/it/parser.rs:167` (FR-002-AC-3) and `tests/it/deep_sources.rs` (TC-749/FR-256-AC-4). This PR is spec-only. |
+| FND-004 | fixed | AC-7 says "at the second `<`". |
+| FND-005 | fixed | The "another limit flag" clause is deleted with the rest of the CLI argument clauses; argument refusal is the driver's. |
