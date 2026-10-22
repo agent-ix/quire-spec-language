@@ -138,28 +138,93 @@ both branches of an `if`.
 |---|---|
 | `Literal` of a Boolean, integer or rational value (`true`, `false`, an integer literal, `rational(n, d)`) | `value` / `literal`; `semantic_type` its type node; body `literal{type, value_kind, value}` spelled as FR-092 fixes. An integer literal that is an operand of `quire.op.integer.add`, `sub`, `mul` or `negate` is no node: it is the same `literal{type, value_kind, value}` term, typed at the builtin `Integer` node, in that application's `arguments` (FR-357, FR-358, ADR-013 O-09), as is an integer literal operand of an integer `quire.op.integer.eq` or `ne` (FR-358 step 6); every other literal operand, including the integer literal of an ordering, the literal that an equality over a bounded integer peer wraps in a `numeric.narrow` application (the operand is that application, identified `graph_child` by FR-358 step 6), and the operands of a composite or non-integer equality, is a reference to its node |
 | `Literal` of a String, UUID or Timestamp value (`"abc"`, `UUID("...")`, `Timestamp(n)`, as check resolves the two calls) | `value` / `literal`; `semantic_type` the node of the native `string`, `uuid` or `timestamp` scalar type; body `literal{type, value_kind, value}` with `value_kind` `string`, `uuid` or `timestamp` and `value` spelled as FR-092 fixes |
+| `Literal` of a quantity value (`3 ms`) | `value` / `literal`; `semantic_type` its unit's `scalar_type`/`unit` node; body `literal{type, value_kind, value}` with `value_kind` `quantity` and `value` the canonical magnitude ("Quantity literals") |
 | `Literal` of an enum member (`E::m`) | the enum member's QSpec `value` / `enum_value` node (FR-092 rule 1) |
 | `Record{declaration, slots}` (`R { f: e, g: null }`) | `value` / `record_value`; `semantic_type` the record's node; body `aggregate` of one binding per slot in declaration order: `f` = `reference(e)` for a present slot, and `f` = `literal{type: the field's Option node, value_kind: "none", value: null}` for a `null` slot and for an omitted optional slot, which denote one value |
 | `Tuple{declaration, arguments}` (`Q(a, b)`) | `value` / `tuple_value`; `semantic_type` the tuple's node; body `aggregate{[reference(a), reference(b)]}` |
 
-### Quantity literals are outside V1 scope
+### Quantity literals
 
-Complete-V1 SHALL refuse a quantity literal in a value expression, including
-`f(3 ms)`, as `unsupported_construct`/`not-yet-implemented`, carried by the
-typed `ProbabilisticCause::QuantityLiteral`. No checked-package literal node
-is emitted for that expression. The source typer can resolve its exact
-rational magnitude and declared unit; this does not admit its lowering.
+A quantity literal `n u` in a value expression, such as the argument of
+`f(3 ms)`, SHALL check and lower to one FR-322 literal node.
 
-QSpec defines `value_kind: quantity`, its canonical magnitude and its
-unit-typed literal fit rule in FR-322-AC-79, and both V2 schemas enumerate the
-kind. A `rational` literal typed at a unit violates the literal/type-family
-contract, so QSL SHALL NOT substitute a rational scalar type to emit a
-quantity literal. Quantity parameters and the existing quantity comparison,
-arithmetic and exact unit-conversion operations are in scope.
+**Typing.** The literal's magnitude `n` is an `exact-value` (a `uint`, a
+`decimal-literal`, `rational(n, d)` or `decimal(n, s)`; FR-393), so it always
+denotes an exact rational. `check` measures and reduces it as FR-185 "Exact
+values" states for every exact value, under the rational-bits ceiling of the
+check stage's `CheckingLimits` (NFR-011). The unit name `u` resolves in the
+unit namespace, as a `Quantity<u>` type form's name does (FR-091-AC-44): it
+names a declared unit, never a dimension and never a compound unit. The
+literal's checked type is `ValueType::Quantity(UnitId)` of that unit, the
+type `Quantity<u>`, and its checked value is the reduced magnitude in that
+unit.
 
-The refusal is QSL's own V1 lowering scope: QSL emits no `value_kind:
-quantity` literal, and `check` raises `ProbabilisticCause::QuantityLiteral` for
-a quantity literal in a value expression.
+A literal never changes type to fit its slot (FR-056-AC-41). A quantity
+literal is admitted where its operand position takes `Quantity<u>` of the
+same unit: a parameter of type `Quantity<u>`, a comparison or `+`/`-` whose
+other operand has type `Quantity<u>`, and a product or quotient, whose result
+unit `check` forms as for any quantity operands (FR-094). Every unit and
+dimension rule of a quantity operand applies to it unchanged: a different
+dimension, and a different unit of the same dimension, each refuse
+`ill_typed`/`type-mismatch`, and a quantity divisor, a literal included,
+refuses `undefined_expression`/`unproved-nonzero` (FR-094). A literal in
+another unit of the same dimension is written as the unit the position takes
+or converted with `convert<T>(…)`, which lowers by the `ConvertScalar` rows
+to `quire.op.quantity.convert` with mode `rounding` = `exact`.
+
+**Lowering.** A quantity literal lowers to a `value`/`literal` node whose
+`semantic_type` is the `scalar_type`/`unit` node of its unit (FR-094: a
+declared unit's quantity type is its unit node) and whose body is
+`literal{type, value_kind, value}` with `type` that same unit node,
+`value_kind` `quantity` and `value` the reduced magnitude in QSpec FR-322's
+canonical spelling ("Scalar literal values", FR-322-AC-79): the decimal
+integer when the denominator is 1, otherwise `numerator/denominator` in
+lowest terms with a sign only on the numerator. So `3 ms` has value `"3"`,
+`0.5 ms` and `rational(2, 4) ms` each have value `"1/2"`, and
+`rational(1, 1000) s` has value `"1/1000"` at the `s` node. The unit node's
+family is `quantity`, the family `value_kind` `quantity` admits, so the
+literal satisfies the literal/type-family rule; a `rational` literal typed
+at a unit node violates it, and `check` never emits one. As for any literal
+outside an integer application's arguments, an operand position holds a
+reference to the literal's node. Literal nodes are content-addressed, so two
+quantity literals with one unit and one reduced magnitude are one node, and
+`3 ms` and `3 s` are two.
+
+**Domain.** A quantity literal contributes no domain to a claim's extent,
+because a literal is one value and not a domain (ADR-014 §4 extent rule). A
+quantity domain comes only from a quantity-typed position, such as a
+`Quantity<u>` parameter, which ADR-014 §4 and FR-097-AC-2 classify as one
+unbounded domain that no `FiniteBound` ranges over. The Contract IR reader
+returns `requires_bound` under a bounds-required profile only for a position
+typed at a quantity; a package whose closure reaches a unit only as a
+`literal.type` lowers (Contract IR FR-038-AC-73).
+
+**Probabilistic positions.** A quantity literal in a probabilistic
+declaration or claim position (a distribution's support value, FR-185; an
+expected-reward threshold, FR-195; a quantile threshold or horizon, FR-186)
+is checked by the same magnitude and unit reading, then recorded in that
+form as that requirement states. It is no value-expression literal and
+lowers to no FR-322 node here; a package holding such a form is refused at
+S4 as FR-185 "Package emission" states.
+
+**Refusals.** A quantity literal in a value expression is refused, with no
+literal node, when:
+
+- its unit name resolves to no declared unit, a dimension name included:
+  `missing_declaration`/`missing-name`, naming the name;
+- its unit differs from the unit its operand position takes:
+  `ill_typed`/`type-mismatch`, at the argument of a call and at the
+  comparison or operation otherwise, for a different dimension and for a
+  different unit of the same dimension alike;
+- its magnitude has a zero denominator (`rational(1, 0) ms`):
+  `undefined_expression`/`unproved-nonzero`, FR-091's code for a zero
+  denominator;
+- its written magnitude exceeds the rational-bits ceiling:
+  `stage_limit_exceeded`/`rational-bits-exceeded`, naming `s3.rational_bits`
+  and the configured ceiling (FR-185 "Exact values", NFR-011).
+
+A magnitude is always an exact rational, so no quantity literal is refused
+for its magnitude's kind.
 
 ### Application nodes
 
@@ -863,7 +928,8 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-30 | Over `x: Int[0, 9]`, the bodies `x + 1`, `1 + x`, `x - 1`, `x * 2` and `-5`, and over `x: Integer` the bodies `x == 1` and `1 != x`, each lower to one application whose integer literal operand is a `literal{type, value_kind: integer, value}` term in the application's `arguments`, typed at the builtin `Integer` node, and the checked graph holds no node for that literal. In `2 * (x + 1)` each literal is inline in its own application and the inner application is a reference in the outer. Over `x: Int[0, 9]`, `x == 1` compares `x` with a `numeric.narrow` application of the literal's node, which FR-358 step 6 identifies as `graph_child`. `x > 0` and `a == true` (with `a: Boolean`) keep a reference to their literal node, and a function whose body is the literal `1` holds the `value`/`literal` node L6. | Test (TC-415) |
 | FR-093-AC-31 | `function f using v(a: Int[-100,100], b: Decimal[-100,100;0,0;nearest-even]): Boolean pure { convert<Decimal[-100,100;0,0;nearest-even]>(a) = b }` lowers to one `quire.op.numeric.convert` node over `a`'s parameter node, whose `result_type` is `b`'s type node, and one `quire.op.decimal.eq` whose arguments are `[ref(convert), ref(b)]`. `!=` gives `quire.op.decimal.ne`, and `b = convert<..>(a)` puts the convert node second. `convert<Decimal[..]>(a) = convert<Decimal[..]>(c)` builds one convert per operand. A conversion between Rational, Decimal and Int types in either direction, and a Quantity conversion `convert<Km>(q) = r` (`quire.op.quantity.convert` with mode `rounding` = `exact`, then `quire.op.quantity.eq`), each lowers a convert node and the equality of the converted type. `a = b` over two `Int[-100,100]` parameters builds no convert node and gives `quire.op.integer.eq` over the two parameters. IR's v2 reader admits each package, and evaluating each equality gives the result of comparing the converted values. | Test (TC-415) |
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
-| FR-093-AC-33 | With declared unit `ms` and `f` taking `Quantity<ms>`, the Complete-V1 call `f(3 ms)` refuses with typed `ProbabilisticCause::QuantityLiteral`, `unsupported_construct`/`not-yet-implemented`, and emits no literal node. | Test (TC-483) |
+| FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. `f(0.5 ms)` and `f(rational(2, 4) ms)` in one unit lower to one shared literal node of value `"1/2"`; two `3 ms` in one unit lower to one shared node; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<s>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
+| FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
 
 ## Dependencies
 
