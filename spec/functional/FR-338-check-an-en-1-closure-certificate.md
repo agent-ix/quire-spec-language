@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: references
+  - target: ix://agent-ix/quire-specification/FR-370
+    type: references
 ---
 # FR-338: Check an EN-1 closure certificate
 
@@ -146,7 +148,9 @@ from the model state; its context does not copy the model subject or hash
 the existing obligation again. The certificate request still binds that
 subject through O-09 and FR-125. `profile` is the exact admitted temporal profile identity;
 `activation` is `"origin"` or `"each"` for a bounded monitor and
-`"infinite"` otherwise. A deadlock-freedom item's existing derived
+`"infinite"` otherwise, except that a clause whose `on each` activation has
+a `when` condition uses `"each-when"` for each property form that admits one
+(TP-1, TP-2, TP-3; "Guarded `on each` activation" below). A deadlock-freedom item's existing derived
 obligation identity selects its `always holds(not deadlocked)` formula.
 No absent root/profile/activation is defaulted.
 
@@ -374,6 +378,51 @@ constants unchanged; infinite-trace terminal stutter advances on the real
 last model state's letter. No terminal/cache marker is needed because
 profile, clock and all open debt/memory facts select those moves; marking
 a state "closed" cannot bypass recomputation.
+
+### Guarded `on each` activation
+
+A TP-1, TP-2 or TP-3 clause whose `on each` activation has a `when`
+condition (FR-126) SHALL use the state algebra above with the following
+rules; it adds no state alternative and no certificate member.
+
+- The condition is the `guard` term of the clause node's activation
+  argument (QSpec FR-370). The context's root names that clause node, whose
+  content identity covers the guard term, so the root binds the condition,
+  and the activation member `"each-when"` selects the guarded reading. A key
+  carries neither the condition nor any reading of it.
+- At every position the monitor reads, the translation SHALL read the
+  condition through FR-125's letter seam for the item's binding, as part of
+  that position's letter and before the clause's atoms. A terminal
+  false-extension position and an infinite-trace stutter position read it
+  by the same rule they apply to the clause's atoms. Where it reads true the
+  position adds the root activation exactly as an unguarded `on each`
+  position does; where it reads false the position adds none. Prior live
+  debt and past memory advance in both cases.
+- The condition's truth SHALL NOT be a state member. It is a function of the
+  position's model state and the binding, so a product state's successors
+  are fixed by its model state, its automaton state and that reading, and
+  two positions that reach the same structural facts have the same key
+  whatever the condition read at them.
+- The state is `["safety", branches]` for TP-1 and TP-3 and
+  `["bounded", ["each"], branches]` (or a decided form) for TP-2. With no
+  live activation, `branches` holds the one obligation-free configuration
+  carrying the current past memory, which is true and does not reject; for
+  a formula with no past occurrence it is `[[[],[],[],[]]]`.
+  `["safety",[]]` remains the unique rejecting safety state.
+- In the protocol non-progress construction below, a `waiting`
+  configuration of a guarded clause SHALL choose as the start of its
+  negated-root activation only a position whose condition reads true.
+
+The checker SHALL rebuild this guarded automaton from the recompiled
+clause and SHALL re-read the condition at every reached product state
+through the same seam, taking no condition reading from the certificate or
+the engine. A certificate built from a misread condition therefore lacks a
+recomputed successor (`SuccessorMissing`) or carries a key no context of
+the item admits (`ShapeMismatch`). A condition that reads undefined at a
+reached state rejects with `BadState` at that product state, as an
+undefined atom does (ADR-018 UE-1); every other outcome of the reading,
+an evaluation-meter stop included, follows the rule this requirement
+states for an atom of the letter.
 
 ### Protocol non-progress acceptance and closure classification
 
@@ -614,7 +663,7 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
   product state is not in the certificate.
 - The checker SHALL reject with `BadState` when a reached state's monitor
   state rejects (a bounded-profile closure at a terminal state included),
-  its letter is undefined, or its expansion records `ContractUndetermined`;
+  its letter (a guarded activation's condition included) is undefined, or its expansion records `ContractUndetermined`;
   for the deadlock-freedom item it SHALL also reject with `BadState` a
   deadlocked state (FR-124). A deadlocked state is bad for no other item:
   it reads by the terminal rules (ADR-018 DL-6).
@@ -637,6 +686,7 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 | FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
 | FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]`, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has two instances, and each instance's `context` is `[root, profile, "infinite", [[N, ["instance", T, "a"]]]]` with `N` the `over` parameter's NodeId and `T` the JSON string of `P1`'s, respectively `P2`'s, declaration identity text; the two contexts' octets differ exactly in `T`, and a certificate state carrying `P1`'s context is not admitted under `P2`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", T, "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the four-element `["instance", T, "a", O]` with `O` the JSON string of `Counter`'s declaration identity text; and `["instance", T, {"type":"text","value":"a"}]`. Over a subject with population `P1` of `Counter`, universe `["a"]`, and two initial states, one holding a `Counter` under key `a` and one holding a `Fast` (a subtype of `Counter`) under key `a`, the instance's context octets are equal in both. | Test (TC-1164) |
+| FR-338-AC-10 | Over the `Counter` subject (no `terminal` declaration), with each `when` condition read by the test's own letters as in FR-126-AC-16 and a request whose recompiled package resolves the guarded clause's root: `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value = 7` returns `Holds` whose certificate holds values 0 to 3, each with activation `"each-when"` and state body `["safety",[[[],[],[],[]]]]`, and `check_closure` accepts it, so FR-127 settles `proved`. `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with the condition `c.value >= 2` returns `Holds` whose certificate `check_closure` accepts, its value-2 state having body `["bounded",["each"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; that certificate with the value-2 state's body replaced by `["bounded",["each"],[[[],[],[],[]]]]` (the condition misread as false) is rejected `SuccessorMissing` at the value-2 product state with the deadline body; the accepted certificate with every key's activation replaced by `"each"` is rejected `ShapeMismatch`; and with the condition undefined at value 2, a certificate holding the states of values 0 to 3 is rejected `BadState` at value 2. | Test (TC-525) |
 
 ## Dependencies
 

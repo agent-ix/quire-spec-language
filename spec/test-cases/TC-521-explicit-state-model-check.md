@@ -87,8 +87,8 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   `kind: UndefinedEvaluation`, cause division-by-zero; `Violated` bound to
   `b` with the prefix `(0,1) -upd(b)-> (0,2)` at position 1.
 - Step 9: `Violated` with the prefix `0 -inc-> 1 -inc-> 2`; `Holds{Exhaustive}`;
-  `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; `Holds` with an
-  empty closure certificate; `Violated`, `kind: UndefinedEvaluation` naming
+  `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; `Holds` with the
+  closure certificate of its explored product states, keyed `"each-when"`; `Violated`, `kind: UndefinedEvaluation` naming
   the activation at position 2.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then
