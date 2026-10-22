@@ -33,6 +33,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/NFR-016
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-406
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/AD-001
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -120,12 +122,13 @@ witness, FR-366 value invariants, FR-106 check 6.5 provenance, FR-138
 history, FR-139 refinement populations, FR-391 named populations) run on
 the std reference evaluator. Retiring that evaluator therefore needs a
 `quire-eval` entry for clause evaluation and a clause extension of its
-environment contract. A requirement of its own defines that entry, the
-extension's reads and reported events, and the placement of the clause and
-refinement causes that FR-403 keeps in `qsl-eval` (`HistoryUnresolved`,
-`NamedPopulationIncomplete`, `ModelQueryRefusal` and the `ProtocolClause*`
-causes, one of which carries `qsl-semantics`' `AdmissionRecord`). Linear
-ticket STD-318 tracks it.
+environment contract.
+[FR-406](FR-406-evaluate-clause-families-through-a-quire-eval-clause-entry.md)
+defines that entry, the extension's reads, the trail events it reports, and
+the placement of the clause and refinement causes that FR-403 does not
+move (`HistoryUnresolved`, `NamedPopulationIncomplete`, `ModelQueryRefusal`
+and the `ProtocolClause*` causes, one of which carries `qsl-semantics`'
+`AdmissionRecord`).
 
 This requirement places three constraints on that entry:
 
@@ -273,8 +276,8 @@ QSL-owned corpus. FR-262-AC-1 to AC-8, AC-10 and AC-11 and FR-403's vectors run 
 - [FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md): the
   `Value`-family evaluator, its environment contract and what `qsl-eval`
   keeps until the switch.
-- The clause-evaluation requirement STD-318 tracks: the `quire-eval` clause
-  entry and its environment contract.
+- [FR-406](FR-406-evaluate-clause-families-through-a-quire-eval-clause-entry.md):
+  the `quire-eval` clause entry and its environment contract.
 - [FR-107](FR-107-evaluate-state-clauses-at-s6a.md),
   [FR-265](FR-265-derive-a-state-clause-separating-witness.md),
   [ADR-031](../decisions/ADR-031-state-forall-separating-witness.md),
