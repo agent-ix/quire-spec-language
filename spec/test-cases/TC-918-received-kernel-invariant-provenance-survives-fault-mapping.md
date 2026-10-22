@@ -57,3 +57,15 @@ ordinary-refusal Inconclusive terminal. Mapping adds no meter event and does
 not erase earlier charges. Ordinary refusal/undefined/incomplete controls
 retain their existing outcomes; an ordinary replay refusal remains
 Inconclusive. The QSL-owned negative control has no synthetic kernel cause.
+
+## Native Integer Capacity Vector
+
+Scope: FR-096-AC-21. Supply `Refusal::CheckedInvariant { cause:
+NativeIntegerCapacityBreach }` to S6a's stop conversion at a located and an
+unlocated seam, and pair it with the kernel stop `IntegerOutOfDomain {
+target: Int[-5, 9] }`. The capacity breach becomes `Err(InternalFault)` with
+stage `S6a`, invariant `checked-program-invariant`, code `runtime_invariant`,
+cause `established-invariant-broken`, category internal failure, no named
+fields and `kernel_cause()` equal to `NativeIntegerCapacityBreach`; kernel
+refusal-record creation returns none. The paired domain stop still builds the
+`integer_out_of_domain` record with `expected` `Int[-5, 9]`.
