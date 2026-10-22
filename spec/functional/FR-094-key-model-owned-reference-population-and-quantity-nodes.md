@@ -316,13 +316,13 @@ holds no quotient unit. FR-094-AC-6 keys the quotient units U2 to U4 from
 the units `value::quantity::result_unit` forms, which is the forming `check`
 does while it types a quantity division.
 
-Quantity parameters and the existing quantity operations use these unit type
-nodes. A quantity literal in a value expression is outside V1
-([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals-are-outside-v1-scope)):
-it is refused `unsupported_construct`/`not-yet-implemented` and introduces no
-literal node and no second quantity type. QSpec FR-322-AC-79 defines the
-quantity literal representation; the refusal is QSL's own V1 lowering scope,
-and the unit key rules do not themselves admit a literal.
+Quantity parameters, the existing quantity operations and quantity literals
+use these unit type nodes. A quantity literal in a value expression
+([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals))
+is a `value`/`literal` node of `value_kind` `quantity` whose `semantic_type`
+and literal `type` are its declared unit's node, so it introduces no second
+quantity type and no new type node: its unit's node is the one a
+`Quantity<u>` parameter of that unit names (QSpec FR-322-AC-79).
 
 ### Refusals
 
