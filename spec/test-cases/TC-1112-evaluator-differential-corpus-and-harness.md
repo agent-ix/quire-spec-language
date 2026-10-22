@@ -34,7 +34,7 @@ to FR-402-AC-10.
    entries out of `identity` order (AC-3).
 4. Load each bundle AC-4 lists (AC-4).
 5. Admit each bundle AC-5 lists, counting evaluator invocations (AC-5).
-6. Run the harness's std build over `fr402/count-3`,
+6. Run the harness's std implementation over `fr402/count-3`,
    `fr402/count-3-short`, `fr402/count-3-boolean` and
    `fr262/ac1/count-100000`, and build a compared record for a run that
    completes with a `Value::Text` (AC-6).
@@ -49,9 +49,9 @@ to FR-402-AC-10.
    `fr402/count-3`; diff `Cargo.lock` for new random-number or
    property-testing crates (AC-8).
 9. Run `make ci` in a tree that ships both implementations and inspect each
-   build's records; feed the comparator a `no_std` record set lacking one
+   implementation's records; feed the comparator a `no_std` record set lacking one
    admitted case; run FR-262-AC-2,
-   AC-3, AC-4, AC-6, AC-7 and AC-8's tests against each build; inspect the
+   AC-3, AC-4, AC-6, AC-7 and AC-8's tests against each implementation; inspect the
    harness's command line, environment and configuration (AC-9).
 10. Run CG's `make evaluator-corpus`, then
     `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>` (AC-10).
@@ -83,17 +83,17 @@ to FR-402-AC-10.
 - Step 7: the first run fails with pair `expected/std` and pointer
   `/consumed/work_units` and reports every other case; the second passes for
   that case; the third compares `std/no_std` only; the comparator reports
-  `std/no_std` under `/charges` and names the missing case and the build
-  that produced no record.
+  `std/no_std` under `/charges` and names the missing case and the
+  implementation that produced no record.
 - Step 8: the `case_id`s are exactly FR-402's list; the two generations are
   byte-identical with ids `gen/000` to `gen/255`, and every case loads and
   admits; the reused id runs and reports as a second case under bundle
   `external`; `Cargo.lock` gains no such crate.
-- Step 9: `make ci` runs both test builds, the std build admits each case
-  once, the `no_std` build compiles nothing and records every admitted case,
+- Step 9: `make ci` runs the runner's one test build, which admits each
+  case once and records every admitted case with each implementation,
   both records for `fr402/count-3` carry non-null `charges`, and the run has
   zero divergences; the lacking set is reported as a divergence; each FR-262
-  test passes against both builds; no tolerance, skip or exclusion setting
+  test passes against both implementations; no tolerance, skip or exclusion setting
   exists.
 - Step 10: every CG record loads and admits, the run reports zero
   divergences, and each non-null `expected` passes `expected/std`.

@@ -118,7 +118,9 @@ These stay where they are and are not part of the leaf: `qsl-foundation`'s
 `catalog_category` and the `CatalogCode` constants such as
 `ALLOCATION_FAILED`; `qsl-semantics`' `FamilyKind` and `FamilyContract`
 (the family contract the checker implements), `SuppliedRun`,
-`SuppliedLimits` and the supplied-value admission; `model::object_environment`
+`SuppliedLimits` and the supplied-value admission, which S6 moves to SV
+([FR-403](FR-403-implement-the-no-std-evaluator-in-quire-eval.md));
+`model::object_environment`
 (`ObjectEnvironment`, `ObservedRead`, `ReadLog`) and `PopulationBinding`;
 and `qsl-eval`'s `QualifiedName`, `supplied_stop_code` and
 `supplied_stop_cause`.
@@ -138,8 +140,8 @@ type, or is called from a crate, that does not:
 - The private helpers `SuppliedEvent::of_membership`, `SuppliedEvent::of_part`,
   `SuppliedStorage::of_request` and `SuppliedStorage::of_arena`, which the
   staying `SuppliedRun` calls, SHALL become private free functions in
-  `qsl-semantics`' `value::supplied` with the same results; they add no SV
-  API.
+  `qsl-semantics`' `value::supplied` with the same results, and move with
+  `SuppliedRun` in S6 (FR-403); they add no public SV API.
 
 `CallFailure::category`, `CallFailure`'s `From<SuppliedFailure>` conversion
 and `FamilyOutcome`'s `From<EvalOutcome>` conversion move with their types
