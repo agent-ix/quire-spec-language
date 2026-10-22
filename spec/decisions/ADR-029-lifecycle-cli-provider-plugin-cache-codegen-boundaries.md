@@ -45,6 +45,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-290
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/FR-289
+    type: relates_to
+  - target: ix://agent-ix/quire-specification/FR-462
+    type: relates_to
 ---
 # ADR-029: Lifecycle, CLI, provider, plugin, cache and code-generation boundaries (ARCH-50)
 
@@ -578,12 +582,58 @@ kills the process.
   B-5, exit 22). Items routed elsewhere are unaffected.
 - **Counterexamples.** A plugin's counterexample is canonical assignments.
   The item settles `refuted` only when S6a replay reproduces it (PV-2
-  item 4).
+  item 4). Before replay the counterexample is the driver's FR-331
+  `counterexamples` entry, the canonical assignments of a counterexample with
+  no transcript (ADR-013 QC-6). It is not a QSL type. The driver replays
+  those assignments through layer-6 `replay` as `ReplaySource::Input`
+  (ADR-013 O-25), and the replay alone settles the item:
+  - an `Input`-arm result that settles `reproduced-without-witness` with
+    category violation settles `refuted`, naming the plugin's `BackendId` and
+    keeping that replay result;
+  - an `Input`-arm result that settles `inconclusive` settles `inconclusive`
+    with cause `replay-parity`, carrying its `DisagreementCause`, and keeps no
+    replay result;
+  - a replay refusal settles as `TerminalValue::from_replay_refusal` does:
+    `inconclusive` with cause `replay-refused` and the refusal's catalog code,
+    or `failed` for a fault;
+  - an `Input`-arm result that reproduced something other than a violation,
+    or a `Witness`-arm result, refutes nothing and settles `failed`.
 - **Trusted proofs.** A plugin's `proved` result cannot be replayed and has
   no in-core certificate checker. The
   terminal record keeps the result `proved`, names the plugin's `BackendId`,
   and carries the certification `trusted`. A renderer shows the label beside
-  the verdict.
+  the verdict. The record is `TerminalValue::Proved{basis, certification:
+  Trusted}` (ADR-013, as amended by ADR-018 §1 and ADR-028), with `basis`
+  the `ProofBasis` the typed reader reads from the result's FR-331 `basis`.
+  The driver never makes up a basis: a plugin proof never carries a
+  `Checks{success_checks}` count the plugin did not report. A plugin
+  `proved` whose basis only the core establishes is refused and its item
+  settles `failed`. Those bases are the Kani check count
+  (`bounded-proof{checks}`, which only CG's C-09 map settles), a closed form
+  whose evidence the core recomputes (`closed-form{analysis}`) and a replayed
+  witness (`witnessed{sources}`).
+- **QSL-only causes.** The causes `replay-parity` and `replay-refused` come
+  from QSL's own S6a replay, and the Kani vacuous-proof cause
+  `kani_vacuous_proof` comes from CG's C-09 map (ADR-013 C-09). No provider
+  settles them. The FR-331 wire spells only the cause kind; the typed
+  payload, the `DisagreementCause` or the refusal's catalog code, exists only
+  on the QSL side. A plugin result that names one of these kinds is a tool
+  failure: the reader refuses it and the item settles `failed`, naming the
+  plugin's `BackendId`. A plugin result in which the reader finds one of
+  these typed causes is refused the same way.
+- **Refused request body.** A plugin that refuses a `request` body runs no
+  item. It answers with one `result` that settles every routed item FR-331
+  `failed`, with the refusal as the entry's `diagnostic` (QSpec
+  FR-462-AC-7): `stale_dependency`/`content-mismatch` for a decoded package
+  whose `package_id` differs from the body's, and
+  `invalid_runtime_input`/`invalid-value` for a `package` that is not the
+  canonical spelling. The driver reads each entry as a `failed` terminal
+  record naming the plugin's `BackendId`; `TerminalValue::Failed` carries no
+  cause. The plugin's diagnostic goes in the outcome document's
+  `diagnostics` (CB-4), built with `OutcomeDiagnostic::new` from its code and
+  cause, not in the terminal record. A refused plugin result (QSL-only
+  cause or core-only basis) settles the same way, with the refusal in
+  `diagnostics`.
 
 ### 6. Cache
 
@@ -862,6 +912,12 @@ except the ADR-011 amendment, which is applied in place.
   CA-2. QSpec FR-305: the manifest binding follows PL-4 and PL-5, and its
   effects and rights members and rights-mismatch refusal are removed
   (RU-4).
+- ADR-013 O-25 and C-09: a `ReplaySource::Input` counterexample is a corpus
+  counterexample or a plugin's counterexample (PL-7). A reproduced corpus
+  counterexample is still no backend evidence. A plugin's counterexample
+  whose replay reproduces the violation settles `refuted` naming the plugin
+  (PL-7). It is not CG backend evidence, because CG has no terminal step for
+  a process provider (PV-4 ruling 3).
 
 ## Alternatives Considered
 
