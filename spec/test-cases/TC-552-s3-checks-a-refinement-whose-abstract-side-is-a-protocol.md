@@ -107,6 +107,6 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   no `CheckedRefinement`.
 - Step 14: the first three rows check; the argument lists of length 3 and 2
   refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1
-  and `actual` 3 and 2, and `a1(1)` refuses `ill_typed`/`type-mismatch` at
+  and `actual` 3 and 2, and `a1(true)` refuses `ill_typed`/`type-mismatch` at
   the argument retaining `expected` the reference type of `Spec::Counter` and
-  `actual` the type of `1`.
+  `actual` `Boolean`.

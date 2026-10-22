@@ -37,3 +37,23 @@ FR-147-AC-14 (Test, TC-552) is in TC-552's scope (now AC-1 to AC-14), run agains
 ## Verdict
 
 FR-147-AC-14 has its TC rows. One low finding: the expected result drops the retained fields the AC requires.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | FR-147-AC-14 and TC-552's expected result for step 14, as fixed, give `actual` for `-> node Spec::Twice::a1(1)` as "the type of `1`" and nothing more, while every other retained value is pinned. QSpec types an integer literal by its context, so the value is not determined and a test written from TC-552 cannot assert it. Fix: name the type, or say `actual` is any integer type, in step with the QSpec half (SR-14032 FND-002). | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:293 |
+
+## Dispositions
+
+Re-checked at head ad0c475ce. Gates at head ad0c475ce: `make check-spec-validation` exit 0 with no warning on FR-147, FR-148 or TC-552; `tools/check-index-completeness.sh` exit 0; the diff touches nothing under `docs/` and no test-parsed vector table. The head contains origin/main. FR-147-AC-14 and TC-552 step 14 are used by no other open QSL PR. The PR body paraphrases no review finding.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed text at the new head: - Step 14: the first three rows check; the argument lists of length 3 and 2 refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1 and `actual` 3 and 2, and `a1(1)` refuses `ill_typed`/`type-mismatch` at the argument retaining `expected` the reference type of `Spec::Counter` and `actual` the type of `1`. |
+
+## Fix pass
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | The row is `-> node Spec::Twice::a1(true)` and `actual` is `Boolean`, so the retained value no longer depends on literal typing; TC-552 step 14 agrees. The QSpec half uses `node Spec::A::a1(self, true)` with `actual` `Boolean`. |

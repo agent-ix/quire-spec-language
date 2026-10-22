@@ -32,3 +32,11 @@ The change removes build-log text ("Remaining work: STD-249 ... this build types
 ## Verdict
 
 Mergeable for EARS apart from one low finding: the bullet packs three requirements under one SHALL.
+
+## Dispositions
+
+Re-checked at head ad0c475ce. Gates at head ad0c475ce: `make check-spec-validation` exit 0 with no warning on FR-147, FR-148 or TC-552; `tools/check-index-completeness.sh` exit 0; the diff touches nothing under `docs/` and no test-parsed vector table. The head contains origin/main. FR-147-AC-14 and TC-552 step 14 are used by no other open QSL PR. The PR body paraphrases no review finding.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed text at the new head: - The expressions of a node right side SHALL be typed against the node's binder record, whose fields per node kind are QSpec FR-432's. - An argument list whose length differs from the field count SHALL refuse `ill_typed`/`operator-ineligible` at the node, retaining `expected`, the field count, and `actual`, the written count. - An argument whose type is not its field's type SHALL refuse `ill_typed`/`type-mismatch` at the argument, retaining `expected`, the field's type, and `actual`, the argument's type. |

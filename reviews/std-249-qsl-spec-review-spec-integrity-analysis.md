@@ -48,3 +48,12 @@ FR-147-AC-14 and TC-552 step 14 are unused on main and on every other open QSL P
 ## Verdict
 
 Not mergeable as written. FND-001 is high: the AC's `a1()` row cannot parse, so its stated S3 refusal with `actual` 0 is unbuildable. FND-002 is low (stale wording in FR-147's first bullet and in FR-148). The rest of AC-14 agrees with QSpec FR-432 and with the counts recomputed by hand.
+
+## Dispositions
+
+Re-checked at head ad0c475ce (fix commit 1c5fd5137, then a merge of origin/main). Gates at head ad0c475ce: `make check-spec-validation` exit 0 with no warning on FR-147, FR-148 or TC-552; `tools/check-index-completeness.sh` exit 0; the diff touches nothing under `docs/` and no test-parsed vector table. The head contains origin/main. FR-147-AC-14 and TC-552 step 14 are used by no other open QSL PR. The PR body paraphrases no review finding. The `a1()` row is gone; `a1(self, _)` is a parsable two-argument list over a one-field binder record (inc has no parameter and no result), so expected 1 and actual 2 is right, and `a1(self, 1, 2)` is 1 and 3. The receiver type named, the reference type of `Spec::Counter`, is what QSpec FR-432 now gives for an attempt whose operation name names `Spec::Counter`. FR-214's observation-label bullet does not contradict the FR-148 wording.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed text at the new head: \| FR-147-AC-14 \| In a build that holds `protocol-abstract-side`, over `Twice`, whose attempt `a1` applies `Spec::Counter::inc` (no parameter and no result, so its binder record is the receiver alone), the rows `-> node Spec::Twice::a1(self)`, `-> node Spec::Twice::a1(_)` and `-> node Spec::Twice::a1` are admitted; `-> node Spec::Twice::a1(self, 1, 2)` and `-> node Spec::Twice::a1(self, _)` each refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1 and `actual` 3 and 2; `-> node Spec::Twice::a1(1)` refuses `ill_typed`/`type-mismatch` at the argument retaining `expected`... |
+| FND-002 | fixed | Fixed text at the new head: - Step rows SHALL cover every concrete step class by FR-136. A right side SHALL be an abstract operation application, an abstract protocol node with an argument list per QSpec FR-432 (an open or absent field is unconstrained), `stutter` or `any`. / FR-148: and arguments (and the concrete result when bound); for a node, a step of that node whose binder record agrees with the row's expressions on every field the row gives. |
