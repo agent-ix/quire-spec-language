@@ -60,8 +60,11 @@ Head bb5264aa6 (fix commit plus a merge of `origin/main` 423ac6aa0, which is an 
 | FND-004 | fixed | The fixture gains `stamps: OrderedSet<Timestamp>[0, 2]` admitted in order `5, -1`, and AC-51 refuses an uppercase-hex UUID element and a `"01"` Timestamp element as `invalid_runtime_input`/`invalid-value` at element 0. |
 | FND-005 | fixed | Checks 6.2 and 12 read "is, or contains at any depth, a type with no QSpec FR-181 form", and AC-51 adds a `Set<Option<String>>` vector. |
 | FND-006 | fixed | Check 6.5 says the index is "the element's index in the supplied array, never its written order" for every kind; the out-of-range report is no longer in the written-values list; AC-52's witness vector is the bag `1, 10, 2` with index 1. |
+| FND-007 | fixed | Disposition pass 2, head 70a50b675 (fix commit plus a merge of `origin/main` 4d34b5556, an ancestor; QSpec #372 is merged as c1033008): FR-106-AC-50 now says `z1` and `a1` each hold `ids` `{"set": []}`, `counts` `{"bag": []}`, `order` `{"ordered-set": []}`, `stamps` `{"ordered-set": []}` and `peers` `{"set": []}`, and the TC-1171 fixture says the same for every snapshot. `make check-spec-validation` against QSpec main c1033008 exits 0 with no finding on a touched file. |
 
 ## Verdict
+
+Disposition pass 2: FND-007 is fixed and there is no new finding. Every finding is fixed. Mergeable: QSpec #372, its dependency, is merged, and main is an ancestor of the head. The owner questions (Timestamp form, native wire spelling and native-encoding write order) remain recorded in the PR body as lead defaults.
 
 Disposition pass 1: FND-001 to FND-006 are fixed. FND-007 is a new low-severity fixture gap. The PR is mergeable once FND-007 is fixed, or with it deferred to the test author if the lead accepts that, and only after QSpec #372 merges. Owner note: the write order now follows the native encoding (key then population), which differs from QSpec FR-181 encoded-byte order for references and records; that is a lead default to confirm alongside the wire-spelling question.
 
