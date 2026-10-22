@@ -54,7 +54,9 @@ use quire_exact::Integer;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::layer::visit_located;
-use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, StageLimitCause};
+use super::refusal::{
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
+};
 
 /// The largest scale a decimal is expanded at when a confidence range is
 /// compared. A larger scale leaves the range unchecked here.
@@ -103,7 +105,7 @@ pub enum ConfidenceFault {
 }
 
 /// Why the `Probabilistic` family's check refused a declaration (FR-185,
-/// FR-186). Each variant but [`Self::QuantityLiteral`] carries its own span,
+/// FR-186). Each variant but `RandomReadInPrecondition` carries its own span,
 /// which `region::DeclarationRegions::refusal_region` reads directly.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProbabilisticCause {
@@ -310,10 +312,6 @@ pub enum ProbabilisticCause {
         /// `related`.
         related: [Span; 2],
     },
-    /// A quantity literal in a function body or clause: it types, but the
-    /// checked package has no literal form for a quantity to emit it as.
-    /// `unsupported_construct`/`not-yet-implemented`.
-    QuantityLiteral,
     /// A claim's `on` subject that names no `model` alias and declares no
     /// type. `missing_declaration`/`missing-name`.
     UnresolvedSubject {
@@ -524,7 +522,7 @@ impl ProbabilisticCause {
             | Self::OverNotObjectType { span, .. }
             | Self::NotStatePredicate { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
-            Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
+            Self::RandomReadInPrecondition { .. } => None,
         }
     }
 
@@ -577,7 +575,7 @@ impl ProbabilisticCause {
                 Code::AmbiguousDeclaration
             }
             Self::DuplicateWorkload { .. } => Code::ConflictingDeclaration,
-            Self::QuantityLiteral | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
+            Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -619,7 +617,7 @@ impl ProbabilisticCause {
             Self::OverNotObjectType { .. } => "over-not-object-type",
             Self::NotStatePredicate { .. } => "not-state-predicate",
             Self::DuplicateWorkload { .. } => "duplicate-declaration",
-            Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
+            Self::NotYetImplemented { .. } => "not-yet-implemented",
         }
     }
 }
@@ -680,23 +678,24 @@ fn exact_refusal(
     }
 }
 
-/// A quantity literal's magnitude, reduced, or the refusal it is at
-/// `location` (FR-185 "Exact values").
+/// A quantity literal's magnitude in a value expression, reduced, or the
+/// refusal it is at `location`, the whole literal (FR-093 "Refusals"). A
+/// zero denominator is the value expression's own unproved-nonzero cause,
+/// not a probabilistic one, so it is located like the ceiling refusal.
 pub(crate) fn quantity_magnitude(
     magnitude: &ExactValueForm,
     ceiling: u64,
     location: &Location,
 ) -> Result<quire_exact::Rational, CheckRefusal> {
-    exact::value(magnitude, ceiling)
-        .map_err(|fault| exact_refusal(fault, ceiling, magnitude.span, location.clone()))
-}
-
-/// The refusal of a quantity literal S4 cannot emit, at `location`.
-pub(crate) fn quantity_literal(location: Location) -> CheckRefusal {
-    CheckRefusal {
-        location,
-        cause: CheckCause::Probabilistic(Box::new(ProbabilisticCause::QuantityLiteral)),
-    }
+    exact::value(magnitude, ceiling).map_err(|fault| match fault {
+        exact::ExactFault::ZeroDenominator => CheckRefusal {
+            location: location.clone(),
+            cause: CheckCause::Unproved(Obligation::Nonzero),
+        },
+        exact::ExactFault::AboveCeiling { bits } => {
+            limit_refusal(Excess { bits, ceiling }, location.clone())
+        }
+    })
 }
 
 fn refusal(cause: ProbabilisticCause) -> CheckRefusal {

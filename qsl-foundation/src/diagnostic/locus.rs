@@ -7,8 +7,9 @@
 //! a kernel [`Location`] tag, and a wire reader names a digest-addressed
 //! artifact and a pointer into it.
 
-use std::fmt;
-use std::str::FromStr;
+use alloc::{borrow::ToOwned, string::String};
+use core::fmt;
+use core::str::FromStr;
 
 use quire_exact::Location;
 
@@ -76,7 +77,7 @@ impl Locus {
         map: &'a PackageSourceMap,
     ) -> Result<&'a [SourceRegion], UnresolvedLocus> {
         match self {
-            Self::Region(region) => Ok(std::slice::from_ref(region)),
+            Self::Region(region) => Ok(core::slice::from_ref(region)),
             Self::Occurrence(location) => Ok(map.resolve(location)?),
             Self::Artifact { .. } => Err(UnresolvedLocus::Artifact),
         }
@@ -151,6 +152,7 @@ impl fmt::Display for JsonPointer {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use ix_trace_rs::trace;
     use quire_exact::{NodeKey, Origin, Role};
 

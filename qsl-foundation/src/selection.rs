@@ -10,7 +10,8 @@
 //! [`ProfileCatalog`]; none of those layers owns them, so they sit in F
 //! (ADR-011 §6.1).
 
-use std::collections::BTreeSet;
+use alloc::collections::BTreeSet;
+use alloc::{string::String, vec::Vec};
 
 use crate::digest::InvalidDigest;
 use crate::{ByteDigest, Span};
@@ -111,9 +112,9 @@ impl ModelDigest {
     }
 }
 
-impl std::fmt::Display for ModelDigest {
+impl core::fmt::Display for ModelDigest {
     /// The source spelling: `sha256:<hex>` or `sha256-jcs:<hex>`.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Artifact(digest) => write!(f, "{digest}"),
             Self::DomainPackage(digest) => write!(f, "sha256-jcs:{digest:x}"),
@@ -290,6 +291,7 @@ impl ProfileCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::{format, string::String, vec, vec::Vec};
 
     fn profile(index: usize) -> String {
         format!("acme.profile.{index}")
