@@ -45,3 +45,14 @@ ACs exists yet (code lane remaining work, QSL-869), so no test is tagged.
 Every new or changed AC has a TC row, and the new AC FR-252-AC-3 has a new
 step. Two changed ACs have TC rows whose text was not brought up to date.
 Both are low.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@655c3660668f4835ba281a90d223412bb1c0784b` (fix commit `655c3660`, on top of `9f940889`, a merge of origin/main into the branch; the head contains origin/main `b5190738`). I checked each outcome against the spec text at that head, not against the commit message. Each `fixed` row quotes the fixed text.
+
+| FND | Outcome | Reason or after excerpt |
+| --- | --- | --- |
+| FND-001 | fixed 655c3660 | TC-707 step 2: "Write obligations for the timestamp contract with `timestamp_parameters` keying that contract to `{now, start}`, for the elapsed-time clause (with `handler` declared nowhere) and for the WCET clause." Step 3 adds the one-parameter contract of the new FR-252-AC-3 clause. |
+| FND-002 | fixed 655c3660 | TC-720 step 3 expected: "their union equals the table and the accounting table, and neither the supplied-value ceilings of FR-277 nor the monitor target's `monitor.max_event_rate` is in that union;" This matches FR-255-AC-3. |
+
+The ACs changed by the fix commit (FR-252-AC-2 and FR-252-AC-3, FR-391-AC-6) each have a matching TC-707 or TC-1076 step.

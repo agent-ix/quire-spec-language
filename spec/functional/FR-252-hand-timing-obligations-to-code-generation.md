@@ -83,8 +83,15 @@ each timing obligation outside the code model.
 - QSL SHALL recognise `elapsed_wall_time(h)` and `wcet(f)` in a timing clause
   before name resolution: it takes `h` and `f` as written, resolves neither
   against the unit's declarations, types the left operand as a time quantity,
-  and refuses nothing at S1 to S3 for either form. These two forms are
-  admitted only as the left operand of a timing clause.
+  and refuses nothing at S1 to S3 for either form. This recognition applies
+  only to the left operand of a timing clause and wins over a function of
+  the same name that the unit declares. Anywhere else (the right operand,
+  or inside another expression) `elapsed_wall_time` and `wcet` are ordinary
+  names that `Application` resolves (FR-065): a unit's own declaration of
+  that name is called, and an undeclared one is refused as `missing-name`.
+  A comparison whose left operand is one of the two forms and whose right
+  operand is not a time quantity is refused as `ill_typed`/`type-mismatch`
+  at the comparison.
 - QSL SHALL dispose a timing clause as `unsupported`,
   `unsupported-requested-capability`, naming its timing kind: a timing clause
   with `elapsed_wall_time` names elapsed real time and one with `wcet` names
@@ -99,6 +106,7 @@ each timing obligation outside the code model.
 | FR-252-AC-1 | FR-251-AC-1's plan yields a `MonitorAgreement` obligation with `events` 8 and a `TickArithmetic` obligation carrying the counter's width, the plan's buffers and its rate; with `agreement_horizon` 4 the agreement obligation carries 4 and states that it covers traces of up to 4 events. | Test (TC-707) |
 | FR-252-AC-2 | A contract `when now - start > d then timed_out` over `u32` parameters, with `timestamp_parameters` keying that contract to `{now, start}`, yields a `TimestampContract` obligation; a clause `elapsed_wall_time(handler) <= 50 µs` is disposed `unsupported`, `unsupported-requested-capability`, naming elapsed real time; a clause bounding a function's WCET is disposed the same way, naming WCET; `elapsed_wall_time(handler)` with `handler` declared nowhere is still disposed `unsupported` and not refused at name resolution. | Test (TC-707) |
 | FR-252-AC-3 | The contract of FR-252-AC-2 with `timestamp_parameters` empty yields no `TimestampContract` obligation, as does a contract that compares only `now` with a constant while `timestamp_parameters` names `{now, start}`; the clauses `elapsed_wall_time(handler) <= 50 µs` and `wcet(f) < 2 ms` are timing clauses, and a comparison of two `u32` parameters is not. | Test (TC-707) |
+| FR-252-AC-4 | A unit that declares its own function `wcet` still has `wcet(f) < 2 ms` taken as a timing clause; in `x = wcet(f)` and in `2 ms > elapsed_wall_time(handler)`, with no unit declaration of either name, the form is refused as `missing-name`; `wcet(f) < 3` is refused as `ill_typed`/`type-mismatch`. | Test (TC-707) |
 
 ## Dependencies
 

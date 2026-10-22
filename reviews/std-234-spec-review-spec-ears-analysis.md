@@ -43,3 +43,13 @@ below at head and none for them on main.
 The new and changed SHALL statements conform except the FR-252 timing-clause
 bullet, which mixes a definition into the requirement sentence and raises two
 new validator warnings.
+
+## Dispositions
+
+Disposition pass 1 at `agent-ix/quire-spec-language@655c3660668f4835ba281a90d223412bb1c0784b` (fix commit `655c3660`, on top of `9f940889`, a merge of origin/main into the branch; the head contains origin/main `b5190738`). I checked each outcome against the spec text at that head, not against the commit message. Each `fixed` row quotes the fixed text.
+
+| FND | Outcome | Reason or after excerpt |
+| --- | --- | --- |
+| FND-001 | fixed 655c3660 | The definition is its own bullet ("- A **timing clause** is a comparison `m <op> d` whose left operand `m` is ..."), and the requirement bullets start "- QSL SHALL recognise ..." and "- QSL SHALL dispose a timing clause as `unsupported`, ...". `quire validate --summary` on FR-252 at `655c3660` reports "1/1 docs grammar-clean (100%); 0 grammar finding(s)". At `b8b3c38` it reported `ears:unclassifiable` and `ears:missing-subject` at line 79. |
+
+The new SHALL bullets (recognise, dispose, TimestampContract trigger) are ubiquitous or event form and raise no grammar finding.
