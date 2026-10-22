@@ -33,6 +33,7 @@ use quire_exact::{Cancel, Identifier, NodeKey, Origin, Role};
 use crate::execute::callable_parameter_keys;
 use crate::identity::QualifiedName;
 use crate::spine::{self, CompileRefusal, DependencyInput, DependencyInputRefusal, OperationName};
+use crate::FrameOperation;
 
 /// What [`call_site`] can locate in the compiled package, and what it
 /// answers for each:
@@ -172,6 +173,11 @@ pub struct FunctionSite {
 /// occurrence each state clause naming the operation is recorded under.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationSite {
+    /// The QSpec FR-323 `frame_operation` replay target of this operation
+    /// (the [`FrameOperation`] a frame counterexample names): the declaring
+    /// object as `<model alias>::<artifact id>` and the operation, found through the selected
+    /// type's effective view (AD-006), never the selected type itself.
+    pub frame_operation: FrameOperation,
     /// The operation's `state`/`operation_anchor` node.
     pub anchor: WireNodeId,
     /// The operation's `state`/`frame` node.
@@ -330,7 +336,8 @@ pub enum CallSiteRefusal {
     /// A broken invariant: the compiled package's own function node for a
     /// selected function is not itself a function node, or its parameter
     /// count does not match its checked signature, or a declared parameter
-    /// or clause name is not itself a valid `Identifier`.
+    /// or clause name is not itself a valid `Identifier`, or an operation's
+    /// declaring object is no declaration of the selected model alias.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
 }
@@ -575,7 +582,7 @@ impl sealed::Locate for OperationName {
                     package: package_id,
                 })
             })?;
-        operation_site(graph, frame)
+        operation_site(graph, &self.model, frame)
     }
 }
 
@@ -652,6 +659,7 @@ impl sealed::Locate for PopulationName {
 /// [`CheckedGraph::operation_frame`] selects the frame by.
 fn operation_site(
     graph: &CheckedGraph,
+    model: &Identifier,
     frame: &CheckedOperationFrame,
 ) -> Result<OperationSite, Box<CallSiteRefusal>> {
     let clauses = graph
@@ -661,7 +669,25 @@ fn operation_site(
         .map(clause_site)
         .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
     let frame_node = wire_id(frame.frame());
+    let operation = frame.operation();
+    let fault = |invariant| {
+        Box::new(CallSiteRefusal::Fault(InternalFault::new(
+            "replay", invariant,
+        )))
+    };
+    let object = graph
+        .declaring_object(model, operation.declaring)
+        .ok_or_else(|| fault("declaring-object-is-a-declaration-of-the-selected-model"))?;
+    let object = QualifiedName::new(vec![model.clone(), object.clone()])
+        .map_err(|_| fault("frame-operation-object-has-segments"))?;
     Ok(OperationSite {
+        frame_operation: FrameOperation {
+            object,
+            operation: identifier(
+                operation.declaration.name(),
+                "declared-operation-name-is-a-valid-identifier",
+            )?,
+        },
         anchor: wire_id(frame.anchor()),
         frame: frame_node,
         frame_occurrence: OccurrenceKey::new(frame_node, frame.frame_origin().clone()),
