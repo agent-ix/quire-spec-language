@@ -20,6 +20,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/NFR-015
     type: references
+  - target: ix://agent-ix/quire-spec-language/NFR-016
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-403
     type: references
 ---
@@ -216,6 +218,16 @@ through `quire-eval` once it carries that implementation; until then CG's
 cases carry no expectation. Admission compiles each case once, and both
 implementations evaluate the same admitted checked package in the runner's
 process (FR-403).
+
+NFR-016 defines S8's gate: `make audit-unsafe` in `agent-ix/quire-eval`
+scans the closure that links into the `no_std` evaluator, `quire-eval`'s
+normal dependencies for `thumbv7em-none-eabi` without proc-macro crates,
+with `cargo-geiger`. It fails on unsafe code in a first-party crate, on a
+first-party crate that does not forbid `unsafe_code`, and on a third-party
+crate with unsafe code that the repository's `unsafe-inventory.toml` does
+not name. The inventory names each such crate, the first-party crates it is
+reached through, what its unsafe code does and why the evaluator may link
+it, and names no version. `make ci` in that repository runs the gate.
 
 ### RT and CG acceptance
 
