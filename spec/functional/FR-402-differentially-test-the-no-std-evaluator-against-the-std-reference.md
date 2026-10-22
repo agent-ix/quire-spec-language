@@ -412,12 +412,17 @@ criteria that name the std implementation hold in this form:
 
 - AC-6: the records are `quire-eval`'s, each equal to the case's recorded
   `expected`, with the same values.
-- AC-7: the pair is `expected/quire-eval`; a case with `expected` `null`
-  reports `missing_expected`; the comparator pairs one record set with the
-  expectations (FR-405-AC-8).
+- AC-7: the pair is `expected/quire-eval`, and a case with `expected`
+  `null` reports `missing_expected`. A comparator fed expectations and a
+  `quire-eval` record set that differ only in one `charges` entry's `sizes`
+  reports pair `expected/quire-eval` and a pointer under `/charges`; a
+  record set missing one `case_id` reports that case and that `quire-eval`
+  produced no record (FR-405-AC-8).
 - AC-9: `make ci` runs `evaluator-regression` over the QSL-owned corpus with
-  zero divergences, and FR-262-AC-2 to AC-8's tests run once, on
-  `quire-eval` (FR-405-AC-8).
+  zero divergences; a comparator fed a `quire-eval` record set that lacks
+  an admitted case reports that case as a divergence; and FR-262-AC-2,
+  AC-3, AC-4, AC-6, AC-7 and AC-8's tests run once, on `quire-eval`
+  (FR-405-AC-8).
 - AC-10: `make evaluator-regression EVALUATOR_CORPUS_DIR=<dir>` runs CG's
   bundle, and every record needs a non-null `expected` (FR-405-AC-9).
 

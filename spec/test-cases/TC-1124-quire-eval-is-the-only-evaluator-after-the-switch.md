@@ -48,8 +48,10 @@ against recorded expectations. Scope: FR-405-AC-1 to FR-405-AC-10.
    Run the generator for count 256.
 8. At the switch head, run `make ci`. Run `evaluator-regression` over a
    bundle holding `fr402/count-3` with `expected.consumed.work_units` one
-   less than the run's, and again with `expected` `null`. Try
-   `make evaluator-differential`.
+   less than the run's, and again with `expected` `null`. Feed the
+   comparator expectations and a `quire-eval` record set that differ only
+   in one `charges` entry's `sizes`, and a record set that lacks one
+   admitted case. Try `make evaluator-differential`.
 9. At the switch head, run `make evaluator-regression
    EVALUATOR_CORPUS_DIR=<dir>` over CG's bundle with expectations recorded
    through `quire-eval`, and again with one record's `expected` set to
@@ -66,9 +68,9 @@ against recorded expectations. Scope: FR-405-AC-1 to FR-405-AC-10.
 4. `qsl-eval/src/value/expression/evaluate.rs` and its submodules,
    `Machine`, the std reference adapter and the separate `quire-eval`
    entry are absent. No type keeps an evaluation's task or value stack.
-   Every traced result comes from a `quire-eval` session. The only
-   `NodeKind` matches are the ADR-031 SW-2 decision-path walk, which
-   returns no value. No feature selects an evaluator, no test-only path
+   Every traced result comes from a `quire-eval` session. Every remaining
+   `NodeKind` match is a structural walk that returns no value, such as the
+   ADR-031 SW-2 decision-path walk. No feature selects an evaluator, no test-only path
    holds one, and no deleted path re-exports or forwards.
 5. Every absent test ran only the std reference as a second
    implementation, paired std and `no_std` records, or tested the separate
@@ -85,8 +87,10 @@ against recorded expectations. Scope: FR-405-AC-1 to FR-405-AC-10.
 8. `make ci` runs `evaluator-regression` with zero divergences. The first
    bundle reports `fr402/count-3` with pair `expected/quire-eval` and
    pointer `/consumed/work_units`, and every other case still runs. The
-   second reports `missing_expected`. `evaluator-differential` does not
-   exist. No setting tolerates, skips or excludes a case.
+   second reports `missing_expected`. The `sizes` difference reports pair
+   `expected/quire-eval` and a pointer under `/charges`; the missing case is
+   reported as a divergence with `quire-eval` producing no record.
+   `evaluator-differential` does not exist. No setting tolerates, skips or excludes a case.
 9. The first run reports zero divergences. The second reports that case as
    `missing_expected`.
 10. No commit of `main` holds both `Machine` and a production path that

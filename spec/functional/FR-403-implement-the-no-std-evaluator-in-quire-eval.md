@@ -44,9 +44,9 @@ The crate `quire-eval` SHALL hold the `no_std` evaluator. It evaluates the
 expression, over C's checked terms. It admits call arguments itself, reads
 the object environment only through an environment contract that
 `quire-eval` defines, and is driven by the FR-262 scheduler that
-`quire-eval` already holds. `qsl-eval` consumes it. `qsl-eval` keeps the std
-reference evaluator, the std reference adapter, the clause and model
-engines and an implementation of the environment contract over
+`quire-eval` already holds. `qsl-eval` consumes it. Until FR-405's switch,
+`qsl-eval` keeps the std reference evaluator and the std reference adapter;
+it keeps the clause and model engines and an implementation of the environment contract over
 `qsl-semantics`' `ObjectEnvironment`, and stays a `std` crate. The two
 implementations agree on every result, refusal, location, loss and charge,
 which [FR-402](FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md)'s
@@ -349,7 +349,8 @@ return the reference's results:
 ### What `qsl-eval` keeps
 
 `qsl-eval` SHALL stay a `std` crate with no `std` feature of its own and no
-NFR-015 row. It keeps:
+NFR-015 row. Until FR-405's switch, it keeps the items below; FR-405
+"The state after the switch" states what it keeps after it:
 
 - the std reference evaluator (`value::expression`'s `Machine`), which
   `CheckedPackageEvaluation`'s `call` and `evaluate` use by default while
@@ -357,13 +358,13 @@ NFR-015 row. It keeps:
 - the clause, clause-set, frame, separation and value-invariant entries,
   the S6a family seam over the `qsl-semantics` family marker types, and
   the simulation, automaton, hyper, temporal, fairness and model-subject
-  engines, all on the reference evaluator;
-- the std reference adapter of FR-401, and the environment contract
+  engines, all on the reference evaluator until FR-405's switch;
+- until FR-405's switch, the std reference adapter of FR-401; and the environment contract
   implementation over `ObjectEnvironment`;
 - name resolution (`QualifiedName`), the FR-098 conversion phase before
   `call_supplied`'s admission, and the refusal-record function.
 
-`qsl-eval` SHALL expose an entry that runs a checked package's call or
+Until FR-405's switch, `qsl-eval` SHALL expose an entry that runs a checked package's call or
 expression through the `quire-eval` evaluator, with the package's checked
 graph as the closure and its `ObjectEnvironment` as the environment. The
 FR-402 differential runs and this requirement's FR-262 runs use that entry.

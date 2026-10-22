@@ -67,3 +67,27 @@ Owner and planner decisions:
 - Open the STD ticket for the `quire-eval` clause-entry requirement (FND-001), and decide where the clause causes live.
 - Decide whether RT's differential acceptance has to run before S9 (SR-15621 FND-003).
 - CG FR-044 must record non-null expectations through `quire-eval` before FR-405-AC-9 can pass; CG owns that.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | minor: FR-405-AC-4 is narrower than the Behavior text it checks. Behavior allows any "structural walk over checked terms that computes no value". AC-4 and TC-1124 expected result 4 instead require that "the `NodeKind` matches left in `qsl-eval` are the ADR-031 SW-2 decision-path walk". The clause orchestration that the switch rewrites (for example a clause-set or frame walk, or `composite_site`-style local matching) could legitimately add another structural match, and that would fail AC-4 while meeting the Behavior. <br>Fix: make AC-4 say "every `NodeKind` match left in `qsl-eval` is a structural walk that returns no value, such as the ADR-031 SW-2 decision-path walk". | spec/functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md:187-195, spec/functional/FR-405-retire-the-std-reference-evaluator-for-quire-eval.md:252 |
+
+## Dispositions
+
+Round 1, reviewed at 591355c8cfc0678ec05bbcbb7cfdb555ef4e7081.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | "Clause evaluation: a prerequisite" names a separate requirement tracked by STD-318 (it exists in Linear, Backlog). That requirement owns the entry, the extension's reads and events and the placement of the clause causes, all listed. FR-405 keeps three constraints only. |
+| FND-002 | fixed | The proxy is now no task or value stack and no `Value`/`Outcome`/`Evaluation` except through a `quire-eval` session, with the SW-2 walk named as allowed. The residual narrowness in AC-4 is FND-010. |
+| FND-003 | fixed | "Tests at the switch" limits deletion to three classes and requires porting the in-module probes. AC-5 is a base/head test-inventory diff, and TC-1124 step 5 builds it. |
+| FND-004 | fixed | "One switch change" lists the production evaluation paths and excludes FR-403's separate entry, and AC-10 repeats this. |
+| FND-005 | fixed | The switch change's description reports the switch base and the item 1 and 2 results. AC-1 and AC-2 add Inspection of that report. AC-6 compares against a checked-in fixture produced at the base. |
+| FND-006 | fixed | State item 1 places `src/state/evaluation.rs` and `src/temporal.rs` outside FR-405, under ADR-011 M-6c. |
+| FND-007 | fixed | "today" and "no longer" are gone; the added lines of the diff carry no time-relative wording. |
+| FND-008 | fixed | AC-4 and state item 2 name the file `qsl-eval/src/value/expression/evaluate.rs` and its submodules. The FR-380-AC-7 bound check moves into the clause orchestration and is in the list of what `qsl-eval` keeps. |
+| FND-009 | fixed | The PR body labels the Q-1 quotes as the planner's relay of Peter's earlier ruling, unverified by the lead. The owner still has to confirm retire rather than demote. |
+
+Verdict after round 1: no major finding is open. FND-010 (low) is a new minor finding.

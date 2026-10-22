@@ -42,3 +42,25 @@ These claims hold:
 ## Verdict
 
 Not mergeable as is. Three major findings: FND-001 (FR-403 and X-16 still say that `quire-eval` has no clause entry), FND-002 (FR-402 and FR-403 ACs become false after the switch) and FND-003 (AD-001's RT acceptance needs the deleted reference). FND-004 to FND-006 are minor. No textual conflict with #1236. The ids are unique.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | minor: FR-403 still states, without condition, two things that FR-405 deletes, in places the fix round did not bound. The Description (lines 47-53) says "`qsl-eval` keeps the std reference evaluator, the std reference adapter ...", and "What `qsl-eval` keeps" (lines 349-371) lists the std reference adapter. "What `qsl-eval` keeps" also says "`qsl-eval` SHALL expose an entry that runs a checked package's call or expression through the `quire-eval` evaluator", which is FR-403's separate entry, deleted by FR-405 state item 2 and FR-405-AC-4. Only the `Machine` bullet is bounded ("while it remains the reference"). <br>Fix: bound the Description sentence, the adapter bullet, the "all on the reference evaluator" bullet and the separate-entry SHALL with "until FR-405's switch", as the Scope section and AC-9 now are. | spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:47-53, spec/functional/FR-403-implement-the-no-std-evaluator-in-quire-eval.md:349-371 |
+| FND-008 | medium | minor: The FR-402 "After the switch" mapping drops two vectors that can still fail. (1) FR-402-AC-7's "a record set missing one `case_id` reports that case and the implementation that produced no record" and AC-9's "a comparator fed a `no_std` record set that lacks an admitted case reports that case as a divergence" have no post-switch form. FR-405 keeps the rule ("A case for which the run produces no record is a divergence"), but no FR-405 AC tests it, so after the switch the rule is untested. (2) AC-7's `charges` `sizes` comparator vector (pointer under `/charges`) becomes the vague "the comparator pairs one record set with the expectations". Also, the AC-9 mapping says "FR-262-AC-2 to AC-8", while FR-402-AC-9 lists AC-2, 3, 4, 6, 7 and 8, without AC-5. <br>Fix: in the mapping, keep the missing-record vector (pair `expected/quire-eval`, the case named) and the `/charges` pointer vector, and use FR-402-AC-9's own AC list, or say that FR-405 adds AC-5. | spec/functional/FR-402-differentially-test-the-no-std-evaluator-against-the-std-reference.md:403-423 |
+
+## Dispositions
+
+Round 1, reviewed at 591355c8cfc0678ec05bbcbb7cfdb555ef4e7081.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-403's Scope sentences (lines 108-112), its RT and CG sentence (192-193) and AC-9's clause-entry clause now read "until FR-405's switch". X-16 reads "until X-17", and X-17 reads "amending X-16" and cites STD-318. The unbounded remainder in the Description and in "What `qsl-eval` keeps" is FND-007. |
+| FND-002 | fixed | FR-402 has an "After the switch" subsection mapping AC-6, AC-7, AC-9 and AC-10. FR-403 has one paragraph mapping AC-2 to AC-7 and AC-10 to AC-14, which covers every FR-403 AC that compares with the reference (AC-1 and AC-8 do not compare, and AC-9 is bounded). FR-402-AC-2 and AC-5 name only QSL's std admission, which stays. Each mapped AC still compares with recorded values and can still fail. The dropped FR-402 vectors are FND-008. |
+| FND-003 | fixed | AD-001's RT bullet compares with the std reference while it exists and with the recorded expectations after S9, and says RT's acceptance is outside QSL's S9 criterion. FR-405 says the same. |
+| FND-004 | fixed | Criterion 4 is now "Slice S8's unsafe audit (IR-592) ... over the closure that links into the `no_std` evaluator", with no `quire-eval-corpus` and no "dependency". This matches #1236's NFR-016 closure. The NFR-016 citation is left to whichever PR merges second. `git merge-tree` with #1236's head is still clean. |
+| FND-005 | fixed | AD-001's Decisions bullet reads "make it the only evaluator", the S7-S9 paragraph reads "makes the no_std implementation the only evaluator", and line 191 reads "on its production paths". |
+| FND-006 | fixed | FR-405's relationships add FR-106, FR-138, FR-139, FR-366, FR-380, FR-391 and ADR-031. The IR-584 completion paragraph moved to AD-001's Decisions. |
+
+Verdict after round 1: no major finding is open. FND-007 and FND-008 (medium) are new minor findings.
