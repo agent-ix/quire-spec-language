@@ -150,14 +150,18 @@ wording.
 - The hook SHALL write each `Initial` and `Step` record into
   `CheckedGraph::requirements()` with kind `operation-contract`, keyed by its
   O-07 generated occurrence (FR-146-AC-9), and with the extent ADR-014 §4
-  gives as FR-097 classifies it over the record's roots, as FR-104 does for a
-  clause's record.
-- A `Step` record's roots SHALL be the concrete operation's receiver type and
-  parameter types, the parameter domain of each `_` argument of its abstract
-  operation, and each population of the concrete model; an `Initial`
-  record's roots SHALL be the populations of the concrete model. An abstract
-  population adds no domain of its own, since its universe is the concrete
-  universe of its source population (ADR-020 RM-2).
+  gives as FR-097 classifies it over the record's roots.
+- A `Step` record's roots SHALL be, as FR-104 takes a clause record's: the
+  concrete operation's receiver (`self`), result and parameter types; the
+  parameter domain of each `_` argument of its abstract operation; the
+  context population, the one population that covers the receiver's type
+  (FR-104); and each population a `reaches` in the operation's contract
+  clauses or in the refinement's state mapping walks. An `Initial` record's
+  roots SHALL be the population covering each concrete object type the state
+  mapping maps. A population of the concrete model that none of these names
+  adds no domain, and an abstract population adds no domain of its own,
+  since its universe is the concrete universe of its source population
+  (ADR-020 RM-2).
 - A record with no unbounded domain SHALL be `Bounded`; any other SHALL be
   `Unbounded` naming each unbounded domain, keyed and boundable as FR-104
   keys and bounds a clause record's domains (a population with no maximum is
@@ -166,8 +170,11 @@ wording.
 ### Routing and settlement
 
 - The records SHALL be offered to negotiation like any `operation-contract`
-  record (FR-075), routed by their kind and extent; a record no candidate
-  settles SHALL settle V-8 `unsupported`.
+  record (FR-075): candidates are chosen by kind alone (ADR-012 §1.1), and a
+  record's extent meets the candidate's advertised mode only at
+  negotiation, so an `Unbounded` record settles `requires-bound` unless its
+  candidate advertises `operation-contract` in unbounded mode. A record no
+  candidate settles SHALL settle V-8 `unsupported`.
 - The refinement record (FR-144) SHALL also be a candidate for SMT unrolling
   (ADR-018 EN-2) with the `check_step` edge monitor (ADR-020 RE-3); a
   refutation from it SHALL settle `refuted` only through FR-145's replay.
@@ -219,9 +226,9 @@ wording.
 | FR-146-AC-5 | Over a model subject, `StepRowRef` is the zero-based position in the `steps` order QSpec FR-375 fixes (node-key digest of the first named declaration, then member name). For `CasRefinesCounter`, the seven `Step` records name the positions 0 to 6, each once, and the row at position i has a first named declaration whose node-key digest is not greater than the row at position i + 1's; writing the seven `step` rows in reverse source order gives each `Step` record the same `StepRowRef`. Over FR-136-AC-7's protocol (with its `unknown`-delivery channel and `tso` `parallel`) the `Step` records name the positions of FR-375's protocol order (a `memory` row after every declaration-naming row, ties by alias-free class spelling), and reversing the source order of the rows changes none. | Test (TC-551) |
 | FR-146-AC-6 | With a package that holds `Spec::Counter` and `Impl::Counter` and an invariant `AbsInv` on `Spec::Counter` beside `CasInv` on `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` and not `AbsInv` in `hypotheses`, and writing the clauses in the opposite source order leaves each record's `hypotheses` unchanged. | Test (TC-551) |
 | FR-146-AC-7 | The settlement map treats a certificate by what FR-314 finds: a backend outcome "holds" for a `Step` record whose certificate FR-314 shows wrong settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{rule, at})` with FR-314's rule and locus, never `proved`; the same outcome with a certificate that FR-314 cannot verify and does not show wrong settles `Proved{Inductive{depth: 1}, Uncertified}`. The vector feeds the settlement map the checker's `Rejected` and `Unverifiable` results directly. | Test (TC-551) |
-| FR-146-AC-8 | The safety half of `CasRefinesCounter` settles from its eight records and hypothesis items by QSpec FR-468: `proved`, `Certified` when all eight records are proved with verified certificates and every hypothesis item is certified; `proved`, `Uncertified` when one hypothesis item is `Uncertified`; `inconclusive`, `hypotheses-not-established` for the invariant `self.value < 0` whose hypothesis items are not proved, although every step record is proved; `Inconclusive(InductionNotClosed{depth: 1})` for a backend counterexample for one `Step` record; `refuted` through FR-145's replay for a counterexample for the `Initial` record. | Test (TC-551) |
+| FR-146-AC-8 | Under a backend that advertises `operation-contract` in unbounded mode, the safety half of `CasRefinesCounter` settles from its eight records and hypothesis items by QSpec FR-468: `proved`, `Certified` when all eight records are proved with verified certificates and every hypothesis item is certified; `proved`, `Uncertified` when one hypothesis item is `Uncertified`; `inconclusive`, `hypotheses-not-established` for the invariant `self.value < 0` whose hypothesis items are not proved, although every step record is proved; `Inconclusive(InductionNotClosed{depth: 1})` for a backend counterexample for one `Step` record; `refuted` through FR-145's replay for a counterexample for the `Initial` record. | Test (TC-551) |
 | FR-146-AC-9 | Each of `CasRefinesCounter`'s eight `StepSimulationRecord`s is written with the occurrence key ADR-013 O-07 gives it: the refinement node, role `generated`, ordinal 0 for the `Initial` record and `i + 1` for the `Step { row: i }` record. | Test (TC-551) |
-| FR-146-AC-10 | `CheckedGraph::requirements()` of `CasRefinesCounter` holds its eight `StepSimulationRecord`s, each of kind `operation-contract`, keyed by its FR-146-AC-9 occurrence, with extent `Unbounded` and one domain, the `Impl::counters` population, of kind population and boundable by `Cardinality`; `Spec::counters` adds no domain. With `bound CountersBound on Impl::counters [2]` (FR-380) each of the eight is `Bounded`. A variant whose concrete operation `peek` takes a parameter `n: Integer` (no range) gives `peek`'s `Step` record a second unbounded domain, the `Integer` of `n`, and leaves the other seven records' domains unchanged. | Test (TC-551) |
+| FR-146-AC-10 | `CheckedGraph::requirements()` of `CasRefinesCounter` holds its eight `StepSimulationRecord`s, each of kind `operation-contract`, keyed by its FR-146-AC-9 occurrence, with extent `Unbounded` and one domain, the `Impl::counters` population, of kind population and boundable by `Cardinality`; `Spec::counters` adds no domain. With `bound CountersBound on Impl::counters [2]` (FR-380) each of the eight is `Bounded`. A variant whose concrete package adds an object type `Audit` with an unbounded population `audits` that no contract clause or state mapping reads gives the eight records the same single domain, `audits` adding none. A variant whose concrete operation `peek` takes a parameter `n: Integer` (no range) gives `peek`'s `Step` record a second unbounded domain, the `Integer` of `n`, and one whose `peek` returns `Integer` (no range) gives it the result's `Integer` domain; the other seven records' domains are unchanged. Under a backend that advertises `operation-contract` only in bounded mode, each `Unbounded` record settles `requires-bound`. | Test (TC-551) |
 
 ## Dependencies
 
