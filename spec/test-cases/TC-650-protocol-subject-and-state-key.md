@@ -12,7 +12,7 @@ relationships:
 
 Verify the protocol subject's construction and refusals, the thread paths and ordinals, binder removal and the canonical state key.
 
-Scope: FR-205-AC-1 to FR-205-AC-7.
+Scope: FR-205-AC-1 to FR-205-AC-8.
 
 ## Test Procedure
 
@@ -39,6 +39,10 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
    read the ordinals the second forks of `P` and `Q` take while the first
    `u` rests at `U1`, each `u`'s environment and `Ck` value, and the key's
    `observations`.
+8. Run FR-205-AC-8's protocol: activate the two registrations by the two
+   triggers in both orders, take each compensation thread's `cattempt` and
+   `cend`, then step `Committed` and finish the instance;
+   read the keys.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 
@@ -63,3 +67,6 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 - Step 7: `P` forks at ordinal 0 again and `Q` at ordinal 1; each `u` reads its
   own iteration's `a` (true, then false) and no state refuses; `observations`
   holds no `a` under a completed `u`.
+- Step 8: distinct keys for the two activation orders, each thread's entry
+  naming its registration; the commit entry from the commit step until the
+  instance finishes.

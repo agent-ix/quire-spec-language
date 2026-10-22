@@ -12,7 +12,7 @@ relationships:
 
 Verify access classification, admitted orderings with their refusal, the access-shape rule at S3 and in the pre-check, and that orderings change nothing under `sc`.
 
-Scope: FR-220-AC-1 to FR-220-AC-14. Steps 1 to 9 are S3 and pre-check checks; steps 10 to 13 are EN-1 checks, owned by the EN-1 pre-check and run against the EN-1 pre-check.
+Scope: FR-220-AC-1 to FR-220-AC-15. Steps 1 to 9 are S3 and pre-check checks; steps 10 to 14 are EN-1 checks, owned by the EN-1 pre-check and run against the EN-1 pre-check.
 
 ## Test Procedure
 
@@ -40,6 +40,9 @@ EN-1 steps (not S3 results):
 12. Instantiate AC-8's branch and read EN-1's sharing (FR-220-AC-13).
 13. Run the pre-check on an instantiated `release` load, an `acquire` store and
     an RMW with no ordering, under `tso` and under `ra` (FR-220-AC-14).
+14. Run the pre-check on FR-220-AC-15's `event` reader beside the storing
+    branch under `tso` and under `sc`, on the `z.v` reader of the variant whose universe also holds an unaccessed `z`, and on the
+    `finish` reader.
 
 Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 
@@ -59,3 +62,4 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 - Step 11: two stores to one shared location.
 - Step 12: the register is branch-local.
 - Step 13: V-8 `WeakAccessShape` for each.
+- Step 14: V-8 `WeakAccessShape` with `MultiLocation` naming the `event` and `(x, v)` under `tso`; admitted under `sc`, for the unshared reader and for the `finish` reader.
