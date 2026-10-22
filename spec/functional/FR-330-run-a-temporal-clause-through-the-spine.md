@@ -59,8 +59,21 @@ FR-109's `ClauseRunRequest`, with the selection
 
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
 the usage. Its `category` adds `inconclusive` (a pending result)
-and `unsupported` (a missing fairness premise), and its `disposition` for a
-`violation` carries the failing `TemporalPosition`.
+and `unsupported` (a missing fairness premise). Its `disposition` for a
+`violation` (`Completed(false)` or an `Undefined` that is a violation)
+carries the failing `TemporalPosition` and the refutation's
+`TemporalCounterexample`, QSpec FR-364's observed arm, which the entry
+builds from what it ran: one `{document}` step per represented position
+from the `sha256-jcs` digests of the trace's `DocumentRef`s (the `Finite`
+trace as `prefix` with an empty `loop`, or the `Lasso`'s `prefix` and
+`loop`; for an `Undefined` result, the positions 0 to the failing position
+as `prefix` and an empty `loop`), the checked clause's fairness set, the
+interval of its first interval-carrying operator in pre-order (`null` when
+it has none, and for an `Undefined` result), the trace position, and for
+an `Undefined` result the undefined-evaluation envelope whose `where`
+carries the position, that position's document digest and the undefined
+atom's locus. A refused condition's disposition carries its position. The
+FR-267 writer writes these as the report holds them and derives none.
 
 ## Behavior
 
@@ -112,7 +125,7 @@ and `unsupported` (a missing fairness premise), and its `disposition` for a
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |
 | FR-330-AC-5 | From source, FR-327-AC-5's first clause over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
 | FR-330-AC-6 | From source, a clause `Fair` (`always eventually holds(c.value = 2)` under `fair weak inc`) over `Lasso` with an empty prefix and loop 0, 1, 2 reports stage `evaluate`, `unsupported`, exit 21, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`. | Test (TC-848) |
-| FR-330-AC-7 | From source, a `Counter` clause `always[0,1] holds(...)` under event-position false-extension, whose `holds` condition completes for `c.value` 0 and refuses with kernel `integer_out_of_domain`/`outside-domain` for `c.value` 2, over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
+| FR-330-AC-7 | From source, a `Counter` clause `always[0,1] holds(...)` under event-position false-extension, `always[0,1] holds(InUnit(c.value))` with `function InUnit using v(x: Int[0, 1]): Boolean pure { x >= 0 }`, whose `holds` condition completes for `c.value` 0 and, for `c.value` 2, refuses the `Coerce` of 2 into `Int[0, 1]` with kernel `integer_out_of_domain`/`outside-domain` and `expected` naming `Int[0, 1]` (FR-096-AC-8, TC-428), over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
 
 ## Dependencies
 

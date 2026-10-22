@@ -7,6 +7,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-267
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-266
+    type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-327
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-330
@@ -18,15 +20,18 @@ relationships:
 
 Verify that a temporal clause is selected by the FR-312 request wire, that
 every FR-330 temporal disposition is written and read as
-`native-run-result/2` under FR-267's temporal disposition wire, and that a
-refused `holds` condition settles as a refusal at its position.
+`native-run-result/2` under FR-267's temporal disposition wire with FR-266's
+basis, and that a refused `holds` condition settles as a refusal at its
+position.
 
-Scope: FR-312-AC-7, FR-267-AC-13, FR-267-AC-14, FR-327-AC-6, FR-330-AC-7.
+Scope: FR-312-AC-7, FR-267-AC-13, FR-267-AC-14, FR-267-AC-15, FR-266-AC-4,
+FR-327-AC-6, FR-330-AC-7.
 
 ## Test Procedure
 
-Use TC-840's `Counter` unit (clauses `Bounded`, `Reaches`, `Fair`) and
-snapshots with `c.value` 0, 1, 2, and TC-847's undefined clause.
+Use TC-840's `Counter` unit (clauses `Bounded` and `Reaches`), TC-848's
+clause `Fair`, TC-847's undefined clause, TC-629's window clauses and
+snapshots with `c.value` 0, 1, 2.
 
 1. Through `run`, send FR-312-AC-7's temporal request over the lasso with
    loop `s0`, `s1`, then over loop `s0`, `s1`, `s2`; build the same
@@ -36,11 +41,13 @@ snapshots with `c.value` 0, 1, 2, and TC-847's undefined clause.
    FR-267-AC-13 and their RFC 8785 re-encoding; wrap its `counterexample`
    in an FR-070 envelope naming `Reaches` and replay it through FR-331.
    Write FR-330-AC-1's `Bounded` violation and read its `interval`.
-3. Write and read back each report FR-267-AC-14 lists; apply each edit
-   FR-267-AC-14 lists to the documents and read them.
+3. Write and read back each report FR-267-AC-14 and FR-267-AC-15 list,
+   checking each `basis` against FR-266-AC-4; apply each edit those ACs
+   list to the documents and read them.
 4. Evaluate FR-327-AC-6's clause with a stub `holds` atom over the finite
    trace, the infinite-trace prefix and the lasso.
-5. Run FR-330-AC-7's clause from source over `c.value` 0, 2.
+5. Run FR-330-AC-7's clause (`InUnit(c.value)`) from source over `c.value`
+   0, 2.
 
 Tag the tests `#[trace("TC-1160", "<criterion>")]` with the criterion each
 step asserts.
@@ -55,9 +62,13 @@ step asserts.
   `reproduced-with-evaluated-witness`; `interval` is
   `{"lower": "0", "upper": "1"}`.
 - Step 3: each report reads back to an equal disposition with its table
-  row's members; each edited document refuses with a located diagnostic.
+  row's members, `outcome` and `basis`, the two trace refusals to
+  `EmptyLoop` and `EmptyTrace`; no document has a `refusal` member; each
+  edited document refuses with a located diagnostic naming the member.
 - Step 4: the refused condition at position 1 with
   `integer_out_of_domain`/`outside-domain`; `Completed(false)` at position 0
-  when position 0 is false; an internal failure for `CheckedInvariant`.
+  when position 0 is false; the refused condition carrying
+  `CheckedInvariant`, not a `TemporalRefusal::Fault`.
 - Step 5: stage `evaluate`, `refusal`, exit 20, position 1, `outcome`
-  `refused` with the record and locus; no `truth`, no `internal_fault`.
+  `refused` with `integer_out_of_domain`/`outside-domain`, `expected`
+  `Int[0, 1]` and the condition's locus; no `truth`, no `internal_fault`.
