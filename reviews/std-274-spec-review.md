@@ -73,3 +73,16 @@ Round 2 checked head 17118b04e, which contains main 4c3562eaa and merges cleanly
 | --- | --- | --- |
 | FND-006 | fixed | S3 admits no role on a model alias: the interim rule refuses `role w on M` at `M`, and AC-24 and TC-1065 row 8 test it. Nothing now reaches S4 without a node form. |
 | FND-007 | fixed | FR-205-AC-2 now says the key's `roles` entry holds `{"type":"null"}` for `w`. That rule depends on the conditional admission (see FND-008 and FND-009). |
+
+## Dispositions (round 3)
+
+Round 3 checked head 6d215b392, which contains main 4ac5935ad and merges cleanly. `make check-spec-validation` on the merge exits 0. The PR now changes only FR-218: a "Role on a model alias" section states the current refusal and its reason, and FR-218-AC-24 and TC-1065 row 8 test it. FR-205 and TC-650 are back to main's text, and no spec file mentions STD-331. No new findings.
+
+Removing the target rules and the FR-205 edits also means FND-002 to FND-005 no longer apply: the text they were about is gone, and their round-1 fixes went with it. FND-001 stays deferred to STD-331.
+
+Planner note, not a finding of this PR: main's FR-205-AC-1, FR-214, FR-215, TC-651 and US-024 build ADR-027 §7's `Fill`, whose `role w on M` S3 refuses under main's own role rule. STD-331, or a change to the fixture, resolves that.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-008 | fixed | FR-205 and TC-650 are reverted to main's text, so no AC in this PR says `Fill` builds. FR-218-AC-24 is the only statement about that unit. |
+| FND-009 | fixed | The section states the current refusal and its reason only, with no conditional, plan or tracker wording. |
