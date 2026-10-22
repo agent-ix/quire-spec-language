@@ -200,14 +200,6 @@ pub enum EmitRefusal {
         /// The unit's selected header profile identity, when it selects one.
         profile: Option<&'static str>,
     },
-    /// A checked clause names a domain-package population (FR-391
-    /// "Lowering"), whose population-reference term FR-322 has no encoding
-    /// for yet: the emitter refuses rather than write a package without it.
-    #[error("the population `{population}` a clause names cannot be written to a checked-package/v2 graph yet")]
-    PopulationReferenceNotEmitted {
-        /// The first such population's node identity, in graph order.
-        population: String,
-    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -228,8 +220,7 @@ impl EmitRefusal {
             Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
-            Self::ProbabilisticModelNotEmitted { .. }
-            | Self::PopulationReferenceNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -237,8 +228,7 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
-            Self::ProbabilisticModelNotEmitted { .. }
-            | Self::PopulationReferenceNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::ProbabilisticModelNotEmitted { .. } => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -426,10 +416,8 @@ impl BodyNames {
                     names.dependencies.insert(node_id(target.0));
                 }
                 // FR-322-AC-37: a `dependency_reference` is never one of the
-                // node's `dependencies`, and names no node of this graph; a
-                // population reference (FR-391) names no node either, and
-                // the emitter refuses a graph that holds one.
-                LeafTerm::DependencyReference { .. } | LeafTerm::PopulationReference { .. } => {}
+                // node's `dependencies`, and names no node of this graph.
+                LeafTerm::DependencyReference { .. } => {}
             }
         }
         names
@@ -1251,17 +1239,6 @@ fn emit_package_inner(
             // selects its probabilistic declarations under.
             profile: graph.header_layers().last().map(|layer| layer.identity()),
         });
-    }
-    if let Some(population) = graph.semantic_graph().nodes().find_map(|node| {
-        node.body()
-            .leaves()
-            .into_iter()
-            .find_map(|leaf| match leaf {
-                LeafTerm::PopulationReference { node, .. } => Some(node.clone()),
-                _ => None,
-            })
-    }) {
-        return Err(EmitRefusal::PopulationReferenceNotEmitted { population });
     }
     let candidates = candidates_of(graph, abstraction.as_ref())?;
     let omitted = omissions(&candidates, graph.source(), decodes);

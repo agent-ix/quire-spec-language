@@ -36,6 +36,7 @@ fn admit(
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         Some(&["collection", "integer"]),
         None,
+        None,
     )
 }
 
@@ -63,6 +64,7 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
         advertised,
         None,
         None,
+        None,
     )
     .expect("the manifest labels are valid");
     let process = descriptor_from_manifest(
@@ -70,6 +72,7 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
         ProviderOrigin::Process,
         digest,
         advertised,
+        None,
         None,
         None,
     )
@@ -174,6 +177,7 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
         ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
         Some(&["collection"]),
+        None,
         None,
     )
     .expect_err("an absent mode is never defaulted");
@@ -340,6 +344,7 @@ fn admit_domains(
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         domains,
         None,
+        None,
     )
 }
 
@@ -466,6 +471,7 @@ fn the_typed_constructor_applies_the_same_domains_rules() {
             ManifestDigest::from_digest([4; 32]),
             [(Capability::ValueValidity, advertises)],
             domains,
+            None,
         )
     };
     let refused = |result: Result<BackendDescriptor, qsl_route::RegistrationRefusal>, defect| {

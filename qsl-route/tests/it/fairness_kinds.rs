@@ -29,6 +29,7 @@ fn temporal(id: &str, seed: u8, kinds: &[FairnessKind]) -> BackendDescriptor {
         ManifestDigest::from_digest([seed; 32]),
         [(Capability::TemporalSatisfaction, Mode::Unbounded)],
         None,
+        None,
     )
     .expect("a well-formed descriptor")
     .with_fairness_kinds(kinds.iter().copied())
@@ -163,6 +164,7 @@ fn admit(
         pairs.iter().map(|&(kind, mode)| (Some(kind), Some(mode))),
         domains,
         member,
+        None,
     )
 }
 
@@ -181,6 +183,7 @@ fn manifest(id: &str, seed: u8, labels: &[FairnessLabel<'_>]) -> BackendDescript
         [(Some("temporal-satisfaction"), Some("unbounded"))],
         None,
         Some(FairnessKindsMember::List(labels)),
+        None,
     )
     .expect("a valid manifest")
 }

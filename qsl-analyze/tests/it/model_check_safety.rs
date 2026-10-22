@@ -15,9 +15,8 @@
 //! Not covered here: FR-126-AC-1, AC-3 to AC-5, AC-7 and AC-8 rest on TP-4
 //! claims (QSL-530); AC-9's TP-4 row has no fixture in this module. AC-6's
 //! refused-contract row has none in this crate: every kernel refusal a
-//! contract can raise is proved away by S3, a family refusal needs a named
-//! population (`PopulationReferenceNotEmitted`) or a dispatch-family fixture
-//! whose `family_steps` or `ancestor_steps` ceiling refuses a dispatched
+//! contract can raise is proved away by S3, a family refusal needs a
+//! dispatch-family fixture whose `family_steps` or `ancestor_steps` ceiling refuses a dispatched
 //! call, and the dispatch fixtures live in `qsl-eval`'s tests (Remaining
 //! work: QSL-898). Replay's reading of a guarded condition
 //! (`ReplayedLetters::activation`) is untested too: replay recompiles the

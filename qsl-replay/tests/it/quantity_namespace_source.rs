@@ -71,3 +71,22 @@ fn distinct_and_case_distinct_type_names_pass_strict_v2() {
         }
     }
 }
+
+/// QSL-950: a unit, a dimension and a record of one name are three
+/// namespaces; each declaration is used so all three nodes are emitted.
+#[trace("TC-483", "FR-091-AC-44", "FR-142-AC-13")]
+#[test]
+fn same_name_unit_dimension_and_record_pass_strict_v2() {
+    for body in [
+        // unit + record
+        "dimension Length;\nunit m : Length = rational(1, 1);\nrecord m { sample: Boolean; }\nfunction f using v(a: Quantity<m>, r: m): Boolean pure { r.sample }",
+        // unit + dimension
+        "dimension m;\nunit m : m = rational(1, 1);\nfunction f using v(a: Quantity<m>): Boolean pure { a = a }",
+        // dimension + record
+        "dimension m;\nunit u : m = rational(1, 1);\nrecord m { sample: Boolean; }\nfunction f using v(a: Quantity<u>, r: m): Boolean pure { r.sample }",
+        // all three
+        "dimension m;\nunit m : m = rational(1, 1);\nrecord m { sample: Boolean; }\nfunction f using v(a: Quantity<m>, r: m): Boolean pure { r.sample }",
+    ] {
+        assert_admitted(&format!("{HEADER}{body}\n"));
+    }
+}
