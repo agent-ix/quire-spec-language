@@ -14,8 +14,9 @@ Verify the exact twelve-versus-one split ADR-011's module table describes
 for `value::expression::refusal`: `check` defines every check-cause type
 (`CheckCause`, `CheckRefusal`, `Obligation`, `MeasureObligation`,
 `CheckingStage`, `CheckingLimitKind`, `DispatchFunctionRole`,
-`InvalidDispatchDeclaration`, `Location`, `Origin`, `ProvedInterval`,
-`WrongSnapshotCause`) and does not define `InputRefusal`; `value::expression`
+`InvalidDispatchDeclaration`, `Location`, `Origin`, `ProvedInterval`)
+and does not define `InputRefusal` or `WrongSnapshotCause` (both live in
+`quire-semantic-value`'s `call` module); `value::expression`
 defines `InputRefusal`, relocated beside `CheckedPackage::call`'s and
 `CheckedPackage::evaluate`'s admission code, and does not define any of the
 twelve check-cause types. This test catches both an over-move (`InputRefusal`

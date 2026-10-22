@@ -25,7 +25,6 @@ use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     AdmittedModel, CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations,
-    WrongSnapshotCause,
 };
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -49,6 +48,7 @@ use quire_exact::{
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
