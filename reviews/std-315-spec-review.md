@@ -40,3 +40,11 @@ belongs to the implementing ticket.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | "`bind_abstraction_at` with bindings it refuses" names no refused binding, and TC-1111 step 8 does not either, so two implementers may pick refusals that exercise different paths (for example one rejected before `check_abstraction` runs). Name one, such as a binding to a declaration the package does not hold. | spec/non-functional/NFR-015-build-evaluator-crates-no-std-behind-a-default-std-feature.md:235; spec/test-cases/TC-1111-qsl-package-gates-the-checked-package-wire-behind-std.md:48 |
+
+## Dispositions
+
+Round 1, checked against fix commit 6f195a6af. `AbstractionRefusal::MissingDeclaration` exists (qsl-semantics/src/check/abstraction.rs:311). `make check-spec-validation` exits 0; main is an ancestor; no textual conflict with #1233 or any other current open PR.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-10 and TC-1111 step 8 name the refused binding: one binding whose key names a declaration the package does not hold, refused with `AbstractionRefusal::MissingDeclaration`. |
