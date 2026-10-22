@@ -46,7 +46,7 @@ fn quantity_parameter_round_trip_and_wrong_addend_mutant_admit_strictly() {
             .as_array()
             .unwrap()
             .iter()
-            .filter_map(|node| node["body"]["operation"]["catalog_id"].as_str())
+            .filter_map(|node| node["body"]["operation"]["identity"].as_str())
             .collect();
         for catalog in [
             "quire.op.quantity.add",
