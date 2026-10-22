@@ -32,9 +32,10 @@ Tag the tests `#[trace("TC-615", "FR-181-AC-5")]`.
 
 ## Expected Results
 
-- Step 1: each initial state has a witness lasso looping `step(0)` at
-  `(h, 0)`; the outcome is `Undefined` at the first product state with
+- Step 1: the outcome is `Undefined` at the first product state with
   `l = 1`, cause `division-by-zero`; `refuted`, `decisive-counterexample`,
-  cause `UndefinedEvaluation`, in both runs.
+  cause `UndefinedEvaluation`, in both runs; with the default `witness_samples`
+  phase 0 also finds a sampled witness lasso per initial state looping
+  `step(0)` at `(h, 0)`, and with `witness_samples` 0 there is none.
 - Step 2: `Witnessed` from a run with `end` `Completed` and no open node;
   `proved`, `decisive-witness`.

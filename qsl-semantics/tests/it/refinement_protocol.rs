@@ -362,7 +362,7 @@ fn a_node_the_list_does_not_name_is_visible() {
     let row = mutated(
         &base,
         "step Impl::Counter::retryA -> stutter;",
-        "step Impl::Counter::retryA -> node Spec::Twice::Done(self);",
+        "step Impl::Counter::retryA -> node Spec::Twice::Done(true);",
     );
     let found = refused(
         &row,
@@ -1067,4 +1067,281 @@ fn a_field_row_naming_a_protocol_binder_is_refused() {
         "{:?}",
         field.refinement()
     );
+}
+
+/// `CasTwice` with `commitA`'s row replaced by `target`.
+fn node_row(target: &str) -> String {
+    mutated(
+        &cas_twice(),
+        "step Impl::Counter::commitA -> Spec::Counter::inc(self);",
+        &format!("step Impl::Counter::commitA -> {target};"),
+    )
+}
+
+/// FR-147-AC-14 (TC-552 step 14), admitted rows: `a1` applies `inc`, which
+/// has no parameter and no result, so its binder record is the receiver
+/// alone. A list left out and `_` leave it open.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn a_node_row_whose_arguments_fit_the_binder_record_checks() {
+    for (target, open) in [
+        ("node Spec::Twice::a1(self)", 0),
+        ("node Spec::Twice::a1(_)", 1),
+        ("node Spec::Twice::a1", 1),
+    ] {
+        let graph = checked(&node_row(target), None);
+        let arguments: Vec<_> = the_refinement(&graph)
+            .steps()
+            .iter()
+            .filter_map(|step| match &step.target {
+                StepTarget::Node {
+                    node, arguments, ..
+                } if node == "a1" => Some(arguments),
+                _ => None,
+            })
+            .collect();
+        let [arguments] = arguments.as_slice() else {
+            panic!("{target}: one node row");
+        };
+        assert_eq!(arguments.len(), 1, "{target}: one field");
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.is_none())
+                .count(),
+            open,
+            "{target}"
+        );
+    }
+}
+
+/// FR-147-AC-14 (TC-552 step 14), the count: a list whose length differs
+/// from the field count refuses `ill_typed`/`operator-ineligible` at the
+/// node, retaining both counts.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn a_node_row_with_the_wrong_argument_count_is_refused_at_the_node() {
+    for (target, actual) in [
+        ("node Spec::Twice::a1(self, 1, 2)", 3),
+        ("node Spec::Twice::a1(self, _)", 2),
+    ] {
+        let found = refused(&node_row(target), None, RefinementSupport::BUILD);
+        let count = only(&found);
+        assert_eq!(
+            count.code_and_cause(),
+            (Code::IllTyped, Some("operator-ineligible")),
+            "{target}"
+        );
+        assert_eq!(count.at.as_deref(), Some("Spec::Twice::a1"), "{target}");
+        assert_eq!(
+            count.refinement(),
+            &RefinementCause::NodeArgumentCount {
+                node: "Spec::Twice::a1".to_owned(),
+                expected: 1,
+                actual,
+            },
+            "{target}"
+        );
+    }
+}
+
+/// FR-147-AC-14 (TC-552 step 14), the type: an argument that is not its
+/// field's type refuses `ill_typed`/`type-mismatch` at the argument,
+/// retaining the field's type and the argument's.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn a_node_row_argument_of_the_wrong_type_is_refused_at_the_argument() {
+    let found = refused(
+        &node_row("node Spec::Twice::a1(true)"),
+        None,
+        RefinementSupport::BUILD,
+    );
+    let mismatch = only(&found);
+    assert_eq!(
+        mismatch.code_and_cause(),
+        (Code::IllTyped, Some("type-mismatch"))
+    );
+    assert_eq!(mismatch.at.as_deref(), Some("true"));
+    let RefinementCause::NodeArgumentType {
+        node,
+        position,
+        expected,
+        actual,
+    } = mismatch.refinement()
+    else {
+        panic!("a node argument type refusal: {:?}", mismatch.refinement());
+    };
+    assert_eq!((node.as_str(), *position), ("Spec::Twice::a1", 0));
+    // The role `w` of `Twice` is `on Spec::Counter`.
+    let base = checked(&cas_twice(), None);
+    let counter = base
+        .protocol("Twice")
+        .and_then(|twice| twice.roles.first())
+        .and_then(|role| role.context)
+        .expect("the role w acts on Spec::Counter");
+    assert_eq!(**expected, quire_exact::ValueType::Reference(counter));
+    assert_eq!(**actual, quire_exact::ValueType::Boolean);
+}
+
+/// FR-432-AC-14's protocol over the abstract counter: `a1` applies `inc`
+/// (the receiver alone), `a2` applies `quad` (a parameter and a result),
+/// `ev` is an event of the two-field record `Spec::Evt`, `eb` of a Boolean,
+/// `ch` carries a Boolean and `Done` finishes with one.
+fn rec() -> String {
+    "protocol Rec using v over (c: Spec::Counter) on origin {\n\
+     role w on Spec::Counter;\n\
+     channel ch from w to w carries Boolean ordering unordered delivery unknown \
+     capacity 2 overflow block;\n\
+     run sequence Main {\n\
+     attempt a1 by w on Spec::Counter::inc contracts [] as (r1: Boolean) { true };\n\
+     attempt a2 by w on Spec::Counter::quad contracts [] as (r2: Boolean) { true };\n\
+     event ev by w as (e: Spec::Evt) { true };\n\
+     event eb by w as (b: Boolean) { true };\n\
+     send tx via ch as (m1: Boolean) { true };\n\
+     receive rx via ch of Main::tx as (m2: Boolean) { true };\n\
+     effect fx of a1 as (f: Boolean) { true };\n\
+     commit cm by w as (k: Spec::Evt) { true };\n\
+     }\n\
+     finish Done as (d: Boolean) { true };\n\
+     }\n"
+    .to_owned()
+}
+
+fn rec_row(target: &str) -> String {
+    let unit = format!("{}{}", rec(), refinement("Spec", "Rec"));
+    mutated(
+        &unit,
+        "step Impl::Counter::commitA -> Spec::Counter::inc(self);",
+        &format!("step Impl::Counter::commitA -> {target};"),
+    )
+}
+
+/// FR-432-AC-14 (the QSL half, FR-147-AC-14): the parameter and the result
+/// of an attempt, and the fields of an event's record, are fields of the
+/// binder record; the rows that fit are admitted.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn the_binder_record_has_a_field_per_parameter_result_and_record_field() {
+    for (target, fields) in [
+        ("node Spec::Rec::a2(self, 1, _)", 3),
+        ("node Spec::Rec::a2", 3),
+        ("node Spec::Rec::ev(true, 3)", 2),
+        ("node Spec::Rec::eb(true)", 1),
+        ("node Spec::Rec::tx(true)", 1),
+        ("node Spec::Rec::rx(_)", 1),
+        ("node Spec::Rec::Done(true)", 1),
+        ("node Spec::Rec::fx(true)", 1),
+        ("node Spec::Rec::cm(true, 3)", 2),
+    ] {
+        let graph = checked(&rec_row(target), None);
+        let arguments: Vec<_> = the_refinement(&graph)
+            .steps()
+            .iter()
+            .filter_map(|step| match &step.target {
+                StepTarget::Node { arguments, .. } => Some(arguments.len()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(arguments, [fields], "{target}");
+    }
+}
+
+/// FR-432-AC-15 (the QSL half, FR-147-AC-14): the count refusals of the
+/// attempt with a parameter and a result, the event over a record, a
+/// scalar-bound event, a send and a finish.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn the_argument_count_is_the_field_count_of_every_node_kind() {
+    for (target, expected, actual) in [
+        ("node Spec::Rec::a2(self, 1)", 3, 2),
+        ("node Spec::Rec::ev(true)", 2, 1),
+        ("node Spec::Rec::eb(true, false)", 1, 2),
+        ("node Spec::Rec::tx(true, true)", 1, 2),
+        ("node Spec::Rec::Done(true, true)", 1, 2),
+        ("node Spec::Rec::rx(true, true)", 1, 2),
+        ("node Spec::Rec::fx(true, true)", 1, 2),
+        ("node Spec::Rec::cm(true)", 2, 1),
+    ] {
+        let found = refused(&rec_row(target), None, RefinementSupport::BUILD);
+        let count = only(&found);
+        assert_eq!(
+            count.code_and_cause(),
+            (Code::IllTyped, Some("operator-ineligible")),
+            "{target}"
+        );
+        assert!(
+            matches!(
+                count.refinement(),
+                RefinementCause::NodeArgumentCount { expected: e, actual: a, .. }
+                    if (*e, *a) == (expected, actual)
+            ),
+            "{target}: {:?}",
+            count.refinement()
+        );
+    }
+}
+
+/// FR-432-AC-15 (the QSL half): an argument of the wrong type refuses at
+/// that argument, whichever field it fills.
+#[trace("TC-552", "FR-147-AC-14")]
+#[test]
+fn an_argument_of_the_wrong_type_is_refused_at_its_field() {
+    use quire_exact::ValueType;
+    for (target, at, position, field) in [
+        (
+            "node Spec::Rec::ev(true, true)",
+            "true",
+            1,
+            ValueType::Integer,
+        ),
+        (
+            "node Spec::Rec::a2(self, true, _)",
+            "true",
+            1,
+            ValueType::Integer,
+        ),
+        (
+            "node Spec::Rec::cm(true, true)",
+            "true",
+            1,
+            ValueType::Integer,
+        ),
+        ("node Spec::Rec::fx(3)", "3", 0, ValueType::Boolean),
+    ] {
+        let found = refused(&rec_row(target), None, RefinementSupport::BUILD);
+        let mismatch = only(&found);
+        assert_eq!(
+            mismatch.code_and_cause(),
+            (Code::IllTyped, Some("type-mismatch")),
+            "{target}"
+        );
+        assert!(
+            mismatch
+                .at
+                .as_deref()
+                .is_some_and(|text| text.starts_with(at)),
+            "{target}"
+        );
+        let RefinementCause::NodeArgumentType {
+            position: p,
+            expected,
+            actual,
+            ..
+        } = mismatch.refinement()
+        else {
+            panic!("{target}: {:?}", mismatch.refinement());
+        };
+        assert_eq!(*p, position, "{target}");
+        assert_eq!(**expected, field, "{target}");
+        // The argument is `true` (Boolean) or the literal `3`.
+        let boolean = at == "true";
+        assert!(
+            if boolean {
+                **actual == ValueType::Boolean
+            } else {
+                matches!(**actual, ValueType::Int(_) | ValueType::Integer)
+            },
+            "{target}: {actual:?}"
+        );
+    }
 }

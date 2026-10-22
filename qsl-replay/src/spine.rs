@@ -906,6 +906,18 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: replicated role `{role}` allows at most {actual} live instances; \
                      at least 1 is required"
                 ),
+                ProtocolAnchorCause::MissingRolePopulation {
+                    role, population, ..
+                } => format!(
+                    "{message}: replicated role `{role}` is drawn from `{population}`, which is \
+                     no population of the package that declares its type"
+                ),
+                ProtocolAnchorCause::RolePopulationType {
+                    role, population, ..
+                } => format!(
+                    "{message}: replicated role `{role}` is drawn from `{population}`, whose \
+                     element type is not the role's type"
+                ),
                 ProtocolAnchorCause::MissingRelationship { name, .. } => {
                     format!("{message}: `{name}` names no export of a selected model")
                 }

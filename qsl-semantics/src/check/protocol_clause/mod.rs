@@ -288,6 +288,33 @@ pub fn check(
     ))
 }
 
+/// The name of the role that owns the node `declaration` as written
+/// (ADR-027 RR-2): the role of an `attempt` or `event` written `by`, a
+/// `send`'s channel's `from` role, a `receive`'s channel's `to` role. `None`
+/// for any other node, or a channel that is declared nowhere.
+pub(crate) fn written_owner(
+    protocol: &ProtocolDeclarationForm,
+    declaration: usize,
+) -> Option<&str> {
+    let node = protocol.declarations.get(declaration)?;
+    let channel = |to: bool| {
+        let name = &node.channel.as_ref()?.name;
+        let channel = protocol
+            .channels
+            .iter()
+            .find(|candidate| &candidate.name.name == name)?;
+        Some(if to { &channel.to } else { &channel.from }.name.as_str())
+    };
+    match node.kind {
+        qsl_forms::ProtocolNodeKind::Attempt | qsl_forms::ProtocolNodeKind::Event => {
+            node.role.as_ref().map(|role| role.name.as_str())
+        }
+        qsl_forms::ProtocolNodeKind::Send => channel(false),
+        qsl_forms::ProtocolNodeKind::Receive => channel(true),
+        _ => None,
+    }
+}
+
 /// The role that owns each node a role acts at (ADR-027 RR-2, RR-4): an
 /// `attempt` or `event` written `by` it, a `send` by its channel's `from`
 /// role, a `receive` by its channel's `to` role, and a `choice` or `repeat`
@@ -298,33 +325,9 @@ pub(crate) fn owners(
     checked: &CheckedProtocol,
 ) -> Vec<CheckedOwner> {
     let role_of = |name: &str| checked.roles.iter().position(|role| role.name == name);
-    let channel_role = |channel: &str, to: bool| {
-        let channel = checked
-            .channels
-            .iter()
-            .find(|candidate| candidate.name == channel)?;
-        role_of(if to { &channel.to } else { &channel.from })
-    };
     let mut owners = Vec::new();
-    for (index, declaration) in protocol.declarations.iter().enumerate() {
-        let role = match declaration.kind {
-            qsl_forms::ProtocolNodeKind::Attempt | qsl_forms::ProtocolNodeKind::Event => {
-                declaration
-                    .role
-                    .as_ref()
-                    .and_then(|role| role_of(&role.name))
-            }
-            qsl_forms::ProtocolNodeKind::Send => declaration
-                .channel
-                .as_ref()
-                .and_then(|channel| channel_role(&channel.name, false)),
-            qsl_forms::ProtocolNodeKind::Receive => declaration
-                .channel
-                .as_ref()
-                .and_then(|channel| channel_role(&channel.name, true)),
-            _ => None,
-        };
-        if let Some(role) = role {
+    for index in 0..protocol.declarations.len() {
+        if let Some(role) = written_owner(protocol, index).and_then(role_of) {
             owners.push(CheckedOwner {
                 node: ProtocolNodeId(index),
                 role,

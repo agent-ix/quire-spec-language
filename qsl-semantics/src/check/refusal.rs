@@ -473,6 +473,28 @@ pub enum ProtocolAnchorCause {
         /// The maximum's span.
         span: Span,
     },
+    /// FR-218 "Scopes", ADR-027 RR-1: the `pop` of `role r each T from pop`
+    /// names no population of the domain package that declares `T`.
+    /// `missing_declaration`/`missing-name`, at the name.
+    MissingRolePopulation {
+        /// The role's declared name.
+        role: String,
+        /// The population name as written.
+        population: String,
+        /// The population name's span.
+        span: Span,
+    },
+    /// FR-218 "Scopes", ADR-027 RR-1: the `pop` of `role r each T from pop`
+    /// names a population whose element type is not `T`.
+    /// `ill_typed`/`type-mismatch`, at the name.
+    RolePopulationType {
+        /// The role's declared name.
+        role: String,
+        /// The population name as written.
+        population: String,
+        /// The population name's span.
+        span: Span,
+    },
     /// FR-218 "Relationships": a `relationship r = M::R;` whose `M::R` is no
     /// export of a selected model. `missing_declaration`/`missing-name`, at
     /// the name.
@@ -854,6 +876,8 @@ impl ProtocolAnchorCause {
             | Self::MissingRequirement { span, .. }
             | Self::MissingRelationship { span, .. }
             | Self::RoleMax { span, .. }
+            | Self::MissingRolePopulation { span, .. }
+            | Self::RolePopulationType { span, .. }
             | Self::RelationshipExport { span, .. }
             | Self::MissingRelated { span, .. }
             | Self::RelatedEnd { span, .. }
@@ -876,6 +900,7 @@ impl ProtocolAnchorCause {
             | Self::MissingTemporalProfile { .. }
             | Self::MissingRequirement { .. }
             | Self::MissingRelationship { .. }
+            | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
@@ -888,6 +913,7 @@ impl ProtocolAnchorCause {
             | Self::RequirementKind { .. }
             | Self::AccessOrdering { .. }
             | Self::RelatedEnd { .. }
+            | Self::RolePopulationType { .. }
             | Self::RoleMax { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
@@ -925,6 +951,7 @@ impl ProtocolAnchorCause {
             | Self::MissingChannel { .. }
             | Self::MissingRequirement { .. }
             | Self::MissingRelationship { .. }
+            | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }
@@ -932,6 +959,7 @@ impl ProtocolAnchorCause {
             | Self::CarriesMismatch { .. }
             | Self::AwaitWindow { .. }
             | Self::RelatedEnd { .. }
+            | Self::RolePopulationType { .. }
             | Self::RoleMax { .. } => "type-mismatch",
             Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
