@@ -25,21 +25,22 @@ relationships:
 ADR-011 S6a reference evaluation SHALL return
 `Result<Evaluation<T>, InternalFault>`, where
 `Evaluation<T> { outcome: FamilyOutcome<T>, location: Option<quire_semantic_value::location::Location>,
-losses: Vec<LocatedLoss> }` is a layer-5 `value::expression` type and `T` is
+losses: Vec<LocatedLoss> }` is a layer-E `quire-eval` type
+([FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md)) and `T` is
 the evaluated family's `ReferenceEvaluation::Observed`. `CheckedPackage::call`
 and `CheckedPackage::evaluate` return `Evaluation<Value>`, written
 `Evaluation`: `FamilyOutcome<Value>` beside the location and the losses.
-`FamilyOutcome` is a QSL layer-3 `check`-core type with exactly two variants:
+`FamilyOutcome` is a layer-E `quire-eval` type with exactly two variants:
 `Evaluated(quire_exact::Outcome<T>)`, which carries the kernel evaluation
 outcome unchanged, and `FamilyEvaluated(FamilyResult)`, which carries a
-family-owned evaluation-time result. `FamilyResult` is a layer-3 `check`-core
-type with exactly two variants: `Refused(Box<dyn CatalogCoded>)`, category
+family-owned evaluation-time result. `FamilyResult` is a layer-E type with
+exactly two variants: `Refused(Box<dyn CatalogCoded>)`, category
 `refusal`, and `Undefined(Box<dyn UndefinedCoded>)`, category `undefined`.
-`CatalogCoded` and `UndefinedCoded` are F `diagnostic` traits. `InternalFault`
-is ADR-013 T-4's type in F `diagnostic`
-(`qsl_foundation::diagnostic::InternalFault`). A family's `evaluate` hook
+`CatalogCoded` and `UndefinedCoded` are SV `catalog` traits. `InternalFault`
+is ADR-013 T-4's type in SV `catalog`
+(`quire_semantic_value::catalog::InternalFault`). A family's `evaluate` hook
 returns `Result<EvalOutcome<T>, InternalFault>`, where `EvalOutcome` is a
-layer-3 `check`-core type with exactly two variants: `Kernel(Outcome<T>)` and
+layer-E type with exactly two variants: `Kernel(Outcome<T>)` and
 `Family(FamilyResult)`.
 
 S6a's input type SHALL admit no `Relation` declaration. The S6a family kind,
@@ -90,8 +91,8 @@ This requirement carries testable criteria for decisions already taken:
 - ADR-011 §2.2, §2.3 and §6.1: the S6a signature, the E6 row that carries
   `Evaluation.location`, the E6 row that refuses bad arguments at admission
   before S6a (`CheckedPackage::call` returns
-  `CallFailure::Input(InputRefusal)`), and the layer-3 row that places
-  `FamilyOutcome`, `FamilyResult` and `EvalOutcome` in the `check` core.
+  `CallFailure::Input(InputRefusal)`), and the layer-E row that places
+  `FamilyOutcome`, `FamilyResult` and `EvalOutcome` in `quire-eval`.
 - ADR-012 §2, §3, §5.1 S1 and §13.5: every family except `Relation`
   implements `ReferenceEvaluation`, whose hook returns
   `Result<EvalOutcome<Observed>, InternalFault>`; a kernel `Outcome`'s
@@ -217,8 +218,8 @@ context). `losses` holds the loss records of the operations a completed
 evaluation performed, in evaluation order, as QSpec FR-140-AC-3 requires
 ("the rounded value plus a canonical-rational loss record"); it is empty
 unless the outcome is `FamilyOutcome::Evaluated(Outcome::Completed(_))`.
-`Evaluation` is a layer-5 `value::expression` type because `LocatedLoss`
-holds value-layer types.
+`Evaluation` is a layer-E `quire-eval` type, because the shared evaluation
+interface returns it (FR-262); `LocatedLoss` is an SV type it can name.
 
 Each catalog locus of a family cause is `Evaluation.location`, the node
 whose evaluation raised the cause. For `precondition-false`, the catalog's
@@ -280,7 +281,7 @@ its category is `refusal`.
 `FamilyResult::Undefined` holds a family-owned undefined cause behind F
 `diagnostic`'s `UndefinedCoded` trait, whose one method is
 `fn undefined_record(&self) -> UndefinedRecord`; its category is `undefined`.
-`UndefinedRecord { reason, fields }` is an F `diagnostic` type, the
+`UndefinedRecord { reason, fields }` is an SV `catalog` type, the
 undefined-side counterpart of O-17's `RefusalRecord`. `reason` is an
 `UndefinedReason`, the closed reason set of the
 `quire.native.diagnostics/v1` "Undefined reasons" table, which the catalog
@@ -570,20 +571,19 @@ or budget exhaustion retain their existing contracts.
 ### Layering
 
 `FamilyOutcome`, `FamilyResult` and `EvalOutcome` are
-defined once, in the layer-3 `check` core; `EvalOutcome` is there because it
-is the family hook's return type and the `check` core defines the hook.
-`CatalogCoded`, `UndefinedCoded`
-and `UndefinedRecord` are defined once, in F `diagnostic`, so that `model`
+defined once, in the layer-E crate `quire-eval` (FR-401), beside
+`Evaluation`, which carries `FamilyOutcome`, and the shared evaluation
+interface that returns it. `CatalogCoded`, `UndefinedCoded`
+and `UndefinedRecord` are defined once, in SV `catalog`, so that `model`
 (below the `check` core) and `value::expression` (above it) can each
-implement the traits for their own cause types. Under ADR-011 §6.1's
-"Depends on" column, the modules that may name the three `check`-core types
-are: the layer-3 `check` core and the family checker modules above it
-in layer 3; layer 4 `package`; layer 5 `value::expression` and its family
-evaluators and `simulation`; layer R `route`; and layer 6 `replay`,
-`command`, `cli` and `main`. K (`quire-exact`), F (`qsl-foundation`),
-layer 1 (`qsl-cst`), layer 2 `forms`, and the layer-3 modules ordered below
-the `check` core (`semantic_value`, `model`, `library`) name none of the
-three `check`-core types.
+implement the traits for their own cause types, and E can name them. Under
+ADR-011 §6.1's "Depends on" column, the QSL crates that may name the three
+layer-E types are the ones at layer 5 or above: `qsl-eval` with its family
+evaluators and `simulation`, `qsl-replay`, `qsl-analyze` and the root
+crate's `command`, `cli` and `main`. K (`quire-exact`), SV
+(`quire-semantic-value`), F (`qsl-foundation`), layer 1 (`qsl-cst`), layer
+2 `forms`, layer 3 `qsl-semantics`, layer 4 `package` and layer R `route`
+name none of them.
 Today `semantic_value`'s modules are `value::{definition, enumeration, unit,
 quantity, key, reference}` (ADR-011 §6.2).
 
@@ -602,7 +602,7 @@ undefined cause type.
 | FR-090-AC-6 | The `ProtocolClause` family cause carrying `WrongSnapshotCause` has an exhaustive `catalog_code()` with no `_` arm that returns `wrong_snapshot`/`wrong-anchor` for `WrongAnchor` and `wrong_snapshot`/`forbidden-pre-read` for `ForbiddenPreRead`. | Test |
 | FR-090-AC-7 | Given a postcondition `pre(allInstances<T>(p))` evaluated through `CheckedPackage::evaluate` with a population argument admitted through `admit_binding` (no pre anchor), the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `wrong_snapshot`/`wrong-anchor`. The result is not a panic, not `FamilyOutcome::Evaluated(Outcome::Refused(_))` and not `Err(CallFailure::Input(_))`. | Test |
 | FR-090-AC-8 | Given an `allInstances<T>(p)` query whose selected member count is above the population's declared maximum, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to the refusing `ModelRefusal`'s `catalog_code()`, `cardinality_out_of_bound`/`above-maximum`. The result is not a panic and not `FamilyOutcome::Evaluated(Outcome::Refused(_))`. The carried refusal holds no `qsl_foundation::diagnostic::Code` value. | Test |
-| FR-090-AC-9 | `FamilyOutcome`, `FamilyResult` and `EvalOutcome` are each defined once, in the layer-3 `check` core. No `use` edge or inline path under `qsl-forms/src/`, `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the `semantic_value` modules (`src/value/{definition, enumeration, unit, quantity, key, reference}`) or `qsl-cst/src/` resolves to any of the three. No `use` edge or inline path under the `check` core resolves to the `ProtocolClause` snapshot cause type, `ModelRefusal` or the `StateModel` undefined cause type. Neither `qsl-foundation` nor `qsl-cst` depends on the crate that defines the three. | Test |
+| FR-090-AC-9 | `FamilyOutcome`, `FamilyResult` and `EvalOutcome` are each defined once, in the layer-E crate `quire-eval`, and no QSL crate defines any of them. No `use` edge or inline path under `qsl-cst/src/`, `qsl-forms/src/`, `qsl-semantics/src/` or `qsl-package/src/` resolves to any of the three. No `use` edge or inline path under the `check` core resolves to the `ProtocolClause` snapshot cause type, `ModelRefusal` or the `StateModel` undefined cause type. None of `qsl-foundation`, `qsl-cst`, `qsl-forms`, `qsl-semantics` and `qsl-package` depends on `quire-eval`. | Test |
 | FR-090-AC-10 | Given a checked `Value` function with a `Population<T>[N]` parameter, `CheckedPackage::call` with an argument whose `PopulationId` names no recorded binding, or whose resolved binding's declared maximum differs from `N`, returns `Err(CallFailure::Input(_))` before S6a runs. Given the same argument passed directly to the S6a seam, bypassing admission, S6a returns `Err(InternalFault)`, not a kernel or family refusal. | Test |
 | FR-090-AC-11 | Given an FR-151 dispatched call `receiver.member(args)` whose selected method's effective precondition evaluates to `false` (QSpec TC-196 D06), evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `precondition-false` and `fields` naming the called effective operation, the selected method's effective identity and the receiver reference, and `e.location` is the location of the dispatched call node, not of the evaluated expression's root. The result is not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, not `FamilyOutcome::Evaluated(Outcome::Undefined(_))` and not a panic. | Test |
 | FR-090-AC-12 | Given a `lookup<T>(p, r) absent undefined` query whose reference `r` names no member of the population bound to `p`, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `absent-key` and `fields` naming the population binding and the requested reference key. The result is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and not a panic. The same query with `absent refused` returns `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `invalid_runtime_input`/`absent-key`. | Test |

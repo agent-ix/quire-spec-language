@@ -719,10 +719,11 @@ enforces it; before #226, §3's interim rule applies.
 | Layer | Modules, in order | Stage | Depends on |
 |---|---|---|---|
 | K | `quire-exact` crate: the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8) (`Value`, `ValueType`, `Outcome`, `Refusal`, `Undefined`, `BoundViolation`, `CardinalityBound`, `BoundedInteger`, `NodeKey`, `EffectiveId`, `UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`, `PopulationId`, `Origin`/`Location`, `ChargePoint`, `Meter`, `Incomplete`) and the scalar and collection operations over them | foundation | none in the ecosystem |
-| SV | `quire-semantic-value` crate: the shared `no_std` semantic-value leaf. It holds `semantic_node` (the `invalid_semantic_graph` refusal vocabulary, the `check_terms` term check, the node-id preimage member `CanonicalNodeId` and the shared `IDENTITY_LIMITS`), `stop` (the `Stop` early-exit carrier), `quantity` (FR-142 quantities, the `UnitTable`/`UnitScope` over kernel `UnitId`s and the quantity operations) and `unit`'s runtime half (`Dimension`, `Unit`, `UnitEdge`, the checked `DimensionNode`/`UnitNode`, `UnitGraph`'s topology and lookups, `CompoundUnit` and its `compound_unit_id`, `InvalidCompoundUnit`), `enumeration`'s runtime half (the structural `EnumDeclaration`, `EnumValue`, `EnumMemberIndex`, `compare_enum`), `definition` (the lock's `SelectionRefusalCode` and the `invalid_package` `PackageRefusal` vocabulary), `declaration` (the FR-143 registry `TypeEnvironment`/`ObjectTypeDeclaration`, record and tuple construction, and the FR-149 checked equality), `containment` (the FR-143 `ValueGraph`), `checking` (`CheckMode`, `CheckingLimits` and the `DEFAULT_CHECKING_*` defaults), `location` (the expression `Origin` and `Location`), `call` (the argument-admission `InputRefusal`, with its catalog code string and cause tag) and `loss` (`ValueLoss`, `LocatedLoss`) | runtime semantic values and the call-surface vocabulary that S3 checking, S6a evaluation and a backend share | K; `quire-canonical`, `serde` and `thiserror`, each without `std` |
+| SV | `quire-semantic-value` crate: the shared `no_std` semantic-value leaf. It holds `semantic_node` (the `invalid_semantic_graph` refusal vocabulary, the `check_terms` term check, the node-id preimage member `CanonicalNodeId` and the shared `IDENTITY_LIMITS`), `stop` (the `Stop` early-exit carrier), `quantity` (FR-142 quantities, the `UnitTable`/`UnitScope` over kernel `UnitId`s and the quantity operations) and `unit`'s runtime half (`Dimension`, `Unit`, `UnitEdge`, the checked `DimensionNode`/`UnitNode`, `UnitGraph`'s topology and lookups, `CompoundUnit` and its `compound_unit_id`, `InvalidCompoundUnit`), `enumeration`'s runtime half (the structural `EnumDeclaration`, `EnumValue`, `EnumMemberIndex`, `compare_enum`), `definition` (the lock's `SelectionRefusalCode` and the `invalid_package` `PackageRefusal` vocabulary), `declaration` (the FR-143 registry `TypeEnvironment`/`ObjectTypeDeclaration`, record and tuple construction, and the FR-149 checked equality), `containment` (the FR-143 `ValueGraph`), `checking` (`CheckMode`, `CheckingLimits` and the `DEFAULT_CHECKING_*` defaults), `location` (the expression `Origin` and `Location`), `call` (the argument-admission `InputRefusal`, with its catalog code string and cause tag, and the `wrong_snapshot` cause `WrongSnapshotCause` that checking and evaluation both raise, X-15), `loss` (`ValueLoss`, `LocatedLoss`), `catalog` (the ADR-013 O-16/O-17 catalog vocabulary every stage's cause maps into: `Category`, `CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason` and `InternalFault`, X-14) and `supplied_stop` (the FR-277 supplied-value stop records `CallFailure` carries, X-14) | runtime semantic values and the call-surface vocabulary that S3 checking, S6a evaluation and a backend share | K; `quire-canonical`, `serde` and `thiserror`, each without `std` |
 | W | `quire-walk` crate (external, `agent-ix/quire-walk`): the shared `no_std` walker toolkit (ADR-030 FR-356): an explicit heap stack of typed frames with enter and exit callbacks, Kani-verified, with no features | walk traversal for every stage | none: `core` and `alloc` only |
 | WG | `qsl-walk-grow` crate: the one `maybe_grow` wrapper (ADR-030 D-1 item 6, FR-356), which grows the stack on demand and is a plain call under `cfg(kani)`; std-only, outside the qualified core (ADR-029 CB-2) | grow-on-demand recursion outside the core | `stacker` only; depended on only by QSL crates outside the core (A, P, X, tool and the root crate), never by a core crate |
-| F | `absence` < `json_number` < `serde_object` < `digest` < `wire_format` < `source` (with `source_map`) < `selection` < `diagnostic` < `located_json` | foundation | K |
+| E | `quire-eval` crate (external, in `agent-ix/quire-eval`): the shared evaluation-core leaf (FR-262, FR-401). It holds the FR-262 interface (the host-body registry and its admission result, the admitted signature, the session, its step and the body contract) and the evaluation result vocabulary: `Evaluation`, `CallFailure` and the S6a result types `FamilyOutcome`, `FamilyResult` and `EvalOutcome`. It reads a checked closure only through the contract it defines, which `qsl-eval`'s std reference adapter implements. It joins FB-05's shared-leaf class, so RT → `quire-eval` and CG → `quire-eval` are §7.1 edges. This row amends layer 3's row and §6.2's `family` row, which then do not hold the S6a result types, and adds E to the "Depends on" cells of layers 5, 6, A, P and X and of the root crate's `command` | the interface S6a, RT and CG call to evaluate checked code | C, SV, K, W; `thiserror`, without `std`; no QSL layer |
+| F | `absence` < `json_number` < `serde_object` < `digest` < `wire_format` < `source` (with `source_map`) < `selection` < `diagnostic` < `located_json` | foundation | SV, K |
 | 1 | `token` < `lexer` < `cst` < `format` (moved from the tool layer by ADR-029 OP-1: the `format` library operation) | S1 | F |
 | 2 | `qsl-forms` crate: `forms` core < family form builders | S2 | 1, F, K |
 | I3 | `qsl-source` crate root < `preflight` | S0 intake adapter | F, K; quire-rs only under feature `quire-extraction` |
@@ -751,6 +752,7 @@ edges.
 | `quire-semantic-value` | SV |
 | `quire-walk` (external) | W |
 | `qsl-walk-grow` | WG |
+| `quire-eval` (external, `agent-ix/quire-eval`) | E |
 | `qsl-foundation` | F |
 | `qsl-cst` | 1 |
 | `qsl-source` | I3 |
@@ -778,7 +780,12 @@ Rules that close the ADR-010 OBS-016 cycles:
   diagnostic↔runtime and diagnostic↔source. The other S1 two-cycles,
   checking↔linking and linking↔native_model, lie inside SEAM-1 and are removed
   with it (M-6). The locus is ADR-013 T-5's `Locus` (`Region`, `Occurrence`,
-  `Artifact`), which uses the kernel `Location` (DA-13).
+  `Artifact`), which uses the kernel `Location` (DA-13). The catalog
+  vocabulary a cause maps into (`Category`, `CatalogCode`, `CatalogCoded`,
+  `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason`, `InternalFault`)
+  is in SV's `catalog` module (X-14), so E names it without F; `Code`,
+  `RefusalRecord`, `Locus` and the record builders stay in F, which depends
+  on SV for it.
 - **K is a leaf.** `quire-exact` depends on no QSL module and no ecosystem
   crate, so K → `model` → K cannot exist. It is `#![no_std]` and uses only
   `core` and `alloc`, so a no_std consumer depends on it directly. Each kernel
@@ -791,7 +798,7 @@ Rules that close the ADR-010 OBS-016 cycles:
   (QC-21). `ValueType::Population` carries its count only. The
   `PopulationBinding` a `PopulationId` names is QSL `model`'s. The kernel
   `Refusal` carries the kernel's own typed causes; F `diagnostic`, which
-  holds `CatalogCode`, maps each one to a code (ADR-013 T-6, O-17).
+  maps each one to an SV `CatalogCode` (ADR-013 T-6, O-17).
   Semantic values that are not kernel types live above K. The
   `invalid_semantic_graph` refusal vocabulary, the `Stop` carrier,
   quantities, the unit graph's runtime half, the structural enum declaration
@@ -910,6 +917,19 @@ Rules that close the ADR-010 OBS-016 cycles:
   the kernel `NodeKey` constructor (ADR-013 O-04), and only `model` calls the
   kernel `EffectiveId` constructor (ADR-013 O-05) and the kernel `PopulationId`
   constructor (ADR-013 QC-21). The T-12 API-surface check enforces all three.
+- **E holds the evaluation interface.** `quire-eval`, in the repository
+  `agent-ix/quire-eval` beside C, depends on C, SV, K, W and `thiserror`,
+  and on no QSL crate, so an edge into it closes no cycle (FR-401). It is
+  `#![no_std]` with `alloc`, has no `std` feature and forbids unsafe code.
+  It names no `CheckedPackage`, `CheckedGraph`, `CheckedExpression` or
+  `ObjectEnvironment`: it identifies a callable by its kernel `NodeKey`,
+  compares admitted signatures by their parameter and result `ValueType`s,
+  and reads the checked input and object environment as types the
+  implementation supplies. The std reference adapter that implements that
+  contract over `CheckedPackage` and `ObjectEnvironment` is layer 5's.
+  `ObjectEnvironment` stays in layer-3 `model`, since its populations map
+  holds `PopulationBinding`. QSL layers 5, 6, A, P and X and the root
+  crate may depend on E; layers F to 4 and R do not.
 
 ### 6.2 Current module map
 
@@ -1011,6 +1031,7 @@ flowchart BT
   CG[quire-contract-codegen]
   FCD[FCD semantic IR and extraction-frontend]
   QRS[quire-rs optional]
+  QEL[quire-eval in quire-eval repo]
   QFO & QSO & QFM & QSE & QPK & QEV & QRO & QRP & QSL --> QX
   QSE & QPK & QEV --> SV
   SV --> QX
@@ -1026,6 +1047,11 @@ flowchart BT
   CG --> RT
   CG -->|replay facade only| QRP
   IR --> CM
+  QEL --> SV & QX
+  QFO --> SV
+  QEV & QRP --> QEL
+  RT --> QEL
+  CG --> QEL
 ```
 
 Differences from today (ADR-010 §3.2), each removed in its owning change:
@@ -1042,6 +1068,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New**; a git dependency on the repository `agent-ix/quire-exact` at `branch = "main"` | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
 | QSL → `quire-semantic-value`, RT → `quire-semantic-value`, CG → `quire-semantic-value` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, RT and CG to the repository `agent-ix/quire-semantic-value`, at `branch = "main"`. | X-11 |
 | QSL → `quire-walk`, IR → `quire-walk`, RT → `quire-walk`, CG → `quire-walk` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, IR, RT and CG to the repository `agent-ix/quire-walk`, each at `branch = "main"`. | ADR-030 FR-356 |
+| QSL → `quire-eval`, RT → `quire-eval`, CG → `quire-eval` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, RT and CG to the repository `agent-ix/quire-eval`, at `branch = "main"`. | X-14 |
 
 Rules:
 
@@ -1152,6 +1179,8 @@ is not blocked.
 | X-10 | Extract crate `qsl-replay`. **Extracted**: `bounds`, `call_site`, `execute`, `identity`, `proof_result`, `request`, `result`, `spine` and `witness` are in the crate `qsl-replay`. Its `[dependencies]` are exactly `qsl-cst` (1), `qsl-forms` (2), `qsl-semantics` (3), `qsl-package` (4), `qsl-eval` (5), `qsl-foundation` (F), `quire-semantic-value` (SV: the `InputRefusal` and `Location` the spine reports), `quire-exact` (K), the marker crate `ix-trace-rs` (ADR-012 section 9) and `thiserror`, and `qsl-source` (I3) under its feature `quire-extraction`; the facade re-exports items of `qsl-semantics`, `qsl-forms`, `qsl-foundation` and `quire-exact`. | 6 | the `replay` facade, including the #231 envelopes | none | none: no root-crate re-export (§7.2) |
 | X-11 | Extract crate `quire-semantic-value` (SV). **Extracted**: the crate holds `semantic_node` (the refusal vocabulary, `check_terms`, `CanonicalNodeId` and `IDENTITY_LIMITS`), `definition` (the refusal vocabulary), `stop`, `quantity`, `declaration`, `containment`, the runtime halves of `unit` and `enumeration`, the call-surface vocabulary: `checking`, `location`, `call` and `loss`, and `object_closure`, the `ObjectEnvironment` core object closure (§6.2). Its `[dependencies]` are exactly `quire-exact` (K), `quire-canonical`, `serde` and `thiserror`, each without `std`; it is `#![no_std]`, and `make ci` builds it for `thumbv7em-none-eabi`. TC-390's dependency check asserts the exact table. Two further rules hold for SV. The `ObjectEnvironment` core object closure is in it (§6.2), while the populations map stays in `model`. A type that S3 or `qsl-eval` produces and CG reads lives in SV, so CG takes no edge to a QSL layer crate; this covers `ModelTransition`, `ProtocolTransition`, `PropertyForm`, `FairnessConstraint`, `Permutation` and `StepObligation`. | SV: a shared leaf that QSL layers 3 and up, RT and CG depend on (FB-05) | the moved modules' public items, at `quire_semantic_value::{semantic_node, stop, quantity, unit, enumeration, definition, declaration, containment, checking, location, call, loss, object_closure}` | after X-10 | none: no re-export from `qsl-semantics` or any other crate (§7.2) |
 | X-12 | Create crates `qsl-analyze` (layer A: the in-process engines behind `analyze`, and `monitor`), `qsl-inspect` (layer P: `inspect` and `render`) and `qsl-jit` (layer X: the JIT execution backend), and move `format` into `qsl-cst` (layer 1). Added by ADR-029 CB-3, OP-1, EB-7 and §9 | A, P and X sit above the qualified core and below the root crate's `command`; `format` joins layer 1 | `qsl_analyze::{analyze, monitor}` with `AnalyzeOutcome`, `MonitorOutcome` and the canonical `AnalyzeRequest`; `qsl_inspect::{inspect, render}` with `View`; `qsl_jit`'s `ExecutionBackend` implementation; `qsl_cst::format` | `qsl-analyze` after X-10; `qsl-inspect` after `qsl-analyze`; `qsl-jit` after layer 5's `ExecutionBackend` seam; `format` with the root crate's `format` deletion | none: root `src/format.rs` is deleted in the change that adds `qsl_cst::format`, with no re-export (§7.2) |
+| X-14 | Create crate `quire-eval` (layer E) in the repository `agent-ix/quire-eval` and move the evaluation interface vocabulary (FR-401, slice S0, IR-583). First, in `agent-ix/quire-semantic-value`, `qsl-foundation`'s catalog vocabulary (`Category`, `CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason`, `InternalFault`) moves to SV `catalog`, and `qsl-semantics`' supplied-value stop records (`SuppliedFailure`, `SuppliedStop` and the records they carry, and `UnsupportedHelperStop`) move to SV `supplied_stop`; `CatalogCoded`'s provided `refusal_record` becomes a `qsl-foundation` function, and `qsl-foundation` adds SV to its `[dependencies]` (amending X-2). Then `quire-eval` holds the FR-262 interface, `Evaluation` and `CallFailure` from `qsl-eval`, and `FamilyOutcome`, `FamilyResult` and `EvalOutcome` from `qsl-semantics`' `family`; `Evaluation::refusal_record` becomes a `qsl-eval` function. Its `[dependencies]` are SV, K and `thiserror`, each without `std`, plus C and W once X-13 has landed and the evaluator names them; it is `#![no_std]` with `alloc`, has no `std` feature, forbids unsafe code and builds for `thumbv7em-none-eabi` in its own gate. QSL takes it as a git dependency at `branch = "main"`: `qsl-eval`, `qsl-replay` and `qsl-bench` add it to their `[dependencies]` (amending X-8 and X-10), and TC-390 asserts those tables and that no layer F to 4 or R crate names it. `qsl-eval` holds the std reference adapter over `CheckedPackage` and `ObjectEnvironment`. | E: a shared leaf above C, SV, K and W and below layers 5, 6 and A, RT and CG (FB-05) | `quire_eval::{Evaluation, CallFailure, FamilyOutcome, FamilyResult, EvalOutcome}` and the interface items; `quire_semantic_value::{catalog, supplied_stop}` | after X-11; the repository's creation is an owner action that precedes it, and its licence, CLA and content-rights checks precede making it public. The SV change lands before the QSL change that repoints callers at it | none: no re-export at a `qsl_foundation::`, `qsl_semantics::` or `qsl_eval::` path (§7.2) |
+| X-15 | Move `WrongSnapshotCause` from `qsl-semantics`' `check::refusal` to SV `call` (FR-401, slice S1, IR-585), where the checker's `CheckCause` and `qsl-eval`'s runtime snapshot cause both name it. This is S1's complete item set: `ObjectEnvironment` already holds SV's `ObjectClosure` and stays in `model`. When X-13 lands first, X-13 moves it to the same place and X-15 is empty | SV | `quire_semantic_value::call::WrongSnapshotCause` | after X-14 | none: no re-export at a `qsl_semantics::` path (§7.2) |
 
 M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
 a working path is removed before its replacement, and no window in which an

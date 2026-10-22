@@ -760,6 +760,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-399
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-401
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
 ---
@@ -1292,6 +1294,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-397](functional/FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md) | FR |
 | [FR-398](functional/FR-398-expose-the-admitted-unit-table-through-the-replay-facade.md) | FR |
 | [FR-399](functional/FR-399-set-a-named-stage-limit-through-the-replay-root.md) | FR |
+| [FR-401](functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |

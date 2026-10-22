@@ -12,6 +12,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/ADR-030
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-401
+    type: references
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: references
 ---
@@ -201,6 +203,40 @@ owned by RT's consumer acceptance contract and must be recorded there; this
 design does not claim those checks have run. Interface acceptance is not
 evidence that the RT target accepts the later implementation.
 
+### Leaf crate and vocabulary placement
+
+FR-401 fixes the leaf and where the interface's types live. The leaf is the
+crate `quire-eval`, ADR-011 layer E, in the repository `agent-ix/quire-eval`
+beside FR-400's `quire-checked` (layer C). It depends on C, SV, K, W and
+`thiserror` and on no QSL crate; before FR-400's X-13 it names only SV, K and
+`thiserror`.
+
+| Interface type | Owner |
+| --- | --- |
+| `Meter` and its accounting vocabulary, `Cancel`, `NodeKey`, `Value`, `ValueType`, `Outcome` | K `quire-exact`, already |
+| `InputRefusal`, `Location`, losses, `EnvironmentFailure`, `ObjectClosure` | SV, already |
+| `InternalFault`, `Category`, `CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason` | SV `catalog`, from `qsl-foundation` (S0) |
+| `CallFailure`'s supplied-value stop payloads | SV `supplied_stop`, from `qsl-semantics` (S0) |
+| `Evaluation`, `CallFailure`, `FamilyOutcome`, `FamilyResult`, `EvalOutcome`, the registry, session and body contract | E `quire-eval` (S0) |
+| `WrongSnapshotCause` | SV `call`, from `check::refusal` (S1) |
+| checked closure, checked expression, object environment | opaque to E: types the implementation supplies through E's closure contract |
+
+The leaf keeps the checked closure opaque. It identifies a callable by its
+kernel `NodeKey` and checks registration against the admitted signature (the
+parameter and result `ValueType`s) the closure contract returns. `qsl-eval`'s
+std reference adapter implements that contract over `CheckedPackage` and
+`ObjectEnvironment` until X-13, and the leaf may name C's checked terms
+after it. `ObjectEnvironment` already holds SV's `ObjectClosure`; it stays in
+layer-3 `model` because its populations map holds `PopulationBinding`.
+
+S0 carries the vocabulary moves its signature needs, since the leaf can import
+neither `qsl-foundation` nor a QSL layer. S1 is the one remaining move,
+`WrongSnapshotCause`; the IR-585 names `EvaluationRefusal` and `CallPlan`
+have no counterpart in QSL, and the `IeeeItemRequirement` and
+`IntegerDivisionConsumer` fields are absent (FR-078). S0, S1 and S2 move
+disjoint sets of items to SV, each item once; whichever of S1 and S2 lands
+first moves `WrongSnapshotCause`.
+
 ## Decisions
 
 - The QSL-owned leaf is the one shared interface and scheduler authority for
@@ -214,6 +250,9 @@ evidence that the RT target accepts the later implementation.
   visible outcome.
 - RT and CG depend on the shared interface directly. A forwarding shim at the
   RT `exact::` path is prohibited.
+- The leaf is `quire-eval` (ADR-011 layer E) in `agent-ix/quire-eval`, and
+  the vocabulary its interface names lives in K, SV or E as FR-401 places
+  it.
 
 ## Risks
 

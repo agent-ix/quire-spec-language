@@ -59,7 +59,10 @@ leaf extraction and host registration are not claimed to be implemented.
 
 ### Ownership and admission
 
-The shared interface belongs to QSL, in a leaf crate in its own repository.
+The shared interface belongs to QSL, in a leaf crate in its own repository:
+`quire-eval` in `agent-ix/quire-eval`, at ADR-011 layer E
+([FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md),
+which also places every type the interface names).
 It SHALL use `core` and `alloc` and forbid unsafe code. QSL's existing std
 evaluator remains the semantic reference behind that interface. The interface
 deliverable (IR-583) precedes checked-term separation (IR-586); the no_std
