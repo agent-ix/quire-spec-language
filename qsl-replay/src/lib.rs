@@ -190,13 +190,15 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, read_plugin_cause_kind, AppliedReduction,
-    BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet, IncompleteCause,
-    InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, PluginResultRefusal,
-    ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
-    ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
-    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, read_plugin_assignments, read_plugin_basis,
+    read_plugin_cause_kind, read_plugin_certification, read_plugin_inconclusive_cause,
+    AppliedReduction, BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet,
+    IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember,
+    PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis, ProofRefusalCause,
+    ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind,
+    ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
+    StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
