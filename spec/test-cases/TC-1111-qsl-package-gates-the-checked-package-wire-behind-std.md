@@ -48,8 +48,8 @@ NFR-015-AC-4 to NFR-015-AC-7, NFR-015-AC-9 and NFR-015-AC-10.
 8. With default features, emit a package with no abstraction relation with `emit_checked`, call
    `bind_abstraction_at` with valid bindings and one site, read
    `emitted_package_id`, then emit it again and read it. Emit a second
-   package, call `bind_abstraction_at` with bindings it refuses, and read
-   `emitted_package_id`.
+   package, call `bind_abstraction_at` with one binding whose key names a
+   declaration the package does not hold, and read `emitted_package_id`.
 
 ## Expected Results
 
@@ -66,5 +66,6 @@ NFR-015-AC-4 to NFR-015-AC-7, NFR-015-AC-9 and NFR-015-AC-10.
 6. No match; the canonical-encoder check passes.
 7. It is `None`.
 8. It is `None` after the binding; the second emission's `package_id`
-   differs from the first. After the refused binding it equals the emitted
-   `package_id`.
+   differs from the first. The second package's binding is refused with
+   `AbstractionRefusal::MissingDeclaration`, and `emitted_package_id` then
+   equals the emitted `package_id`.
