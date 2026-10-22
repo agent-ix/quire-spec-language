@@ -48,8 +48,9 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 mod (2 -
    c.versionNumber) >= 0)` over the example unit with both versions 0 and
    with `a` 0 and `b` 1 (FR-126-AC-11).
-9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each with its
-   `when` condition read by the test's own letters.
+9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each from a
+   test-built checked package carrying its `temporal_clause` node in QSpec
+   FR-370's shape, with its `when` condition read by the test's own letters.
 10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
     counterexample replayed.
 
