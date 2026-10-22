@@ -85,6 +85,9 @@ know whether the claim survives a scheduler that starves a thread, they add
 - FR-126's filter, ADR-018 FA-3's weak fairness and FA-4's SCC test SHALL
   read these classes, a class being enabled when one of its steps is
   enabled (FR-206 to FR-209) and taken by a step that belongs to it.
+- An `activate` step is in no class, so no constraint is violated by an
+  `activate` that stays enabled and is never taken, at an instance-limited
+  state (FR-209) as anywhere else.
 
 ### Scheduler constraints
 
