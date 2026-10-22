@@ -96,3 +96,11 @@ These were found at `e7d813f45`. They are new, not dispositions of the rows abov
 | --- | --- | --- | --- |
 | FND-009 | low | Minor. ADR-026 still says a sample replays by CT-3, which it defines as `replay_model_trace`: SS-2 ("the run is a timed behaviour that replays by CT-3") and the §11 worked example ("each sample replays by CT-3"). SS-6 now routes a timed witness through `replay_sampled_witness` with CT-3's timed steps. The two sentences should say "by CT-3's timed steps" or point at SS-6. | spec/decisions/ADR-026-dense-time.md:238,357 |
 | FND-010 | low | Minor. FR-254's Witnesses bullet now cites `replay_sampled_witness` (FR-193), but FR-254 has no `depends_on` edge to FR-193. | spec/functional/FR-254-sample-timed-runs-for-statistical-checking.md:5-16,89-90 |
+
+Disposition pass 4 at `agent-ix/quire-spec-language@7255ee754` (fix commit `7255ee754`, after merge `3dac94000` of origin/main). A grep of spec/ (reviews/ excluded) for "replays by FR-237", "replays by CT-3", "each sample replays", "sampled witness" and `replay_sampled_witness` finds no statement that still routes a sampled witness through `replay_model_trace` or a recompile. FR-237 still specifies `replay_model_trace` over a timed subject, and FR-254 and ADR-026 borrow only its timed steps. The PR adds no ids. `make check-spec-validation` and `tools/check-index-completeness.sh` exit 0.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-006 | fixed 7255ee754 | FR-254 Description: "A sampled witness replays through `replay_sampled_witness` (FR-193), which applies FR-237's timed steps and recomputes each draw." FR-254-AC-2: "a sampled witness replays through `replay_sampled_witness` (FR-193) with FR-237's timed steps, and its draws recompute from the seed". The Description, the Witnesses bullet and AC-2 now agree. |
+| FND-009 | fixed 7255ee754 | ADR-026 SS-2: "so every sampled delay is an exact rational and the run is a timed behaviour; a sampled witness of it replays through `replay_sampled_witness` by CT-3's timed steps (SS-6)". The §11 worked example: "each sampled witness replays through `replay_sampled_witness` (SS-6)". |
+| FND-010 | fixed 7255ee754 | FR-254 gains `depends_on` `ix://agent-ix/quire-spec-language/FR-193`, and its Dependencies section links FR-193. |

@@ -20,7 +20,7 @@ Fixtures: `Service` and the `2 ms` claim, seed 7, `max_witnesses` 3; `Health` wi
 
 1. Run the claim and read the witnesses.
 2. Replay each witness; replay altered copies (value outside the support, changed seed, changed path probability).
-3. Replay a `Service` witness with `replay_sampled_witness`, which converts it to a counterexample for the TP-2 claim and replays that in the one call; do the same for a witness of the `<= 1/100` fault claim; replay three copies of that witness: one with the first step that reaches `n.healthy` false replaced by the other choice of the same draw and that choice's successor digest, later steps dropped; one with a step's choice changed and its post-state digest kept; one with a step changed to a transition not enabled at its pre-state; run `LongRun`.
+3. Replay a `Service` witness with `replay_sampled_witness`, which converts it to a counterexample for the TP-2 claim and replays that in the one call; do the same for a witness of the `<= 1/100` fault claim; replay three copies of that witness: one with the first step that reaches `n.healthy` false replaced by the other choice of the same draw and that choice's successor digest, later steps dropped; one with a step's choice changed and its post-state digest kept; one with a step changed to a transition not enabled at its pre-state (in `Health` an `attemptUpdate` with a receiver `z` whose identity lies outside the universe, built as in FR-128-AC-3); run `LongRun`.
 4. Refuse `Service` and `Health` at S4, then run step 2's replays of `Service` witnesses and step 3's replays of `Service` and `Health` witnesses over their checked subjects.
 
 Tag the tests `#[trace("TC-628", "FR-193-AC-n")]`.
