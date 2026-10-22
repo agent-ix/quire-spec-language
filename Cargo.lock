@@ -1630,6 +1630,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#942a1b4efd65baf363f66a0a1266cfa28d12778f"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1639,7 +1640,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#1c6cbcb6d523fe1e07f05510918b00047a48233e"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#72b254219fd65a058b8cf93cefadda1c4c249fca"
 dependencies = [
  "allocator-api2",
  "num-bigint",
