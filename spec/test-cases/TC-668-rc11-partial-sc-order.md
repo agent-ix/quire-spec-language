@@ -12,7 +12,7 @@ relationships:
 
 Verify the SC event graph's edges and pruning, its collection on garbage collection, and its place in the canonical key.
 
-Scope: FR-223-AC-1 to FR-223-AC-8.
+Scope: FR-223-AC-1 to FR-223-AC-10.
 
 ## Test Procedure
 
@@ -31,6 +31,12 @@ Scope: FR-223-AC-1 to FR-223-AC-8.
 7. Run ADR-025 §15's LT-15 and LT-16 under `ra`, and at each state in which
    `L := 1` or `L := 2` has been collected list the live SC events, the
    `owed` sets and the pairs of the views.
+8. Run ADR-025 §15's LT-17 under `ra` in every interleaving, and list the live
+   fences after `u`'s second fence with and without `v` having loaded `Y`.
+9. Run a thread that fences twice with `seq_cst`, with no other thread; then
+   a thread running `fence seq_cst; Y := 1; fence seq_cst` with `Y := 1` a
+   `release` store, with no other thread. List the live fences after the
+   second fence of each.
 
 Tag the tests `#[trace("TC-668", "FR-223-AC-n")]`.
 
@@ -48,3 +54,8 @@ Tag the tests `#[trace("TC-668", "FR-223-AC-n")]`.
 - Step 7: both outcomes unreachable; each collected event absent from `P`, and
   its live predecessors present in `owed` or in the pairs of the views that
   covered it.
+- Step 8: the outcome unreachable; the first fence present while `Y`'s message
+  view covers it and not the second, absent once no view does.
+- Step 9: in the first run the first fence is absent after the second fence;
+  in the second it is present while `Y`'s message is live and its view covers
+  the first fence and not the second.
