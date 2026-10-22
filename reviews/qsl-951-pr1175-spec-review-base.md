@@ -62,3 +62,27 @@ Faithful to the proposal: ix-trace-rs owns `string_edge`. The marker takes no ar
 ## Verdict
 
 Not mergeable as it stands. FND-001 states as fact an ix-trace-rs attribute that does not exist yet and records no dependency on it. FND-002 is a contradiction inside FR-064. FND-003 is an AC that cannot be tested as written. FND-004 to FND-007 are low. All are text fixes in this PR. Follow-up for the code half (not a finding of this spec-only diff): README.md line 333 still lists `qsl-attrs`.
+
+## New findings (disposition pass 1)
+
+Head df77f17c3 (PR #1175 round 1).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The fix commit df77f17c3 overwrites three review records already on main and adds a fourth file. reviews/comment-base.md, reviews/comment-ears.md and reviews/comment-integrity.md on origin/main are PR #1098's Linear comment bodies (SR-13545 and its siblings, committed by 8a5569839). The commit replaces them with this review's comment bodies and adds reviews/comment-gap.md. Merging would destroy #1098's records on main. The comment bodies are also not SpecReview artifacts: Linear holds them, and only the four qsl-951-pr1175-*.md SR files belong in reviews/. Restore the three files from origin/main and drop reviews/comment-gap.md. | reviews/comment-base.md:1; reviews/comment-ears.md:1; reviews/comment-integrity.md:1; reviews/comment-gap.md:1 |
+| FND-009 | low | The new path rule accepts 'an attribute whose path is `string_edge` or `ix_trace_rs::string_edge`'. It does not say whether the leading-colon form `#[::ix_trace_rs::string_edge]` counts. Rust accepts that path, and `syn` records it as `leading_colon` plus the same segments, so two implementers could differ. Say whether a leading `::` is accepted, and add it to AC-12 or AC-15. | spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md:72-75 |
+| FND-010 | medium | The new wording 'The QSL workspace SHALL define no item named `string_edge`' and AC-14 'defines no item named `string_edge`' cover more than the marker. A module is an item, and xtask/src/lib.rs:23 declares `pub mod string_edge;`, the QSL adapter FR-064 itself requires. TC-162 step 15 searches for 'any item named `string_edge`', so it would find that module and fail AC-14. The parenthetical lists only the marker cases (proc-macro attribute, re-export, alias), and a coder would have to rename the adapter module for no reason. Restrict both statements to the macro namespace: 'no attribute macro named `string_edge`, and no re-export or alias of one'. | spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md:245; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md:80-81; spec/test-cases/TC-162-string-edge-scan-coverage.md:91-94; xtask/src/lib.rs:23 |
+
+## Dispositions
+
+Round 1, head df77f17c3 (origin/main merged at f47731b39). `make check-spec-validation` and `tools/check-index-completeness.sh` exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in df77f17c3: - Linear QSL-953 (`ix-trace-rs`: publish the `#[string_edge]` attribute with the contract in "The marker attribute") is the prerequisite for QSL's use of the attribute; `ix-trace-rs` provides `trace` and `implements` only until it lands. |
+| FND-002 | fixed | Fixed in df77f17c3: - agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 run the same scan in their own repositories, over the same rule; this requirement builds the scan tool that #141 and #86 invoke, not their own edge inventories. The attribute is `ix-trace-rs`'s. |
+| FND-003 | fixed | Fixed in df77f17c3: \| FR-064-AC-15 \| A fixture function marked `#[my_macros::string_edge]` is reported, as are functions whose only mark is the comment `// string_edge` or the doc comment `/// string_edge`; and `cargo metadata` over the QSL workspace shows `ix-trace-rs` among the dependencies of every package that uses the marker. \| Test (TC-162) \| |
+| FND-004 | fixed | Fixed in df77f17c3: - The scan SHALL treat a function as marked when it carries an attribute whose path is `string_edge` or `ix_trace_rs::string_edge`. - The scan SHALL NOT treat any other path, a crate-qualified path of another crate included, as a marker. |
+| FND-005 | fixed | Fixed in df77f17c3: The marker is the attribute `#[string_edge]`, written as `string_edge` or as `ix_trace_rs::string_edge`. The marker has no comment or doc-comment form. |
+| FND-006 | fixed | Fixed in df77f17c3: \| FR-064-AC-14 \| The QSL workspace defines no item named `string_edge` (no proc-macro attribute, no `pub use`, no alias), holds no crate whose only purpose is that marker, and `cargo check` of every package resolves each `string_edge` marker in production code to `ix_trace_rs::string_edge`. \| Test (TC-162) \| |
+| FND-007 | fixed | Fixed in df77f17c3: These commands are the acceptance recipe, not a claim that the standalone package has already been implemented or the installation run has passed.  ## Expected Results |

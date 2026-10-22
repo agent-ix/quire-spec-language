@@ -47,3 +47,13 @@ Ticket: QSL-951. PR quire-spec-language#1175, head 76a302455. EARS lens over eve
 ## Verdict
 
 Mergeable on this lens alone. Three low findings. None changes behaviour.
+
+## Dispositions
+
+Round 1, head df77f17c3 (origin/main merged at f47731b39). `make check-spec-validation` and `tools/check-index-completeness.sh` exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in df77f17c3: - The scan SHALL treat a function as marked when it carries an attribute whose path is `string_edge` or `ix_trace_rs::string_edge`. - The scan SHALL NOT treat any other path, a crate-qualified path of another crate included, as a marker. - The scan SHALL treat a marker as covering only the function it is applied to, never a file or a crate. - The QSL workspace SHALL import the attribute from `ix-trace-rs` and declare that dependency in the manifest of each package that uses it. - The QSL workspace SHALL define no item named `string_edge`: no proc-macro attribute, no re-export and no alias. |
+| FND-002 | fixed | Fixed in df77f17c3: - The scan SHALL treat a marker as covering only the function it is applied to, never a file or a crate. |
+| FND-003 | fixed | Fixed in df77f17c3: - The QSL workspace SHALL import the attribute from `ix-trace-rs` and declare that dependency in the manifest of each package that uses it. - The QSL workspace SHALL define no item named `string_edge`: no proc-macro attribute, no re-export and no alias.  A consumer imports the attribute from `ix-trace-rs` (`use ix_trace_rs::string_edge;`) or writes `#[ix_trace_rs::string_edge]`; a consumer that keeps its own copy of the marker is outside what the scan can detect by path. |

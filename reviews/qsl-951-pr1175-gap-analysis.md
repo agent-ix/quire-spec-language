@@ -53,3 +53,13 @@ Each new AC has one procedure step and one expected result in TC-162: AC-12 has 
 ## Verdict
 
 Mergeable on this lens once the base review's FND-003 (AC-15) is fixed. Three low findings tighten the procedures.
+
+## Dispositions
+
+Round 1, head df77f17c3 (origin/main merged at f47731b39). `make check-spec-validation` and `tools/check-index-completeness.sh` exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in df77f17c3: - Step 14 (FR-064-AC-13): the marked function behaves as the unmarked one; the argument case reports exactly one error with the message `#[string_edge] takes no arguments`. |
+| FND-002 | fixed | Fixed in df77f17c3: named `string_edge`, any re-export or alias of it and any crate whose only purpose is the marker, and run `cargo check` over every package so each marker's resolution is the compiler's (FR-064-AC-14). |
+| FND-003 | fixed | Fixed in df77f17c3: 9. Exercise the fixtures from steps 1–5 through the public library and binary with consumer rules. Submit a branch-gating allow-list entry both before and after marking its function. Compare occurrence fields and errors with the QSL adapter. |

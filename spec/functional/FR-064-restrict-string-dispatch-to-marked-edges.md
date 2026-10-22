@@ -58,8 +58,8 @@ chain, is a match arm's own value, or is a `strip_prefix` call.
 
 ### The marker attribute
 
-The marker is the attribute `#[string_edge]`, written as `string_edge` or as
-`ix_trace_rs::string_edge`. The marker has no comment or doc-comment form.
+The marker is the attribute `#[string_edge]`, written as `string_edge`, as
+`ix_trace_rs::string_edge` or as `::ix_trace_rs::string_edge`. The marker has no comment or doc-comment form.
 
 Contract QSL relies on (owned by `ix-trace-rs`'s own specification; Linear
 QSL-953 tracks its publication): the attribute is a proc-macro attribute of
@@ -70,15 +70,16 @@ retaining the item. `ix-trace-rs` has no normal dependency and none on QSL, a
 model, IR or a code-generation crate, so a consumer depends on it directly.
 
 - The scan SHALL treat a function as marked when it carries an attribute whose
-  path is `string_edge` or `ix_trace_rs::string_edge`.
+  path is `string_edge`, `ix_trace_rs::string_edge` or
+  `::ix_trace_rs::string_edge`.
 - The scan SHALL NOT treat any other path, a crate-qualified path of another
   crate included, as a marker.
 - The scan SHALL treat a marker as covering only the function it is applied to,
   never a file or a crate.
 - The QSL workspace SHALL import the attribute from `ix-trace-rs` and declare
   that dependency in the manifest of each package that uses it.
-- The QSL workspace SHALL define no item named `string_edge`: no proc-macro
-  attribute, no re-export and no alias.
+- The QSL workspace SHALL define no attribute macro named `string_edge` and no
+  re-export or alias of one.
 
 A consumer imports the attribute from `ix-trace-rs` (`use
 ix_trace_rs::string_edge;`) or writes `#[ix_trace_rs::string_edge]`; a consumer
@@ -242,7 +243,7 @@ comparisons, external constants or indirect branch dataflow.
 | FR-064-AC-11 | QSL's adapter passes its roots and rules to the standalone library, with no second detector implementation. On clean, violating and invalid-input fixtures, its report content and success/failure agree with the library; its existing lint prerequisite still propagates failure. Extraction adds only the scanner crate's own tests to QSL verification. | Test |
 | FR-064-AC-12 | A fixture function marked `#[ix_trace_rs::string_edge]` and one marked with `#[string_edge]` imported by `use ix_trace_rs::string_edge;` each hold a string comparison that the library, the command and QSL's adapter do not report; an unmarked function in the same fixture is reported. | Test (TC-162) |
 | FR-064-AC-13 | A consumer crate that applies `#[string_edge]` from `ix-trace-rs` to a function compiles and runs the function with the behaviour of the unmarked function; `#[string_edge(anything)]` fails to compile with the one error message `#[string_edge] takes no arguments` and no second error from the retained function. | Test (TC-162) |
-| FR-064-AC-14 | The QSL workspace defines no item named `string_edge` (no proc-macro attribute, no `pub use`, no alias), holds no crate whose only purpose is that marker, and `cargo check` of every package resolves each `string_edge` marker in production code to `ix_trace_rs::string_edge`. | Test (TC-162) |
+| FR-064-AC-14 | The QSL workspace defines no attribute macro named `string_edge` and no re-export or alias of one, holds no crate whose only purpose is that marker, and `cargo check` of every package resolves each `string_edge` marker in production code to `ix_trace_rs::string_edge`. | Test (TC-162) |
 | FR-064-AC-15 | A fixture function marked `#[my_macros::string_edge]` is reported, as are functions whose only mark is the comment `// string_edge` or the doc comment `/// string_edge`; and `cargo metadata` over the QSL workspace shows `ix-trace-rs` among the dependencies of every package that uses the marker. | Test (TC-162) |
 
 ## Dependencies

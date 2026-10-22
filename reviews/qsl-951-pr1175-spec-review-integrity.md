@@ -54,3 +54,12 @@ These agree: the marker contract (no argument, identity expansion, item kept on 
 ## Verdict
 
 Mergeable on this lens once FND-001 is resolved: QSL obligations should be stated as dependencies on ix-trace-rs, not as SHALLs on it. FND-002 is low.
+
+## Dispositions
+
+Round 1, head df77f17c3 (origin/main merged at f47731b39). `make check-spec-validation` and `tools/check-index-completeness.sh` exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in df77f17c3: Contract QSL relies on (owned by `ix-trace-rs`'s own specification; Linear QSL-953 tracks its publication): the attribute is a proc-macro attribute of `ix-trace-rs` that applies to a function, takes no argument, expands to the annotated item unchanged, adds no runtime behaviour, and reports an argument as one compile error with the message `#[string_edge] takes no arguments` while retaining the item. `ix-trace-rs` has no normal dependency and none on QSL, a model, IR or a code-generation crate, so a consumer depends on it directly. |
+| FND-002 | fixed | Fixed in df77f17c3: \| R-3 \| A marker attribute crate (the marker owner is `ix-trace-rs`) would need a new dependency in `quire-exact` and `quire-semantic-value` and an FB-05 change. \| No new dependency and no reserved-name list, since a list is a ledger. Canonical types carry the doc-comment tag `/// quire:canonical`, which the xtask parses (DT-1). FB-05 is unchanged. \| |

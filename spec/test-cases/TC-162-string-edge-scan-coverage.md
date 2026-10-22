@@ -88,11 +88,12 @@ dataflow retain the limitations stated by FR-064.
 14. Compile a consumer crate with a marked function and run it; compile a
     second with `#[string_edge(anything)]` and read the compiler's errors
     (FR-064-AC-13).
-15. Search the QSL workspace's manifests and production source for any item
-    named `string_edge`, any re-export or alias of it and any crate whose only
-    purpose is the marker, and run `cargo check` over every package so each
+15. Search the QSL workspace's manifests and production source for any attribute
+    macro named `string_edge`, any re-export or alias of one and any crate whose
+    only purpose is the marker, and run `cargo check` over every package so each
     marker's resolution is the compiler's (FR-064-AC-14).
 16. Scan a fixture with a function marked `#[my_macros::string_edge]` and
+    a function marked `#[::ix_trace_rs::string_edge]` (a marker, not reported) and
     functions whose only mark is `// string_edge` or `/// string_edge`; read
     `cargo metadata` for the QSL workspace (FR-064-AC-15).
 
@@ -186,9 +187,9 @@ package has already been implemented or the installation run has passed.
 - Step 14 (FR-064-AC-13): the marked function behaves as the unmarked one; the
   argument case reports exactly one error with the message
   `#[string_edge] takes no arguments`.
-- Step 15 (FR-064-AC-14): no such item, re-export, alias or crate is found,
+- Step 15 (FR-064-AC-14): no such attribute macro, re-export, alias or crate is found,
   `cargo check` passes for every package, and each marker resolves to
   `ix_trace_rs::string_edge`.
 - Step 16 (FR-064-AC-15): the `my_macros::string_edge`, comment and doc-comment
-  fixtures are reported, and `ix-trace-rs` is a dependency of every package that
+  fixtures are reported, the `::ix_trace_rs::string_edge` function is not, and `ix-trace-rs` is a dependency of every package that
   uses the marker.
