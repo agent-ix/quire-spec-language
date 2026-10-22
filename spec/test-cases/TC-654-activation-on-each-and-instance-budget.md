@@ -27,7 +27,7 @@ Scope: FR-209-AC-1 to FR-209-AC-7.
    `max_live_instances` 1 and 2.
 6. Check FR-209-AC-6's violated liveness claim with `max_live_instances` 1
    and replay its lasso.
-7. Check FR-209-AC-7's `repeat { attempt set }` protocol with
+7. Check FR-209-AC-7's `repeat R by p visible() while { true } attempt Done on set` protocol with
    `always eventually holds(k.v = 0)` and `max_live_instances` 1, and replay
    its lasso.
 
