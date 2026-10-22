@@ -94,7 +94,7 @@ fn declared_floats_select_the_profile_even_without_an_ieee_application() {
     for declaration in [
         "function keep using v(a: Float64[nearest-even]): Boolean pure { true }",
         "function keep using v(a: Float32[nearest-even]): Float32[nearest-even] pure { a }",
-        "record Reading { value: Float64[nearest-even]; }",
+        "record Reading { sample: Float64[nearest-even]; }",
         "tuple Reading(Float32[nearest-even]);",
         "union Reading { Empty, Some(Float64[nearest-even]) }",
         "type Reading = Float64[nearest-even];",
