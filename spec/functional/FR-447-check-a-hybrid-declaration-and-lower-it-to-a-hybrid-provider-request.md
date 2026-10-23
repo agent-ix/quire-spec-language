@@ -1,6 +1,6 @@
 ---
 id: FR-447
-title: "Check a hybrid declaration and its claims, and lower them to a hybrid provider request"
+title: "Check a hybrid declaration and its claims, emit them, and lower them to a hybrid provider request"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-026
@@ -27,23 +27,30 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-322
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-481
+    type: depends_on
 ---
-# FR-447: Check a hybrid declaration and its claims, and lower them to a hybrid provider request
+# FR-447: Check a hybrid declaration and its claims, emit them, and lower them to a hybrid provider request
 
 ## Description
 
 This requirement covers a unit that holds a `hybrid-decl` (QSpec FR-193
 "Source form and the clock line"). S2 (`qsl-forms`) builds one declaration
 form for it. S3 checks that form into a checked hybrid model on the checked
-package. The request writer lowers each claim over that model to an FR-331
-request item that negotiation (FR-075) routes to a hybrid provider. The
-Behavior section states each stage's rules. The checked hybrid model
+package. S4 emits the model and each claim over it as the checked-package v2
+nodes QSpec FR-481 defines. The request writer lowers each claim to an FR-331
+request item that negotiation (FR-075) routes to a hybrid provider, in
+process or in a process of its own. The Behavior section states each stage's
+rules. The checked hybrid model
 records each mode's rate of each continuous variable and classifies each
 variable as a clock or as hybrid dynamics, which is ADR-026 HY-1's line
 between EN-6 and an external solver. QSpec FR-193 owns the production and its
-meaning; this requirement specifies the forms QSL builds, the checks and
-refusals S3 applies, the checked record, and the request it lowers to.
-FR-250 maps the provider's result to a verdict.
+meaning, and QSpec FR-481 the emitted nodes; this requirement specifies the
+forms QSL builds, the checks and refusals S3 applies, the checked record, the
+nodes S4 emits and the request it lowers to. FR-250 maps the provider's
+result to a verdict.
 
 ## Use case
 
@@ -153,6 +160,9 @@ pub struct HybridInterval { pub lower: u64, pub upper: Option<u64> } // seconds;
 `CheckedPackage::hybrid_models: Vec<CheckedHybridModel>` and
 `CheckedPackage::hybrid_claims: Vec<CheckedHybridClaim>`, each in source
 order. A typed `CheckRefusal` with a span on refusal.
+
+At S4, the emitted v2 package carries each checked hybrid model and claim as
+QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 
 ## Behavior
 
@@ -282,8 +292,9 @@ order. A typed `CheckRefusal` with a span on refusal.
   kebab-case and whose other members are its fields. So two packages that
   differ in a mode, a rate, a guard, a reset, a classification or a claim
   have different checked package identities.
-- The `CheckedHybridModel` SHALL be the one form the request writer and a
-  hybrid provider read; neither re-reads source.
+- The `CheckedHybridModel` SHALL be the one form the request writer and an
+  in-process hybrid provider read, and its emitted nodes (Package emission)
+  the one form a process hybrid provider reads; none re-reads source.
 
 ### The provider request
 
@@ -294,22 +305,53 @@ order. A typed `CheckRefusal` with a span on refusal.
   requirement QSpec FR-193 names, for negotiation (FR-075) to route.
 - The request writer SHALL give that requirement to every hybrid claim,
   since every checked hybrid model has a `Hybrid` variable (The clock line).
-- A hybrid provider SHALL be an in-process provider (QSpec FR-331
-  "In-process providers"; FR-280): it receives the request's manifest,
-  `deadline_ms` and items as typed values, together with the checked
-  package, and reads the claim's `CheckedHybridClaim` and its
-  `CheckedHybridModel` from that package. QSL's built-in hybrid solver is
-  such a provider, and FR-250's descriptor bounds are its bounds.
+- The item's `claim` SHALL name the claim's emitted `temporal_clause` node
+  and its `claim` occurrence (QSpec FR-331 "Items", FR-481 "Hybrid claims"),
+  so the item has one locus for every provider.
+- Negotiation SHALL route the item to any registered provider that
+  advertises the item's kind and requirement, in process or in a process of
+  its own; no rule restricts a hybrid item to either.
+- An in-process hybrid provider (QSpec FR-331 "In-process providers";
+  FR-280) receives the request's manifest, `deadline_ms` and items as typed
+  values, together with the checked package, and reads the claim's
+  `CheckedHybridClaim` and its `CheckedHybridModel` from that package. QSL's
+  built-in hybrid solver is such a provider, and FR-250's descriptor bounds
+  are its bounds.
+- A process hybrid provider, such as one that runs dReal or Flow*, receives
+  the request frame with the emitted package's v2 bytes (QSpec FR-331
+  "Package bytes") and reads the claim's `temporal_clause` node and its
+  model's `hybrid` nodes from those bytes (QSpec FR-481).
 
 ### Package emission
 
-- If a checked package holds a checked hybrid model, then S4 SHALL refuse
-  the package `unsupported_construct`/`not-yet-implemented`, naming the first
-  hybrid declaration in source order, the feature name `hybrid-model` and
-  the selected profile identity (QSpec FR-272), as FR-185 does for a
-  probabilistic package. The checked package is unaffected, and an item over
-  it routed to a process provider settles `unsupported` with a diagnostic
-  (QSpec FR-331 "In-process providers").
+- S4 SHALL emit a checked package that holds a checked hybrid model, with
+  each model and each claim over it as the nodes QSpec FR-481 defines:
+  - each `CheckedHybridModel` as one `hybrid`/`hybrid_model` node declared by
+    its name, with each `ContinuousVariable` a `value`/`parameter` node named
+    by it at the level of its index, typed `scalar_type`/`rational`, and its
+    `class` the text `clock` or `hybrid`;
+  - each `CheckedMode` as one `hybrid`/`hybrid_mode` node declared by the
+    model's name and the mode's name, its `invariant`, its `rates` in
+    variable order and its `transitions` in declared order;
+  - each `CheckedTransition` as one `hybrid`/`hybrid_transition` node with
+    its target `ModeIndex`, its guard and its resets in declared order, each
+    by its `VariableIndex`;
+  - each `HybridTerm` as a term node: `Variable(i)` a `reference` to
+    variable `i`'s node; `Constant(q)` a `value`/`literal` node of `q` typed
+    `scalar_type`/`rational`; `Boolean(b)` a `value`/`literal` node of `b`;
+    and `Negate`, `Arithmetic`, `Compare`, `Not` and `Logic` an `expression`
+    node applying the catalogued `quire.op.rational.*` or
+    `quire.op.boolean.*` operation of that operator to the nodes of its
+    operands;
+  - each `CheckedHybridClaim` as the `temporal`/`temporal_clause` node of
+    its `temporal` clause, whose `over` parameter is typed by its model's
+    `hybrid_model` node, with clock `model-time`, activation `origin` and
+    its `HybridFormula` as QSpec FR-370 formula nodes, each `HybridInterval` in
+    the integer form. The horizon is not emitted: a reader derives it from
+    the formula by the reach rule of "Hybrid claims" above.
+- The emitted package's `package_id` SHALL take every hybrid node, so two
+  packages that differ in a mode, a rate, a guard, a reset, a
+  classification or a claim have different `package_id`s.
 
 ## Acceptance Criteria
 
@@ -318,15 +360,15 @@ order. A typed `CheckRefusal` with a span on refusal.
 | FR-447-AC-1 | The use case's `Braking` builds one `HybridForm` with modes `Moving` and `Stopped` in that order, `Moving` holding three equations and one transition to `Stopped`, each with its span; S3 checks it to a `CheckedHybridModel` whose variables are `v`, `a` and `t` in that order, classified `Hybrid`, `Hybrid` and `Clock`, whose `Moving` rates are `Negate(Variable(1))`, `Constant(0)` and `Constant(1)`, whose initial mode is `Moving`, and whose transition's reset is `[(0, Constant(0))]`. | Test (TC-1187) |
 | FR-447-AC-2 | Each mutation of `Braking` refuses at its span with the cause given: a second mode `Moving`, `conflicting_declaration`/`duplicate-declaration`; `transition to Halted`, `missing_declaration`/`missing-name`; `Stopped` without `t' = 1;`, `invalid_model_binding`/`malformed-declaration` naming `Stopped` and `t`; a second `v' = 0;` in `Moving`, `conflicting_declaration`/`duplicate-declaration`; `P::v' = 0;`, `invalid_model_binding`/`malformed-declaration`; an invariant `{ v }`, `ill_typed`/`non-boolean-root`; a reset `{ v > 0 }`, `invalid_model_binding`/`malformed-declaration`; a reset `{ v = 0 and v = 1 }`, `conflicting_declaration`/`duplicate-declaration`; a guard reading `w`, `missing_declaration`/`missing-name`; a guard `when { v + 1 }`, `ill_typed`/`non-boolean-root`; a flow `v' = true;`, `ill_typed`/`type-mismatch`; a flow `v' = f(v)`, `unsupported_construct`/`expression-form`; and a declaration whose only equations are `t' = 1;` in each mode, `invalid_timed_model`/`rate-one-hybrid`. | Test (TC-1187) |
 | FR-447-AC-3 | `SlowEnough` checks to a `CheckedHybridClaim` over `Braking` with the formula `Always(Some([0, 10]), Holds(Compare(Lt, Variable(0), Constant(30))))` and horizon 10; with the body `always [0, 10] eventually [0, 5] holds(h.v < 30)` the horizon is 15, with `holds(h.v < 30) until [0, 4] holds(h.v = 0)` it is 4, and with `always holds(h.v < 30)` or `always [0, *] holds(h.v < 30)` it is `None`. `once [0, 2] holds(h.v = 0)` is refused `unsupported_construct`/`expression-form`; `clock "model-steps"`, `on each`, a `fair` clause and a capture are each refused `unsupported_construct`/`declaration-form`; and `h.w` is refused `missing_declaration`/`missing-name`. | Test (TC-1187) |
-| FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, and with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different checked package identities. | Test (TC-1187) |
-| FR-447-AC-5 | S4 refuses the package holding `Braking` `unsupported_construct`/`not-yet-implemented` naming `Braking` and the feature `hybrid-model`, while the checked package remains and serves AC-4's in-process provider; the same item routed to a process provider settles `unsupported` with a diagnostic. | Test (TC-1187) |
+| FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, whose `claim` names `SlowEnough`'s emitted `temporal_clause` node and its `claim` occurrence; with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with only a process fixture hybrid provider registered the item routes to it, which receives the package's v2 bytes and reads `Braking` and `SlowEnough` from their QSpec FR-481 nodes; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different checked package identities. | Test (TC-1187) |
+| FR-447-AC-5 | S4 emits the package holding `Braking` and `SlowEnough`, and QSpec's v2 reader admits it: one `hybrid`/`hybrid_model` node declared `[Braking]` whose variables are the parameter nodes of `v`, `a` and `t` at levels 0 to 2 classed `hybrid`, `hybrid` and `clock`, whose modes are `[Braking, Moving]` and `[Braking, Stopped]` in that order, `Moving`'s rates referencing the nodes of `-a`, `0` and `1` and its one transition node `target` 1 with the reset `(0, 0)`; and one `temporal_clause` node over a parameter typed by the model node, clock `model-time`. Replacing `Moving`'s `v' = -a` by `v' = -2 * a` changes the `package_id`. | Test (TC-1187) |
 
 ## Dependencies
 
 - QSpec FR-193 (the `hybrid-decl` production, its meaning, the clock line and
   the solver contract); QSpec FR-290 (the item kind); QSpec FR-331 (the
-  request item, `hybrid.limits` and the in-process form); QSpec FR-272 (the
-  causes).
+  request item, `hybrid.limits`, the package bytes and the in-process form);
+  QSpec FR-322 and FR-481 (the emitted nodes); QSpec FR-272 (the causes).
 - ADR-026 HY-1 to HY-3.
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md),
