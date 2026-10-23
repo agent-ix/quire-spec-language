@@ -1096,6 +1096,66 @@ mod tests {
         assert_eq!(candidates.candidates()[0].id().as_str(), "backend-a");
     }
 
+    /// FR-345-AC-6/9: without a negotiation function, an admitted witness
+    /// with an actual candidate stays unresolved and is never called held.
+    #[trace("TC-868")]
+    #[test]
+    fn an_admitted_witness_with_candidates_is_unresolved_without_negotiation() {
+        let temp = crate::test_support::tempdir();
+        let root = temp.path().join("state-core-witness");
+        fs::create_dir_all(&root).unwrap();
+        let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:ecfa214e5426e184e57a3ddee21e655bafba118888b1bbeab7cbd6789470926d\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
+        fs::write(root.join("witness.native"), source).unwrap();
+        let package = fs::read("examples/config-version/model.semantic-ir.json").unwrap();
+        fs::write(root.join("model.semantic-ir.json"), &package).unwrap();
+        let entry = json!({
+            "kind": "witness",
+            "unit": {
+                "path": "witness.native",
+                "authority": "agent-ix",
+                "identity": "ix://test/layering/state-core-witness"
+            },
+            "layer": "quire.state.core/v1",
+            "packages": ["model.semantic-ir.json"],
+            "dependencies": []
+        });
+        fs::write(root.join("entry.json"), serde_json::to_vec(&entry).unwrap()).unwrap();
+
+        let descriptor = BackendDescriptor::new(
+            Candidate::new(BackendId::new("backend-a")),
+            ProviderOrigin::Linked,
+            ManifestDigest::from_digest(ByteDigest::of(b"manifest").as_bytes()),
+            [
+                (Capability::OperationContract, Mode::Bounded),
+                (Capability::ValueValidity, Mode::Bounded),
+            ],
+            Some(BTreeSet::from([DomainKind::Collection])),
+            None,
+        )
+        .expect("well-formed backend");
+        let mut builder = RegistrySnapshotBuilder::new();
+        builder.register(descriptor).expect("registration admitted");
+        let report = compare(temp.path(), compile_unit, &builder.build(), None);
+        let witness = report
+            .results
+            .iter()
+            .find_map(|result| match result {
+                EntryResult::Layer {
+                    layer,
+                    witnesses,
+                    result,
+                } if layer == "quire.state.core/v1" => Some((witnesses, result)),
+                _ => None,
+            })
+            .expect("state core layer has one witness result");
+        assert_eq!(witness.0.len(), 1);
+        assert_eq!(witness.0[0].class, "admitted");
+        assert_eq!(witness.0[0].reason.as_deref(), Some("not-negotiated"));
+        assert_eq!(witness.0[0].candidates[0].backend, "backend-a");
+        assert_eq!(witness.0[0].result, U);
+        assert_eq!(*witness.1, U);
+    }
+
     /// The edge table is exactly the six lock rows' direct `requires` edges.
     #[trace("TC-868", "FR-345-AC-4", "FR-345-AC-7")]
     #[test]
