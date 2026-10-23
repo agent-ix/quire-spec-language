@@ -63,6 +63,8 @@ pub struct ModelCheckRequest<'a> {
     pub max_store_buffer: Option<u64>,      // FR-225: method bound
     pub max_messages: Option<u64>,          // FR-225: method bound
     pub limits: ModelCheckLimits,
+    pub smt_encoding: SmtEncodingLimits,    // FR-315: the SMT encoding limits, `smt_encoding.*`
+    pub smt_run: SmtRunLimits,              // FR-315: the SMT solver run limits, `smt.*`
 }
 
 pub enum CheckSubject<'a> {
@@ -178,22 +180,24 @@ automaton states and the depth reached.
 - For a `BoundedMltl` (TP-2) clause the engine SHALL build a deterministic
   finite monitor over positions, for activation `on origin` and for
   activation `on each` (ADR-018 TP-2).
-- For a TP-1, TP-2 or TP-3 clause whose `on each` activation has a `when`
-  condition, the engine SHALL read the condition through the letter seam for
+- For a clause of any property form (TP-1 to TP-4) whose `on each`
+  activation has a `when` condition, the engine SHALL read the condition through the letter seam for
   the instance at every position the monitor reads, before it reads the
   clause's atoms, and the clause SHALL activate at the positions where it is
-  true. A guarded activation starts only at a model position, as an
-  unguarded `on each` activation does: a terminal false-extension position
-  reads no condition and adds no activation, whatever the guard term (a
-  constant `true` guard included), and an infinite-trace terminal stutter
-  position reads the condition on the real last model state's letter
+  true. A guarded activation starts only at an activation position: a model
+  position or an infinite-trace terminal stutter position, which reads the
+  condition on the real last model state's letter. A terminal
+  false-extension position is not one: it reads no condition and adds no
+  activation, whatever the guard term (a constant `true` guard included)
   (FR-338 "Guarded `on each` activation"). A condition with no value at a position the monitor reads SHALL end
   the run with `kind: UndefinedEvaluation` located at the activation, as an
   undefined atom does (UE-1); it is never read as false. A partial-order run
-  SHALL include the condition's footprint in the atoms'. Such a clause's
-  `Holds` SHALL carry the `ClosureCertificate` of every explored product
-  state, keyed by FR-338's guarded activation (`"each-when"`), and FR-127
-  settles it `proved` when FR-338's checker accepts it. A request whose
+  SHALL include the condition's footprint in the atoms'. Such a TP-1, TP-2
+  or TP-3 clause's `Holds` SHALL carry the `ClosureCertificate` of every
+  explored product state, and such a TP-4 clause's `Holds` the
+  `ComponentCertificate` (§ "Certificates"), keyed by FR-338's guarded
+  activation (`"each-when"`); FR-127 settles it `proved` when FR-338's,
+  respectively FR-339's, checker accepts it. A request whose
   clause root S4 did not emit (FR-337 `NotEmitted`) is refused by that
   checker and settles `failed`.
 - For a `ReachableInvariant` (TP-1) or `Safety` (TP-3) clause and for a
@@ -203,7 +207,13 @@ automaton states and the depth reached.
   construction, whose one rejecting state, the empty subset, is reached
   exactly when the prefix read is a bad prefix (ADR-018 SM-6).
 - For a `Liveness` (TP-4) clause the engine SHALL build a generalized Büchi
-  automaton for the negation of the formula.
+  automaton for the negation of the formula. For a TP-4 clause with a
+  guarded `on each` activation it SHALL build FR-338's guarded automaton
+  ("Guarded TP-4 clause"): a waiting phase that reads every letter and may
+  select one activation at an activation position whose condition
+  reads true, an active phase that runs the negated formula from that
+  position, and an activation acceptance set of the active states, so an
+  infinitely waiting run is never accepting.
 - The engine SHALL track past subformulas as automaton state, so the
   product needs no unrolling.
 - The engine SHALL translate each interval operator under infinite-trace by
@@ -369,18 +379,13 @@ automaton states and the depth reached.
 - With `max_depth = Some(k)` the pass SHALL read positions to depth `k` and no
   further.
 
-### Unsupported liveness clauses
+### Liveness proofs and guarded liveness clauses
 
-- The engine SHALL refuse a TP-4 clause with a guarded `on each` activation (a
-  `when` condition) with `ModelCheckRefusal::GuardedActivation`, as
-  `unsupported_construct`/`not-yet-implemented`, before it explores any
-  state. V1 defines no guarded TP-4 reading: neither the second phase nor
-  FR-339's component certificate reads a `when` condition, and FR-338's
-  `"each-when"` context admits no TP-4 key. The refusal is therefore the
-  outcome of every V1 run of such a clause. Its cause is the one ADR-017
-  maps to `unsupported`: a construct the language admits that QSL's checker
-  does not decide. A strong constraint is not refused: FR-130
-  decides it.
+- The engine SHALL decide a TP-4 clause with a guarded `on each` activation
+  through both phases over the guarded automaton: a second-phase candidate
+  SHALL hold a state of the activation set, as of every other acceptance
+  set, before the fairness filter runs. A strong constraint is decided by
+  FR-130.
 - A TP-4 item SHALL NOT settle `Holds` without the `ComponentCertificate`
   that FR-339's checker accepts. When the first phase completed with an empty
   frontier and the second phase finds no fair accepting cycle, the engine
@@ -426,6 +431,12 @@ automaton states and the depth reached.
   `Formula`, `Deadlock` for a deadlock-freedom violation, or
   `UndefinedEvaluation{where, cause}`.
 - Its length SHALL be its number of transitions, stem and loop together.
+- For a TP-4 clause with a guarded `on each` activation, the counterexample
+  SHALL be the canonical lasso of the guarded product, whose stem's product
+  states change from waiting to active at the selected activation. FR-128
+  replays it with the condition read through the same letter seam; the
+  lasso is a refutation when the formula is false from some position of it
+  whose condition reads true.
 
 ### Certificates
 
@@ -459,10 +470,10 @@ automaton states and the depth reached.
 | FR-126-AC-10 | Over the example subject with initial versions `a` 2 and `b` 0, `always eventually holds(c.versionNumber = 2)` under a weak constraint with no granularity returns `Violated` bound to `b`, with an empty stem and the loop `(2,0) -upd(a)-> (0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, length 3, though `a` is the first binding: the counterexample for `a` has a stem of one transition and a loop of three, length 4. | Test (TC-521) |
 | FR-126-AC-11 | Over the example subject with both versions 0, `always holds(6 mod (2 - c.versionNumber) >= 0)` returns `Violated` bound to `a` with the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`, since both bindings are undefined at depth 2 and `a` is the earlier. With initial versions `a` 0 and `b` 1, it returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`. | Test (TC-521) |
 | FR-126-AC-12 | Over the example subject with both versions 0, `eventually (holds(c.versionNumber = 0) and holds(6 mod (2 - c.versionNumber) >= 0))`, whose negation automaton has no move at position 0, returns `Violated` bound to `a` with `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}` and the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, found by the model-only pass; the run's statistics report no product state for the dead positions. With `max_states` 1 it returns `Stopped{ResourceExhausted, {MaxStates, 1}}`, the pass's second state exhausting the budget. | Test (TC-1085) |
-| FR-126-AC-13 | The TP-4 claim of AC-1 as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its statistics when no certificate is built, never `Holds` without one. | Test (TC-1085) |
+| FR-126-AC-13 | AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its statistics when no certificate is built, never `Holds` without one. | Test (TC-1085) |
 | FR-126-AC-14 | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2. | Test (TC-1085) |
 | FR-126-AC-15 | With initial versions `a` 0 and `b` 1 and the AC-12 claim, whose first phase ends in `a` with a finding at depth 2, `max_states` 6 returns `Stopped{ResourceExhausted, {MaxStates, 6}}`, since binding `b` stops before it completes depth 1; `max_states` 1,000 returns the AC-14 finding for `b`; with both versions 0, `max_states` 1,000 returns the AC-12 finding for `a`, the tie going to the earlier binding. | Test (TC-1085) |
-| FR-126-AC-16 | Given to the engine directly as a checked package of the unit that carries each guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's guard term), built by the test because S3/S4 refuse an `on each` clause `NotEmitted` (FR-337, QSL-926), so that the clause root a certificate key names resolves in that package, and with each condition the reading the letter seam returns rather than source text, over the `Counter` subject, `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with a `when` condition returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` when the condition is `c.value = 1`, and `Holds{Exhaustive}` when it is `c.value >= 2`; `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value >= 3` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, and with the condition `c.value = 7` returns `Holds{Exhaustive}` with the `ClosureCertificate` of its explored product states, keyed with activation `"each-when"` (FR-338-AC-10); `eventually[0,3] holds(c.value = 3)` `on each` with a condition undefined at value 2 returns `Violated` with `kind: UndefinedEvaluation` at position 2 and the prefix `0 -inc-> 1 -inc-> 2`, its site naming the activation. A partial-order run of such a clause asks the letter seam for the condition's footprint: a footprint with no rule refuses the run `Footprint`, and the transitions the footprint meets are visible. | Test (TC-521) |
+| FR-126-AC-16 | Given to the engine directly as a checked package of the unit that carries each guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's guard term), built by the test because S3/S4 refuse an `on each` clause `NotEmitted` (FR-337, QSL-926), so that the clause root a certificate key names resolves in that package, and with each condition the reading the letter seam returns rather than source text, over the `Counter` subject, `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with a `when` condition returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` when the condition is `c.value = 1`, and `Holds{Exhaustive}` when it is `c.value >= 2`; `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value >= 3` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, and with the condition `c.value = 7` returns `Holds{Exhaustive}` with the `ClosureCertificate` of its explored product states, keyed with activation `"each-when"` (FR-338-AC-10); `eventually[0,3] holds(c.value = 3)` `on each` with a condition undefined at value 2 returns `Violated` with `kind: UndefinedEvaluation` at position 2 and the prefix `0 -inc-> 1 -inc-> 2`, its site naming the activation. Over ADR-018 §6's example unit (universe `{a, b}`, both versions 0) with the same fixture form, the TP-4 clause `eventually holds(c.versionNumber = 2)` under infinite-trace `on each` with the condition `c.versionNumber = 1` returns `Holds{Exhaustive}` with a `ComponentCertificate` FR-339's checker accepts under a weak `each` constraint on `attemptUpdate`; under a weak constraint with no granularity it returns `Violated` bound to `a`, the first binding, since both bindings give length 4, with the stem `(0,0) -upd(a)-> (1,0)`, at whose end the activation is selected, and the loop `(1,0) -upd(b)-> (1,1) -upd(b)-> (1,2) -upd(b)-> (1,0)`, which FR-128 replays to `reproduced-with-evaluated-witness`, while the same lasso replayed with the condition's letters reading false at every position settles `inconclusive`, `ReplayParity` (a replay that read the clause `on origin` would reproduce it); with the condition `c.versionNumber = 7` and no fairness constraint it returns `Holds{Exhaustive}`; with the condition undefined at version 1 it returns `Violated` bound to `a` with `kind: UndefinedEvaluation` at position 1 and the prefix `(0,0) -upd(a)-> (1,0)`, its site naming the activation. Over the `Counter` subject under infinite-trace, the TP-4 clause `always eventually holds(c.value = 0)` `on each` with the condition `c.value = 3` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3` and the terminal stutter loop at value 3, the stutter marker set, which replays to `reproduced-with-evaluated-witness`, and with the condition `c.value = 7` returns `Holds{Exhaustive}`. A partial-order run of such a clause asks the letter seam for the condition's footprint: a footprint with no rule refuses the run `Footprint`, and the transitions the footprint meets are visible. | Test (TC-521) |
 | FR-126-AC-17 | Over the `Counter` subject under infinite-trace, `always (holds(c.value = 3) implies eventually[1,1] not holds(c.value = 3))` `on origin`, violated only at the stutter position after value 3, returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a loop at position 3 with the terminal stutter marker set, and length 4; the counterexample replays to `reproduced-with-evaluated-witness`. | Test (TC-521) |
 
 ## Dependencies

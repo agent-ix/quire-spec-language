@@ -74,6 +74,12 @@ reports.
   which FR-127 settles `inconclusive`.
 - `NoInstance` for an item with zero instances (Instancing), which FR-127
   settles `inconclusive`.
+- `invalid_runtime_input`/`conflicting-identity` for an item whose
+  overlapping populations' initial member records give one key two types
+  (Instancing).
+- `ModelSystem::instances` and `ModelSystem::excluded_keys` for a claim: its
+  instances in the canonical order, and the universe keys no initial record
+  admits (Instancing).
 
 ## Behavior
 
@@ -96,60 +102,103 @@ reports.
 - The evaluator SHALL evaluate a `holds` atom over an object that does not
   exist at a position as FR-107 evaluates a reference to an absent object.
 - When the subject's `initial` list is empty, QSL SHALL report
-  `NoInitialState` before it explores any state.
+  `NoInitialState` before it explores any state ("Instancing" states its
+  place among the other outcomes).
 
 ### Instancing
 
+QSpec FR-361 "Binding of the clause's `over` parameter" owns these rules; the
+bullets state how QSL applies them over FR-120's subject.
+
 - QSL SHALL instantiate a checked temporal clause or state-graph claim at
-  request time, from the subject's `universes`: one instance per object of
-  the subject's universes whose type conforms to the `over` parameter's type
-  `T` (QSpec FR-361), with the parameter bound to that object. An object of
-  a subtype of `T` conforms. The next bullets state how QSL realizes this
-  over universes of keys. S3 records the `over` binding and does not
-  instantiate, because the universes are not an S3 input; one checked claim
-  serves every subject.
-- Universes are kept per population (FR-120). When several populations hold
-  objects conforming to `T`, the instances are the objects of all of them;
-  instances are ordered by population declaration identity text, then by
-  the order of the population's universe list, which is the canonical order.
-  QSL SHALL list instances, including in `ModelSystem::instances`, in the
-  canonical order.
-- A universe is a list of keys, and a key has no type until a state holds its
-  object (FR-120). A population **admits `T`** when one of its member types is
-  `T`, a subtype of `T`, or a supertype of `T`: QSpec FR-153 says a member type
-  covers itself and every type that conforms to it, so a key of a population
-  of `Animal` may hold a `Dog`. QSL SHALL instantiate each key of each
-  population that admits `T` exactly once, whatever number of its member types
-  are comparable with `T`. This follows QSpec FR-361 (an instance for each
-  object that conforms to `T`) and FR-153; that the instance is the key, not a
-  typed object, is QSL-proposed (Remaining work).
-- QSL SHALL identify an instance by its population's declaration identity text
-  and its key. That pair is the instance in the obligation identity
-  (ADR-013 O-09), the name of a refuted binding (QSpec FR-361) and the
-  binding of the instance's FR-338 automaton-state key context
-  (`["instance", population, key]`); none of them carries an object type.
-- QSL SHALL read the bound parameter at a position as the reference of the
-  state's object under the instance's population and key, carrying that
-  object's own most-specific type and the population's `UniverseId` (FR-120),
-  so FR-107's comparison by (universe, object type, key), `x = r` and
-  `contains(allInstances<T>(P), x)` treat the bound object as they treat any
-  reference to it. The bound value conforms to `T` at every position where it
-  is read.
-- Where the population holds no object under the key whose most-specific type
-  conforms to `T`, QSL SHALL return, for a read through the bound parameter,
-  the `absent-key` undefined value QSpec FR-361 states for an absent object.
-  A claim over a subtype of a mixed population (such as `over (x: Dog)` over
-  an `Animals` population) is therefore refuted, `undefined-evaluation`, at any
-  key holding a non-conforming object unless the property guards the read, and
-  QSL has no guard for it yet: population membership is true there and there
-  is no type-test operator (Remaining work).
-- When a population that admits `T` has no universe, QSL SHALL return
-  `NotSimulated::RequiresBound` naming it (FR-120), before instantiating.
-- When no population that admits `T` has a key, including an empty universe and
-  a type no population's member types are comparable with, the claim has zero instances. QSL SHALL then
-  report `NoInstance` for the item before it explores any state, and FR-127
-  settles it `inconclusive`, so an item that was never evaluated is never read
-  as holding.
+  request time, from the subject's `universes` and initial states. S3 records
+  the `over` binding and does not instantiate, because the universes are not
+  an S3 input; one checked claim serves every subject.
+- A universe is a list of keys, and a key has no type until a member record
+  admits it (FR-120). A population **overlaps `T`**, the `over` parameter's
+  type, when one of its member types conforms to `T` or `T` conforms to one
+  of its member types (QSpec FR-153: a member type covers itself and every
+  type that conforms to it, so a key of a population of `Animal` may hold a
+  `Dog`). A population whose member types are all unrelated to `T` does not
+  overlap it.
+- An **admitted key** is a key of the universe of at least one population
+  that overlaps `T` and that a member record of some initial state of the
+  subject admits. QSL SHALL give the claim one instance per distinct admitted
+  key. All populations that overlap `T` lie in `T`'s object universe (ADR-013
+  O-05: one `UniverseId` per connected component of the supertype graph), so
+  one key text listed by several of them is one object and one instance.
+- The claim's **excluded keys** are the universe keys of the populations that
+  overlap `T` that no member record of any initial state admits, each listed
+  once, in the instance order below. A key that only an operation creates is
+  an excluded key, never an instance. A verdict over the item covers its
+  instances only: a `proved` item has not checked an object created under an
+  excluded key, and a refuted item never names one. `ModelSystem::excluded_keys`
+  SHALL return them for a claim; they are a function of the subject, so no
+  verdict member carries them.
+- QSL SHALL order the instances by first occurrence in the sequence that
+  lists the populations overlapping `T` in ascending UTF-8 byte order of their
+  declaration identity texts, each universe in its list order. QSL SHALL list
+  instances, including in `ModelSystem::instances`, in that order. The
+  reported instance of a refuted item is the first refuted instance in that
+  order, and its counterexample, basis and cause are that instance's (FR-127).
+- QSL SHALL identify an instance by its key alone. The key is the instance
+  in the obligation identity (ADR-013 O-09) and in the binding of the
+  instance's FR-338 automaton-state key context (`["instance", key]`);
+  neither carries a population or an object type. A refutation names the
+  instance by its key (QSpec FR-361); the binding it writes out is the
+  reference the next bullet states, which carries a type and no population.
+- QSL SHALL read the bound parameter at a position as the reference
+  (`UniverseId`, most-specific type, key) of the object the state holds under
+  the instance's key (FR-120's reference triple), carrying that object's own
+  most-specific type, never a population's member type. FR-107's comparison
+  by (universe, object type, key), `x = r` and
+  `contains(allInstances<T>(P), x)` therefore treat the bound object as they
+  treat any reference to it, from whichever overlapping population it is
+  reached. A binding written out of the position (a refuted binding, a replay
+  `over_binding`) is the reference (`UniverseId`, admitted type, key), whose
+  type is that of the member record admitted for its key, which the next
+  bullet makes unique; it carries no population.
+- A key has one type across the subject. After the `RequiresBound` and
+  `NoInitialState` checks below, QSL SHALL compare the member records of every
+  overlapping population in every initial state. Two member records with one
+  universe and key and different types, in one population or in two, in one
+  initial state or in two, SHALL refuse the item
+  `invalid_runtime_input`/`conflicting-identity`, naming the key and both
+  types, before it forms any instance.
+- An instance whose admitted record does not conform to `T` (an `Animal` key
+  holding a `Cat` under `over (x: Dog)`) is an instance. Where no overlapping
+  population holds under the key an object whose most-specific type conforms
+  to `T`, including a position where no object is held, QSL SHALL return, for
+  every read through the bound parameter other than the guard below, the
+  `absent-key` undefined value QSpec FR-361 states. The claim is then
+  undefined at that position and the item settles `refuted`,
+  `undefined-evaluation`, naming the instance, the position and the read's
+  locus (FR-127).
+- **The guard.** For a parameter `x` bound by `over`, `lookup<T>(p, x)`
+  (FR-084) SHALL be present exactly when `p` holds under `x`'s key an object
+  whose most-specific type conforms to `T`, and SHALL otherwise give the
+  declared absence mode, never a type refusal. A clause guards its reads
+  through `x` with the disjunction over every population `p1`, `p2`, ... that
+  overlaps `T`: `present(lookup<T>(M::p1, x) absent empty) or
+  present(lookup<T>(M::p2, x) absent empty) or ...`. The disjunction is true
+  exactly when a read through `x` evaluates. A guard naming only some of the
+  overlapping populations is false at the keys only the others list, and
+  holds the guarded property vacuously there. QSpec FR-361 adds no type-test
+  operator and no population-free membership form, so an unguarded read at a
+  key whose object does not conform to `T` refutes the item whatever the
+  property.
+- QSL SHALL decide the item's instancing outcomes in this order, each before
+  it explores any state:
+  1. When a population that overlaps `T` has no universe, QSL SHALL return
+     `NotSimulated::RequiresBound` naming it (FR-120).
+  2. When the subject's `initial` list is empty, QSL SHALL report
+     `NoInitialState`, whatever the universes hold.
+  3. The `conflicting-identity` check above.
+  4. When the claim has no admitted key, because no population overlaps `T`,
+     every overlapping population has an empty universe, or no member record
+     of an initial state admits a key of their universes, QSL SHALL report
+     `NoInstance` for the item, and FR-127 settles it `inconclusive`, so an
+     item that was never evaluated is never read as holding.
 - QSL SHALL instantiate a checked hyper clause (FR-172) at request time with
   one instance per key of the universe of the one population each object
   parameter `v: V::T` resolves to, the instances ranging over the product of
@@ -159,6 +208,11 @@ reports.
 - When any one of those populations has an empty universe, the hyper clause
   has zero instances. QSL SHALL then report `NoInstance` for the item before
   it explores any state, and FR-127 and FR-182 settle it `inconclusive`.
+- A hyper clause's parameter bound to a key SHALL read as an `over`
+  parameter does: as the reference of the object the state holds under the
+  key, with that object's own most-specific type, and as the `absent-key`
+  undefined value where the parameter's population holds under the key no
+  object whose most-specific type conforms to the parameter's type.
 - QSL SHALL give a state-graph or probabilistic clause or claim with no `over`
   parameter one instance, with no bound object. A `temporal` clause always
   names an `over` parameter (QSpec FR-370-AC-13): S1 SHALL refuse one written
@@ -222,36 +276,15 @@ reports.
 | FR-125-AC-5 | On the same lasso, `always eventually (holds(a.versionNumber = 0) and once[1,1] holds(a.versionNumber = 2))` has past reach 1 and is evaluated over `m = 2` loop copies, 6 positions: the conjunction is `false` at position 0, which has no previous position, and `true` at position 3, whose previous position holds version 2, and the formula evaluates `true`. The same conjunction read at position 9 by congruence is `true`. | Test (TC-520) |
 | FR-125-AC-6 | Over the `Counter` subject, the letter of `always holds(6 mod (2 - c.value) >= 0)` under infinite-trace is defined at positions 0 and 1 and undefined at position 2, cause `division-by-zero`. `eventually[0,1] holds(6 mod (2 - c.value) = 0 and c.value = 1)` under event-position false-extension, `on origin`, reads positions 0 and 1 only and evaluates `true`. | Test (TC-537) |
 | FR-125-AC-7 | Over ADR-018 §6's subject (universe `{a, b}`), the state-graph claims `ReachesTwo` and `ReachesThree` (`over (c: Config::ConfigVersion)`) each yield two instances, `a` then `b`; `possible Anything using v { true }` with no `over` yields one instance with no bound object. `ReachesTwo`, checked once, yields `a`, `b` over `{a, b}` and `a` over a subject whose universe is `{a}`, without being re-checked. A claim over a subtype-conforming population yields its objects; a universe-less population is `RequiresBound`; an empty universe yields zero instances and the item reports `NoInstance`, settled `inconclusive`, never proved. | Test (TC-520) |
-| FR-125-AC-8 | (QSL-proposed rule, STD-196: instance is a key) For a population `P` declaring member types `Lamp` and `Switch`, both subtypes of `Thing`, each key of its universe is one instance of `over (x: Lamp)`, and one instance (not two) of `over (x: Thing)`. A population none of whose member types is `T`, a subtype or a supertype of `T` yields no instance. A population that admits `T` and has no universe is `RequiresBound`; when no population that admits `T` has a key the item gives `NoInstance`. | Test (TC-520) |
-| FR-125-AC-9 | (QSL-proposed rule, STD-196: instance is a key) With `Lamp`'s `DeclarationKey` ordering before `Switch`'s, an instance of `over (x: Thing)` reads at a position whose object under the key is a `Switch` as the reference with type `Switch`, and at one whose object is a `Lamp` as the reference with type `Lamp`; for `over (x: Lamp)` the position whose object is a `Switch`, or has no object, reads `absent-key` undefined. The instance is named by its population and key in the obligation identity and in a refuted binding, without a type. | Test (TC-520) |
-| FR-125-AC-10 | (QSL-proposed rule, STD-196) With populations `P1` and `P2`, whose declaration identity texts order `P1` before `P2`, holding universes `[d, c]` and `[b, a]` respectively, the instances of a claim admitted by both are ordered `P1/d`, `P1/c`, `P2/b`, `P2/a`, and `ModelSystem::instances` returns that order, not an ascending reference order. | Test (TC-520) |
-| FR-125-AC-11 | (QSL-proposed rule, STD-196) For an instance of `over (x: Thing)` whose object is a `Switch` (not the least member type), `holds(x = r)` where `r` is the state's reference to that object, and `holds(contains(allInstances<Thing>(P), x))`, each evaluate `true`; for a `Lamp` object likewise. | Test (TC-520) |
-| FR-125-AC-12 | (QSL-proposed rule, STD-196: instance is a key) A population `Dogs` declaring `Dog` and a population `Animals` declaring `Animal` and holding a `Dog` object under key `k`, with `Dog` a subtype of `Animal`: `over (x: Dog)` instances every key of `Dogs` and every key of `Animals`, so `Animals/k` is checked and read as the `Dog` reference; a position where an `Animals` key holds a `Cat`, or no object, reads `absent-key` undefined. A population declaring only `Animal` with a `Dog` object is not `NoInstance` for `over (x: Dog)`. | Test (TC-520) |
-
-## Remaining work
-
-- What follows QSpec: an instance for each object whose type conforms to `T`
-  (FR-361), a member type covering every conforming type (FR-153), so a
-  population admits `T` by a member type that is `T`, a subtype or a supertype
-  of `T`, and `absent-key` for an absent object (FR-361). What is
-  QSL-proposed (AC-8 to AC-12, and the instance order of AC-10): that an
-  instance is a (population, key) pair, because the universe is a list of keys
-  (QSL FR-120's `keys: Vec<String>`; QSpec FR-331 names `universes` without a
-  shape); that the bound value is the state's own reference; and the canonical
-  instance order. QSpec follow-up: Linear STD-196, with the open questions of
-  the key-versus-object shape and of the membership guard: population
-  membership is true where a key holds a non-conforming object, so QSpec
-  FR-361's membership guard does not prevent the `absent-key` refutation. The
-  consequence stands until QSpec rules: `over (x: Dog)` over a population that
-  also holds a `Cat` is refuted at that key whatever the property, since there
-  is no type-test operator. QSpec may add a guard operator, exclude such keys
-  from the instances, or settle the item `inconclusive` with a named cause. If
-  QSpec rules otherwise, its rule replaces these.
-- FR-169 (state-graph claims) instances under these rules. FR-182 (hyper
-  clauses) instances by the hyper bullet above and takes the reference reading
-  (the bound value is the state's own reference) and the `absent-key` rule;
-  no checker in the repository exercises either yet, so AC-8 to AC-11 are
-  tested through the temporal claim only.
+| FR-125-AC-8 | For a population `P` declaring member types `Lamp` and `Switch`, both subtypes of `Thing`, whose universe keys `l` and `s` are admitted by initial records of a `Lamp` and a `Switch`, `over (x: Lamp)` and `over (x: Thing)` each have exactly the instances `l` and `s`, one per key. A population none of whose member types conforms to `Lamp` or is conformed to by it yields no instance. A key of `P`'s universe that no initial record admits is an excluded key, not an instance, and `ModelSystem::excluded_keys` returns it. | Test (TC-520) |
+| FR-125-AC-9 | An instance of `over (x: Thing)` reads at a position whose object under its key is a `Switch` as the reference with type `Switch`, and at one whose object is a `Lamp` as the reference with type `Lamp`; for `over (x: Lamp)` a read at a position whose object is a `Switch`, or has no object, is `absent-key` undefined. The instance is identified by its key alone in the obligation identity and the FR-338 key context, with no population and no type; a refuted binding of `over (x: Thing)` at the key `s`, whose admitted record is a `Switch`, is the reference (`UniverseId`, `Switch`, `s`), with no population. | Test (TC-520) |
+| FR-125-AC-10 | With populations `P1` and `P2`, whose declaration identity texts order `P1` before `P2`, holding universes `[d, c]` and `[b, a]`, every key admitted, the instances of a claim both overlap are `d`, `c`, `b`, `a`, and `ModelSystem::instances` returns that order, not an ascending key order. With `P2`'s universe `[c, a]` instead, the instances are `d`, `c`, `a`: the key `c` listed by both is one instance, at its first occurrence. With `P1`'s universe `[d, u]` and `P2`'s `[u, a]`, where no initial record admits `u`, the instances are `d`, `a` and the excluded keys are `[u]`, listed once. | Test (TC-520) |
+| FR-125-AC-11 | For an instance of `over (x: Thing)` whose object is a `Switch` (not the population's first member type), `holds(x = r)` where `r` is the state's reference to that object, and `holds(contains(allInstances<Thing>(P), x))`, each evaluate `true`; for a `Lamp` object likewise. With the key `c` listed by `P1` and `P2` of `Thing`, `holds(contains(allInstances<Thing>(P2), x))` for the instance `c` evaluates `true`. | Test (TC-520) |
+| FR-125-AC-12 | A population `dogs` declaring `Dog` with universe `[d]`, and a population `animals` declaring `Animal` with universe `[k, t]`, where an initial state holds a `Dog` under `k` and a `Cat` under `t` in `animals` and a `Dog` under `d` in `dogs` (`Dog` and `Cat` subtypes of `Animal`), with `Animal` declaring `age: Int[0, 9]`, give `over (x: Dog)` the instances `k`, `t`, `d` (`animals` orders before `dogs`). `k` reads as the `Dog` reference. The unguarded `always holds(x.age >= 0)` refutes, `undefined-evaluation`, naming `t`. With `G` the guard `present(lookup<Dog>(M::animals, x) absent empty) or present(lookup<Dog>(M::dogs, x) absent empty)`, `always holds(G implies x.age >= 0)` evaluates at every instance and position, `G` being false at `t` and true at `k` and `d`, and settles `proved`. `present(lookup<Dog>(M::animals, x) absent empty)` alone is false at `d`, so a property guarded by it holds vacuously there. A subject whose only population is `animals` holding only `Cat` objects still has instances for `over (x: Dog)` and is not `NoInstance`. | Test (TC-520) |
+| FR-125-AC-13 | Outcome order. A subject in which an overlapping population has no universe returns `RequiresBound` naming it, also when its `initial` list is empty. A subject with an empty `initial` list and bounded universes reports `NoInitialState`, never `NoInstance`. Two member records under the key `c`, one an `Animal` in `animals` and one a `Dog` in `dogs`, in one initial state or in two initial states, refuse the item `invalid_runtime_input`/`conflicting-identity` naming `c` and both types, before any instance is formed; agreeing types are admitted. A subject with an initial state, bounded universes and no admitted key reports `NoInstance`. Each outcome arrives before any state is explored. | Test (TC-520) |
+| FR-125-AC-14 | Over `P1` of `Counter` with universe `[c, d, z]`, initial records under `c` and `d` only, value 0 each, `inc` disabled, and an operation `make` that creates a `Counter` with value 1 under `z`, `over (x: Counter)` has the instances `c` and `d` and the excluded keys `[z]`, and `always holds(x.value = 0)` settles `proved`, although `z`'s object has value 1 at a reachable position. | Test (TC-520) |
+| FR-125-AC-15 | A state-graph claim `over (x: Thing)` (FR-169) over AC-10's populations has the instances, order and excluded keys a temporal claim has. A hyper clause (FR-172) whose parameter `v: V::Thing` resolves to `P` of AC-9 reads `v`, at each position, as the reference with the held object's most-specific type, and a parameter typed `V::Lamp` reads `absent-key` undefined where the key holds a `Switch`. | Test (TC-520) |
+| FR-125-AC-16 | With a population `all` of member type `Entity` (a supertype of `Counter`) whose initial state holds a `Counter` under `c` (value 0, with `inc` enabled) and an `Entity` that is not a `Counter` under `e`, the unguarded claim `always holds(x.value <= 0)` over `Counter` refutes at both instances, `c` by a false evaluation after `inc` and `e` by an `absent-key` read. With `all = [c, e]` the reported instance is `c`, with no undefined cause; with `all = [e, c]` it is `e`, with cause `undefined-evaluation`. The item is `refuted` in both orders, and the two subjects give different request identities. | Test (TC-520) |
 
 ## Dependencies
 

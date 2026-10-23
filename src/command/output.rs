@@ -512,10 +512,10 @@ mod tests {
     use super::*;
     use crate::formal_source::FormalSource;
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::Category;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::CallOutcome;
     use qsl_semantics::library::PackageId;
+    use quire_semantic_value::catalog::Category;
 
     fn formal_source() -> FormalSource {
         let source = qsl_foundation::Source::read(
@@ -596,7 +596,7 @@ mod tests {
     }
 
     /// FR-100-AC-9 (TC-452 step 4): each family `Undefined` reason
-    /// (`qsl_foundation::diagnostic::UndefinedReason::as_str`) renders
+    /// (`quire_semantic_value::catalog::UndefinedReason::as_str`) renders
     /// `{"kind":"undefined","reason":...}` and exits 10, FR-285's code for
     /// undefined.
     #[test]
@@ -642,7 +642,7 @@ mod tests {
             ("actual", "6".to_owned()),
         ]);
         let result = render(CallOutcome::Refused(CallRefusal::Record {
-            code: qsl_foundation::diagnostic::CatalogCode::new(
+            code: quire_semantic_value::catalog::CatalogCode::new(
                 "resource_exhausted",
                 "insufficient-next-charge",
             ),
@@ -774,7 +774,7 @@ mod tests {
     fn refused_family_with_no_record_renders_code_and_cause_only() {
         use qsl_replay::spine::CallRefusal;
         let result = render(CallOutcome::Refused(CallRefusal::Family {
-            code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
+            code: quire_semantic_value::catalog::CatalogCode::new("ill_typed", "type-mismatch"),
             location: None,
         }));
         assert_eq!(result.exit_code, 20);
@@ -826,7 +826,7 @@ mod tests {
         ];
         for (origin, expected) in cases {
             let result = render(CallOutcome::Refused(CallRefusal::Family {
-                code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
+                code: quire_semantic_value::catalog::CatalogCode::new("ill_typed", "type-mismatch"),
                 location: Some(Location::at(origin, &[2, 0])),
             }));
             assert_eq!(
@@ -875,7 +875,7 @@ mod tests {
         let expected_location = serde_json::json!({"origin": {"kind": "body", "function": "f", "index": 0}, "path": [1]});
 
         let record = render(CallOutcome::Refused(CallRefusal::Record {
-            code: qsl_foundation::diagnostic::CatalogCode::new(
+            code: quire_semantic_value::catalog::CatalogCode::new(
                 "invalid_runtime_input",
                 "absent-key",
             ),
@@ -902,7 +902,7 @@ mod tests {
         );
 
         let family = render(CallOutcome::Refused(CallRefusal::Family {
-            code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
+            code: quire_semantic_value::catalog::CatalogCode::new("ill_typed", "type-mismatch"),
             location: Some(location),
         }));
         assert_eq!(
