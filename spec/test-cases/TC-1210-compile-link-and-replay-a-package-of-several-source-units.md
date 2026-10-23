@@ -79,6 +79,6 @@ Tag the tests `#[trace("TC-1210", "FR-480-AC-n")]`, and step 9 `#[trace("TC-1210
   `package_id` comparison; a refusal before any recompile.
 - Step 8: two checked units, each with its own digest; the mismatched
   binding is refused by FR-362's digest comparison.
-- Step 9: the FR-278 bytes, equal for both arrays, exit code 0;
-  `unknown_edition` at stage `profile` naming the second file;
+- Step 9: the FR-278 bytes, equal for both arrays, exit 0;
+  `unknown_edition` at the second unit's edition literal, naming its file;
   `invalid-request`; an intake refusal naming `dependent_bytes`.
