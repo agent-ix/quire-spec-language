@@ -166,6 +166,7 @@ FR-243 basis, O-16 category and method.
 | — | SMT `BackendFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | — | SMT `EncodingRefused` carrying `SmtEncodingRefusal::Fault`, or `HyperProductIdentity::of(item)` returning `Fault` (FR-315 "Internal faults") | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | V-7 | SMT `TimedOut` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)`, written `timed-out` (FR-293, QSpec FR-331) | incomplete |
+| V-7 | SMT `EncodingRefused` with `too-large`, a request encoding limit reached (FR-315 "Size limits") | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` naming the measure's limit and its `smt_encoding.*` setting | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace; SMT `EncodingRefused` with `hyper-body`, a field sort or an out-of-fragment construct | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
 
 - A `Violated` outcome SHALL settle `refuted` only through its replay.
@@ -266,8 +267,15 @@ FR-243 basis, O-16 category and method.
        and that bounds the SMT run, stopped the solver. It settles V-7
        `Incomplete(LimitReached{limit, value, setting})` naming that limit,
        never `InductionNotClosed`. A limit bounds the SMT run only when its
-       definition names an EN-2 or EN-3 query; every other
-       `ModelCheckLimit` bounds none. For example, `MaxStates`,
+       definition names an EN-2 or EN-3 query. Exactly two do: FR-315's
+       solver run limits `SmtMaxSolverSteps` and `SmtMaxSolverTime`
+       ("Solver run limits"), which bound each EN-2 and EN-3 query, settings
+       `smt.max_solver_steps` and `smt.max_solver_time`. A stop under either
+       settles V-7 `Incomplete(LimitReached{limit, value, setting})` with
+       limit `max_solver_steps` or `max_solver_time`, its configured value
+       and that setting. A stop under `max_solver_time` is this rule, not
+       rule 2, which is the backend's own wall clock. Every other
+       `ModelCheckLimit` bounds no SMT run. For example, `MaxStates`,
        `MaxTransitions` and `MaxAutomatonStates` bound EN-1's exploration,
        `MaxWitnessSet` and `MaxRelationTuples` bound FR-184's searches,
        `MaxCertificateBytes` and `MaxCertificateEdges` bound a certificate
@@ -277,8 +285,10 @@ FR-243 basis, O-16 category and method.
        encoded, and its stop is the `match-conjunct` encoding refusal. A
        `LimitStopped` naming a limit that does not bound the SMT run SHALL
        write no record and refuse `HyperSettleRefusal::LimitNotApplicable`.
-       Until a `ModelCheckLimit` bounds the SMT run, every solver stop that
-       is neither cancellation nor wall clock falls under rule 4;
+       FR-315's encoding limits (`SmtMaxConstants` to `SmtMaxScriptBytes`)
+       bound the encoding, not the solver: their stop is the `too-large`
+       encoding refusal below, never a `LimitStopped`, so a `LimitStopped`
+       naming one also refuses `LimitNotApplicable`;
     4. `Unknown{depth}`, for the solver's own undecided answer (`unknown`),
        including an internal resource stop that no request limit names. It
        settles V-6 `InductionNotClosed{depth}`, as QSpec FR-363 and FR-399
@@ -292,6 +302,9 @@ FR-243 basis, O-16 category and method.
   - `Cancelled{source}` as V-7 `Incomplete(Cancelled{source})`;
   - `EncodingRefused`: `Fault` as `failed`, `Failed`, as for `BackendFault`;
     `match-conjunct` as V-6 `MatchUndetermined`;
+    `too-large` as V-7 `Incomplete(LimitReached{limit, value, setting})`
+    naming the measure's `ModelCheckLimit`, the configured value and its
+    `smt_encoding.*` setting (FR-315 "Size limits"), never V-8;
     `hyper-body`, a field sort or an out-of-fragment construct as V-8
     `Unsupported(unsupported-requested-capability)`; `query-kind` writes no
     record and refuses `HyperSettleRefusal::QueryKind`. The other refusal
@@ -329,6 +342,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-10 | Over ADR-023 §8's secure vault, `NonInterference`'s `Inductive{depth: 1}` outcome with no `MatchWitnessCheck` settles `inconclusive`, `VacuousMatch`, never `proved`. With FR-183-AC-8's matched witness, whose check is `Accepted`, it settles `proved`, `decisive-witness`, `Uncertified`. With FR-183-AC-8's unmatched witness, whose check is `Refused`, it settles `inconclusive`, `VacuousMatch`. Over a vault whose `vaults` universe is `{v, w}`, the outcome for instance `w` with the matched witness for instance `v`, whose check is `Accepted`, settles `inconclusive`, `VacuousMatch`. The one-variable clause `forall trace a of V { always holds(v.l @ a <= 1) }`, whose `μ_U` is empty, settles its `Inductive{depth: 1}` outcome `proved`, `Uncertified`, with no witness. `NonInterference` over the secure vault with an empty initial list settles `inconclusive`, `NoInitialState`, never `proved`, with or without a witness. | Test (TC-607) |
 | FR-182-AC-11 | Over ADR-023 §8's secure vault with the `vaults` universe `{v, w}`, `settle_hyper_smt` for the `NonInterference` item at instance `v`, with an `Inductive{depth: 1}` outcome carrying FR-315's identity for that item, settles `proved`, `decisive-witness`, `Uncertified`, method `k-induction`, with FR-183-AC-8's matched witness for `v`, and `inconclusive`, `VacuousMatch` with its unmatched witness; an `InductionNotClosed{depth: 1}` outcome carrying the same identity settles `inconclusive`, `InductionNotClosed{depth: 1}`. Each of these writes no record and refuses `ProductMismatch` for the item at `v`: the outcome carrying the identity for instance `w`, naming `instance`; the outcome carrying the identity for a subject that differs only in a proof bound, naming `subjects`; the `Inductive` and the `InductionNotClosed` outcomes carrying the identity of the clause with `fair { weak V::Vault::step }` on `a`, naming `clause`; and the outcome carrying that fair clause's identity for instance `w`, which differs in both `clause` and `instance`, naming `clause`. The item with an empty `instance` refuses `ItemIdentity` carrying `instance-binding`. | Test (TC-1190) |
 | FR-182-AC-12 | Over ADR-023 §8's secure vault, `settle_hyper_smt` for the `NonInterference` item at instance `v`, each outcome carrying that item's identity, settles: `BoundReached{depth: 2}` as `inconclusive`, `BoundReached{depth: 2}`, method `smt-unrolling`, with a record stating the HP-2 bound reading; the leaky vault's `Violated` `Lockstep` lasso, method `smt-unrolling`, as `refuted`, `decisive-counterexample` once QSL's own replay over the item reproduces it, and the same lasso with one post-state digest altered as `inconclusive`, `ReplayRefused`; the same lasso with its `instance` binding `w`, inside the outcome carrying `v`'s identity, writes no record and refuses `ProductMismatch` naming `instance`, never `refuted`; FR-315-AC-9's undefined-match base model, concretised as an `Undefined` counterexample with method `k-induction`, as `refuted`, `UndefinedEvaluation`, method `k-induction`; `Unknown{depth: 1, method: KInduction}` as `inconclusive`, `InductionNotClosed{depth: 1}`, method `k-induction`, never `proved`; `Cancelled{source: Requested, method: KInduction}` as `failed`, `Incomplete(Cancelled{Requested})`; a solver stop at depth 1 under the backend's own wall-clock limit, reported `TimedOut{method: KInduction}`, as `failed`, `Incomplete(TimedOut)`, never `InductionNotClosed`; `LimitStopped` naming `MaxStates`, which bounds no SMT run, writes no record and refuses `LimitNotApplicable`, never `InductionNotClosed`; a solver crash and a solver response that does not parse, each reported `BackendFault{method: KInduction}`, as `failed`, `Failed`, never `InductionNotClosed`; an internal solver resource stop that no request limit names, reported `Unknown{depth: 1, method: KInduction}`, as `inconclusive`, `InductionNotClosed{depth: 1}`; `EncodingRefused` with `match-conjunct` as `inconclusive`, `MatchUndetermined`, and with `hyper-body` as `unsupported`, `unsupported-requested-capability`. `EncodingRefused` with `query-kind` writes no record and refuses `QueryKind`. Each of these outcomes carrying the identity for instance `w` refuses `ProductMismatch` naming `instance`. | Test (TC-1190) |
+| FR-182-AC-14 | Over ADR-023 §8's secure vault, `settle_hyper_smt` for the `NonInterference` item at instance `v`, each outcome carrying that item's identity, settles: `LimitStopped{limit: ReachedLimit{limit: SmtMaxSolverSteps, value: 1000}, method: KInduction}` as `failed`, execution `resource-incomplete`, `Incomplete(LimitReached{limit: max_solver_steps, value: 1000, setting: smt.max_solver_steps})`; `LimitStopped{limit: ReachedLimit{limit: SmtMaxSolverTime, value: 5}, method: SmtUnrolling}` as `Incomplete(LimitReached{max_solver_time, 5, smt.max_solver_time})`, never `TimedOut`; neither is ever `InductionNotClosed` or `LimitNotApplicable`. A `LimitStopped` whose `ReachedLimit` names `SmtMaxConstants` writes no record and refuses `LimitNotApplicable`. FR-315-AC-40's `EncodingRefused` with `too-large` for `constants` under `encoding.max_constants` 7 settles `Incomplete(LimitReached{max_constants, 7, smt_encoding.max_constants})`, not `unsupported`. | Test (TC-1202) |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 | FR-182-AC-9 | ADR-023 §1's `NonInterference` over an empty `Vault` universe settles `inconclusive`, `NoInstance`, basis `unsettled`, before any state is explored, never `Proved` or `Refuted`; ADR-023 §1's `SavesPower` `(d: S::Device, e: N::Device)` with one empty universe and the other non-empty settles the same way, so the product is read over both parameters; the same clause over a population with no universe is `RequiresBound`, not `NoInstance`. | Test (TC-607) |
 
