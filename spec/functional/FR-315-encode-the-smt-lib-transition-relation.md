@@ -31,6 +31,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-123
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-338
+    type: depends_on
 ---
 # FR-315: Encode a model subject's transition relation as SMT-LIB
 
@@ -95,7 +99,7 @@ would be one more input that a certificate would have to carry.
 
 | Order | Code | When | Locus |
 | --- | --- | --- | --- |
-| 1 | `item-form` | The item is a TP-4 liveness clause, whose refutations are EN-2's lassos; a TP-2 `on each` clause; a TP-2 `on origin` clause other than `always[0,u] holds(I)` or `eventually[0,u] holds(I)` over a state predicate `I`; a clause with no recorded property form; a clause whose activation is guarded by a `when` condition; or a clause whose property-automaton translation refuses, carrying that refusal | the clause |
+| 1 | `item-form` | The item is a TP-4 liveness clause, guarded or not, whose refutations are EN-2's lassos (Monitors); a clause with no recorded property form; or a clause whose property-automaton translation refuses, carrying that refusal | the clause |
 | 2 | `profile` | The clause binds a profile other than infinite-trace and event-position false-extension, such as ADR-026's `model-time` | the clause |
 | 3 | `query-kind` | `InductionBase` or `InductionStep` for a TP-2 `on origin` item, whose V-2 verdict needs no induction; `Unrolling{depth}` with `depth < u` for `eventually[0,u] holds(I)` (Finite behaviours) | the clause |
 | 4 | `subject-admission` | FR-120's admission of the subject refuses, carrying that refusal | the subject |
@@ -108,10 +112,9 @@ would be one more input that a certificate would have to carry.
 | 11 | `requires-bound` | A population that admits the clause's `over` type has no universe (FR-125 `RequiresBound`) | the population |
 | 12 | `no-instance` | The clause has zero instances (FR-125 `NoInstance`), so every query would be unsatisfiable | the clause |
 | 13 | `instance-type` | An instance's object does not conform to the `over` type in an initial state | the instance |
-| 14 | `several-instances` | A TP-3 item has more than one instance: the encoding builds one monitor, for one instance | the clause |
-| 15 | `too-large` | The `constants`, then `applications`, then `monitor-atoms`, then `monitor-states`, then `candidates` measure passes its limit (Size limits) | the measure, its value and its limit |
-| 16 | `out-of-fragment` | An expression is outside the `QF_LIA` fragment the encoding prints, such as a product of two non-literal terms or a non-literal divisor | the expression's clause and node |
-| 17 | `too-large` | The `script-bytes` measure passes its limit | the measure, its value and its limit |
+| 14 | `too-large` | The `constants`, then `applications`, then `monitor-atoms`, then `monitor-states`, then `candidates` measure passes its limit (Size limits) | the measure, its value and its limit |
+| 15 | `out-of-fragment` | An expression is outside the `QF_LIA` fragment the encoding prints, such as a product of two non-literal terms or a non-literal divisor | the expression's clause and node |
+| 16 | `too-large` | The `script-bytes` measure passes its limit | the measure, its value and its limit |
 
 Of several constructs that one row refuses, the encoding names the first in
 the canonical order of the script: object, field and operation order for
@@ -192,10 +195,12 @@ internal-failure category, never `inconclusive` or `unsupported`:
   a value constant of its element's sort and a `Bool` presence constant
   `s<i>.<object>.<field>.present`. Every term the encoding prints is linear,
   so each query is a `QF_LIA` script.
-- For a TP-3 item the encoding SHALL also declare one monitor-state constant
-  `m<i>` per position. For a TP-2 `on origin` item it SHALL declare one
-  `Bool` constant `h<i>` per position, true when position `i` lies past the
-  end of a finite behaviour (Finite behaviours).
+- For a monitor item (Monitors) the encoding SHALL also declare, per
+  position, one `Int` monitor-state constant `m<i>.<n>` per instance, `n`
+  the instance's zero-based index in FR-125's canonical instance order
+  (Instances). For every TP-2 item, `on origin` or `on each`, it SHALL
+  declare one `Bool` constant `h<i>` per position, true when position `i`
+  lies past the end of a finite behaviour (Finite behaviours).
 - **Field equality.** Two copies `k` and `j` agree on a field when the
   field's value is the same in both. For a required field the encoding SHALL
   print this as `(= s<k>.<object>.<field> s<j>.<object>.<field>)`, the later
@@ -260,7 +265,10 @@ internal-failure category, never `inconclusive` or `unsupported`:
   eventually[0,1] holds(c.value = 1))` holds, yet the base query is
   satisfiable at every depth by stuttering at value 0, so its `k`-induction
   never closes and the item is settled by EN-1. The encoding accepts this
-  loss of completeness and keeps soundness.
+  loss of completeness and keeps soundness. A guarded item's `when`
+  condition is read at a stutter position on the repeated state, as its
+  atoms are (FR-338 "Guarded `on each` activation"), so a stutter can add
+  activations only at a state the path already holds.
 - **Reading a satisfiable model.** A satisfiable query is not a refutation
   by itself, because its model may take the stutter where an operation is
   enabled, a path of the over-approximation only. CG's SMT backend SHALL
@@ -275,14 +283,19 @@ internal-failure category, never `inconclusive` or `unsupported`:
      operation step is at a non-terminal state: the operation step leaves
      the same state, so its operation is enabled there. CG decides this from
      the model alone.
-  3. When the failure at `p` is a property of the state alone (a TP-1
-     violation, a deadlock, or a definedness failure), CG SHALL drop every
+  3. When the failure at `p` is a property of the state alone (an unguarded
+     TP-1 violation, a deadlock, or a definedness failure, a guarded item's
+     undefined condition included), CG SHALL drop every
      stutter step before `p`. A stutter repeats its state, so the remaining
      operation steps are a real path from an initial state to the failing
      state, and that prefix is a counterexample (ADR-018 CX-1, UE-3).
-  4. When the failure is a TP-3 monitor violation, which can depend on
+  4. When the failure is a monitor violation of an infinite-trace item (a
+     TP-3 item, or a guarded TP-1 or TP-3 item), which can depend on
      positions a stutter adds (IV-7), a model with a stutter of rule 2 is no
-     counterexample candidate. A model whose stutters before `p` form one
+     counterexample candidate. A model with no stutter before `p` gives the
+     prefix to `p`, its operation steps a real path whose monitor rejects
+     at `p`: a bad prefix, which is CX-1's safety counterexample under
+     infinite-trace. A model whose stutters before `p` form one
      tail, from a position `q` to `p`, is the lasso of CX-1 with the prefix
      to `q` and the `terminal-stutter` loop, which CG replays through
      `qsl_replay::replay_model_trace` (FR-128). That entry refuses a
@@ -297,23 +310,39 @@ internal-failure category, never `inconclusive` or `unsupported`:
      outcome.
   4a. When failures of several kinds hold at the failing position `p`, a
      failure that is a property of the state alone (rule 3: a definedness
-     failure, a TP-1 violation or a deadlock) SHALL be read before a TP-3
-     monitor violation, so CG builds rule 3's prefix and needs no
+     failure, an unguarded TP-1 violation or a deadlock) SHALL be read
+     before a monitor violation, so CG builds rule 3's prefix and needs no
      terminality check. Among state-only failures CG reads them in the
      negated property's disjunct order.
-  4b. A TP-2 `on origin` model under false-extension has no stutter: every
-     step it takes before the end is an operation step, and its copies past
-     the end (`h<i>` true) are not states. Rules 2 to 4 do not apply. Its
-     path is the live copies, `0` to `e`, `e` the last live position within
-     `0..=u`. A definedness failure at a least live position `p`, read
-     first as in rule 4a, gives the prefix to `p` (UE-3). Otherwise the
-     violation gives the prefix to `e`, uncut, for `always[0,u]` and
-     `eventually[0,u]` alike. ADR-018 CX-1 requires a bounded-profile
-     prefix to cover the horizon or end at a terminal state, so that the
-     evaluator decides it exactly: the prefix to `e` does when `e = u` or
-     copy `e` is terminal. When neither holds, which can happen only for
-     `always[0,u]` at `depth < u`, the model is a bad prefix that is no CX-1
-     counterexample, and the query gives no outcome at that depth.
+  4b. A TP-2 model, `on origin` or `on each`, under false-extension has no
+     stutter: every step it takes before the end is an operation step, and
+     its copies past the end (`h<i>` true) are not states. Rules 2 to 4 do
+     not apply. Its path is the live copies from position 0. A definedness
+     failure at a least live position `p`, a guarded item's undefined
+     condition included, read first as in rule 4a, gives the prefix to `p`
+     (UE-3). Otherwise let `p` be the failing position, the least position
+     at which a violation disjunct holds (for a monitor item, some
+     instance's monitor rejecting), and let `c` be the item's **cover
+     position**: `u` for the direct shapes `always[0,u] holds(I)` and
+     `eventually[0,u] holds(I)` (Finite behaviours), the formula's ADR-014
+     TR-4 horizon `h` for any other `on origin` item, and `p + h` for an
+     `on each` item, whose failing activation starts at a position `a <= p`
+     and reads no position after `a + h`. The violation gives the prefix to
+     `e`, uncut, `e` the least of `c` and the last live position within
+     `0..=depth`. ADR-018 CX-1 requires a bounded-profile prefix to cover
+     the horizon from the activation it reports or end at a terminal state,
+     so that the evaluator decides it exactly: the prefix to `e` does when
+     `e = c` or copy `e` is terminal. When neither holds, the model is a bad
+     prefix that is no CX-1 counterexample, and the query gives no outcome
+     at that depth (rule 5); an `Unrolling` at a depth that reaches `c`
+     reads it.
+  4c. CG SHALL attribute the counterexample to the instance of the first
+     disjunct of the negated property, in its disjunct order (Negated
+     property), that holds in the model at the failing position, and SHALL
+     name that instance's `over_binding` (ADR-018 CX-2), which FR-128's
+     replay checks. For a monitor item that instance is the one whose
+     monitor `m<p>.<n>` rejects first in instance order. Each instance has
+     its own monitor, so the reading needs no search over instances.
   5. After a model that is no candidate, CG SHALL settle from that query
      with no further model: a base query gives `InductionNotClosed{depth}`
      (V-6), and an `Unrolling` query gives no outcome at that depth. It
@@ -326,7 +355,8 @@ internal-failure category, never `inconclusive` or `unsupported`:
 
 ### Finite behaviours
 
-Under event-position false-extension (TP-2 `on origin`) a behaviour that
+Under event-position false-extension (every TP-2 item, `on origin` or
+`on each`) a behaviour that
 reaches a terminal state is closed there (ADR-018 SM-4), and the positions
 after it are read by the closed-boundary rule, every atomic predicate false
 (QSpec FR-091). TP-2 is the only form under that profile. Under
@@ -335,7 +365,15 @@ S3 refuses one without, `MissingInterval`), FR-123 classifies a
 false-extension clause as TP-2 before it tries TP-3, and TP-1, TP-3 and
 deadlock-freedom are infinite-trace forms (ADR-018 §1). So the only
 `always` under false-extension is `always[0,u]`, read past the end as
-FR-125-AC-2 reads it.
+FR-125-AC-2 reads it. Two `on origin` shapes are printed directly, with no
+monitor: `always[0,u] holds(I)` and `eventually[0,u] holds(I)` over a state
+predicate `I` (the **direct shapes**, the last two bullets below). Every
+other TP-2 item, any bounded formula FR-123 admits (nested intervals,
+`until`, `release`, past operators and Boolean combinations among them) and
+every `on each` item, is a monitor item: its property is read through its
+bounded monitor, which reads a position past the end through the end letter
+(Monitors). The candidates, enabledness, terminality and step assertion
+below hold for every TP-2 item.
 
 - **Candidates.** The candidates of an application are the post-states
   FR-120 enumerates for it: every field the frame does not let it write
@@ -371,7 +409,7 @@ FR-125-AC-2 reads it.
 - Every live copy (one with `h<i>` false) either has an operation successor
   or is terminal, so every behaviour, finite or not, has a model path to
   `depth`, and no trace that ends before `depth` drops out of the query.
-- The property of `always[0,u] holds(I)` at a position `p` is `I` there for
+- The property of the direct shape `always[0,u] holds(I)` at a position `p` is `I` there for
   every instance, and is false at a position past the end. Its violation is
   `h<p>` or the negation of `I` for some instance, at some position `p` in
   `0..=min(depth, u)`. Below its horizon this query is a bounded search: a
@@ -380,7 +418,7 @@ FR-125-AC-2 reads it.
   property: `h<p>` first, then `(not I)` for each instance in instance
   order. It SHALL NOT print it as one disjunct `(or h<p> ...)`. A position
   `p > min(depth, u)` contributes no violation disjunct.
-- The violation of `eventually[0,u] holds(I)` is, for some instance, `h<p>`
+- The violation of the direct shape `eventually[0,u] holds(I)` is, for some instance, `h<p>`
   or the negation of `I` at every position `p` in `0..=u`. `Unrolling{depth}`
   with `depth < u` SHALL refuse `query-kind`: it would read "`I` has not
   held yet" as a violation, so a satisfiable answer would be no counterexample,
@@ -398,35 +436,93 @@ FR-125-AC-2 reads it.
 
 ### Monitors
 
-- For a TP-3 item the property is read through the deterministic bad-prefix
-  monitor that `qsl-eval`'s property-automaton translation builds (ADR-018
-  SM-6, EN-3, LA-2). The encoding SHALL number the monitor states in the
+- A **monitor item** is a TP-3 item; a TP-2 item other than the two direct
+  shapes (Finite behaviours), which is every `on each` TP-2 item and every
+  `on origin` TP-2 item over any other bounded formula; and every item whose
+  `on each` activation has a `when` condition (a **guarded item**), TP-1,
+  TP-2 or TP-3. An unguarded TP-1 item and the deadlock-freedom item are
+  read directly, by their state predicate. A TP-4 item, guarded or not, has
+  no proof query (`item-form`): its refutations are EN-2's lasso searches,
+  which read a guarded clause's condition as FR-126 and FR-338 "Guarded TP-4
+  clause" state and replay through FR-128 (ADR-018 DS-3).
+- The property of a monitor item is read through the deterministic monitor
+  that `qsl-eval`'s property-automaton translation builds for it (ADR-018
+  SM-6, EN-3, LA-2; FR-126): the bad-prefix monitor of a TP-3 item, the
+  bounded monitor of a TP-2 item for its activation (`on origin` or
+  `on each`), and, for a guarded item, that monitor under FR-338's guarded
+  reading, which adds the root activation at a model position exactly where
+  the condition reads true. The encoding reads the monitor through the
+  translation alone and keeps no formula-specific encoding, so every bounded
+  formula FR-123 admits and every activation have the one encoding of this
+  section.
+- **Letters.** A model letter has one bit per letter member. For a guarded
+  item member 0 is the `when` condition, read before the clause's atoms as
+  FR-338 reads it, and member `j + 1` is the translation's atom `j`; for
+  any other monitor item member `j` is the translation's atom `j`. Bit `j`
+  of a model letter is the value of member `j` at the position for the
+  instance. Under event-position false-extension the monitor has one more
+  letter, the **end letter**, which it reads at a position past the end of a
+  behaviour: the closed-boundary letter of QSpec FR-091, every atomic
+  predicate false and every constant unchanged, at which no condition is
+  read and no activation starts, so it only advances the debt already live
+  (FR-338). The end letter is numbered `2^a`, `a` the number of letter
+  members, after every model letter. An infinite-trace monitor has no end
+  letter: its stutter positions read the repeated state's model letter.
+- **Tabulation.** The encoding SHALL number the monitor states in the
   order a breadth-first tabulation reaches them from the initial monitor
-  state, the initial state being 0, over letters in ascending numeric order,
-  bit `j` of a letter being the value of the translation's atom `j`. It
-  SHALL assert `0 <= m<i> <= n-1` for `n` tabulated states, and one
-  implication per tabulated move: at position `i > 0`, `m<i-1>` at the
-  move's source and the letter of position `i` imply `m<i>` at its target;
-  at position 0, for `Unrolling` and `InductionBase` only, the letter of
-  position 0 implies `m0` at the target of the move from the initial state.
-- `m<i>` is therefore the monitor state after reading the letter of
-  position `i`, EN-1's product convention: `m0` is the initial monitor state
-  stepped over the letter of position 0, not the initial monitor state
-  itself. Under `InductionStep`, `m0` is constrained by its range assertion
-  only, which over-approximates the states the step case starts from. The
-  property at a position is `m<i>` differing from the rejecting state's
-  number. A monitor whose rejecting state is not reached by the tabulation
-  has no violation term.
+  state, the initial state being 0, over letters in ascending numeric
+  order, the end letter last. The tabulation is one per item: every
+  instance's monitor is the same automaton over its own letters.
+- **Letter terms.** The term of a model letter `b` at position `i` for
+  instance `n` SHALL be the conjunction, in member order, of member `j`'s
+  value term over copy `i` read for that instance when bit `j` of `b` is 1
+  and its negation `(not ...)` when it is 0. Under false-extension it SHALL
+  have `(not h<i>)` as its first conjunct, and the end letter's term SHALL
+  be `h<i>`. A member's value term is its value, as an atom of an unguarded
+  item is printed; its definedness is read apart (Undefined evaluation).
+- **Moves.** The encoding SHALL assert `(<= 0 m<i>.<n>)` and
+  `(<= m<i>.<n> s-1)` as one range assertion `(and (<= 0 m<i>.<n>) (<=
+  m<i>.<n> s-1))` for `s` tabulated states, and one implication per
+  tabulated move and instance: at position `i > 0`, for the move from state
+  `x` on letter `b` to state `y`, `(=> (and (= m<i-1>.<n> x) L) (= m<i>.<n>
+  y))`, `L` the term of letter `b` at position `i` for instance `n`; at
+  position 0, for `Unrolling` and `InductionBase` only, for the move from
+  the initial state on letter `b` to `y`, `(=> L (= m0.<n> y))`.
+- `m<i>.<n>` is therefore instance `n`'s monitor state after reading the
+  letter of position `i`, EN-1's product convention: `m0.<n>` is the
+  initial monitor state stepped over the letter of position 0, not the
+  initial monitor state itself. Under `InductionStep`, `m0.<n>` is
+  constrained by its range assertion only, which over-approximates the
+  states the step case starts from. The property of instance `n` at a
+  position is `m<i>.<n>` differing from the rejecting state's number, and
+  its violation there is `(= m<i>.<n> r)`, `r` that number. A monitor whose
+  rejecting state is not reached by the tabulation has no violation term.
+- A monitor item reads every position `0..=depth`. A TP-2 `on origin` item
+  is settled by `Unrolling` (V-2 at a depth reaching its horizon, its
+  refutations by rule 4b at any depth), and a TP-2 `on each` item, like a
+  TP-3 item, by all three query kinds: it holds at every activating
+  position, an unbounded safety property that EN-3's `k`-induction settles
+  (ADR-018 §1, EN-3).
+- **Steps past the end.** Under false-extension a copy past the end is no
+  state, so two copies that are both past the end hold the same position
+  of the behaviour exactly when their monitor states agree, whatever their
+  field constants hold (Canonical printing, step 7).
 
 ### Instances
 
 - A query SHALL cover every instance of the item together. The property at
   a position is the conjunction over the item's instances, in FR-125's
   canonical order, and its violation is the disjunction of the instances'
-  violations in that order. The query attributes no failure to an instance:
-  a model shows that some instance fails, and the counterexample built from
-  it names its `over_binding` (ADR-018 CX-2), which replay checks. A TP-3
-  item SHALL have exactly one instance (`several-instances`).
+  violations in that order. A model shows that some instance fails, and the
+  counterexample built from it names that instance's `over_binding`
+  (ADR-018 CX-2, rule 4c), which replay checks.
+- A monitor item SHALL have one monitor per instance, whatever the number
+  of instances: the constants `m<i>.<n>` for every instance `n`, each with
+  its range assertion and its moves over its own letters, and the property
+  at a position the conjunction of the instances' monitors not rejecting.
+  No instance's monitor reads another's letters, so a violation of
+  instance `n` is `(= m<p>.<n> r)` alone, and the model names the failing
+  instance by which monitor rejects.
 
 ### Undefined evaluation
 
@@ -437,10 +533,18 @@ FR-125-AC-2 reads it.
   value inside its sort's range), reading `and`, `or`, `implies` and `if`
   under FR-006's short-circuit.
 - A **definedness failure** at position `p` is any of these:
-  - an atom the claim reads at `p` is undefined. Under false-extension the
-    claim reads positions `0..=min(depth, u)` only (UE-1: a TP-2 `on origin`
-    claim reads positions 0 to `h`), and only at a live copy, since a
-    position past the end evaluates no atom;
+  - an atom the claim reads at `p` is undefined. Under false-extension a
+    TP-2 `on origin` claim reads positions `0..=min(depth, h)` only, `h`
+    its horizon (`u` for a direct shape; UE-1: a TP-2 `on origin` claim
+    reads positions 0 to `h`), a TP-2 `on each` claim every position
+    `0..=depth`, and both only at a live copy, since a position past the end
+    evaluates no atom;
+  - for a guarded item, its `when` condition is undefined at `p` for an
+    instance: the condition has no value at a position the monitor reads it
+    (FR-126), which is every position `0..=depth` under infinite-trace and
+    every live position under false-extension. The failure is located at
+    the activation, as FR-126 locates it, and is read before the atoms'
+    failures at `p`, as the condition is read before the atoms;
   - an application's precondition is undefined on copy `p`, read as FR-120
     reads it: some clause, in ascending name order, is undefined while every
     clause before it holds (a false clause before it leaves the precondition
@@ -465,8 +569,8 @@ FR-125-AC-2 reads it.
     construct with a definedness condition (a division or modulo, a `value`
     read, a reduction or a range coercion), it prints no term;
   - for the deadlock-freedom item, `P` is undefined at a terminal copy `p`.
-- Under false-extension every atom, precondition and postcondition failure
-  at `p` SHALL be conjoined with `(not h<p>)`, printed as
+- Under false-extension every condition, atom, precondition and
+  postcondition failure at `p` SHALL be conjoined with `(not h<p>)`, printed as
   `(and (not h<p>) F)`, `F` the failure's term: a
   copy past the end is no reachable state, and a failure there would make the
   query satisfiable with no counterexample.
@@ -485,7 +589,9 @@ FR-125-AC-2 reads it.
   for `InductionStep`, the property and the absence of every definedness
   failure at each position `0..depth`, the copies at positions `0..=depth`
   pairwise distinct (some field, by field equality, or the monitor state
-  differs between every two copies), and a violation or a definedness
+  differs between every two copies; for a TP-2 item, two copies past the
+  end differ only by a monitor state, and a live copy differs from one past
+  the end), and a violation or a definedness
   failure at `depth`, the guard and postcondition failures of the
   applications from copy `depth` included (ADR-018 EN-3). Base and step at
   one depth `k` thus cover every definedness failure at every reachable
@@ -493,9 +599,11 @@ FR-125-AC-2 reads it.
   failing state of a shortest path, whatever its distance.
 - The negated property is one disjunction. Its disjuncts SHALL be, for each
   position in ascending order: the violation there, per instance in
-  instance order (for an `eventually[0,u]` item, its per-instance violations
-  stand first, before every position); then the atoms' definedness failures,
-  per instance in instance order and atom in clause-node order; then the
+  instance order (for the direct shape `eventually[0,u]`, its per-instance
+  violations stand first, before every position; for a monitor item,
+  `(= m<p>.<n> r)` per instance `n`); then the definedness failures of the
+  claim, per instance in instance order, for each instance a guarded item's
+  condition failure first and then its atoms' in clause-node order; then the
   precondition failures, then the postcondition failures, of the
   applications in step-disjunct order; then, for the deadlock-freedom item,
   `P`'s failure. A position with no violation and no failure contributes no
@@ -517,22 +625,29 @@ FR-125-AC-2 reads it.
   2. the `declare-const` commands, position by position in ascending order:
      copy `i`'s constants in ascending (object key, field name) order, an
      optional field's value constant before its presence constant, then
-     `m<i>`, then `h<i>`;
+     the monitor constants `m<i>.<n>` in instance order, then `h<i>`;
   3. the range assertions, position by position: one per ranged value
-     constant of copy `i` in declaration order, then `m<i>`'s;
+     constant of copy `i` in declaration order, then each `m<i>.<n>`'s in
+     instance order;
   4. for `Unrolling` and `InductionBase`, the initial-state predicate on
      copy 0, the disjunction over the subject's initial states in their
      list order, each the conjunction of its field values in declaration
      order (an absent optional field as `(not P)` alone); then, for a TP-2
      item, `(not h0)`;
   5. one step assertion per step, in ascending order;
-  6. the monitor implications, position by position, each position's in
+  6. the monitor implications, position by position, within a position
+     instance by instance in instance order, and each instance's in
      tabulation order (source state, then letter);
   7. for `InductionStep`, one distinctness assertion per pair of positions
      `(j, k)` with `j < k`, in ascending `(j, k)` order, printed as
-     `(not (and Q1 ... Qn))`, `Q1` to `Qn` the field equalities of copy `k`
-     with copy `j` in declaration order, then `(= m<k> m<j>)` for a TP-3
-     item; then one assertion per position `p` in `0..depth`, in ascending
+     `(not (and Q1 ... Qn M1 ... Mm))`, `Q1` to `Qn` the field equalities of
+     copy `k` with copy `j` in declaration order and `M1` to `Mm` the
+     monitor equalities `(= m<k>.<n> m<j>.<n>)` in instance order (none for
+     an item that is not a monitor item). For a TP-2 item it SHALL be printed
+     as `(not (and (= h<k> h<j>) (or h<k> (and Q1 ... Qn)) M1 ... Mm))`: two
+     copies past the end hold one position of the behaviour exactly when
+     their monitor states agree (Monitors), so their field constants are
+     not compared. Then one assertion per position `p` in `0..depth`, in ascending
      order, printed as `(and (not d1) ... (not dn))`, `d1` to `dn` the
      disjuncts the negated property has at position `p` (Negated property),
      in that order, so that it states the property and the absence of every
@@ -557,10 +672,10 @@ this order, and check each before it builds the terms the measure counts:
 
 | Measure | Counts | Limit |
 | --- | --- | --- |
-| `constants` | `declare-const` commands: `depth + 1` times the constants of one position, `m<i>` and `h<i>` included | 1,048,576 (2^20) |
+| `constants` | `declare-const` commands: `depth + 1` times the constants of one position, every `m<i>.<n>` and `h<i>` included | 1,048,576 (2^20) |
 | `applications` | applications of one step: receivers times operations times argument vectors, summed over the operations | 65,536 (2^16) |
-| `monitor-atoms` | atoms of a TP-3 item's monitor letter | 8 |
-| `monitor-states` | monitor states the tabulation reaches | 64 |
+| `monitor-atoms` | members of a monitor item's model letter, a guarded item's condition included | 8 |
+| `monitor-states` | monitor states the item's one tabulation reaches, the same for every instance | 64 |
 | `candidates` | candidates of one application whose enabledness or postcondition failure the query expands | 65,536 (2^16) |
 | `script-bytes` | bytes of the canonical script, counted as it is printed, stopping at the first byte past the limit | 268,435,456 (2^28) |
 
@@ -687,7 +802,8 @@ HV-3 reads.
   position. For any other body, it is the deterministic bad-prefix monitor
   that `qsl-eval`'s property-automaton translation builds for the body
   (ADR-018 SM-6) not rejecting at `m<i>`, with its steps asserted as for a
-  TP-3 item. An indexed atom `e @ t` SHALL read `t`'s copy at the position
+  monitor item (Monitors), the query's one instance's monitor being
+  `m<i>` itself. An indexed atom `e @ t` SHALL read `t`'s copy at the position
   (ADR-023 HM-4), and it carries its definedness condition as any atom
   does.
 - **Negated property.** The query SHALL assert the negated property as for
@@ -869,7 +985,7 @@ impl HyperProductIdentity {
 | FR-315-AC-2 | `InductionStep{depth: 1}` for `always holds(c.value <= 3)` asserts no initial-state predicate, asserts the property at position 0 and its violation at position 1; `InductionBase{depth: 1}` asserts the initial-state predicate on copy 0. | Test (TC-900) |
 | FR-315-AC-3 | An item over a field whose sort the encoding has no form for refuses `SmtEncodingRefusal` naming the field, with its locus, and writes no script. | Test (TC-900) |
 | FR-315-AC-4 | Over the `Tally` subject (universe `{t}`, fields `tally: Int[0, 3]` and `next: Int[0, 3]`, initially 0 and 1; operation `bump` with frame `modifies [tally, next]`, precondition `pre G { self.tally < 3 and self.next = self.tally + 1 }`, and postconditions `post B { self.tally - pre(self.tally) = 1 }` and `post C { self.tally < 3 and self.next = self.tally + 1 }`), under infinite-trace, `Unrolling{depth: 2}` for `always holds(t.tally < 3 and t.next = t.tally + 1)` builds the definedness condition of the range coercion of `t.tally + 1` into `Int[0, 3]` under the `and`'s short-circuit: at each position `i` in `0..=2`, a disjunct of the negated property holds when `s<i>.t.tally < 3` holds and `s<i>.t.tally + 1` lies outside `[0, 3]`. `G`'s coercion contributes the same condition over copy `i` as `bump`'s precondition failure at every position `0..=2`, position 2 included, and `C`'s coercion contributes `bump`'s postcondition failure at each position, expanded over the 16 candidates of (`tally`, `next`). `B` holds no partial construct and contributes no failure term. Every term of the script is linear. | Test (TC-900) |
-| FR-315-AC-5 | `InductionStep{depth: 2}` for `always holds(c.value <= 3)` asserts that copies 0, 1 and 2 are pairwise distinct; for a TP-3 item it declares `m0` to `m2` and asserts the monitor steps, the property at a position being the monitor state there not rejecting. | Test (TC-900) |
+| FR-315-AC-5 | `InductionStep{depth: 2}` for `always holds(c.value <= 3)` asserts that copies 0, 1 and 2 are pairwise distinct; for a TP-3 item it declares `m0.0` to `m2.0` and asserts the monitor steps, the property at a position being the monitor state there not rejecting. | Test (TC-900) |
 | FR-315-AC-6 | Over `CasRefinesCounter`, the `Initial` query declares the concrete copy `s0`, asserts the initial-state predicate on it and the negation of `map(s0)` equalling an abstract initial state, and the `Step { row }` query for a `stutter` row declares `s0` and `s1`, asserts the operation's precondition on `s0` and its frame and postcondition over `s0`, `s1`, and the negation of the mapped state being unchanged; encoding either twice gives byte-equal scripts; an `any` row refuses `SmtEncodingRefusal` `refinement-any-row`; a `Step` query for an abstract-operation row (`step Impl::Counter::commitA -> Spec::Counter::inc(self);`) asserts that operation's precondition, frame and postcondition over `map(s0)`, `map(s1)` with the row's receiver and arguments evaluated at `s0`, negated; a row with a `_` argument refuses `SmtEncodingRefusal` `refinement-open-argument` naming the row and the argument, shown over `CasRefinesCounterAdd`, which is `CasRefinesCounter` with `Spec::Counter` gaining the operation `add(n: Int[0, 1])` (frame `modifies [value]`, precondition `self.value + n <= 2`, postcondition `self.value = pre(self.value) + n`) and `Impl::Counter` gaining the operation `bump()` with an empty frame, like `peek`, and the row `step Impl::Counter::bump -> Spec::Counter::add(self, _);` (one receiver and one argument for the one abstract parameter, so the row types under FR-136; `bump` is the eighth step row and its position in the `steps` order is `r`); a mapping row outside `QF_LIA` refuses `out-of-fragment` naming the row. | Test (TC-900) |
 | FR-315-AC-7 | Over ADR-023 §8's secure vault and its §1 `NonInterference` clause for the instance `v`, `encode_hyper_query` with `InductionBase{depth: 1}` declares, in order, `s0.a.v.h`, `s0.a.v.l`, `s0.b.v.h`, `s0.b.v.l`, `s1.a.v.h`, `s1.a.v.l`, `s1.b.v.h`, `s1.b.v.l`, all `Int`, and no `m<i>`; asserts `a`'s initial-state predicate on copy 0 and then `b`'s; and asserts for step 0 to 1 one disjunction of exactly three joint disjuncts, `(step(0), step(0))`, `(step(1), step(1))`, then `(stutter, stutter)`. Each component's disjunct order is `step(0)`, `step(1)`, `stutter`, and `μ_U` holds on `(stutter, stutter)` because both operations are `stutter` and both arguments are absent. With the `match` block removed, the disjunction has all nine tuples in lexicographic order, `(step(0), step(0))` first and `(stutter, stutter)` last. Encoding either twice gives byte-equal scripts, and every term is linear. | Test (TC-1120) |
 | FR-315-AC-8 | For the same clause, `InductionStep{depth: 1}` asserts no initial-state predicate, the property `v.l @ a = v.l @ b` at position 0, the joint states at positions 0 and 1 distinct, and its violation at position 1; `InductionStep{depth: 2}` asserts positions 0, 1 and 2 pairwise distinct. The same clause with `fair { weak V::Vault::step }` on `a` gives byte-equal scripts to it for both kinds. | Test (TC-1120) |
@@ -885,9 +1001,9 @@ impl HyperProductIdentity {
 | FR-315-AC-18 | Read by a `QF_LIA` solver, over FR-315-AC-1's `Counter` under event-position false-extension: `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` is unsatisfiable, the V-2 query of FR-314-AC-1. `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` is satisfiable, the behaviour ending at position 3 and positions 4 and 5 lying past its end (FR-125-AC-2), and so is `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 2)`. `Unrolling{depth: 3}` for `eventually[0,3] holds(c.value = 3)` is unsatisfiable, and `Unrolling{depth: 2}` for `eventually[0,2] holds(c.value = 3)` is satisfiable. | Analysis (TC-900) |
 | FR-315-AC-19 | Over `Tally`, `InductionStep{depth: 1}` for `always holds(t.tally < 3)` has, among the negated property's disjuncts at position 1, `bump`'s precondition failure over copy 1 and its postcondition failure over copy 1 and the 16 candidates; each reads constants of copy 1 and literals only. The position-0 assertion before the negated property holds the property at position 0 and the negation of the same two failures over copy 0. | Test (TC-900) |
 | FR-315-AC-20 | For `Tally`'s deadlock-freedom item, `InductionBase{depth: 2}` declares no `m<i>` and no `h<i>`, keeps the stutter disjunct in each step assertion, and reads the violation at position `i` as copy `i` terminal, by the expansion over `bump`'s 16 candidates. With `terminal when P` for `P` the state predicate `t.tally = 2`, the violation at position `i` is copy `i` terminal conjoined with the negation of `P` over copy `i`. | Test (TC-900) |
-| FR-315-AC-21 | Each call refuses `SmtEncodingRefusal` with the code and locus given and writes no script: over `Counter`, the TP-4 claim `always eventually holds(c.value = 0)` names `item-form`; the TP-2 `on origin` claim `always[0,3] eventually[0,1] holds(c.value >= 1)` names `item-form`; `Counter` with FR-120-AC-3's operation `spawn()` (frame `creates Counter`) names `object-lifecycle` at `spawn`; `Counter` with an empty `initial` list names `no-initial-state`; `Counter` with an empty universe and an initial state that holds no object names `no-instance`; `Counter` with an operation `setTo(n: Integer)` names `parameter-domain` at `setTo` and `n`; `always holds(c.value * c.value <= 9)` names `out-of-fragment` at the product; FR-315-AC-23's TP-3 item over `Counter` with the universe `{c, d}` names `several-instances`; `Unrolling{depth: 1048576}` for `always holds(c.value <= 3)` names `too-large` with measure `constants`, value 1,048,577 and limit 1,048,576, before any constant is built. Each refusal is equal across two calls. | Test (TC-900) |
+| FR-315-AC-21 | Each call refuses `SmtEncodingRefusal` with the code and locus given and writes no script: over `Counter`, the TP-4 claim `always eventually holds(c.value = 0)` names `item-form`; the TP-4 claim `always eventually holds(c.value = 0)` with a guarded `on each` activation `when c.value = 1` names `item-form`; `Counter` with FR-120-AC-3's operation `spawn()` (frame `creates Counter`) names `object-lifecycle` at `spawn`; `Counter` with an empty `initial` list names `no-initial-state`; `Counter` with an empty universe and an initial state that holds no object names `no-instance`; `Counter` with an operation `setTo(n: Integer)` names `parameter-domain` at `setTo` and `n`; `always holds(c.value * c.value <= 9)` names `out-of-fragment` at the product; `Unrolling{depth: 1048576}` for `always holds(c.value <= 3)` names `too-large` with measure `constants`, value 1,048,577 and limit 1,048,576, before any constant is built. Each refusal is equal across two calls. | Test (TC-900) |
 | FR-315-AC-22 | Over a `Counter` subject with the universe `{d, c}`, both objects initially 0, operations `inc` and `setTo(n: Int[0, 2])` (each with frame `modifies [value]`), `InductionStep{depth: 2}` for `always holds(x.value <= 2)` with `over (x: Counter)` declares `s0.c.value`, `s0.d.value`, `s1.c.value`, `s1.d.value`, `s2.c.value`, `s2.d.value` in that order, and then asserts, in order: six range assertions in declaration order; two step assertions; three distinctness assertions for positions `(0, 1)`, `(0, 2)` and `(1, 2)`; two assertions for positions 0 and 1; the negated property; and `(check-sat)`. Each step assertion's disjuncts are `c.inc`, `c.setTo(0)`, `c.setTo(1)`, `c.setTo(2)`, `d.inc`, `d.setTo(0)`, `d.setTo(1)`, `d.setTo(2)` and the stutter, in that order. The instances are `d` then `c`, FR-125's universe-list order (FR-125-AC-10), so the negated property's first two disjuncts are the violations of instance `d` and then instance `c` at position 2. | Test (TC-900) |
-| FR-315-AC-23 | For the TP-3 item `always (holds(c.value = 3) implies always holds(c.value = 3))` with `over (c: Counter)` over FR-315-AC-1's `Counter` under infinite-trace, `Unrolling{depth: 2}` asserts `0 <= m<i> <= n-1` for each position, `n` the tabulated monitor states with the initial state numbered 0; at position 0 one implication per letter from the initial state, the letter of position 0 implying `m0` at that move's target; and at positions 1 and 2 one implication per tabulated move, `m<i-1>` at its source and the letter of position `i` implying `m<i>` at its target, all after the step assertions. `InductionStep{depth: 2}` asserts no implication at position 0, so `m0` is constrained by its range assertion only. | Test (TC-900) |
+| FR-315-AC-23 | For the TP-3 item `always (holds(c.value = 3) implies always holds(c.value = 3))` with `over (c: Counter)` over FR-315-AC-1's `Counter` under infinite-trace, `Unrolling{depth: 2}` asserts `(and (<= 0 m<i>.0) (<= m<i>.0 s-1))` for each position, `s` the tabulated monitor states with the initial state numbered 0; at position 0 one implication `(=> L (= m0.0 y))` per letter from the initial state; and at positions 1 and 2 one implication `(=> (and (= m<i-1>.0 x) L) (= m<i>.0 y))` per tabulated move, all after the step assertions. `InductionStep{depth: 2}` asserts no implication at position 0, so `m0.0` is constrained by its range assertion only. | Test (TC-900) |
 | FR-315-AC-24 | Over FR-315-AC-1's `Counter` with an added operation `isZero(): Boolean` (empty frame, postcondition `post Z { result = (self.value = 0) }`), each step assertion's `isZero` disjunct has the postcondition part `(or Z0 Z1)`, `Z0` being `Z` read with `result` the literal `false` and `Z1` with `true`, and the script declares no constant for the result. With `Counter` given a field `id: Integer` that `inc`'s frame also writes, the false-extension query of FR-315-AC-17, which expands `inc`'s candidates, refuses `field-domain` at `c.id`. | Test (TC-900) |
 | FR-315-AC-25 | Over a `Holder` subject (universe `{s}`, an optional field `held: Int[0, 3]`, initially absent; operation `put` with frame `modifies [held]` and postcondition `present(self.held)`), under infinite-trace, `InductionStep{depth: 1}` for `always holds(present(s.held) or not present(s.held))` prints the stutter between copies 0 and 1 as `(and (= s1.s.held.present s0.s.held.present) (or (not s1.s.held.present) (= s1.s.held s0.s.held)))`, and its distinctness assertion as the negation of that field equality. Two copies with `held` absent therefore agree on `held` whatever their value constants hold. | Test (TC-900) |
 | FR-315-AC-26 | Over FR-315-AC-1's `Counter` under infinite-trace, a model of `InductionBase{depth: 3}` for `always holds(c.value <= 1)` that takes `inc` twice and then the stutter at value 2, where `inc` is still enabled, has failing position 2. CG reads it as the prefix `0, 1, 2`, a counterexample that FR-128 replays to `refuted`, and the stutter after position 2 is not read. For `always (holds(c.value = 0) implies eventually[0,1] holds(c.value = 1))`, a base model that stutters at value 0 and then fails is no candidate: rebuilt as the lasso with the `terminal-stutter` loop at value 0, it is refused by `replay_model_trace` with `invalid-value` naming the `terminal-stutter` loop step, and the base query settles `InductionNotClosed{depth}`, not `ReplayParity` or `ReplayRefused`. | Analysis (TC-900) |
@@ -897,6 +1013,13 @@ impl HyperProductIdentity {
 | FR-315-AC-30 | Settlement of a fault: an SMT `Inductive{depth: 1}` result for FR-315-AC-2's item whose FR-314 rebuild of the base query meets `SmtEncodingRefusal::Fault` gives `SmtProofCheck::Fault`, and FR-127 settles it `failed`, basis `unavailable`, `TerminalValue::Failed`, category failed. Over ADR-023 §8's secure vault, `settle_hyper_smt` for `NonInterference` at instance `v` with an `EncodingRefused` outcome carrying `Fault` from a later check of `encode_hyper_query`, whose `product` is `Ok` and equal to the item's identity, settles `failed`, `Failed`, not V-8. Inside `qsl-eval`, with the request's checked clause altered after S3 so that `HyperProductIdentity::of` returns `Fault(f)`, CG's outcome is `EncodingRefused { refusal: Fault(f) }` with `product: Err(f)`, and `settle_hyper_smt` over that item writes a `failed`, `Failed` record and refuses no `ItemIdentity`. The same `Err` outcome settled for an item whose `of` returns an identity is refused `ProductMismatch` naming `clause`. | Test (TC-900) |
 | FR-315-AC-31 | FR-315-AC-1's `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` has, at each position `p` in `0..=3`, the violation disjuncts `h<p>` and then `(not (<= s<p>.c.value 3))`, followed by `inc`'s postcondition failure `(and (not h<p>) F)`, and no disjunct for a position past 3. `inc` has that failure term because `Inc`'s right side `pre(self.value) + 1` is an integer sum compared by `=` with the `Int[0, 3]` field `self.value`, so FR-104's equality typing (TC-1084) coerces it into `Int[0, 3]`, a range coercion with a definedness condition. The query has no atom-failure disjunct, because `c.value <= 3` holds no partial construct, and no precondition-failure disjunct, because `CanInc` (`self.value < 3`) holds none. | Test (TC-900) |
 | FR-315-AC-32 | `SmtEncodingRefusal` has exactly the two arms `Refused { code, locus }`, its code one of the closed refusal set, and `Fault(InternalFault)`. No refusal code names a broken invariant. None of FR-315-AC-21's requests returns `Fault`. Inside `qsl-eval`, an encoding called with a TP-1 item whose checked clause has had its one atom removed after S3, which no well-formed request carries, returns `Fault` naming the atom invariant, not `Refused` with `item-form`. | Test (TC-900) |
+| FR-315-AC-33 | Over FR-315-AC-1's `Counter` under event-position false-extension, `Unrolling{depth: 2}` for the TP-2 claim `eventually[0,1] holds(c.value = 3)` with activation `on each` declares `s0.c.value`, `m0.0`, `h0`, `s1.c.value`, `m1.0`, `h1`, `s2.c.value`, `m2.0`, `h2` in that order; asserts at each position the range assertion of `s<i>.c.value` and then `(and (<= 0 m<i>.0) (<= m<i>.0 s-1))`, `s` the tabulated monitor states; asserts `(= s0.c.value 0)`, `(not h0)` and two step assertions in FR-315-AC-17's false-extension form with no stutter disjunct; and then the monitor implications. The monitor has one letter member, the atom `A<i>` = `(= s<i>.c.value 3)`, so the position-0 implications are one per move from the initial state on the letters 0, 1 and the end letter 2, whose terms are `(and (not h0) (not A0))`, `(and (not h0) A0)` and `h0`; positions 1 and 2 have one implication per tabulated move. The negated property has, at each position `p` in `0..=2`, the violation `(= m<p>.0 r)`, `r` the rejecting state's number, followed by `inc`'s postcondition failure `(and (not h<p>) F)` (FR-315-AC-31). Encoding it twice gives byte-equal scripts. `InductionBase{depth: 1}` and `InductionStep{depth: 1}` for the same item are encoded, not refused `query-kind`; the step asserts no initial-state predicate, no `(not h0)` and no position-0 implication, and its one distinctness assertion is `(not (and (= h1 h0) (or h1 (= s1.c.value s0.c.value)) (= m1.0 m0.0)))`. | Test (TC-1201) |
+| FR-315-AC-34 | Read by a `QF_LIA` solver over FR-315-AC-1's `Counter` under event-position false-extension, for `eventually[0,1] holds(c.value = 3)` `on each`: `Unrolling{depth: 2}` is satisfiable, the monitor rejecting first at position 1, where the activation at position 0 has read the values 0 and 1; CG reads it by rule 4b as the prefix `0, 1, 2` (`e` the least of the cover position `1 + 1` and the last live position 2), which FR-128 replays to `refuted`, the counterexample FR-126-AC-2 finds by EN-1. `Unrolling{depth: 1}` is satisfiable with the same rejection, and its prefix `0, 1` neither reaches the cover position 2 nor ends at a terminal state, so the query gives no outcome at depth 1. For `eventually[0,1] holds(c.value >= 1)` `on each`, `InductionStep{depth: 1}` is satisfiable, from a copy past the end whose monitor state holds an open activation, and `InductionBase{depth: 2}` and `InductionStep{depth: 2}` are both unsatisfiable, the outcome `Inductive{depth: 2}` (ADR-018 V-3). | Analysis (TC-1201) |
+| FR-315-AC-35 | Over FR-315-AC-1's `Counter` under event-position false-extension, the TP-2 `on origin` claim `always[0,3] eventually[0,1] holds(c.value >= 1)`, whose horizon is 4, is a monitor item: `Unrolling{depth: 4}` declares `m<i>.0` and `h<i>` at each position 0 to 4, asserts the monitor implications of its one letter member `(>= s<i>.c.value 1)` with the end letter `h<i>`, and its violation at each position is `(= m<p>.0 r)`. Read by a `QF_LIA` solver it is unsatisfiable, the V-2 outcome `BoundedComplete{depth: 4}`. For `always[0,3] eventually[0,1] holds(c.value = 3)`, `Unrolling{depth: 4}` is satisfiable, the monitor rejecting at position 1; CG reads the prefix `0, 1, 2, 3`, ending at the terminal state 3 before the cover position 4, which FR-128 replays to `refuted`; `Unrolling{depth: 1}` is satisfiable with the same rejection and gives no outcome at depth 1, its prefix ending at the live, non-terminal position 1. `InductionBase{depth: 4}` for either claim refuses `query-kind`. | Analysis (TC-1201) |
+| FR-315-AC-36 | Over FR-315-AC-1's `Counter` under infinite-trace, the guarded TP-1 claim `always holds(c.value <= 1)` `on each` `when c.value >= 3` is a monitor item. `Unrolling{depth: 1}` declares `m0.0` and `m1.0` and no `h<i>`; its letter members are the condition `C<i>` = `(>= s<i>.c.value 3)` (bit 0) and then the atom `A<i>` = `(<= s<i>.c.value 1)` (bit 1), so letter 2's term at position `i` is `(and (not C<i>) A<i>)`; the monitor has no end letter, and each step assertion keeps the stutter disjunct. Over the same `Counter` under event-position false-extension, `Unrolling{depth: 2}` for `eventually[0,3] holds(c.value = 3)` `on each` `when 6 mod (2 - c.value) >= 0` has, at each position `p` in `0..=2`, after the violation `(= m<p>.0 r)`, the condition's definedness failure (the divisor `2 - c.value` zero over copy `p`) conjoined as `(and (not h<p>) F)`, and then `inc`'s postcondition failure; the atom holds no partial construct, so the query has no atom-failure disjunct. | Test (TC-1201) |
+| FR-315-AC-37 | Read by a `QF_LIA` solver: `Unrolling{depth: 3}` for AC-36's guarded `always holds(c.value <= 1)` `when c.value >= 3` is satisfiable, the monitor rejecting at position 3, where the activation starts at value 3; the model takes `inc` three times with no stutter, and CG reads the prefix `0, 1, 2, 3`, which FR-128 replays to `refuted`, FR-126-AC-16's counterexample. With the condition `c.value = 7`, `InductionStep{depth: 2}` is satisfiable, from two copies whose monitor state holds the activation, and `InductionBase{depth: 3}` and `InductionStep{depth: 3}` are both unsatisfiable, the outcome `Inductive{depth: 3}`. AC-36's false-extension query with the condition undefined at value 2 is satisfiable only by the condition failure at position 2; CG reads the prefix `0, 1, 2` (rule 4b, UE-3), which FR-128 replays to `refuted` with `kind: UndefinedEvaluation` at position 2, its site naming the activation (FR-126-AC-16). | Analysis (TC-1201) |
+| FR-315-AC-38 | Over a `Counter` subject with the universe `{c, d}`, both objects initially 0, and the operation `inc` with frame `modifies self.value` (FR-154's receiver scope), under infinite-trace, the TP-3 claim `always (holds(x.value = 1) implies eventually[0,1] holds(x.value = 2))` with `over (x: Counter)` has the instances `c` (index 0) and `d` (index 1). `Unrolling{depth: 2}` declares, at each position `i`, `s<i>.c.value`, `s<i>.d.value`, `m<i>.0`, `m<i>.1` in that order; asserts the monitor implications at each position for instance 0, whose letters read `s<i>.c.value`, and then for instance 1, whose letters read `s<i>.d.value`, both from the item's one tabulation; and its negated property has, at each position `p`, `(= m<p>.0 r)` and then `(= m<p>.1 r)`. `InductionStep{depth: 1}`'s distinctness assertion is `(not (and (= s1.c.value s0.c.value) (= s1.d.value s0.d.value) (= m1.0 m0.0) (= m1.1 m0.1)))`. FR-315-AC-23's TP-3 item over this subject encodes with `m<i>.0` and `m<i>.1` and is not refused. | Test (TC-1201) |
+| FR-315-AC-39 | Read by a `QF_LIA` solver: a model of AC-38's `Unrolling{depth: 2}` that applies `c.inc` and then `d.inc`, reaching `(1, 0)` and then `(1, 1)` as `(c, d)`, fails at position 2, where only instance 0's monitor rejects: `c` is 1 at position 1 and not 2 at position 2. CG names `over_binding` `c` (rule 4c) and reads the prefix of the two steps, which has no stutter, and FR-128 replays it to `refuted`. The model that applies `d.inc` and then `c.inc` names `over_binding` `d`. | Analysis (TC-1201) |
 
 ## Dependencies
 
@@ -913,6 +1036,10 @@ impl HyperProductIdentity {
   (`ModelCheckItem`), [FR-128](FR-128-replay-a-model-counterexample.md) (the
   replay a satisfiable query's model goes through), [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
   (the internal fault).
+- [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md)
+  (the property forms and the bounded formulas a monitor item reads),
+  [FR-338](FR-338-check-an-en-1-closure-certificate.md) (the monitor
+  translation's activation, end-of-behaviour and guarded `on each` readings).
 - [FR-172](FR-172-check-hyper-and-relation-clauses-over-model-subjects.md)
   (the checked hyper clause), [FR-173](FR-173-classify-hyper-clauses-into-forms.md)
   (its form), [FR-176](FR-176-check-a-universal-hyperproperty-by-self-composition.md)
@@ -931,4 +1058,5 @@ impl HyperProductIdentity {
   STD-311; hyper product identity: Linear STD-336; proof-query stutter,
   finite behaviours, deadlock-freedom, refusals and size limits: Linear
   STD-338; false-extension items, internal faults and violation order:
-  Linear STD-340.
+  Linear STD-340; monitor items (every bounded TP-2 formula, `on each`
+  activations, guarded clauses) and per-instance monitors: Linear STD-407.
