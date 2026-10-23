@@ -1018,9 +1018,9 @@ impl PackageDeclarations {
                                                 },
                                             });
                                         }
-                                        let count = model.tick_operation_count(&operation.name);
-                                        if count != 1 {
-                                            let cause = if count == 0 {
+                                        let operations = model.tick_operation_keys(&operation.name);
+                                        let [resolved] = operations.as_slice() else {
+                                            let cause = if operations.is_empty() {
                                                 TemporalCause::MissingTickOperation {
                                                     name: operation.name.clone(),
                                                     span: operation.span,
@@ -1035,19 +1035,40 @@ impl PackageDeclarations {
                                                 location: root(Origin::Expression),
                                                 cause: CheckCause::Temporal(Box::new(cause)),
                                             });
-                                        }
+                                        };
                                         let magnitude = match probabilistic::exact_value(
                                             &period.magnitude,
                                             limits.rational_bits(),
                                         ) {
                                             Ok(value) => value,
-                                            Err(_) => {
+                                            Err(probabilistic::ExactFault::ZeroDenominator) => {
                                                 return Some(CheckRefusal {
                                                     location: root(Origin::Expression),
-                                                    cause: CheckCause::TimedNotChecked {
-                                                        construct: TimedConstruct::TimeSource,
-                                                        span: period.span,
-                                                    },
+                                                    cause: CheckCause::Temporal(Box::new(
+                                                        TemporalCause::ZeroDenominator {
+                                                            span: period.magnitude.span,
+                                                        },
+                                                    )),
+                                                })
+                                            }
+                                            Err(probabilistic::ExactFault::AboveCeiling {
+                                                bits,
+                                            }) => {
+                                                return Some(CheckRefusal {
+                                                    location: root(Origin::Expression),
+                                                    cause: CheckCause::ResourceExhausted(Box::new(
+                                                        StageLimitCause {
+                                                            stage: CheckingStage::Typing,
+                                                            kind: CheckingLimitKind::RationalBits,
+                                                            limit: limits.rational_bits(),
+                                                            actual: u128::from(bits),
+                                                            region: region::region(
+                                                                &self.source,
+                                                                self.embedding.as_deref(),
+                                                                period.magnitude.span,
+                                                            ),
+                                                        },
+                                                    )),
                                                 })
                                             }
                                         };
@@ -1082,7 +1103,7 @@ impl PackageDeclarations {
                                             });
                                         }
                                         TimeSourceKind::Tick {
-                                            operation: operation.name.clone(),
+                                            operation: resolved.node.clone(),
                                             period: converted,
                                         }
                                     }
@@ -1103,6 +1124,24 @@ impl PackageDeclarations {
                                     },
                                 )),
                             });
+                        }
+                        if let TimedDeclaration::Urgent(urgent) = form {
+                            if matches!(urgent.target, qsl_forms::UrgentTarget::When(_))
+                                && self.time_sources.is_empty()
+                                && !self
+                                    .timed_forms
+                                    .iter()
+                                    .any(|form| matches!(form, TimedDeclaration::TimeSource(_)))
+                            {
+                                return Some(CheckRefusal {
+                                    location: root(Origin::Expression),
+                                    cause: CheckCause::Temporal(Box::new(
+                                        TemporalCause::UrgencyWithoutTimeSource {
+                                            span: urgent.span,
+                                        },
+                                    )),
+                                });
+                            }
                         }
                     }
                     let cause = if admitted {

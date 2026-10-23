@@ -1029,6 +1029,11 @@ pub enum TemporalCause {
         /// The alias name's span.
         span: Span,
     },
+    /// FR-230: `urgent when` has no timed model to bind its predicate.
+    UrgencyWithoutTimeSource {
+        /// The urgency declaration's span.
+        span: Span,
+    },
     /// FR-230: a tick source's period is zero or negative.
     InvalidTickPeriod {
         /// The period quantity's span.
@@ -1211,7 +1216,10 @@ pub enum TemporalCause {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TimeUnitCause {
     /// The unit graph has no base dimension named `Time`.
-    NoTimeDimension,
+    NoTimeDimension {
+        /// The required base dimension name.
+        name: &'static str,
+    },
     /// The unit graph has no unit with the written name.
     UnknownUnit {
         /// The unit as written.
@@ -1239,6 +1247,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { span, .. }
             | Self::DuplicateTimeSource { span, .. }
             | Self::MissingTimedModel { span, .. }
+            | Self::UrgencyWithoutTimeSource { span }
             | Self::InvalidTickPeriod { span }
             | Self::MissingTickOperation { span, .. }
             | Self::AmbiguousTickOperation { span, .. }
@@ -1270,6 +1279,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { .. } => Code::UnsupportedConstruct,
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
+            Self::UrgencyWithoutTimeSource { .. } => Code::MissingDeclaration,
             Self::InvalidTickPeriod { .. } => Code::InvalidModelBinding,
             Self::MissingTickOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousTickOperation { .. } => Code::AmbiguousDeclaration,
@@ -1289,7 +1299,7 @@ impl TemporalCause {
             Self::UnitlessTimedBound { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
+                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
                     Code::MissingDeclaration
                 }
                 TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
@@ -1310,6 +1320,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { .. } => "declaration-form",
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
+            Self::UrgencyWithoutTimeSource { .. } => "missing-name",
             Self::InvalidTickPeriod { .. } => "malformed-declaration",
             Self::MissingTickOperation { .. } => "missing-name",
             Self::AmbiguousTickOperation { .. } => "ambiguous-name",
@@ -1333,7 +1344,7 @@ impl TemporalCause {
             Self::UnitlessTimedBound { .. } => "type-mismatch",
             Self::ZeroDenominator { .. } => "unproved-nonzero",
             Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
+                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
                     "missing-name"
                 }
                 TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {

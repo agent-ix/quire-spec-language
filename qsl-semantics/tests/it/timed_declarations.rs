@@ -13,7 +13,7 @@ use serde_json::json;
 use crate::model_operations::{
     admit_and_assemble_with_body, admit_and_assemble_with_profiles,
     attempt_update_modifies_version_number, config_unit_with_body, config_version_document,
-    config_version_identity, wire_field,
+    config_version_identity, tc465_deep_hierarchy_document, wire_field,
 };
 
 fn document() -> Vec<u8> {
@@ -45,6 +45,41 @@ fn clock_document() -> Vec<u8> {
             "required",
             1,
         ));
+    serde_json::to_vec(&document).expect("the fixture stays JSON")
+}
+
+fn package_units_document() -> Vec<u8> {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&document()).expect("the fixture is JSON");
+    let origin = document["types"][0]["origin"].clone();
+    let time = "ix://example/config-version/dimension/Time";
+    let second = "ix://example/config-version/unit/s";
+    document["dimensions"] = json!([{
+        "identity": time,
+        "name": "Time",
+        "base": true,
+        "terms": [],
+        "origin": origin,
+    }]);
+    document["units"] = json!([
+        {
+            "identity": second,
+            "name": "s",
+            "dimension": time,
+            "scale": "1",
+            "offset": "0",
+            "origin": origin,
+        },
+        {
+            "identity": "ix://example/config-version/unit/ms",
+            "name": "ms",
+            "dimension": time,
+            "target": second,
+            "scale": "1/1000",
+            "offset": "0",
+            "origin": origin,
+        },
+    ]);
     serde_json::to_vec(&document).expect("the fixture stays JSON")
 }
 
@@ -86,19 +121,37 @@ fn a_package_clock_field_reaches_the_timed_model_check() {
 
 #[trace("TC-685")]
 #[test]
-fn dense_source_resolves_a_time_unit_at_s3() {
-    let body = "dimension Time;\nunit s : Time = rational(1, 1);\nunit ms : Time = rational(1, 1000) * s;\ntime Config dense unit ms;\n";
+#[ignore = "FCD FR-146: pinned I1 schema rejects top-level dimensions"]
+fn package_time_units_reach_s3_with_their_model_owner() {
     let declarations = admit_and_assemble_with_profiles(
-        &document(),
+        &package_units_document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
-        body,
+        "time Config dense unit Config::ms;\n",
     )
-    .expect("S2 retains the unit and time forms");
+    .expect("FCD admits package dimensions and units");
     let checked = declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
-        .expect("a dense source with a Time unit checks");
-    assert_eq!(checked.time_sources()[0].model, "Config");
-    assert_eq!(checked.time_sources()[0].unit, "ms");
+        .expect("S3 resolves the package-owned Time unit");
+    assert_eq!(checked.time_sources()[0].unit, "Config::ms");
+}
+
+#[trace("TC-685")]
+#[test]
+fn dense_source_resolves_a_time_unit_at_s3() {
+    for name in ["ms", "s"] {
+        let body = format!("dimension Time;\nunit s : Time = rational(1, 1);\nunit ms : Time = rational(1, 1000) * s;\ntime Config dense unit {name};\n");
+        let declarations = admit_and_assemble_with_profiles(
+            &document(),
+            "profile t = \"quire.temporal.complete/v1\";\n",
+            &body,
+        )
+        .expect("S2 retains the unit and time forms");
+        let checked = declarations
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect("a dense source with a Time unit checks");
+        assert_eq!(checked.time_sources()[0].model, "Config");
+        assert_eq!(checked.time_sources()[0].unit, name);
+    }
 }
 
 #[trace("TC-685")]
@@ -149,7 +202,39 @@ fn a_source_without_base_time_refuses_before_looking_up_the_unit() {
     let refusals = declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect_err("S3 requires a base Time node");
-    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::TimeQuantity { cause, .. } if matches!(&**cause, qsl_semantics::check::TimeUnitCause::NoTimeDimension)))), "{refusals:?}");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::TimeQuantity { cause, .. } if matches!(&**cause, qsl_semantics::check::TimeUnitCause::NoTimeDimension { name } if *name == "Time")))), "{refusals:?}");
+}
+
+#[trace("TC-685")]
+#[test]
+fn derived_duration_is_not_the_base_time_dimension() {
+    let body = "dimension Time;\ndimension Duration = Time;\nunit d : Duration = rational(1, 1);\ntime Config dense unit d;\n";
+    let declarations = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect("S2 retains the derived dimension");
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("Duration and Time have distinct nodes");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::TimeQuantity { cause, .. } if matches!(&**cause, qsl_semantics::check::TimeUnitCause::NotTimeDimension { name } if name == "d")))), "{refusals:?}");
+}
+
+#[trace("TC-685")]
+#[test]
+fn affine_time_unit_cannot_be_a_model_time_source() {
+    let body = "dimension Time;\nunit s : Time = rational(1, 1);\nunit degc : Time = rational(1, 1) * s + rational(273, 1);\ntime Config dense unit degc;\n";
+    let declarations = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect("S2 retains the affine unit");
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("S3 rejects a nonzero composed offset");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::TimeQuantity { cause, .. } if matches!(&**cause, qsl_semantics::check::TimeUnitCause::AffineUnit { name, .. } if name == "degc")))), "{refusals:?}");
 }
 
 #[trace("TC-685")]
@@ -166,6 +251,21 @@ fn time_source_names_an_admitted_model() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect_err("S3 resolves the model alias");
     assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::MissingTimedModel { name, .. } if name == "Missing"))), "{refusals:?}");
+}
+
+#[trace("TC-685")]
+#[test]
+fn urgent_when_without_a_time_source_refuses_as_a_missing_binding() {
+    let declarations = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        "urgent stalled when { true };\n",
+    )
+    .expect("S2 retains the urgency condition");
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("urgency needs a timed model");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::UrgencyWithoutTimeSource { .. }))), "{refusals:?}");
 }
 
 #[trace("TC-685")]
@@ -227,7 +327,43 @@ fn tick_source_resolves_its_operation_and_exact_period() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("the operation and positive period check");
     assert!(
-        matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, period } if operation == "ConfigVersion::attemptUpdate" && *period == quire_exact::Rational::new(1_i64.into(), 2_i64.into()).expect("half"))
+        matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, period } if operation == &config_version_identity("attemptUpdate") && *period == quire_exact::Rational::new(1_i64.into(), 2_i64.into()).expect("half"))
+    );
+}
+
+#[trace("TC-685")]
+#[test]
+fn unqualified_tick_operation_resolves_to_its_declaration_identity() {
+    let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick attemptUpdate period 1 ms unit ms;\n";
+    let declarations = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect("S2 retains the unqualified operation");
+    let checked = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("a unique model operation resolves");
+    assert!(
+        matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, .. } if operation == &config_version_identity("attemptUpdate"))
+    );
+}
+
+#[trace("TC-685")]
+#[test]
+fn tick_operation_on_a_derived_object_resolves_its_inherited_declaration() {
+    let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick Deep1::attemptUpdate period 1 ms unit ms;\n";
+    let declarations = admit_and_assemble_with_profiles(
+        &tc465_deep_hierarchy_document(1),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect("S2 keeps the derived owner name");
+    let checked = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("S3 resolves the inherited operation");
+    assert!(
+        matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { operation, .. } if operation == &config_version_identity("attemptUpdate"))
     );
 }
 
@@ -251,6 +387,41 @@ fn tick_period_converts_exactly_to_the_model_unit() {
 
 #[trace("TC-685")]
 #[test]
+fn a_ten_to_fortieth_tick_period_is_checked_exactly() {
+    let huge = "10000000000000000000000000000000000000000";
+    let body = format!("dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick ConfigVersion::attemptUpdate period {huge} ms unit ms;\n");
+    let declarations = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        &body,
+    )
+    .expect("S2 retains the large exact period");
+    let checked = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("a 10^40 period is representable");
+    assert!(
+        matches!(&checked.time_sources()[0].source, qsl_semantics::check::TimeSourceKind::Tick { period, .. } if *period == quire_exact::Rational::from_integer(quire_exact::Integer::power_of_ten(40)))
+    );
+}
+
+#[trace("TC-685")]
+#[test]
+fn tick_period_respects_the_s3_rational_bit_limit() {
+    let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick ConfigVersion::attemptUpdate period 10000000000000000000000000000000000000000 ms unit ms;\n";
+    let declarations = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect("S2 does not impose the S3 ceiling");
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default().with_rational_bits(32))
+        .expect_err("the configured S3 ceiling stops the exact reduction");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::ResourceExhausted(limit) if limit.kind == qsl_semantics::check::CheckingLimitKind::RationalBits && limit.region.is_some())), "{refusals:?}");
+}
+
+#[trace("TC-685")]
+#[test]
 fn zero_tick_period_refuses_at_the_period() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick ConfigVersion::attemptUpdate period 0 ms unit ms;\n";
     let declarations = admit_and_assemble_with_profiles(
@@ -263,6 +434,22 @@ fn zero_tick_period_refuses_at_the_period() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect_err("tick period must be positive");
     assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::InvalidTickPeriod { .. }))), "{refusals:?}");
+}
+
+#[trace("TC-685")]
+#[test]
+fn a_tick_period_with_zero_denominator_refuses_at_the_magnitude() {
+    let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config tick ConfigVersion::attemptUpdate period rational(1,0) ms unit ms;\n";
+    let declarations = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect("S2 retains an exact value without resolving it");
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("S3 refuses an undefined rational");
+    assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::ZeroDenominator { .. }))), "{refusals:?}");
 }
 
 #[trace("TC-685")]
