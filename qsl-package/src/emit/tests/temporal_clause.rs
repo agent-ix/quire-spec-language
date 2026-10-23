@@ -413,8 +413,7 @@ fn ir_refusal(
     compiled: &Compiled,
     envelope: &Value,
 ) -> quire_contract_model::CheckedPackageRefusal {
-    let package_id =
-        qsl_semantics::library::PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
+    let package_id = crate::checked_v2::tests::derived_package_id(envelope);
     match read_bytes(&jcs(envelope), &compiled.wire, package_id) {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => *refusal,
         other => panic!("an IR refusal, not {other:?}"),
