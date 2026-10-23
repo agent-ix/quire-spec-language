@@ -1534,6 +1534,25 @@ pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
     })
 }
 
+#[cfg(any(test, feature = "test-support"))]
+impl CheckedTemporalClause {
+    /// The clause with its profile replaced after S3 (test-support only): a
+    /// clause no well-formed request carries.
+    #[must_use]
+    pub fn with_profile_after_s3(mut self, profile: TemporalProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// The clause with its property form replaced after S3 (test-support
+    /// only): a clause no well-formed request carries.
+    #[must_use]
+    pub fn with_property_form_after_s3(mut self, form: Option<PropertyForm>) -> Self {
+        self.property_form = form;
+        self
+    }
+}
+
 /// Every `temporal` clause of `package`, checked by the family alone, as
 /// the package check runs it before its `holds` conditions are typed
 /// (test-support only).
