@@ -52,13 +52,13 @@ fn evidence_of(record: &RequirementRecord) -> Option<ClaimEvidence> {
     record.requirements().evidence()
 }
 
-/// Checks FR-195-AC-6 (TC-1163 step 1): each probabilistic claim has a
+/// Checks TC-1163 step 1: each probabilistic claim has a
 /// `probabilistic-satisfaction` record, unbounded over a domain naming the
 /// claim, with a `Boolean` result bound, no conversion context and an empty
 /// path condition; `P95` records `statistical`, and a claim under every
 /// scheduler, one with no confidence parameters and an expected-reward form
 /// record `exact`.
-#[trace("TC-1163", "FR-195-AC-6")]
+#[trace("TC-1163")]
 #[test]
 fn each_probabilistic_claim_records_its_evidence_kind() {
     let world = World::new(&prob_world::service(CLAIMS));

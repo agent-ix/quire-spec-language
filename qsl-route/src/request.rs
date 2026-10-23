@@ -586,48 +586,53 @@ pub fn items_with_evidence(
     named: Option<&BackendId>,
     selection: EvidenceSelection,
 ) -> Vec<RequirementItem> {
-    let write =
-        |position: usize, occurrence: &OccurrenceKey, record: &RequirementRecord, evidence| {
-            let requirements = record.requirements();
-            let extent = ExtentClassification::of(requirements.extent());
-            let unbounded = match requirements.extent() {
-                ClaimExtent::Bounded => Vec::new(),
-                ClaimExtent::Unbounded(domains) => domains
-                    .iter()
-                    .map(|(key, kind)| (key.clone(), kind))
-                    .collect(),
-            };
-            RequirementItem {
-                index: RequestIndex::new(position),
-                occurrence: occurrence.clone(),
-                kind: requirements.kind(),
-                extent,
-                unbounded,
-                proof_bounds: Vec::new(),
-                subject_proof_bounds: Vec::new(),
-                model_subject: requirements.model_subject(),
-                result_bound: record.result_bound().node(),
-                conversion_context: record.conversion_context().cloned(),
-                path_condition: record.path_condition().to_vec(),
-                candidates: candidates_of(requirements, evidence, registry, named),
-                unsupported: requirements.unsupported().cloned(),
-                evidence,
-            }
-        };
     let probabilistic = |record: &RequirementRecord| {
         matches!(
             record.requirements().kind(),
             Capability::ProbabilisticSatisfaction
         )
     };
-    let own = |record: &RequirementRecord| {
-        probabilistic(record).then(|| match selection {
-            EvidenceSelection::One(kind) => kind,
-            EvidenceSelection::Record | EvidenceSelection::Both => record
-                .requirements()
-                .evidence()
-                .map_or(EvidenceKind::Statistical, EvidenceKind::from),
-        })
+    let write = |position: usize,
+                 occurrence: &OccurrenceKey,
+                 record: &RequirementRecord,
+                 evidence: Option<EvidenceKind>| {
+        let requirements = record.requirements();
+        let extent = ExtentClassification::of(requirements.extent());
+        let unbounded = match requirements.extent() {
+            ClaimExtent::Bounded => Vec::new(),
+            ClaimExtent::Unbounded(domains) => domains
+                .iter()
+                .map(|(key, kind)| (key.clone(), kind))
+                .collect(),
+        };
+        RequirementItem {
+            index: RequestIndex::new(position),
+            occurrence: occurrence.clone(),
+            kind: requirements.kind(),
+            extent,
+            unbounded,
+            proof_bounds: Vec::new(),
+            subject_proof_bounds: Vec::new(),
+            model_subject: requirements.model_subject(),
+            result_bound: record.result_bound().node(),
+            conversion_context: record.conversion_context().cloned(),
+            path_condition: record.path_condition().to_vec(),
+            candidates: if evidence.is_none() && probabilistic(record) {
+                // FR-195: a probabilistic record always carries its
+                // evidence kind; one without has no backend to settle it.
+                CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named))
+            } else {
+                candidates_of(requirements, evidence, registry, named)
+            },
+            unsupported: requirements.unsupported().cloned(),
+            evidence,
+        }
+    };
+    let own = |record: &RequirementRecord| match selection {
+        EvidenceSelection::One(kind) => probabilistic(record).then_some(kind),
+        EvidenceSelection::Record | EvidenceSelection::Both => {
+            record.requirements().evidence().map(EvidenceKind::from)
+        }
     };
     let mut items: Vec<RequirementItem> = records
         .iter()

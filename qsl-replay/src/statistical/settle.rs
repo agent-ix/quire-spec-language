@@ -266,7 +266,7 @@ fn predicate_refused(outcome: &ClauseOutcome) -> StatisticalRecord {
         ClauseOutcome::FamilyRefused(code) => StatisticalRecord::failed(*code),
         ClauseOutcome::Incomplete(incomplete) => {
             StatisticalRecord::of(TerminalValue::Incomplete(IncompleteCause::LimitReached {
-                limit: ModelCheckLimit::of_counter(incomplete.limit_kind),
+                limit: ModelCheckLimit::Counter(incomplete.limit_kind),
                 value: incomplete.limit,
             }))
         }
@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(json["cause"]["kind"], "limit-reached");
         assert_eq!(json["cause"]["limit"], "evaluation-meter");
         assert_eq!(json["cause"]["value"], 4_096);
-        assert_eq!(json["cause"]["setting"], "meter");
+        assert_eq!(json["cause"]["setting"], "work_units");
         assert_eq!(
             expansion(Some(ExpansionLimit::MaxCandidates), exhausted).value,
             incomplete(ModelCheckLimit::MaxCandidates, 512)
@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(
             exhausted(LimitKind::WorkUnits).value,
             TerminalValue::Incomplete(IncompleteCause::LimitReached {
-                limit: ModelCheckLimit::EvaluationMeter,
+                limit: ModelCheckLimit::Counter(LimitKind::WorkUnits),
                 value: 9,
             })
         );

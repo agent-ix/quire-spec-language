@@ -111,22 +111,12 @@ pub enum ModelCheckLimit {
     MaxRelationTuples,
     /// An EN-4 budget (FR-191, FR-192).
     Statistical(StatisticalLimit),
-    /// An accounting counter other than the evaluation meter's work units
-    /// that a predicate read exhausted (FR-255 Behavior 9): the counter's own
+    /// An accounting counter a predicate read exhausted (FR-255 Behavior 9): the counter's own
     /// name is both the limit and the setting.
     Counter(LimitKind),
 }
 
 impl ModelCheckLimit {
-    /// The limit an exhausted accounting counter `kind` names: the
-    /// evaluation meter for its work units, otherwise the counter itself.
-    pub fn of_counter(kind: LimitKind) -> Self {
-        match kind {
-            LimitKind::WorkUnits => Self::EvaluationMeter,
-            other => Self::Counter(other),
-        }
-    }
-
     /// The limit's FR-331 spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -151,7 +141,7 @@ impl ModelCheckLimit {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
-            Self::EvaluationMeter => "meter",
+            Self::EvaluationMeter => "work_units",
             Self::MaxCandidates => "max_candidates",
             Self::SolverSteps => "max_solver_steps",
             Self::WitnessSamples => "witness_samples",
