@@ -115,6 +115,8 @@ pub(crate) enum Read {
         source_map: PackageSourceMap,
         /// See [`V2Read::effective_limits`].
         effective_limits: V2ReadLimits,
+        /// The complete IR-admitted graph retained by the reader.
+        admitted: Arc<CheckedPackageV2>,
     },
     /// `StageFailure::Refused`.
     Refused(V2ReadRefusal),
@@ -141,12 +143,14 @@ pub(crate) fn read_v2(
                 package,
                 source_map,
                 effective_limits,
+                admitted,
                 ..
             } = staged.into_value();
             Read::Verified {
                 package,
                 source_map,
                 effective_limits,
+                admitted,
             }
         }
         Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
