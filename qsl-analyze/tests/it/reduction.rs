@@ -23,7 +23,6 @@ use qsl_eval::simulation::{
     SymmetryClass, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::Category;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
@@ -33,6 +32,7 @@ use qsl_replay::{
     UndefinedLocus,
 };
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::PropertyForm;
 
 use crate::reduction_world::{

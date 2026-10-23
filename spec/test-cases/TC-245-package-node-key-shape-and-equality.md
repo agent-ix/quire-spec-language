@@ -14,8 +14,7 @@ Verify that `PackageNodeKey` is defined exactly as
 `{package: package_id, node: WireNodeId}` — the shape ADR-011:200,
 ADR-011:353, ADR-013 T-3 and FR-322-AC-26 agree on — with no second
 definition anywhere in the crate carrying a `node: NodeKey` field (the
-shape review finding FND-021 recorded as a defect, since fixed in the ADR
-text but not yet built). Also verify declared equality: two keys compare
+shape review finding FND-021 recorded as a defect). Also verify declared equality: two keys compare
 equal iff both components compare lexically equal, with no structural
 comparison over the referenced node's content substituting. Scope:
 FR-087-AC-5.
