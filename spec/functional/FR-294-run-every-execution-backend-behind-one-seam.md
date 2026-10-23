@@ -30,33 +30,13 @@ backend (ADR-029 EB-1):
 - `ExecutionBackend::prepare(&self, package: &CheckedPackage, entries:
   &[EntrySelection], limits: &PrepareLimits, cancel: &Cancel)` returns
   `Result<Self::Prepared, PrepareFailure>`. An entry the backend cannot run
-  is recorded inside `Self::Prepared` as unsupported for that entry only.
-- `PreparedEntries::unsupported(&self) -> &[(EntrySelection,
-  UnsupportedEntry)]` lists the selected entries the backend did not
-  prepare, in selection order, each with its cause.
+  settles `Unsupported` for that entry only.
 - `PreparedEntries::call(entry, arguments, environment, accounting, cancel)`
   and `PreparedEntries::evaluate(clause, input, accounting, cancel)` each
   return `Result<Evaluation<Value>, CallFailure>`, with the contract of
-  `CheckedPackageEvaluation::call` and `evaluate`. Calling an entry the
-  backend recorded unsupported returns `CallFailure::Unsupported` with that
-  entry's `UnsupportedEntry`.
-
-The seam's types:
-
-| Type | Definition |
-| --- | --- |
-| `EntrySelection` | `Function(QualifiedName)` or `Clause(ClauseSelection)`: one entry to prepare. |
-| `PrepareLimits` | `compile_work_units: u64` and `code_bytes: u64`: the translation work and the generated code size one `prepare` may use. Published defaults 16777216 units and 67108864 bytes; setting names `prepare.compile_work_units` and `prepare.code_bytes` (FR-277). The interpreter translates nothing and charges neither. |
-| `PrepareFailure` | `Limit(LimitExceeded)`, naming the `PrepareLimits` field, its configured value and the counter reached; `Cancelled(CancelCause)`; `Fault(InternalFault)`. It fails the whole `prepare` and has no per-entry variant. |
-| `UnsupportedEntry` | `backend: ExecutionBackendChoice` (FR-296), the backend that did not run the entry, and `cause: UnsupportedCause`. |
-| `UnsupportedCause` | `NotSupplied`: the caller supplied no such backend (FR-296); or `Untranslatable { location: Location }`: the source location of the first construct of the entry, in clause-node order, that the backend cannot translate. |
-
-Beside its admission, fault and cancellation arms, `CallFailure` has
-`Unsupported(UnsupportedEntry)` and `Limit(LimitExceeded)`; `Limit` comes
-only from `prepare` (FR-279).
-Unsupported is not an evaluation
-outcome (ADR-013 O-16), so it is a `CallFailure` arm and never an
-`Evaluation`.
+  `CheckedPackageEvaluation::call` and `evaluate`.
+- `PrepareFailure` holds per-entry `Unsupported` causes, `Limit`,
+  `Cancelled` and `Fault`.
 
 Three backends implement the seam: the interpreter in `qsl-eval`, which
 accepts every entry S6a accepts and runs S6a; AOT in the driver's
@@ -86,15 +66,8 @@ As the trait signatures state.
 - The interpreter backend shall accept every entry S6a accepts, and its
   `call` and `evaluate` shall return what `CheckedPackage::call` and
   `CheckedPackage::evaluate` return for the same inputs.
-- When a backend cannot run a selected entry, `prepare` shall return
-  `Ok` with that entry listed by `unsupported` with an `Untranslatable`
-  cause, and shall prepare the other selected entries.
-- When `call` or `evaluate` names an entry its `prepare` recorded
-  unsupported, the prepared value shall return `CallFailure::Unsupported`
-  with that entry's `UnsupportedEntry`.
-- When a backend's translation reaches a `PrepareLimits` bound, the
-  backend's `prepare` operation shall return `PrepareFailure::Limit` naming
-  that field and its configured value.
+- When a backend cannot run an entry, `prepare` shall settle that entry
+  `Unsupported` with a typed cause and prepare the other selected entries.
 - Each backend's `prepare` and each `PreparedEntries` method shall honour
   `&Cancel` as FR-276 states.
 - The `replay` facade shall evaluate through S6a for every request.
@@ -105,9 +78,8 @@ As the trait signatures state.
 | --- | --- | --- |
 | FR-294-AC-1 | The interpreter backend, prepared over FR-100-AC-4's unit with every function selected, returns for each AC-4 call the `Evaluation` or `CallFailure` that `CheckedPackage::call` returns for the same arguments and accounting limits; for FR-109's ConfigVersion clause, `evaluate` returns what `CheckedPackage::evaluate` returns. | Test (TC-778) |
 | FR-294-AC-2 | Passing package bytes, a `ParsedSource` or an unchecked expression to `prepare`, and package bytes read from a file to AOT's `generate` step, each fails to compile (`compile_fail` doctests with compiling controls). | Test (TC-778) |
-| FR-294-AC-3 | A test backend standing in for `jit` that cannot run the third of three selected entries returns `Ok` from `prepare`; `unsupported` lists exactly that entry with `UnsupportedEntry { backend: Jit, cause: Untranslatable { location } }`, `location` the construct the test backend names; calling the two other entries returns their interpreter results, and calling the third returns `CallFailure::Unsupported` with the same `UnsupportedEntry`. | Test (TC-778) |
+| FR-294-AC-3 | A test backend that cannot run one of three selected entries returns a prepared value for the other two and a `PrepareFailure` entry cause `Unsupported` for the third; calling the two prepared entries returns their interpreter results. | Test (TC-778) |
 | FR-294-AC-4 | `prepare` and `call` with a handle already cancelled return `PrepareFailure::Cancelled` and `CallFailure::Cancelled`. | Test (TC-778) |
-| FR-294-AC-5 | `PrepareLimits::default()` has `compile_work_units` 16777216 and `code_bytes` 67108864. A test backend that charges one compile work unit per entry, prepared over three entries with `compile_work_units` 2, returns `PrepareFailure::Limit` naming `prepare.compile_work_units`, configured value 2 and counter 3; with the default it returns `Ok`. The interpreter prepared over the same entries with both fields 0 returns `Ok`. | Test (TC-778) |
 
 ## Dependencies
 

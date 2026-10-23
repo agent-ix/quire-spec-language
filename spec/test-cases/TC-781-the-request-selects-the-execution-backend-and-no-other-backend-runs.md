@@ -18,14 +18,14 @@ Scope: FR-296-AC-1 to FR-296-AC-4.
 
 1. Call `execute` on `tests/fixtures/spine-compile.native`'s `seven` with a request that names no backend.
 2. Call `execute` choosing `jit` with `SuppliedBackends::default()`.
-3. With a test JIT that lists one entry `unsupported` with cause `Untranslatable` and an interpreter instrumented to count calls, call `execute` of that entry choosing `jit`.
-4. Read `ExecutionBackendChoice::default()`. Supply a test JIT that counts `prepare` calls as `SuppliedBackends { aot: None, jit: Some(&jit) }` and call `execute` of `seven` choosing `jit`, with the interpreter instrumented to count calls.
+3. With a test JIT that settles one entry `Unsupported` and an interpreter instrumented to count calls, call `execute` of that entry choosing `jit`.
+4. Read `ExecutionBackendChoice::default()`. Supply a test JIT that counts `prepare` calls as `SuppliedBackends { aot: None, jit: Some(&jit) }`, with the interpreter instrumented to count calls; call `execute` of `seven` choosing `jit`, then choosing `aot`.
 
 Tag the tests `#[trace("TC-781", "<AC id>")]`.
 
 ## Expected Results
 
 - Step 1: the interpreter runs and the call completes with 7.
-- Step 2: `CallFailure::Unsupported(UnsupportedEntry { backend: Jit, cause: NotSupplied })`, exit 21, before any stage.
-- Step 3: `CallFailure::Unsupported` with the JIT's `UnsupportedEntry`, exit 21, and the interpreter's call count is zero.
-- Step 4: `Interpreter`; the JIT's `prepare` count is 1, the interpreter's call count is zero, and the call completes with 7.
+- Step 2: `CallFailure::BackendNotSupplied(Jit)`, exit 21, before any stage.
+- Step 3: the unsupported outcome returns, and the interpreter's call count is zero.
+- Step 4: `Interpreter`; the JIT's `prepare` count is 1, the interpreter's call count is zero and the call completes with 7; then `CallFailure::BackendNotSupplied(Aot)` with no further `prepare` call.

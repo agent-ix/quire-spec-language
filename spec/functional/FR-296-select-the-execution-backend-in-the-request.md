@@ -26,7 +26,7 @@ EB-8). The choice is one of the seam's closed set: `interpreter`, `aot` or
 `--engine interpreter|aot|jit`.
 
 The choice is `ExecutionBackendChoice { Interpreter, Aot, Jit }`, the
-`backend` member of `ExecuteRequest` (FR-279), whose `Default` is
+`backend` member of FR-279's `ExecuteRequest`, whose `Default` is
 `Interpreter`. The binary links the backends it supports and passes them to
 `execute` as `SuppliedBackends`:
 
@@ -51,12 +51,13 @@ impl<B: ExecutionBackend> SuppliedBackend for B { /* boxes B::Prepared */ }
 
 `ExecutionBackend` has an associated `Prepared` type, so it is not
 dyn-compatible. `SuppliedBackend` is its object-safe form, implemented for
-every `ExecutionBackend` by boxing the prepared value. The interpreter is
-always available, because `qsl-eval` owns it, so `SuppliedBackends` has no
+every `ExecutionBackend` by boxing the prepared value, and it prepares
+exactly as that backend's `prepare` does. The interpreter is always
+available, because `qsl-eval` owns it, so `SuppliedBackends` has no
 interpreter member and `SuppliedBackends::default()` supplies the
 interpreter alone. A choice whose backend the caller has not supplied
 refuses before any stage as unsupported (exit 21), with
-`CallFailure::Unsupported` cause `NotSupplied`. A name outside the set refuses as an unknown argument
+`CallFailure::BackendNotSupplied` naming the choice. A name outside the set refuses as an unknown argument
 (exit 20). The chosen backend runs, or the request refuses; another backend
 never runs in its place.
 
@@ -75,12 +76,11 @@ before any stage.
 - The `execute` request shall name its backend from the closed set
   `interpreter`, `aot`, `jit`, and shall default to `interpreter`.
 - If the chosen backend is `aot` or `jit` and its `SuppliedBackends` member
-  is `None`, then `execute` shall return `CallFailure::Unsupported` with
-  `UnsupportedEntry { backend, cause: NotSupplied }`, naming the backend,
-  before any stage.
-- If the chosen backend lists the entry `unsupported` (FR-294), then
-  `execute` shall return `CallFailure::Unsupported` with that entry's
-  `UnsupportedEntry`.
+  is `None`, then `execute` shall return `CallFailure::BackendNotSupplied`
+  naming the choice, before any stage and without calling any backend's
+  `prepare`.
+- If the chosen backend settles an entry `Unsupported`, then `execute` shall
+  return that outcome.
 - The `execute` operation shall run only the chosen backend.
 
 ## Acceptance Criteria
@@ -88,9 +88,9 @@ before any stage.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-296-AC-1 | An `execute` request that names no backend runs `seven` on the interpreter and completes with 7. | Test (TC-781) |
-| FR-296-AC-2 | An `execute` request choosing `jit` with `SuppliedBackends::default()` returns `CallFailure::Unsupported(UnsupportedEntry { backend: Jit, cause: NotSupplied })`, category unsupported (exit 21), and no stage runs. | Test (TC-781) |
-| FR-296-AC-3 | With a test JIT that lists one entry `unsupported` with cause `Untranslatable`, `execute` of that entry returns `CallFailure::Unsupported` with that `UnsupportedEntry`, category unsupported (exit 21), and the interpreter is never called. | Test (TC-781) |
-| FR-296-AC-4 | `ExecutionBackendChoice::default()` is `Interpreter`; a test JIT passed as `SuppliedBackends { aot: None, jit: Some(&jit) }` through the blanket `SuppliedBackend` implementation runs `seven` when `jit` is chosen and is the only backend whose `prepare` is called, and the call completes with 7. | Test (TC-781) |
+| FR-296-AC-2 | An `execute` request choosing `jit` with only the interpreter supplied (`SuppliedBackends::default()`) returns `CallFailure::BackendNotSupplied(Jit)`, category unsupported (exit 21), and no stage runs. | Test (TC-781) |
+| FR-296-AC-3 | With a test JIT that settles one entry `Unsupported`, `execute` of that entry returns the unsupported outcome, and the interpreter is never called. | Test (TC-781) |
+| FR-296-AC-4 | `ExecutionBackendChoice::default()` is `Interpreter`. A test JIT passed as `SuppliedBackends { aot: None, jit: Some(&jit) }` through the blanket `SuppliedBackend` implementation runs `seven` when `jit` is chosen, its `prepare` is called once and the interpreter's never, and the call completes with 7; choosing `aot` with the same `SuppliedBackends` returns `CallFailure::BackendNotSupplied(Aot)` and calls neither. | Test (TC-781) |
 
 ## Dependencies
 
