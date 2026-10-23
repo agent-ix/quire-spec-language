@@ -145,3 +145,39 @@ Cargo verification did not execute: df reported 247 GiB available; the mandatory
 }
 ```
 
+
+## Dispositions
+
+Round 1: reviewed the fix commit at bed3c5d161ebed52be2e06b2377504e7110e832c against the original candidate. Original findings above are preserved.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The operand at qsl-replay/tests/call_replay_context.rs:489 is accounting.work_units=5000, which SettingName resolves to Accounting(WorkUnits); the context assertions still verify 5000. |
+| FND-002 | fixed | All three cited comment sites now use accounting-prefixed operands or stage_limits keys; bare counter field names remain bare. |
+
+## Disposition pass 1 verdict
+
+**PASS — mergeable from review.** All findings in this artifact are fixed; no new findings. The original review verdict above is historical.
+
+Inspected all fix-round source and test changes. AccountingSetting::name, CallerLimits operands, replay stage_limits and outcome settings retain accounting-prefixed names. Only xtask's case-member report projects an accounting setting to counter(), matching FR-344 and the case reader's from_counter() contract. Stage-setting report names pass through unchanged; no compatibility alias or new public API was introduced. The reported limit member and bound are preserved.
+
+Validation: the code lead reports focused red/green tests and fmt/clippy at this candidate. This disposition independently verifies code, test oracles and trace bindings; it does not claim a fresh Cargo execution. The prior mandatory build-wrapper user-bus failure remains the local execution limitation. No aggregate gate or branch edit was performed. The lead remains responsible for the required gate and for committing these latest disposition artifacts before merge.
+
+```yaml
+{
+  "dispositions": [
+    {
+      "fnd": "FND-001",
+      "outcome": "fixed",
+      "after_excerpt": "        \"accounting.work_units=5000\","
+    },
+    {
+      "fnd": "FND-002",
+      "outcome": "fixed",
+      "after_excerpt": "    /// operation returns for `accounting.work_units=0` settles `Incomplete` naming the\n    /// counter, bound, count and setting; under `accounting.work_units=1000000` it"
+    }
+  ],
+  "new_findings": []
+}
+```
+

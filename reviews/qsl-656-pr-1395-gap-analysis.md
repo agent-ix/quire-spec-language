@@ -168,3 +168,33 @@ Cargo verification did not execute: df reported 247 GiB available; the mandatory
 }
 ```
 
+
+## Dispositions
+
+Round 1: reviewed the fix commit at bed3c5d161ebed52be2e06b2377504e7110e832c against the original candidate. Original findings above are preserved.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | xtask/src/refinement/report.rs:279 converts Accounting settings through setting.counter(); other names remain unchanged. The FR-344-AC-4 test again expects name=work_units/member=accounting and the case reader accepts that bare key. |
+
+## Disposition pass 1 verdict
+
+**PASS — mergeable from review.** All findings in this artifact are fixed; no new findings. The original review verdict above is historical.
+
+Inspected all fix-round source and test changes. AccountingSetting::name, CallerLimits operands, replay stage_limits and outcome settings retain accounting-prefixed names. Only xtask's case-member report projects an accounting setting to counter(), matching FR-344 and the case reader's from_counter() contract. Stage-setting report names pass through unchanged; no compatibility alias or new public API was introduced. The reported limit member and bound are preserved.
+
+Validation: the code lead reports focused red/green tests and fmt/clippy at this candidate. This disposition independently verifies code, test oracles and trace bindings; it does not claim a fresh Cargo execution. The prior mandatory build-wrapper user-bus failure remains the local execution limitation. No aggregate gate or branch edit was performed. The lead remains responsible for the required gate and for committing these latest disposition artifacts before merge.
+
+```yaml
+{
+  "dispositions": [
+    {
+      "fnd": "FND-001",
+      "outcome": "fixed",
+      "after_excerpt": "            let name = match SettingName::from_name(limit.name) {\n                Some(SettingName::Accounting(setting)) => setting.counter(),\n                _ => limit.name,\n            };"
+    }
+  ],
+  "new_findings": []
+}
+```
+
