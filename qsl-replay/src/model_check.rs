@@ -27,5 +27,6 @@ pub mod refinement_replay;
 pub mod refinement_settle;
 pub mod replay;
 pub mod settle;
+pub mod smt_query;
 pub mod state_graph;
 pub mod step_settle;
