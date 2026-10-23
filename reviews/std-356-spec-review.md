@@ -1,5 +1,5 @@
 ---
-id: SR-16211
+id: SR-16213
 title: "Spec review of quire-spec-language PR #1304: STD-356, bare native Text, Rational and Decimal admitted and refused where used"
 type: SpecReview
 analysis: base
@@ -11,7 +11,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/TC-897
     type: reviews
 ---
-# SR-16211: Spec review of quire-spec-language PR #1304: STD-356
+# SR-16213: Spec review of quire-spec-language PR #1304: STD-356
 
 ## Summary
 
