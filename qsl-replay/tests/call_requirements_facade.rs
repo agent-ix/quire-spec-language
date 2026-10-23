@@ -8,7 +8,6 @@
 //! FR-395-AC-2 and FR-075-AC-17 (the items) are in the root crate's
 //! `tests/it/call_requirements_items.rs`.
 
-use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -19,6 +18,7 @@ use qsl_replay::{
     SourceIdentity, SpineLimits, StageLimits, Value,
 };
 use quire_exact::Cancel;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 /// Fixture K (FR-395): four records, in package order: `sq`'s `integer.mul`
 /// (0), the `x + 1` node's ordinal 0, which is `inc`'s add (1), and its

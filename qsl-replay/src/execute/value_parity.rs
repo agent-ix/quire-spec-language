@@ -17,8 +17,7 @@ use quire_eval::FamilyOutcome;
 use quire_exact::{Cancel, Incomplete, Meter, ScalarLimits};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::supplied_stop::SuppliedRun;
-use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedStop};
+use quire_semantic_value::supplied_stop::{SuppliedFailure, SuppliedRun, SuppliedStop};
 
 use super::argument::{self, Stopped};
 use super::{

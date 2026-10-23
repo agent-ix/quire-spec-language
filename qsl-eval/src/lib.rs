@@ -66,15 +66,15 @@
 //! use qsl_semantics::value::supplied::SuppliedStop;
 //! ```
 //!
-//! ```compile_fail
+//! ```compile_fail,E0432
 //! use qsl_semantics::value::supplied::SuppliedRun;
 //! ```
 //!
-//! ```compile_fail
+//! ```compile_fail,E0432
 //! use qsl_semantics::model::refusal::render_identity;
 //! ```
 //!
-//! ```compile_fail
+//! ```compile_fail,E0432
 //! use qsl_semantics::value::modulo;
 //! ```
 //!

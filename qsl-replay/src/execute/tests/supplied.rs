@@ -14,9 +14,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use quire_exact::{Cancel, CancelCause, Integer};
-use quire_semantic_value::supplied_stop::SuppliedLimits;
 use quire_semantic_value::supplied_stop::{
-    AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedLimitKind, SuppliedPhase, SuppliedStop,
+    AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedLimitKind, SuppliedLimits, SuppliedPhase,
+    SuppliedStop,
 };
 
 use super::*;

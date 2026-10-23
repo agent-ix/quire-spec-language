@@ -4,7 +4,6 @@
 //! item `items_from_requirements` writes for that member (FR-075). These
 //! need `qsl-route`, which only the root crate's tests hold.
 
-use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use qsl_foundation::{BackendId, SourceIdentity};
@@ -18,6 +17,7 @@ use qsl_route::Registry;
 use qsl_semantics::check::PackageDeclarations;
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\

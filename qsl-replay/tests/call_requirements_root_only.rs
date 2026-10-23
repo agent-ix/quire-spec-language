@@ -5,7 +5,6 @@
 //! item, so it stops compiling if the facade needs one. `SuppliedLimits`
 //! comes from its owner, `quire_semantic_value` (FR-403).
 
-use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -14,6 +13,7 @@ use qsl_replay::{
     CallValue, Cancel, CancelCause, CompileRefusal, DependencyInput, Integer, ObjectEnvironment,
     PackageId, RunRefusal, ScalarLimits, SourceIdentity, SpineLimits, Value,
 };
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\

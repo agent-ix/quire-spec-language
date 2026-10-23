@@ -195,12 +195,6 @@ pub use member::Member;
 // submodule is deleted; every former consumer now imports
 // `quire_exact::{Outcome, Undefined, Refusal}` directly -- one definition,
 // one import path, no re-export standing in for the deleted module.
-// `PreconditionFailure` was `outcome`'s own non-kernel type (FR-151 dispatch
-// vocabulary, ADR-013 T-6); it moved to `value::expression::causes`, the
-// module that owns the `StateModel` undefined cause it is the payload of,
-// narrowed to `pub(crate)` since its only consumers are inside
-// `value::expression` (rust-review "narrow API" bar: `pub` only for what
-// consumers outside the crate use).
 // `InvalidSemanticGraph` and `SemanticGraphCause` are
 // `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.

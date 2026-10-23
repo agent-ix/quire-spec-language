@@ -38,9 +38,8 @@ use quire_exact::{
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EnvironmentFailure;
-use quire_semantic_value::supplied_stop::SuppliedRun;
 use quire_semantic_value::supplied_stop::{
-    SuppliedCause, SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
+    SuppliedCause, SuppliedFailure, SuppliedRun, SuppliedStop, UnsupportedHelperStop,
 };
 
 use crate::bounds::ReplayLimits;

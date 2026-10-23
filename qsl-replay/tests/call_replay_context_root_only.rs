@@ -8,7 +8,6 @@
 //! item, so it stops compiling if the facade needs one. The six
 //! non-constructible cases are `compile_fail` doctests on `CallReplayContext`.
 
-use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use qsl_replay::CanonicalAssignment;
@@ -19,6 +18,7 @@ use qsl_replay::{
     ProofBound, ReplayRequestWire, RequestIndex, SourceIdentity, TerminalValue, Value, WireNodeId,
     WitnessValue,
 };
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\

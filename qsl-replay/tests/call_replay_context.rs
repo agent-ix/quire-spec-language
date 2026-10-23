@@ -12,7 +12,6 @@
 //! over each member, whatever that answer is, and the in-crate tests in
 //! `call_replay_context.rs` build a request through the context.
 
-use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -25,6 +24,7 @@ use qsl_replay::{
     Value, WireNodeId,
 };
 use quire_exact::Cancel;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n";

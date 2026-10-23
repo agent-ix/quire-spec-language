@@ -2242,20 +2242,24 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 fn the_subsetting_refusal_names_the_lowest_violating_member_in_any_listing_order() {
     let domain_package = r06_bundle();
     let view = view_of(&domain_package);
-    let violating = |name: &str| {
+    // a1 and a2 each declare a `some` value that is not among their `all`
+    // values; a3 is plain. A walk in document order would name a2 in the
+    // second listing.
+    let violating = |name: &str, all: &str, some: &str| {
         member_with_fields(
             name,
             "model.A",
-            vec![("model.A.all", vec!["a2"]), ("model.A.some", vec!["a3"])],
+            vec![("model.A.all", vec![all]), ("model.A.some", vec![some])],
         )
     };
-    let listings: [[&str; 4]; 2] = [["a0", "a1", "a2", "a3"], ["a3", "a1", "a2", "a0"]];
+    let listings: [[&str; 3]; 2] = [["a1", "a2", "a3"], ["a3", "a2", "a1"]];
     for listing in listings {
         for _ in 0..10 {
             let members = listing
                 .iter()
                 .map(|name| match *name {
-                    "a0" | "a1" => violating(name),
+                    "a1" => violating("a1", "a3", "a2"),
+                    "a2" => violating("a2", "a3", "a1"),
                     plain => member(plain, "model.A"),
                 })
                 .collect();
@@ -2278,7 +2282,7 @@ fn the_subsetting_refusal_names_the_lowest_violating_member_in_any_listing_order
             let ModelRefusalCause::SubsettingViolation { object, .. } = refusal.cause else {
                 panic!("expected subsetting-violation, got {:?}", refusal.cause);
             };
-            assert_eq!(object, "a0", "listing {listing:?}");
+            assert_eq!(object, "a1", "listing {listing:?}");
         }
     }
 }

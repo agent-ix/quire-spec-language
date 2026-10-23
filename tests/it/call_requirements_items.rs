@@ -5,7 +5,6 @@
 //! a value-validity record only. These need `qsl-route` and the ConfigVersion
 //! domain package, which only the root crate's tests hold.
 
-use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -20,6 +19,7 @@ use qsl_route::Registry;
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const K: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
