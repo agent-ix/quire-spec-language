@@ -18,7 +18,7 @@ the V2 reader admits the emitted packages, and that every float source form
 (bit constructors, arithmetic, comparison operators, the reserved intrinsic
 calls and the conversions into and out of a float) checks, lowers and evaluates
 as FR-397 states, with the ill-formed inputs refused. Scope: FR-397-AC-1 to
-FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-22, FR-091-AC-48 and FR-091-AC-49
+FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-23, FR-091-AC-48 and FR-091-AC-49
 (FR-397-AC-9 is TC-917's).
 
 ## Test Procedure
@@ -57,6 +57,9 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-22, FR-091-AC-48 and FR-091-AC-49
 16. Compile and run the negations of FR-397-AC-21; read the `negate` nodes.
 17. Compile the structural comparisons of FR-397-AC-22; read the
     `structural` nodes and their leaves; run the equality vectors.
+18. Compile `=` and `!=` over the `Set` and `Bag` parameters of FR-397-AC-23,
+    read the `structural` nodes and their `["inner"]` leaf, read the package
+    through the V2 reader, and run the set, bag and sequence vectors.
 
 ## Expected Results
 
@@ -103,3 +106,8 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-22, FR-091-AC-48 and FR-091-AC-49
 17. `=` is one `structural.eq` node and `!=` one `structural.ne`, each listing
     the float leaves with the law `ieee_profile`; every vector gives the listed
     Boolean.
+18. Each set and bag comparison is one `structural.eq` or `structural.ne`
+    node listing the `["inner"]` float leaf with the law `ieee_profile` and
+    mode `null`; the V2 reader admits the package; members match by bit
+    identity, so every set and bag vector gives the listed Boolean, and the
+    NaN sequence compares unequal to itself.
