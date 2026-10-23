@@ -180,8 +180,8 @@ fn owners_document(touch_diamond: bool) -> Vec<u8> {
                 "operations": operations,
                 "clauses": [],
                 "supertypes": supertypes,
-                "states": [state(name, &from), state(name, &to)],
-                "transitions": [transition(name, &from, &to)],
+                "states": [state(name, from), state(name, to)],
+                "transitions": [transition(name, from, to)],
             }),
         )
     };
