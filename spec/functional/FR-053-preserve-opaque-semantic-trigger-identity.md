@@ -6,13 +6,22 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-052, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-093, type: references }
   - { target: ix://agent-ix/quire-specification/FR-230, type: references }
-  - { target: ix://agent-ix/quire-specification/FR-300, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-479, type: references }
+  - { target: ix://agent-ix/quire-spec-language/FR-449, type: references }
 ---
 # FR-053: Preserve opaque semantic-trigger identity across native temporal evaluation
 
 ## Description
 
 **RETIRED (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs`.**
+
+On the spine, the opaque semantic-trigger identity is the `trigger_event`
+origin identity of QSpec FR-479's protocol-obligation activation binding.
+The protocol consumer (QProtocol) constructs that binding from one FR-449
+activation map row of the checked package and the admitted trigger
+observation it holds. QSL supplies the row and carries no observation, no
+trigger bytes and no obligation identity. The binding's refusals are QSpec
+FR-479's.
 
 When a downstream integration submits an event-triggered native-temporal
 evaluation, the compiler SHALL retain the semantic trigger-event identity as
@@ -58,7 +67,7 @@ changed trigger is a different request/result rather than a correction of the
 same obligation.
 
 This requirement publishes only the native-temporal owner side of QSpec
-FR-300. QProtocol compares the retained bytes to QObs's authority-qualified
+FR-479. QProtocol compares the retained bytes to QObs's authority-qualified
 subject and binds the selected activation site; this compiler does not import
 QObs Rust types or reconstruct a protocol obligation.
 
@@ -70,7 +79,7 @@ retained evidence rather than parse or reconstruct it. The version-two result
 view SHALL expose only the checked activation state already admitted by strict
 result reading. Those accessors carry no QProtocol control handle, QObs subject,
 obligation identity, or construction operation; QProtocol alone joins the owner
-facts into the FR-300 binding.
+facts into the FR-479 binding.
 
 ## Acceptance Criteria
 
@@ -88,5 +97,5 @@ facts into the FR-300 binding.
 - [FR-052](FR-052-publish-native-temporal-evaluation-owner.md) owns the
   canonical request/result evaluation and strict-reader boundary extended here.
 - QSpec FR-093 and FR-230 establish semantic-trigger and obligation identity.
-- QSpec FR-300 establishes the wider activation-binding contract consumed by
-  QProtocol.
+- QSpec FR-479 establishes the activation-binding contract that QProtocol
+  constructs from an FR-449 activation map row.
