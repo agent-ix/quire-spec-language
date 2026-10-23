@@ -31,7 +31,7 @@ FR-100's native-run/1 request for a `1-draft` program is the command encoding
 of `execute` with a function selection; FR-109's `run_clause` is `execute`
 with a clause selection.
 
-### Signature
+## Inputs
 
 ```rust
 pub fn execute(
@@ -59,52 +59,45 @@ pub struct ExecuteLimits {
 }
 ```
 
-`ExecutionBackendChoice` and `SuppliedBackends` are FR-296's.
-`ExecuteLimits::default()` holds both published defaults (FR-277).
-`execute` prepares exactly the selected entry, as one `EntrySelection`
-(FR-294), with the chosen backend's `PrepareLimits`, then calls it with the
-accounting limits.
-
-A `PrepareFailure` that is not an unsupported entry becomes the
-`CallFailure` arm of the same meaning, with the same payload: `Limit`
-becomes `CallFailure::Limit(LimitExceeded)`, `Cancelled` becomes
-`CallFailure::Cancelled`, and `Fault` becomes `CallFailure::Fault`. A chosen
-backend the caller did not supply is `CallFailure::BackendNotSupplied`,
-naming the choice (FR-296). `Limit` and `BackendNotSupplied` are `CallFailure`
-arms beside those FR-294 and FR-401 give it; neither is an `Evaluation`,
-because a prepare limit and an absent backend are not evaluation outcomes
-(ADR-013 O-16).
-
-## Inputs
-
 - `&CheckedPackage`.
 - The selection: a function's `QualifiedName` with its `Arguments`, or a
   `ClauseSelection` with its `ClauseInput`.
 - The `ObjectEnvironment`.
-- The accounting limits (`ScalarLimits`).
-- The execution backend the caller chose, and the backends the caller
-  supplies (FR-296).
+- The execution backend the caller chose, `ExecutionBackendChoice`, and the
+  backends the caller supplies, `SuppliedBackends` (FR-296).
+- The limits: the accounting limits (`ScalarLimits`) and the
+  `PrepareLimits` (FR-294). `ExecuteLimits::default()` is both defaults.
 - `&Cancel`.
 
 ## Outputs
 
 `Result<Evaluation<Value>, CallFailure>`: the `Evaluation` the backend's
-`call` or `evaluate` returns, or `CallFailure::Input`, `CallFailure::Fault`
-or `CallFailure::Cancelled`.
+`call` or `evaluate` returns, or a `CallFailure`: `Input`, `Fault` or
+`Cancelled` from the call or from `prepare`; `Limit(PrepareLimitReached)`
+(FR-294) when `prepare` reaches a `PrepareLimits` bound; `Unsupported` with the `UnsupportedEntry` when the
+chosen backend is not supplied or did not prepare the entry.
 
 ## Behavior
 
-- The `execute` operation shall prepare the selected entry with the chosen
-  execution backend and call it with the arguments, environment and
+- The `execute` operation shall prepare exactly the selected entry with the
+  chosen execution backend and call it with the arguments, environment and
   accounting limits.
-- If the chosen backend's `prepare` settles the entry `Unsupported`, then
-  `execute` shall return that unsupported outcome as its result.
+- If the chosen backend is not supplied, then `execute` shall return
+  `CallFailure::Unsupported(UnsupportedEntry { backend, cause: NotSupplied
+  })` naming the chosen backend, without calling any backend's `prepare`.
+- If the chosen backend's `prepare` lists the entry `unsupported`, then
+  `execute` shall return `CallFailure::Unsupported` with that entry's
+  `UnsupportedEntry`.
+- If `prepare` returns `PrepareFailure::Limit(LimitExceeded)`, then
+  `execute` shall return `CallFailure::Limit(PrepareLimitReached)` holding
+  that `LimitExceeded`'s setting, configured value and counter reached, and
+  no locus.
+- If `prepare` returns `PrepareFailure::Cancelled` or `Fault`, then
+  `execute` shall return `CallFailure::Cancelled` or `Fault` with the same
+  payload.
 - The `execute` operation shall return the same `Evaluation` as
   `CheckedPackage::call` (for a function) or `CheckedPackage::evaluate` (for
   a clause) when the chosen backend is the interpreter.
-- If the chosen backend's `prepare` returns `PrepareFailure::Limit`,
-  `Cancelled` or `Fault`, then `execute` shall return `CallFailure::Limit`,
-  `Cancelled` or `Fault` with the same payload, and shall make no call.
 
 ## Acceptance Criteria
 
@@ -113,7 +106,7 @@ or `CallFailure::Cancelled`.
 | FR-279-AC-1 | `execute` with the interpreter backend over FR-100-AC-4's unit returns, for `lt(5, 3)`, `flag(1)` and `id(4)`, the `Evaluation` `CheckedPackage::call` returns for the same arguments, and for `id(12)` the same `CallFailure::Input`. | Test (TC-760) |
 | FR-279-AC-2 | `execute` with a clause selection over FR-109's ConfigVersion unit returns the `Evaluation` `qsl_replay::spine::run_clause` reports for the same clause and input. | Test (TC-760) |
 | FR-279-AC-3 | For each FR-100-AC-1, AC-4 and AC-6 request, the `outcome` member of FR-100's `spine-run-result/1` document equals the rendering of `execute`'s result for the same source, function, arguments and accounting limits. | Test (TC-760) |
-| FR-279-AC-5 | `execute` choosing a supplied test backend standing in for `aot` whose `prepare` returns `PrepareFailure::Limit` naming `prepare.code_bytes` returns `CallFailure::Limit` with the same `LimitExceeded` and makes no call; with one whose `prepare` returns `PrepareFailure::Fault`, `CallFailure::Fault` with the same `InternalFault`; with one whose `prepare` returns `PrepareFailure::Cancelled`, `CallFailure::Cancelled` with the same cause. `ExecuteLimits::default()` equals `ExecuteLimits { accounting: ScalarLimits::default(), prepare: PrepareLimits::default() }`. | Test (TC-760) |
+| FR-279-AC-4 | `execute` choosing a supplied test backend standing in for `aot` whose `prepare` returns `PrepareFailure::Limit` naming `prepare.code_bytes` with configured value 1 and counter 2 returns `CallFailure::Limit(PrepareLimitReached { setting: PrepareSetting::CodeBytes, bound: 1, actual: 2 })`, whose `setting.name()` is `prepare.code_bytes`, whose category is incomplete (exit 22) and which is built at the path `quire_eval::PrepareLimitReached`; with one whose `prepare` returns `PrepareFailure::Fault`, `CallFailure::Fault` with the same `InternalFault`. | Test (TC-760) |
 
 ## Dependencies
 
