@@ -2117,13 +2117,13 @@ mod tests {
             json_of(&OutcomeDocument::from_call(&outcome))["result"].clone()
         };
         assert_eq!(
-            run_under("work_units=0"),
+            run_under("accounting.work_units=0"),
             json!({"kind": "incomplete", "limit": {
                 "kind": "work_units", "bound": "0", "counter": "1",
-                "field": "work_units", "setting": "work_units"}})
+                "field": "work_units", "setting": "accounting.work_units"}})
         );
         assert_eq!(
-            run_under("work_units=1000000"),
+            run_under("accounting.work_units=1000000"),
             json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
         );
     }
@@ -2195,7 +2195,7 @@ mod tests {
                 "artifacts": [],
                 "result": {"kind": "incomplete", "limit": {
                     "kind": "work_units", "bound": "0", "counter": "1", "field": "work_units",
-                    "setting": "work_units"}},
+                    "setting": "accounting.work_units"}},
             })
         );
 

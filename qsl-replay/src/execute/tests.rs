@@ -2453,8 +2453,8 @@ fn tc_921_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges()
             ..effective
         };
         for (name, bound) in [
-            ("work_units", effective.work_units),
-            ("value_occurrences", effective.value_occurrences),
+            ("accounting.work_units", effective.work_units),
+            ("accounting.value_occurrences", effective.value_occurrences),
         ] {
             split.stage_limits.insert(name.to_owned(), bound);
         }

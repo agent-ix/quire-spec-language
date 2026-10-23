@@ -479,7 +479,8 @@ fn tc_921_a_stage_limits_counter_entry_sets_the_budget() {
     let nodes = 9_u64;
     let mut wire = fixture.input("p", value.clone());
     wire.accounting_limits.work_units = 10_000;
-    wire.stage_limits.insert("work_units".to_owned(), nodes - 1);
+    wire.stage_limits
+        .insert("accounting.work_units".to_owned(), nodes - 1);
     let request = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).expect("decodes");
     assert_eq!(request.accounting_limits().work_units, nodes - 1);
     assert_eq!(
@@ -500,7 +501,9 @@ fn tc_921_a_stage_limits_counter_entry_sets_the_budget() {
 
     let mut raised = fixture.input("p", value.clone());
     raised.accounting_limits.work_units = 0;
-    raised.stage_limits.insert("work_units".to_owned(), 10_000);
+    raised
+        .stage_limits
+        .insert("accounting.work_units".to_owned(), 10_000);
     let raised = assert_reproduced(replay(raised, ReplayLimits::default()));
     let unlimited = assert_reproduced(replay(fixture.input("p", value), ReplayLimits::default()));
     assert_eq!(raised.charges(), unlimited.charges());
