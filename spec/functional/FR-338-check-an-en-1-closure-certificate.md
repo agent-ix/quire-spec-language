@@ -52,6 +52,10 @@ claims and finds every successor inside it and no bad state.
 - Over a protocol subject with an `on each` protocol (FR-209), the
   request's instance bound: `max_live_instances: Option<u64>`, the value
   the run used, `None` meaning 3, the default ADR-027 AE-4 publishes.
+- For an SMT proof checked by FR-314, the request's encoding limits:
+  `smt_encoding: SmtEncodingLimits` (FR-315), the values of the run's
+  `ModelCheckRequest.smt_encoding` (FR-126), under which CG's SMT backend
+  encoded the item's queries. EN-1's own checks read no member of it.
 - A `ClosureCertificate`.
 
 ```rust
