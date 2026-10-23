@@ -19,7 +19,9 @@ Reread the output with exact bindings. Mutate format, fields, source selection
 and syntax.
 Copy only the request-selected sources into a fresh compile directory. Check
 a request past `dependent_bytes` and the same request with the limit raised,
-and unchanged catalog spellings. Capture the process streams and require
+a library source taking the request one byte over `dependent_bytes` and the
+same request with the limit raised, a request of 65 small library files
+under the limit, and unchanged catalog spellings. Capture the process streams and require
 that `command` writes nothing to them.
 
 ## Expected Results
