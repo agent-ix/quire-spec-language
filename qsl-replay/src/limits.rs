@@ -19,7 +19,7 @@ use crate::bounds::ReplayLimits;
 use crate::spine::{default_accounting, SpineLimits, DEFAULT_WORK_UNITS};
 
 /// The call's accounting limits (`quire.value.accounting/v1`): each of the
-/// ten counters is an [`AccountingSetting`] named by the counter (FR-255's
+/// ten counters is an [`AccountingSetting`] named `accounting.<counter>` (FR-255's
 /// accounting table). A newtype over the foreign [`ScalarLimits`]. The
 /// default is FR-100's: `work_units` 1,000,000 and every other counter
 /// `u64::MAX`.
@@ -373,7 +373,11 @@ mod tests {
                     3,
                     "an accounting row has three cells: {cells:?}"
                 );
-                assert_eq!(cells[0], cells[1], "a counter is its own setting");
+                assert_eq!(
+                    cells[0].trim_matches('`'),
+                    format!("accounting.{}", cells[1].trim_matches('`')),
+                    "a counter's setting is `accounting.<counter>`"
+                );
                 (cells[0].trim_matches('`').to_owned(), cells[2].to_owned())
             })
             .collect()
@@ -659,7 +663,8 @@ mod tests {
                 );
             }
         }
-        let max = CallerLimits::from_operands(["work_units=18446744073709551615"]).unwrap();
+        let max =
+            CallerLimits::from_operands(["accounting.work_units=18446744073709551615"]).unwrap();
         assert_eq!(max.accounting.0.work_units, u64::MAX);
     }
 
@@ -680,28 +685,33 @@ mod tests {
         for (operands, operand, cause) in [
             (vec!["depth=1"], "depth=1", UsageCause::UnknownSetting),
             (
-                vec!["accounting.work_units=1"],
-                "accounting.work_units=1",
+                vec!["work_units=1"],
+                "work_units=1",
                 UsageCause::UnknownSetting,
             ),
             (
-                vec!["work_units=ten"],
-                "work_units=ten",
+                vec!["accounting=1"],
+                "accounting=1",
+                UsageCause::UnknownSetting,
+            ),
+            (
+                vec!["accounting.work_units=ten"],
+                "accounting.work_units=ten",
                 UsageCause::NotAnInteger,
             ),
             (
-                vec!["work_units=-1"],
-                "work_units=-1",
+                vec!["accounting.work_units=-1"],
+                "accounting.work_units=-1",
                 UsageCause::NotAnInteger,
             ),
             (
-                vec!["work_units=18446744073709551616"],
-                "work_units=18446744073709551616",
+                vec!["accounting.work_units=18446744073709551616"],
+                "accounting.work_units=18446744073709551616",
                 UsageCause::NotAnInteger,
             ),
             (
-                vec!["work_units=5", "work_units=6"],
-                "work_units=6",
+                vec!["accounting.work_units=5", "accounting.work_units=6"],
+                "accounting.work_units=6",
                 UsageCause::Repeated,
             ),
         ] {
