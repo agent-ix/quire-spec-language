@@ -509,7 +509,10 @@ fn the_provider_entry_serves_a_package_s4_refuses_to_emit() {
     let TerminalValue::Measured(verdict) = record.value() else {
         panic!("expected measured, got {:?}", record.value());
     };
-    assert_eq!(verdict.decision, qsl_replay::statistical::Decision::Rejected);
+    assert_eq!(
+        verdict.decision,
+        qsl_replay::statistical::Decision::Rejected
+    );
     assert_eq!(verdict.witnesses.len(), 3);
     for witness in &verdict.witnesses {
         assert_eq!(
