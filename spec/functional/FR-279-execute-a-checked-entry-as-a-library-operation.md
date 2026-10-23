@@ -80,8 +80,9 @@ chosen backend is not supplied or did not prepare the entry.
 ## Behavior
 
 - The `execute` operation shall prepare exactly the selected entry with the
-  chosen execution backend and call it with the arguments, environment and
-  accounting limits.
+  chosen execution backend under `limits.prepare`, the one `PrepareLimits`
+  that applies to whichever backend is chosen, and call it with the
+  arguments, environment and `limits.accounting`.
 - If the chosen backend is not supplied, then `execute` shall return
   `CallFailure::Unsupported(UnsupportedEntry { backend, cause: NotSupplied
   })` naming the chosen backend, without calling any backend's `prepare`.
