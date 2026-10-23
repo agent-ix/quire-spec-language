@@ -386,7 +386,8 @@ A-4).
   evaluator limits; `&Cancel`.
 - **Output.** `MonitorOutcome`: one record per clause. The record holds the
   verdict under ADR-014 A-4. Over a finite trace the verdict is a violation
-  at a position, with FR-330's `TemporalCounterexample`, or pending. Over a
+  at a position, with the QSpec FR-351 separating witness and FR-330's
+  `TemporalCounterexample`, or pending. Over a
   lasso it is a violation or `tested`.
 - **Terminal records.** A violation is category violation (exit 10). An
   evaluation undefined at a position is a violation there, with cause
