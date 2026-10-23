@@ -12,7 +12,7 @@ relationships:
 
 Verify the AQ-7 loop for an `each` refutation, that partial-order and constrained paths are emitted unchanged, that no counterexample carries reduction data, and determinism.
 
-Scope: FR-161-AC-3 to FR-161-AC-4.
+Scope: FR-161-AC-3 to FR-161-AC-5.
 
 ## Test Procedure
 
@@ -20,6 +20,11 @@ Fixtures: ADR-021 §7.1's `each` refutation; the counterexamples of TC-577 and T
 
 1. Concretise the `each` refutation and replay it with the fairness re-check.
 2. Emit the TC-577 and TC-580 counterexamples; decode every counterexample of TC-585 and this case as `TemporalCounterexample` and scan for canonical states, permutations and reduction names; concretise TC-585 step 1 twice.
+3. Read the transitions counted and the `work_units` charged while
+   concretising TC-585 step 1's loop and AC-2's lasso and while emitting the
+   TC-577 and TC-580 counterexamples; find the least `max_transitions` `M`
+   under which AC-2's run returns `Violated`, and rerun under `M - 1`.
+
 
 Tag the tests `#[trace("TC-586", "FR-161-AC-n")]`.
 
@@ -27,3 +32,6 @@ Tag the tests `#[trace("TC-586", "FR-161-AC-n")]`.
 
 - Step 1: a loop from and to `(0,0,0)` taking `upd(a)`, `upd(b)`, `upd(c)` and passing `a.versionNumber = 2`; replay confirms each identity taken and settles `reproduced-with-evaluated-witness`.
 - Step 2: unchanged paths that replay; every decode succeeds and the scan finds nothing; byte-equal results.
+- Step 3: 3 and 6; 2 and 4; none; under `M - 1`,
+  `Stopped{ResourceExhausted, Some({MaxTransitions, M - 1})}` with no
+  counterexample.
