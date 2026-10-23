@@ -143,7 +143,7 @@ pub enum HybridTerm {
 pub struct CheckedHybridClaim {
     pub model: HybridModelIndex,
     pub formula: HybridFormula,
-    pub horizon: Option<u64>,                 // whole seconds; None for an unbounded claim
+    pub horizon: Option<ExactRational>,       // seconds; None for an unbounded claim
 }
 pub enum HybridFormula {
     Holds(HybridTerm),                        // holds(e), and true and false
@@ -154,7 +154,12 @@ pub enum HybridFormula {
     Until(Option<HybridInterval>, Box<HybridFormula>, Box<HybridFormula>),
     Release(Option<HybridInterval>, Box<HybridFormula>, Box<HybridFormula>),
 }
-pub struct HybridInterval { pub lower: u64, pub upper: Option<u64> } // seconds; None for `*`
+pub struct HybridInterval {                   // seconds
+    pub lower: ExactRational,
+    pub lower_open: bool,
+    pub upper: Option<ExactRational>,         // None for `*`
+    pub upper_open: bool,
+}
 ```
 
 `CheckedPackage::hybrid_models: Vec<CheckedHybridModel>` and
@@ -270,6 +275,18 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
   the operator.
 - An operator with no interval is admitted only where the unit's profile
   admits it (FR-123), and its subformula is unbounded.
+- **Intervals.** An `interval`'s `uint` bounds SHALL count seconds, each end
+  closed, and S3 SHALL record each bound as an exact rational.
+- An interval the claim's profile does not admit (QSpec FR-370 "Placement
+  and profile fit") SHALL refuse `unsupported_construct`/`expression-form`
+  at its span, naming the profile: under `quire.temporal.timed/v1` an
+  interval with the upper bound `*`; under
+  `quire.temporal.event-position.false-extension/v1`,
+  `quire.temporal.fixed-sample.false-extension/v1` and
+  `quire.temporal.timestamped-event.finite-window/v1` an interval with the
+  upper bound `*`, and an operator with no interval, at the operator's span;
+  and under every profile other than `quire.temporal.timed/v1` an interval
+  with an open end or a bound that is not a whole number of seconds.
 - S3 SHALL compute the claim's horizon as the reach `r` of its formula,
   the latest time in seconds whose state the formula reads:
   `r(Holds(_))` is 0; `r(Not(f))` is `r(f)`; `r(Logic(_, f, g))` is the
@@ -348,7 +365,11 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
     `hybrid_model` node, with the `temporal_profile` law the claim's `using`
     profile selects, clock `model-time`, activation
     `origin` and its `HybridFormula` as QSpec FR-370 formula nodes, each
-    `HybridInterval` in the integer form. `Holds(Boolean(true))` and
+    `HybridInterval` in the form QSpec FR-370 admits under the claim's
+    profile: under `quire.temporal.timed/v1` the timed form, `lower` and
+    `upper` exact rational seconds with `lower_end` and `upper_end` `open`
+    or `closed` as the interval's ends are, and under every other profile
+    the integer form. `Holds(Boolean(true))` and
     `Holds(Boolean(false))` SHALL be the formula nodes of
     `quire.op.temporal.true` and `quire.op.temporal.false`, and every other
     `Holds(t)` the node of `quire.op.temporal.holds` over `t`'s term node,
@@ -376,8 +397,9 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 | FR-447-AC-3 | `SlowEnough` checks to a `CheckedHybridClaim` over `Braking` with the formula `Always(Some([0, 10]), Holds(Compare(Lt, Variable(0), Constant(30))))` and horizon 10; with the body `always [0, 10] eventually [0, 5] holds(h.v < 30)` the horizon is 15, with `holds(h.v < 30) until [0, 4] holds(h.v = 0)` it is 4, and with `always holds(h.v < 30)` or `always [0, *] holds(h.v < 30)` it is `None`. `once [0, 2] holds(h.v = 0)` is refused `unsupported_construct`/`expression-form`; `clock "model-steps"`, `on each`, a `fair` clause and a capture are each refused `unsupported_construct`/`declaration-form`; and `h.w` is refused `missing_declaration`/`missing-name`. | Test (TC-1187) |
 | FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, whose `claim` names `SlowEnough`'s emitted `temporal_clause` node and its `claim` occurrence; with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with only a process fixture hybrid provider registered the item routes to it, which receives the package's v2 bytes and reads `Braking` and `SlowEnough` from their QSpec FR-481 nodes; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different checked package identities. | Test (TC-1187) |
 | FR-447-AC-5 | S4 emits the package holding `Braking` and `SlowEnough`, and QSpec's v2 reader admits it: one `hybrid`/`hybrid_model` node declared `[Braking]` whose variables are the parameter nodes of `v`, `a` and `t` at levels 0 to 2 classed `hybrid`, `hybrid` and `clock`, whose modes are `[Braking, Moving]` and `[Braking, Stopped]` in that order, `Moving`'s rates referencing the nodes of `-a`, `0` and `1` and its one transition node `target` 1 with the reset `(0, 0)`; and one `temporal_clause` node over a parameter typed by the model node, clock `model-time`. Replacing `Moving`'s `v' = -a` by `v' = -(2 * a)` changes the `package_id`. | Test (TC-1187) |
-| FR-447-AC-6 | QSL's I2 reader admits AC-5's emitted package and reads back `Braking`'s `CheckedHybridModel` and `SlowEnough`'s `CheckedHybridClaim` with horizon 10, each equal to the checked one; it admits QSpec's `positive-all-families.json`, whose `Tank` model has a bare-variable rate and reset and a `hybrid` variable whose rates are all the literal `1`; and, with `dependencies`, keys and `package_id` rebuilt after each edit, it refuses `Moving` with a fourth rate `invalid_model_binding`/`malformed-declaration` at `rates`, every variable classed `clock` `invalid_package`/`invalid-value` at `v`'s class literal, and `SlowEnough`'s clock `model-steps` `invalid_package`/`invalid-value` at `/body/arguments/1`, each as QSpec FR-481 orders them; a model body with `modes` before `variables` refuses `malformed_wire`. | Test (TC-1187) |
-| FR-447-AC-7 | A claim body `always [0, 10] true` emits a `quire.op.temporal.true` formula node under the `always` node and no `quire.op.temporal.holds` node over a Boolean literal; `SlowEnough` emits the `temporal_profile` law its `using` alias selects. | Test (TC-1187) |
+| FR-447-AC-13 | QSL's I2 reader admits AC-5's emitted package and reads back `Braking`'s `CheckedHybridModel` and `SlowEnough`'s `CheckedHybridClaim` with horizon 10, each equal to the checked one; it admits QSpec's `positive-all-families.json`, whose `Tank` model has a bare-variable rate and reset and a `hybrid` variable whose rates are all the literal `1`; and, with `dependencies`, keys and `package_id` rebuilt after each edit, it refuses `Moving` with a fourth rate `invalid_model_binding`/`malformed-declaration` at `rates`, every variable classed `clock` `invalid_package`/`invalid-value` at `v`'s class literal, and `SlowEnough`'s clock `model-steps` `invalid_package`/`invalid-value` at `/body/arguments/1`, each as QSpec FR-481 orders them; a model body with `modes` before `variables` refuses `malformed_wire`. | Test (TC-1187) |
+| FR-447-AC-14 | A claim body `always [0, 10] true` emits a `quire.op.temporal.true` formula node under the `always` node and no `quire.op.temporal.holds` node over a Boolean literal; `SlowEnough` emits the `temporal_profile` law its `using` alias selects. | Test (TC-1187) |
+| FR-447-AC-15 | `SlowEnough` written `using` a profile alias selecting `quire.temporal.timed/v1` checks with the interval `{lower: 0, lower_open: false, upper: Some(10), upper_open: false}` and horizon `Some(10)`, and S4 emits its `always` node with the timed interval `{lower: 0, upper: 10, lower_end: closed, upper_end: closed}` in exact rational seconds and the `timed/v1` law, which QSpec's v2 reader admits; under the infinite-trace profile the same claim emits the integer `[0, 10]`. Under `timed/v1`, `always [0, *] holds(h.v < 30)` refuses at S3 `unsupported_construct`/`expression-form` at the interval's span, naming the profile; under `quire.temporal.event-position.false-extension/v1`, `always holds(h.v < 30)` refuses the same at the operator's span. | Test (TC-1187) |
 
 ## Dependencies
 
