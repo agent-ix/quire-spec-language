@@ -63,3 +63,10 @@ Not mergeable until FND-001 and FND-002 are fixed. Resolution, lookup, the
 selectable-clause check and the `CheckedRefinement` shape follow QSpec FR-375
 and ADR-015. The emitted node and one resolution boundary need stating and
 testing.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (3c3a3ba4): S4 writes `protocol` as the dependency clause's `PackageNodeKey`, the dependency's `package_id` with the clause's node id. The refinement node id then differs from the local form, and FR-147-AC-15 and TC-552 step 15 test both. The PR adds no `dependencies` entry for a dependency's clause, and that deviation is correct. QSpec FR-322 says that a node's `dependencies` names nodes of its own graph only, and that a `dependency_reference` target is never listed there. FR-375's "The selected protocol clause's node is also one of the node's `dependencies`" therefore applies only to a clause of the declaring package. ADR-015 D-5 governs only the `NodeKey` lookup, not this point; the FR-147 bullet cites FR-322 for it, which is right. |
+| FND-002 | fixed | Round 1: FR-147 states that a protocol the declaring unit declares over a dependency's model belongs to the declaring package and refuses `missing-name`. FR-147-AC-15 and TC-552 step 15 add `abstract Spec::LocalTwice`, refusing at `LocalTwice`. |
