@@ -27,7 +27,7 @@ relationships:
 EN-5's cost SHALL be bounded only by `ExactProbLimits`, ADR-014 B-5 budgets
 that the request sets, each with a published default (ADR-028 LM-1 to
 LM-3). Reaching one SHALL stop the run and name the budget, its value and
-the request member that raises it. QSL SHALL settle every item routed to
+the request setting that raises it. QSL SHALL settle every item routed to
 EN-5 as exactly one FR-331 terminal record with ADR-018's verdict kinds and
 the `ProofBasis` members `ExactValue` and `ValueBounds` (XV-1 to XV-7),
 never with ADR-024's `measured`.

@@ -12,7 +12,7 @@ relationships:
 
 Verify the enabledness and effects of the attempt, event, channel, fork, join, timeout and finish steps, the folding of structural moves and the waiting rule.
 
-Scope: FR-206-AC-1 to FR-206-AC-10.
+Scope: FR-206-AC-1 to FR-206-AC-11.
 
 ## Test Procedure
 
@@ -38,6 +38,9 @@ Scope: FR-206-AC-1 to FR-206-AC-10.
 10. Run FR-206-AC-10's protocol, whose `effect` anchors on the qualified
     `Main::P::left::A` after the `all` join, and read `event(E)`'s enabledness
     and the root's environment after `join`.
+11. Run FR-206-AC-11's `join predicate(f) [c, a] outstanding cancel`
+    protocol and its `[a, c]` variant, and read `join(P)`'s enabledness at
+    every state.
 
 Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 
@@ -64,3 +67,5 @@ Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
   any of them.
 - Step 10: `event(E)` is enabled after `join`, with `A`'s binder in the root's
   environment.
+- Step 11: `join(P)` enabled exactly where FR-206-AC-11 states; the `[a, c]`
+  variant reaches the same states and transitions.
