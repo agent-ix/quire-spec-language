@@ -1,5 +1,5 @@
 ---
-id: TC-1200
+id: TC-1230
 title: "The certificate check and replay run under the run's memory and instance bounds"
 type: TC
 relationships:
@@ -10,7 +10,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-217
     type: verifies
 ---
-# TC-1200: The certificate check and replay run under the run's memory and instance bounds
+# TC-1230: The certificate check and replay run under the run's memory and instance bounds
 
 ## Description
 
@@ -20,7 +20,7 @@ their `Tso` and `Ra` components under the memory bounds, and expand
 subject carry; that a certificate with a state a bound cuts is rejected; and
 that a counterexample step a bound cuts refuses.
 
-Scope: FR-338-AC-17, FR-338-AC-18, FR-227-AC-5, FR-217-AC-8.
+Scope: FR-338-AC-21, FR-338-AC-22, FR-227-AC-5, FR-217-AC-8.
 
 ## Test Procedure
 
@@ -39,8 +39,8 @@ Scope: FR-338-AC-17, FR-338-AC-18, FR-227-AC-5, FR-217-AC-8.
    replay the two-`activate` prefix with 2, then 1; replay FR-209-AC-7's
    lasso with 1.
 
-Tag the tests `#[trace("TC-1200", "FR-338-AC-n")]`,
-`#[trace("TC-1200", "FR-227-AC-5")]` and `#[trace("TC-1200", "FR-217-AC-8")]`.
+Tag the tests `#[trace("TC-1230", "FR-338-AC-n")]`,
+`#[trace("TC-1230", "FR-227-AC-5")]` and `#[trace("TC-1230", "FR-217-AC-8")]`.
 
 ## Expected Results
 
