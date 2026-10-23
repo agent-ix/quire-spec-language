@@ -48,3 +48,13 @@ Merge status: Conflicts with origin/main d0a756b2b (47 commits behind): FR-128 (
 ## Verdict
 
 **Not mergeable as it stands**: four content conflicts with main (FR-128, FR-158, TC-539, TC-581) and two medium findings. No high finding, and no deferral or narrowing language in the PR's added lines. Gate `QSPEC_DIR=<QSpec #406 head> make check-spec-validation`: exit 0, 19 warnings (the baseline count; the 2 on a touched file are at FR-104 line 43, not in the delta). Ids unique across 61 open heads (FR-158-AC-5 is main's, so AC-6 is free).
+
+## Dispositions
+
+| FND | Round | Outcome | Reason |
+| --- | --- | --- | --- |
+| FND-001 | 1 | fixed | Fixed in head 38d14082; the fix agrees with the finding and the vectors were derived by hand. |
+| FND-002 | 1 | fixed | Fixed in head 38d14082; the fix agrees with the finding and the vectors were derived by hand. |
+| FND-003 | 1 | fixed | Fixed in head 38d14082; the fix agrees with the finding and the vectors were derived by hand. |
+
+Round 1 verdict: All three findings fixed, no new defect; mergeable (merge-tree with main clean; gate exit 0, 19 warnings).
