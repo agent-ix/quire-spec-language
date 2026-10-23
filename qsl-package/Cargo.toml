@@ -67,6 +67,8 @@ qsl-cst = { path = "../qsl-cst" }
 # dependency that does.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The tests build v2 wires and golden preimages as JSON.
+# The tests derive `Deserialize` for QSpec fixture envelopes.
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
 # The X18 test validates QSpec's published definitions file against its schema.
