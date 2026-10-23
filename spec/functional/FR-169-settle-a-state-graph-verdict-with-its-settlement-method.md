@@ -85,9 +85,9 @@ pub enum WitnessSource {
 
 pub struct StateGraphCertificate {
     pub package_id: PackageId,           // the package the engine explored
-    pub closure: Vec<StateKey>,          // explored model states, sorted
-    pub ranks: Vec<(u64, u32)>,          // `possible`, `always possible`: (state, d)
-    pub counts: Vec<(u64, u8, u64)>,     // `unique path`: (state, count, order)
+    pub closure: Vec<DigestRecord>,      // explored model states' state-key records, sorted
+    pub ranks: Vec<(u64, u32)>,          // `possible`, `always possible`: (closure index, d)
+    pub counts: Vec<(u64, u8, u64)>,     // `unique path`: (closure index, count, order)
 }
 
 pub enum StateGraphCheck {
@@ -101,13 +101,20 @@ pub fn check_state_graph(request: &CertificateRequest<'_>, claim: &StateGraphIte
     certificate: &StateGraphCertificate) -> StateGraphCheck;
 ```
 
+The first member of a `ranks` or `counts` entry is a **closure index**: the
+zero-based position, in `closure`, of the model state the entry is about.
+
 The checker uses FR-338's `CertificateRejection{rule, at}`. FR-338's
-`CertificateRule` gains `PredicateUndefined`, `RankMissing`, `RankBroken`,
-`OrderBroken` and `CountBroken` (`InitialMissing`, `SuccessorMissing`
-and `BadState` are FR-338's own), and its `CertificateLocus` gains
-`ModelState(DigestRecord)`, a model state's
-`quire.simulation.state-key/v1` digest, since a state-graph certificate
-holds model states, not product states.
+`CertificateRule` gains `Malformed`, `PredicateUndefined`, `RankMissing`,
+`RankBroken`, `OrderBroken` and `CountBroken` (`InitialMissing`,
+`SuccessorMissing` and `BadState` are FR-338's own), and its
+`CertificateLocus` gains `ModelState(DigestRecord)`, a model state's digest
+record, since a state-graph certificate holds model states, not product
+states, and `Entry { index: u64 }`, a `ranks` or `counts` entry whose closure
+index names no closure state. A `ModelState` locus carries the
+`quire.simulation.state-key/v1` domain under every rule except `Malformed`,
+where it carries the record as the closure entry holds it, in whatever
+FR-201 domain that is (QSpec FR-331 "State" and "State-graph entry" loci).
 
 and the FR-331 terminal record carrying the value, its QSpec FR-360 label,
 its QSpec FR-243 basis, its O-16 category and its settlement method.
@@ -155,8 +162,31 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
   `package_id`; when they differ it SHALL return
   `PackageMismatch{certificate, recompiled}` naming both and evaluate no
   rule (FR-282), which settles `Inconclusive(StaleDependency{requested,
-  recompiled})` with `requested` the certificate's `package_id`. The
-  checker SHALL evaluate the rules in
+  recompiled})` with `requested` the certificate's `package_id`.
+- **Malformed.** After the package comparison and before any other rule,
+  and before it recomputes anything, the checker SHALL read the
+  certificate's shape and return `Rejected` with rule `Malformed` at the
+  first defect, reading `closure`, then `ranks`, then `counts`, each in
+  certificate order:
+  - a `closure` entry whose digest record is not in the
+    `quire.simulation.state-key/v1` domain, at `ModelState` of that record
+    as the entry holds it;
+  - a `closure` entry whose digest is not strictly above the digest of the
+    entry before it (out of order or a duplicate), at `ModelState` of that
+    entry;
+  - a `ranks` or `counts` entry whose closure index is not below the length
+    of `closure`, at `Entry { index }` with that index;
+  - a `ranks` or `counts` entry whose closure index is not strictly above
+    the closure index of the entry before it in the same list (out of order
+    or a second entry for one state), at `ModelState` of the closure state
+    the index names;
+  - a `counts` entry in a certificate for `possible` or `always possible`,
+    or a `ranks` entry in one for `unique path`, at `Entry { index }` with
+    the entry's closure index.
+
+  A malformed certificate settles `CertificateRejected{Malformed, at}`, as
+  any other rejection does.
+- The checker SHALL then evaluate the rules in
   the order listed here, each over every reached state, and reject with the
   first rule that fails (for `unique path`, `OrderBroken` before
   `CountBroken`):
@@ -238,6 +268,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | FR-169-AC-10 | Rejected certificates, each settling `inconclusive`, `CertificateRejected{rule, at}` and never `proved`: AC-9's `ReachesTwo` certificate with `(2, 2)` removed (`SuccessorMissing` at the first, in certificate order, of the two closure states that reach it, `(1, 2)` and `(2, 1)`; the engine gives `(1, 2)`); with the rank of `(1, 0)` changed to 2 (`RankBroken` at `(0, 0)`, the only ranked state left with no successor one rank lower, because `(1, 0)` keeps its successor `(1, 1)` at rank 1); with `(0, 0)` unranked (`RankMissing` at `(0, 0)`); a hand-built certificate for FR-168-AC-5's item that lists all 9 states (`PredicateUndefined` at the first, in certificate order, of the three states where `va = 2`, because the target divides by zero at each; the engine gives `(2, 0)`); the `InOneWay` certificate over §7.3's unsequenced job with every count 1 and a valid reverse topological order (`CountBroken` at the node with two paths); the sequenced certificate with its order reversed (`OrderBroken` at the first, in certificate order, of its nodes other than the `to` node; the engine gives `tff`). The check with `max_states` 2 stops and settles `failed`, naming `max_states`. | Test (TC-644) |
 | FR-169-AC-11 | A certificate holding a state whose expansion evaluates a contract conjunction undefined is rejected `BadState` at that state and settles `inconclusive`, `CertificateRejected{BadState, at}`, never `proved`: §7.1's subject with universe `{a}`, the one initial state `va = 0` and the guard `pre Guard using v on Config::ConfigVersion::attemptUpdate { 2 div (2 - self.versionNumber) >= 1 }` (the guard of TC-592's FR-167-AC-2 fixture), checked with a hand-built certificate of its 3 states ranked 2, 1 and 0 for `ReachesTwo`, is rejected `BadState` at the state where `va = 2`, whose guard has no value; the same ranks over a subject without the guard are accepted. | Test (TC-644) |
 | FR-169-AC-12 | Package identity. AC-9's `ReachesTwo` certificate carries the `package_id` of the package the engine explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by another package's returns `PackageMismatch{certificate, recompiled}` naming both identities before any rule is evaluated, and the item settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `proved`. AC-9's `ReachesTwo` witness replayed with a request whose `package_id` is stale refuses `PackageIdMismatch` and the item settles `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the request's `package_id`, not `ReplayRefused`. | Test (TC-1141) |
+| FR-169-AC-13 | Malformed certificates, each rejected before any recomputation and settling `inconclusive`, `CertificateRejected{Malformed, at}`, never `proved`. From FR-169-AC-9's `ReachesTwo` certificate (closure of 9 states, ranks at closure indices): its second closure entry's domain rewritten to `quire.model.object-universe/v2` (an FR-201 domain other than the state key's) with the same digest, at `ModelState` of that record carrying `quire.model.object-universe/v2`; its second and third closure entries swapped, at `ModelState` of the entry now second; its first closure entry repeated after itself, at `ModelState` of the repeat; a `ranks` entry with closure index 9, at `Entry { index: 9 }`; two `ranks` entries for closure index 0, at `ModelState` of the first closure state; its `ranks` reversed, at `ModelState` of the state the second entry names; a `counts` entry `(0, 1, 0)` added, at `Entry { index: 0 }`. The certificate with closure index 9 and a `package_id` of another package returns `PackageMismatch`, not `Malformed`; the certificate with its first closure entry out of domain and `(0, 0)` unranked is rejected `Malformed`, not `RankMissing`. | Test (TC-644) |
 
 ## Dependencies
 

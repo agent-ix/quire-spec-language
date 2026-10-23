@@ -12,10 +12,11 @@ relationships:
 
 Verify each rejection rule of `check_state_graph`: a missing successor, a
 broken or missing rank, an undefined predicate, an undefined contract
-conjunction, a broken count and a broken order, each settling `CertificateRejected{rule, at}`, and a check that a
-limit stops.
+conjunction, a broken count and a broken order, each settling `CertificateRejected{rule, at}`, a check that a
+limit stops, and the malformed certificates rejected before any
+recomputation.
 
-Scope: FR-169-AC-10, FR-169-AC-11.
+Scope: FR-169-AC-10, FR-169-AC-11, FR-169-AC-13.
 
 ## Test Procedure
 
@@ -33,9 +34,15 @@ FR-168-AC-5's item; §7.3's unsequenced job; TC-592's guarded subject (FR-167-AC
    and 0 for `ReachesTwo`, over the guarded subject, and over the same
    subject without the guard.
 6. Settle each step's result.
+7. Check each malformed variant of `ReachesTwo`'s certificate that
+   FR-169-AC-13 lists: an out-of-domain second closure entry, swapped second
+   and third entries, a repeated first entry, a rank at closure index 9, two
+   ranks for index 0, reversed ranks and an added `counts` entry; then the
+   index-9 certificate with another package's `package_id`, and the
+   out-of-domain certificate with `(0, 0)` unranked. Settle each.
 
-Tag the tests `#[trace("TC-644", "FR-169-AC-10")]` or
-`#[trace("TC-644", "FR-169-AC-11")]`.
+Tag the tests `#[trace("TC-644", "FR-169-AC-10")]`,
+`#[trace("TC-644", "FR-169-AC-11")]` or `#[trace("TC-644", "FR-169-AC-13")]`.
 
 ## Expected Results
 
@@ -53,3 +60,10 @@ Tag the tests `#[trace("TC-644", "FR-169-AC-10")]` or
 - Step 6: each rejection settles `inconclusive`,
   `CertificateRejected{rule, at}`, never `proved`; step 4 settles
   `failed`, naming `max_states`.
+- Step 7: `Malformed` at `ModelState` of the out-of-domain record with its
+  `quire.model.object-universe/v2` domain, of the entry now second, of the repeat, at
+  `Entry { index: 9 }`, at `ModelState` of the first closure state, at
+  `ModelState` of the state the second reversed entry names, and at
+  `Entry { index: 0 }`; `PackageMismatch` for the stale index-9 certificate;
+  `Malformed`, not `RankMissing`, for the last; each settles `inconclusive`,
+  `CertificateRejected{Malformed, at}`, never `proved`.
