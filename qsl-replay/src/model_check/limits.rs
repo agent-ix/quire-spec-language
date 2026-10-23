@@ -138,7 +138,7 @@ impl ModelCheckLimit {
             Self::MaxAutomatonStates => "max_automaton_states",
             Self::EvaluationMeter => "meter",
             Self::MaxCandidates => "max_candidates",
-            Self::SolverSteps => "max_solver_steps",
+            Self::SolverSteps => "hybrid.max_solver_steps",
             Self::WitnessSamples => "witness_samples",
             Self::MaxWalkSteps => "max_walk_steps",
             Self::MaxWitnessSet => "max_witness_set",

@@ -140,8 +140,7 @@ impl Serialize for SolverHorizon {
     /// FR-250's `ExactRational` wire: decimal-string components, so a
     /// numerator beyond 2^53 keeps its precision for JSON consumers.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut object = serializer.serialize_struct("SolverHorizon", 3)?;
-        object.serialize_field("kind", "rational")?;
+        let mut object = serializer.serialize_struct("SolverHorizon", 2)?;
         object.serialize_field("numerator", &self.0.numerator().to_string())?;
         object.serialize_field("denominator", &self.0.denominator().to_string())?;
         object.end()
@@ -533,7 +532,7 @@ mod tests {
                 "basis": {
                     "type": "bounded-solver",
                     "method": "delta-complete",
-                    "horizon": {"kind": "rational", "numerator": "10", "denominator": "1"},
+                    "horizon": {"numerator": "10", "denominator": "1"},
                     "jumps": 3,
                     "exhaustive": ["time"],
                 },
@@ -625,7 +624,7 @@ mod tests {
                     "kind": "limit-reached",
                     "limit": "solver-steps",
                     "value": 1000,
-                    "setting": "max_solver_steps",
+                    "setting": "hybrid.max_solver_steps",
                 },
                 "category": "incomplete",
             })
@@ -737,7 +736,7 @@ mod tests {
         let half = Rational::new(large, Integer::from(2_i64)).expect("non-zero");
         assert_eq!(
             serde_json::to_value(SolverHorizon::new(half).expect("non-negative")).expect("wire"),
-            json!({"kind": "rational", "numerator": "18446744073709551615", "denominator": "2"})
+            json!({"numerator": "18446744073709551615", "denominator": "2"})
         );
     }
 }
