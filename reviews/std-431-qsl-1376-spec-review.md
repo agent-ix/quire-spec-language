@@ -44,3 +44,11 @@ positions for those types. They do not narrow anything.
 ## Verdict
 
 Mergeable. The nested selection agrees exactly with the extent walk. The one low finding is a wording fix. Merge origin/main first (clean).
+
+## Dispositions
+
+Round 1, against head a358c2b1. Gate `make check-spec-validation` at a358c2b1: exit 0 (only the 3 main warnings on FR-121).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
