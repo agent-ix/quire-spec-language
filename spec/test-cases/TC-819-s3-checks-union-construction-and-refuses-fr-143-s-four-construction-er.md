@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Scope: FR-317-AC-1, FR-317-AC-2, FR-317-AC-4.
+Scope: FR-317-AC-1, FR-317-AC-2, FR-317-AC-4, FR-317-AC-5.
 
 ## Test Procedure
 
@@ -22,6 +22,9 @@ Over `union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }`:
 3. Check `Shape::Rect(2, 3)` and `Shape::Rect(1)` as part of a state clause
    body and of a `decreases` measure.
 4. Run QSpec TC-262's construction cases (tag `QSpec-TC-262`).
+5. Over ADR-022 §7.2's `Game` unit (enum `G::Phase`), check the bare and the
+   qualified `CanStillWin` with `from`, `Lost != x.phase`, `x.phase = Draw`,
+   `Lost = Won`, `x.phase < Mid` and `let Lost = 1 in x.phase != Lost`; compare the node ids of the bare and qualified claims.
 
 Tag each test `#[trace("TC-819", "<AC id>")]`.
 
@@ -33,3 +36,8 @@ Tag each test `#[trace("TC-819", "<AC id>")]`.
   refusal each.
 - Step 3: the same verdicts as in a function body, under each clause kind.
 - Step 4: TC-262's verdicts.
+- Step 5: the bare and qualified claims check equal and emit one node id;
+  `Lost != x.phase` checks as `x.phase != Lost`; `missing_declaration`/
+  `missing-name` at `Draw`, at `Lost` in `Lost = Won`, and at `Mid`;
+  `ambiguous_declaration`/`ambiguous-name` at the compared `Lost`, naming the
+  `let` binder and `G::Phase::Lost`.

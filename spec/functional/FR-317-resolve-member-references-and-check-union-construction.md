@@ -56,7 +56,32 @@ check the construction against QSpec FR-143's construction rule (ADR-012
     candidate.
   - With no candidate, the checker SHALL refuse exactly as an unresolved
     name is refused.
-- Every unqualified name SHALL resolve exactly as it does without unions.
+- Every unqualified name SHALL resolve exactly as it does without unions,
+  except a bare enum member, below.
+- **Bare enum members.** An enum member is written qualified, `E::m` (for an
+  enum of an admitted domain package, `E` carries the model alias:
+  `G::Phase::Lost`), or bare, `m`, where the position supplies an expected
+  enum type. A position supplies the expected enum type `E` when it is:
+  - an operand of `=` or `!=` whose other operand is not a bare name and is
+    typed `E` (the other operand is typed first);
+  - an argument whose parameter is typed `E` (FR-065);
+  - a branch of an `if` or a `case` arm body typed under the expected type
+    `E` (FR-318), such as `self.phase = (if c then Done else Busy)`;
+  - an element of a set or sequence literal typed under the expected element
+    type `E`.
+  The ordering operators `<`, `<=`, `>` and `>=` supply no expected type
+  (FR-104), so a bare name compared by them resolves as any other name.
+  - When the position supplies the expected enum type `E`, `E` declares the
+    case `m`, and `m` names no value, parameter, binder or declaration in
+    scope, the checker SHALL resolve `m` to `E::m`. The resolved name is the
+    qualified member: its checked term and its FR-093 lowering equal those
+    of `E::m`, so the two spellings give one node id.
+  - When `E` declares the case `m` and `m` also names something in scope,
+    the checker SHALL refuse `ambiguous_declaration`/`ambiguous-name` at `m`,
+    naming both.
+  - When `E` declares no case `m`, or the position supplies no expected enum
+    type, the checker SHALL resolve `m` as any other unqualified name, and
+    refuse `missing_declaration`/`missing-name` at `m` when it names nothing.
 - For a union-member target, the checker SHALL check each payload argument
   against its declared position type, in position order, under the
   enclosing clause kind (FR-065).
@@ -76,6 +101,7 @@ check the construction against QSpec FR-143's construction rule (ADR-012
 | FR-317-AC-2 | `Shape::Square(1)`, `Shape::Empty(1)`, a bare `Shape::Circle` and `Shape::Rect(1)` each refuse `ill_typed`/`type-mismatch` at the construction expression, one refusal each. | Test (TC-819) |
 | FR-317-AC-3 | In source, when a union `q` declares `m` and an import alias `q` exports `m`, `q::m` refuses `ambiguous_declaration`/`ambiguous-name` naming both candidates, and with the union `q` alone `q::m` resolves to its member. A unit declaring two types named `q` (two unions, or a union and an enum) is refused by the assembler at the second declaration as `ambiguous_declaration`/`ambiguous-name`, so one unit cannot reach the member resolver with two types named `q`; an import contributes only its alias qualifier, never a type, so no import supplies a second type named `q`. The resolver's own ambiguity property is tested on hand-built scopes: when a union `q` and an enum `q` both declare `m`, and when two unions named `q` both declare `m`, `q::m` refuses `ambiguous_declaration`/`ambiguous-name` naming every candidate; when two unions named `q` exist and only one declares `m`, `q::m` resolves to that union's member. An enum member `Kind::Empty` and a tuple constructor `Pair(1, 2)` resolve as they did before unions existed. | Test (TC-820) |
 | FR-317-AC-4 | `Shape::Rect(2, 3)` checks as a union construction inside a state clause body and inside a `decreases` measure, each under its own clause kind, and `Shape::Rect(1)` refuses `ill_typed`/`type-mismatch` in both. | Test (TC-819) |
+| FR-317-AC-5 | Over ADR-022 §7.2's `Game` (`phase: Phase`, the enum `{Start, Mid, Won, Lost}` of the domain package selected as `G`), `from (x.phase != Lost) { x.phase = Won }` and `from (x.phase != G::Phase::Lost) { x.phase = G::Phase::Won }` check to equal claims and emit one node id; `Lost != x.phase` checks the same as `x.phase != Lost`. `x.phase = Draw` (no such case) and `Lost = Won` (no typed operand) each refuse `missing_declaration`/`missing-name` at the bare name, `Draw` and `Lost` respectively; `x.phase < Mid` refuses `missing_declaration`/`missing-name` at `Mid`; `let Lost = 1 in x.phase != Lost` refuses `ambiguous_declaration`/`ambiguous-name` at the `Lost` of the comparison, naming the `let` binder and `G::Phase::Lost`. | Test (TC-819) |
 
 ## Dependencies
 
