@@ -2242,11 +2242,6 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
         .unwrap()
         .iter_mut()
         .for_each(strip);
-    wire["identity_preimage"]["identity_projection"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .for_each(strip);
     let mut re_roled = 0;
     for entry in wire["source_map"].as_array_mut().unwrap() {
         if entry["node_id"]["digest"] == status && entry["role"] == "declaration" {
@@ -2255,7 +2250,7 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
         }
     }
     assert_eq!(re_roled, 1, "Status had one declaration entry");
-    let package_id = PackageId::of_preimage(&jcs(&wire["identity_preimage"]));
+    let package_id = crate::checked_v2::tests::derived_package_id(&wire);
     wire["package_id"]["digest"] = json!(package_id.hex());
     let mut evidence = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
