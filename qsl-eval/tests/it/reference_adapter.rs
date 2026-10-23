@@ -619,12 +619,14 @@ fn assert_no_consumption(meter: &Meter) {
     assert_eq!(meter.admission_count(), 0);
 }
 
-/// FR-262-AC-12 for `call_supplied`: the caller's run polls the caller's
-/// handle, and `Begin` polls the meter's, each ending as `Cancelled` with no
-/// session and zero consumption; no handle cancelled gives a result.
-#[trace("FR-262-AC-12")]
+/// FR-401-AC-9 for `call_supplied`: it admits under the caller's run, which
+/// polls the caller's handle (a cancelled one is `Cancelled`, with zero
+/// consumption), and begins the session already admitted, so the meter's
+/// cancelled handle is observed at the first charge as the located incomplete
+/// result and never as `CallFailure::Cancelled`.
+#[trace("FR-401-AC-9")]
 #[test]
-fn call_supplied_observes_both_the_callers_and_the_meters_handle() {
+fn call_supplied_polls_the_callers_handle_and_the_meters_at_the_first_charge() {
     use qsl_eval::value::CheckedPackageEvaluation as _;
     use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
 
@@ -642,33 +644,27 @@ fn call_supplied_observes_both_the_callers_and_the_meters_handle() {
         (result, meter)
     };
 
-    let (result, meter) = run_over(Cancel::new(), Some(cancelled(CancelCause::Requested)));
-    assert!(matches!(
-        result,
-        Err(CallFailure::Cancelled(CancelCause::Requested))
-    ));
-    assert_no_consumption(&meter);
+    for meter_handle in [Some(Cancel::new()), None] {
+        let (result, meter) = run_over(cancelled(CancelCause::Requested), meter_handle);
+        assert!(matches!(
+            result,
+            Err(CallFailure::Cancelled(CancelCause::Requested))
+        ));
+        assert_no_consumption(&meter);
+    }
 
-    let (result, meter) = run_over(Cancel::new(), Some(cancelled(CancelCause::Deadline)));
-    assert!(matches!(
-        result,
-        Err(CallFailure::Cancelled(CancelCause::Deadline))
-    ));
-    assert_no_consumption(&meter);
-
-    let (result, meter) = run_over(cancelled(CancelCause::Requested), Some(Cancel::new()));
-    assert!(matches!(
-        result,
-        Err(CallFailure::Cancelled(CancelCause::Requested))
-    ));
-    assert_no_consumption(&meter);
-
-    let (result, meter) = run_over(cancelled(CancelCause::Requested), None);
-    assert!(matches!(
-        result,
-        Err(CallFailure::Cancelled(CancelCause::Requested))
-    ));
-    assert_no_consumption(&meter);
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        let handle = cancelled(cause);
+        let (result, meter) = run_over(Cancel::new(), Some(handle.clone()));
+        let evaluation = result.expect("an evaluation, not Cancelled");
+        assert!(matches!(
+            &evaluation.outcome,
+            FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                if record.charge_point == ChargePoint::FunctionCall
+        ));
+        assert_no_consumption(&meter);
+        assert_eq!(handle.tripped(), Some(cause));
+    }
 
     for meter_handle in [Some(Cancel::new()), None] {
         let (result, meter) = run_over(Cancel::new(), meter_handle);

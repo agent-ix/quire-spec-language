@@ -37,7 +37,7 @@ use qsl_semantics::check::CheckedExpression;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
 use quire_eval::{CheckedClosure, Evaluation, RequestRefusal, Signature, Transition};
-use quire_exact::{Cancel, Meter, NodeKey, Value, ValueType};
+use quire_exact::{Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 
@@ -108,17 +108,6 @@ where
             pending.extend(package.dependencies().values().map(|d| &**d));
         }
         None
-    }
-
-    /// The caller admitted its arguments under its own run, which polled the
-    /// caller's handle. `Begin` still observes the meter's installed handle
-    /// before any charge (FR-262-AC-12), so a handle cancelled there ends it as
-    /// `Cancelled` with no session.
-    fn meter_handle_not_cancelled(meter: &Meter) -> Result<(), CallFailure> {
-        match meter.cancel().and_then(Cancel::cause) {
-            Some(cause) => Err(CallFailure::Cancelled(cause)),
-            None => Ok(()),
-        }
     }
 
     fn admit(
@@ -197,7 +186,7 @@ where
             .declaring(*callable)
             .ok_or_else(|| InputRefusal::UnknownFunction(identity_spelling(callable)))?;
         if self.pre_admitted {
-            return Self::meter_handle_not_cancelled(meter);
+            return Ok(());
         }
         let function = package
             .graph()
@@ -253,7 +242,7 @@ where
         meter: &Meter,
     ) -> Result<(), CallFailure> {
         if self.pre_admitted {
-            return Self::meter_handle_not_cancelled(meter);
+            return Ok(());
         }
         self.admit(expression.parameters(), parameters, environment, meter)
     }

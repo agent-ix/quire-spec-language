@@ -250,7 +250,7 @@ fn member(declaration: &AdmittedEnumDeclaration, case: &str) -> Value {
 }
 
 #[test]
-#[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
+#[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17", "FR-401-AC-9")]
 fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
     use qsl_eval::value::QualifiedName;
     use qsl_forms::{BuiltinType, TypeForm};
