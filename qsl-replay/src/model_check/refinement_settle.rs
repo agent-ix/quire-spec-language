@@ -27,8 +27,8 @@
 //! What this does not do yet: the requirement record and its `Refinement`
 //! property form and the obligation identity.
 
-use qsl_foundation::InternalFault;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::certificate::simulation::{
     check_simulation_certificate, SimulationCertificateRequest, SimulationRefusal,

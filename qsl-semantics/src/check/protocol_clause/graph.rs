@@ -60,7 +60,7 @@ fn fault(invariant: &'static str) -> Vec<(Span, CheckRefusal)> {
                 quire_semantic_value::location::Origin::Expression,
             ),
             cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
-                qsl_foundation::InternalFault::new("check.protocol", invariant),
+                quire_semantic_value::catalog::InternalFault::new("check.protocol", invariant),
             ))),
         },
     )]

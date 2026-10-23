@@ -187,11 +187,11 @@ uncommitted working draft before this ticket's first commit
 ever landed -- from a reader's point of view, indistinguishable
 from a symbol that was never proposed at all, which is precisely the
 "hypothetical placeholder" AC-4 forbids citing. `Requirements`,
-`CapabilityKind`, `Extent`, `Bound` and `Stage::Requirements` are recorded
-unbacked for AC-4 rather than cited as deleted (they are real deferrals --
-this document's `requirements()` note above and `qsl-semantics/src/family/mod.rs`'s own
-module doc explain why -- just not ones a git log entry can show being
-removed). `PackageRefusal`, `EvaluateRefusal::Incomplete` and
+its capability kind and the claim extent are implemented, as ADR-012 §2 and
+ADR-014 §4 state and this document's `requirements()` note above describes,
+and `Stage::Requirements` has no counterpart because no stage table exists
+(ADR-012 §2 "Contract parts with no construction"); none of them is cited
+as deleted. `PackageRefusal`, `EvaluateRefusal::Incomplete` and
 `DeclarationCause` are dropped from this list entirely: `package` was
 narrowed to take no `Result` (so it never needed a `PackageRefusal`) rather
 than have one deleted, and `EvaluateRefusal`/function-declaration's `Cause`

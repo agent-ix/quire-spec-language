@@ -7,7 +7,7 @@
 //! replay hook's step. Only the TemporalTrace evaluate hook decodes a
 //! descriptor (FR-327 "Positions").
 
-use qsl_foundation::CatalogCode;
+use quire_semantic_value::catalog::CatalogCode;
 
 /// A zero-based index into the represented trace, prefix first, then loop
 /// (ADR-014 TR-2).

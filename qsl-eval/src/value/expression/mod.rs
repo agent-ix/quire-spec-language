@@ -13,26 +13,29 @@
 
 mod causes;
 mod clause_set;
+mod closure;
 mod evaluate;
 mod family;
 mod s6a;
 mod value_invariants;
 
 use evaluate::Machine;
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::SelfKind;
-use qsl_semantics::value::supplied::{
-    SuppliedCause, SuppliedFailure, SuppliedLimits, SuppliedPhase, SuppliedRun, SuppliedStop,
-    UnsupportedHelperStop,
-};
+use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
+use quire_eval::Registry;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
-use quire_semantic_value::declaration::{EnvironmentFailure, TypeEnvironment};
+use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::supplied_stop::{
+    SuppliedCause, SuppliedFailure, SuppliedPhase, SuppliedStop,
+};
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
-pub use evaluate::Evaluation;
+pub use closure::{PackageClosure, PackageTask};
+pub use evaluate::refusal_record;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
@@ -50,6 +53,7 @@ pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, Valu
 // scope to call it.
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedExpression, CheckedNode};
+use quire_eval::{CallFailure, Evaluation};
 
 /// FR-358: evaluate `node`, a closed subexpression of a checked function
 /// body (it reads no local), to its outcome under `meter`. `slots` is the
@@ -282,89 +286,6 @@ pub fn supplied_stop_cause(stop: &SuppliedStop) -> Option<&'static str> {
         SuppliedCause::Storage(_) => Some(ALLOCATION_FAILED.cause()),
         SuppliedCause::Capacity(_) => Some(RESERVATION_SIZE_OVERFLOW.cause()),
         SuppliedCause::Limit(_) | SuppliedCause::Cancelled(_) => None,
-    }
-}
-
-/// FR-090 "Bad arguments are refused at admission; a broken invariant is an
-/// internal fault" (ADR-013 T-4; ADR-011 §2.3 E6 row): [`CheckedPackage::
-/// call`]'s and [`CheckedPackage::evaluate`]'s error, split between an
-/// ordinary caller-input refusal admission catches and a broken S6a
-/// invariant admission cannot have let through -- never conflated into one
-/// shape, since a caller that asks "was my input rejected" needs a different
-/// answer than "did the runtime break".
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum CallFailure {
-    /// An argument refused at admission, before any S6a evaluation runs.
-    #[error(transparent)]
-    Input(#[from] InputRefusal),
-    /// An S6a invariant broke (ADR-013 T-4): never a caller-input refusal,
-    /// and never surfaced as a `FamilyResult` or as
-    /// `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
-    #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
-    Fault(qsl_foundation::diagnostic::InternalFault),
-    /// The caller's [`quire_exact::Cancel`] handle was cancelled and the
-    /// call stopped at its next charge (ADR-029 LC-3, FR-276). It returns no
-    /// value.
-    #[error("the call was cancelled: {0:?}")]
-    Cancelled(quire_exact::CancelCause),
-    /// An argument's membership in its parameter type was not decided because
-    /// the type environment's admission worklist could not reserve storage.
-    /// It is `resource_exhausted`, never a wrong-value-kind refusal.
-    #[error("admission of argument {parameter} decided nothing: {failure:?}")]
-    Storage {
-        /// The parameter index.
-        parameter: usize,
-        /// The kernel's storage failure.
-        failure: EnvironmentFailure,
-    },
-    /// A supplied-value phase stopped before any call at a helper ceiling,
-    /// a failed reservation or an unrepresentable size (FR-277), with its
-    /// phase context. No evaluation ran and nothing was charged to the
-    /// meter. Invalid input and cancellation keep [`Self::Input`] and
-    /// [`Self::Cancelled`]; their phase context is the run's
-    /// [`SuppliedRun::failure`].
-    #[error("supplied-value {phase} stopped before the call: {cause:?}", phase = .0.context.phase.as_str(), cause = .0.cause)]
-    Supplied(Box<SuppliedStop>),
-    /// A supplied-admission walk reached a helper family QSV has not
-    /// qualified, before that helper ran. Distinct from every other arm.
-    #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
-    UnsupportedHelper(Box<UnsupportedHelperStop>),
-}
-
-impl From<SuppliedFailure> for CallFailure {
-    fn from(failure: SuppliedFailure) -> Self {
-        match failure {
-            SuppliedFailure::Stop(stop) => match stop.cause {
-                SuppliedCause::Input { refusal, .. } => Self::Input(refusal),
-                SuppliedCause::Cancelled(cause) => Self::Cancelled(cause),
-                SuppliedCause::Limit(_)
-                | SuppliedCause::Storage(_)
-                | SuppliedCause::Capacity(_) => Self::Supplied(stop),
-            },
-            SuppliedFailure::Unsupported(stop) => Self::UnsupportedHelper(stop),
-            SuppliedFailure::Fault(fault) => Self::Fault(fault),
-        }
-    }
-}
-
-impl CallFailure {
-    /// FR-285: an admission refusal is a refusal, a broken S6a invariant an
-    /// internal failure, and a cancellation incomplete (ADR-013 O-16).
-    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
-        use qsl_foundation::diagnostic::Category;
-        match self {
-            Self::Input(_) => Category::Refusal,
-            Self::Fault(fault) => fault.category(),
-            Self::Cancelled(_) | Self::Storage { .. } => Category::Incomplete,
-            Self::Supplied(stop) => match stop.cause {
-                SuppliedCause::Input { .. } => Category::Refusal,
-                SuppliedCause::Limit(_)
-                | SuppliedCause::Cancelled(_)
-                | SuppliedCause::Storage(_)
-                | SuppliedCause::Capacity(_) => Category::Incomplete,
-            },
-            Self::UnsupportedHelper(_) => Category::Unsupported,
-        }
     }
 }
 
@@ -1019,24 +940,21 @@ impl CheckedPackageEvaluation for CheckedPackage {
             self.graph().scope().types(),
             run,
         )?;
-        // FR-062/FR-065: this family's own `evaluate` hook
-        // (`s6a::ReferenceEvaluation`) is the one path that runs
-        // checked function-application code, not a second, parallel
-        // `Machine` call beside it. It charges this call's own
-        // `function.call` to the caller's `meter`, then runs the body
-        // against that same meter, so `meter` counts the whole
-        // call. A denied charge surfaces as
+        // FR-401: one `quire-eval` session drives the application. The
+        // scheduler charges this call's own `function.call` to the caller's
+        // `meter`, then the reference adapter runs the body against that
+        // same meter through this family's `evaluate` hook
+        // (`s6a::ReferenceEvaluation`), so `meter` counts the whole call. A
+        // denied charge surfaces as
         // `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(_)))`, the same
-        // shape a denied charge inside the body takes.
-        let identity = callable.identity;
-        let mut env = family::EvaluationEnv::new(self, objects, arguments);
-        evaluate_declaration(
-            S6aFamilyKind::Value,
-            &identity,
-            EvaluationTarget::Value(&mut env),
-            meter,
-        )
-        .map_err(CallFailure::Fault)
+        // shape a denied charge inside the body takes. Arguments were
+        // admitted above under the caller's `run`, so `Begin` admits nothing.
+        let mut registry = Registry::new(
+            PackageClosure::<&CheckedPackage, &CheckedExpression>::pre_admitted(self),
+        );
+        registry
+            .begin_call(callable.identity, arguments, objects, meter)?
+            .run()
     }
 
     fn evaluate(
@@ -1055,15 +973,14 @@ impl CheckedPackageEvaluation for CheckedPackage {
             self.graph().scope().types(),
             &mut run,
         )?;
-        Machine::new(
-            self.graph().scope(),
-            self.graph(),
-            objects,
-            meter,
-            self.graph().dispatch_tables(),
-        )
-        .run(expression.root(), expression.slots(), arguments)
-        .map_err(CallFailure::Fault)
+        // An expression root incurs no call charge unless it reaches an
+        // application (FR-262).
+        let mut registry = Registry::new(
+            PackageClosure::<&CheckedPackage, &CheckedExpression>::pre_admitted(self),
+        );
+        registry
+            .begin_expression(expression, arguments, objects, meter)?
+            .run()
     }
 
     fn evaluate_holds(
@@ -1234,11 +1151,12 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
-    use qsl_foundation::diagnostic::Category;
     use qsl_semantics::check::{PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
-    use qsl_semantics::family::{EvalOutcome, FamilyOutcome};
+    use quire_eval::{EvalOutcome, FamilyOutcome};
     use quire_exact::{Integer, NodeKey};
+    use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::declaration::EnvironmentFailure;
 
     /// FR-285-AC-3 (TC-769 step 3): `CallFailure::Input` exits 20 and
     /// `CallFailure::Fault` 30.
@@ -1247,7 +1165,9 @@ mod tests {
     fn tc_769_call_failures_exit_by_their_category() {
         let input = CallFailure::Input(InputRefusal::WrongValueKind { parameter: 0 });
         assert_eq!(input.category().exit_code(), 20);
-        let fault = CallFailure::Fault(qsl_foundation::diagnostic::InternalFault::new("S6a", "x"));
+        let fault = CallFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
+            "S6a", "x",
+        ));
         assert_eq!(fault.category().exit_code(), 30);
     }
 
@@ -1492,7 +1412,7 @@ mod tests {
         );
         assert_eq!(
             fault.catalog_code(),
-            qsl_foundation::diagnostic::CatalogCode::new(
+            quire_semantic_value::catalog::CatalogCode::new(
                 "runtime_invariant",
                 "established-invariant-broken"
             ),

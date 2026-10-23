@@ -19,12 +19,13 @@
 //! `one`'s smaller slot count.
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::FamilyOutcome;
+use quire_eval::{CallFailure, Evaluation};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
