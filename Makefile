@@ -281,6 +281,9 @@ build-no-std:
 	cargo build --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
 	cargo clippy --locked -p qsl-foundation --no-default-features --target thumbv7em-none-eabi --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings
 	cargo test --locked -p qsl-foundation --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
+	cargo check --locked -p qsl-package --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
+	cargo clippy --locked -p qsl-package --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std" -- -D warnings
+	cargo test --locked -p qsl-package --no-default-features --target-dir "$${CARGO_TARGET_DIR:-target}/no-std"
 
 # PLAT-856: `rustdoc::broken_intra_doc_links` and `missing_docs` are only
 # enforced fully under a real `cargo doc` build -- clippy never runs

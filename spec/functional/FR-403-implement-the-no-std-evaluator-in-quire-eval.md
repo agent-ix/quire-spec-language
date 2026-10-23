@@ -224,10 +224,10 @@ A failure is a pre-charge Begin failure: `CallFailure::Input`,
 `CallFailure::Cancelled`, `CallFailure::Supplied`,
 `CallFailure::UnsupportedHelper` or `CallFailure::Fault`, from the run's
 `SuppliedFailure` conversion (FR-401), with no charge and no body
-invocation. A Begin with no supplied-value run uses a run of its own at
-`SuppliedLimits::default()` over the meter's installed handle, or over a
-handle no caller holds when the meter has none. A caller-supplied run and a
-run whose handle differs from the meter's follow FR-262's Begin rule.
+invocation. Begin takes no caller run: it admits through a run of its own
+at `SuppliedLimits::default()` over the meter's installed handle, or over a
+handle no caller holds when the meter has none. A caller that holds its own
+run admits under it and begins pre-admitted, as FR-262 states.
 
 The supplied-value run (`SuppliedRun`, `SuppliedLimits`, and the private
 event and storage helpers FR-401 places with them) SHALL move from
