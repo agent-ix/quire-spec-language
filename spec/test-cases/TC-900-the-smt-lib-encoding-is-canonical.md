@@ -13,7 +13,7 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-28.
+Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-32.
 
 Steps 8, 10, 18 and 20 read scripts with a `QF_LIA` solver, steps 18 and
 20 with replay as well; every other step reads
@@ -65,6 +65,15 @@ the printed script.
     FR-315-AC-27's `Tally` with `peek`.
 20. Read the false-extension `Counter` models and the altered base model
     FR-315-AC-28 describes, and replay what they yield.
+21. Inside `qsl-eval`, encode FR-315-AC-29's TP-1 and TP-3 items with their
+    profile set to event-position false-extension after S3.
+22. Settle FR-315-AC-30's `Inductive` result whose rebuild meets `Fault`,
+    the vault's `EncodingRefused` outcome carrying `Fault` with an `Ok`
+    product, the `Err`-product outcome built when `HyperProductIdentity::of`
+    faults, and that outcome against an item whose `of` gives an identity.
+23. Encode FR-315-AC-1's query and read the negated property's disjuncts.
+24. Call the encoding inside `qsl-eval` with a TP-1 item whose checked
+    clause has its atom removed, and repeat FR-315-AC-21's requests.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -118,3 +127,15 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
   the altered model's replay refused naming the altered step, settled as
   FR-127 settles that refusal (V-6 `ReplayRefused`); the
   `always[0,5] holds(c.value <= 1)` model at depth 2 gives no outcome.
+- Step 21: `SmtEncodingRefusal::Fault` naming the infinite-trace invariant,
+  with no script and no `Refused` code, for both items.
+- Step 22: `SmtProofCheck::Fault` and `failed`, `Failed`, category failed;
+  the `Ok`-product hyper outcome `failed`, `Failed`, not V-8; the
+  `Err`-product outcome `failed`, `Failed`, with no `ItemIdentity` refusal;
+  against the other item, `ProductMismatch` naming `clause`.
+- Step 23: `h<p>` and then `(not ...)` at positions 0 to 3 only, each
+  followed by `inc`'s postcondition failure; no atom-failure or
+  precondition-failure disjunct.
+- Step 24: `Fault` carrying `InternalFault` (`runtime_invariant`) naming the
+  atom invariant, not `Refused` with `item-form`; no AC-21 request returns
+  it.
