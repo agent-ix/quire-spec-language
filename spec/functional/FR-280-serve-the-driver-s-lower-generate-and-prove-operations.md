@@ -45,19 +45,46 @@ operations. This requirement states what QSL supplies at that boundary:
   input `lower` takes and the input `prove` hands a process provider;
 - for each `analyze` engine (FR-281), its FR-331 provider manifest, so the
   registry can route items to it (FR-288);
-- an entry that runs the items of an FR-331 provider request routed to a QSL
-  engine through `analyze`, and returns FR-331 results whose terminal records
-  equal those `analyze` settles for the same items, so `prove` and `analyze`
-  produce the same record for an item (ADR-029 OP-2). The entry reads the
-  run's `CheckedPackage`, the package `analyze` reads, and ignores the
-  `emitted: Option<&EmittedPackage>` parameter of the PV-3 `Provider::run`
-  signature;
+- an entry, `qsl_analyze::provider::run`, that runs the items of an FR-331
+  provider request routed to a QSL engine through `analyze`, and returns
+  terminal records equal to those `analyze` settles for the same items, so
+  `prove` and `analyze` produce the same record for an item (ADR-029 OP-2).
+  The entry reads the run's `CheckedPackage`, the package `analyze` reads,
+  and takes no `EmittedPackage`;
 - QSL's FR-331 terminal record type (`TerminalRecord`, ADR-013 O-24), the
   one record type both paths write.
 
-The entry is the PV-3 `Provider::run` of a QSL engine. It reads the
-checked package, and it ignores `emitted`, which `prove` passes as `None` when
-`package` refuses to emit and as `Some` otherwise. The entry takes the checked
+The entry and every type it takes are QSL's, in layer A `qsl-analyze`, so
+no QSL crate names a driver type:
+
+```rust
+pub fn run(
+    package: &CheckedPackage,
+    binding: &SubjectBinding,
+    items: &[RoutedItem],
+    limits: &AnalyzeLimits,
+    cancel: &Cancel,
+) -> Vec<TerminalRecord>;
+
+pub struct RoutedItem {
+    pub item: ClaimItem,
+    pub backend: BackendId,
+}
+```
+
+`SubjectBinding`, `ClaimItem` and `AnalyzeLimits` are `analyze`'s own types
+(FR-281); `backend` is the QSL engine the registry routed the item to. The
+driver's PV-3 `Provider::run` for a QSL engine adapts to this entry: it
+converts its `ProviderRequest` items and the request's `deadline_ms` to
+`RoutedItem`s and `AnalyzeLimits`, passes the run's `CheckedPackage` and
+subject binding, drops `emitted`, which `prove` passes as `None` when
+`package` refuses to emit and as `Some` otherwise, and returns the records
+as its `ProviderResults`. The entry runs each item on its routed engine and
+returns one record per item in `items` order. A subject binding that FR-120
+admission does not admit settles every routed item `declined` with the
+admission failure's catalog code, since the entry returns records only:
+cause `invalid-input` for `AdmissionFailure::Refused` and `incomplete-input`
+for `AdmissionFailure::Incomplete`, ADR-013 O-16's refusal row. The entry takes the checked
 package because a QSL engine runs in process
 over the checked subject, and because some packages a QSL engine settles have
 no emitted form: S4 refuses to emit a package that holds a random parameter,
@@ -70,16 +97,17 @@ since every package that holds a probabilistic claim is one S4 refuses.
 ## Inputs
 
 For the provider entry: the run's `CheckedPackage` from `check` (FR-278),
-the subject binding (FR-120), the FR-331 provider request's `manifest` and
-its items routed to one QSL engine with the request's `deadline_ms`, the
-provider limits and `&Cancel`. The entry ignores `emitted` and reads no `package`,
+the `SubjectBinding` (FR-120, FR-281), the `RoutedItem`s of the FR-331
+provider request routed to QSL engines, the `AnalyzeLimits` holding the
+request's `deadline_ms`, and `&Cancel`. The entry takes no `emitted` and reads no `package`,
 `package_id`, `dependencies` or `provision` member: the checked package and
 its resolved dependencies are already in process (QSpec FR-331, "In-process
 providers").
 
 ## Outputs
 
-FR-331 results: one terminal record per routed item.
+`Vec<TerminalRecord>`: one terminal record per routed item, in `items`
+order, which the driver's adapter writes as FR-331 results.
 
 ## Behavior
 
@@ -95,21 +123,25 @@ FR-331 results: one terminal record per routed item.
   the evidence kind `statistical` and no other, and with the `domains`
   `population` and `integer`, the boundable domains its sampler draws over
   (FR-057 refuses a `bounded` pair without `domains`).
-- When the driver passes an FR-331 provider request routed to a QSL engine,
-  the QSL provider entry shall run the routed items through `analyze` over
-  the `CheckedPackage` it is given and return one FR-331 terminal record per
-  routed item.
-- The provider entry shall read the checked package and ignore the
-  `emitted` parameter of PV-3, so it serves an item over a checked package that S4 refuses to emit
-  (FR-185) as it serves an item over one that S4 emits.
+- When the driver passes routed items of an FR-331 provider request to
+  `qsl_analyze::provider::run`, the provider entry shall run each item on its
+  routed engine through `analyze` over the `CheckedPackage` it is given and
+  return one terminal record per routed item, in `items` order.
+- The provider entry shall read the checked package and take no
+  `EmittedPackage`, so it serves an item over a checked package that S4
+  refuses to emit (FR-185) as it serves an item over one that S4 emits.
+- If FR-120 admission does not admit the subject binding, then the provider
+  entry shall settle every routed item `declined` with the admission
+  failure's catalog code, cause `invalid-input` for a refusal and
+  `incomplete-input` for an incomplete admission.
 - When an EN-4 item settles `measured` through the provider entry, the
   provider entry shall keep in its record the sampled witnesses `analyze`
   keeps for the same item.
 - The provider entry shall keep each sampled witness replayable through
   `replay_sampled_witness` over the checked subject it was given (FR-193).
 - The terminal record the provider entry returns for an item shall equal the
-  record `analyze` returns for the same item, checked package, subject
-  binding and limits.
+  record `analyze` returns for the same item naming the same backend,
+  checked package, subject binding and limits.
 - No QSL crate shall depend on a CG, RT or driver crate. An IR crate that
   ADR-011 §6.1 sanctions (`quire-contract-model`) is allowed.
 
@@ -118,10 +150,11 @@ FR-331 results: one terminal record per routed item.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-280-AC-1 | Each QSL engine's provider manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` whose advertised (kind, mode) pairs equal the claim kinds the engine settles in TC-762. | Test (TC-761) |
-| FR-280-AC-2 | For each TC-762 item, an FR-331 provider request that routes that item to its QSL engine, passed to the provider entry with the `CheckedPackage` of the same source, returns a terminal record equal to the one `analyze` returns for that item. | Test (TC-761) |
+| FR-280-AC-2 | For each TC-762 item, a `RoutedItem` routing that item to its QSL engine, passed to `qsl_analyze::provider::run` with the `CheckedPackage`, `SubjectBinding` and `AnalyzeLimits` of the same run, returns a terminal record equal to the one `analyze` returns for that item naming the same backend. | Test (TC-761) |
 | FR-280-AC-3 | The `cargo tree` of every QSL crate lists no CG, RT or driver crate; an IR crate ADR-011 §6.1 sanctions (`quire-contract-model`) is allowed (FR-284's direction check). | Test (TC-767) |
 | FR-280-AC-4 | EN-4's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`probabilistic-satisfaction`, `bounded`) with the evidence-kind set `{statistical}` and the `domains` `{population, integer}`. A registry holding it and a descriptor advertising the same pair with `{exact}` gives a `statistical` probabilistic item the EN-4 `BackendId` alone, and an `exact` item the other alone. | Test (TC-761) |
-| FR-280-AC-5 | `Service` (FR-185-AC-7), whose `emit_checked` refuses `unsupported_construct`/`not-yet-implemented`, is passed to the provider entry as its `CheckedPackage`, with its subject binding and an FR-331 provider request routing the `2 ms` claim of ADR-024 §7.2 over `Service` (the claim of FR-193-AC-1 and FR-193-AC-5) to EN-4 with evidence kind `statistical`, the Okamoto method (FR-189-AC-1), seed 7 and `max_witnesses` 3. The entry returns one record, `measured` with decision `rejected`, equal to the record `analyze` returns for that item over the same checked package, binding and limits; its three sampled witnesses equal `analyze`'s and each replays `Reproduced` through `replay_sampled_witness` over `Service`'s checked subject. No `EmittedPackage` of `Service` exists in the run; `Service`'s `emit_checked` is refused before and after the entry runs. | Test (TC-761) |
+| FR-280-AC-5 | `Service` (FR-185-AC-7), whose `emit_checked` refuses `unsupported_construct`/`not-yet-implemented`, is passed to the provider entry as its `CheckedPackage`, with its subject binding and a `RoutedItem` routing the `2 ms` claim of ADR-024 §7.2 over `Service` (the claim of FR-193-AC-1 and FR-193-AC-5) to EN-4 with evidence kind `statistical`, the Okamoto method (FR-189-AC-1), seed 7 and `max_witnesses` 3. The entry returns one record, `measured` with decision `rejected`, equal to the record `analyze` returns for that item over the same checked package, binding and limits; its three sampled witnesses equal `analyze`'s and each replays `Reproduced` through `replay_sampled_witness` over `Service`'s checked subject. No `EmittedPackage` of `Service` exists in the run; `Service`'s `emit_checked` is refused before and after the entry runs. | Test (TC-761) |
+| FR-280-AC-6 | AC-2's request with its items in reverse order returns their records in that reverse order, each equal to AC-2's record for the same item. The same items with a binding whose `universes` name a population the package does not declare return one `declined` record per item, cause `invalid-input`, code `invalid_runtime_input`/`wrong-role-mapping`; with a binding whose `initial` digest is absent from `snapshots`, one `declined` record per item, cause `incomplete-input`, code `unavailable_observation`/`missing-required-artifact`; in both, no engine runs. `qsl_analyze::provider::run`'s signature names no type from a driver, CG or RT crate (FR-280-AC-3's `cargo tree` check holds with the entry built). | Test (TC-761) |
 
 ## Dependencies
 
@@ -143,7 +176,8 @@ FR-331 results: one terminal record per routed item.
 ## Overlap
 
 The driver repository owns the requirements for `lower`, `generate` and
-`prove`, the `Provider` trait (ADR-029 PV-3) and its adapter over this entry,
+`prove`, the `Provider` trait (ADR-029 PV-3) and its adapter over
+`qsl_analyze::provider::run`,
 including how `prove` hands this entry the checked package when `package`
 refuses to emit.
 CG owns the process-provider negotiation arm (ADR-029 PV-4).

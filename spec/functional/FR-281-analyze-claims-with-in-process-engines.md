@@ -47,25 +47,87 @@ with cause `UndefinedEvaluation{where, cause}`: the claim did not hold there.
 The item's category is violation, it exits 10 (FR-285), and it never carries
 the `undefined` label (FR-286).
 
+### Engine choice
+
+`analyze` routes each item to one engine. It holds one registry built from
+the QSL engines' provider manifests (FR-280) by FR-288's conversion, and
+computes each item's candidate set by FR-075 from the item's capability
+kind, its evidence kind and its named `backend`. Of those candidates it runs
+the first, in FR-075's bytewise `BackendId` order, whose advertised pairs
+hold the item's kind with the mode of its extent classification (`bounded`
+or `unbounded`). When no candidate qualifies, the item settles
+`unsupported`, naming its kind and, when the item names a backend, that
+backend; a named backend the registry does not hold is FR-075's
+unknown-backend marker and settles the same way. The registry holds QSL
+engines only: SMT, Kani and plugin providers reach a claim through the
+driver's `prove`, never through `analyze` (ADR-029 OP-2).
+
 ## Inputs
 
+```rust
+pub fn analyze(
+    package: &CheckedPackage,
+    request: &AnalyzeRequest,
+    limits: &AnalyzeLimits,
+    cancel: &Cancel,
+) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>>;
+
+pub struct AnalyzeRequest {
+    pub binding: SubjectBinding,
+    pub items: Vec<ClaimItem>,
+}
+
+pub struct AnalyzeLimits {
+    pub accounting: ScalarLimits,
+    pub observation: ObservationLimits,
+    pub normalization: ModelNormalizationLimits,
+    pub deadline_ms: Option<u64>,
+}
+```
+
 - `&CheckedPackage`.
-- The claim items, each named by its occurrence key.
-- The subject binding: the `ModelSystem` and the initial population
-  (FR-120).
-- Each engine's request settings and budgets, for example ADR-018's
-  model-check limits.
-- The accounting limits.
+- `SubjectBinding`: the subject the claims are decided over, FR-120's
+  `ModelSimulationRequest` members other than the package: `packages`
+  (FR-056's domain package input), `snapshots` (the FR-106 snapshot
+  provision), `initial: Vec<DocumentRef>` and `universes:
+  Vec<PopulationUniverse>`. `analyze` admits it as `ModelSystem::new`
+  admits a request (FR-120) before any item runs.
+- `ClaimItem`: one requested item, the typed value of a QSpec FR-331
+  request item in its in-process form ("Items"), without `candidates`:
+  `request_index`, `claim` (`{node, occurrence}`, the item's occurrence
+  key), `kind`, `extent` with its proof bounds, the named `backend` when the
+  caller names one, `options`, and the kind's own member (`temporal`,
+  `probabilistic` or `hybrid`) with its settings and limits, for example
+  ADR-018's model-check limits. `request_index` values are `0..n` in
+  `items` order.
+- `AnalyzeLimits`: the accounting limits, the observation and
+  model-normalization limits the binding is admitted under, and the
+  wall-clock deadline `deadline_ms` (QSpec FR-331), each with its published
+  default (FR-277).
 - `&Cancel`.
 
 ## Outputs
 
+```rust
+pub struct AnalyzeOutcome {
+    pub records: Vec<TerminalRecord>,
+}
+
+pub enum AnalyzeRefusal {
+    Binding(AdmissionFailure),
+}
+```
+
 `Staged<AnalyzeOutcome>`: exactly one terminal record per requested item,
-with the FR-331 result vocabulary, its O-16 category, its typed cause, its
-basis, its counterexample or certificate where it has one, and its
-accounting. An undefined claim evaluation gives a `refuted` record, category
-violation, with cause `UndefinedEvaluation{where, cause}` and the point where
-the evaluation was undefined as its counterexample.
+in `request_index` order, with the FR-331 result vocabulary, its O-16
+category, its typed cause, its basis, its counterexample or certificate
+where it has one, and its accounting. Each record names the `BackendId` of
+the engine that ran it, or none for an item no engine accepts. An undefined
+claim evaluation gives a `refuted` record, category violation, with cause
+`UndefinedEvaluation{where, cause}` and the point where the evaluation was
+undefined as its counterexample. A binding that FR-120 admission does not admit
+fails the whole request with `StageFailure::Refused(AnalyzeRefusal::Binding)`
+holding the `AdmissionFailure`, and no record.
 
 ## Behavior
 
@@ -74,6 +136,12 @@ the evaluation was undefined as its counterexample.
 - If no layer-A engine accepts an item's claim kind, then `analyze` shall
   settle that item `unsupported` with a typed cause that names the claim
   kind.
+- The `analyze` operation shall run each item on the first engine, in
+  FR-075's candidate order, whose advertised pairs hold the item's kind
+  with the mode of its extent classification, and on no other engine.
+- If FR-120 admission does not admit the subject binding, then `analyze` shall
+  return `StageFailure::Refused(AnalyzeRefusal::Binding)` with the
+  admission failure, before any item runs.
 - When an engine reports a proof with a certificate, `analyze` shall run the
   engine's certificate checker (FR-282) and settle the item `proved`, with
   the certification `certified`, only if the checker accepts the
@@ -112,6 +180,8 @@ the evaluation was undefined as its counterexample.
 | FR-281-AC-5 | With a test engine that reports a counterexample replay does not reproduce, the item settles `inconclusive` with cause `replay_parity`; with one whose counterexample names a parameter the function lacks, `inconclusive` with cause `replay_refused`. | Test (TC-763) |
 | FR-281-AC-6 | The AC-1 item with its engine's state budget set to 1 settles `incomplete` with the state-budget cause. | Test (TC-763) |
 | FR-281-AC-7 | Over a finite model with one reachable state at which the invariant `100 / x > 0` divides by zero, an EN-1 item claiming that invariant settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names that state and whose `cause` is `division-by-zero`; replay reproduces the undefined value at that state, the record carries no `undefined` label, and FR-285 maps the outcome to exit 10. | Test (TC-763) |
+| FR-281-AC-8 | With two test engines `qsl.test-a` and `qsl.test-b` whose manifests both advertise (`value-validity`, `bounded`), an item of that kind and extent naming no backend runs on `qsl.test-a` alone and its record names `qsl.test-a`; the same item naming `qsl.test-b` runs on `qsl.test-b` alone; naming `qsl.test-c`, which the registry does not hold, settles `unsupported` naming the kind and `qsl.test-c`, and neither engine runs. With `qsl.test-a` advertising only (`value-validity`, `unbounded`), the unnamed item runs on `qsl.test-b`. | Test (TC-762) |
+| FR-281-AC-9 | AC-3's request returns its three records in `request_index` order 0, 1, 2. The same request whose binding's `universes` name a population the package does not declare returns `StageFailure::Refused(AnalyzeRefusal::Binding)` holding FR-120's `invalid_runtime_input`/`wrong-role-mapping`, no record, and no engine runs. | Test (TC-762) |
 
 ## Dependencies
 
