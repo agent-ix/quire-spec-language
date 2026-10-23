@@ -8,21 +8,22 @@ relationships:
 ---
 ## Description
 
-Integration, P1: use the real compile binary to emit a selected native package
+Integration, P1: call `command` in process to emit a selected native package
 without runtime inputs, then reread its exact bytes through the existing API.
 
 ## Test Procedure
 
-Run compile on source-only files and compare with the existing static pipeline.
+Call `command` with compile requests over source-only files and compare the
+outcome's package bytes with the existing static pipeline.
 Reread the output with exact bindings. Mutate format, fields, source selection
-and syntax; run the existing standalone and syntax command tests.
+and syntax.
 Copy only the request-selected sources into a fresh compile directory. Check
-command-specific arity errors before file I/O, named count exhaustion for model,
-snapshot and invocation groups, and unchanged catalog spellings. On Linux,
-redirect the actual binary's artifact output to /dev/full and require exit 30,
-[FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure.
+a request past `dependent_bytes` and the same request with the limit raised,
+and unchanged catalog spellings. Capture the process streams and require
+that `command` writes nothing to them.
 
 ## Expected Results
 
 Successful bytes/digest match with no wrapper or newline. Refusals preserve their
-stage/code and produce no package bytes; other commands retain their behavior.
+stage/code and carry no package bytes, and each outcome's FR-285 exit code is
+the status FR-027 states.

@@ -97,7 +97,12 @@ The driver repository specifies and tests the `quire` binary against QSpec
 FR-301: its verbs and arguments, refusal of an unknown verb, option,
 profile or provider before any stage (exit 20), `version`, reading no
 configuration file its arguments do not name, and stream-write failures
-(exit 30, a closed pipe ending quietly with the outcome's code).
+(exit 30, a closed pipe ending quietly with the outcome's code). For the
+`run` and `compile` verbs over FR-026 and FR-027 requests it also owns the
+request-file operand, the option spelling that sets the `request_bytes` and
+`dependent_bytes` settings, usage and arity errors before any file is read
+(exit 20), writing `command`'s package bytes or result document to stdout
+and its refusal envelope to stderr.
 
 ## References
 
