@@ -111,10 +111,20 @@ belong to Agent-C; they are not silently reassigned to this lane.
 
 ## Existing Evidence Reconciliation
 
-The accepted central inventory snapshot credits the 82 Agent-A rows as follows:
+The 82 Agent-A rows are credited as follows:
 implementation is **18 complete, 36 partial and 28 missing**; direct verification
 is **16 complete, 38 partial and 28 missing**; integration is 52 partial and 30
 missing; qualification is 82 missing. Plan adoption changes none of those states.
+
+These counts are the 83-row central credit (implementation 18 complete, 36
+partial, 29 missing; verification 16 complete, 38 partial, 29 missing;
+integration 52 partial, 31 missing; qualification 83 missing) less the WASM
+parity row V1-TOOL-009 (QSpec FR-308, TC-228), because WASM is not a QSL
+deliverable. That row comes out of the missing bucket of every layer because it
+had no evidence in any layer: `quire-wasm` #6 closed with no implementation, no
+test verifies QSpec TC-228 (the `TC-228` trace tags in `qsl-semantics` name this
+repository's own TC-228 for FR-084), and nothing integrated or qualified it. The
+complete and partial counts are therefore the same over both row sets.
 
 | Existing layer | Credited local evidence | Complete-V1 remainder |
 | --- | --- | --- |
