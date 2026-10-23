@@ -11,10 +11,11 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{BudgetDenial, CatalogCode};
+use qsl_foundation::diagnostic::BudgetDenial;
 use qsl_foundation::selection::{ModelDigest, ModelSelection};
 use qsl_foundation::{Code, IntakeLimits, Span};
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::CatalogCode;
 
 use super::{admit_located, read_domain_package, PackageDocument};
 use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};

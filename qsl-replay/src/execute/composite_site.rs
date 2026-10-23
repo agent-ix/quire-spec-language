@@ -9,13 +9,13 @@
 //! subexpression, evaluated.
 
 use qsl_eval::value::evaluate_closed;
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedNode, NodeKind};
-use qsl_semantics::family::FamilyOutcome;
+use quire_eval::FamilyOutcome;
 use quire_exact::Origin as BodyKey;
 use quire_exact::{Meter, Outcome, Value, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EqualityOperator;
 use quire_semantic_value::location::Origin as BodyOrigin;
 

@@ -472,6 +472,21 @@ not bad input.
 Broken pipes end quietly; other write and output-serialization failures
 exit 30.
 
+### The call depth of an outcome
+
+S6a's `Evaluation` SHALL carry, beside `location`, `frame_depth: u32`: the
+number of package-function call frames open above the selected call's own
+frame when the outcome arose. It is 0 for an outcome of the selected
+function's own body, 1 for one inside a function that body calls, and one
+more for each further nested call, a recursive call of the same function
+included. A `Location` names a place in a body and no frame, so the same
+`Location` recurs at every depth of a recursive function; `frame_depth`
+tells those apart. A completed call's `frame_depth` is 0. The outcome
+document carries no `frame_depth` member. FR-098's application claim reads
+it to observe only the selected call's own evaluation of its claim site; the
+consumer is `qsl-replay`'s replay executor, and the producer is the S6a
+session's frame stack (FR-262), which already holds one frame per open call.
+
 ## Behavior
 
 - The run command shall read the program source's declared edition once,
@@ -583,6 +598,7 @@ exit 30.
 | FR-100-AC-17 | Malformed identity bytes rejected by the actual constructor/reader never become supplied typed references. A well-formed real object absent only from the query population reaches the AC-14 lookup refusal; an object absent from the complete object world produces dangling-reference admission instead. An unresolved-reference context cannot turn the latter into AC-14. | Test |
 | FR-100-AC-18 | The scalar inputs, values, refusals, category/exit mapping and internal-fault oracles in AC-1 through AC-12 remain equal after adapting callers to the shared Value field and explicit context. All ten actual accounting limits reach evaluation unchanged. Requested and Deadline stops remain distinct before and during S6a; applicable pre-call denial has zero evaluation consumption. | Test |
 | FR-100-AC-19 | Public signatures use the carriers in Typed public call and no qsl_eval path. The source, binding and object context are admitted through their actual owner APIs, with no copied/trusted substitute model view or second engine. The driver executes TC-792 through this reviewed public boundary and retains the absent/present and invalid-admission distinctions. | Test (TC-792) |
+| FR-100-AC-20 | Calling `function d using v(n: Int[0, 9]): Integer pure decreases(n) { if n = 0 then 0 else d(n - 1) + 10 mod (n - 1) }` through S6a: `d(1)` returns `Undefined` at the `Location` of `10 mod (n - 1)` with `frame_depth` 0; `d(2)` and `d(3)` return `Undefined` at that same `Location` with `frame_depth` 1 and 2; `d(0)` completes `0` with `frame_depth` 0; and `function e using v(n: Int[0, 9]): Integer pure { d(n) }` called with `1` returns `Undefined` at that `Location` with `frame_depth` 1. | Test (TC-444) |
 
 The typed-call acceptance criteria supplement all existing scalar oracles;
 FR-100-AC-13 is the QSL-656 accounting-object criterion.
@@ -592,7 +608,7 @@ with inspection of the public signatures and actual owning admission and
 engine paths; inspection alone cannot discharge its driver-execution
 obligation. The existing test-case associations are unchanged: AC-1–3
 use TC-450; AC-4–6 TC-451; AC-7–9 and AC-12 TC-452; AC-10–11 TC-786;
-AC-14–19 TC-792. These associations do not replace executable trace tags.
+AC-14–19 TC-792; AC-20 TC-444. These associations do not replace executable trace tags.
 
 ## Dependencies
 
@@ -639,10 +655,9 @@ only. Accounting setting member semantics are owned by QSL-656; this branch
 does not duplicate that amendment or TC-951. No implementation branch is
 created by this spec.
 
-Remaining work (implementation, with the native-run deletion change, FR-312):
-the code still requires a `sha256:` source digest on each source selection
-and checks the file against it; both go, and the command reads each named
-file's bytes as they are.
+A source selection carries no `sha256:` source digest and the command checks
+no file against one (FR-312); the command reads each named file's bytes as
+they are.
 
 Implemented. `qsl_replay::spine::run` and the CLI `run` command render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,
@@ -662,6 +677,5 @@ Every exit status is FR-285's `Category::exit_code` of the outcome's
 category, and an undefined outcome exits 10 (FR-100-AC-10, FR-100-AC-11,
 TC-786).
 
-Remaining work (implementation, Linear QSL-381): the program selection and the `source`
-member still carry the revision namespace and revision; they carry the two
-FR-001 labels (QSpec STD-150).
+The program selection and the `source` member carry the two FR-001 labels
+(QSpec STD-150), not a revision namespace and revision.

@@ -22,6 +22,10 @@ relationships:
 
 When an author invokes quire-spec compile with a native-compile/1 request file, the command shall compile the selected program source by the edition its header declares. A `1-draft` source compiles through the spine (S1 to S4, ADR-011 §7.3 M-6a) into `quire.checked-package/v2` bytes. A `0-draft` source compiles into the exact native linked package bytes produced from the selected model and program sources. Native compile is deleted with M-6c (ADR-011, owner ruling 2026-09-24).
 
+A `1-draft` request's `program` is one source selection or a non-empty
+array of source selections: the package's unit list in request order
+(FR-480). Every unit of the list compiles into the one checked package.
+
 Each selected source carries the two source labels of
 [FR-001](FR-001-read-exact-source.md) under the request identity
 [FR-026](FR-026-run-standalone-native-workflow.md) defines, and the
@@ -109,6 +113,16 @@ is read or either compiler runs. Each program source goes to exactly one compile
 an edition other than `0-draft` or `1-draft`, then the compiler command shall
 refuse with `unknown_edition` at the edition literal, naming the file and the
 edition.
+For an array `program`, the compiler command shall check each unit's digest
+and read each unit's header edition in this way, in request order, before
+any model source is read. The first unit whose edition is not `1-draft`
+refuses the request with `unknown_edition` at that unit's edition literal,
+naming that unit's file and edition: the `0-draft` compiler compiles one
+program source, so an array `program` is a `1-draft` form. An empty array
+refuses with `invalid-request`. This per-unit edition check runs before
+FR-480's header-agreement check, which the spine compile applies to units
+that all declare `1-draft`; the units' header agreement and every other
+several-unit rule are FR-480's.
 Each request type shall own its selector from the shared native format catalog.
 The compiler command shall use the same source frontend and static compiler path
 as the run command, without reading or constructing runtime artifacts.
@@ -118,7 +132,8 @@ The compiler command shall finish package construction before writing its bytes.
 If a static stage fails, then the compiler command shall return its existing
 typed failure without a successful artifact.
 
-Library source files count toward `dependent_bytes`.
+Library source files count toward `dependent_bytes`. Each unit of an array
+`program` counts as a program source.
 
 ## Acceptance Criteria
 
@@ -136,6 +151,7 @@ Library source files count toward `dependent_bytes`.
 | FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes the FR-278 composition returns over the same source and dependency input, exit 0. A `0-draft` request carrying a library refuses with `invalid-request`, exit 20, empty stdout; so does a `1-draft` request with a library of an empty identity, or with a library object that has any member besides `identity`, `source` and `refinement_internals`, a `version` for one. | Test (TC-446) |
 | FR-027-AC-12 | A `1-draft` request carrying `refinement_internals` at its top level and on a library object hands those values to spine `compile` unchanged, and writes exactly the bytes the FR-278 composition returns over the same source, dependency input and refinement internals input, exit 0; a request with the member absent supplies the empty list. A `0-draft` request carrying `refinement_internals`, at its top level or on a library object, refuses with `invalid-request`, exit 20, empty stdout. | Test (TC-446) |
 | FR-027-AC-11 | For FR-027-AC-5's, AC-9's and AC-10's requests, the bytes the command writes equal the `package` output of `parse`, `select`, `check` and `package` composed over the same source, domain packages and libraries; for FR-027-AC-8's sources, the refusing operation's stage and cause code equal the command's, and its FR-285 exit code equals the command's exit status. | Test (TC-785) |
+| FR-027-AC-14 | Through `command`, a `1-draft` request whose `program` is an array of FR-480-AC-1's units `U1` and `U2` writes exactly the bytes the FR-278 composition returns over that unit list, exit 0, and the same request with the array reversed writes the same bytes. An array whose second unit declares `edition "0-draft"` refuses `unknown_edition` at that unit's edition literal, naming its file, with no package bytes and before FR-480's header agreement is checked; an empty array refuses `invalid-request`; and an array whose two units exceed `dependent_bytes` together, though each fits alone, refuses at intake naming `dependent_bytes`. | Test (TC-1210) |
 
 ## Dependencies
 

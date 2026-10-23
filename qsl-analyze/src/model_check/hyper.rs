@@ -126,7 +126,7 @@ use qsl_eval::temporal::{
     TemporalPosition, TupleLetters,
 };
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::{IdentityLimits, InternalFault};
+use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     AppliedReduction, BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperLocus,
     HyperOutcome, HyperStep, HyperTrace, HyperUndefined, IncompleteCause, ModelCheckLimit,
@@ -134,6 +134,7 @@ use qsl_replay::{
 };
 use qsl_semantics::check::{CheckedHyperClause, CopyGroup, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
