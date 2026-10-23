@@ -59,3 +59,23 @@ Coder deviations, judged:
   conforms to the spec (FR-116 Inputs: "the object type, process or state
   machine that declares the operation"), but it is untested (SR-12365
   FND-005).
+
+## Dispositions
+
+Round 1, reviewed at 47c32d419 (fix commit 6c7a89b30, plus merges of
+origin/main 98ef4cacc). Focused tests run at the head:
+`cargo test -p qsl-replay --lib call_site` gave 30 passed and 1 failed. The
+failure is `call_site_returns_the_checked_package_bytes_its_package_id_names`,
+which also fails on main 98ef4cacc and was introduced by QSL-1009 #1300
+(e5554bc9f): it passes at e5554bc9f^ and fails at e5554bc9f. This PR did
+not cause it. `cargo test -p qsl-semantics --test it probabilistic_declarations`
+gave 51 passed. Mutation check: with `model_object_tables` reverted to
+`operation_owners()`, both `a_process_in_the_package_does_not_make_a_workload_incomplete`
+and `a_field_of_a_process_or_state_machine_is_not_selectable` fail.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6c7a89b30 |
+| FND-002 | fixed | 6c7a89b30 |
+| FND-003 | still-open | No CG adaptation PR or ticket exists, and CG main `src/replay/function.rs` still matches `CallSiteRefusal` exhaustively without the two new arms. Open the CG change and land it with this merge. |
+| FND-004 | fixed | 6c7a89b30 |

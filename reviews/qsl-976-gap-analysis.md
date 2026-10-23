@@ -50,3 +50,23 @@ would be `UnknownOperation`. The AC-27 test fails in both cases.
 are untested branches of ACs this PR implements. FND-003 to FND-005 are
 weak assertions or coverage gaps. The `call_site` ACs that are tested are
 tested well: each test fails on the wrong implementations listed above.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | Two new tests carry trace pairs that TC-1162 does not scope. TC-1162's Scope is FR-121-AC-25, AC-26 and AC-27. `a_field_of_a_process_or_state_machine_is_not_selectable` is tagged `("TC-1162", "FR-121-AC-18")`, and AC-18 is the `Sub`/`ConfigVersion` field-key case (TC-516). `a_call_site_frame_operation_resolves_as_a_replay_frame_target` is tagged `FR-115-AC-6` under TC-1162, and FR-115-AC-6 belongs to TC-514. Fix: tag the FR-115-AC-6 assertion under `TC-514`. Keep the field test on `TC-1162` without `FR-121-AC-18`, or tag it against the FR-121 field rule. | qsl-replay/src/spine/clause/tests/call_site_owners.rs:570,621 |
+
+## Dispositions
+
+Round 1, reviewed at 47c32d419 (fix commit 6c7a89b30). See SR-12364's
+round-1 note for the test runs, the mutation check and the main-caused
+`call_site_returns_the_checked_package_bytes_its_package_id_names` failure.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6c7a89b30 |
+| FND-002 | fixed | 6c7a89b30 |
+| FND-003 | fixed | 6c7a89b30 |
+| FND-004 | fixed | 6c7a89b30 |
+| FND-005 | fixed | 6c7a89b30 |
