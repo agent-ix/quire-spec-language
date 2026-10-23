@@ -123,8 +123,13 @@ the replay completed no value), then the record SHALL count as not
 definite, and the item SHALL be `conflict`, naming the backend, its
 `refuted` record and the gate's replay result: the backend and the
 evaluator disagree about a definite verdict. If the re-check replay
-refuses or faults, then the record SHALL count as not definite and the
-item SHALL be `tool-failure`, holding the replay refusal or fault. A record the provider
+refuses (a `ReplayRefusal` other than a fault, such as a replay limit
+reached), then the record SHALL count as not definite, as O-16's
+`replay_refused` does, and the entry SHALL hold the refusal and its catalog
+code; it fails nothing. If the re-check replay faults (`ReplayRefusal::Fault`
+or an admission `InternalFault`), then the record SHALL count as not
+definite and the item SHALL be `tool-failure`, holding the fault, as O-16
+maps a replay fault to `failed`. A record the provider
 settled `inconclusive` with `replay_parity` or `replay_refused` is not
 definite and is reported with its cause; it fails nothing.
 
@@ -137,11 +142,12 @@ over the terminal records of its candidates that ran:
   two are comparable under O-16, or when a replay re-check fails;
 - `tool-failure` when no pair conflicts and a backend run panicked,
   returned an internal fault or a `failed` terminal record, or a re-check
-  replay refused or faulted, holding the panic message, fault or refusal;
+  replay faulted, holding the panic message or the fault;
 - `agree` when neither holds and at least two records are definite
   (`proved` or `refuted`) and comparable;
 - `not-compared` otherwise. The entry names, for each record, why it was
-  not compared: its candidate did not negotiate `supported`, its record is
+  not compared: its candidate did not negotiate `supported`, its re-check
+  replay refused (naming the refusal), its record is
   not definite (its O-16 category), or a `bounded`-mode proof met a
   counterexample whose witness lies outside its declared domain (naming
   the domain).
@@ -183,6 +189,7 @@ with cause `no-comparable-item` and exit 2.
 | FR-448-AC-6 | Two runs over the AC-1 corpus give byte-equal JSON reports, with entries in ascending bytewise vector id and then request index order. | Test |
 | FR-448-AC-7 | A candidate whose negotiation settles `requires-bound` does not run and is reported with that disposition; with one other candidate settled `supported`, the item is `not-compared`. | Test |
 | FR-448-AC-8 | Adding a vector whose `compile` refuses `ill_typed` yields a `not-compiled` entry holding the refusal and leaves the exit status at 0. A vector naming a source file absent from the corpus yields a `tool-failure` entry holding the I/O error, the other entries keep their settlements, and the gate exits 1. | Test |
+| FR-448-AC-9 | A `refuted` record whose re-check replay is run under a replay limit it reaches is reported not definite, holding the replay refusal and its catalog code; against another backend's `proved` the item is `not-compared` and the gate exits 0. A `refuted` record whose re-check replay faults makes the item `tool-failure`, holding the fault, and the gate exits 1. | Test |
 
 ## Dependencies
 

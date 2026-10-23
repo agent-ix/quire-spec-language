@@ -91,3 +91,20 @@ compared over its declared domain". The rest of the relation is sound: only
 counterexample at any bound, and no tie-break. FND-003 to FND-005 are
 unspecified paths (negotiation, C-09 ownership, compile failures). Fix
 FND-001 to FND-005 in this PR. FND-006 follows owner question 2.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The gate's re-check settles a replay refusal and a replay fault the same way, as `tool-failure`, exit 1. O-16 keeps the two apart: a replay refusal (an identity mismatch, a decode refusal, a stale dependency, a limit reached) is `inconclusive` `replay_refused`, while only a fault is `failed`. FR-448 itself lets a provider-settled `replay_refused` fail nothing. As written, a re-check that reaches a replay limit at the effective `--limit` values fails the run as a tool failure, and the report does not tell it apart from a defect. Fix: give a re-check refusal its own reported cause (for example `recheck-refused`, holding the refusal's catalog code), and state whether it exits 1. Keep `tool-failure` for a fault or panic. | spec/functional/FR-448-cross-check-verification-backends-over-the-conformance-corpus.md:125-128; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:478-479 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The O-16 note now compares every success-category `proved` record whatever its basis. It cites ADR-018 V-2 (`BoundedComplete` is complete) and V-5 (depth-only results are `Inconclusive(BoundReached)`). AC-3 and TC-1193 step 3 now expect `BoundedComplete{3}` against a reproduced counterexample to be `conflict`, exit 1 (fix commit 754d7e5b, head ed7b5ec3). |
+| FND-002 | fixed | The bound comparison is gone. A `bounded`-mode proof (one negotiated `supported` in `bounded` mode) holds only over the item's declared finite domain (O-20). A reproduced counterexample is comparable with it only when the witness lies inside that domain; otherwise the pair is `not-compared`, naming the domain. AC-3 now uses domain `0..=10` with witnesses 12 and 4. The report records the declared domain. This rule is sound: a witness inside the domain contradicts the proof. |
+| FND-003 | fixed | A Negotiation section is added. Each candidate is requested by its `BackendId` (a one-backend FR-075 set) and negotiated, and only `supported` candidates run. `requires-bound`, `unsupported` and `invalid-request` are reported as `unsupported`, `unsupported` and `refusal`, matching the O-16 negotiation column. The in-scope count is taken before negotiation, and an item with fewer than two `supported` candidates is `not-compared`. New AC-7 and TC-1193 step 7 cover this. |
+| FND-004 | fixed | A backend now returns its FR-331 terminal record, already settled under C-09 after the T-13 driver ran the E9 replay. The gate settles no raw outcome. Its replay of each `refuted` record is a named re-check, with its own outcomes. This is lead default 3, flagged in the PR body. Owner question 1 stays open and now names this default. |
+| FND-005 | fixed | A compile refusal or limit yields a `not-compiled` entry, which fails nothing. A compile panic, fault or unreadable file yields `tool-failure`, and the gate continues. A `tool-failure` exits 1 (lead default 5, flagged), which matches FR-353's treatment of `tool-failure`. New AC-8 and TC-1193 step 8 cover this. |
+| FND-006 | fixed | The TC-1193 title now reads "fails on conflicting verdicts, including a wrong backend's proof or refutation". Step 4's unreproduced refutation is now `conflict`, exit 1, under the new re-check rule. A provider-settled `replay_parity` record stays reported and exits 0 (owner question 2). |

@@ -15,10 +15,10 @@ backends per item. Show that agreeing verdicts pass; that a test backend
 proving a refuted item, and one whose refutation the gate's replay does
 not reproduce, are both caught; that a provider-settled `replay_parity`
 record, bounded-mode proofs outside their domain, non-definite records,
-unnegotiated candidates and compile refusals are reported without
+unnegotiated candidates, re-check replay refusals and compile refusals are reported without
 failing; and that preflight refusals exit 2.
 
-Scope: FR-448-AC-1 to FR-448-AC-8.
+Scope: FR-448-AC-1 to FR-448-AC-9.
 
 ## Test Procedure
 
@@ -47,6 +47,10 @@ Scope: FR-448-AC-1 to FR-448-AC-8.
    `requires-bound`, and remove one of the two `supported` backends.
 8. Add to the step 1 corpus a vector whose source `compile` refuses
    `ill_typed`, then a vector naming a source file absent from the corpus.
+9. Re-check R's `refuted` record from step 1 with a replay limit of zero
+   steps, against the other backend's `proved` record of R from step 2.
+   Then re-check it with a replay test seam that returns an
+   `InternalFault`.
 
 Tag the tests `#[trace("TC-1193", "FR-448-AC-n")]`.
 
@@ -74,3 +78,7 @@ Tag the tests `#[trace("TC-1193", "FR-448-AC-n")]`.
 - Step 8: the `ill_typed` vector is `not-compiled` holding the refusal and
   the exit stays 0; the missing-file vector is `tool-failure` holding the
   I/O error, P and R keep their settlements, and the gate exits 1.
+- Step 9: under the zero limit the record is not definite, the entry holds
+  the replay refusal and its catalog code, R is `not-compared` and the
+  gate exits 0; with the fault, R is `tool-failure` holding the fault and
+  the gate exits 1.
