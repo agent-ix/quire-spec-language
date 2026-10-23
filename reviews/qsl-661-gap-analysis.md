@@ -69,3 +69,34 @@ Disposition pass 2 reviewed head `15aefe760` (fix commit `f3668797c`).
 | FND-001 | fixed | f3668797c. `a_partial_construct_contributes_its_definedness_failure_at_every_position` is tagged FR-315-AC-4 and is built over `Tally`. |
 | FND-004 | fixed | f3668797c. AC-15 to AC-25 and AC-27 now have tagged tests. AC-26 and AC-28 are Analysis ACs about how CG's backend reads a model, which CG owns, not this crate. |
 | FND-005 | fixed | f3668797c. `assert_unsat` checks that every Int constant is ranged inside the search values before it trusts an unsat. The remaining direct `!sat` uses are over `Int[0,3]` fixtures. |
+
+### Disposition pass 3
+
+Disposition pass 3 reviewed head `4358f0286` (fix commit `f3aeb2be8`), against FR-315 as amended
+by STD-340 (#1293). Every finding's latest outcome was already `fixed`, so this pass adds no row.
+It checked the post-round-2 changes only:
+
+- **Soundness:** the z3 probes were re-run, with no regression.
+  - P1: `Unrolling{3,4}` and `InductionBase{3,4}` are sat.
+  - P2: `always[0,5] holds(c.value <= 2)` at depth 5 is sat, `always[0,4] holds(c.value <= 3)` at
+    depth 4 is sat, and `always[0,3] holds(c.value <= 3)` at depth 3 is unsat. `eventually[0,3]`
+    at depth 3 is unsat and at depth 2 refuses `query-kind`. `eventually[0,2]` at depth 2 is sat.
+  - P5: infinite-trace depth 1 is sat. The false-extension and deadlock queries refuse
+    `field-domain`.
+  - Deadlock: base 2 is unsat and base 3 is sat.
+- **Fault arm:** `SmtEncodingRefusal` is `Refused(Refusal)` or `Fault(InternalFault)`, with stage
+  `smt-encoding`, as #1293 requires. The broken invariants (a TP-1 or TP-3 item binding
+  false-extension, a TP-1 item without its atom, a TP-3 item without an atom, a monitor index,
+  and the build-order reads) return `Fault`, not `item-form`. `h<i>` is declared for TP-2 only
+  (`infinite = bounded.is_none()`).
+- **Test-support constructors:** `with_profile_after_s3` and `with_property_form_after_s3` are
+  gated by `cfg(any(test, feature = "test-support"))`. Every `test-support` edge in the workspace
+  is a dev-dependency, under resolver 2, and `cargo tree -e normal,features -i qsl-semantics`
+  shows no `test-support` in a normal build. Production clauses keep their invariants.
+- **Tags:** the AC-29 and AC-32 tests assert what their ACs require.
+  - The AC-32 test removes the atom by relabelling a TP-3 clause as TP-1, which leaves a TP-1
+    item with no atom.
+  - The AC-31 test asserts the violation order only, and its comment says so. S3 refuses AC-31's
+    `pre(self.value) + 1` fixture with `Unproved(Range)`, so the failure-term half of the AC
+    cannot be built. That is a spec point for draco, not a code defect.
+- **Gates:** `cargo clippy -p qsl-eval -p qsl-semantics -p qsl-replay -p qsl-analyze --all-targets -D warnings` is clean, and the smt tests and the facade test pass.
