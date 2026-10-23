@@ -3,13 +3,15 @@
 //! counterexample's replay request, and the ordered refusals of building it.
 //!
 //! A plugin counterexample settles only through its S6a replay (FR-289 item
-//! 4), and FR-098's `replay` decides one claim: that a Boolean function
-//! returns `true`. So [`PluginReplayContext::request`] builds a request only
-//! for a function-contract item, the `declaration` occurrence of a checked
-//! `Boolean` function. Every other item is non-replayable and settles
+//! 4), and FR-098's `replay` decides the claim a function request's
+//! occurrence key selects. [`PluginReplayContext::request`] builds a request
+//! for a function-contract item (the `declaration` occurrence of a checked
+//! `Boolean` function: the predicate claim) and for an application item (a
+//! `value-validity` record owned by a function `replay` can select by name:
+//! the application claim). Every other item is non-replayable and settles
 //! `inconclusive` with cause `replay-refused` (ADR-029 PL-7).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::{InconclusiveCause, TerminalRecord, TerminalValue};
 use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeError};
@@ -23,9 +25,11 @@ use qsl_foundation::bound::ProofBound;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
-use qsl_foundation::{BackendId, Code, InternalFault, RequestIndex, Setting, SettingLimits};
+use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
+use qsl_semantics::check::Capability;
 use qsl_semantics::library::PackageId;
 use quire_exact::{Identifier, Origin, Role, ScalarLimits, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 /// The occurrence role and ordinal of a function's declaration (ADR-013 O-09).
 const DECLARATION_ROLE: &str = "declaration";
@@ -61,7 +65,10 @@ pub struct PluginReplayContext {
     source: RawSourceRef,
     dependencies: Vec<DependencySelection>,
     functions: BTreeMap<WireNodeId, FunctionDeclaration>,
-    requirements: BTreeSet<OccurrenceKey>,
+    /// Every requirement record of the package, with the function whose
+    /// application claim it is when `replay` can select that function by
+    /// name: a `value-validity` record owned by a callable function.
+    requirements: BTreeMap<OccurrenceKey, Option<Identifier>>,
     byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
     stage_limits: BTreeMap<String, u64>,
     accounting_limits: ScalarLimits,
@@ -157,7 +164,18 @@ impl PluginReplayContext {
             source: source_reference(checked.source()),
             dependencies,
             functions,
-            requirements: graph.requirements().keys().cloned().collect(),
+            requirements: graph
+                .requirements()
+                .iter()
+                .map(|(key, record)| {
+                    let owner = record
+                        .owner()
+                        .filter(|_| record.requirements().kind() == Capability::ValueValidity)
+                        .filter(|owner| graph.callable(owner).is_some())
+                        .and_then(|owner| Identifier::new(owner).ok());
+                    (key.clone(), owner)
+                })
+                .collect(),
             byte_provision,
             stage_limits,
             accounting_limits: limits.accounting.0,
@@ -176,7 +194,8 @@ impl PluginReplayContext {
     ///
     /// The first [`PluginReplayRefusal`], in this order: the occurrence is no
     /// function declaration and no requirement record of the package
-    /// (`UnknownOccurrence`); the item is not a function-contract item
+    /// (`UnknownOccurrence`); the item is neither a function-contract item
+    /// nor an application item of a function `replay` selects by name
     /// (`NotReplayable`); a dependency has no resolved source
     /// (`UnresolvedDependency`, defensive); two bounds name one domain key
     /// (`DuplicateBoundKey`).
@@ -191,15 +210,22 @@ impl PluginReplayContext {
         let function = (occurrence.origin() == &declaration)
             .then(|| self.functions.get(&occurrence.node()))
             .flatten();
-        if function.is_none() && !self.requirements.contains(occurrence) {
+        let record = self.requirements.get(occurrence);
+        if function.is_none() && record.is_none() {
             return Err(PluginReplayRefusal::UnknownOccurrence {
                 key: occurrence.clone(),
             });
         }
-        let Some(function) = function.filter(|function| function.predicate) else {
-            return Err(PluginReplayRefusal::NotReplayable {
-                key: occurrence.clone(),
-            });
+        // The function the request selects: a predicate's own name for a
+        // function-contract item, the record's owner for an application item.
+        let name = match (function, record) {
+            (Some(function), _) if function.predicate => function.name.clone(),
+            (None, Some(Some(owner))) => Some(owner.clone()),
+            _ => {
+                return Err(PluginReplayRefusal::NotReplayable {
+                    key: occurrence.clone(),
+                })
+            }
         };
         let dependencies = self
             .dependencies
@@ -246,7 +272,7 @@ impl PluginReplayContext {
                 "declared-function-name-is-an-identifier",
             ))
         };
-        let name = function.name.clone().ok_or_else(fault)?;
+        let name = name.ok_or_else(fault)?;
         let selected_function = QualifiedName::new(vec![name]).map_err(|_| fault())?;
         Ok(ReplayRequestWire {
             profile_selections: Vec::new(),

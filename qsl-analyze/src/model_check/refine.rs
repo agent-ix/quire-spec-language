@@ -42,7 +42,6 @@ use qsl_eval::fairness::{analyze, Analysis, EdgeLabel, FairnessError, Graph, Ide
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
-use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     abstract_classes, check_initial, check_step, open_systems, AbstractClass, CertifiedEdge,
@@ -56,6 +55,7 @@ use qsl_replay::{
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 

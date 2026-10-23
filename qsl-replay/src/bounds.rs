@@ -65,7 +65,7 @@ impl SettingLimits for ReplayLimits {
 
 /// A #231 reader refused an encoding exceeding its [`ReplayLimits`]:
 /// `stage_limit_exceeded/input-bytes-exceeded` naming `replay.input_bytes`, through
-/// [`qsl_foundation::diagnostic::CatalogCoded`].
+/// [`quire_semantic_value::catalog::CatalogCoded`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error(
     "stage_limit_exceeded/input-bytes-exceeded: encoded size {actual} exceeds the configured reader bound of {bound} bytes; raise `replay.input_bytes`"
@@ -104,8 +104,8 @@ impl BoundExceeded {
     }
 }
 
-impl qsl_foundation::diagnostic::CatalogCoded for BoundExceeded {
-    fn catalog_code(&self) -> qsl_foundation::diagnostic::CatalogCode {
+impl quire_semantic_value::catalog::CatalogCoded for BoundExceeded {
+    fn catalog_code(&self) -> quire_semantic_value::catalog::CatalogCode {
         self.limit().catalog_code()
     }
 
@@ -142,7 +142,7 @@ mod tests {
     #[trace("TC-737", "FR-263-AC-3")]
     #[test]
     fn reports_stage_limit_exceeded_input_bytes_naming_the_setting() {
-        use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded};
+        use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
         let err =
             BoundExceeded::check(1001, ReplayLimits::default().with_input_bytes(1000)).unwrap_err();
