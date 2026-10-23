@@ -40,7 +40,9 @@ use quire_semantic_value::declaration::EnvironmentFailure;
 use quire_semantic_value::location::Location;
 
 use super::lifecycle as front_end;
-use super::{CompileRefusal, DependencyInput, SpineLimits};
+use super::{
+    AdmittedModels, CheckedUnit, CompileRefusal, DependencyInput, EmittedUnit, SpineLimits,
+};
 use qsl_foundation::SourceIdentity;
 
 /// FR-100: the default `work_units` limit when a request omits it.
@@ -441,19 +443,20 @@ pub fn run(
         call,
         objects,
         cancel,
-        |_| Ok(()),
+        |_, _, _| Ok(()),
     )
     .map(|(package_id, outcome, ())| (package_id, outcome))
 }
 
 /// [`run`] over one compile, and, once the call has run, `read` over the
-/// compile's checked graph (FR-395 "One checked graph"): the value `read`
-/// returns comes from the same checked package as the call and the
+/// compile's checked unit, emitted unit and admitted models (FR-395 "One
+/// checked graph", FR-404 "One compile"): the value `read` returns comes from
+/// the same compile as the call and the
 /// `package_id`. A refusal before the call, including a cancel, returns
 /// before `read` runs.
 #[allow(
     clippy::too_many_arguments,
-    reason = "run's signature (FR-100) plus the one read of the checked graph"
+    reason = "run's signature (FR-100) plus the one read of the compile's units"
 )]
 pub(crate) fn run_reading<T>(
     source: SourceIdentity,
@@ -465,7 +468,7 @@ pub(crate) fn run_reading<T>(
     call: &Call,
     objects: &ObjectEnvironment,
     cancel: &Cancel,
-    read: impl FnOnce(&CheckedGraph) -> Result<T, Box<RunRefusal>>,
+    read: impl FnOnce(&CheckedUnit, &EmittedUnit, &AdmittedModels) -> Result<T, Box<RunRefusal>>,
 ) -> Result<(PackageId, CallOutcome, T), Box<RunRefusal>> {
     let refusal = |failure| match failure {
         StageFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
@@ -536,7 +539,7 @@ pub(crate) fn run_reading<T>(
     sources.push(checked.source().clone());
     sources.extend(checked.libraries().iter().cloned());
     let outcome = convert_outcome(evaluation, package.graph(), &sources)?;
-    let read = read(package.graph())?;
+    let read = read(&checked, &emitted, &models)?;
     Ok((package_id, outcome, read))
 }
 
