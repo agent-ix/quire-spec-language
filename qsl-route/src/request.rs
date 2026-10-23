@@ -98,6 +98,7 @@ pub struct RequestItem {
     index: RequestIndex,
     occurrence: OccurrenceKey,
     kind: Capability,
+    hybrid_dynamics: bool,
     extent: ExtentClassification,
     domains: Vec<ProofBound>,
     unsupported: Option<UnsupportedItem>,
@@ -123,6 +124,16 @@ impl RequestItem {
     /// The requested capability kind.
     pub fn kind(&self) -> Capability {
         self.kind
+    }
+
+    /// The FR-331 `requirements` member. Empty for an ordinary item and
+    /// exactly `hybrid-dynamics` for a checked hybrid claim.
+    pub fn requirements(&self) -> &'static [&'static str] {
+        if self.hybrid_dynamics {
+            &["hybrid-dynamics"]
+        } else {
+            &[]
+        }
     }
 
     /// The FR-331 extent classification.
@@ -291,6 +302,7 @@ impl RequestWriter {
             index,
             occurrence,
             kind: requirements.kind(),
+            hybrid_dynamics: requirements.hybrid_dynamics(),
             extent,
             domains,
             unsupported: requirements.unsupported().cloned(),
@@ -361,6 +373,7 @@ pub struct RequirementItem {
     index: RequestIndex,
     occurrence: OccurrenceKey,
     kind: Capability,
+    hybrid_dynamics: bool,
     extent: ExtentClassification,
     unbounded: Vec<(DomainKey, DomainKind)>,
     proof_bounds: Vec<ProofBound>,
@@ -394,6 +407,15 @@ impl RequirementItem {
     /// The record's capability kind.
     pub fn kind(&self) -> Capability {
         self.kind
+    }
+
+    /// The provider item requirement labels in wire order.
+    pub fn requirements(&self) -> &'static [&'static str] {
+        if self.hybrid_dynamics {
+            &["hybrid-dynamics"]
+        } else {
+            &[]
+        }
     }
 
     /// The extent classification [`RequestWriter::item`] computes from the
@@ -563,6 +585,7 @@ pub fn items_from_requirements(
                 index,
                 occurrence: occurrence.clone(),
                 kind: requirements.kind(),
+                hybrid_dynamics: requirements.hybrid_dynamics(),
                 extent,
                 unbounded,
                 proof_bounds: Vec::new(),
@@ -586,8 +609,13 @@ fn candidates_of(
     registry: &Registry,
     named: Option<&BackendId>,
 ) -> CandidateOutcome {
-    let outcome =
-        registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness());
+    let outcome = registry.candidates_for_temporal_dynamics(
+        requirements.kind(),
+        named,
+        requirements.fairness(),
+        &Default::default(),
+        requirements.hybrid_dynamics(),
+    );
     match outcome {
         // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).
         CandidateOutcome::Candidates(_) if requirements.unsupported().is_some() => {
@@ -635,6 +663,21 @@ mod tests {
 
     fn depth(maximum: u64) -> FiniteBound {
         FiniteBound::depth(maximum).unwrap()
+    }
+
+    /// Trace: FR-447-AC-17, FR-250-AC-1, TC-1187.
+    #[ix_trace_rs::trace("TC-1187", "FR-447-AC-17")]
+    #[test]
+    fn request_writer_keeps_hybrid_dynamics_in_the_item_identity() {
+        let ordinary = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+        let hybrid = ordinary.clone().with_hybrid_dynamics();
+        let mut writer = RequestWriter::new();
+        let first = writer.item(occurrence(), &ordinary);
+        let second = writer.item(occurrence(), &hybrid);
+        let items = writer.finish();
+        assert!(items[first.get()].requirements().is_empty());
+        assert_eq!(items[second.get()].requirements(), ["hybrid-dynamics"]);
+        assert_ne!(items[first.get()], items[second.get()]);
     }
 
     /// TC-438 (ADR-014 §4; §10 scenarios 2 and 3): a bounded item is

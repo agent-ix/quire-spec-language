@@ -595,6 +595,7 @@ fn every_plugin_basis_is_trusted() {
             method: qsl_replay::SolverMethod::DeltaComplete,
             horizon,
             jumps: 4,
+            exhaustive: std::collections::BTreeSet::new(),
         },
     ] {
         let record = TerminalRecord::from_plugin_proof(

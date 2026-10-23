@@ -12,7 +12,7 @@ use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
-use crate::hybrid::{SolverHorizon, SolverMethod};
+use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::model_check::limits::ModelCheckLimit;
 use crate::model_check::state_graph::WitnessSource;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
@@ -31,6 +31,7 @@ use quire_exact::{CancelCause, Integer};
 use quire_semantic_value::catalog::{CatalogCode, Category};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 mod plugin;
 mod plugin_read;
@@ -91,6 +92,13 @@ pub enum ProofBasis {
         horizon: SolverHorizon,
         /// The jump bound the proof covers.
         jumps: u64,
+        /// The bounds established complete by the solver.
+        exhaustive: BTreeSet<BoundDimension>,
+    },
+    /// A solver's inductive proof over every time and jump count.
+    InductiveSolver {
+        /// The method that established the enclosure.
+        method: SolverMethod,
     },
     /// FR-169 (ADR-022 GV-1): a replayed witness for every initial state of
     /// a state-graph `possible` item, from a run that completed with no open
@@ -376,6 +384,9 @@ impl ProofRefusalCause {
 pub enum UnavailabilityCause {
     /// No solver satisfying the request's capability negotiation is present.
     SolverAbsent,
+    /// No registration holds the hybrid dynamics requested by this claim.
+    /// Wire cause `unsupported_projection`/`unsupported-requested-capability`.
+    HybridProviderAbsent,
     /// No backend satisfying the request's capability negotiation is
     /// present.
     BackendAbsent,
@@ -500,6 +511,7 @@ impl UnavailabilityCause {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::SolverAbsent => "solver-absent",
+            Self::HybridProviderAbsent => "unsupported-requested-capability",
             Self::BackendAbsent => "backend-absent",
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
             Self::UnsupportedReduction { .. }
@@ -526,6 +538,7 @@ impl UnavailabilityCause {
             | Self::WeakAccessShape { .. }
             | Self::PunctualInterval { .. } => None,
             Self::MissingFairnessPremise { .. }
+            | Self::HybridProviderAbsent
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
             | Self::StrongAbstractFairness
@@ -619,6 +632,15 @@ pub enum InconclusiveCause {
     /// flowpipe meeting the unsafe set, `unknown`, or a method not sound for
     /// its outcome).
     SolverInconclusive,
+    /// A sound bounded solver proof did not cover every state the claim reads.
+    InsufficientHorizon {
+        /// The proof's time bound.
+        horizon: SolverHorizon,
+        /// The proof's jump bound.
+        jumps: u64,
+        /// Which dimensions the solver established complete.
+        exhaustive: BTreeSet<BoundDimension>,
+    },
     /// FR-169 (ADR-022 GV-1, RU-5): every initial state of a state-graph
     /// `possible` item has a replayed witness, but the run a limit stopped,
     /// or that ended with open nodes, did not rule out a reachable undefined
@@ -755,6 +777,7 @@ impl InconclusiveCause {
             Self::ReplayRefused(_) => REPLAY_REFUSED_KIND,
             Self::ScalarAgrees(_) => "scalar-agrees",
             Self::SolverInconclusive => "solver-inconclusive",
+            Self::InsufficientHorizon { .. } => "insufficient-horizon",
             Self::SufficientTestFailed => "sufficient-test-failed",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
@@ -781,6 +804,7 @@ impl InconclusiveCause {
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive
+            | Self::InsufficientHorizon { .. }
             | Self::ReductionNotPreserving { .. }
             | Self::ConstraintReached { .. }
             | Self::ReductionHorizon { .. }
@@ -916,6 +940,7 @@ impl TerminalValue {
                     | ProofBasis::Inductive { .. }
                     | ProofBasis::ClosedForm { .. }
                     | ProofBasis::BoundedSolver { .. }
+                    | ProofBasis::InductiveSolver { .. }
                     | ProofBasis::Witness { .. }
                     | ProofBasis::Reduced { .. },
                 ..

@@ -11,6 +11,7 @@ use super::{
     REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND,
 };
 use crate::execute::ReplayRefusal;
+use crate::hybrid::{ClaimHorizon, SolverCoverage};
 use crate::outcome::OutcomeDiagnostic;
 use crate::result::{InputSettlement, ReplayResult};
 use qsl_foundation::{BackendId, RequestIndex};
@@ -271,6 +272,7 @@ impl TerminalRecord {
             | ProofBasis::BoundedComplete { .. }
             | ProofBasis::Inductive { .. }
             | ProofBasis::BoundedSolver { .. }
+            | ProofBasis::InductiveSolver { .. }
             | ProofBasis::Reduced { .. } => {}
         }
         Ok(Self::with_backend(
@@ -281,6 +283,43 @@ impl TerminalRecord {
                 certification: Certification::Trusted,
             },
         ))
+    }
+
+    /// A trusted plugin proof over a hybrid claim. A bounded solver basis
+    /// settles `proved` only if it covers every state the claim reads;
+    /// otherwise its bounds settle `insufficient-horizon` (FR-250-AC-7).
+    /// Other admitted plugin bases retain their FR-290 settlement.
+    pub fn from_hybrid_plugin_proof(
+        request_index: RequestIndex,
+        plugin: BackendId,
+        basis: ProofBasis,
+        claim: &ClaimHorizon,
+    ) -> Result<Self, PluginResultRefusal> {
+        if let ProofBasis::BoundedSolver {
+            horizon,
+            jumps,
+            exhaustive,
+            ..
+        } = &basis
+        {
+            let coverage = SolverCoverage::Bounded {
+                horizon: horizon.clone(),
+                jumps: *jumps,
+                exhaustive: exhaustive.clone(),
+            };
+            if !coverage.covers(claim) {
+                return Self::from_plugin_inconclusive(
+                    request_index,
+                    plugin,
+                    InconclusiveCause::InsufficientHorizon {
+                        horizon: horizon.clone(),
+                        jumps: *jumps,
+                        exhaustive: exhaustive.clone(),
+                    },
+                );
+            }
+        }
+        Self::from_plugin_proof(request_index, plugin, basis)
     }
 
     /// A plugin's `inconclusive` result with the typed cause the driver read

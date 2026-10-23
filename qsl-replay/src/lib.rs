@@ -131,7 +131,8 @@ pub use execute::{
     ValueParityResult,
 };
 pub use hybrid::{
-    NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+    BoundDimension, ClaimHorizon, NegativeHorizon, SolverCoverage, SolverHorizon, SolverMethod,
+    SolverOutcome, SolverResult, SolverStop,
 };
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,

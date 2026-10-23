@@ -10,6 +10,7 @@
 use quire_exact::Rational;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
+use std::collections::BTreeSet;
 
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::{
@@ -26,6 +27,10 @@ pub enum SolverMethod {
     FlowpipeOutwardRounded,
     /// A flowpipe without outward rounding: no result of it is sound.
     FlowpipeUnrounded,
+    /// An inductive enclosure proves every time and jump count.
+    InductiveEnclosure,
+    /// A method outside QSpec FR-193's classified solver methods.
+    Unclassified,
 }
 
 impl SolverMethod {
@@ -35,20 +40,40 @@ impl SolverMethod {
             Self::DeltaComplete => "delta-complete",
             Self::FlowpipeOutwardRounded => "flowpipe-outward-rounded",
             Self::FlowpipeUnrounded => "flowpipe-unrounded",
+            Self::InductiveEnclosure => "inductive-enclosure",
+            Self::Unclassified => "unclassified",
         }
     }
 
-    /// Whether this kind of method makes `outcome` a sound proof.
-    pub const fn is_sound_for(self, outcome: &SolverOutcome) -> bool {
+    /// Whether the method, outcome and coverage form a sound proof triple.
+    pub fn is_sound_for(self, outcome: &SolverOutcome, coverage: &SolverCoverage) -> bool {
         matches!(
-            (self, outcome),
-            (Self::DeltaComplete, SolverOutcome::Unsat)
-                | (
-                    Self::FlowpipeOutwardRounded,
-                    SolverOutcome::EnclosureDisjoint
-                )
+            (self, outcome, coverage),
+            (
+                Self::DeltaComplete,
+                SolverOutcome::Unsat,
+                SolverCoverage::Bounded { .. }
+            ) | (
+                Self::FlowpipeOutwardRounded,
+                SolverOutcome::EnclosureDisjoint,
+                SolverCoverage::Bounded { .. }
+            ) | (
+                Self::InductiveEnclosure,
+                SolverOutcome::EnclosureDisjoint,
+                SolverCoverage::Inductive
+            )
         )
     }
+}
+
+/// The dimension of a bounded solver result established complete.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BoundDimension {
+    /// Every behavior's jumps through the given time are within `jumps`.
+    Time,
+    /// Every behavior's first `jumps` jumps occur within `horizon`.
+    Jumps,
 }
 
 impl Serialize for SolverMethod {
@@ -81,6 +106,8 @@ pub enum SolverOutcome {
     EnclosureMeetsUnsafe,
     /// The solver could not decide.
     Unknown,
+    /// The model has no initial state; no behavior establishes a proof.
+    NoInitialState,
     /// A budget stopped the solver.
     Stopped(SolverStop),
 }
@@ -121,6 +148,65 @@ impl Serialize for SolverHorizon {
     }
 }
 
+/// The clock and horizon of the checked hybrid claim whose proof is being
+/// settled. A missing horizon names an unbounded claim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ClaimHorizon {
+    /// A duration in exact seconds under `model-time`.
+    ModelTime(Option<SolverHorizon>),
+    /// A count of positions under `model-steps`, never converted to seconds.
+    ModelSteps(Option<u64>),
+}
+
+/// The part of a hybrid behavior a solver result established (FR-250).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SolverCoverage {
+    /// A finite time and jump bound, with the dimensions established complete.
+    Bounded {
+        /// The covered duration in exact seconds.
+        horizon: SolverHorizon,
+        /// The covered jump count.
+        jumps: u64,
+        /// Completeness established by the provider.
+        exhaustive: BTreeSet<BoundDimension>,
+    },
+    /// Every time and every jump count.
+    Inductive,
+}
+
+impl SolverCoverage {
+    /// Whether this coverage includes every state a claim can read.
+    pub fn covers(&self, claim: &ClaimHorizon) -> bool {
+        match (self, claim) {
+            (Self::Inductive, _) => true,
+            (
+                Self::Bounded {
+                    horizon,
+                    exhaustive,
+                    ..
+                },
+                ClaimHorizon::ModelTime(Some(required)),
+            ) => {
+                horizon.seconds() >= required.seconds()
+                    && exhaustive.contains(&BoundDimension::Time)
+            }
+            (
+                Self::Bounded {
+                    jumps, exhaustive, ..
+                },
+                ClaimHorizon::ModelSteps(Some(required)),
+            ) => {
+                *jumps >= *required
+                    && (*required == 0 || exhaustive.contains(&BoundDimension::Jumps))
+            }
+            (
+                Self::Bounded { .. },
+                ClaimHorizon::ModelTime(None) | ClaimHorizon::ModelSteps(None),
+            ) => false,
+        }
+    }
+}
+
 /// A provider's result (FR-250 Inputs).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SolverResult {
@@ -128,19 +214,16 @@ pub struct SolverResult {
     pub method: SolverMethod,
     /// The outcome.
     pub outcome: SolverOutcome,
-    /// The time horizon the result covers.
-    pub horizon: SolverHorizon,
-    /// The jump bound the result covers.
-    pub jumps: u64,
+    /// The behavior range established by the solver.
+    pub coverage: SolverCoverage,
 }
 
 impl SolverResult {
-    /// FR-250's map. A sound `Unsat` or `EnclosureDisjoint` is `proved`,
-    /// `uncertified`, over its horizon and jump bound; `Stopped` is
-    /// `incomplete`; everything else is `inconclusive`. Never `refuted`.
-    /// This is the only place a `BoundedSolver` proof is built, and it is
-    /// always `Uncertified`.
-    pub fn terminal_value(&self) -> TerminalValue {
+    /// FR-250's method and coverage map for a checked claim. A sound proof
+    /// settles `proved` only when its coverage includes the claim; a sound
+    /// bounded result that falls short names its actual bounds. No provider
+    /// assertion of soundness is read.
+    pub fn terminal_value(&self, claim: &ClaimHorizon) -> TerminalValue {
         match self.outcome {
             SolverOutcome::Stopped(SolverStop::Time) => {
                 TerminalValue::Incomplete(IncompleteCause::TimedOut)
@@ -151,13 +234,40 @@ impl SolverResult {
                     value,
                 })
             }
-            outcome if self.method.is_sound_for(&outcome) => TerminalValue::Proved {
-                basis: ProofBasis::BoundedSolver {
-                    method: self.method,
-                    horizon: self.horizon.clone(),
-                    jumps: self.jumps,
+            SolverOutcome::NoInitialState => {
+                TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
+            }
+            outcome if self.method.is_sound_for(&outcome, &self.coverage) => match &self.coverage {
+                SolverCoverage::Bounded {
+                    horizon,
+                    jumps,
+                    exhaustive,
+                } if !self.coverage.covers(claim) => {
+                    TerminalValue::Inconclusive(InconclusiveCause::InsufficientHorizon {
+                        horizon: horizon.clone(),
+                        jumps: *jumps,
+                        exhaustive: exhaustive.clone(),
+                    })
+                }
+                SolverCoverage::Bounded {
+                    horizon,
+                    jumps,
+                    exhaustive,
+                } => TerminalValue::Proved {
+                    basis: ProofBasis::BoundedSolver {
+                        method: self.method,
+                        horizon: horizon.clone(),
+                        jumps: *jumps,
+                        exhaustive: exhaustive.clone(),
+                    },
+                    certification: Certification::Uncertified,
                 },
-                certification: Certification::Uncertified,
+                SolverCoverage::Inductive => TerminalValue::Proved {
+                    basis: ProofBasis::InductiveSolver {
+                        method: self.method,
+                    },
+                    certification: Certification::Uncertified,
+                },
             },
             SolverOutcome::Unsat
             | SolverOutcome::DeltaSat
@@ -172,15 +282,21 @@ impl SolverResult {
     /// The QSpec FR-243 basis the result settles with: `closed-scope` for a
     /// proof within its horizon and jump bound, `unsettled` for an
     /// inconclusive result, `unavailable` for a stopped solver.
-    pub fn basis(&self) -> SettlementBasis {
+    pub fn basis(&self, claim: &ClaimHorizon) -> SettlementBasis {
         match self.outcome {
             SolverOutcome::Stopped(_) => SettlementBasis::Unavailable,
-            outcome if self.method.is_sound_for(&outcome) => SettlementBasis::ClosedScope,
+            outcome
+                if self.method.is_sound_for(&outcome, &self.coverage)
+                    && self.coverage.covers(claim) =>
+            {
+                SettlementBasis::ClosedScope
+            }
             SolverOutcome::Unsat
             | SolverOutcome::DeltaSat
             | SolverOutcome::EnclosureDisjoint
             | SolverOutcome::EnclosureMeetsUnsafe
-            | SolverOutcome::Unknown => SettlementBasis::Unsettled,
+            | SolverOutcome::Unknown
+            | SolverOutcome::NoInitialState => SettlementBasis::Unsettled,
         }
     }
 }
@@ -191,6 +307,7 @@ mod tests {
     use crate::model_check::limits::ModelCheckLimit;
     use crate::outcome::OutcomeItem;
     use crate::proof_result::TerminalRecord;
+    use crate::proof_result::UnavailabilityCause;
     use ix_trace_rs::trace;
     use qsl_foundation::RequestIndex;
     use quire_exact::Integer;
@@ -200,17 +317,192 @@ mod tests {
         SolverHorizon::new(Rational::from_integer(Integer::from(seconds))).expect("non-negative")
     }
 
+    /// Trace: FR-250-AC-6, FR-250-AC-7, TC-705.
+    #[trace("TC-705", "FR-250-AC-7")]
+    #[test]
+    fn bounded_coverage_requires_the_claims_dimension_and_full_extent() {
+        let time = SolverCoverage::Bounded {
+            horizon: horizon(10),
+            jumps: 1,
+            exhaustive: BTreeSet::from([BoundDimension::Time]),
+        };
+        assert!(time.covers(&ClaimHorizon::ModelTime(Some(horizon(10)))));
+        assert!(!time.covers(&ClaimHorizon::ModelTime(Some(horizon(11)))));
+        assert!(!time.covers(&ClaimHorizon::ModelSteps(Some(1))));
+        assert!(!time.covers(&ClaimHorizon::ModelTime(None)));
+
+        let jumps = SolverCoverage::Bounded {
+            horizon: horizon(20),
+            jumps: 1,
+            exhaustive: BTreeSet::from([BoundDimension::Jumps]),
+        };
+        assert!(jumps.covers(&ClaimHorizon::ModelSteps(Some(1))));
+        assert!(!jumps.covers(&ClaimHorizon::ModelSteps(Some(2))));
+        assert!(!jumps.covers(&ClaimHorizon::ModelTime(Some(horizon(1)))));
+
+        let zero = SolverCoverage::Bounded {
+            horizon: horizon(1),
+            jumps: 0,
+            exhaustive: BTreeSet::new(),
+        };
+        assert!(zero.covers(&ClaimHorizon::ModelSteps(Some(0))));
+        assert!(!zero.covers(&ClaimHorizon::ModelSteps(Some(1))));
+        assert!(!zero.covers(&ClaimHorizon::ModelSteps(None)));
+        assert!(SolverCoverage::Inductive.covers(&ClaimHorizon::ModelTime(None)));
+        assert!(SolverCoverage::Inductive.covers(&ClaimHorizon::ModelSteps(None)));
+    }
+
+    /// Trace: FR-250-AC-6, FR-250-AC-7, TC-705.
+    #[trace("TC-705", "FR-250-AC-7")]
+    #[test]
+    fn sound_bounded_result_that_misses_a_claim_is_inconclusive() {
+        let result = SolverResult {
+            method: SolverMethod::DeltaComplete,
+            outcome: SolverOutcome::Unsat,
+            coverage: SolverCoverage::Bounded {
+                horizon: horizon(1),
+                jumps: 1,
+                exhaustive: BTreeSet::from([BoundDimension::Time]),
+            },
+        };
+        assert_eq!(
+            result.terminal_value(&ClaimHorizon::ModelTime(Some(horizon(10)))),
+            TerminalValue::Inconclusive(InconclusiveCause::InsufficientHorizon {
+                horizon: horizon(1),
+                jumps: 1,
+                exhaustive: BTreeSet::from([BoundDimension::Time]),
+            })
+        );
+        assert_eq!(
+            result.basis(&ClaimHorizon::ModelTime(Some(horizon(10)))),
+            SettlementBasis::Unsettled
+        );
+    }
+
+    /// Trace: FR-250-AC-6, FR-250-AC-7, TC-705.
+    #[trace("TC-705", "FR-250-AC-7")]
+    #[test]
+    fn inductive_enclosure_proves_unbounded_claims_only_with_inductive_coverage() {
+        let result = SolverResult {
+            method: SolverMethod::InductiveEnclosure,
+            outcome: SolverOutcome::EnclosureDisjoint,
+            coverage: SolverCoverage::Inductive,
+        };
+        assert_eq!(
+            result.terminal_value(&ClaimHorizon::ModelTime(None)),
+            TerminalValue::Proved {
+                basis: ProofBasis::InductiveSolver {
+                    method: SolverMethod::InductiveEnclosure,
+                },
+                certification: Certification::Uncertified,
+            }
+        );
+        assert_eq!(
+            result.basis(&ClaimHorizon::ModelTime(None)),
+            SettlementBasis::ClosedScope
+        );
+    }
+
+    /// Trace: FR-250-AC-6, TC-705.
+    #[trace("TC-705", "FR-250-AC-6")]
+    #[test]
+    fn an_empty_initial_set_never_proves_a_claim() {
+        let result = SolverResult {
+            method: SolverMethod::DeltaComplete,
+            outcome: SolverOutcome::NoInitialState,
+            coverage: SolverCoverage::Inductive,
+        };
+        assert_eq!(
+            result.terminal_value(&ClaimHorizon::ModelTime(None)),
+            TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
+        );
+        assert_eq!(
+            result.basis(&ClaimHorizon::ModelTime(None)),
+            SettlementBasis::Unsettled
+        );
+    }
+
+    /// Trace: FR-250-AC-1, TC-705.
+    #[trace("TC-705", "FR-250-AC-1")]
+    #[test]
+    fn absent_hybrid_provider_settles_unsupported_requested_capability() {
+        let record = TerminalRecord::from_value(
+            RequestIndex::new(0),
+            TerminalValue::Unsupported(UnavailabilityCause::HybridProviderAbsent),
+        );
+        let item = serde_json::to_value(OutcomeItem::from_terminal(&record)).expect("serializes");
+        assert_eq!(item["result"], "unsupported");
+        assert_eq!(item["category"], "unsupported");
+        assert_eq!(item["cause"]["kind"], "unsupported-requested-capability");
+        assert_eq!(item["cause"]["code"], "unsupported_projection");
+    }
+
+    /// Trace: FR-250-AC-6, TC-705.
+    #[trace("TC-705", "FR-250-AC-6")]
+    #[test]
+    fn only_the_three_classified_method_outcome_coverage_triples_are_sound() {
+        let bounded = SolverCoverage::Bounded {
+            horizon: horizon(10),
+            jumps: 1,
+            exhaustive: BTreeSet::from([BoundDimension::Time]),
+        };
+        let inductive = SolverCoverage::Inductive;
+        let methods = [
+            SolverMethod::DeltaComplete,
+            SolverMethod::FlowpipeOutwardRounded,
+            SolverMethod::FlowpipeUnrounded,
+            SolverMethod::InductiveEnclosure,
+            SolverMethod::Unclassified,
+        ];
+        let outcomes = [SolverOutcome::Unsat, SolverOutcome::EnclosureDisjoint];
+        for method in methods {
+            for outcome in outcomes {
+                for coverage in [&bounded, &inductive] {
+                    let expected = matches!(
+                        (method, outcome, coverage),
+                        (
+                            SolverMethod::DeltaComplete,
+                            SolverOutcome::Unsat,
+                            SolverCoverage::Bounded { .. }
+                        ) | (
+                            SolverMethod::FlowpipeOutwardRounded,
+                            SolverOutcome::EnclosureDisjoint,
+                            SolverCoverage::Bounded { .. }
+                        ) | (
+                            SolverMethod::InductiveEnclosure,
+                            SolverOutcome::EnclosureDisjoint,
+                            SolverCoverage::Inductive
+                        )
+                    );
+                    assert_eq!(
+                        method.is_sound_for(&outcome, coverage),
+                        expected,
+                        "{method:?} {outcome:?} {coverage:?}"
+                    );
+                }
+            }
+        }
+    }
+
     fn result(method: SolverMethod, outcome: SolverOutcome) -> SolverResult {
         SolverResult {
             method,
             outcome,
-            horizon: horizon(10),
-            jumps: 3,
+            coverage: SolverCoverage::Bounded {
+                horizon: horizon(10),
+                jumps: 3,
+                exhaustive: BTreeSet::from([BoundDimension::Time]),
+            },
         }
     }
 
+    fn claim() -> ClaimHorizon {
+        ClaimHorizon::ModelTime(Some(horizon(10)))
+    }
+
     fn item(result: &SolverResult) -> serde_json::Value {
-        let record = TerminalRecord::from_value(RequestIndex::new(0), result.terminal_value());
+        let record =
+            TerminalRecord::from_value(RequestIndex::new(0), result.terminal_value(&claim()));
         serde_json::to_value(OutcomeItem::from_terminal(&record)).expect("serializes")
     }
 
@@ -221,12 +513,13 @@ mod tests {
     fn a_sound_unsat_settles_proved_uncertified_with_horizon_and_jumps() {
         let sound = result(SolverMethod::DeltaComplete, SolverOutcome::Unsat);
         assert_eq!(
-            sound.terminal_value(),
+            sound.terminal_value(&claim()),
             TerminalValue::Proved {
                 basis: ProofBasis::BoundedSolver {
                     method: SolverMethod::DeltaComplete,
                     horizon: horizon(10),
                     jumps: 3,
+                    exhaustive: BTreeSet::from([BoundDimension::Time]),
                 },
                 certification: Certification::Uncertified,
             }
@@ -242,18 +535,19 @@ mod tests {
                     "method": "delta-complete",
                     "horizon": {"kind": "rational", "numerator": "10", "denominator": "1"},
                     "jumps": 3,
+                    "exhaustive": ["time"],
                 },
                 "certification": "uncertified",
                 "category": "success",
             })
         );
-        assert_eq!(sound.basis(), SettlementBasis::ClosedScope);
+        assert_eq!(sound.basis(&claim()), SettlementBasis::ClosedScope);
         let enclosure = result(
             SolverMethod::FlowpipeOutwardRounded,
             SolverOutcome::EnclosureDisjoint,
         );
         assert!(matches!(
-            enclosure.terminal_value(),
+            enclosure.terminal_value(&claim()),
             TerminalValue::Proved {
                 certification: Certification::Uncertified,
                 ..
@@ -279,9 +573,9 @@ mod tests {
             result(SolverMethod::FlowpipeOutwardRounded, SolverOutcome::Unsat),
         ];
         for result in &unsound {
-            assert_eq!(result.basis(), SettlementBasis::Unsettled);
+            assert_eq!(result.basis(&claim()), SettlementBasis::Unsettled);
             assert_eq!(
-                result.terminal_value(),
+                result.terminal_value(&claim()),
                 TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive),
                 "{result:?}"
             );
@@ -307,7 +601,7 @@ mod tests {
             SolverMethod::DeltaComplete,
             SolverOutcome::Stopped(SolverStop::Time),
         );
-        assert_eq!(timed.basis(), SettlementBasis::Unavailable);
+        assert_eq!(timed.basis(&claim()), SettlementBasis::Unavailable);
         assert_eq!(
             item(&timed),
             json!({
@@ -321,7 +615,7 @@ mod tests {
             SolverMethod::DeltaComplete,
             SolverOutcome::Stopped(SolverStop::Steps(1000)),
         );
-        assert_eq!(stepped.basis(), SettlementBasis::Unavailable);
+        assert_eq!(stepped.basis(&claim()), SettlementBasis::Unavailable);
         assert_eq!(
             item(&stepped),
             json!({
@@ -386,7 +680,7 @@ mod tests {
         ];
         for (method, outcome, expect) in table {
             let settled = result(method, outcome);
-            let (value, basis) = (settled.terminal_value(), settled.basis());
+            let (value, basis) = (settled.terminal_value(&claim()), settled.basis(&claim()));
             match expect {
                 Proved => {
                     assert_eq!(
@@ -396,6 +690,7 @@ mod tests {
                                 method,
                                 horizon: horizon(10),
                                 jumps: 3,
+                                exhaustive: BTreeSet::from([BoundDimension::Time]),
                             },
                             certification: Certification::Uncertified,
                         },

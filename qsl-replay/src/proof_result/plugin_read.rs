@@ -11,6 +11,7 @@
 //! plugin. Those are the [`BASIS`] and [`CAUSE`] tables below.
 
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
@@ -19,7 +20,7 @@ use super::{
     AppliedReduction, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, ProofBasis,
     Proviso, ReductionKind,
 };
-use crate::hybrid::{SolverHorizon, SolverMethod};
+use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::witness::{CanonicalAssignment, WitnessValue};
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, Rational};
@@ -44,7 +45,11 @@ const BASIS: &[Spelling] = &[
     spelling("exhaustive", &[]),
     spelling("bounded-complete", &["depth"]),
     spelling("inductive", &["depth"]),
-    spelling("bounded-solver", &["horizon", "jumps", "method"]),
+    spelling(
+        "bounded-solver",
+        &["exhaustive", "horizon", "jumps", "method"],
+    ),
+    spelling("inductive-solver", &["method"]),
     spelling("reduced", &["reductions"]),
 ];
 
@@ -65,6 +70,7 @@ const CAUSE: &[Spelling] = &[
     spelling("no-instance", &[]),
     spelling("sufficient-test-failed", &[]),
     spelling("solver-inconclusive", &[]),
+    spelling("insufficient-horizon", &["exhaustive", "horizon", "jumps"]),
     spelling("match-undetermined", &[]),
     spelling("vacuous-match", &[]),
     spelling("bound-reached", &["depth"]),
@@ -262,14 +268,29 @@ pub fn read_plugin_basis(basis: &Value) -> Result<ProofBasis, PluginResultRefusa
             depth: count(members, "depth", BASE, false)?,
         },
         "bounded-solver" => {
+            let exhaustive = read_exhaustive(
+                member(members, "exhaustive", BASE)?,
+                child(BASE, "exhaustive"),
+            )?;
             let horizon = read_horizon(member(members, "horizon", BASE)?, child(BASE, "horizon"))?;
             let jumps = count(members, "jumps", BASE, false)?;
             let method = read_method(member(members, "method", BASE)?, child(BASE, "method"))?;
+            if method == SolverMethod::InductiveEnclosure {
+                return Err(invalid(child(BASE, "method")));
+            }
             ProofBasis::BoundedSolver {
                 method,
                 horizon,
                 jumps,
+                exhaustive,
             }
+        }
+        "inductive-solver" => {
+            let method = read_method(member(members, "method", BASE)?, child(BASE, "method"))?;
+            if method != SolverMethod::InductiveEnclosure {
+                return Err(invalid(child(BASE, "method")));
+            }
+            ProofBasis::InductiveSolver { method }
         }
         _ => ProofBasis::Reduced {
             reductions: read_reductions(
@@ -287,13 +308,34 @@ fn read_method(value: &Value, pointer: String) -> Result<SolverMethod, PluginRes
         SolverMethod::DeltaComplete,
         SolverMethod::FlowpipeOutwardRounded,
         SolverMethod::FlowpipeUnrounded,
+        SolverMethod::InductiveEnclosure,
+        SolverMethod::Unclassified,
     ]
     .into_iter()
     .find(|candidate| candidate.as_str() == method)
-    .ok_or_else(|| PluginResultRefusal::Unsupported {
-        pointer,
-        feature: method.to_owned(),
-    })
+    .ok_or_else(|| invalid(pointer))
+}
+
+#[ix_trace_rs::string_edge]
+fn read_exhaustive(
+    value: &Value,
+    pointer: String,
+) -> Result<BTreeSet<BoundDimension>, PluginResultRefusal> {
+    let labels = value
+        .as_array()
+        .ok_or_else(|| wrong_kind(pointer.clone()))?;
+    let mut dimensions = BTreeSet::new();
+    for label in labels {
+        let dimension = match label.as_str() {
+            Some("time") => BoundDimension::Time,
+            Some("jumps") => BoundDimension::Jumps,
+            _ => return Err(invalid(pointer)),
+        };
+        if !dimensions.insert(dimension) {
+            return Err(invalid(pointer));
+        }
+    }
+    Ok(dimensions)
 }
 
 /// A canonical decimal integer: an optional `-`, then digits with no leading
@@ -505,6 +547,14 @@ pub fn read_plugin_inconclusive_cause(
         "no-instance" => InconclusiveCause::NoInstance,
         "sufficient-test-failed" => InconclusiveCause::SufficientTestFailed,
         "solver-inconclusive" => InconclusiveCause::SolverInconclusive,
+        "insufficient-horizon" => InconclusiveCause::InsufficientHorizon {
+            exhaustive: read_exhaustive(
+                member(members, "exhaustive", BASE)?,
+                child(BASE, "exhaustive"),
+            )?,
+            horizon: read_horizon(member(members, "horizon", BASE)?, child(BASE, "horizon"))?,
+            jumps: count(members, "jumps", BASE, false)?,
+        },
         "match-undetermined" => InconclusiveCause::MatchUndetermined,
         "vacuous-match" => InconclusiveCause::VacuousMatch,
         "bound-reached" => InconclusiveCause::BoundReached {
