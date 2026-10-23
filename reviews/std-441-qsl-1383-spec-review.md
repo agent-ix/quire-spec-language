@@ -103,3 +103,25 @@ Gates:
 | FND-006 | still-open | New finding of this round: the B vector uses an unbounded `Integer`, which B does not cover, and expects `RefusedInput` where FR-277 gives a `limit` stop that settles `Incomplete`. |
 
 Round 2 verdict: Not mergeable. FND-006 (high) is open; FND-001 to FND-005 are fixed.
+
+### Dispositions, round 3
+
+Fix head 84bcfb54. QSpec #422 is unchanged at 528a73ed. Both repos' main branches have moved on (QSL 4643fb43, QSpec bb3404f9), and both PRs merge into them cleanly; I gated the merged trees.
+
+I hand-checked VP-10 against QSpec FR-323 rule 5, QSV `admit_supplied_bounded_numeric` and qsl-semantics `magnitude_stop`:
+- The numbers are right: 2^41 = 2199023255552, 2^40 = 1099511627776 (41 bits), and `m + 1` = 1099511627777.
+- `wide` under B 4096: the operands are the value (41 bits), lower 0 (1 bit) and upper 2^41 (42 bits). All are within B and the value is in range, so it settles `Agrees`.
+- `wide` under B 40: the value operand, checked first, has 41 bits, which is over 40. That is a `NumericSize` stop whose `SuppliedStop` limit kind is `NumericMagnitudeBits` with limit 40, so `pre_call` returns `PreCallIncomplete`, which settles `Incomplete(ResourceExhausted)`, and nothing is compared.
+- An omitted B resolves to 4096, so it is the same claim.
+- `grow` under B 40: `ValueType::Integer` has no value-in-domain comparison, so the binding is admitted and settles `Agrees`.
+- Claims that differ only in A, or only in H, are unequal.
+
+Gates (both on the trees merged with current main):
+- QSL `make check-spec-validation` exits 0 with both QSPEC_DIRs (19 pre-existing warnings).
+- QSpec `quire validate` gives 86 failure lines, and cargo passes 24 + 139.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-006 | fixed | See after_excerpt in the Linear dispositions comment. |
+
+Round 3 verdict: Mergeable. FND-001 to FND-006 are all fixed. Per the brief, each author still merges current main into the branch before landing; both merges are clean.
