@@ -36,22 +36,26 @@ Scope: FR-338-AC-17, FR-338-AC-18, FR-227-AC-5, FR-217-AC-8.
    product state of FR-209-AC-1's protocol explored with
    `max_live_instances` 2 under a request carrying 2.
 6. Replay FR-209-AC-6's lasso with `max_live_instances` 1, then unset;
-   replay the two-`activate` prefix with 2, then 1.
+   replay the two-`activate` prefix with 2, then 1; replay FR-209-AC-7's
+   lasso with 1.
 
 Tag the tests `#[trace("TC-1200", "FR-338-AC-n")]`,
 `#[trace("TC-1200", "FR-227-AC-5")]` and `#[trace("TC-1200", "FR-217-AC-8")]`.
 
 ## Expected Results
 
-- Step 1: V-1; accepted; rejected `SuccessorMissing` at a product state
-  where the third store is cut, with no refusal.
-- Step 2: V-1; accepted; rejected `SuccessorMissing` at a bound-limited
+- Step 1: V-1; accepted; rejected `SuccessorMissing` at the shallowest
+  bound-limited product state (stores to `x` and `y` buffered, no loading
+  step taken), with no refusal.
+- Step 2: V-1; accepted; rejected `SuccessorMissing` at the initial
   product state.
 - Step 3: `reproduced-with-evaluated-witness` both times.
 - Step 4: `reproduced-with-evaluated-witness`; refused
   `invalid_runtime_input`/`invalid-value` at the first store.
-- Step 5: V-1; accepted twice; rejected `SuccessorMissing` at an
-  instance-limited product state, with no refusal.
+- Step 5: V-1; accepted twice; rejected `SuccessorMissing` at the
+  shallowest instance-limited product state (two `activate(Tick)` steps,
+  both instances at their start, `k.v` 0), with no refusal.
 - Step 6: `reproduced-with-evaluated-witness` twice; the prefix
   re-executes with 2 and refuses `invalid_runtime_input`/`invalid-value`
-  at the second `activate` with 1.
+  at the second `activate` with 1; FR-209-AC-7's lasso
+  `reproduced-with-evaluated-witness`, not refused as unfair.
