@@ -7,8 +7,6 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-025
     type: references
-  - target: ix://agent-ix/quire-spec-language/FR-031
-    type: references
 ---
 ## Description
 

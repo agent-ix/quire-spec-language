@@ -37,7 +37,7 @@ a `ClauseRunRequest` any other way.
 FR-100's clause runner is this requirement's reader plus `run_clause`
 (FR-109); every artifact names the change that lands it as "the change that
 lands FR-100's clause runner". That change is ADR-011 M-6c's deletion of
-native `run` (FR-026 to FR-032) and `native-run-result/1` (ADR-031 R-1).
+native `run` and `native-run-result/1` (ADR-031 R-1).
 
 ## Inputs
 

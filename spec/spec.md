@@ -74,11 +74,7 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-032
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-031
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-030
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-028
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-027
     type: contains
@@ -102,8 +98,6 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-010
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-011
-    type: contains
   - target: ix://agent-ix/quire-spec-language/US-001
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-002
@@ -123,8 +117,6 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-004
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-002
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-003
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-005
     type: contains
@@ -146,23 +138,9 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-006
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-019
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-020
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-021
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-022
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-023
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-024
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-025
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/NFR-007
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-007
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-013
     type: contains
@@ -935,7 +913,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR |
 | [FR-008](functional/FR-008-evaluate-state-reference.md) | FR |
 | [FR-010](functional/FR-010-report-native-outcomes.md) | FR |
-| [FR-011](functional/FR-011-integrate-opaque-extraction.md) | FR |
 | [US-001](usecase/US-001-author-native-source.md) | US |
 | [US-002](usecase/US-002-link-exact-models.md) | US |
 | [US-003](usecase/US-003-evaluate-bounded-state.md) | US |
@@ -966,7 +943,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-003](non-functional/NFR-003-preserve-uncertain-outcomes.md) | NFR |
 | [NFR-004](non-functional/NFR-004-preserve-implementation-rights.md) | NFR |
 | [IT-002](integration/IT-002-native-state-workflow.md) | IT |
-| [IT-003](integration/IT-003-opaque-extraction-adapter.md) | IT |
 
 | [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR |
 | [NFR-014](non-functional/NFR-014-check-native-ci-suite-emptiness.md) | NFR |
@@ -979,18 +955,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT |
-| [FR-019](functional/FR-019-package-checked-native-clauses.md) | FR |
-| [FR-020](functional/FR-020-read-and-rebind-native-packages.md) | FR |
-| [FR-021](functional/FR-021-derive-native-package-identity.md) | FR |
-| [FR-022](functional/FR-022-compile-mapped-native-clauses.md) | FR |
-| [FR-023](functional/FR-023-run-native-packages.md) | FR |
 | [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR |
 | [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR |
 | [FR-027](functional/FR-027-export-compiled-native-package.md) | FR |
-| [FR-028](functional/FR-028-run-selected-native-package.md) | FR |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR |
-| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR |
 | [FR-032](functional/FR-032-realize-config-version-workflow.md) | FR |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR |

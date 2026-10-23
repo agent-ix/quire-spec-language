@@ -431,7 +431,7 @@ requirements work that follows this record.
   a `case` or a node key by `MAX_CHECKING_DEPTH`, `DepthAboveMaximum` or a
   nesting-depth limit kind now bound it by the node, preimage-byte and work
   limits.
-- **No native limit is clamped and none bounds depth.** NFR-007, NFR-008 and
+- **No native limit is clamped and none bounds depth.** NFR-008 and
   the native-profile requirements (FR-002, FR-003, FR-013, FR-015,
   FR-016, FR-024, FR-025, FR-036, FR-040, FR-041, FR-042,
   FR-051, FR-052) take each caller limit as

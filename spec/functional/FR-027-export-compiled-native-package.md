@@ -1,6 +1,6 @@
 ---
 id: FR-027
-title: "Export a compiled native package from selected source files"
+title: "Compile a 1-draft program source into a checked package"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-002
@@ -114,7 +114,8 @@ Library source files count toward `dependent_bytes`.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-027-AC-3 | For a `1-draft` request, stale source and malformed syntax return their original codes with empty stdout; a request past `dependent_bytes` names the limit, its configured value and its CLI option, and the same request with the limit raised to its size compiles; compile arity errors precede I/O and exit 20; output failures exit 30. | Test (TC-105) |
+| FR-027-AC-2 | A directory containing only the selected `1-draft` sources and their compile request compiles, exit 0. A native-run/1 request given to `compile`, and a native-compile/1 request carrying `snapshots`, `invocations`, `selection` or `package`, each refuse `invalid-request` at the request stage, exit 20, empty stdout, without reading a model or runtime file. | Test (TC-105) |
+| FR-027-AC-3 | For a `1-draft` request, stale source and malformed syntax return their original codes with empty stdout; a program source without `identity`, and one without `authority`, refuses `invalid-request` and exits 20; a request past `dependent_bytes` names the limit, its configured value and its CLI option, and the same request with the limit raised to its size compiles; compile arity errors precede I/O and exit 20; output failures exit 30. | Test (TC-105) |
 | FR-027-AC-5 | A native-compile/1 request whose program source declares `edition "1-draft"` and holds a record, an Integer function and a function with parameters writes exactly the bytes the FR-278 composition returns for that source, and QSL's I2 reader reads those bytes back Verified with no node omitted. Two such requests that differ only in the program's `document` and `formal_revision` write identical bytes. | Test (TC-435) |
 | FR-027-AC-7 | A program source declaring `edition "0-draft"`, the same source in a request carrying a library and `refinement_internals`, and a source declaring `edition "7-draft"` each refuse with `unknown_edition` at stage `profile`, exit 20, empty stdout, and a message naming the file and the edition. A source with no header refuses `invalid_syntax` and one declaring `language "ix:other"` refuses `unknown_language`, each at stage `source`, exit 20, empty stdout. A `1-draft` request selecting native rule models or clause bindings refuses with `invalid-request`, exit 20, whatever state the model files are in. | Test (TC-435) |
 | FR-027-AC-8 | A `1-draft` source each spine stage refuses (`source`, `forms`, `assembly`, `check`, `emit`) exits with that stage's cause code and reports the stage, with empty stdout. | Test (TC-435) |

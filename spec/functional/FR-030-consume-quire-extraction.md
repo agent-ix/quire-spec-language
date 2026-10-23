@@ -1,26 +1,21 @@
 ---
 id: FR-030
-title: "Compile clauses from actual Quire extraction"
+title: "Extract a selected clause body through Quire"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-004
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-011
-    type: references
-  - target: ix://agent-ix/quire-spec-language/FR-022
-    type: references
 ---
 ## Description
 
-When a caller selects an authored clause in an original document, the optional Quire consumer shall invoke Quire's Rust extractor (`quire-rs`) and yield the verified body with its document source map, and the extracted-command caller shall compile that body through the existing mapped native compiler.
+When a caller selects an authored clause in an original document, the optional Quire consumer shall invoke Quire's Rust extractor (`quire-rs`) and yield the verified body with its document source map. `run_clause` takes that body as its I3 source and S1 parses it (FR-109, FR-108-AC-5).
 
 ## Inputs
 
 An immutable original Source, a caller-loaded Quire SemanticContext, a Selection
 of the authored clause ID, the authored requirement's package and the
 caller-assigned native body identity, and caller-configured original byte and line
-limits. The extracted-command caller holds the one authored ClauseBinding, the
-formal body identity, admitted models and the native compiler stage limits.
+limits.
 The caller selects and verifies the original document's
 digest before admission. The selected Quire heading ID equals the authored
 binding's clause ID; the body contains a complete single-clause native unit.
@@ -33,20 +28,17 @@ The consumer yields an ExtractedSource: the verified body in its document
 SourceMap, the selected clause's declared language and the unchanged complete
 ClausesOutcome. Otherwise it yields a typed failure retaining original source,
 selection, any completed extraction outcome and the actual preflight or
-correspondence cause. The extracted-command caller yields a mapped native package
-with the unchanged ClausesOutcome, or a typed failure retaining original source,
-authored binding, any completed extraction outcome and the actual preflight,
-correspondence or native/mapped compiler cause. Quire's unchecked-language
-advisory and lossy availability remain observable after successful native compilation.
+correspondence cause. Quire's unchecked-language advisory and lossy
+availability remain observable in the ClausesOutcome.
 No extraction status is rewritten into a parsing or runtime result.
 Preflight checks the context by content. Its failures distinguish the byte
 and line limits, and source identity, path and authored-package mismatches
 against the original and the binding, with typed causes carrying actual and expected values. Their existing native code
 families remain unchanged. The consumer is the `qsl-source` crate. It re-exports
 Quire's contracts (ClausesOutcome, SemanticContext and the result and failure
-types the extracted-command caller renders), so the caller names them through
+types its callers render), so a caller names them through
 `qsl-source`. The consumer also builds the validated clause-only Quire
-context for an original source and authored package. The extracted-command caller
+context for an original source and authored package. A caller
 reaches Quire only through `qsl-source`.
 
 ## Behavior
@@ -65,35 +57,31 @@ LF of an original CRLF pair, the compiler body also drops the remaining terminal
 CR. Indentation and interior CR bytes stay intact; the source map admits only
 the resulting final LF or CRLF deletion. Quire's raw body remains in its unchanged
 extraction outcome. No header, import or newline is inserted.
-The extracted-command caller shall invoke mapped::compile with the extracted source map, the declared language, the authored binding and the formal body identity.
-If extraction, correspondence or native compilation fails, then the extracted-command caller shall return no partial package and retain the actual failure.
+If extraction or correspondence fails, then the consumer shall return no partial body and retain the actual failure.
 
 The original byte limit has a published default of 1 MiB and the line limit
 one of 4096 lines, including a trailing empty line. The caller raises or
 lowers each, and the value is used as given. The line bound
 limits work in the existing extractor before it builds its clause population;
-it is not a new Quire-wide performance guarantee. Existing compiler stage limits,
-including the native source-byte limit on the extracted body, remain independent
-and fresh for each request and apply at compilation.
-The quire-extraction Cargo feature is optional; default native builds do not
-call Quire extraction. The root crate's feature enables `qsl-source`'s own
-feature of the same name, which is what lets QSL code name quire-rs. quire-rs is
+it is not a new Quire-wide performance guarantee. The spine's stage limits
+apply to the extracted body at S1, independent and fresh for each run.
+The quire-extraction Cargo feature is optional; default builds do not
+call Quire extraction. `qsl-replay`'s feature enables `qsl-source`'s own
+feature of the same name, which is what lets QSL code name quire-rs (ADR-011
+§7.3 X-4). quire-rs is
 still built transitively in every build, through FCD's
 `agent-ix-extraction-frontend` (`model::intake`). C retains changes to existing
-repositories, schemas, CLI/wire adoption and broader integration. This is A's native compiler consumer.
+repositories, schemas, CLI/wire adoption and broader integration.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-030-AC-1 | Actual Quire extraction of an indented CRLF clause with Unicode surroundings reaches mapped compilation and existing healthy/violating/refused runtime outcomes with exact authored/source identity. | Test (TC-108) |
-| FR-030-AC-2 | Successful and failed native compilation retain Quire's original availability, complete clause population and diagnostics; an unchecked tag alone does not pass the native parser. | Test (TC-108) |
-| FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package; each foreign context field retains its distinct typed preflight cause before extraction. | Test (TC-108) |
+| FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a body; each foreign context field retains its distinct typed preflight cause before extraction. | Test (TC-108) |
 | FR-030-AC-4 | Verified original/body coordinates remain exact at body EOF and with trailing layout; invalid body identity and out-of-range mapping requests refuse. | Test (TC-108) |
-| FR-030-AC-5 | Original byte/line and native stage limits return incomplete, with successful fresh retry; minimal builds retain their existing behavior. | Test (TC-108) |
+| FR-030-AC-5 | Original byte and line limits return incomplete, with successful fresh retry; minimal builds retain their existing behavior. | Test (TC-108) |
 
 ## Dependencies
 
-- [FR-011](FR-011-integrate-opaque-extraction.md): actual extraction integration.
-- [FR-022](FR-022-compile-mapped-native-clauses.md): existing mapped compiler.
 - [FR-004](FR-004-verify-source-maps.md): exact source correspondence.
+- [FR-109](FR-109-run-a-state-clause-through-the-spine.md): `run_clause`, which takes the body as its I3 source.

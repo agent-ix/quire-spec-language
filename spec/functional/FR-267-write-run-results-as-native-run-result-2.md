@@ -46,7 +46,7 @@ CG campaign. CG owns that authentication through a separate producer/artifact
 binding receipt, as specified under **CG source-identity boundary** below.
 
 This lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), which also
-deletes native `run` (FR-026 to FR-032) and `native-run-result/1`; from that
+deletes native `run` and `native-run-result/1`; from that
 change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 (ADR-031 R-1).
 
