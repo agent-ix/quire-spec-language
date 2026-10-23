@@ -73,7 +73,22 @@ const CLAIMS: &str =
        always [0, 12] holds(drag(h.v) < 100)\n\
      }\n";
 
-fn check(declarations: &str) -> CheckedGraph {
+/// A checked unit and the declared names of its hybrid claims, in the order
+/// `CheckedGraph::hybrid_claims` lists them (a checked claim keeps no name).
+struct Unit {
+    graph: CheckedGraph,
+    claims: Vec<String>,
+}
+
+impl std::ops::Deref for Unit {
+    type Target = CheckedGraph;
+
+    fn deref(&self) -> &CheckedGraph {
+        &self.graph
+    }
+}
+
+fn check(declarations: &str) -> Unit {
     let text = format!("{HEADER}{FUNCTIONS}{declarations}");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
@@ -84,28 +99,35 @@ fn check(declarations: &str) -> CheckedGraph {
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    PackageDeclarations::assemble(
+    let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
         Vec::new(),
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the unit assembles: {refusal:?}"))
-    .with_unwritten_hybrids()
     .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"))
+    .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
+    let claims = text
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("temporal "))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .map(str::to_owned)
+        .collect();
+    Unit { graph, claims }
 }
 
-fn braking_unit(flow: &str, guard: &str) -> CheckedGraph {
+fn braking_unit(flow: &str, guard: &str) -> Unit {
     check(&format!("{}{CLAIMS}", braking(flow, guard)))
 }
 
-fn claim<'g>(graph: &'g CheckedGraph, name: &str) -> &'g CheckedHybridClaim {
-    graph
-        .hybrid_claims()
+fn claim<'g>(unit: &'g Unit, name: &str) -> &'g CheckedHybridClaim {
+    let position = unit
+        .claims
         .iter()
-        .find(|claim| claim.name.as_str() == name)
-        .unwrap_or_else(|| panic!("no claim {name}"))
+        .position(|claim| claim == name)
+        .unwrap_or_else(|| panic!("no claim {name}"));
+    &unit.graph.hybrid_claims()[position]
 }
 
 fn q(numerator: i64, denominator: i64) -> Rational {
