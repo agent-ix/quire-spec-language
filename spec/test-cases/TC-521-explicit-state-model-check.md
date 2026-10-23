@@ -15,7 +15,7 @@ granularities, bounded clauses `on origin` and `on each`, an invariant,
 deadlock detection, a mixed formula, every limit with its value, the second
 phase at `max_depth`, `max_automaton_states`, and determinism.
 
-Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11, FR-126-AC-16 and FR-126-AC-17.
+Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11, FR-126-AC-16, FR-126-AC-17 and FR-126-AC-19.
 
 ## Test Procedure
 
@@ -36,12 +36,16 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
 4. The recovery-stability formula over `Health` and over `Restless`.
 5. The TP-4 claim with no granularity with `max_depth` 2, with `max_depth`
    3, with `max_states` 2, with `max_transitions` 3, and with a `Cancel`
-   handle already cancelled; `Counter` with an evaluation meter budget of zero.
+   handle already cancelled; `DeadlockFreedom` over `Counter` with an
+   evaluation meter budget of zero.
 6. The `eventually[0,100]` formula over `Restless` with
    `max_automaton_states` 50 and with the default; a subject whose
    contract conjunction is refused, with no clause false and none
-   undefined (a dispatch-family fixture whose `family_steps` or
-   `ancestor_steps` ceiling refuses a dispatched call); `always holds(true)` over the `Counter` subject with `pre CanInc
+   undefined (FR-126-AC-6's test `TransitionSystem` over the `Counter`
+   subject, whose initial state and expansions of values 0, 2 and 3 are the
+   `Counter` subject's own and whose expansion of value 1, reached by `inc`
+   from 0, records `ContractUndetermined` for `inc` with one `Refused`
+   evaluation); `always holds(true)` over the `Counter` subject with `pre CanInc
    { 6 mod (2 - self.value) >= 0 }` from value 2; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
 8. The TP-4 claim with no granularity over the example unit with initial
@@ -62,6 +66,13 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    condition's letters reading false at every position.
 10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
     counterexample replayed.
+11. The meter and candidate runs of FR-126-AC-19: `DeadlockFreedom` over
+    `Counter` under `work_units` 0, `always holds(c.value <= 3)` over the
+    no-precondition `Counter` variant under `work_units` 0, and
+    `DeadlockFreedom` over the example subject with `max_candidates` 1; then
+    each run again under the limits
+    the settings operation returns for `accounting.work_units=1000000` and
+    for `expansion.max_candidates=1000000`.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
@@ -84,11 +95,11 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   `Stopped{ResourceExhausted, {MaxStates, 2}}`;
   `Stopped{ResourceExhausted, {MaxTransitions, 3}}`;
   `Stopped{Cancelled, None}`; `Stopped{ResourceExhausted,
-  {EvaluationMeter, 0}}`.
+  {EvaluationMeter{work_units}, 0}}`.
 - Step 6: `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an
   automaton-state count of 50 and no counterexample, then `Violated` with
   at least 101 consecutive unhealthy positions;
-  `Undecided(UndecidedSuccessor)` (not built: Remaining work: QSL-898); `Violated` with the empty prefix at
+  `Undecided(UndecidedSuccessor)`; `Violated` with the empty prefix at
   value 2, `kind: UndefinedEvaluation`, cause `DivisionByZero`, at position 0;
   `RequiresBound` with no state explored.
 - Step 7: equal outcomes and byte-equal counterexamples.
@@ -111,3 +122,11 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then
   `reproduced-with-evaluated-witness`.
+- Step 11: `DeadlockFreedom` over `Counter` returns
+  `Stopped{ResourceExhausted, {EvaluationMeter{work_units}, 0}}` at the
+  `inc` precondition; `always holds(c.value <= 3)` over the no-precondition
+  `Counter` variant returns the same stop at the letter of position 0 with
+  no counterexample and no certificate; `DeadlockFreedom` over the example
+  subject returns `Stopped{ResourceExhausted, {MaxCandidates, 1}}`; each
+  limit's setting is `accounting.work_units` or `expansion.max_candidates`;
+  under the raised limits no run stops at that limit.
