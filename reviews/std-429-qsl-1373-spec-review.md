@@ -59,3 +59,20 @@ Bernoulli, and Okamoto or regeneration still decides them.
 ## Verdict
 
 Not mergeable. The decisions, sample count, error bounds and tail precision are correct, and they agree with QSpec #420. The k = 219 interval clause, however, fails for a correct implementation (the same defect is in QSpec FR-408-AC-13 and TC-355 SC-11, SR-16271), and three method lists still omit Clopper-Pearson. Fix both PRs together.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-005 | low | [ambiguous] The exact upper end is 0.976211754458844909955841... The text writes it as `0.97621175445884490996…`, rounded up in the 20th digit, while the lower end `…070929…` is truncated. Where the literal serves as the threshold ('at least `0.97621175445884490996…`'), a correct reported upper end in [exact, …0996) fails it. Fix: write `0.97621175445884490995…`, truncated like the lower end, or give the digits `0.976211754458844909955841…`. | spec/functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md:266; spec/test-cases/TC-624-statistical-model-checking-decides-probabilistic-claims.md:54 | wrong-requirement |
+
+## Dispositions
+
+Round 1, against head 1ec2395c. Gate `make check-spec-validation` with QSPEC_DIR at QSpec #420 e3bc134b: exit 0. Exact Clopper-Pearson ends at k = 219 (one-sided levels: lower = least p with G(219, p) >= beta' = 1/100, upper = greatest p with L(219, p) >= alpha' = 1/100; exact-rational bisection, 90 halvings): lower in [0.90351472792271070929237711031, 0.90351472792271070929237711113], upper in [0.97621175445884490995584141752, 0.97621175445884490995584141834]. The author's 0.90351472792271070929... and 0.97621175445884490996... are right to within the rounding of the last digit. The first-round SR's ...070918 / ...490925 were wrong: they were the lower ends of a 60-halving bracket, not the exact values. The 64-halving dyadic bracket ends that a conforming bisection reports are lower 0.90351472792271070929182724685 (exact minus 5.5e-22) and upper 0.97621175445884491000524824100 (exact plus 4.9e-20), both within 2^-64 = 5.42e-20.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
