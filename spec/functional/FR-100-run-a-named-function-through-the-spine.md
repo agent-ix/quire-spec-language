@@ -44,8 +44,8 @@ relationships:
 
 ## Description
 
-When an author invokes quire-spec run with a native-run/1 request file, the
-run command shall route the program source by the edition its header
+When a caller hands QSL's library operation `command` (FR-287) a native-run/1
+request file, the run command shall route the program source by the edition its header
 declares, as compile does
 ([FR-027](FR-027-export-compiled-native-package.md)). A `0-draft` source,
 or one declaring no edition, runs its selected clause through native run
@@ -73,7 +73,10 @@ The request handling is the QSL library operation `command`, which the
 driver's `quire run` reaches (FR-287). A `1-draft` native-run/1 request is
 the command encoding of the `execute` operation with a function selection
 (FR-279). Every exit status this requirement states is FR-285's exit code of
-the outcome's ADR-013 O-16 category.
+the outcome's ADR-013 O-16 category. `command` returns a typed outcome that
+carries the result document, the refusal envelope or neither, and writes
+nothing to the process streams; the driver writes the result document to
+stdout and the refusal envelope to stderr (FR-287, Overlap).
 
 ## Inputs
 
@@ -264,11 +267,11 @@ document, its value SHALL reuse the existing canonical typed Reference form:
 identity. No population binding or object fields are serialized as a
 Reference result. This does not add a Population argument wire encoding.
 
-For a call that reaches S6a, stdout is one `spine-run-result/1` JSON
-document, newline-terminated, and nothing else.
+For a call that reaches S6a, `command`'s outcome carries one
+`spine-run-result/1` JSON document as its result document and no refusal
+envelope.
 
-`spine-run-result/1` is the current output of QSL's `quire-spec` CLI. It is
-retired with that CLI when the driver's verbs land (ADR-029 CB-1). The
+`spine-run-result/1` is `command`'s result document for a `1-draft` run. The
 outcome document of the `execute` operation is FR-286's `quire-outcome/1`,
 whose `result` member carries the completed value, undefined reason or
 exhausted limit this document's `outcome` member carries. Its members are:
@@ -402,11 +405,10 @@ and evaluated at S6a reaches it (FR-100-AC-10).
 
 A call whose outcome is the kernel `Refusal::CheckedInvariant`, for which
 `CheckedPackage::call` returns `CallFailure::Fault(fault)`, or whose
-record's locus names a region no supplied source's reference equals, writes
-nothing
-to stdout. It writes the command-error envelope (FR-026's
+record's locus names a region no supplied source's reference equals, carries
+no result document. It carries the command-error envelope (FR-026's
 `native-run-result/1` until the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), FR-267's `native-run-result/2` from it)
-to stderr with stage `call`, code `runtime_invariant` and `details`
+as its refusal envelope, with stage `call`, code `runtime_invariant` and `details`
 `{"stage": "<fault stage>", "invariant": "<fault invariant>"}`, the
 `InternalFault`'s stable identifiers. For `CheckedInvariant` they are stage
 `S6a` and invariant `checked-program-invariant`; for `CallFailure::Fault`,
@@ -419,9 +421,9 @@ path exits 30, FR-285's exit code for internal failure.
 
 ### Refusals before S6a
 
-Every refusal before S6a writes nothing to stdout. It writes the
+Every refusal before S6a carries no result document. It carries the
 command-error envelope (FR-026's `native-run-result/1` until the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`),
-FR-267's `native-run-result/2` from it) to stderr, carrying a stage, a
+FR-267's `native-run-result/2` from it) as its refusal envelope, holding a stage, a
 catalog code, a `message` and a `details` object, and
 exits with that code's exit status:
 
@@ -462,8 +464,23 @@ function's claim is replayed by FR-357's value-parity entry); run calls any func
 result kind the outcome document cannot express is an unsupported construct,
 not bad input.
 
-Broken pipes end quietly; other write and output-serialization failures
-exit 30.
+Writing the result document or the refusal envelope to a stream, and a
+stream that fails or closes, are the driver's (FR-287, Overlap).
+
+### The call depth of an outcome
+
+S6a's `Evaluation` SHALL carry, beside `location`, `frame_depth: u32`: the
+number of package-function call frames open above the selected call's own
+frame when the outcome arose. It is 0 for an outcome of the selected
+function's own body, 1 for one inside a function that body calls, and one
+more for each further nested call, a recursive call of the same function
+included. A `Location` names a place in a body and no frame, so the same
+`Location` recurs at every depth of a recursive function; `frame_depth`
+tells those apart. A completed call's `frame_depth` is 0. The outcome
+document carries no `frame_depth` member. FR-098's application claim reads
+it to observe only the selected call's own evaluation of its claim site; the
+consumer is `qsl-replay`'s replay executor, and the producer is the S6a
+session's frame stack (FR-262), which already holds one frame per open call.
 
 ## Behavior
 
@@ -557,25 +574,26 @@ exit 30.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `package_id` equals the one the FR-278 composition computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test |
-| FR-100-AC-2 | A `0-draft` native-run/1 request writes the stdout bytes and exit status TC-103 and TC-104 fix for it. A program declaring `edition "7-draft"` refuses `unknown_edition` at stage `profile`, exit 20, empty stdout, with a `message` naming the file and the edition. | Test |
-| FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, empty stdout, whatever state its model files are in; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. A value in `call.accounting` of `18446744073709551616`, `-1` or `1.5`, and a legacy `work_units` member directly in `call`, each refuse the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test |
-| FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, empty stdout, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test |
-| FR-100-AC-5 | `function` `nope`, `module.seven`, `""`, `seven.`, and `7x` each refuse `missing_declaration` at stage `call`, exit 20, empty stdout, with `details` `{"function": <that string>}`. A function whose declared result is a record refuses `unsupported_construct` at stage `call`, exit 21, before any call. A `1-draft` source with a syntax error refuses at stage `source` (`invalid_syntax`), and one declaring `inv(x: Int[0, 9]): Boolean { 1 / x > 0 }` refuses at stage `check` with `ill_typed` (integer `/` with no `Rational` expected type); each exits 20 with empty stdout (FR-027-AC-8). | Test |
-| FR-100-AC-6 | `seven` with `call.accounting` `{"work_units": 0}` writes outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22. | Test |
-| FR-100-AC-7 | `qsl_replay::spine::run` called directly over each AC-1, AC-4, AC-5 and AC-6 input returns the same `package_id`, outcome category, value, code, reason, counter, and parameter name or position the CLI renders. The root crate names `qsl-eval` in no dependency table (TC-390). | Test |
+| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` has exit code 0 and an outcome carrying no refusal envelope and one result document whose `format` is `spine-run-result/1`, whose `package_id` equals the one the FR-278 composition computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test |
+| FR-100-AC-2 | A `0-draft` native-run/1 request returns the result document and exit code TC-103 and TC-104 fix for it. A program declaring `edition "7-draft"` refuses `unknown_edition` at stage `profile`, exit 20, no result document, with a `message` naming the file and the edition. | Test |
+| FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, no result document, whatever state its model files are in; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. A value in `call.accounting` of `18446744073709551616`, `-1` or `1.5`, and a legacy `work_units` member directly in `call`, each refuse the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test |
+| FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, no result document, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test |
+| FR-100-AC-5 | `function` `nope`, `module.seven`, `""`, `seven.`, and `7x` each refuse `missing_declaration` at stage `call`, exit 20, no result document, with `details` `{"function": <that string>}`. A function whose declared result is a record refuses `unsupported_construct` at stage `call`, exit 21, before any call. A `1-draft` source with a syntax error refuses at stage `source` (`invalid_syntax`), and one declaring `inv(x: Int[0, 9]): Boolean { 1 / x > 0 }` refuses at stage `check` with `ill_typed` (integer `/` with no `Rational` expected type); each has exit code 20 and no result document (FR-027-AC-8). | Test |
+| FR-100-AC-6 | `seven` with `call.accounting` `{"work_units": 0}` returns a result document whose outcome is `{"kind": "incomplete", "limit": "work_units"}`, exit 22. | Test |
+| FR-100-AC-7 | `qsl_replay::spine::run` called directly over each AC-1, AC-4, AC-5 and AC-6 input returns the same `package_id`, outcome category, value, code, reason, counter, and parameter name or position `command`'s result document or refusal envelope carries for it. The root crate names `qsl-eval` in no dependency table (TC-390). | Test |
 | FR-100-AC-8 | No public item of `qsl_replay::spine`, and no `qsl_replay` re-export, names a `qsl_eval` path; a `pub use` of a `qsl_eval` item from `qsl_replay`, or a `qsl_eval` type in `spine::run`'s signature, fails the check. | Test |
 | FR-100-AC-9 | The outcome mapping converts a constructed `Outcome::Completed` of each value kind, `Outcome::Refused` of each of the thirteen kernel refusals, `Outcome::Undefined` of each of the five kernel reasons, `Outcome::Incomplete`, `FamilyResult::Refused` with and without an FR-096 key-table row, `FamilyResult::Undefined` of each family reason, and a `CallFailure::Fault` into the `outcome` member and exit status the mapping tables state: each of the twelve kernel refusals other than `CheckedInvariant` renders its record's code, cause, fields (JSON strings) and locus, as the kernel-record table states, exit 20; a family cause with a record renders the same members; a family cause without a record renders its `catalog_code()` with no `fields`, exiting by that code (`TypeMismatch`, `ill_typed`, exits 20); and `CheckedInvariant` and `CallFailure::Fault` are `runtime_invariant` command errors with their stage and invariant in `details`, at the internal-failure exit status. | Test |
 | FR-100-AC-10 | With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Pos>(x in q: x)` for an empty `q` of `Sequence<Int[1, 9]>[0, 2]` returns `Outcome::Undefined(Undefined::SumOutOfDomain)` located at the `sum` node, and the outcome mapping renders it `{"kind": "undefined", "reason": "sum-out-of-domain"}`, exit 10. The same `sum` for `q` holding `4` completes with `4`. | Test |
 | FR-100-AC-11 | Every exit status `run` returns equals FR-285's exit code of the outcome's O-16 category: FR-100-AC-10's `sum-out-of-domain` outcome and a `FamilyResult::Undefined` with reason `precondition-false` each write outcome kind `undefined` and exit 10; FR-100-AC-4's `invalid_runtime_input` refusals exit 20; FR-100-AC-5's record-result function exits 21; FR-100-AC-6 exits 22; a `CallFailure::Fault` exits 30. The `execute` operation (FR-279) over each of these inputs returns an outcome whose FR-285 exit code equals the command's. | Test |
 | FR-100-AC-12 | `qsl_replay::spine::run` over FR-100-AC-1's `seven`, with a `Cancel` that trips during the run and not before it, returns `RunRefusal::Cancelled` carrying the handle's cause, category incomplete, exit 22, and never `RunRefusal::Fault`: tripped with `Requested` at the last front-end charge (before S6a starts) and tripped with `Deadline` at the first S6a charge (inside `CheckedPackage::call`), each gives `Cancelled` with that cause. `OutcomeDocument::from_run` over each writes `category` incomplete, `last_stage` `null` and one `cancelled` diagnostic whose cause is `requested` and `deadline` respectively. | Test |
-| FR-100-AC-13 | A `1-draft` call's optional closed `accounting` object accepts any subset of the ten `quire.value.accounting/v1` counter names with values from 0 to `u64::MAX`; omitted counters use the published defaults, and every supplied counter reaches evaluation unchanged. A direct `work_units` member of `call` refuses `invalid-request` at stage `request`, exit 20, empty stdout. | Test (TC-450, TC-921) |
+| FR-100-AC-13 | A `1-draft` call's optional closed `accounting` object accepts any subset of the ten `quire.value.accounting/v1` counter names with values from 0 to `u64::MAX`; omitted counters use the published defaults, and every supplied counter reaches evaluation unchanged. A direct `work_units` member of `call` refuses `invalid-request` at stage `request`, exit 20, no result document. | Test (TC-450, TC-921) |
 | FR-100-AC-14 | TC-792's exact source-compiled Value lookup with real admitted Population/Reference inputs reaches S6a through `spine::run`; a reference resolving in the object world but absent from the selected population produces the actual enclosing `FamilyResult::Refused`, StateModel `absent-key` cause, refusal category and exit 20, with the owning fields and source location. Compile/select/admit/unsupported-result failures do not satisfy this criterion. | Test |
 | FR-100-AC-15 | With the same compiled lookup and model, selecting a population containing that reference completes with `CallValue::Reference` whose universe, most-specific type and object identity equal the supplied reference, exit 0. The Reference result encoding retains all three components exactly. | Test |
 | FR-100-AC-16 | Independently supply a wrong-kind argument, an unregistered PopulationId, a binding whose declared maximum differs from the parameter's, a foreign selected model/universe, and a dangling Reference. Each refuses before evaluation with its owning typed cause and parameter/identity fields. TC-792's actual selected-model exact type and genuine proper subtype both pass Reference admission, retaining the most-specific identity; an in-model unrelated type refuses WrongValueKind. Combined foreign-universe plus nonconforming type retains the foreign-universe cause before conformance. Unknown, duplicate and missing parameter failures retain precedence over value admission, and declared parameter order selects the first failing input. A function ignoring its arguments cannot bypass these checks. | Test |
 | FR-100-AC-17 | Malformed identity bytes rejected by the actual constructor/reader never become supplied typed references. A well-formed real object absent only from the query population reaches the AC-14 lookup refusal; an object absent from the complete object world produces dangling-reference admission instead. An unresolved-reference context cannot turn the latter into AC-14. | Test |
 | FR-100-AC-18 | The scalar inputs, values, refusals, category/exit mapping and internal-fault oracles in AC-1 through AC-12 remain equal after adapting callers to the shared Value field and explicit context. All ten actual accounting limits reach evaluation unchanged. Requested and Deadline stops remain distinct before and during S6a; applicable pre-call denial has zero evaluation consumption. | Test |
 | FR-100-AC-19 | Public signatures use the carriers in Typed public call and no qsl_eval path. The source, binding and object context are admitted through their actual owner APIs, with no copied/trusted substitute model view or second engine. The driver executes TC-792 through this reviewed public boundary and retains the absent/present and invalid-admission distinctions. | Test (TC-792) |
+| FR-100-AC-20 | Calling `function d using v(n: Int[0, 9]): Integer pure decreases(n) { if n = 0 then 0 else d(n - 1) + 10 mod (n - 1) }` through S6a: `d(1)` returns `Undefined` at the `Location` of `10 mod (n - 1)` with `frame_depth` 0; `d(2)` and `d(3)` return `Undefined` at that same `Location` with `frame_depth` 1 and 2; `d(0)` completes `0` with `frame_depth` 0; and `function e using v(n: Int[0, 9]): Integer pure { d(n) }` called with `1` returns `Undefined` at that `Location` with `frame_depth` 1. | Test (TC-444) |
 
 The typed-call acceptance criteria supplement all existing scalar oracles;
 FR-100-AC-13 is the QSL-656 accounting-object criterion.
@@ -585,7 +603,7 @@ with inspection of the public signatures and actual owning admission and
 engine paths; inspection alone cannot discharge its driver-execution
 obligation. The existing test-case associations are unchanged: AC-1–3
 use TC-450; AC-4–6 TC-451; AC-7–9 and AC-12 TC-452; AC-10–11 TC-786;
-AC-14–19 TC-792. These associations do not replace executable trace tags.
+AC-14–19 TC-792; AC-20 TC-444. These associations do not replace executable trace tags.
 
 ## Dependencies
 
@@ -636,7 +654,7 @@ A source selection carries no `sha256:` source digest and the command checks
 no file against one (FR-312); the command reads each named file's bytes as
 they are.
 
-Implemented. `qsl_replay::spine::run` and the CLI `run` command render the
+Implemented. `qsl_replay::spine::run` and `command`'s `run` render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,
 `CallFailure::Fault`, an unresolvable locus, each exiting 30 directly), and
 locus resolution over the program's and every supplied library's source.

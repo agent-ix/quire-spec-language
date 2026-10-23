@@ -113,7 +113,7 @@ Kani obligations.
 ### US-026-EX-4: A task set is checked in closed form
 
 - **Given** the task set `Ctl` of ADR-026 §12.
-- **When** the operator requests `schedulable Ctl under fixed-priority`.
+- **When** the operator requests `schedulable CtlFp on Ctl under fixed_priority;`.
 - **Then** it settles `proved` with the response times 1, 3 and 12 as
   evidence, recomputed before the verdict settles, and with the third
   task's WCET raised to 6 it settles `refuted`.
