@@ -130,8 +130,10 @@ profiles compiles one declaration per profile from identical clause text.
     change of FR-043-AC-14 and require `Refusal::Binding` with that AC's
     dimension, no position visited, no truth and no authenticated binding.
     Evaluate the same mutated traces through the `/1` `evaluate` over the same
-    source and require no refusal on those parameters and no authenticated
-    binding.
+    source: require the profile and clock-name mutations to refuse
+    `Refusal::Binding` (`Profile`, `Clock`), the parameter mutations (key set,
+    `epoch`, `period`, `unit`, `sequence_authority`, `timestamp_unit`) to
+    evaluate without refusal, and no result to carry an authenticated binding.
 
 ## Expected Results
 

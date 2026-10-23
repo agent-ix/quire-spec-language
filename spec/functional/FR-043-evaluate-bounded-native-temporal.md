@@ -43,16 +43,14 @@ this evaluator diverge, the owned rule governs and this requirement is defective
 | Atoms, constants and boundaries | FR-091-AC-2, FR-092-AC-2; the three profile definition artifacts |
 | Progress, closure and settlement | FR-094 Behavior and FR-094-AC-1..AC-8; FR-091-AC-4 |
 
-### Verification limit recorded on compiler #38
+### Settlement basis is computed, never supplied
 
-FR-043-AC-10's closing obligation — that every one-axis substitution of a
-settlement basis, truth and closure combination is refused — has no expressible
-verification against this surface. The evaluator computes the basis from the
-evaluated result and the trace's premises; it accepts no caller-supplied basis,
-so there is no substitution a caller can submit and no refusal path to exercise.
-The independence half of AC-10 is verified in full. This limit is recorded rather
-than left as an unbacked claim, and becomes verifiable only if a caller-supplied
-basis ever enters the surface.
+The evaluator SHALL compute every settlement basis and truth from the
+evaluated result and the trace's premises alone, and its public API SHALL
+accept no caller-supplied basis, truth or closure combination. No one-axis
+substitution of basis, truth and closure can therefore be submitted.
+FR-043-AC-10 verifies this by Inspection of the public API, and the
+independence of the four axes by Test.
 
 ### Ratified semantic rulings
 
@@ -300,7 +298,7 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-11 | A fixed-sample or timestamped watermark reaching an inclusive deadline with complete valuations settles a silent obligation, an instant exactly at the deadline participates before settlement, an instant after it does not, and an event-position clock does not advance during silence. | Test (TC-122) |
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122) |
 | FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122); Analysis |
-| FR-043-AC-14 | Through `evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package digest, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). The same mutated traces through the `/1` `evaluate` are not refused on those parameters, and their results retain no authenticated binding. | Test (TC-122) |
+| FR-043-AC-14 | Through `evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package digest, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). Through the `/1` `evaluate`, the profile and clock-name mutations refuse `Refusal::Binding` (`Profile`, `Clock`) as they do under `/2`; the parameter mutations (the key set, `epoch`, `period`, `unit`, `sequence_authority` and `timestamp_unit`) are not refused, and every `/1` result retains no authenticated binding. | Test (TC-122) |
 
 ## Dependencies
 
