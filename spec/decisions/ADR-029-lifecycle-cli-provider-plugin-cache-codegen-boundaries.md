@@ -337,7 +337,8 @@ ADR-024's EN-4, ADR-028's EN-5, ADR-026's zone search, and later QSL engines.
 SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 
 - **Input.** The checked package; the claim items, each named by its
-  occurrence key; the subject binding (the `ModelSystem` and the initial
+  occurrence key and carrying the settlement CG's `negotiate_*` gave it,
+  which `analyze` routes and never makes itself (FR-281); the subject binding (the `ModelSystem` and the initial
   population, FR-120); each engine's request settings and budgets (for
   example ADR-018's model-check limits); the accounting limits; `&Cancel`.
 - **Output.** `AnalyzeOutcome`: one terminal record per requested item, with
@@ -463,9 +464,13 @@ pub trait Provider {
 }
 ```
 
-The Kani backend reached through CG, the QSL engines of OP-2 and the plugin
-host's process adapter (§5) each implement it, so the driver handles every
-provider the same way after routing.
+The Kani backend reached through CG, the driver's adapter over the QSL
+engines of OP-2 and the plugin host's process adapter (§5) each implement
+it, so the driver handles every provider the same way after routing. QSL
+depends on no driver crate (FR-280), so a QSL engine never names this trait:
+QSL exposes `qsl_analyze::provider::run` over its own `SubjectBinding`,
+`RoutedItem` and `AnalyzeLimits` types (FR-280, FR-281), and the driver's
+adapter converts its `ProviderRequest` to them and drops `emitted`.
 
 `prove` always passes the run's `CheckedPackage` and passes the
 `EmittedPackage` only when `package` emitted one. S4 refuses to emit a package
@@ -779,7 +784,8 @@ holds every execution backend:
 pub trait ExecutionBackend {
     type Prepared: PreparedEntries;
     /// Prepare the selected entries of one checked package. An entry this
-    /// backend cannot run settles `Unsupported` for that entry only.
+    /// backend cannot run is listed by `PreparedEntries::unsupported`, for
+    /// that entry only; `PrepareFailure` fails the whole call.
     fn prepare(
         &self,
         package: &CheckedPackage,
@@ -790,7 +796,10 @@ pub trait ExecutionBackend {
 }
 
 pub trait PreparedEntries {
-    /// The same contract as `CheckedPackageEvaluation::call`.
+    /// The selected entries this backend did not prepare, with their causes.
+    fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)];
+    /// The same contract as `CheckedPackageEvaluation::call`; an entry
+    /// listed by `unsupported` returns `CallFailure::Unsupported`.
     fn call(
         &self,
         entry: &QualifiedName,
@@ -810,8 +819,9 @@ pub trait PreparedEntries {
 }
 ```
 
-`PrepareFailure` holds per-entry `Unsupported` causes, `Limit`, `Cancelled`
-and `Fault`. Three backends implement the seam:
+`PrepareFailure` is `Limit`, `Cancelled` or `Fault`, with no per-entry arm;
+FR-294 defines `EntrySelection`, `PrepareLimits`, `PrepareFailure` and
+`UnsupportedEntry`. Three backends implement the seam:
 
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
