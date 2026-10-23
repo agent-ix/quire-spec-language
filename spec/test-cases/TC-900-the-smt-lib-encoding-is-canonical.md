@@ -13,7 +13,7 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-23.
+Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-25.
 
 Steps 8 and 10 read scripts with a `QF_LIA` solver; every other step reads
 the printed script.
@@ -39,8 +39,9 @@ the printed script.
    `always holds(t.tally < 2)` and `always holds(t.tally < 3)` queries, and
    the deadlock-freedom item's base queries without and with
    `terminal when` `t.tally = 2`.
-9. Encode `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` and
-   `InductionBase{depth: 3}` for `always[0,3] holds(c.value <= 3)` over
+9. Encode `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)`,
+   `InductionBase{depth: 3}` for `always[0,3] holds(c.value <= 3)` and
+   `Unrolling{depth: 2}` for `eventually[0,3] holds(c.value = 3)` over
    `Counter` under event-position false-extension.
 10. With a solver, check the `Counter` false-extension queries FR-315-AC-18
     lists.
@@ -53,6 +54,10 @@ the printed script.
     FR-315-AC-22's two-object `Counter`.
 15. Encode `Unrolling{depth: 2}` and `InductionStep{depth: 2}` for
     FR-315-AC-23's TP-3 item over `Counter`.
+16. Encode a query over FR-315-AC-24's `Counter` with `isZero`, then the
+    false-extension query of FR-315-AC-17 with the written `id: Integer`
+    field.
+17. Encode `InductionStep{depth: 1}` over FR-315-AC-25's `Holder`.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -74,10 +79,11 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 - Step 7: each step assertion has the `bump` disjunct and then the stutter,
   the stutter holding the two field equalities and no other conjunct.
 - Step 8: the satisfiable and unsatisfiable results FR-315-AC-16 lists.
-- Step 9: `h0` to `h5` declared, `(not h0)`, each step assertion in the
-  halting form with `inc`'s enabledness expanded over the candidates 0 to 3
-  and no stutter disjunct, `h<p>` in the violation at each position 0 to 5;
-  the `InductionBase` request refused `query-kind`.
+- Step 9: `h0` to `h5` declared, `(not h0)`, each step assertion printed as
+  FR-315-AC-17 gives it, with `inc`'s enabledness expanded over the
+  candidates 0 to 3 and no stutter disjunct, `h<p>` in the violation at each
+  position 0 to 5; the `InductionBase` and `eventually[0,3]` requests
+  refused `query-kind`.
 - Step 10: the satisfiable and unsatisfiable results FR-315-AC-18 lists.
 - Step 11: the precondition and postcondition failures over copy 1 among the
   position-1 disjuncts, reading copy 1 and literals only; their negations
@@ -91,3 +97,7 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 - Step 14: the declaration, assertion and disjunct order FR-315-AC-22 lists.
 - Step 15: the range assertions and monitor implications FR-315-AC-23
   lists, with no position-0 implication in the step case.
+- Step 16: the `isZero` disjunct's postcondition part `(or Z0 Z1)` and no
+  result constant; the `id` query refused `field-domain` at `c.id`.
+- Step 17: the stutter and distinctness printed with the optional field
+  equality FR-315-AC-25 gives.
