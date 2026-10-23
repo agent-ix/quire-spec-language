@@ -1,5 +1,5 @@
 ---
-id: TC-1195
+id: TC-1198
 title: "An HP-5 item settles through settle_existential with its product-closure check"
 type: TC
 relationships:
@@ -10,7 +10,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-182
     type: verifies
 ---
-# TC-1195: An HP-5 item settles through settle_existential with its product-closure check
+# TC-1198: An HP-5 item settles through settle_existential with its product-closure check
 
 ## Description
 
@@ -39,8 +39,8 @@ FR-182-AC-13.
 6. Settle §8.1's secure `NonInterference` `Holds` outcome whose certificate
    check is step 5's `PackageMismatch` through `settle_hyper_check`.
 
-Tag the tests `#[trace("TC-1195", "FR-169-AC-13")]`,
-`#[trace("TC-1195", "FR-163-AC-8")]` and `#[trace("TC-1195", "FR-182-AC-13")]`.
+Tag the tests `#[trace("TC-1198", "FR-169-AC-13")]`,
+`#[trace("TC-1198", "FR-163-AC-8")]` and `#[trace("TC-1198", "FR-182-AC-13")]`.
 
 ## Expected Results
 
