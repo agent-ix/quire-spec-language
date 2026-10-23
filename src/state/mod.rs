@@ -8,10 +8,10 @@ mod work;
 pub use evaluation::{evaluate, evaluate_v2};
 pub use input::{
     AdapterArtifact, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput,
-    CanonicalDigest, CanonicalizationDomain, ContextualSlot, ContextualValue, ContextualValueKind,
-    EvaluationOutcome, EvaluationReport, EvaluationRequest, FieldInput, FieldValue, InputSlot,
-    InvalidAdapterArtifact, MissingInput, ObjectInput, ObjectKey, ObservationDigest,
-    ObservationIdentity, ObservationKey, PopulationInput, Refusal, StateView, StaticAuthority,
-    UnsupportedCanonicalizationDomain, Value, ValueKind, ValuePathSegment,
+    CanonicalDigest, ContextualSlot, ContextualValue, ContextualValueKind, EvaluationOutcome,
+    EvaluationReport, EvaluationRequest, FieldInput, FieldValue, InputSlot, InvalidAdapterArtifact,
+    MissingInput, ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
+    PopulationInput, Refusal, StateView, StaticAuthority, StaticAuthorityDigestCause,
+    StaticAuthorityMember, Value, ValueKind, ValuePathSegment,
 };
 pub use work::{Dimension, Exhaustion, ExhaustionCause, Limits, Usage, ACCOUNTING_VERSION};
