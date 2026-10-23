@@ -1,5 +1,5 @@
 ---
-id: SR-16212
+id: SR-16214
 title: "Spec review of quire-spec-language PR #1318: STD-380, state constraint over protocol subjects and bound-limited counting"
 type: SpecReview
 analysis: base
@@ -17,7 +17,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/TC-670
     type: reviews
 ---
-# SR-16212: Spec review of quire-spec-language PR #1318: STD-380
+# SR-16214: Spec review of quire-spec-language PR #1318: STD-380
 
 ## Summary
 
