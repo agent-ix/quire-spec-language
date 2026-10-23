@@ -37,8 +37,8 @@ claim from the package bytes it receives.
 6. Read the emitted package and QSpec's `positive-all-families.json` with
    QSL's I2 reader; feed it each mutation FR-447-AC-6 lists, with
    `dependencies`, keys and `package_id` rebuilt after each edit.
-7. Check `SlowEnough` under a `timed/v1` profile alias, and emit the claim
-   body `always [0, 10] true`.
+7. Emit the claim body `always [0, 10] true`, and read `SlowEnough`'s
+   emitted law.
 
 Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 
@@ -63,6 +63,5 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 - Step 6: the read-back `CheckedHybridModel` and `CheckedHybridClaim`
   (horizon 10) equal the checked ones; `positive-all-families.json` is
   admitted; each mutation refused with the code and locus FR-447-AC-6 states.
-- Step 7: `unsupported_construct`/`declaration-form` at the alias's span,
-  naming the profile; a `quire.op.temporal.true` formula node under the
-  `always` node.
+- Step 7: a `quire.op.temporal.true` formula node under the `always` node
+  and no `holds` node over a Boolean literal; the law `p` selects.

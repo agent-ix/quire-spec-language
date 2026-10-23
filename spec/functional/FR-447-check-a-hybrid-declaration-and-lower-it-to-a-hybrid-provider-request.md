@@ -249,11 +249,6 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
   declaration of the unit SHALL be a hybrid claim over that declaration's
   checked model, and S3 SHALL check it by this section in place of the
   model-subject rules (FR-123, FR-233).
-- A hybrid claim's `using` profile SHALL be
-  `quire.temporal.infinite-trace/v1`, the profile whose integer intervals
-  QSpec FR-481 emits; a hybrid claim whose profile is another SHALL refuse
-  `unsupported_construct`/`declaration-form` at the `using` alias's span,
-  naming the profile.
 - A hybrid claim SHALL write `clock "model-time"`, and its interval bounds
   SHALL count seconds. Another clock string SHALL refuse
   `unsupported_construct`/`declaration-form` at the clock clause's span.
@@ -350,8 +345,8 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
     operands;
   - each `CheckedHybridClaim` as the `temporal`/`temporal_clause` node of
     its `temporal` clause, whose `over` parameter is typed by its model's
-    `hybrid_model` node, with the `temporal_profile` law
-    `quire.temporal.infinite-trace/v1`, clock `model-time`, activation
+    `hybrid_model` node, with the `temporal_profile` law the claim's `using`
+    profile selects, clock `model-time`, activation
     `origin` and its `HybridFormula` as QSpec FR-370 formula nodes, each
     `HybridInterval` in the integer form. `Holds(Boolean(true))` and
     `Holds(Boolean(false))` SHALL be the formula nodes of
@@ -382,7 +377,7 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 | FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, whose `claim` names `SlowEnough`'s emitted `temporal_clause` node and its `claim` occurrence; with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with only a process fixture hybrid provider registered the item routes to it, which receives the package's v2 bytes and reads `Braking` and `SlowEnough` from their QSpec FR-481 nodes; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different checked package identities. | Test (TC-1187) |
 | FR-447-AC-5 | S4 emits the package holding `Braking` and `SlowEnough`, and QSpec's v2 reader admits it: one `hybrid`/`hybrid_model` node declared `[Braking]` whose variables are the parameter nodes of `v`, `a` and `t` at levels 0 to 2 classed `hybrid`, `hybrid` and `clock`, whose modes are `[Braking, Moving]` and `[Braking, Stopped]` in that order, `Moving`'s rates referencing the nodes of `-a`, `0` and `1` and its one transition node `target` 1 with the reset `(0, 0)`; and one `temporal_clause` node over a parameter typed by the model node, clock `model-time`. Replacing `Moving`'s `v' = -a` by `v' = -(2 * a)` changes the `package_id`. | Test (TC-1187) |
 | FR-447-AC-6 | QSL's I2 reader admits AC-5's emitted package and reads back `Braking`'s `CheckedHybridModel` and `SlowEnough`'s `CheckedHybridClaim` with horizon 10, each equal to the checked one; it admits QSpec's `positive-all-families.json`, whose `Tank` model has a bare-variable rate and reset and a `hybrid` variable whose rates are all the literal `1`; and, with `dependencies`, keys and `package_id` rebuilt after each edit, it refuses `Moving` with a fourth rate `invalid_model_binding`/`malformed-declaration` at `rates`, every variable classed `clock` `invalid_package`/`invalid-value` at `v`'s class literal, and `SlowEnough`'s clock `model-steps` `invalid_package`/`invalid-value` at `/body/arguments/1`, each as QSpec FR-481 orders them; a model body with `modes` before `variables` refuses `malformed_wire`. | Test (TC-1187) |
-| FR-447-AC-7 | `SlowEnough` written `using` a profile alias selecting `quire.temporal.timed/v1` refuses at S3 `unsupported_construct`/`declaration-form` at the alias's span, naming the profile; a claim body `always [0, 10] true` emits a `quire.op.temporal.true` formula node under the `always` node, and no `quire.op.temporal.holds` node over a Boolean literal. | Test (TC-1187) |
+| FR-447-AC-7 | A claim body `always [0, 10] true` emits a `quire.op.temporal.true` formula node under the `always` node and no `quire.op.temporal.holds` node over a Boolean literal; `SlowEnough` emits the `temporal_profile` law its `using` alias selects. | Test (TC-1187) |
 
 ## Dependencies
 
