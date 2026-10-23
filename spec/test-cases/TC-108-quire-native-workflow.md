@@ -31,9 +31,9 @@ without an extraction outcome. Both the default build and the build with
 `qsl-replay`'s `quire-extraction` run locally; the default build calls no
 Quire extraction.
 
-The ExtractedSource's ClausesOutcome equals Quire's: the same availability,
-every clause of the population, the same diagnostics and the
-unchecked-language advisory, and it is unchanged after either compile.
+The ExtractedSource's ClausesOutcome equals Quire's actual result: the same
+availability, complete clause population, diagnostics and unchecked-language
+advisory; it is unchanged after either successful or failed spine compilation.
 
 The original clause remains identifiable through actual extraction, compilation
 and execution. All failed prerequisites retain their stage's data without a
