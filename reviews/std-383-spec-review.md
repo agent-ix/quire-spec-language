@@ -81,7 +81,11 @@ open PRs). The oracle was QSpec origin/main 9c8fc775 FR-142 and TC-187.
 | FND-003 | fixed | The amended parts move to a new FR-091-OQ-13 row dated 2026-10-22 and marked "lead default, not an owner answer". OQ-11 keeps (a), (b) and (d) under its original date. |
 | FND-004 | still-open | New in this pass. It needs a fix round. |
 | FND-005 | still-open | New in this pass. It needs a fix round. |
+| FND-004 | fixed | FR-091 adds the rule "Dimension name shared with a domain package": `conflicting_declaration`/`duplicate-declaration` at the source span, or at the later package's selection row. Package units are named through their alias, so they never duplicate a source unit. The rule is in the catalog table, AC-21 and TC-406, and AC-55 adds FR-142-AC-19's three collision vectors. Checked against QSpec FR-142 "Namespaces" at 9c8fc775. |
+| FND-005 | fixed | AC-55 and TC-483 step 8 select `P` at `/lock/model_selections/0` and `Q` at `/lock/model_selections/1`, with `Q` declaring U11z2's `T` and `s`. |
 
 Verdict after disposition pass 1: FND-001 to FND-003 are fixed. Not mergeable
 until FND-004 is fixed; FND-005 is low. TC-406 is also edited by open #1357,
 so expect a textual conflict.
+
+Verdict after disposition pass 2: every finding is fixed, `make check-spec-validation` exits 0 at 90c2af41, and the head merges cleanly with origin/main 28a76640. Mergeable.
