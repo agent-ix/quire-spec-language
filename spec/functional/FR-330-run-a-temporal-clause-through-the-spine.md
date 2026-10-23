@@ -108,6 +108,9 @@ FR-267 writer writes these as the report holds them and derives none.
   `Completed(false)` to `violation` with the failing position; `Undefined`
   to `violation` with its position and its `UndefinedEvaluation` cause, as
   FR-109 reports a state clause that evaluates undefined;
+  `InsufficientData` to `undefined` (exit 10, FR-285) with its position,
+  `count` and `min_count`, no `truth` and no counterexample, as the trace
+  lacks the data to decide the claim (QSpec FR-414);
   `Pending` to `inconclusive` (exit 0, completed without violation);
   `MissingFairnessPremise` to `unsupported` (exit 21) with cause
   `unsupported_projection`/`missing-fairness-premise`; and `Incomplete` to
@@ -126,6 +129,7 @@ FR-267 writer writes these as the report holds them and derives none.
 | FR-330-AC-5 | From source, FR-327-AC-5's first clause, `always[0,2] holds(3 mod (2 - c.value) >= 0)` in the `Counter` unit, which compiles, over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
 | FR-330-AC-6 | From source, a clause `Fair` (`always eventually holds(c.value = 2)` under `fair weak inc`) over `Lasso` with an empty prefix and loop 0, 1, 2 reports stage `evaluate`, `unsupported`, exit 21, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`. | Test (TC-848) |
 | FR-330-AC-7 | From source, the `Counter` clause `always[0,1] holds(InUnit(c.value))` under event-position false-extension with `function InUnit using v(x: Int[0, 1]): Boolean pure { x >= 0 }`, whose `holds` condition completes for `c.value` 0 and, for `c.value` 2, refuses the `Coerce` of 2 into `Int[0, 1]` with kernel `integer_out_of_domain`/`outside-domain` and `expected` naming `Int[0, 1]` (FR-096-AC-8, TC-428), over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
+| FR-330-AC-8 | From source, FR-327-AC-7's `always[0,2] A` `on origin` over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, category `undefined`, exit 10, position 2, `count` 0 and `min_count` 1, and no `truth`, no counterexample and no `UndefinedEvaluation`. | Test (TC-847) |
 
 ## Dependencies
 
