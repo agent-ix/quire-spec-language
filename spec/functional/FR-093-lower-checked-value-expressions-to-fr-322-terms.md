@@ -179,8 +179,36 @@ conversion, and conversion never occurs implicitly (QSpec FR-142 Behavior),
 so a quantity in another unit, of the same dimension or another, stands
 where `Quantity<u>` is required only through `convert<Quantity<u>>(…)`
 (QSpec FR-142), which lowers by the `ConvertScalar` rows to
-`quire.op.quantity.convert` with mode `rounding` = `exact`. A quantity
-divisor, a literal included, is never proved nonzero (FR-094).
+`quire.op.quantity.convert` with mode `rounding` = `exact`.
+
+**Division by a literal.** `check` SHALL admit a quotient `e / n u` whose
+divisor is a quantity literal of nonzero reduced magnitude, and SHALL record
+that literal as a nonzero fact that discharges the division's nonzero
+obligation (QSpec FR-146), whatever the dividend. The quotient follows QSpec
+FR-142's division. Each operand is taken in the canonical root of its unit,
+where a literal of magnitude `n` in unit `u` is `n` times the composed scale
+of `u` to its root, so a magnitude that is a rational, a decimal or a
+negative `rational(-3, 1)` composes its scale exactly. The quotient's
+dimension is the dividend's dimension with the divisor's exponents
+subtracted, zero exponents removed. Its unit is the compound unit over the
+canonical root units with those exponents (FR-094), which is the dimensionless
+unit when every exponent cancels, and its value is the exact quotient of the
+two root values. So with `d: Quantity<ms>` and `a: Quantity<m>`, `d / 3 ms`
+is dimensionless, with the value of `d` divided by three, and `a / 3 ms` has
+the unit `m` per `s` and `1000/3` times the value of `a`. A negative literal
+divisor negates the quotient. A divisor in another unit of the same
+dimension composes its own scale: `d / 3 s` is `d`, taken in seconds,
+divided by three, and is dimensionless as well. The division lowers by the
+`Quantity(operator)` row to one `binary` `quire.op.quantity.div` node whose
+arguments are `[ref(l), ref(r)]`, `r` the literal's node, and whose
+`result_type` is the node of the quotient's compound unit (FR-094).
+
+A divisor that is not itself a quantity literal is never proved nonzero: a
+parameter, a `let` name, a call, a conversion, or a product or quotient of
+quantities, even one whose value is a nonzero literal, refuses
+`undefined_expression`/`unproved-nonzero` at the division, and no guard
+changes that (QSpec FR-146). A quantity literal of zero magnitude is a
+legitimate value where it is not a divisor, such as `d = 0 ms`.
 
 **Lowering.** The literal's node has as `semantic_type` the
 `scalar_type`/`unit` node of its unit (FR-094: a declared unit's quantity
@@ -242,6 +270,11 @@ ceiling, zero-denominator or unit-name refusal is located at the whole literal.
   (QSpec FR-142).
 - If a quantity literal is the operand of unary `-`, then `check` SHALL
   refuse the negation `ill_typed`/`operator-ineligible`.
+- If the divisor of a quantity division is a quantity literal of zero
+  magnitude (`d / 0 ms`, `d / rational(0, 1) ms`, `d / 0.0 ms`), then `check`
+  SHALL refuse the division `undefined_expression`/`unproved-nonzero` at the
+  division. A literal refusal above is reached first and is the one reported:
+  `d / rational(1, 0) ms` refuses at the literal for its zero denominator.
 
 A magnitude is always an exact rational, so no quantity literal is refused
 for its magnitude's kind.
@@ -962,7 +995,9 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-31 | `function f using v(a: Int[-100,100], b: Decimal[-100,100;0,0;nearest-even]): Boolean pure { convert<Decimal[-100,100;0,0;nearest-even]>(a) = b }` lowers to one `quire.op.numeric.convert` node over `a`'s parameter node, whose `result_type` is `b`'s type node, and one `quire.op.decimal.eq` whose arguments are `[ref(convert), ref(b)]`. `!=` gives `quire.op.decimal.ne`, and `b = convert<..>(a)` puts the convert node second. `convert<Decimal[..]>(a) = convert<Decimal[..]>(c)` builds one convert per operand. A conversion between Rational, Decimal and Int types in either direction, and a Quantity conversion `convert<Km>(q) = r` (`quire.op.quantity.convert` with mode `rounding` = `exact`, then `quire.op.quantity.eq`), each lowers a convert node and the equality of the converted type. `a = b` over two `Int[-100,100]` parameters builds no convert node and gives `quire.op.integer.eq` over the two parameters. IR's v2 reader admits each package, and evaluating each equality gives the result of comparing the converted values. | Test (TC-415) |
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
 | FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. In one unit beside `h`, `function h2 using v(): Boolean pure { f(0.5 ms) }` and `function h3 using v(): Boolean pure { f(rational(2, 4) ms) }` lower their arguments to one shared literal node of value `"1/2"`, and `function h4 using v(): Boolean pure { f(3 ms) }` references `h`'s `3 ms` node; `function n using v(): Boolean pure { f(rational(-3, 1) ms) }` lowers a literal of value `"-3"`; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
-| FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
+| FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
+| FR-093-AC-36 | With FR-091-AC-44's units and `dimension Length;`, `unit m : Length = rational(1, 1);`, `dimension Velocity = Length / Time;` and `unit mps : Velocity = rational(1, 1);`, each of these checks and lowers: `function p1 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, two `quire.op.quantity.div` nodes with arguments `[ref(d), ref(L)]` and `[ref(e), ref(L)]`, `L` the one shared `3 ms` literal node, each with `result_type` the dimensionless compound-unit node, under one `quire.op.quantity.eq`; `function p2 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / 3 ms) = b }`, a quotient whose compound unit has the terms `m` to the power 1 and `s` to the power -1, which `convert` admits to `mps`; `function p3 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / rational(-3, 1) ms) = b }`, divisor literal of value `"-3"`; `function p4 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / 0.5 s) = b }`, divisor literal of value `"1/2"` at the `s` node; `function p5 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 s = e / 3 s }`; and `function p6 using v(d: Quantity<ms>): Boolean pure { d = 0 ms }`. Evaluating the lowered bodies gives: `p1` true for `d` = `6 ms`, `e` = `6 ms` and false for `d` = `6 ms`, `e` = `3 ms`; `p2` true for `a` = `6 m`, `b` = `2000 mps`; `p3` true for `a` = `6 m`, `b` = `-2000 mps`; `p4` true for `a` = `6 m`, `b` = `12 mps`; `p5` true for `d` = `6000 ms`, `e` = `6000 ms` and false for `d` = `6000 ms`, `e` = `3000 ms`; `p6` true for `d` = `0 ms`. IR's v2 reader admits each package. | Test (TC-483) |
+| FR-093-AC-37 | Under AC-36's units, each of these refuses and emits no node: `function z1 using v(d: Quantity<ms>): Boolean pure { d / 0 ms = d / 0 ms }`, `function z2 using v(d: Quantity<ms>): Boolean pure { d / rational(0, 1) ms = d / 0 ms }` and `function z3 using v(d: Quantity<ms>): Boolean pure { d / 0.0 ms = d / 0.0 ms }`, each `undefined_expression`/`unproved-nonzero` at the first division; `function z4 using v(d: Quantity<ms>): Boolean pure { d / rational(1, 0) ms = d / 3 ms }`, `undefined_expression`/`unproved-nonzero` at the literal; `function z5 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / e = d / e }`, `function z6 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { if e = 3 ms then d / e = d / e else true }`, `function z7 using v(d: Quantity<ms>): Boolean pure { let k = 3 ms in d / k = d / k }` and `function z8 using v(d: Quantity<ms>): Boolean pure { d / convert<Quantity<ms>>(3 s) = d / 3 ms }`, each `undefined_expression`/`unproved-nonzero` at the first division; and `function z9 using v(d: Quantity<ms>): Boolean pure { d / -3 ms = d / 3 ms }`, `ill_typed`/`operator-ineligible` at the negation. | Test (TC-483) |
 
 ## Dependencies
 
