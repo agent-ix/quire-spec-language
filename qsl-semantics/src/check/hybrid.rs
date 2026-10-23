@@ -350,6 +350,9 @@ pub struct HybridFairness {
     pub kind: FairnessKind,
     /// One constraint over the named transitions, or one per transition.
     pub granularity: FairnessGranularity,
+    /// The target after `::` when the source writes `fair S::T`; absent for
+    /// `fair S`, even if all of S's transitions have the same target.
+    pub named_target: Option<ModeIndex>,
     /// The named transitions, in source order.
     pub transitions: Vec<(ModeIndex, TransitionIndex)>,
 }

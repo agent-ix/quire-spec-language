@@ -1,0 +1,30 @@
+---
+id: SR-16325
+title: "Spec integrity review of PR #1394 FR-447 fairness emission clause"
+type: SpecReview
+analysis: integrity
+scope: "agent-ix/quire-spec-language; QSL-1017 PR #1394; spec/functional/FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md:548-561; QSpec FR-481 hybrid claims:186-192"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-447
+    type: reviews
+---
+# Spec integrity review of PR #1394
+
+## Summary
+
+Ticket: QSL-1017. Reviewed the PR's FR-447 S4 fairness emission edit against its cited QSpec FR-481 wire contract. The two specifications prescribe different members for one source form.
+
+## Verdict
+
+**FAIL.** FR-447 calls the new encoding a QSpec FR-481 member while contradicting FR-481 for `fair S` whenever all transitions of S share a target. This needs an explicit cross-repository contract decision and corresponding spec change.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | FR-447 says `fair S` with one transition target emits `declaration` the mode node and `name` the target mode. QSpec FR-481 says every `fair S` emits `declaration` the model node and `name` S, reserving mode-node/target for `fair S::T`. Align the normative contracts before asserting that S4 emits QSpec FR-481 hybrid fairness members. | spec/functional/FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md:555-560; QSpec spec/objects/interfaces/FR-481-checked-package-hybrid-model-nodes.md:186-192 |
+
+## Coverage
+
+Examined the edited FR-447 S4 emission statement, FR-447-AC-12 and AC-16 as context, and QSpec FR-481's hybrid fairness paragraph and AC-9 as context. The rest of the edited statement preserves the FR-481 node forms and the listed profile interval forms. The relevant scope is a targeted integrity review; other optional spec-analysis lenses were not run.

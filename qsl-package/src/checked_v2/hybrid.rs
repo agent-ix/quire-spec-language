@@ -906,33 +906,40 @@ impl Reader<'_> {
                 .iter()
                 .position(|mode| is_text(mode.name.as_str(), name))
         };
-        let transitions: Vec<(ModeIndex, TransitionIndex)> = if is_text(declaration, &facts.digest)
-        {
-            // `fair S`: every transition of `S`.
-            let mode = shape(mode_named(name))?;
-            (0..model.modes[mode].transitions.len())
-                .map(|position| (ModeIndex::new(mode), TransitionIndex::new(position)))
-                .collect()
-        } else {
-            // `fair S::T`: the transitions of `S` that go to `T`.
-            let mode = shape(
-                facts
-                    .modes
-                    .iter()
-                    .position(|digest| is_text(digest, declaration)),
-            )?;
-            let target = shape(mode_named(name))?;
-            model.modes[mode]
-                .transitions
-                .iter()
-                .enumerate()
-                .filter(|(_, transition)| transition.target.get() == target)
-                .map(|(position, _)| (ModeIndex::new(mode), TransitionIndex::new(position)))
-                .collect()
-        };
+        let (transitions, named_target): (Vec<(ModeIndex, TransitionIndex)>, Option<ModeIndex>) =
+            if is_text(declaration, &facts.digest) {
+                // `fair S`: every transition of `S`.
+                let mode = shape(mode_named(name))?;
+                (
+                    (0..model.modes[mode].transitions.len())
+                        .map(|position| (ModeIndex::new(mode), TransitionIndex::new(position)))
+                        .collect(),
+                    None,
+                )
+            } else {
+                // `fair S::T`: the transitions of `S` that go to `T`.
+                let mode = shape(
+                    facts
+                        .modes
+                        .iter()
+                        .position(|digest| is_text(digest, declaration)),
+                )?;
+                let target = shape(mode_named(name))?;
+                (
+                    model.modes[mode]
+                        .transitions
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, transition)| transition.target.get() == target)
+                        .map(|(position, _)| (ModeIndex::new(mode), TransitionIndex::new(position)))
+                        .collect(),
+                    Some(ModeIndex::new(target)),
+                )
+            };
         Ok(HybridFairness {
             kind: shape(fairness_kind(field("fairness_kind")?))?,
             granularity: shape(fairness_granularity(field("granularity")?))?,
+            named_target,
             transitions,
         })
     }

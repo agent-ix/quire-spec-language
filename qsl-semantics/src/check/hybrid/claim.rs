@@ -445,9 +445,9 @@ fn fairness(
                 })
                 .map(|(position, _)| (ModeIndex::new(mode_index), TransitionIndex::new(position)))
                 .collect();
-            (!transitions.is_empty()).then_some(transitions)
+            (!transitions.is_empty()).then_some((transitions, target.map(ModeIndex::new)))
         });
-        let Some(transitions) = resolved else {
+        let Some((transitions, named_target)) = resolved else {
             stops.push(missing());
             ok = false;
             continue;
@@ -461,6 +461,7 @@ fn fairness(
                 Some(qsl_forms::FairnessGranularity::Each) => FairnessGranularity::Each,
                 Some(qsl_forms::FairnessGranularity::Whole) | None => FairnessGranularity::Whole,
             },
+            named_target,
             transitions,
         };
         if !checked.contains(&checked_constraint) {

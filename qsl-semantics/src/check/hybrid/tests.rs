@@ -782,6 +782,7 @@ fn slows_checks_activation_captures_and_fairness() {
     assert_eq!(claim.fairness.len(), 1);
     assert_eq!(claim.fairness[0].kind, FairnessKind::Weak);
     assert_eq!(claim.fairness[0].granularity, FairnessGranularity::Whole);
+    assert_eq!(claim.fairness[0].named_target, Some(ModeIndex::new(1)));
     assert_eq!(
         claim.fairness[0].transitions,
         [(ModeIndex::new(0), TransitionIndex::new(0))]
@@ -810,6 +811,7 @@ fn slows_checks_activation_captures_and_fairness() {
     let strong = claim_of(&with_braking2(&strong));
     assert_eq!(strong.fairness[0].kind, FairnessKind::Strong);
     assert_eq!(strong.fairness[0].granularity, FairnessGranularity::Each);
+    assert_eq!(strong.fairness[0].named_target, None);
     assert_eq!(
         strong.fairness[0].transitions,
         [(ModeIndex::new(0), TransitionIndex::new(0))]
