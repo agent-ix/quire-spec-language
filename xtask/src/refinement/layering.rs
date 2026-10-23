@@ -1106,7 +1106,13 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\nmodel Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:ecfa214e5426e184e57a3ddee21e655bafba118888b1bbeab7cbd6789470926d\";\ninvariant One using v on Config::ConfigVersion at current { true }\n";
         fs::write(root.join("witness.native"), source).unwrap();
-        let package = fs::read("examples/config-version/model.semantic-ir.json").unwrap();
+        let package = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("xtask manifest has a workspace root")
+                .join("examples/config-version/model.semantic-ir.json"),
+        )
+        .unwrap();
         fs::write(root.join("model.semantic-ir.json"), &package).unwrap();
         let entry = json!({
             "kind": "witness",
