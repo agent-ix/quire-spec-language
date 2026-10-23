@@ -249,6 +249,11 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
   declaration of the unit SHALL be a hybrid claim over that declaration's
   checked model, and S3 SHALL check it by this section in place of the
   model-subject rules (FR-123, FR-233).
+- A hybrid claim's `using` profile SHALL be
+  `quire.temporal.infinite-trace/v1`, the profile whose integer intervals
+  QSpec FR-481 emits; a hybrid claim whose profile is another SHALL refuse
+  `unsupported_construct`/`declaration-form` at the `using` alias's span,
+  naming the profile.
 - A hybrid claim SHALL write `clock "model-time"`, and its interval bounds
   SHALL count seconds. Another clock string SHALL refuse
   `unsupported_construct`/`declaration-form` at the clock clause's span.
@@ -345,10 +350,24 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
     operands;
   - each `CheckedHybridClaim` as the `temporal`/`temporal_clause` node of
     its `temporal` clause, whose `over` parameter is typed by its model's
-    `hybrid_model` node, with clock `model-time`, activation `origin` and
-    its `HybridFormula` as QSpec FR-370 formula nodes, each `HybridInterval` in
-    the integer form. The horizon is not emitted: a reader derives it from
+    `hybrid_model` node, with the `temporal_profile` law
+    `quire.temporal.infinite-trace/v1`, clock `model-time`, activation
+    `origin` and its `HybridFormula` as QSpec FR-370 formula nodes, each
+    `HybridInterval` in the integer form. `Holds(Boolean(true))` and
+    `Holds(Boolean(false))` SHALL be the formula nodes of
+    `quire.op.temporal.true` and `quire.op.temporal.false`, and every other
+    `Holds(t)` the node of `quire.op.temporal.holds` over `t`'s term node,
+    so one claim has one encoding and one `package_id`. The horizon is not emitted: a reader derives it from
     the formula by the reach rule of "Hybrid claims" above.
+- QSL's I2 reader SHALL admit an emitted package's hybrid nodes and read
+  each `hybrid_model` node and its modes and transitions back into the
+  `CheckedHybridModel` it was emitted from, and each hybrid claim's
+  `temporal_clause` node into its `CheckedHybridClaim`, the horizon derived
+  by the reach rule of "Hybrid claims".
+- The I2 reader SHALL refuse a hybrid node or hybrid claim that breaks a
+  QSpec FR-481 rule with FR-481's code at FR-481's locus, in FR-481's
+  reader order, and a layout outside QSpec's published schema `malformed_wire`
+  at strict wire validation.
 - The emitted package's `package_id` SHALL take every hybrid node, so two
   packages that differ in a mode, a rate, a guard, a reset, a
   classification or a claim have different `package_id`s.
@@ -361,14 +380,17 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 | FR-447-AC-2 | Each mutation of `Braking` refuses at its span with the cause given: a second mode `Moving`, `conflicting_declaration`/`duplicate-declaration`; `transition to Halted`, `missing_declaration`/`missing-name`; `Stopped` without `t' = 1;`, `invalid_model_binding`/`malformed-declaration` naming `Stopped` and `t`; a second `v' = 0;` in `Moving`, `conflicting_declaration`/`duplicate-declaration`; `P::v' = 0;`, `invalid_model_binding`/`malformed-declaration`; an invariant `{ v }`, `ill_typed`/`non-boolean-root`; a reset `{ v > 0 }`, `invalid_model_binding`/`malformed-declaration`; a reset `{ v = 0 and v = 1 }`, `conflicting_declaration`/`duplicate-declaration`; a guard reading `w`, `missing_declaration`/`missing-name`; a guard `when { v + 1 }`, `ill_typed`/`non-boolean-root`; a flow `v' = true;`, `ill_typed`/`type-mismatch`; a flow `v' = f(v)`, `unsupported_construct`/`expression-form`; and a declaration whose only equations are `t' = 1;` in each mode, `invalid_timed_model`/`rate-one-hybrid`. | Test (TC-1187) |
 | FR-447-AC-3 | `SlowEnough` checks to a `CheckedHybridClaim` over `Braking` with the formula `Always(Some([0, 10]), Holds(Compare(Lt, Variable(0), Constant(30))))` and horizon 10; with the body `always [0, 10] eventually [0, 5] holds(h.v < 30)` the horizon is 15, with `holds(h.v < 30) until [0, 4] holds(h.v = 0)` it is 4, and with `always holds(h.v < 30)` or `always [0, *] holds(h.v < 30)` it is `None`. `once [0, 2] holds(h.v = 0)` is refused `unsupported_construct`/`expression-form`; `clock "model-steps"`, `on each`, a `fair` clause and a capture are each refused `unsupported_construct`/`declaration-form`; and `h.w` is refused `missing_declaration`/`missing-name`. | Test (TC-1187) |
 | FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, whose `claim` names `SlowEnough`'s emitted `temporal_clause` node and its `claim` occurrence; with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with only a process fixture hybrid provider registered the item routes to it, which receives the package's v2 bytes and reads `Braking` and `SlowEnough` from their QSpec FR-481 nodes; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different checked package identities. | Test (TC-1187) |
-| FR-447-AC-5 | S4 emits the package holding `Braking` and `SlowEnough`, and QSpec's v2 reader admits it: one `hybrid`/`hybrid_model` node declared `[Braking]` whose variables are the parameter nodes of `v`, `a` and `t` at levels 0 to 2 classed `hybrid`, `hybrid` and `clock`, whose modes are `[Braking, Moving]` and `[Braking, Stopped]` in that order, `Moving`'s rates referencing the nodes of `-a`, `0` and `1` and its one transition node `target` 1 with the reset `(0, 0)`; and one `temporal_clause` node over a parameter typed by the model node, clock `model-time`. Replacing `Moving`'s `v' = -a` by `v' = -2 * a` changes the `package_id`. | Test (TC-1187) |
+| FR-447-AC-5 | S4 emits the package holding `Braking` and `SlowEnough`, and QSpec's v2 reader admits it: one `hybrid`/`hybrid_model` node declared `[Braking]` whose variables are the parameter nodes of `v`, `a` and `t` at levels 0 to 2 classed `hybrid`, `hybrid` and `clock`, whose modes are `[Braking, Moving]` and `[Braking, Stopped]` in that order, `Moving`'s rates referencing the nodes of `-a`, `0` and `1` and its one transition node `target` 1 with the reset `(0, 0)`; and one `temporal_clause` node over a parameter typed by the model node, clock `model-time`. Replacing `Moving`'s `v' = -a` by `v' = -(2 * a)` changes the `package_id`. | Test (TC-1187) |
+| FR-447-AC-6 | QSL's I2 reader admits AC-5's emitted package and reads back `Braking`'s `CheckedHybridModel` and `SlowEnough`'s `CheckedHybridClaim` with horizon 10, each equal to the checked one; it admits QSpec's `positive-all-families.json`, whose `Tank` model has a bare-variable rate and reset and a `hybrid` variable whose rates are all the literal `1`; and, with `dependencies`, keys and `package_id` rebuilt after each edit, it refuses `Moving` with a fourth rate `invalid_model_binding`/`malformed-declaration` at `rates`, every variable classed `clock` `invalid_package`/`invalid-value` at `v`'s class literal, and `SlowEnough`'s clock `model-steps` `invalid_package`/`invalid-value` at `/body/arguments/1`, each as QSpec FR-481 orders them; a model body with `modes` before `variables` refuses `malformed_wire`. | Test (TC-1187) |
+| FR-447-AC-7 | `SlowEnough` written `using` a profile alias selecting `quire.temporal.timed/v1` refuses at S3 `unsupported_construct`/`declaration-form` at the alias's span, naming the profile; a claim body `always [0, 10] true` emits a `quire.op.temporal.true` formula node under the `always` node, and no `quire.op.temporal.holds` node over a Boolean literal. | Test (TC-1187) |
 
 ## Dependencies
 
 - QSpec FR-193 (the `hybrid-decl` production, its meaning, the clock line and
   the solver contract); QSpec FR-290 (the item kind); QSpec FR-331 (the
   request item, `hybrid.limits`, the package bytes and the in-process form);
-  QSpec FR-322 and FR-481 (the emitted nodes); QSpec FR-272 (the causes).
+  QSpec FR-322 and FR-481 (the emitted nodes and their reader order);
+  QSpec FR-272 (the causes).
 - ADR-026 HY-1 to HY-3.
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md),
