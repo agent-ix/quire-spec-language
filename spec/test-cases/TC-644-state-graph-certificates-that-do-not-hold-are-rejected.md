@@ -34,8 +34,11 @@ FR-168-AC-5's item; §7.3's unsequenced job; TC-592's guarded subject (FR-167-AC
    subject without the guard.
 6. Settle each step's result.
 7. Check `ReachesTwo`'s certificate with the `counts` entry `(0, 1, 0)`
-   added, and the sequenced `InOneWay` certificate with the `ranks` entry
-   `(0, 0)` added; settle each.
+   added, the sequenced `InOneWay` certificate with the `ranks` entry
+   `(0, 0)` added, and `ReachesTwo`'s certificate with the `counts` entry
+   `(9, 1, 0)` added; then check TC-643's `ReachesTwo` and sequenced
+   `InOneWay` certificates as the engine returns them, whose list of the
+   other form is empty; settle each.
 
 Tag the tests `#[trace("TC-644", "FR-169-AC-10")]`,
 `#[trace("TC-644", "FR-169-AC-11")]` or `#[trace("TC-644", "FR-169-AC-15")]`.
@@ -56,6 +59,7 @@ Tag the tests `#[trace("TC-644", "FR-169-AC-10")]`,
 - Step 6: each rejection settles `inconclusive`,
   `CertificateRejected{rule, at}`, never `proved`; step 4 settles
   `failed`, naming `max_states`.
-- Step 7: `Malformed` at `Entry { index: 0 }` for each, with no successor
-  recomputed; each settles `inconclusive`, `CertificateRejected{Malformed,
-  at}`, never `proved`.
+- Step 7: `Malformed` at the `ModelState` of closure state 0 for the first
+  two and at `Entry { index: 9 }` for the third, with no successor
+  recomputed, each settling `inconclusive`, `CertificateRejected{Malformed,
+  at}`, never `proved`; the two engine certificates are accepted.
