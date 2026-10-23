@@ -47,20 +47,44 @@ with cause `UndefinedEvaluation{where, cause}`: the claim did not hold there.
 The item's category is violation, it exits 10 (FR-285), and it never carries
 the `undefined` label (FR-286).
 
-### Engine choice
+### Negotiated items
 
-`analyze` routes each item to one engine. It holds one registry built from
-the QSL engines' provider manifests (FR-280) by FR-288's conversion, and
-computes each item's candidate set by FR-075 from the item's capability
-kind, its evidence kind and its named `backend`. Of those candidates it runs
-the first, in FR-075's bytewise `BackendId` order, whose advertised pairs
-hold the item's kind with the mode of its extent classification (`bounded`
-or `unbounded`). When no candidate qualifies, the item settles
-`unsupported`, naming its kind and, when the item names a backend, that
-backend; a named backend the registry does not hold is FR-075's
-unknown-backend marker and settles the same way. The registry holds QSL
-engines only: SMT, Kani and plugin providers reach a claim through the
-driver's `prove`, never through `analyze` (ADR-029 OP-2).
+`analyze` does not negotiate and never chooses among engines. Negotiation is
+not a QSL stage: CG's `negotiate_*` is the single negotiation point (QSpec
+AD-016, FR-057), it settles each item from its `candidates` and extent under
+QSpec FR-290's candidate table, it never selects among several candidates,
+and QSL depends on no CG crate (FR-280). So the caller negotiates, as it does
+for `prove`: it builds a registry from the manifests of the engines it
+passes (FR-288), computes each item's `candidates` by FR-075, settles each
+item with `negotiate_*`, and hands `analyze` each item with its settlement.
+Routing then follows FR-057: an item settled `supported` runs on its one
+candidate.
+
+- An item settled `Supported(candidate)` runs on the engine in `engines`
+  whose `BackendId` is that candidate, and on no other engine.
+- An item settled `requires-bound`, `unsupported` or `invalid-request` runs
+  on no engine. Its terminal record is settled by that disposition (QSpec
+  FR-331 `settled_by` `disposition`) and keeps the disposition's FR-272
+  diagnostic. An item with more than one candidate and no named backend
+  therefore reaches `analyze` settled `invalid-request` with
+  `invalid_capability`/`ambiguous-backend`, and an item no engine advertises
+  settled `unsupported` with `unsupported_projection`/
+  `unsupported-requested-capability` naming its kind, exactly as through
+  `prove`.
+- A `Supported` candidate that `engines` does not hold settles the item
+  `invalid-request` with `invalid_capability`/`unknown-backend` naming it,
+  FR-290's first row, and no engine runs.
+
+`Engines` is the set of in-process engines `analyze` and the provider entry
+(FR-280) may run, each by its `BackendId` with its FR-331 manifest.
+`Engines::qsl()` holds every layer-A engine. `Engines::with` adds an
+implementation of `qsl_analyze::Engine`, the trait every layer-A engine
+implements: its manifest, and its run over one item, which returns the
+engine's own result (a proof with its certificate or none, a counterexample,
+an undefined evaluation, a budget stop) for `analyze` to settle. Tests use
+it to run test engines. SMT, Kani and plugin providers are not `Engine`s:
+they reach a claim through the driver's `prove`, never through `analyze`
+(ADR-029 OP-2).
 
 ## Inputs
 
@@ -68,13 +92,20 @@ driver's `prove`, never through `analyze` (ADR-029 OP-2).
 pub fn analyze(
     package: &CheckedPackage,
     request: &AnalyzeRequest,
+    engines: &Engines,
     limits: &AnalyzeLimits,
     cancel: &Cancel,
 ) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>>;
 
 pub struct AnalyzeRequest {
     pub binding: SubjectBinding,
-    pub items: Vec<ClaimItem>,
+    pub items: Vec<NegotiatedItem>,
+}
+
+pub struct NegotiatedItem {
+    pub item: ClaimItem,
+    pub disposition: Disposition,
+    pub diagnostic: Option<DispositionDiagnostic>,
 }
 
 pub struct AnalyzeLimits {
@@ -93,13 +124,19 @@ pub struct AnalyzeLimits {
   Vec<PopulationUniverse>`. `analyze` admits it as `ModelSystem::new`
   admits a request (FR-120) before any item runs.
 - `ClaimItem`: one requested item, the typed value of a QSpec FR-331
-  request item in its in-process form ("Items"), without `candidates`:
-  `request_index`, `claim` (`{node, occurrence}`, the item's occurrence
-  key), `kind`, `extent` with its proof bounds, the named `backend` when the
-  caller names one, `options`, and the kind's own member (`temporal`,
+  request item in its in-process form ("Items"): `request_index`, `claim`
+  (`{node, occurrence}`, the item's occurrence key), `kind`, `extent` with
+  its proof bounds, the named `backend` when the caller names one,
+  `candidates`, `options`, and the kind's own member (`temporal`,
   `probabilistic` or `hybrid`) with its settings and limits, for example
   ADR-018's model-check limits. `request_index` values are `0..n` in
   `items` order.
+- `NegotiatedItem`: a `ClaimItem` with the settlement `negotiate_*` gave it:
+  `disposition`, FR-057's `qsl_route::Disposition` (`Supported(candidate)`,
+  `RequiresBound`, `Unsupported` or `InvalidRequest`), and `diagnostic`, the
+  FR-272 code, cause and payload of an `unsupported` or `invalid-request`
+  disposition (QSpec FR-331), present exactly for those two.
+- `Engines`: the engines "Negotiated items" describes.
 - `AnalyzeLimits`: the accounting limits, the observation and
   model-normalization limits the binding is admitted under, and the
   wall-clock deadline `deadline_ms` (QSpec FR-331), each with its published
@@ -121,8 +158,10 @@ pub enum AnalyzeRefusal {
 `Staged<AnalyzeOutcome>`: exactly one terminal record per requested item,
 in `request_index` order, with the FR-331 result vocabulary, its O-16
 category, its typed cause, its basis, its counterexample or certificate
-where it has one, and its accounting. Each record names the `BackendId` of
-the engine that ran it, or none for an item no engine accepts. An undefined
+where it has one, and its accounting. A record of an item an engine ran
+names that engine's `BackendId` and is settled by its result; a record of an
+item settled `requires-bound`, `unsupported` or `invalid-request` is settled
+by that disposition, names no engine and carries its diagnostic. An undefined
 claim evaluation gives a `refuted` record, category violation, with cause
 `UndefinedEvaluation{where, cause}` and the point where the evaluation was
 undefined as its counterexample. A binding that FR-120 admission does not admit
@@ -133,12 +172,18 @@ holding the `AdmissionFailure`, and no record.
 
 - The `analyze` operation shall return exactly one terminal record for each
   requested item.
-- If no layer-A engine accepts an item's claim kind, then `analyze` shall
-  settle that item `unsupported` with a typed cause that names the claim
-  kind.
-- The `analyze` operation shall run each item on the first engine, in
-  FR-075's candidate order, whose advertised pairs hold the item's kind
-  with the mode of its extent classification, and on no other engine.
+- When an item's disposition is `Supported(candidate)` and `engines` holds
+  that candidate, the `analyze` operation shall run the item on that engine
+  only.
+- If an item's disposition is `RequiresBound`, `Unsupported` or
+  `InvalidRequest`, then `analyze` shall return, without running any engine
+  for it, a record settled by that disposition with its diagnostic.
+- If an item's disposition is `Supported(candidate)` and `engines` holds no
+  engine with that `BackendId`, then `analyze` shall settle the item, without
+  running any engine for it, `invalid-request` with
+  `invalid_capability`/`unknown-backend` naming the candidate.
+- The `analyze` operation shall run an item only on the candidate its
+  disposition names, and never choose among engines.
 - If FR-120 admission does not admit the subject binding, then `analyze` shall
   return `StageFailure::Refused(AnalyzeRefusal::Binding)` with the
   admission failure, before any item runs.
@@ -175,12 +220,12 @@ holding the `AdmissionFailure`, and no record.
 | --- | --- | --- |
 | FR-281-AC-1 | Over a finite probabilistic model, an EN-5 item claiming a reachability probability bound that holds settles `proved` with category success after the EN-5 certificate checker accepts its certificate, and the record carries the certificate. | Test (TC-762) |
 | FR-281-AC-2 | Over a finite model whose invariant one transition breaks, an EN-1 item claiming that invariant settles `refuted`, the record carries the counterexample, and replaying that counterexample through `replay` reproduces it. | Test (TC-762) |
-| FR-281-AC-3 | A request of three items, one whose claim kind no layer-A engine advertises, one an engine proves and one an engine refutes, returns exactly three records, the first `unsupported` with a cause naming the claim kind. | Test (TC-762) |
+| FR-281-AC-3 | A request of three items over `Engines::qsl()`, one whose claim kind no layer-A engine advertises, settled `Unsupported` with the diagnostic `unsupported_projection`/`unsupported-requested-capability` naming that kind (the settlement `negotiate_*` gives its empty candidate set), one an engine proves and one an engine refutes, each settled `Supported` on its engine, returns exactly three records, the first settled by its `unsupported` disposition with that diagnostic naming the claim kind. | Test (TC-762) |
 | FR-281-AC-4 | With the test engine's certificate altered in one member before checking, the item settles `inconclusive` with cause `CertificateRejected`; with a test engine that reports a proof and has no certificate checker, the item settles `proved`, category success, with the certification `uncertified` naming that engine. | Test (TC-763) |
 | FR-281-AC-5 | With a test engine that reports a counterexample replay does not reproduce, the item settles `inconclusive` with cause `replay_parity`; with one whose counterexample names a parameter the function lacks, `inconclusive` with cause `replay_refused`. | Test (TC-763) |
 | FR-281-AC-6 | The AC-1 item with its engine's state budget set to 1 settles `incomplete` with the state-budget cause. | Test (TC-763) |
 | FR-281-AC-7 | Over a finite model with one reachable state at which the invariant `100 / x > 0` divides by zero, an EN-1 item claiming that invariant settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names that state and whose `cause` is `division-by-zero`; replay reproduces the undefined value at that state, the record carries no `undefined` label, and FR-285 maps the outcome to exit 10. | Test (TC-763) |
-| FR-281-AC-8 | With two test engines `qsl.test-a` and `qsl.test-b` whose manifests both advertise (`value-validity`, `bounded`), an item of that kind and extent naming no backend runs on `qsl.test-a` alone and its record names `qsl.test-a`; the same item naming `qsl.test-b` runs on `qsl.test-b` alone; naming `qsl.test-c`, which the registry does not hold, settles `unsupported` naming the kind and `qsl.test-c`, and neither engine runs. With `qsl.test-a` advertising only (`value-validity`, `unbounded`), the unnamed item runs on `qsl.test-b`. | Test (TC-762) |
+| FR-281-AC-8 | With `engines` holding test engines `qsl.test-a` and `qsl.test-b`, both advertising (`value-validity`, `bounded`): an item settled `Supported(qsl.test-b)` runs on `qsl.test-b` alone and its record names it; the same item settled `InvalidRequest` with `invalid_capability`/`ambiguous-backend` naming `qsl.test-a` and `qsl.test-b`, as `negotiate_*` settles it with both candidates and no named backend (QSpec FR-290, FR-331-AC-4), returns a record settled by that disposition with that diagnostic and runs neither engine; settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability`, a record settled by that disposition and no run; settled `RequiresBound`, a record settled by that disposition with no diagnostic and no run; and settled `Supported(qsl.test-c)`, which `engines` does not hold, `invalid-request` with `invalid_capability`/`unknown-backend` naming `qsl.test-c` and no run. | Test (TC-762) |
 | FR-281-AC-9 | AC-3's request returns its three records in `request_index` order 0, 1, 2. The same request whose binding's `universes` name a population the package does not declare returns `StageFailure::Refused(AnalyzeRefusal::Binding)` holding FR-120's `invalid_runtime_input`/`wrong-role-mapping`, no record, and no engine runs. | Test (TC-762) |
 
 ## Dependencies

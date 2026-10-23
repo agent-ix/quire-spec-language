@@ -17,7 +17,7 @@ Scope: FR-280-AC-1, FR-280-AC-2, FR-280-AC-4, FR-280-AC-5, FR-280-AC-6.
 ## Test Procedure
 
 1. Read each QSL engine's provider manifest with the FR-331 reader and convert it with FR-288's conversion.
-2. For each TC-762 item, build a `RoutedItem` routing it to its engine and pass it, with the `CheckedPackage`, `SubjectBinding` and `AnalyzeLimits` of the same run, to `qsl_analyze::provider::run`; call `analyze` with the same item naming the same backend.
+2. For each TC-762 item, build a `RoutedItem` routing it to its engine and pass it, with the `CheckedPackage`, `SubjectBinding` and `AnalyzeLimits` of the same run, to `qsl_analyze::provider::run`; call `analyze` over `Engines::qsl()` with the same item settled `Supported` on the same backend.
 3. Convert EN-4's manifest, admit the descriptor, register it with a descriptor advertising the same pair with evidence `{exact}`, and compute the candidates of a `statistical` and of an `exact` probabilistic item.
 4. Check `Service` (FR-185-AC-7) and confirm `emit_checked` refuses it. Pass its `CheckedPackage` to `qsl_analyze::provider::run` with a `RoutedItem` routing the `2 ms` claim of ADR-024 §7.2 over `Service` to EN-4 (`statistical`, Okamoto, seed 7, `max_witnesses` 3); call `analyze` with the same item, checked package, binding and limits; replay each returned witness with `replay_sampled_witness` over `Service`'s checked subject.
 5. Pass step 2's routed items in reverse order to the entry; then pass them with a binding whose `universes` name an undeclared population, and with a binding whose `initial` digest is absent from `snapshots`.

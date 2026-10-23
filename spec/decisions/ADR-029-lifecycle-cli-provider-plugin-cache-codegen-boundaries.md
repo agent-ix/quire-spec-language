@@ -337,7 +337,8 @@ ADR-024's EN-4, ADR-028's EN-5, ADR-026's zone search, and later QSL engines.
 SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 
 - **Input.** The checked package; the claim items, each named by its
-  occurrence key; the subject binding (the `ModelSystem` and the initial
+  occurrence key and carrying the settlement CG's `negotiate_*` gave it,
+  which `analyze` routes and never makes itself (FR-281); the subject binding (the `ModelSystem` and the initial
   population, FR-120); each engine's request settings and budgets (for
   example ADR-018's model-check limits); the accounting limits; `&Cancel`.
 - **Output.** `AnalyzeOutcome`: one terminal record per requested item, with
