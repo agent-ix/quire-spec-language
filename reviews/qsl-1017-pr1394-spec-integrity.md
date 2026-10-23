@@ -34,3 +34,8 @@ Examined the edited FR-447 S4 emission statement, FR-447-AC-12 and AC-16 as cont
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | still-open | PR #1394 at `03ed8c629` still contains FR-447 lines 555-560, saying single-target `fair S` emits the mode-node/target member. Open spec PR #1397 adds a correct AC-5/TC-1187 vector but does not yet remove or correct this paragraph. Align the normative paragraph before #1394 merges. |
+| FND-001 | fixed | At `fb4fbd25`, the merged FR-447 S4 paragraph requires model-node/mode for every `fair S` and mode-node/target for `fair S::T`, matching QSpec FR-481. The FR-447-AC-5 and TC-1187 `MovingFair` vector also checks the model-node/mode member. This row supersedes the prior still-open disposition. |
+
+## Final disposition scope
+
+Checked the merge's FR-447 S4 and `MovingFair` AC/test-case changes against QSpec FR-481, plus the resulting PR-specific diff. The previously fixed code and gap findings remain outside this narrow spec disposition; no new regression was found in the reviewed merge scope.
