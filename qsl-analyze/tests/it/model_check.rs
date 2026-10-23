@@ -558,7 +558,7 @@ fn an_undefined_model_side_expression_refutes_the_deadlock_item() {
 /// `max_transitions` 1 stop the run naming the limit and its value; an
 /// already-cancelled handle stops it with no limit; a zero evaluation meter
 /// stops it at `inc`'s precondition naming the meter, 0.
-#[trace("TC-521")]
+#[trace("TC-521", "FR-126-AC-19", "FR-255-AC-9")]
 #[test]
 fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     let world = self::world("", &[&[("c", 0)]]);
@@ -622,6 +622,31 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
             })
         )
     );
+    let mut candidate_subject = subject(
+        &world.package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        UNLIMITED,
+    );
+    candidate_subject.simulation.expansion.max_candidates = 1;
+    let candidate_stop = check_model(
+        ModelCheckRequest {
+            subject: candidate_subject,
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            limits: defaults,
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("checked");
+    let (cause, limit) = stopped(candidate_stop);
+    assert_eq!(cause, IncompleteCause::ResourceExhausted);
+    let reached = limit.expect("candidate bound stopped expansion");
+    assert_eq!(reached.limit, ModelCheckLimit::MaxCandidates);
+    assert_eq!(reached.value, 1);
+    assert_eq!(reached.limit.setting(), "expansion.max_candidates");
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
     let cancelled = check_model(
