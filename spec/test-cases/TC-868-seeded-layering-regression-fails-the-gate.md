@@ -16,7 +16,7 @@ Each `case` and `distinguishing` entry is two units, byte-equal except for
 the identity string of one header `profile` declaration, and both are
 compiled by the running build.
 
-Scope: FR-345-AC-4 to FR-345-AC-9.
+Scope: FR-345-AC-4 to FR-345-AC-10.
 
 ## Test Procedure
 
@@ -24,8 +24,10 @@ Faults are injected only through FR-345's compile seam: the test passes the
 gate's comparison core a wrapper around the FR-278 composition,
 defined in the test module, that returns a chosen result for a named unit.
 Steps 1 to 6 pass a test registry holding one backend that advertises
-`operation-contract` and `value-validity` in `bounded` mode, unless a step
-names another.
+`operation-contract` and `value-validity` in `bounded` mode, and a test
+negotiation function, defined in the test module, that settles every
+request `supported`, unless a step names another. No step calls
+quire-contract-codegen's `negotiate_*`.
 
 1. Build a test-only corpus of `entry.json` entries. For each of E1 to E5
    it holds:
@@ -39,7 +41,8 @@ names another.
    log (state queries), a reachability invariant over a finite universe
    (state graph), a record validation function (complete value) and a
    dispatched operation contract (complete model).
-2. Run `xtask refinement layering` over it twice.
+2. Run the gate core over it twice, then once with no negotiation
+   function.
 3. Run the gate core over step 1's corpus with a wrapper that, for each
    edge's both-refuse case, returns for the child unit the `Ok` compile of
    the same unit with the failing range proof removed.
@@ -53,11 +56,20 @@ names another.
    registry of two backends advertising both kinds in `bounded` mode, one
    whose negotiation arm settles every witness item `supported` and one that
    settles every item `unsupported`; then with both settling `unsupported`.
+   Then run step 1's corpus with the `value-validity`-only test registry
+   and no negotiation function.
 6. Run the gate over an empty corpus; over step 1's corpus without the state
    graph `witness` and the E5 `distinguishing` entry; over step 1's corpus
    with one `entry.json` holding an extra member `expected`.
 7. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`,
-   then over a copy with one `witness` entry removed.
+   which passes no negotiation function, then over a copy with one
+   `witness` entry removed.
+8. From a test of the root package (a dev dependent of `xtask`), call
+   `xtask::refinement::layering::compare` over `REAL_CORPUS` with the
+   FR-278 composition, QSL's registry snapshot and a negotiation function
+   defined in that test that settles every request `supported`, capturing
+   the process streams; then again with no negotiation function. Run
+   `cargo tree -p xtask -e normal,build,dev`.
 
 Each expected result is a literal in the test. Tag the test
 `#[trace("TC-868", "FR-345-AC-n")]` over the criteria each step backs.
@@ -68,7 +80,9 @@ Each expected result is a literal in the test. Tag the test
   `holds` reporting both codes and the distinguishing-form case is
   `not applicable`; each layer result `holds`, every witness item settling
   `supported`; each edge result `holds`. The
-  two reports are byte-equal.
+  two reports are byte-equal. The run with no negotiation function also has
+  verdict success, exit 0, every layer holding with a non-empty candidate
+  set and no request submitted.
 - Step 3: verdict violation, exit 10; exactly five `regression`s, one per
   edge, each naming its case's two `RawSourceRef`s, its edge's two layer
   identities and the parent's codes; every other result as in step 2.
@@ -82,11 +96,20 @@ Each expected result is a literal in the test. Tag the test
   success, every layer holding, with each candidate requested by name and
   no request settling `ambiguous-backend`; the fifth gives a `regression`
   for every layer, each naming both backend identities with disposition
-  `unsupported`. Each run but the fourth has verdict violation, exit 10.
+  `unsupported`; the sixth, with no negotiation function, gives a
+  `regression` naming the empty candidate set for each of the four
+  `operation-contract` layers, while complete value holds, and submits no
+  request. Each run but the fourth has verdict violation, exit 10.
 - Step 6: exactly one tool-failure result naming the corpus and no other
   result; exactly two naming
   state graph / `witness` and E5 / `distinguishing`; one naming the
   `entry.json` path and the member `expected`, with every other entry still
   compiled. Each verdict tool failure, exit 30.
-- Step 7: the make target passes over the real corpus, and the gate run
-  over the copy exits non-zero.
+- Step 7: the make target passes over the real corpus, every layer holding
+  with a non-empty candidate set in QSL's registry snapshot, and the gate
+  run over the copy exits non-zero.
+- Step 8: the first call has verdict success, every layer, case and edge
+  result equal to step 7's real-corpus run, each witness item requested
+  once per candidate; the second makes no negotiation call and returns
+  step 7's report; neither writes to the streams; the tree lists no
+  quire-contract-codegen crate.

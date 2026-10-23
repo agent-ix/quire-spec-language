@@ -1,6 +1,6 @@
 ---
 id: TC-103
-title: "Execute source and runtime files through the CLI"
+title: "Execute source and runtime files through command"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-026
@@ -8,14 +8,16 @@ relationships:
 ---
 ## Description
 
-Integration, P1: run the real binary with source-derived models and selected
-runtime files for healthy/violating aggregates and recorded operation frames.
+Integration, P1: call `command` in process with source-derived models and
+selected runtime files for healthy/violating aggregates and recorded operation
+frames.
 
 ## Test Procedure
 
-Write public-API artifacts into an isolated directory, invoke run from a different
-working directory and inspect output, exit status, identities and counters.
-Run the existing parse/format suite unchanged.
+Write public-API artifacts into an isolated directory, call `command` with the
+request's path from a different working directory and inspect the outcome's
+result, FR-285 exit code, identities and counters. Capture the process
+streams and require that `command` writes nothing to them.
 
 ## Expected Results
 
