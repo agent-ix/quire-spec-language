@@ -119,7 +119,10 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   the `n` values.
 - When the window holds fewer than `min_count` values, the atom SHALL
   evaluate to `Undefined` with cause `InsufficientData{count, min_count}`,
-  and the clause at that position is O-16 undefined.
+  and the activation that reads it has no truth value; the clause result is
+  FR-327's `InsufficientData{where, atom, count, min_count}`, O-16
+  undefined, unless another activation is false or another atom undefined
+  or refused (FR-327).
 - When a window would hold more than `max_window_values` values, evaluation
   SHALL stop and the result SHALL be `Incomplete(LimitReached{limit, value,
   setting})` (ADR-018 V-7), naming `max_window_values`, its value and
