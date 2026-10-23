@@ -168,13 +168,6 @@ that no trace exists.
 | FR-181-AC-6 | AC-1's claim with the default `witness_samples` and `max_states` 2 gets a sampled witness lasso per initial state, the exploration stops at `max_states`, and the item returns `WitnessedUnchecked` and settles `inconclusive`, `WellDefinednessUnchecked`, never `proved`; with `witness_samples` 0 the same run settles `incomplete`, `LimitReached`, naming `max_states`. | Test (TC-616) |
 | FR-181-AC-7 | Two vaults in one start, so two instances of `over (v: V::Vault)`, give one outcome per instance in canonical order, and the second instance's product is explored with the `max_states` the first left; a clause with no instance has no outcome. | Test (TC-606) |
 
-## Remaining work
-
-The replay, certificate and settlement halves are not built: the `proved`,
-`refuted`, `inconclusive` and `incomplete` settlement records of AC-1 to AC-6,
-AC-4's replay-refusal sentence, the FR-163 product-closure certificate that
-`Witnessed` carries, and the Replay section above. Remaining work: QSL-964.
-
 ## Dependencies
 
 - ADR-023 §15 SE-1 to SE-5, §12 RU-3, HV-8; ADR-022 §3 GE-2, §4 GV-1, GV-2,
