@@ -28,3 +28,9 @@ Ticket: QSL-1017. Reviewed the PR's own Rust diff, its call sites and tests, FR-
 ## Coverage
 
 Examined FR-447-AC-5, AC-12, AC-13, AC-14, AC-15, AC-16 and the FR-447 S4 emission clause; QSpec FR-481 hybrid model nodes, hybrid claims, fairness members and reader order. Inspected the changed emitter, read-back, checked-form, wire-member, and tagged-test paths for the introduced behavior, including API exposure, malformed-input handling, typed boundaries, resource limit, and trace tags. No CI workflow file changed. No full aggregate gate was run in this review lane.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit `03ed8c629` records `named_target: Option<ModeIndex>` in `HybridFairness`, sets it from the source `::` form, emits the model-node/mode member for `None`, and reconstructs it on read-back. The two source spellings now have distinct asserted wire members. |

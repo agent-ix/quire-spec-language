@@ -29,3 +29,10 @@ Ticket: QSL-1017. Traced the FR-447 emission and read-back criteria to tests and
 ## Coverage
 
 Examined FR-447-AC-5, AC-12, AC-13, AC-14, AC-15 and AC-16; the tagged tests in `qsl-package/src/emit/tests/hybrid.rs` and `qsl-package/src/checked_v2/tests.rs`; the emitter and I2 read-back. Existing QSpec fixture tests under `QSPEC_DIR` establish a pattern for the full vector assertion. The computed matrix was attempted but remained running for several minutes under concurrent repository reviews; this pass used a manual trace-tag and assertion audit. Plan completion: not assessed. Optional repository-wide semantic review was not run.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Commit `03ed8c629` adds `braking2_restored_nodes_match_qspec_vectors`, which loads QSpec's `hybrid-node-vectors.json` through `QSPEC_DIR`, compares the complete restored node ID set and each node's content, ignoring occurrences in the source map. |
+| FND-002 | fixed | Commit `03ed8c629` adds `fairness_member_preserves_the_source_mode_or_target_form`, which writes both `fair Moving;` and `fair Moving::Stopped;` and asserts the different declaration nodes, names, package identities and read-back. |

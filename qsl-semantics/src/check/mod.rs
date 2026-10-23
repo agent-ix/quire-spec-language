@@ -547,13 +547,21 @@ pub struct CheckedGraph {
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
-    /// FR-115: each `model` alias's object types, by artifact id: the table
-    /// [`Self::resolve_operation`] resolves a `Frame` selection's alias and
-    /// type in.
+    /// Each `model` alias's object types, by artifact id: the table
+    /// [`Self::field_domain`] resolves a field selection's alias and type in.
     model_objects: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
-    /// FR-116: each `model` alias's top-level declarations that are not object
-    /// types, by artifact id: the nodes that cannot declare operations.
-    model_non_objects: BTreeMap<String, std::collections::BTreeSet<Identifier>>,
+    /// FR-115, FR-121: each `model` alias's operation owners (object types,
+    /// processes and state machines), by artifact id: the table
+    /// [`Self::resolve_operation`] resolves an operation selection's alias
+    /// and owner in.
+    model_owners: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    /// FR-116, FR-121: each `model` alias's top-level declarations that are
+    /// not operation owners, by artifact id: the nodes that cannot declare
+    /// operations a frame names.
+    model_non_owners: BTreeMap<String, std::collections::BTreeSet<Identifier>>,
+    /// FR-115: every admitted operation owner's effective identity, by its
+    /// declaration key.
+    owner_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
     object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
@@ -1173,7 +1181,8 @@ impl PackageDeclarations {
             .pending_types
             .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
-        let model_non_objects = model_non_object_tables(&models);
+        let (model_owners, owner_types) = model_owner_tables(&models);
+        let model_non_owners = model_non_owner_tables(&models);
         let model_names = abstraction::model_names(&models);
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
@@ -3475,7 +3484,9 @@ impl PackageDeclarations {
             probabilistic: probabilistic_model,
             operation_frames,
             model_objects,
-            model_non_objects,
+            model_owners,
+            model_non_owners,
+            owner_types,
             object_types,
             object_nodes,
             model_populations,
@@ -3510,22 +3521,44 @@ fn with_deferred(mut found: Vec<CheckRefusal>, deferred: &[CheckRefusal]) -> Vec
     found
 }
 
-/// FR-115: the tables [`CheckedGraph::resolve_operation`] and
-/// [`CheckedGraph::operation_frame`] read, from the admitted models: each
-/// `model` alias's object types by artifact id (the `T` of `ix://<package>/T`),
-/// and every object type's effective identity by declaration key. The
-/// artifact id is derived once here, so a selection resolves by map lookup.
-fn model_object_tables(
-    models: &[AdmittedModel],
-) -> (
-    BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
-    BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
-) {
+/// Each `model` alias's object types by artifact id (the `T` of
+/// `ix://<package>/T`), and every object type's effective identity by
+/// declaration key: the tables field selection and population keys read.
+fn model_object_tables(models: &[AdmittedModel]) -> (ModelTypeTable, TypeIdentities) {
+    type_tables(models, |model| Box::new(model.object_types()))
+}
+
+/// FR-115, FR-121: the same tables over every operation owner (an object
+/// type, a process or a state machine): the tables
+/// [`CheckedGraph::resolve_operation`] and [`CheckedGraph::operation_frame`]
+/// read. The artifact id is derived once here, so a selection resolves by
+/// map lookup.
+fn model_owner_tables(models: &[AdmittedModel]) -> (ModelTypeTable, TypeIdentities) {
+    type_tables(models, |model| Box::new(model.operation_owners()))
+}
+
+type ModelTypeTable = BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>;
+type TypeIdentities = BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>;
+
+/// The tables of the declarations `select` picks from each admitted model.
+fn type_tables<'m>(
+    models: &'m [AdmittedModel],
+    select: impl Fn(
+        &'m AdmittedModel,
+    ) -> Box<
+        dyn Iterator<
+                Item = (
+                    &'m crate::model::key::DeclarationKey,
+                    quire_exact::EffectiveId,
+                ),
+            > + 'm,
+    >,
+) -> (ModelTypeTable, TypeIdentities) {
     let mut by_alias = BTreeMap::new();
     let mut identities = BTreeMap::new();
     for model in models {
         let mut objects = BTreeMap::new();
-        for (key, id) in model.object_types() {
+        for (key, id) in select(model) {
             identities.insert(key.clone(), id);
             if let Some(artifact) =
                 crate::model::intake::type_identity_segment(&key.package, &key.node)
@@ -3541,9 +3574,9 @@ fn model_object_tables(
     (by_alias, identities)
 }
 
-/// FR-116: each `model` alias's top-level declarations that are not object
-/// types, by artifact id.
-fn model_non_object_tables(
+/// FR-116, FR-121: each `model` alias's top-level declarations that are not
+/// operation owners, by artifact id.
+fn model_non_owner_tables(
     models: &[AdmittedModel],
 ) -> BTreeMap<String, std::collections::BTreeSet<Identifier>> {
     models
@@ -3551,7 +3584,7 @@ fn model_non_object_tables(
         .filter_map(|model| {
             let alias = model.alias()?;
             let names = model
-                .non_object_declarations()
+                .non_owner_declarations()
                 .filter_map(|key| {
                     crate::model::intake::type_identity_segment(&key.package, &key.node)
                         .and_then(|artifact| Identifier::new(artifact).ok())
@@ -3963,38 +3996,40 @@ impl CheckedGraph {
         object: &Identifier,
         operation: &Identifier,
     ) -> Option<OperationSelection> {
-        let object = self.model_objects.get(model.as_str())?.get(object)?;
+        let object = self.model_owners.get(model.as_str())?.get(object)?;
         Some(OperationSelection {
             object: object.clone(),
             operation: operation.clone(),
         })
     }
 
-    /// FR-116: whether `object` names a declaration of the `model` alias's
-    /// package that cannot declare operations (a value type, an enum, a
-    /// record, ...), as against naming nothing or an object type. QSpec
-    /// FR-323 refuses such a `frame_operation` `malformed-declaration`.
-    pub fn names_non_object_declaration(&self, model: &Identifier, object: &Identifier) -> bool {
-        self.model_non_objects
+    /// FR-116, FR-121: whether `object` names a declaration of the `model`
+    /// alias's package that is no operation owner (a value type, an enum, a
+    /// record, ...), as against naming nothing or an object type, a process
+    /// or a state machine. QSpec FR-323 refuses such a `frame_operation`
+    /// `malformed-declaration`.
+    pub fn names_non_owner_declaration(&self, model: &Identifier, object: &Identifier) -> bool {
+        self.model_non_owners
             .get(model.as_str())
             .is_some_and(|names| names.contains(object))
     }
 
-    /// FR-121: the object type `declaring` (the
-    /// declaring type of a [`ClauseOperation`], found through the effective
-    /// view's AD-006 original declaration) under its artifact id in the
-    /// domain package the `model` alias binds. `None` when the alias binds no
-    /// package, or `declaring` is no object type of that package.
+    /// FR-121: the operation owner `declaring` (the declaring type of a
+    /// [`ClauseOperation`], found through the effective view's AD-006
+    /// original declaration: an object type, a process or a state machine)
+    /// under its artifact id in the domain package the `model` alias binds.
+    /// `None` when the alias binds no package, or `declaring` is no
+    /// operation owner of that package.
     pub fn declaring_object(
         &self,
         model: &Identifier,
         declaring: quire_exact::EffectiveId,
     ) -> Option<&Identifier> {
-        self.model_objects
+        self.model_owners
             .get(model.as_str())?
             .iter()
             .find_map(|(artifact, declaration)| {
-                (self.object_types.get(declaration) == Some(&declaring)).then_some(artifact)
+                (self.owner_types.get(declaration) == Some(&declaring)).then_some(artifact)
             })
     }
 
@@ -4103,8 +4138,8 @@ impl CheckedGraph {
         population_domain_key(&self.object_types, &self.object_nodes, domain)
     }
 
-    /// FR-115: the frame of the operation `selection` names, and its object
-    /// type's identity. The operation resolves in the object type's
+    /// FR-115: the frame of the operation `selection` names, and its owner's
+    /// identity. The operation resolves in the owner's
     /// effective view exactly as FR-104's Resolution resolves a clause's
     /// operation (`OperationTable::resolve`), so an inherited operation
     /// yields its declaring type's frame. `None` when the operation
@@ -4122,7 +4157,7 @@ impl CheckedGraph {
         &self,
         selection: &OperationSelection,
     ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
-        let context = *self.object_types.get(&selection.object)?;
+        let context = *self.owner_types.get(&selection.object)?;
         let crate::model::operation::OperationLookup::Declared {
             declaring,
             operation,
@@ -4144,11 +4179,11 @@ impl CheckedGraph {
     }
 
     /// FR-116: whether the operation `selection` names resolves to no single
-    /// operation because two supertypes of its object type expose that name
+    /// operation because two supertypes of its owner expose that name
     /// and neither is more derived than the other (QSpec FR-342
     /// `ambiguous_declaration`).
     pub fn operation_is_ambiguous(&self, selection: &OperationSelection) -> bool {
-        let Some(context) = self.object_types.get(&selection.object) else {
+        let Some(context) = self.owner_types.get(&selection.object) else {
             return false;
         };
         matches!(

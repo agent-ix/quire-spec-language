@@ -21,12 +21,12 @@ Scope: FR-312-AC-1 to FR-312-AC-6.
 
 1. From FR-108's fixtures, write clause-run requests for healthy-parent and
    violating-parent (`ParentOrder`, the case's current snapshot), each with
-   `self: child` and the snapshot's `anchor`. Run each
-   with `quire-spec run`, then pass the same file to the driver's run entry.
+   `self: child` and the snapshot's `anchor`. Call
+   `command`'s `run` in process over each.
 2. Edit the healthy-parent request, one edit per run: add a `call`; remove
    `clause`; add `function` beside `clause` in `selection`; add a member
    `note` to `clause`; point the selection at observation key `ghost`.
-3. Set `--dependent-bytes` one below the total size of the request's dependent files, then to that
+3. Set `dependent_bytes` one below the total size of the request's dependent files, then to that
    total.
 4. Write a `function` request for `sameIdentity` over the
    distinct-identities snapshot with arguments `{b: child, a: root}`, and a
@@ -52,10 +52,8 @@ Tag the tests `#[trace("TC-891", "FR-312-AC-n")]`.
 ## Expected Results
 
 - Step 1: one `/2` document each: `success`, `truth: true`, exit 0;
-  `violation`, `truth: false`, exit 10. The driver's stdout bytes and exit
-  equal the CLI's.
-- Step 2: each refuses `invalid-request` at stage `request`, exit 20, empty
-  stdout, naming the member or key.
+  `violation`, `truth: false`, exit 10.
+- Step 2: each refuses `invalid-request` at stage `request`, exit 20, no result document, naming the member or key.
 - Step 3: the intake-limit refusal, then a run.
 - Step 4: each document's disposition equals the in-process report; the
   `package_id` run writes a `/2` document with stage `compile`,
@@ -67,7 +65,7 @@ Tag the tests `#[trace("TC-891", "FR-312-AC-n")]`.
   Every missing or forbidden context member refuses `invalid-request` at
   stage `request`, naming that member; a selected post snapshot, unknown
   format or unknown observation role names `observation`. Each request
-  refusal writes empty stdout and exits 20 before `run_clause`.
+  refusal returns no result document, exit 20, before `run_clause`.
 - Step 6: all ten counter values reach `ClauseRunRequest.accounting`
   unchanged; omission uses FR-100's defaults; the legacy `clause.work_units`
-  request refuses `invalid-request` at stage `request`, exit 20, empty stdout.
+  request refuses `invalid-request` at stage `request`, exit 20, no result document.

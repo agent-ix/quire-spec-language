@@ -1060,7 +1060,8 @@ fn run_frame(
 }
 
 /// FR-104's Resolution of a `Frame` selection: `M` and `T` resolve to a
-/// domain package and one of its object types, `op` names an operation of
+/// domain package and one of its operation owners (an object type, a
+/// process or a state machine), `op` names an operation of
 /// that type's effective view, and the package holds its frame node only
 /// when a clause or attempt names it (FR-105). `None` when any step
 /// resolves nothing.

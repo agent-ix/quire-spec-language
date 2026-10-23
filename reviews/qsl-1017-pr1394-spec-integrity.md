@@ -28,3 +28,9 @@ Ticket: QSL-1017. Reviewed the PR's FR-447 S4 fairness emission edit against its
 ## Coverage
 
 Examined the edited FR-447 S4 emission statement, FR-447-AC-12 and AC-16 as context, and QSpec FR-481's hybrid fairness paragraph and AC-9 as context. The rest of the edited statement preserves the FR-481 node forms and the listed profile interval forms. The relevant scope is a targeted integrity review; other optional spec-analysis lenses were not run.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | PR #1394 at `03ed8c629` still contains FR-447 lines 555-560, saying single-target `fair S` emits the mode-node/target member. Open spec PR #1397 adds a correct AC-5/TC-1187 vector but does not yet remove or correct this paragraph. Align the normative paragraph before #1394 merges. |
