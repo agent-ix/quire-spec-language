@@ -42,8 +42,9 @@ keys. `StaticAuthority`'s document, model, profile and configuration identity
 and digest are checked independently of that domain-package identity: each is
 a static identity paired with a `sha256` digest in the
 `filament-canonical-json-1` domain, which the evaluator's `valid_digest` check
-enforces. Moving these identities to the FR-056 domain package's `sha256-jcs`
-digests is tracked separately (refs #131). F's selected observation binding
+enforces. These identities do not take the FR-056 domain package's
+`sha256-jcs` digests: `StaticAuthority` is part of the native state
+evaluator, which ADR-011 M-6c deletes. F's selected observation binding
 and assessment-input contract supplies concrete records, occurrence
 correlation, membership, observation anchors, progress and completeness.
 That observation contract additionally
