@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-17. Steps 1 to 6 and 9 to 15 need a header that can select `quire.temporal.complete/v1` and wait for it. Steps 7 and 8 run now.
+Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-17 and FR-230-AC-19 to FR-230-AC-23. Steps 1 to 6 and 9 to 20 need a header that can select `quire.temporal.complete/v1` and wait for it. Steps 7 and 8 run now.
 
 ## Test Procedure
 
@@ -32,8 +32,13 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 11. Check the `Timer` record, the tuple field and the three-object universe of FR-230-AC-11, including the whole read `self.u = self.t`, the `let` literal and the checked `Timer` node.
 12. Check the `Alias`, `Option<Clock>` and union-case fields of FR-230-AC-12 with the three guards, the two writes and the time invariant.
 13. Check `reset(c: Clock)` with a frame naming `Call.x` and with an empty frame, and `check(c: Clock)` (FR-230-AC-13).
-14. Check the collection, `time tick`, untimed and multiplicity `[0, 3]` fields of FR-230-AC-14 and the unit declarations that raise no refusal.
+14. Check the `time tick` and untimed fields `t: Timer` and `ts: Sequence<Timer>` of FR-230-AC-14 and the unit declarations that raise no refusal.
 15. Check the `Quantity<ms>` positions of FR-230-AC-15, the domain package of FR-230-AC-16 and the unit positions of FR-230-AC-17, each with its refused variants.
+16. Check the clock collections, the static dimension and the `Map<Timer, Int>` key of FR-230-AC-19.
+17. Check the collection-valued writes and their refusals of FR-230-AC-20.
+18. Check the selectors, quantified reads, resets by selection, time invariant bodies and refused queries of FR-230-AC-21.
+19. Check the `Option<Clock>` positions of FR-230-AC-22.
+20. Check the package clock collections of FR-230-AC-23, then the same package with the maximum changed.
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -52,5 +57,10 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 11: three clocks `Call.t.x`; the guard, the reset and the data write; `clock-read-outside-constraint` at `self.t`; the data write; `clock-write`; the place `Call.p.0`; a `Timer` node listing `n` only.
 - Step 12: `w` a clock; the guard with `present(self.v)`; `undefined_expression`/`unproved-presence`; the reset that makes `v` present; the drop; the guarded invariant bound; the guarded place `Call.state.Armed` and a payload-free case.
 - Step 13: one instance per place of `Call.x`, naming it; `invalid_timed_model`/`clock-write`; one instance per clock place.
-- Step 14: `clock-in-collection` for `s`, `q` and the `[0, 3]` field; `clock-without-dense-time` for the tick and untimed fields; no refusal for the declarations.
+- Step 14: `clock-without-dense-time` for the tick and untimed fields; no refusal for the declarations.
 - Step 15: every position checks and is typed by the one unit node; `ill_typed`/`type-mismatch`; `missing_declaration`/`missing-name`; the package clocks of FR-230-AC-16; the `Quantity<M::ms>` positions, and `missing_declaration`/`missing-name` naming each member path.
+- Step 16: the places and shapes, the dimension `11` for one object with `s` adding none, `s` with at most one element, `ts` typed over the `Timer` data node, and `ill_typed`/`operator-ineligible` at the map key.
+- Step 17: the provenance records of AC-20 and `clock-write` at each refused occurrence and position.
+- Step 18: the resets, the guard entries by size, the convex parts for `exists`, `unproved-presence` at `1`, `time-invariant-shape` for the `exists` body and `clock-read-outside-constraint` for `=`, `contains` and `count`, with `size` and `e.n` admitted.
+- Step 19: each `Option<Clock>` position as stated, with the instances of `arm`, the place expressions of `maybe` and the refusals.
+- Step 20: the clock collections of the package with dimension `5` for one `Call`, and a different package identity under the changed maximum.

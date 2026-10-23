@@ -25,7 +25,7 @@ FR-056-AC-7, FR-056-AC-42, FR-056-AC-44, FR-056-AC-45.
    `ix://quire/unit/ms` (FR-056-AC-42), assemble it with a unit declaring `ms`,
    then with a unit declaring no `ms`.
 5. Admit a package with clock members in an operation parameter, an operation
-   result, an alias target, an aliased field, an optional field and a record
+   result, an alias target, an aliased field, an optional field, a record, a sequence `items`, a map `values` and a multi-valued clock field
    (FR-056-AC-44), then a package whose alias target, sequence items and map
    values carry `ix://quire/unit/ms`, assembled with a unit declaring `ms` and
    with one declaring none (FR-056-AC-45).

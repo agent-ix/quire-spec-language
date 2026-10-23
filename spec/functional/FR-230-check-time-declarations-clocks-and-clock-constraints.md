@@ -54,7 +54,9 @@ clock read to an atomic clock constraint, so no real value reaches the value
 kernel. It admits a clock, and a quantity in a declared unit, in every type
 position a unit writes: a function, predicate or operation parameter and
 result, a record field, a tuple element, a union payload, a type alias target
-and the argument of `Option`.
+and the argument of `Option`, and it admits a collection of either in every position a
+collection of its element type is admitted, with one clock place for each
+element (QSpec FR-415 "Clock collections").
 
 ## Use case
 
@@ -90,9 +92,18 @@ pub struct TimedModel {
 
 pub struct ClockField {
     pub object_type: TypeId,
-    pub path: Vec<PlaceStep>,               // field names, tuple indexes and union cases down to the Clock
-    pub guard: Option<PlaceGuard>,          // Some under an Option, `?` field or union case: the presence test
+    pub path: Vec<PlaceStep>,               // field names, tuple indexes, union cases and collection slots down to the Clock
+    pub guard: Option<PlaceGuard>,          // Some under an Option, `?` field, union case or collection slot: the presence test
 }
+
+pub enum PlaceStep {
+    Field(Name), Index(usize), Case(Name),
+    Slot(CollectionShape),                  // an element place of a clock collection: one entry for each clock of the element
+}
+
+pub struct CollectionShape { pub kind: CollectionKind, pub min: u64, pub max: Option<u64> }   // None: no declared maximum
+
+pub enum Provenance { Carried { from: SlotExpr }, Fresh { resets: Vec<(ClockRef, ExactRational)> } }
 
 pub struct ClockConstraint { pub clock: ClockRef, pub op: ClockOp, pub bound: ExactRational }
 pub enum ClockOp { Lt, Le, Eq, Ge, Gt }
@@ -100,7 +111,8 @@ pub enum ClockOp { Lt, Le, Eq, Ge, Gt }
 
 `CheckedStateModel::time: Option<TimedModel>`, each operation's checked
 guard as data predicates and atomic clock constraints, and each operation's
-resets as `(ClockRef, ExactRational)` pairs. A typed `CheckRefusal` with a
+resets as `(ClockRef, ExactRational)` pairs and, for each collection-valued postcondition
+conjunct over a clock collection, the `Provenance` of every occurrence of the written value. A typed `CheckRefusal` with a
 span on refusal.
 
 ## Behavior
@@ -320,11 +332,69 @@ ill-formed use.
   of the clock fields the operation's frame (FR-103) names, and a reset of a
   clock the frame does not name SHALL refuse `invalid_timed_model`/
   `clock-write` at the reset.
-- **Collections.** The checker SHALL refuse a clock-bearing type as the element
-  of a `Set`, `Bag`, `Sequence`, `OrderedSet` or map, and a field of
-  clock-bearing type whose multiplicity is not `[1, 1]`,
-  `invalid_timed_model`/`clock-in-collection` at the type form or field,
-  because the number of clocks would vary with the state.
+- **Clock collections.** The checker SHALL admit a clock-bearing type as the element of a `Set`,
+  `Bag`, `Sequence`, `OrderedSet` or as the value of a `Map`, nested in `Option`, in another
+  collection, in a record, tuple or union, and as a member whose multiplicity is not `[1, 1]`,
+  following QSpec FR-415 "Clock collections". It SHALL refuse a clock-bearing `Map` key
+  `ill_typed`/`operator-ineligible` at the key type, because a key is an immutable lookup value
+  and a clock advances with time. The places of a clock collection SHALL be listed in "Places"
+  with a `Slot(CollectionShape)` step, one `ClockField` for each clock of the element type, in
+  element-type declaration order; a slot `j` is live exactly while the collection holds it, and
+  the guard of a slot place is that presence test, composed with the guards above it.
+  The static clock dimension of the model SHALL be, for each object and each clock collection,
+  the declared maximum (the collection type's bound `u`, the member's multiplicity upper bound)
+  times the clocks of one element, summed with the places outside collections; a collection with
+  no declared maximum SHALL record `max: None` and add no static bound, and its live places are
+  bounded in analysis by the model checker's `max_clocks` limit (QSpec FR-415 "Cardinality
+  bound").
+- **Element identity.** A `Set`, `Bag` or `OrderedSet` of a clock-bearing element type SHALL
+  decide uniqueness and multiplicity by equality of the data parts (QSpec FR-144), so the
+  checker SHALL record `Set<Clock>` as holding at most one element, and SHALL refuse `=` and
+  `!=` over a clock collection, `contains`, `convert` and any other query that compares
+  elements as values, and `count`, `fold`, `reduce`, `sum`, `map` and `filter` whose body reads
+  a clock, `invalid_timed_model`/`clock-read-outside-constraint` at the read. The data fields of
+  an element, `size` of the collection and the presence of a slot or a key are data reads and
+  check as usual; they are recorded as data predicates of the timed model and read no clock.
+- **Selection.** The checker SHALL admit the selectors `p[i]` for a `Sequence` or `OrderedSet`
+  and `p[k]` for a `Map`, `i` and `k` data terms of the pre-state, as a place expression, and
+  SHALL check the selected place as a guarded place whose presence test is `i < size(p)` or
+  `k` being in the domain; it SHALL accept the selection where the same guard conjunct, the
+  precondition or the time invariant's predicate establishes that test, and SHALL refuse it
+  otherwise `undefined_expression`/`unproved-presence` at the selector. A `Set` and a `Bag`
+  are read through `forall` and `exists` only.
+- **Quantified reads.** The checker SHALL admit `forall(e in p: B)` and `exists(e in p: B)` in
+  a precondition, a time invariant body and a clock-reading declaration, `p` a clock collection
+  place expression and `B` a Boolean combination of data predicates over the data part of `e`
+  and atomic clock constraints over the places of `e`. It SHALL record the guard of a
+  `forall` as the conjunction of `B` over the live slots, true on an empty collection, and
+  the guard of an `exists` as the union of convex parts, one for each slot, each carrying the
+  data predicate "the collection holds the slot" and the element's data predicates, false on
+  an empty collection; for a bounded collection the record holds one entry for each size from
+  the minimum to the maximum, and for an unbounded one the record is the family of those
+  entries indexed by size. A time invariant body `forall(e in p: e.x <= c)` SHALL check as the
+  upper bound `x <= c` on each live slot of `p`, and a body `exists` SHALL refuse
+  `invalid_timed_model`/`time-invariant-shape`, because a disjunction of bounds is not a
+  conjunction of upper bounds.
+- **Resets by selection.** The checker SHALL check `p[i].x = c`, `p[k].x = c`, `p[i] = literal`,
+  `p[k] = literal` and `forall(e in p: P(e) implies e.x = c)` (`P` a data predicate over `e`'s
+  data part, or absent) as resets of the selected places to exact non-negative rational time
+  constants, require the collection field to be named by the operation's frame (FR-103), and
+  record the selected slot expression or the data predicate with the reset. A place not selected
+  keeps its value.
+- **Collection-valued writes.** A postcondition conjunct `self.f = E`, `f` a clock collection,
+  SHALL check `E` as a **place-preserving collection expression**: a collection literal
+  (`sequence[...]`, `set[...]`, `bag[...]`, `orderedSet[...]`), the collection `self.f` or
+  another clock collection place, an element bound by a traversal of one, and `filter`,
+  `flatten`, `convert`, `map` whose body returns the bound element or a literal, applied to those.
+  The checker SHALL record, for every occurrence of the written value, its `Provenance`:
+  `Carried` from the slot of the pre-state element it comes from (the clock and its value follow
+  the element to its new slot), or `Fresh` with the exact non-negative rational time constants of
+  the literal's clock components. When two occurrences of a `Set`, `OrderedSet` or `Map` result
+  are equal by data part (or key), the checker SHALL record the first occurrence in FR-145's
+  visiting order. An occurrence that is neither carried nor a literal with constant clock
+  components SHALL refuse `invalid_timed_model`/`clock-write` at the occurrence, and a clock
+  collection written anywhere but as the right side of such a conjunct SHALL refuse
+  `clock-write`. A frame that does not name `f` SHALL leave its places and provenance unchanged.
 - **Dense time.** A clock place held by a model object field SHALL check by
   "Clocks and resets", under `Dense` only. A function, predicate or record
   type that mentions `Clock` is admitted in any unit; the requirement binds
@@ -420,10 +490,15 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-11 | With `record Timer { x: Clock; n: Int }` held by object field `t` of `Call` over a universe of three objects, the model has three clocks, each the place `Call.t.x`, declared in object order; `self.t.x >= 1 ms` in a precondition and `self.t = Timer { x: 0 ms, n: 3 }` in a postcondition check as a guard and a reset of the clock and a write of `n`; `self.u = self.t` refuses `clock-read-outside-constraint` at `self.t`, `self.t.n = 4` checks as a data write, a `Timer` literal in a `let` refuses `clock-write`, and a tuple `(Clock, Int)` field holds the place `Call.p.0`. The checked `Timer` record node lists `n` only. | Test (TC-685) |
 | FR-230-AC-12 | With `type Alias = Clock;` and a field `w: Alias`, `w` is a clock under `time dense`. With a field `v: Option<Clock>` the guard `present(self.v) and value(self.v) >= 1 ms` checks to one convex part `v >= 1` carrying the data predicate `present(self.v)`, `value(self.v) >= 1 ms` alone refuses `undefined_expression`/`unproved-presence` at the read, `self.v = 0 ms` records a reset of `v` that makes it present, `self.v = absent` records no reset and drops it, and a time invariant `when present(self.v) { value(self.v) <= 3 ms }` records the bound with the guard. A union case `Armed(Clock)` is the guarded place `Call.state.Armed` and a union case with a payload in the checked package has no payload. | Test (TC-685) |
 | FR-230-AC-13 | An operation `reset(c: Clock)` with postcondition `c = 0` and a frame naming `Call.x` has one checked instance per object's place of `Call.x`, each instance naming its place; the same operation with an empty frame refuses `invalid_timed_model`/`clock-write` at the reset; an operation `check(c: Clock)` with the precondition `c >= 1 ms` and no reset has one instance for each clock place of the model. | Test (TC-685) |
-| FR-230-AC-14 | Each refuses at its span with its cause: a field `s: Set<Clock>` and a field `q: Sequence<Timer>` (`invalid_timed_model`/`clock-in-collection`); a field `t: Timer` of an object type in a `time tick` model and in an untimed model (`clock-without-dense-time`); a field of clock-bearing type with multiplicity `[0, 3]` (`clock-in-collection`). A function `f(c: Clock)`, a function `g(): Clock { self.x }`, a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` declared in a dense model's unit raise no refusal of their own. | Test (TC-685) |
+| FR-230-AC-14 | A field `t: Timer` of an object type in a `time tick` model and in an untimed model refuses `invalid_timed_model`/`clock-without-dense-time` at its span, and so does a field `ts: Sequence<Timer>`. A function `f(c: Clock)`, a function `g(): Clock { self.x }`, a record with a `Clock` field, `type Alias = Clock;`, `Option<Clock>` and `Sequence<Clock>` declared in a dense model's unit raise no refusal of their own. | Test (TC-685) |
 | FR-230-AC-15 | With dimension `Time`, root `s` and `ms` of scale `1/1000`: `record Window { d: Quantity<ms>; n: Int }`, `type Span = Quantity<ms>;`, a field `o: Option<Quantity<ms>>`, a tuple `(Quantity<ms>, Int)`, a union case `Within(Quantity<ms>)`, `Set<Quantity<ms>>`, `Map<Text, Quantity<ms>>`, `function f(d: Quantity<ms>): Quantity<ms>`, `predicate p(d: Span)` and an operation parameter and result of `Quantity<ms>` each check; `Span` and `Quantity<ms>` are one type, every position is typed by the one `scalar_type`/`unit` node of `ms`, and no node is introduced for the alias, the tuple element, the union payload or `Option`. `f(3 s)` refuses `ill_typed`/`type-mismatch`; `record R { d: Quantity<Time> }` refuses `missing_declaration`/`missing-name`. | Test (TC-685) |
-| FR-230-AC-16 | A domain package `acme/rpc` with a clock field `Call.x`, an operation `reset` whose parameter is `ix://quire/native/Clock`, an operation `clk` whose result is `ix://quire/native/Clock`, an alias `Stopwatch` whose `target` is `ix://quire/native/Clock` with a field `Call.s` typed `Stopwatch`, an optional clock field `Call.w` and a record `Timer` with a clock field `x` held by `Call.t` checks to the clocks `Call.x`, `Call.s`, `Call.w` (guarded) and `Call.t.x`; `reset`'s postcondition `c = 0` with a frame naming `Call.x` checks as in FR-230-AC-13. A package clock as a sequence `items` refuses at intake, FR-154's `malformed-declaration`. | Test (TC-685) |
+| FR-230-AC-16 | A domain package `acme/rpc` with a clock field `Call.x`, an operation `reset` whose parameter is `ix://quire/native/Clock`, an operation `clk` whose result is `ix://quire/native/Clock`, an alias `Stopwatch` whose `target` is `ix://quire/native/Clock` with a field `Call.s` typed `Stopwatch`, an optional clock field `Call.w` and a record `Timer` with a clock field `x` held by `Call.t` checks to the clocks `Call.x`, `Call.s`, `Call.w` (guarded) and `Call.t.x`; `reset`'s postcondition `c = 0` with a frame naming `Call.x` checks as in FR-230-AC-13. A package sequence type whose `items` is `ix://quire/native/Clock`, a map type whose `values` is `ix://quire/native/Clock` and a field `Call.q` typed `ix://quire/native/Clock` with multiplicity `{0, 3, true, false}` check to the clock collections of FR-230-AC-19. | Test (TC-685) |
 | FR-230-AC-17 | A domain package `acme/rpc` with a unit `ms` and an alias `D` whose `target` is `ix://quire/unit/acme/rpc/ms`, a sequence type with that `items`, a map type with that `values`, a field, an operation parameter and an operation result typed by it checks to `Quantity<M::ms>` at each position (with `model M = "acme/rpc"`); the same alias, `items` or `values` naming `ix://quire/unit/ghost` refuses `missing_declaration`/`missing-name` naming the member and its path (`TypeDefinition.target`, `TypeDefinition.items`, `TypeDefinition.values`). | Test (TC-685) |
+| FR-230-AC-19 | Over a dense model whose object type `Call` has `ts: Sequence<Timer>[0, 3]` (`Timer { x: Clock; n: Int }`), `b: Bag<Clock>[0, 2]`, `s: Set<Clock>`, `m: Map<Text, Timer>[0, 2]`, `o: Option<Sequence<Clock>[0, 2]>` and `q: Sequence<Option<Clock>>[0, 2]`, the checker lists the places `Call.ts.[slot].x`, `Call.b.[slot]`, `Call.s.[slot]`, `Call.m.[slot].x`, `Call.o.[slot]` (guarded by `present(o)`) and `Call.q.[slot]` (guarded by `present` of the element), each with its `CollectionShape`; the static clock dimension of one object is `3 + 2 + 0 + 2 + 2 + 2` (the unbounded `s` adds no static bound, `max: None`); `s` holds at most one element and `b` one for each occurrence; `ts` is typed by the `collection_bounds` node over the sequence of the `Timer` data node listing `n` only; `m: Map<Timer, Int>` refuses `ill_typed`/`operator-ineligible` at the key type. | Test (TC-685) |
+| FR-230-AC-20 | `self.ts = filter(e in self.ts: e.n > 1)` checks with the provenance `Carried` from each surviving slot; `self.ts = flatten(sequence[sequence[Timer { x: 0 ms, n: 9 }], self.ts])` checks with `Fresh { x = 0 }` at slot 0 and `Carried` from slot `j` at slot `j + 1`; `self.st = set[Timer { x: 0 ms, n: 1 }, Timer { x: 5 ms, n: 1 }]` records one `Fresh { x = 0 }` occurrence, the first; `self.ts = sequence[Timer { x: self.u, n: 1 }]` (a clock read as a component) and `self.ts = sequence[Timer { x: self.ts[0].x, n: 1 }]` refuse `invalid_timed_model`/`clock-write` at the occurrence; `self.ts` written in an `invariant` clause or a `let` refuses `clock-write`; a frame that does not name `ts` leaves it unchanged. | Test (TC-685) |
+| FR-230-AC-21 | `self.ts[1].x = 0 ms` checks as a reset of slot 1 and refuses `undefined_expression`/`unproved-presence` at `1` unless the precondition establishes `1 < size(self.ts)`; `self.m[k].x = 0 ms` resets by key and `self.m[k] = Timer { x: 0 ms, n: 1 }` replaces the entry with a fresh one; `forall(e in self.ts: e.n > 1 implies e.x = 0 ms)` records a reset with the data predicate `e.n > 1`; the guard `forall(e in self.ts: e.x <= 3 ms)` records one entry for each size 0 to 3 with the conjunction over the live slots (true for size 0); `exists(e in self.ts: e.n = 2 and e.x >= 1 ms)` records one convex part for each slot with the data predicate "holds the slot" and `n = 2`; a time invariant body `forall(e in self.ts: e.x <= 3 ms)` records `x <= 3` on each live slot and a body `exists(...)` refuses `time-invariant-shape`; `self.a = self.b`, `contains(self.ts, t)` and `count<Int>(e in self.ts: e.x >= 1 ms)` over clock collections refuse `clock-read-outside-constraint`, while `size(self.ts) > 1` and `e.n` check as data reads. | Test (TC-685) |
+| FR-230-AC-22 | `Option<Clock>` is covered in every position: a field, an operation parameter `arm(c: Option<Clock>)` with `c = 0 ms` (one instance for each guarded place, each making its place present), a function result `maybe(o: Timer): Option<Clock>` with the body `o.x` (a place expression) and the body `absent` (an inactive place), an alias target, a record component, a union payload, `Option<Timer>` with `value(self.o).x >= 1 ms` refusing `undefined_expression`/`unproved-presence` unless `present(self.o)` holds, `Sequence<Option<Clock>>` with a slot whose `value` needs both the slot's and the element's presence, and `Option<Sequence<Clock>>` whose slots are live only while the option is present. | Test (TC-685) |
+| FR-230-AC-23 | A domain package `acme/rpc` with a sequence type over `ix://quire/native/Clock`, a map type over it, a field `Call.q` of clock multiplicity `{0, 3, true, false}`, a field `Call.r` typed `Timer` with `{0, 2, true, false}` and an operation parameter and result of multiplicity `{0, 2, true, false}` checks to the clock collections `Call.q`, `Call.r.[slot].x` and the parameter and result of those shapes, with static dimension `3 + 2` for one `Call`; a model whose collection maximum is `4` instead of `3` has a different package identity. | Test (TC-685) |
 
 ## Dependencies
 
@@ -448,8 +523,7 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 - QSpec half: QSpec FR-415 (Linear STD-139) owns the shared grammar of the
   `time` member, `Clock` fields, resets, clock constraints, time invariants
   and `urgent` (ADR-026 OV-7).
-- Remaining work: the rules of this requirement wait on E3 admitting
-  `quire.temporal.complete/v1` as a selectable profile (FR-110, FR-361 item 8).
+- Selection of the timed facet: FR-110-AC-13 and FR-361-AC-14 (the header `profile` that names `quire.temporal.complete/v1`).
 - filament-core-data FR-146 (Linear STD-295, agent-ix/filament-core-data#301):
   the `Clock` field type and the `dimensions` and `units` of the admitted
   domain package.
