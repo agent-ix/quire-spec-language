@@ -558,13 +558,39 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// Every operation owner of this package that `M::T::op` can name: an
+    /// object type, a process or a state machine (FR-104, FR-115, FR-121),
+    /// with its declaration key and effective identity.
+    pub(crate) fn operation_owners(&self) -> impl Iterator<Item = (&DeclarationKey, EffectiveId)> {
+        self.types
+            .iter()
+            .filter(|(_, key)| {
+                matches!(
+                    self.records.get(*key),
+                    Some(
+                        DomainPackageRecord::ObjectType(_)
+                            | DomainPackageRecord::Process(_)
+                            | DomainPackageRecord::StateMachine(_)
+                    )
+                )
+            })
+            .map(|(id, key)| (key, *id))
+    }
+
     /// The declaration key of every top-level declaration of this package
-    /// that is not an object type (a value type, an enum, a record, ...):
-    /// the nodes that cannot declare operations.
-    pub(crate) fn non_object_declarations(&self) -> impl Iterator<Item = &DeclarationKey> {
+    /// that is not an operation owner (a value type, an enum, a record, ...):
+    /// the nodes that cannot declare operations a frame names.
+    pub(crate) fn non_owner_declarations(&self) -> impl Iterator<Item = &DeclarationKey> {
         self.records
             .iter()
-            .filter(|(_, record)| !matches!(record, DomainPackageRecord::ObjectType(_)))
+            .filter(|(_, record)| {
+                !matches!(
+                    record,
+                    DomainPackageRecord::ObjectType(_)
+                        | DomainPackageRecord::Process(_)
+                        | DomainPackageRecord::StateMachine(_)
+                )
+            })
             .map(|(key, _)| key)
     }
 

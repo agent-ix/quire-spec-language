@@ -17,7 +17,7 @@
 
 use qsl_semantics::check::ProtocolNodeId;
 use qsl_semantics::check::{ChannelOverflow, LossSelector};
-use qsl_semantics::family::FamilyOutcome;
+use quire_eval::FamilyOutcome;
 use quire_exact::{Meter, Outcome, Value};
 
 use super::identity::{

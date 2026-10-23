@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-390 (FR-090-AC-9) and TC-386 step 3 (FR-090-AC-5): `FamilyOutcome`,
-//! `FamilyResult` and `EvalOutcome` are defined once, in the layer-3 `check`
-//! core (`qsl-semantics/src/family/`); no module below the core names them;
+//! `FamilyResult` and `EvalOutcome` are defined once, in the layer-E leaf
+//! `quire-eval` (FR-401), so no QSL crate defines them; no module below the
+//! check core names them;
 //! the core names no family cause type; no crate below layer 3 depends on
 //! this crate; and `qsl-semantics`, layer 3 itself, depends on layers 2, F,
 //! SV and K only. Uses the resolved-import and definition scans of TC-256, TC-170 and
@@ -45,11 +46,11 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
-/// Step 1: exactly one definition of each type, under
-/// `qsl-semantics/src/family/`.
-#[trace("FR-090-AC-9", "TC-390")]
+/// Step 1 (FR-401-AC-3): the one definition of each type is `quire-eval`'s,
+/// so no QSL crate defines it, `qsl-semantics/src/family/` included.
+#[trace("FR-090-AC-9", "TC-390", "FR-401-AC-3")]
 #[test]
-fn family_outcome_types_are_defined_once_in_the_check_core() {
+fn family_outcome_types_are_defined_in_no_qsl_crate() {
     let definitions = xtask::definition_scan::scan_dirs(
         &workspace_root(),
         &[
@@ -60,20 +61,15 @@ fn family_outcome_types_are_defined_once_in_the_check_core() {
             "qsl-semantics/src",
             "qsl-package/src",
             "qsl-eval/src",
+            "qsl-replay/src",
         ],
     )
     .expect("the definition scan runs cleanly");
     for name in CORE_TYPES {
         let locations = definitions.items.get(name).cloned().unwrap_or_default();
-        assert_eq!(
-            locations.len(),
-            1,
-            "{name} must be defined exactly once: {locations:?}"
-        );
         assert!(
-            locations[0].file.starts_with("qsl-semantics/src/family/"),
-            "{name} must be defined under qsl-semantics/src/family/, found {:?}",
-            locations[0].file
+            locations.is_empty(),
+            "{name} is defined in quire-eval only, found in the workspace: {locations:?}"
         );
     }
 }
@@ -440,6 +436,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-package",
                     "qsl-semantics",
                     "quire-canonical",
+                    "quire-eval",
                     "quire-exact",
                     "quire-semantic-value",
                     "serde",
@@ -694,4 +691,99 @@ fn no_core_crate_depends_on_qsl_analyze() {
             );
         }
     }
+}
+
+/// FR-401-AC-2: the crates whose shipped code names a `quire-eval` item
+/// (`qsl-eval`, `qsl-replay`) list it in `[dependencies]`; the lower layers
+/// name it in no table, so the leaf stays below them in the dependency
+/// direction.
+/// The FR-401-AC-2 violations over `packages`, each naming the crate and the
+/// table: a crate that must name `quire-eval` in `[dependencies]` and does
+/// not, and a lower layer that names it in any table.
+fn quire_eval_placement_violations(packages: &[PackageDependencies]) -> Vec<String> {
+    let mut violations = Vec::new();
+    for named in ["qsl-eval", "qsl-replay"] {
+        match packages.iter().find(|package| package.name == named) {
+            None => violations.push(format!("cargo metadata lists no {named}")),
+            Some(package) if !package.normal.iter().any(|d| d == "quire-eval") => {
+                violations.push(format!(
+                    "{named} does not name quire-eval in [dependencies]"
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    for lower in [
+        "qsl-foundation",
+        "qsl-cst",
+        "qsl-source",
+        "qsl-forms",
+        "qsl-semantics",
+        "qsl-package",
+        "qsl-route",
+    ] {
+        let Some(package) = packages.iter().find(|package| package.name == lower) else {
+            violations.push(format!("cargo metadata lists no {lower}"));
+            continue;
+        };
+        for (table, names) in [
+            ("[dependencies]", &package.normal),
+            ("[dev-dependencies]", &package.dev),
+            ("[build-dependencies]", &package.build),
+        ] {
+            if names.iter().any(|dependency| dependency == "quire-eval") {
+                violations.push(format!(
+                    "{lower} names quire-eval in {table}, which sits above it"
+                ));
+            }
+        }
+    }
+    violations
+}
+
+#[trace("FR-401-AC-2", "TC-390")]
+#[test]
+fn only_the_evaluation_layers_depend_on_quire_eval() {
+    let violations = quire_eval_placement_violations(&workspace_dependencies());
+    assert!(violations.is_empty(), "{violations:#?}");
+}
+
+/// FR-401-AC-2: a fixture in which `qsl-semantics` depends on `quire-eval`
+/// fails the check, naming the crate and the table.
+#[trace("FR-401-AC-2", "TC-390")]
+#[test]
+fn a_lower_layer_naming_quire_eval_fails_the_placement_check() {
+    let package = |name: &str, normal: &[&str]| PackageDependencies {
+        name: name.to_owned(),
+        normal: normal.iter().map(|d| (*d).to_owned()).collect(),
+        dev: Vec::new(),
+        build: Vec::new(),
+        shipped_features: Vec::new(),
+        default_features: Vec::new(),
+        features: Vec::new(),
+    };
+    let mut fixture: Vec<_> = [
+        "qsl-foundation",
+        "qsl-cst",
+        "qsl-source",
+        "qsl-forms",
+        "qsl-package",
+        "qsl-route",
+    ]
+    .into_iter()
+    .map(|name| package(name, &[]))
+    .collect();
+    fixture.push(package("qsl-eval", &["quire-eval"]));
+    fixture.push(package("qsl-replay", &["quire-eval"]));
+    fixture.push(package("qsl-semantics", &[]));
+    assert!(quire_eval_placement_violations(&fixture).is_empty());
+    fixture
+        .last_mut()
+        .unwrap()
+        .normal
+        .push("quire-eval".to_owned());
+    assert_eq!(
+        quire_eval_placement_violations(&fixture),
+        ["qsl-semantics names quire-eval in [dependencies], which sits above it"]
+    );
 }

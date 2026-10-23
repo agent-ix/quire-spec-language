@@ -14,10 +14,10 @@ use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::FamilyOutcome;
 use quire_exact::{FieldValue, Integer, Meter, NodeKey, Outcome, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 

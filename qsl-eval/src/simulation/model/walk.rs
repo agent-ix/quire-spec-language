@@ -17,7 +17,7 @@ use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::key;
 
 /// A stop with `cause`.
-pub(super) const fn stop(cause: qsl_foundation::CatalogCode) -> ExpansionStop {
+pub(super) const fn stop(cause: quire_semantic_value::catalog::CatalogCode) -> ExpansionStop {
     ExpansionStop { cause, limit: None }
 }
 

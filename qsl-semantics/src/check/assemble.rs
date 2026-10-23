@@ -35,13 +35,14 @@ use qsl_forms::{
     RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind, TypeForm,
     TypeFormHead, UnitForm,
 };
-use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
+use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, IdentityLimits, Setting, SettingLimits, Span};
 use quire_exact::{
     Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, EnumShape, Identifier,
     IeeeWidth, Integer, IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
 };
+use quire_semantic_value::catalog::CatalogCode;
 
 use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,

@@ -79,7 +79,7 @@ Candidate sets (FR-075) and FR-331 terminal records.
   `failed`.
 - A process provider's `proved` result settles `proved` with the certification
   `trusted`, the provider's `BackendId` and the basis the provider reports
-  (ADR-029 PL-7, "Trusted proofs": `exhaustive`, `bounded-complete`, `inductive`, `reduced` and `bounded-solver`, each `trusted` whatever a first-party engine's label is), except the bases whose certificate or
+  (ADR-029 PL-7, "Trusted proofs": `exhaustive`, `bounded-complete`, `inductive`, `reduced`, `bounded-solver` and `inductive-solver`, each `trusted` whatever a first-party engine's label is), except the bases whose certificate or
   evidence only the core establishes (ADR-018 §1, ADR-026, ADR-028; QSpec
   FR-331 "Certification"): the Kani check count (`bounded-proof`), a
   core-recomputed closed form (`closed-form`), a replayed witness
