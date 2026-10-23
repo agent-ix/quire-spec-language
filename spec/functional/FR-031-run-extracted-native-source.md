@@ -108,30 +108,32 @@ The caller shall extract the body through FR-030 before any compile. An
 extraction failure shall end the request with FR-030's error and no partial
 package.
 
-The clause runner shall compile the body under its body identity. It shall
-report compile, select, admit and evaluate outcomes with FR-109's stages,
-categories, truth and exit codes, exactly as for a source given as bytes, and
-shall retain the extraction record beside them. Only a completed evaluation
+The clause runner shall compile the body under its body identity. The clause
+runner shall report compile, select, admit and evaluate outcomes with FR-109's stages,
+categories, truth and exit codes, exactly as for a source given as bytes.
+The clause runner shall retain the extraction record beside those outcomes.
+Only a completed evaluation
 has truth.
 
 The original document and the body shall keep distinct identities. The
 original selects the Markdown bytes; the body's identity owns the compiled
 declarations and so the `package_id` (FR-001, FR-032-AC-4). The command shall
-recompute the body digest over the extracted bytes; a `body.digest` that
-differs shall refuse `stale_dependency`/`content-mismatch`, naming both
-digests.
+recompute the body digest over the extracted bytes. If `body.digest`
+differs, then the command shall refuse `stale_dependency`/`content-mismatch`,
+naming both digests.
 
 The request reader shall decode `program.extraction` and `program.clauses`
 under FR-100's closed-envelope rules: a `null` or positional record, a
 duplicate member and an unknown member refuse `invalid-request` at stage
-`request`, naming the member. It shall check the request's mode before it
-reads any dependent file:
+`request`, naming the member. The request reader shall check the request's
+mode before it reads any dependent file:
 
 - If a request carrying `extraction` is a compile request (FR-027) or a run
   request carrying `call` in place of `clause`, then the command shall refuse
   `extraction-requires-run`.
-- If a request carrying `extraction` also carries `package`, then the command
-  shall refuse `extraction-package-conflict`.
+- If a request carrying `extraction` selects a package artifact through its
+  `package` member, then the command shall refuse the request with
+  `extraction-package-conflict`.
 - If a request carrying `extraction` carries a number of `clauses` bindings
   other than one, then the command shall refuse `extraction-clause-count`,
   with `details` `{"actual": n}` for the number it carries.
@@ -155,9 +157,9 @@ identities (FR-109-AC-2).
 
 ### Original-region correspondence
 
-A refusal at compile, select, admit or evaluate whose locus names a span of
-the body shall keep that body span unchanged and shall carry the
-original-document regions the verified `SourceMap` (FR-004, FR-030) gives for
+When a refusal at compile, select, admit or evaluate has a locus that names a
+span of the body, the clause runner shall keep that body span unchanged and
+shall carry in the extraction record the original-document regions the verified `SourceMap` (FR-004, FR-030) gives for
 it. The regions shall be exact under multi-byte Unicode and under the layout
 FR-030's map deletes (fence indentation and a final LF or CRLF), and a span
 the map splits shall keep every region rather than collapse them into one.
