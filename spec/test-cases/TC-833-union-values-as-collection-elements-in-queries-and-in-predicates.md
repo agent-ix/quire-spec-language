@@ -37,7 +37,8 @@ Tag each test `#[trace("TC-833", "<AC id>")]`.
   order); the sequence keeps all four in input order.
 - Step 2: all four types are admitted; the set holds `Measured(-0)` then
   `Measured(+0)`; the bag holds `Measured(+0)` with multiplicity 2 and
-  `Measured(-0)` with multiplicity 1; `f1 = f2` refuses
-  `ill_typed`/`operator-ineligible`.
+  `Measured(-0)` with multiplicity 1; `f1 = f2` is admitted and
+  compares the payloads by numericEqual: `Measured(+0) = Measured(-0)` is true
+  and a NaN payload is unequal to itself.
 - Step 3: `true`, `false`; `contains` is `true`; `filter` keeps both `Rect`
   occurrences in order; `count` is 2.

@@ -68,8 +68,9 @@ FR-144-AC-6; ADR-012 §16.4 S3 collection element types row).
 - The kernel SHALL treat two such union values as the same member exactly when
   their members and payloads are the same member under QSpec FR-144's
   collection membership relation, a float being compared by its bits.
-- The checker SHALL refuse `=` and `!=` over such a union as
-  `ill_typed`/`operator-ineligible` (QSpec FR-149).
+- The checker SHALL admit `=` and `!=` over such a union, and the kernel SHALL
+  compare the float payloads by FR-148 numericEqual (QSpec FR-149), so equality
+  does not follow the bit-level membership relation above.
 
 ## Acceptance Criteria
 
@@ -77,7 +78,7 @@ FR-144-AC-6; ADR-012 §16.4 S3 collection element types row).
 |----|----------|--------------|
 | FR-323-AC-1 | `Set<Shape>`, `Bag<Shape>` and `OrderedSet<Shape>` are admitted at S3. Building each from `Shape::Rect(2, 3)`, `Shape::Empty`, `Shape::Rect(2, 3)` and `Shape::Circle(1)` gives a set of three elements and a bag of four, each sorted by its FR-144 union key exactly as QSpec's union-key vectors order them and the same whatever the input order, and an ordered set of the three elements `Rect(2, 3)`, `Empty`, `Circle(1)` in first-occurrence order; from the reversed input the ordered set is `Circle(1)`, `Rect(2, 3)`, `Empty`. | Test (TC-833) |
 | FR-323-AC-2 | `Sequence<Shape>` of the same four values is admitted and keeps all four in input order. | Test (TC-833) |
-| FR-323-AC-3 | With `union F { Measured(Float64) }` (a float payload), `Set<F>`, `Bag<F>`, `OrderedSet<F>` and `Sequence<F>` are admitted; building a `Set<F>` from `F::Measured` of the bits `0000000000000000`, `8000000000000000` and `0000000000000000` gives two members visited `Measured(-0)` then `Measured(+0)`, and a `Bag<F>` of the same three gives `Measured(+0)` with multiplicity 2; `f1 = f2` over two values of `F` refuses `ill_typed`/`operator-ineligible`. | Test (TC-833) |
+| FR-323-AC-3 | With `union F { Measured(Float64) }` (a float payload), `Set<F>`, `Bag<F>`, `OrderedSet<F>` and `Sequence<F>` are admitted; building a `Set<F>` from `F::Measured` of the bits `0000000000000000`, `8000000000000000` and `0000000000000000` gives two members visited `Measured(-0)` then `Measured(+0)`, and a `Bag<F>` of the same three gives `Measured(+0)` with multiplicity 2; `f1 = f2` over two values of `F` is admitted and compares the payloads by FR-148 numericEqual, so `Measured(+0) = Measured(-0)` is true and a `Measured` holding a NaN payload is unequal to itself. | Test (TC-833) |
 
 ## Dependencies
 
