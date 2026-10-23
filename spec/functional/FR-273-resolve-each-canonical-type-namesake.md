@@ -61,7 +61,9 @@ items.
 - The table's namesakes SHALL be the items of the QSL workspace's members.
   `quire-exact`, `quire-semantic-value` and `quire-eval` are shared leaves in
   their own repositories, outside that workspace, and the `identifier` and
-  `re-export` rules never apply inside them (FR-272).
+  `re-export` rules never apply inside them (FR-272). The verdict table's rows
+  are checked by that gate; the shared-leaf table's rows are checked by a
+  scan of the leaf's source, as that section states.
 - `quire-semantic-value` SHALL name its `location::Location`, a declaration
   and a child-index path to an expression, `ExpressionLocation`, and its
   `location::Origin`, the declaration a location belongs to,
@@ -147,8 +149,19 @@ FR-273-AC-n.
 | 46 | `quire_exact::location::Origin` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Origin`, the owner crate's public path |
 | 47 | `quire_exact::integer::Integer` (O-13) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Integer`, the owner crate's public path |
 | 48 | `qsl_semantics::model::key::DeclarationKey` (O-03) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_semantics::model::key::DeclarationKey` |
-| 49 | `quire_exact::location::Location` (O-12) | `quire_semantic_value::location::Location` | a declaration and a child-index path to an expression | rename `ExpressionLocation` |
-| 50 | `quire_exact::location::Origin` (an occurrence key within a node, O-07) | `quire_semantic_value::location::Origin` | the declaration a location belongs to | rename `ExpressionOwner` |
+
+## Shared-leaf namesakes
+
+The canonical-types gate (FR-272) scans the QSL workspace only, so it never
+sees an item of the shared leaf `quire-semantic-value`. The two namesakes
+below live in that leaf. Their verdicts hold by a scan of the leaf's own
+source and by a compile-resolution test from the QSL workspace, not by the
+gate. Row n is checked by FR-273-AC-n, and FR-273-AC-51 checks both.
+
+| Row | Canonical type | Namesake | Namesake's meaning | Verdict |
+| --- | --- | --- | --- | --- |
+| 49 | `quire_exact::location::Location` (O-12) | `quire_semantic_value::location::Location` | a declaration and a child-index path to an expression | rename `ExpressionLocation`; checked by a scan of `quire-semantic-value` |
+| 50 | `quire_exact::location::Origin` (an occurrence key within a node, O-07) | `quire_semantic_value::location::Origin` | the declaration a location belongs to | rename `ExpressionOwner`; checked by a scan of `quire-semantic-value` |
 
 ## Acceptance Criteria
 
@@ -202,8 +215,8 @@ FR-273-AC-n.
 | FR-273-AC-46 | The `pub use` of `Origin` in `qsl-replay/src/lib.rs` names `quire_exact::Origin` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
 | FR-273-AC-47 | The `pub use` of `Integer` in `qsl-replay/src/lib.rs` names `quire_exact::Integer` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
 | FR-273-AC-48 | The `pub use` of `DeclarationKey` in `qsl-replay/src/lib.rs` names `qsl_semantics::model::key::DeclarationKey` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
-| FR-273-AC-49 | The item that was `quire_semantic_value::location::Location` is named `ExpressionLocation` in its definition and every use, and the canonical-types gate over the QSL workspace reports no `identifier` finding for `Location` at it. | Test (TC-748) |
-| FR-273-AC-50 | The item that was `quire_semantic_value::location::Origin` is named `ExpressionOwner` in its definition and every use, and the canonical-types gate over the QSL workspace reports no `identifier` finding for `Origin` at it. | Test (TC-748) |
+| FR-273-AC-49 | A scan of the module-level items, type aliases and `pub use` items of `quire-semantic-value`'s `location` module finds `ExpressionLocation`, a declaration and a child-index path to an expression, and no item, alias or re-export whose identifier is `Location`; the same scan over a copy of the module with `pub type Location = ExpressionLocation;` added reports that alias. | Test (TC-748) |
+| FR-273-AC-50 | A scan of the module-level items, type aliases and `pub use` items of `quire-semantic-value`'s `location` module finds `ExpressionOwner`, the declaration a location belongs to, and no item, alias or re-export whose identifier is `Origin`; the same scan over a copy of the module with `pub use self::ExpressionOwner as Origin;` added reports that re-export. | Test (TC-748) |
 | FR-273-AC-51 | FR-401's interface type that locates an expression resolves at `quire_semantic_value::location::ExpressionLocation`, the owner of an `ExpressionLocation` at `quire_semantic_value::location::ExpressionOwner`, and neither `quire_semantic_value::location::Location` nor `quire_semantic_value::location::Origin` resolves. | Test (TC-748) |
 
 ## Dependencies

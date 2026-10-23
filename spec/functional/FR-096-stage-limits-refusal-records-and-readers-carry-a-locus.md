@@ -73,7 +73,7 @@ no record.
 - `LimitKind` and `LimitExceeded` in F `diagnostic`.
 - `RefusalRecord` in F `diagnostic`, and a second `CatalogCoded` method,
   `catalog_fields`.
-- The resolution of a check-stage `quire_semantic_value::location::Location` to a `SourceRegion`.
+- The resolution of a check-stage `quire_semantic_value::location::ExpressionLocation` to a `SourceRegion`.
 - The I2 reader's refusals and limits, each with its locus.
 - The kernel value refusals' target domains and widths, carried in their
   `quire-exact` variants, and the kernel undefined reason
@@ -89,7 +89,7 @@ unit's `RawSourceRef` (FR-001), its source owner is that reference's
 `SourceOwner{authority, identity}`, and every location and span it gives
 names that unit's source.
 
-A `quire_semantic_value::location::Location` names a declaration origin and a child-index path. The
+A `quire_semantic_value::location::ExpressionLocation` names a declaration origin and a child-index path. The
 path SHALL be a parent chain shared with the location it was taken from, so
 taking a child costs the same at any depth and a location at depth `d` holds
 no copy of the `d` steps above it (ADR-030 D-1, FR-258). The index sequence is
@@ -144,7 +144,7 @@ embedded in:
    spans more than one document region (a layout deletion the C-21 map
    admits splits it). No single region of the document names it.
 
-The checked package SHALL resolve a `quire_semantic_value::location::Location` of its own
+The checked package SHALL resolve a `quire_semantic_value::location::ExpressionLocation` of its own
 declarations by the same rule, so a consumer holding an S6a `Evaluation`
 resolves `Evaluation.location` without the forms.
 
@@ -205,9 +205,9 @@ Each producer's locus is the position at which its charge failed:
 | Producer | Limits | Locus |
 | --- | --- | --- |
 | S3, a family `check`, for a declaration as a whole | the declaration's preimage input bytes and work charge | `Locus::Region` over that declaration's span |
-| S3, `Typer` and lowering, under `CheckingLimits` | the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `quire_semantic_value::location::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
+| S3, `Typer` and lowering, under `CheckingLimits` | the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `quire_semantic_value::location::ExpressionLocation`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
 | S3, a `choice`'s partition proof (FR-218), under `CheckingLimits` | the shared work meter, one unit per valuation, charged after the declaration's precheck and before its lowering | `Locus::Region` over the `choice`'s span |
-| S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `quire_semantic_value::location::Location` |
+| S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `quire_semantic_value::location::ExpressionLocation` |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:
