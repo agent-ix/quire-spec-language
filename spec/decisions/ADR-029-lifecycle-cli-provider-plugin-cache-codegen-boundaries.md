@@ -723,9 +723,10 @@ target}`, and no other member:
   QSpec FR-331 descriptor, as a `quire.tool-manifest.jcs/v1` digest record. A
   change to any descriptor member changes the key. The tool version is the
   descriptor's `tool.version`: every descriptor carries `tool` (QSpec FR-331
-  "Backend tool"), `{name, version}` for a backend that fronts an external
-  tool and `producer` for a pure in-process engine, and the provider queries
-  the version from the executable at each invocation, so a tool-only upgrade
+  "Backend tool"), `{name, version}` of the executable a backend that fronts
+  an external tool invokes, queried from that executable at each invocation,
+  or of the crate that implements a pure in-process engine, at its version
+  in the producer's build. A tool upgrade or an engine release therefore
   changes the `ManifestDigest` and the key and leaves the `BackendId`
   unchanged;
 - `target`: for `generate` only, the generation target and its options.
@@ -750,11 +751,19 @@ the value parses with the same typed reader that reads a fresh result.
 Anything else is a miss. A writer writes to a temporary name and renames it
 into place. Two writers of one key write identical bytes, so a race is
 harmless. The store is a directory the caller names. Eviction keeps the
-store under the caller's size limit.
+store under the caller's size limit. For an item routed to a backend that
+fronts an external tool, the cache is read only after that item's QSpec
+FR-290 tool probe passes, and the probe passes only when the executable about
+to run reports the descriptor's `tool.version`; a failed probe settles the
+item `unsupported` with `tool-unavailable` and reads no entry. So a tool
+replaced on the host after the registry was built never returns an entry
+keyed by the old version (QSpec FR-306 "Read after the probe").
 
 **CA-5 What is never stored.** A result whose category is internal failure,
 a cancelled or deadline result, a time-limited `incomplete`, and any member
-that records wall time. A plugin's results are not stored (RU-5).
+that records wall time. A `tool-unavailable` result, whose outcome depends on
+the host's tool and not on the key, is not stored. A plugin's results are not
+stored (RU-5).
 
 ### 7. Execution backends, AOT and JIT
 

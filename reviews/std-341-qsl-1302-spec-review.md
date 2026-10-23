@@ -57,3 +57,18 @@ expectation, and FND-002 leaves FR-292 contradicting the new key. Both are
 small edits inside this PR. FND-003 and FND-004 are low. The PR should merge
 after, or together with, QSpec PR 391, whose open findings (SR-16207) may
 change the FR-331 wording these sections cite.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-005 | medium | QSpec FR-306 at the paired head (09371106) adds two cache rules: every `tool-unavailable` result is never stored, and for a backend that fronts an external tool the cache is read only after the item's FR-290 probe passes, so a hit is returned only for the tool that would run. ADR-029 CA-4 (store and read) and CA-5 (never stored) state neither, and FR-292 says the driver's `quire-cache` implements FR-306 "(ADR-029 CA-1 to CA-4)". A driver built from the ADR reads the cache before the probe and returns a stored result after a mid-invocation tool replacement, the stale hit STD-341 refuses. Fix: CA-4 reads only after a passing probe for an external-tool backend; CA-5 adds `tool-unavailable` results. | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:745-757; spec/functional/FR-292-key-cached-results-by-content-identity.md:38 | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | At eca1e752 TC-772 step 4 converts "two manifests that differ only in the QSpec FR-331 descriptor member `tool.version`" and expects "the same `BackendId` and different `ManifestDigest`s, each the QSpec FR-331 `ManifestDigest` of its descriptor". |
+| FND-002 | fixed | FR-292 restates the key as FR-306's closed object `{operation, package_id, request, backend, manifest, target}` with the provider's `BackendId` and its QSpec FR-331 `ManifestDigest` record. |
+| FND-003 | fixed | FR-288 Behavior: "The conversion shall set the descriptor's `ManifestDigest` to the QSpec FR-331 `ManifestDigest` of the manifest's descriptor: SHA-256 in the QSpec FR-201 domain `quire.tool-manifest.jcs/v1` over the RFC 8785 bytes of that complete descriptor, `tool` included." |
+| FND-004 | fixed | ADR-029 CA-2 names FR-306's closed object `{operation, package_id, request, backend, manifest, target}`, "and no other member", with one bullet per member. |

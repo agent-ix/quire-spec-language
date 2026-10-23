@@ -35,7 +35,7 @@ FR-306's closed object `{operation, package_id, request, backend, manifest,
 target}`: the operation, the subject's `package_id`, the canonical request,
 the provider's `BackendId`, its QSpec FR-331 `ManifestDigest` record and, for
 `generate` only, the target and its options), what stays outside the key, invalidation, the store and its read check. The driver's `quire-cache`
-implements it (ADR-029 CA-1 to CA-4).
+implements it (ADR-029 CA-1 to CA-5), reading the cache for an item routed to a backend that fronts an external tool only after that item's tool probe passes (CA-4) and never storing a `tool-unavailable` result (CA-5).
 
 QSL's part is what the cache reads from QSL:
 
@@ -86,7 +86,7 @@ reader's record or typed refusal.
 
 ## Dependencies
 
-- ADR-029 CA-1 to CA-4: what is cached, the key, invalidation and the store.
+- ADR-029 CA-1 to CA-5: what is cached, the key, invalidation, the store with its read after the tool probe, and what is never stored.
 - ADR-013 O-19: `BackendId`.
 - [FR-281](FR-281-analyze-claims-with-in-process-engines.md): `analyze` records.
 - [FR-288](FR-288-build-the-registry-from-provider-manifests.md): `BackendId`.
