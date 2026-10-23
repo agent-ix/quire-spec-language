@@ -591,8 +591,14 @@ request's `encoding` (Hyper self-composition queries).
 Each limit is a request setting with one name at every entry point (FR-255
 "Engine limit setting names", QSpec FR-461 Behavior 5): the library field of
 `SmtEncodingLimits`, a replay request's `stage_limits` entry and the driver
-CLI's `--limit <setting>=<n>` all raise it. Its value is a positive count.
-A `too-large` refusal names the measure's limit and setting from this table:
+CLI's `--limit <setting>=<n>` all raise it, and a model-check item
+carries the values as FR-126's `ModelCheckRequest.smt_encoding` and, on a
+provider request, as QSpec FR-368's `temporal.smt_encoding` member. Its
+value is a positive count. The values change the result (a `too-large`
+stop against a proof), so they are part of the request identity and the
+cache key (QSpec FR-368, FR-306), and a result is reused only for a request
+with equal values. A `too-large` refusal names the measure's limit and
+setting from this table:
 
 | Measure | Limit name | Setting | `ModelCheckLimit` |
 | --- | --- | --- | --- |
@@ -624,11 +630,12 @@ pub enum ModelCheckLimit {
   settles an HP-2 `EncodingRefused` outcome carrying `too-large` the same
   way.
 - **The values used are recorded.** CG's SMT backend SHALL encode every
-  query of an item under the one `SmtEncodingLimits` of the item's request,
-  the defaults for every member the request does not set. The item's
-  terminal record SHALL state the values used, as ADR-018 V-7 requires of
-  every limit, and the certificate request of an SMT proof SHALL record
-  them, so FR-314's checker rebuilds each query under the values the
+  query of an item under the one `SmtEncodingLimits` of the item's request
+  (`ModelCheckRequest.smt_encoding`), the defaults for every member the
+  request does not set. The item's terminal record SHALL state the values
+  used, as ADR-018 V-7 requires of every limit, and the certificate request
+  of an SMT proof SHALL record them as FR-338's
+  `CertificateRequest.smt_encoding`, so FR-314's checker rebuilds each query under the values the
   backend encoded it under (FR-314 "Encoding limits").
 
 ### Solver run limits
@@ -636,7 +643,10 @@ pub enum ModelCheckLimit {
 CG's SMT backend SHALL run every query of an item's EN-2 and EN-3 methods
 (this requirement's proof queries, EN-2's counterexample and lasso
 searches, and an HP-2 item's base, step and lasso queries) under the
-request's `SmtRunLimits`, which bound the SMT run itself:
+request's `SmtRunLimits`, which bound the SMT run itself. A model-check
+item carries them as FR-126's `ModelCheckRequest.smt_run` and, on a
+provider request, as QSpec FR-368's `temporal.limits.max_solver_steps` and
+`max_solver_time`:
 
 ```rust
 /// The SMT run's limits, each a request setting `smt.<member>` (FR-255).
@@ -1010,8 +1020,9 @@ impl HyperProductIdentity {
 | FR-315-AC-30 | Settlement of a fault: an SMT `Inductive{depth: 1}` result for FR-315-AC-2's item whose FR-314 rebuild of the base query meets `SmtEncodingRefusal::Fault` gives `SmtProofCheck::Fault`, and FR-127 settles it `failed`, basis `unavailable`, `TerminalValue::Failed`, category failed. Over ADR-023 §8's secure vault, `settle_hyper_smt` for `NonInterference` at instance `v` with an `EncodingRefused` outcome carrying `Fault` from a later check of `encode_hyper_query`, whose `product` is `Ok` and equal to the item's identity, settles `failed`, `Failed`, not V-8. Inside `qsl-eval`, with the request's checked clause altered after S3 so that `HyperProductIdentity::of` returns `Fault(f)`, CG's outcome is `EncodingRefused { refusal: Fault(f) }` with `product: Err(f)`, and `settle_hyper_smt` over that item writes a `failed`, `Failed` record and refuses no `ItemIdentity`. The same `Err` outcome settled for an item whose `of` returns an identity is refused `ProductMismatch` naming `clause`. | Test (TC-900) |
 | FR-315-AC-31 | FR-315-AC-1's `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` has, at each position `p` in `0..=3`, the violation disjuncts `h<p>` and then `(not (<= s<p>.c.value 3))`, followed by `inc`'s postcondition failure `(and (not h<p>) F)`, and no disjunct for a position past 3. `inc` has that failure term because `Inc`'s right side `pre(self.value) + 1` is an integer sum compared by `=` with the `Int[0, 3]` field `self.value`, so FR-104's equality typing (TC-1084) coerces it into `Int[0, 3]`, a range coercion with a definedness condition. The query has no atom-failure disjunct, because `c.value <= 3` holds no partial construct, and no precondition-failure disjunct, because `CanInc` (`self.value < 3`) holds none. | Test (TC-900) |
 | FR-315-AC-32 | `SmtEncodingRefusal` has exactly the two arms `Refused { code, locus }`, its code one of the closed refusal set, and `Fault(InternalFault)`. No refusal code names a broken invariant. None of FR-315-AC-21's requests returns `Fault`. Inside `qsl-eval`, an encoding called with a TP-1 item whose checked clause has had its one atom removed after S3, which no well-formed request carries, returns `Fault` naming the atom invariant, not `Refused` with `item-form`. | Test (TC-900) |
-| FR-315-AC-40 | Over FR-315-AC-1's `Counter` under event-position false-extension, `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)`, whose script declares eight constants, encoded under `SmtEncodingLimits` with `max_constants` 8 gives a script byte-equal to the one the defaults give; with `max_constants` 7 it refuses `too-large` naming the measure `constants`, value 8, limit 7 and setting `smt_encoding.max_constants`, with no script; with `max_script_bytes` 1 it refuses `too-large` naming `script-bytes`, limit 1 and setting `smt_encoding.max_script_bytes`. FR-315-AC-23's TP-3 item with `max_monitor_states` 1 refuses `too-large` naming `monitor-states`, a value above 1, limit 1 and setting `smt_encoding.max_monitor_states`. FR-315-AC-21's `Unrolling{depth: 1048576}` under the defaults names the setting `smt_encoding.max_constants` with its measure, value and limit. ADR-023 §8's `NonInterference` `InductionBase{depth: 1}` for instance `v`, whose script declares eight constants (FR-315-AC-7), with `encoding.max_constants` 7 refuses `too-large` naming `constants`, value 8, limit 7 and `smt_encoding.max_constants`, and its `HyperProductIdentity::of` equals the identity under the default encoding limits. Each call twice gives equal results. | Test (TC-1202) |
-| FR-315-AC-41 | CG's SMT map, read against these vectors: AC-40's `max_constants` 7 refusal, the item's next query with no earlier query having settled it, settles `failed`, execution `resource-incomplete`, `Incomplete(LimitReached{limit: SmtMaxConstants, value: 7, setting: smt_encoding.max_constants})`, never `unsupported`, V-5 or V-6, and its terminal record states the encoding limits used. For `always holds(c.value <= 3)` over `Counter`, an `InductionBase{depth: 1}` query that the solver stops at `max_solver_steps` 1 settles `Incomplete(LimitReached{max_solver_steps, 1, smt.max_solver_steps})`, and one stopped at `max_solver_time` 1 settles `Incomplete(LimitReached{max_solver_time, 1, smt.max_solver_time})`, each never `InductionNotClosed` or `TimedOut`; the same step-limit stop with the cancellation handle tripped settles `Incomplete(Cancelled{source})`, and with the backend's own wall-clock limit expired `Incomplete(TimedOut)`; a solver `unknown` with no limit reached settles `InductionNotClosed{depth: 1}`. Two requests that differ only in `max_solver_time` have equal request identity, and two that differ only in `max_solver_steps` differ. | Analysis (TC-1202) |
+| FR-315-AC-40 | Over FR-315-AC-1's `Counter` under event-position false-extension, `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)`, whose script declares eight constants, encoded under `SmtEncodingLimits` with `max_constants` 8 gives a script byte-equal to the one the defaults give; with `max_constants` 7 it refuses `too-large` naming the measure `constants`, value 8, limit 7 and setting `smt_encoding.max_constants`, with no script; with `max_script_bytes` 1 it refuses `too-large` naming `script-bytes`, limit 1 and setting `smt_encoding.max_script_bytes`. FR-315-AC-23's TP-3 item with `max_monitor_states` 1 refuses `too-large` naming `monitor-states`, a value above 1, limit 1 and setting `smt_encoding.max_monitor_states`. FR-315-AC-21's `Unrolling{depth: 1048576}` under the defaults names the setting `smt_encoding.max_constants` with its measure, value and limit. ADR-023 §8's `NonInterference` `InductionBase{depth: 1}` for instance `v`, whose script declares eight constants (FR-315-AC-7), with `encoding.max_constants` 7 refuses `too-large` naming `constants`, value 8, limit 7 and `smt_encoding.max_constants`, and its `HyperProductIdentity::of` equals the identity under the default encoding limits. Each call twice gives equal results. | Test (TC-1250) |
+| FR-315-AC-41 | CG's SMT map, read against these vectors: AC-40's `max_constants` 7 refusal, the item's next query with no earlier query having settled it, settles `failed`, execution `resource-incomplete`, `Incomplete(LimitReached{limit: SmtMaxConstants, value: 7, setting: smt_encoding.max_constants})`, never `unsupported`, V-5 or V-6, and its terminal record states the encoding limits used. For `always holds(c.value <= 3)` over `Counter`, an `InductionBase{depth: 1}` query that the solver stops at `max_solver_steps` 1 settles `Incomplete(LimitReached{max_solver_steps, 1, smt.max_solver_steps})`, and one stopped at `max_solver_time` 1 settles `Incomplete(LimitReached{max_solver_time, 1, smt.max_solver_time})`, each never `InductionNotClosed` or `TimedOut`; the same step-limit stop with the cancellation handle tripped settles `Incomplete(Cancelled{source})`, and with the backend's own wall-clock limit expired `Incomplete(TimedOut)`; a solver `unknown` with no limit reached settles `InductionNotClosed{depth: 1}`. Two requests that differ only in `max_solver_time` have equal request identity, and two that differ only in `max_solver_steps` differ. | Analysis (TC-1250) |
+| FR-315-AC-42 | A `ModelCheckRequest` (FR-126) for `always holds(c.value <= 3)` over `Counter` carries `smt_encoding` and `smt_run`, each `Default` when the caller sets no `smt_encoding.*` or `smt.*` setting. Two requests that differ only in `smt_encoding.max_constants` (7 and 8) have different request identities and cache keys, and a result recorded for one is not reused for the other; two that differ only in `smt.max_solver_time` have equal ones. The `CertificateRequest` that the settlement builds for an SMT proof of that item carries `smt_encoding` equal to the run's `ModelCheckRequest.smt_encoding`. | Test (TC-1250) |
 
 ## Dependencies
 

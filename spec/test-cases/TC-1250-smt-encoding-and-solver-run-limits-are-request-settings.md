@@ -1,5 +1,5 @@
 ---
-id: TC-1202
+id: TC-1250
 title: "The SMT encoding limits and solver run limits are request settings that settle V-7 and are recorded for the certificate check"
 type: TC
 relationships:
@@ -12,7 +12,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-255
     type: verifies
 ---
-# TC-1202: The SMT encoding limits and solver run limits are request settings that settle V-7 and are recorded for the certificate check
+# TC-1250: The SMT encoding limits and solver run limits are request settings that settle V-7 and are recorded for the certificate check
 
 ## Description
 
@@ -23,7 +23,7 @@ its value and its setting and settle V-7 `LimitReached`, that FR-182's stop
 order places the run limits at rule 3, and that FR-314's checker rebuilds a
 query under the encoding limits the certificate request records.
 
-Scope: FR-315-AC-40, FR-315-AC-41, FR-182-AC-14, FR-314-AC-7 and
+Scope: FR-315-AC-40 to FR-315-AC-42, FR-182-AC-14, FR-314-AC-7 and
 FR-255-AC-14.
 
 Step 2 reads CG's SMT map against injected backend outcomes: each outcome
@@ -59,8 +59,12 @@ settlement, not the solver.
    `smt.max_solver_steps=1000` and `smt.max_solver_time=5`, with no operand,
    with `smt.max_solver_time=0` and with `smt_encoding.max_monitor_states=0`;
    replay with the `stage_limits` entry `smt_encoding.max_constants` at 8.
+6. Build FR-315-AC-42's `ModelCheckRequest`s with no SMT setting, with
+   `smt_encoding.max_constants` 7 and 8, and with `smt.max_solver_time` 5
+   and 10; compute their request identities and cache keys; settle an SMT
+   proof of the first and read its `CertificateRequest.smt_encoding`.
 
-Tag the tests `#[trace("TC-1202", "<criterion id>")]`.
+Tag the tests `#[trace("TC-1250", "<criterion id>")]`.
 
 ## Expected Results
 
@@ -86,10 +90,15 @@ Tag the tests `#[trace("TC-1202", "<criterion id>")]`.
   `SmtMaxConstants` stop writes no record and refuses `LimitNotApplicable`;
   the `too-large` outcome `LimitReached{max_constants, 7,
   smt_encoding.max_constants}` (FR-182-AC-14).
-- Step 4: `Verified` for `max_constants` 8 and for the defaults; for 7, the
-  rebuild refused `too-large` naming `smt_encoding.max_constants`, never
-  `Verified` (FR-314-AC-7).
+- Step 4: `Verified` for `max_constants` 8 and for the defaults; for 7,
+  `QueryMismatch` at `Query { part: Unrolling }`, the rebuild refused
+  `too-large` naming `smt_encoding.max_constants`, settled `inconclusive`,
+  `CertificateRejected` (FR-314-AC-7).
 - Step 5: the limits with the named members set and the others at their
   defaults; both types at their defaults with no operand; usage refusals
   naming `smt.max_solver_time=0` and `smt_encoding.max_monitor_states=0`;
   the replay's encoding under 8 (FR-255-AC-14).
+- Step 6: `Default` limits on the plain request; different identities and
+  keys for the two `max_constants` requests and no reuse between them;
+  equal ones for the two `max_solver_time` requests; the certificate
+  request's `smt_encoding` equal to the run's (FR-315-AC-42).
