@@ -44,7 +44,8 @@ for `c = a`.
 6. Run FR-168-AC-12's `possible c.value = 3` over the `Counter` subject with
    the undefined `terminal when` predicate, and replay its evidence.
 7. Run FR-168-AC-13's `ReachesTwo` with the undefined state constraint
-   `Half`, and replay its evidence with the request that selects `Half`.
+   `Half`, and replay its evidence through a request that selects `Half`
+   and through one that selects no constraint.
 
 Tag the tests `#[trace("TC-612", "<AC id>")]`.
 
@@ -70,5 +71,6 @@ Tag the tests `#[trace("TC-612", "<AC id>")]`.
   neither a predicate nor a transition; the replay settles
   `reproduced-with-evaluated-witness`.
 - Step 7: `Undefined` at `va = 2` with the constraint's locus; no
-  `ConstraintBoundary` node there; the replay settles
-  `reproduced-with-evaluated-witness`.
+  `ConstraintBoundary` node there; the item settles `refuted`,
+  `decisive-counterexample`, cause `UndefinedEvaluation`; both replays
+  settle `reproduced-with-evaluated-witness`.
