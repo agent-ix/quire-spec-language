@@ -15,7 +15,7 @@ certificate with the first failing rule and its member, never accepts a
 certificate for a false claim, and stops at a caller limit.
 
 Scope: FR-163-AC-2, FR-163-AC-3, FR-163-AC-4, FR-163-AC-5,
-FR-163-AC-6, FR-163-AC-7, FR-163-AC-8.
+FR-163-AC-6, FR-163-AC-7, FR-163-AC-9.
 
 ## Test Procedure
 

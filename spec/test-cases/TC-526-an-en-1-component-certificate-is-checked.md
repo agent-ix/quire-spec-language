@@ -14,7 +14,7 @@ Verify that `check_components` accepts a weak-fairness liveness proof's
 partition and rejects a failing witness, a backward edge and a
 non-partition.
 
-Scope: FR-339-AC-1 to FR-339-AC-3 and FR-339-AC-5.
+Scope: FR-339-AC-1 to FR-339-AC-3 and FR-339-AC-6.
 
 ## Test Procedure
 
