@@ -25,6 +25,21 @@
 //! directly; IR names no QSL type. O-11's `QualifiedName` is still `identity`'s own minimal
 //! version, with the shape ADR-013 specifies; `identity` names the ticket
 //! that absorbs it.
+//!
+//! # Former paths (FR-401-AC-3)
+//!
+//! The ADR-013 O-16 `Category` a `Verdict` carries is
+//! `quire_semantic_value::catalog::Category`. This crate no longer re-exports
+//! it:
+//!
+//! ```
+//! use quire_semantic_value::catalog::Category;
+//! # let _ = Category::Success;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_replay::Category;
+//! ```
 
 #![forbid(unsafe_code)]
 
@@ -231,9 +246,6 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
-// The ADR-013 O-16 category a `Verdict` and each arm result carry, re-exported
-// so CG names `Category::Success` and `Category::Violation` through this crate.
-pub use quire_semantic_value::catalog::Category;
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not

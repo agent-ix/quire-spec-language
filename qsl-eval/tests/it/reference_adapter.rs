@@ -410,7 +410,7 @@ fn begin_refuses_a_wrong_argument_count_before_any_charge() {
 /// FR-262: `Begin`'s supplied-value run polls the meter's installed handle,
 /// so a handle cancelled before `Begin` ends it with `Cancelled`, before any
 /// charge.
-#[trace("FR-262-AC-10")]
+#[trace("FR-262-AC-12")]
 #[test]
 fn begin_observes_the_meters_cancelled_handle() {
     let package = package(vec![keep()]);
@@ -592,4 +592,145 @@ fn cancelling_after_a_request_is_saved_ends_at_the_childs_call_charge() {
     assert_eq!(cancel.tripped(), Some(CancelCause::Requested));
     assert_eq!(work(&meter), 1);
     assert_eq!(transitions.load(Ordering::SeqCst), 1);
+}
+
+/// `g(x: Int[0, 9], y: Int[0, 9]): Boolean { true }`.
+fn two_arguments() -> FunctionDeclaration {
+    FunctionDeclaration::new(
+        "g",
+        vec![
+            ("x".to_owned(), form(&range(0, 9))),
+            ("y".to_owned(), form(&range(0, 9))),
+        ],
+        form(&ValueType::Boolean),
+        None,
+        Expression::boolean(true),
+    )
+}
+
+fn cancelled(cause: CancelCause) -> Cancel {
+    let cancel = Cancel::new();
+    cancel.cancel(cause);
+    cancel
+}
+
+fn assert_no_consumption(meter: &Meter) {
+    assert_eq!(work(meter), 0);
+    assert_eq!(meter.admission_count(), 0);
+}
+
+/// FR-262-AC-12 for `call_supplied`: the caller's run polls the caller's
+/// handle, and `Begin` polls the meter's, each ending as `Cancelled` with no
+/// session and zero consumption; no handle cancelled gives a result.
+#[trace("FR-262-AC-12")]
+#[test]
+fn call_supplied_observes_both_the_callers_and_the_meters_handle() {
+    use qsl_eval::value::CheckedPackageEvaluation as _;
+    use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
+
+    let package = package(vec![two_arguments()]);
+    let objects = ObjectEnvironment::default();
+    let name = QualifiedName::unqualified("g").unwrap();
+    let run_over = |handle: Cancel, meter_handle: Option<Cancel>| {
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), handle).unwrap();
+        let mut meter = Meter::new(UNLIMITED);
+        if let Some(handle) = meter_handle {
+            meter = meter.with_cancel(handle);
+        }
+        let result =
+            package.call_supplied(&name, vec![int(3), int(4)], &objects, &mut meter, &mut run);
+        (result, meter)
+    };
+
+    let (result, meter) = run_over(Cancel::new(), Some(cancelled(CancelCause::Requested)));
+    assert!(matches!(
+        result,
+        Err(CallFailure::Cancelled(CancelCause::Requested))
+    ));
+    assert_no_consumption(&meter);
+
+    let (result, meter) = run_over(Cancel::new(), Some(cancelled(CancelCause::Deadline)));
+    assert!(matches!(
+        result,
+        Err(CallFailure::Cancelled(CancelCause::Deadline))
+    ));
+    assert_no_consumption(&meter);
+
+    let (result, meter) = run_over(cancelled(CancelCause::Requested), Some(Cancel::new()));
+    assert!(matches!(
+        result,
+        Err(CallFailure::Cancelled(CancelCause::Requested))
+    ));
+    assert_no_consumption(&meter);
+
+    let (result, meter) = run_over(cancelled(CancelCause::Requested), None);
+    assert!(matches!(
+        result,
+        Err(CallFailure::Cancelled(CancelCause::Requested))
+    ));
+    assert_no_consumption(&meter);
+
+    for meter_handle in [Some(Cancel::new()), None] {
+        let (result, meter) = run_over(Cancel::new(), meter_handle);
+        assert!(matches!(
+            result.map(|e| e.outcome),
+            Ok(FamilyOutcome::Evaluated(Outcome::Completed(
+                Value::Boolean(true)
+            )))
+        ));
+        assert_eq!(work(&meter), 1);
+    }
+}
+
+/// FR-262-AC-12 for `Begin` of a call and of a checked expression through the
+/// adapter: the meter's cancelled handle ends it with the handle's cause and
+/// no consumption; an uncancelled handle, or none, gives a session.
+#[trace("FR-262-AC-12")]
+#[test]
+fn begin_of_a_call_and_of_an_expression_observes_the_meters_handle() {
+    use quire_semantic_value::checking::CheckMode;
+
+    let package = package(vec![two_arguments()]);
+    let objects = ObjectEnvironment::default();
+    let key = identity(&package, "g");
+    let expression = package
+        .graph()
+        .check_expression(
+            vec![("x".to_owned(), range(0, 9)), ("y".to_owned(), range(0, 9))],
+            &Expression::boolean(true),
+            None,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let meter_with = |handle: Option<Cancel>| {
+        let meter = Meter::new(UNLIMITED);
+        match handle {
+            Some(handle) => meter.with_cancel(handle),
+            None => meter,
+        }
+    };
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        let mut registry = Registry::new(Closure::new(&package));
+        let mut meter = meter_with(Some(cancelled(cause)));
+        let refused = registry.begin_call(key, vec![int(3), int(4)], &objects, &mut meter);
+        assert!(matches!(refused, Err(CallFailure::Cancelled(c)) if c == cause));
+        assert_no_consumption(&meter);
+        let mut meter = meter_with(Some(cancelled(cause)));
+        let refused =
+            registry.begin_expression(&expression, vec![int(3), int(4)], &objects, &mut meter);
+        assert!(matches!(refused, Err(CallFailure::Cancelled(c)) if c == cause));
+        assert_no_consumption(&meter);
+    }
+    for handle in [Some(Cancel::new()), None] {
+        let mut registry = Registry::new(Closure::new(&package));
+        let mut meter = meter_with(handle.clone());
+        assert!(registry
+            .begin_call(key, vec![int(3), int(4)], &objects, &mut meter)
+            .is_ok());
+        let mut meter = meter_with(handle);
+        assert!(registry
+            .begin_expression(&expression, vec![int(3), int(4)], &objects, &mut meter)
+            .is_ok());
+    }
 }

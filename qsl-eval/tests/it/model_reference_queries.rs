@@ -4362,3 +4362,63 @@ fn model_query_shapes_fault_at_the_real_producers_without_added_query_charges() 
         }
     }
 }
+
+/// FR-262-AC-11, FR-089-AC-5: the reference adapter validates a body's nested
+/// request for a `Population<T>[N]` parameter by the resolved binding's
+/// declared maximum, as argument admission does. A binding admitted with
+/// maximum 5 is a member of `Population<5>` and refused under `Population<6>`,
+/// and an id no binding resolves is refused. (A storage failure of the
+/// membership walk is not reachable from here: the kernel's reservation hook
+/// is private, so that branch is `quire-eval`'s toy-closure test.)
+#[test]
+#[trace("FR-262-AC-11", "FR-089-AC-5")]
+fn the_adapter_validates_a_population_request_by_its_declared_maximum() {
+    use qsl_eval::value::PackageClosure;
+    use quire_eval::{CheckedClosure, RequestRefusal};
+
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let universe = view_of(&domain_package).object_universe().identity();
+    let (a, b) = (type_id(&view, "model.A"), type_id(&view, "model.B"));
+    let admit = |maximum: Option<u64>| {
+        let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+        match admit_binding(
+            &view,
+            &p1("test/orders"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            maximum,
+            &mut meter,
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("expected an admitted binding, got {other:?}"),
+        }
+    };
+    let (five, seven) = (admit(Some(5)), admit(Some(7)));
+    let scenario = Scenario {
+        universe,
+        a,
+        b,
+        binding: five.clone(),
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
+    };
+    let environment = ObjectEnvironment::default()
+        .with_population(five.clone())
+        .unwrap();
+    let unresolved = seven.population_id();
+
+    for (declared, argument, expected) in [
+        (5, five.population_id(), Ok(())),
+        (6, five.population_id(), Err(RequestRefusal::NotAdmitted)),
+        (5, unresolved, Err(RequestRefusal::NotAdmitted)),
+    ] {
+        let package = package_with_size_function(&scenario, declared);
+        let key = package.graph().callable("F").unwrap().identity;
+        let closure = PackageClosure::<&CheckedPackage, &CheckedExpression>::new(&package);
+        assert_eq!(
+            closure.admit_request(&key, &[Value::Population(argument)], &environment),
+            expected,
+            "Population<{declared}>"
+        );
+    }
+}
