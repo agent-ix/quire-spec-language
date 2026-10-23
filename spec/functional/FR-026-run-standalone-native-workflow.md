@@ -84,7 +84,7 @@ both in the limits it gives `command`; neither has a ceiling. A refusal at
 either names its setting (`request_bytes` or `dependent_bytes`) and its
 configured value.
 The command shall count every dependent file toward `dependent_bytes` by its
-size, whatever its role (model, program, library, snapshot, invocation or
+size, whatever its role (model, each program unit, library, snapshot, invocation or
 package), and shall apply no limit on the number of files.
 The command shall verify each selected file's digest before consuming it.
 The command shall begin each invocation with fresh budgets.

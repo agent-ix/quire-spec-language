@@ -51,10 +51,10 @@ use qsl_eval::temporal::{
     evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
     TemporalPosition, TupleLetters, UndefinedCause,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits};
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::execute::ReplayRefusal;
@@ -426,8 +426,8 @@ impl TupleLetters for Reexecuted<'_> {
     }
 }
 
-fn fault_of(invariant: &'static str) -> qsl_foundation::InternalFault {
-    qsl_foundation::InternalFault::new("replay-hyper-trace-tuple", invariant)
+fn fault_of(invariant: &'static str) -> quire_semantic_value::catalog::InternalFault {
+    quire_semantic_value::catalog::InternalFault::new("replay-hyper-trace-tuple", invariant)
 }
 
 /// The checks `Lockstep` and `WitnessExhausted` share (FR-183 "Common"): the

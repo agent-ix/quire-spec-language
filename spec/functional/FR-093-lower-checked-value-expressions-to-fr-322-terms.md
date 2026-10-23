@@ -74,7 +74,9 @@ Nodes are content-addressed: two checked expressions that lower to the same
 body, type and form are one node. Each source occurrence of a node is its own
 occurrence entry, keyed (node id, role, ordinal) (ADR-013 O-07). Ordinals per
 (node id, role) follow insertion order: the order `check` records them in, not
-a sort by region. Each binder's own site is recorded before that binder's
+a sort by region. In a package of several source units the units' occurrences
+follow FR-480's canonical unit order, an earlier unit's first, and insertion
+order applies within each unit. Each binder's own site is recorded before that binder's
 reads, even when its region starts at the same byte as its first read.
 Content-addressing means two binders can share one parameter node: when they
 do, the node's occurrences follow one sequence in lowering order, so a later
@@ -277,6 +279,7 @@ to `x`'s node.
 | `Coerce(e, interval)` (an integer admitted into an `Int[..]` that does not contain its type) | `convert` | `quire.op.numeric.narrow` | member `type_argument{declaration: T(Int[interval])}` | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand type is an exact numeric type other than the target | `convert` | `quire.op.numeric.convert` | member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand is a quantity | `convert` | `quire.op.quantity.convert` | member `type_argument` of the target type node; mode `rounding` = `exact` (Quantity conversion) | `[ref(e)]` |
+| `ConvertText(target, e)` (`convert<T>(e)` whose operand has a `Text[..]` or `String` type, QSpec FR-478) | `convert` | `quire.op.text.to_<k>` for a `Text[..]` operand, `quire.op.string.to_<k>` for a `String` operand, where `<k>` is `integer` (`Integer`, `Int[..]`), `decimal` (`Decimal`, `Decimal[..]`), `rational` (`Rational`, `Rational[..]`), `float32`, `float64` or `quantity` (`Quantity<u>`) for the target | law `text_profile` for a `Text[..]` operand, then law `ieee_profile` for a `float32` or `float64` target; mode `rounding` = the target's mode for a decimal or IEEE target (`exact` when the target omits it) and `exact` for a quantity target, no mode for an integer or rational target; member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertDecimal(e, target)` (`convert<T>(e)` to a decimal) | `convert` | `quire.op.numeric.convert` when exact, `quire.op.numeric.convert_rounding` when FR-149 classifies it as scale reduction | member `type_argument` of `target`'s node; for `convert_rounding`, mode `rounding` = `target`'s mode | `[ref(e)]` |
 | `IeeeToRational(e, domain)` | `convert` | `quire.op.ieee.to_rational` | law `ieee_profile`; member `type_argument` of `domain`'s node | `[ref(e)]` |
 | `ConvertCollection{target, operand}` | `convert` | `quire.op.collection.convert` | member `type_argument` of `target`'s node; leaves `result_inner` | `[ref(e)]` |
@@ -324,21 +327,49 @@ rational magnitude and no numeric domain, so the rounding mode it pins is
 into an exact target with no loss. `quire.op.quantity.convert` therefore
 carries mode `rounding` = `exact`.
 
+**Text to number.** `check` SHALL build a `convert<T>(e)` whose `e` has a
+`Text[..]` or `String` type as a `ConvertText(T, e)` node of type `T` when `T`
+is an integer, decimal, rational, `Float32`, `Float64` or `Quantity<u>` type
+(QSpec FR-478). A target equal to `e`'s own type builds no node, as for
+every `convert` (below). For any other target there is no conversion from
+text, and `check` refuses it with `ill_typed`/`operator-ineligible` at the `convert`,
+building no node. A `ConvertText` is never a `ConvertScalar`,
+`ConvertDecimal`, `Coerce` or `IeeeToRational`: it lowers by its own row,
+inside or outside an `Equality`.
+
+It is a `convert`, so its `rounding` mode is pinned by the target type alone
+(QSpec FR-322 `type_pinned_modes`): a decimal or IEEE target's declared mode,
+`exact` for a quantity, and no mode for an integer or rational target. A
+`Text[..]` operand gives its `text_profile` law, with the lock's text-profile
+definition as for every text identity, and its profile is read from the
+operand's type node, not from a `text_profile` mode. A `String` operand takes
+no `text_profile` law, as for `quire.op.string.eq`, and lowering selects a
+`quire.op.string.to_*` identity for it, never a `quire.op.text.*` one. An IEEE
+target adds the `ieee_profile` law, whose lock evidence is FR-397's selection.
+The operand's text-leaf list is unchanged. In a pure function body a
+`ConvertText` carries no obligation (QSpec FR-146). Its undefined outcome for
+text that is not a number, and its refusals for a number outside `T` or a
+strict `exact` rounding, are FR-478's at evaluation.
+
 A `Coerce` exists only for a narrowing: an integer whose type an `Int[..]`
 contains is admitted with no node, and a `ConvertScalar` whose operand type
 equals its target builds no node; its parent references the operand's node.
 
 **Converted equality operand.** An `Equality` operand written `convert<T>(e)`,
-whose `e` has a type other than `T`, is checked as a `ConvertScalar(T, e)`
-node of type `T`. It lowers by the `ConvertScalar` rows:
-`quire.op.numeric.convert`, or `quire.op.quantity.convert` for a quantity.
-The equality's operand family `<f>` is that of the compared type `T`, and its
+whose `e` has an exact numeric or quantity type other than `T`, is checked as
+a `ConvertScalar(T, e)` node of type `T`. It lowers by the `ConvertScalar`
+rows: `quire.op.numeric.convert`, or `quire.op.quantity.convert` for a
+quantity. An `Equality` operand written `convert<T>(e)` whose `e` has a
+`Text[..]` or `String` type is checked as a `ConvertText(T, e)` node, by the
+"Text to number" rule above, and lowers by the `ConvertText` row. Either way,
+the equality's operand family `<f>` is that of the compared type `T`, and its
 argument at that operand's position references the convert node, never `e`'s
-node. A `convert<T>(e)` whose `e` already has type `T` builds no node. A
-conversion keeps the value, so a guard (`=`, `!=` or an ordering) comparing an
-integer-typed chain of conversions with an integer literal bounds the
-chain's innermost integer operand as the comparison of that operand itself
-does.
+node. A `convert<T>(e)` whose `e` already has type `T` builds no node. An
+exact numeric conversion keeps the value, so a guard (`=`, `!=` or an
+ordering) comparing an integer-typed chain of such conversions with an integer
+literal bounds the chain's innermost integer operand as the comparison of that
+operand itself does. A `ConvertText` reads a number out of text, so a guard over
+it bounds no operand.
 
 The model nodes, the `Reference<T>` and `Population<T>[N]` type nodes and
 the model rows' vectors E4 to E9 are
@@ -557,8 +588,8 @@ node or clause function carries its `ModelOwner`
 node's owner, the same value its key hashes, copied and not rebuilt. A
 nominal node, a node keyed by `quire.application-node/v1` and every
 undeclared node that is not model-owned carry no `owner`. The node's
-`identity_projection` entry carries the same `owner`, so it enters
-`package_id`. A reader therefore re-derives every structural key, in-group
+`owner` enters `package_id` through the `identity_projection` derived from
+the graph nodes; the wire carries no `identity_projection`. A reader therefore re-derives every structural key, in-group
 keys and group digests included, from the emitted package alone, and reads
 no owner from the source map. The lock's `sources` holds each emitted
 `SourceOwner`'s (`authority`, `identity`) and its `model_selections` each
@@ -580,7 +611,7 @@ reader follows them, beside `semantic_type` and the body's own references,
 when it builds a node's closure and checks graph cycles, and it joins them
 exactly against the body of an application node, the nominal preimage of an
 enum, dimension or unit node, and the entries of a frame (QSpec FR-322,
-FR-340). They enter `package_id` through the `identity_projection`.
+FR-340). They enter `package_id` through the `identity_projection` derived from the graph nodes.
 
 The v2 emission arm SHALL write each node's `dependencies` as the node ids,
 unique and ascending by digest, that these rules name:
@@ -933,7 +964,7 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-18 | For `ordered enum Status { READY, DONE }` read from source text, with no member literal written: when the enum's only uses are the parameter types of `before using v(a: Status, b: Status): Boolean pure { a < b }`, or of the same function with `a = b`, each member node has exactly one occurrence, a `generated` one whose source-map region is that function's body text, and the package emits with nothing omitted. When no function names the enum, each member's region is the declared name `Status`, and for `record P { x: Int[0, 9]; }` no function names, the `Int[0, 9]` node's region is `P`, and stays `P` with `record Q { y: Int[0, 9]; }` declared before it. Each of those packages reads back Verified through QSL's I2 read. With `record R { x: Int[0, 9]; }` beside the post clause `VersionUnchanged` over `1 < 2`, which a protocol attempt names, the `Integer` node's only occurrence is `generated`, with region `1 < 2`: a type name never displaces a state clause or attempt placement. | Test (TC-416) |
 | FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, at its emitted `package_id`. | Test (TC-416) |
 | FR-093-AC-20 | The v2 emission of a checked package holding `t` writes the lock's `edition` and each `definition_selections` row as the `DefinitionLock` catalog's row of that role, exactly `{authority, identity}` with no revision and no digest. The emission of a `Float64` addition writes the `definition` of the operation's `ieee_profile` law as that same exactly-two-member row, and the lock's `definition_selections` holds it. IR's v2 reader admits both packages. | Test (TC-416) |
-| FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and on their `identity_projection` entries: a node carries `owner` exactly when its preimage does. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes M1 and M5 carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions C1, C2, C4, C5 and C6 of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. The key of every emitted structural node recomputed from the wire node alone, its `owner` included, equals its `node_id`, and each `Tree` group's label recomputes from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
+| FR-093-AC-21 | The v2 emission writes `owner` on exactly the nodes whose `quire.structural-node/v1` preimage carries one, equal to that preimage's `owner`, and the wire carries no `identity_projection`, so `owner` enters `package_id` only through the projection derived from the graph: a node carries `owner` exactly when its preimage does. Checked under owner (`a`, `u`): `record P { x: Int[0, 9]; }`, the recursive `record Tree { kids: Sequence<Tree>[0, 3]; }` and the declared function over a `Reference<M::Order>` parameter (FR-094-AC-1) carry the `SourceOwner` (`a`, `u`); the model declaration nodes M1 and M5 carry their `ModelOwner`s (`ix://acme/orders/Order`, `ix://acme/orders/Sub`); the clause functions C1, C2, C4, C5 and C6 of FR-094-AC-5, built by `checked_dispatch_operation` with a test-built clause table, carry their `ModelOwner`s; and the `Int[0, 9]`, `Sequence<Tree>`, `collection_bounds`, R1, parameter and expression nodes, and the declaration and member nodes of `ordered enum Status { READY, DONE }`, carry none. The key of every emitted structural node recomputed from the wire node alone, its `owner` included, equals its `node_id`, and each `Tree` group's label recomputes from the wire alone. IR's v2 reader admits each package. | Test (TC-416) |
 | FR-093-AC-22 | The same source, `record Point { x: Integer; }` and `record List { next?: List; }`, checked and emitted under the owners (`agent-ix`, `example-a`) and (`agent-ix`, `example-b`), gives two packages whose `Point` node ids differ, whose `List` group labels and `List` group member ids differ and whose `Integer` node id is equal; their `package_id`s differ, and IR's v2 reader admits both. QSL writes the declarations with the qualified names `["Point"]` and `["List"]` (FR-092 D1), so these `Point`, `List` and `Integer` nodes are the corresponding nodes of QSpec's `positive-two-owners-a.json` and `positive-two-owners-b.json` (QSpec FR-322-AC-53). | Test (TC-416) |
 | FR-093-AC-23 | Structural equality and inequality over each Union text-leaf vector U1 to U7 carry exactly that vector's complete ordered leaf list, with the selected text definition and stated profiles. U2's rename, member reorder, payload swap and source arm reorder give exactly the changes the vectors state. | Test |
 | FR-093-AC-24 | For each `K` of `Set`, `Bag` and `OrderedSet`, structural equality over `K<Choice>` (U2) carries U2's leaves with one leading `inner` on every path; `contains` over that collection carries U2's leaves without that prefix (`inner:0`). A catalogued `result_inner` operation yielding `K<Choice>` carries U2's leaves without that prefix, while one yielding `Sequence<Choice>` carries `[]`. Structural equality over `Sequence<Choice>` still carries U2's leaves with one leading `inner`. | Test |
@@ -947,6 +978,8 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
 | FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. In one unit beside `h`, `function h2 using v(): Boolean pure { f(0.5 ms) }` and `function h3 using v(): Boolean pure { f(rational(2, 4) ms) }` lower their arguments to one shared literal node of value `"1/2"`, and `function h4 using v(): Boolean pure { f(3 ms) }` references `h`'s `3 ms` node; `function n using v(): Boolean pure { f(rational(-3, 1) ms) }` lowers a literal of value `"-3"`; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
 | FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
+| FR-093-AC-35 | Over `t: Text[0, 8; nfc]`, each of `convert<Int[0, 99]>(t)`, `convert<Decimal[0, 1000; 0, 2; nearest-even]>(t)`, `convert<Rational[-9, 9; 1, 9]>(t)`, `convert<Float32[toward-zero]>(t)`, `convert<Float64>(t)` and, with FR-091-AC-44's units, `convert<Quantity<ms>>(t)` as a pure function body lowers to one `convert` node over `[ref(t)]` with member `type_argument` naming the target type node. The identities are `quire.op.text.to_integer`, `to_decimal`, `to_rational`, `to_float32`, `to_float64` and `to_quantity`. Each carries law `text_profile` with the lock's `quire.value.text.unicode-17.0.0/v1` definition; `to_float32` and `to_float64` also carry law `ieee_profile`. The modes are: none for `to_integer` and `to_rational`, `{"kind":"rounding","value":"nearest-even"}` for `to_decimal`, `toward-zero` for `to_float32`, `exact` for `to_float64` and `exact` for `to_quantity`. No node carries a `text_profile` mode. Over `s: String` the same six bodies lower to `quire.op.string.to_integer` to `quire.op.string.to_quantity` with the same members and modes, the `ieee_profile` law for the two IEEE targets and no `text_profile` law. No function carries a body obligation. | Test (TC-1196) |
+| FR-093-AC-47 | `function g using v(t: Text[0, 8; nfc]): Boolean pure { convert<Integer>(t) = 3 }` lowers the comparison to `quire.op.integer.eq` with arguments `[ref(the convert node), ref(the literal 3)]`, where the convert node is `quire.op.text.to_integer` over `[ref(t)]` and no `ConvertScalar` or `quire.op.numeric.convert` node is built. Over the same `t`, `convert<Boolean>(t)`, `convert<Text[0, 4; nfc]>(t)`, `convert<String>(t)` and, for `s: String`, `convert<Text[0, 8; nfc]>(s)` each refuse `ill_typed`/`operator-ineligible` at the `convert` and build no node; `convert<Text[0, 8; nfc]>(t)` builds no node. | Test (TC-1196) |
 
 ## Dependencies
 

@@ -56,7 +56,6 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-305, type: references }
   - { target: ix://agent-ix/quire-specification/FR-306, type: references }
   - { target: ix://agent-ix/quire-specification/FR-307, type: references }
-  - { target: ix://agent-ix/quire-specification/FR-308, type: references }
   - { target: ix://agent-ix/quire-specification/FR-309, type: references }
   - { target: ix://agent-ix/quire-specification/FR-311, type: references }
   - { target: ix://agent-ix/quire-specification/FR-336, type: references }
@@ -66,9 +65,9 @@ relationships:
 
 ## Scope
 
-Adopt the QSpec complete-V1 baseline, then execute QSL #116 through #123 and `quire-wasm` #6. This is the single
+Adopt the QSpec complete-V1 baseline, then execute QSL #116 through #123. This is the single
 repository plan for Agent-A's complete source/package, type/expression, model,
-reference-runtime, tooling, WASM and qualification lane. Central QSpec retains
+reference-runtime, tooling and qualification lane. Central QSpec retains
 semantic authority; this plan owns implementation order, local tests and honest
 evidence state.
 
@@ -88,8 +87,7 @@ evidence state.
   deterministic finite simulation in QSL #121.
 - [ ] **FR-300/301/305/306:** expose lifecycle APIs, CLI, isolated Rust plugins
   and exact compilation/cache behavior in QSL #122.
-- [ ] **FR-307/308:** deliver reusable semantic libraries in QSL #119 and pure
-  bounded WASM parity in `quire-wasm` #6.
+- [ ] **FR-307:** deliver reusable semantic libraries in QSL #119.
 - [ ] **FR-311/336, I18/I19:** qualify every Agent-A inventory row in
   QSL #123 without promoting missing consumer evidence.
 
@@ -100,10 +98,10 @@ belong to Agent-C; they are not silently reassigned to this lane.
 ## Dependency Graph
 
 - `Task-046 -> Task-047 -> Task-048 -> Task-049 -> Task-050 -> Task-051 ->
-  Task-052 -> Task-053 -> Task-054`.
+  Task-052 -> Task-054`.
   Reason: the user-assigned and central-manifest campaign is serial across one
-  repository owner, with WASM consuming the merged lifecycle before final QSL
-  qualification.
+  repository owner, with final QSL qualification consuming the merged
+  lifecycle tooling.
 - QSL #131 and #120 consume the merged filament-core-data semantic IR crates and
   quire-rs extraction by exact git revision; they edit neither repository.
 - QSL #121 consumes merged temporal/protocol artifacts and preserves their
@@ -113,10 +111,20 @@ belong to Agent-C; they are not silently reassigned to this lane.
 
 ## Existing Evidence Reconciliation
 
-The accepted central inventory snapshot credits the 83 Agent-A rows as follows:
-implementation is **18 complete, 36 partial and 29 missing**; direct verification
-is **16 complete, 38 partial and 29 missing**; integration is 52 partial and 31
-missing; qualification is 83 missing. Plan adoption changes none of those states.
+The 82 Agent-A rows are credited as follows:
+implementation is **18 complete, 36 partial and 28 missing**; direct verification
+is **16 complete, 38 partial and 28 missing**; integration is 52 partial and 30
+missing; qualification is 82 missing. Plan adoption changes none of those states.
+
+These counts are the 83-row central credit (implementation 18 complete, 36
+partial, 29 missing; verification 16 complete, 38 partial, 29 missing;
+integration 52 partial, 31 missing; qualification 83 missing) less the WASM
+parity row V1-TOOL-009 (QSpec FR-308, TC-228), because WASM is not a QSL
+deliverable. That row comes out of the missing bucket of every layer because it
+had no evidence in any layer: `quire-wasm` #6 closed with no implementation, no
+test verifies QSpec TC-228 (the `TC-228` trace tags in `qsl-semantics` name this
+repository's own TC-228 for FR-084), and nothing integrated or qualified it. The
+complete and partial counts are therefore the same over both row sets.
 
 | Existing layer | Credited local evidence | Complete-V1 remainder |
 | --- | --- | --- |
@@ -171,9 +179,8 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 - [ ] **TC-180 backend-install repeat:** complement Task-047's authority-free
   parser type proof with a before/after installation-state integration vector.
 
-### WASM and qualification
+### Qualification
 
-- [ ] **TC-228 / WASM #6:** native/WASM accepted-value, refusal and limit parity.
 - [ ] **TC-047, TC-182/183, TC-230/231, IT-070/071/076 / QSL #123:**
   authority-bound diagnostic catalog/causes, canonical manifest and extension
   compatibility, failure-stage and complete attributable qualification over all
@@ -269,7 +276,6 @@ concrete evidence owner; task files may require additional boundary cases.
 | V1-TOOL-006 | FR-305 | QSL #122 | TC-225 | QSL #123 |
 | V1-TOOL-007 | FR-306 | QSL #122 | TC-226 | QSL #123 |
 | V1-TOOL-008 | FR-307 | QSL #119 | TC-227 | QSL #123 |
-| V1-TOOL-009 | FR-308 | WASM #6 | TC-228 | QSL #123 |
 
 ## Remaining Work
 
@@ -282,13 +288,12 @@ concrete evidence owner; task files may require additional boundary cases.
 - **A04 = Task-050** domain-package intake and model graph — hard; exit: domain-package intake, closed lookup and dispatch pass.
 - **A05 = Task-051** runtime — hard; exit: all admitted clauses execute and simulations replay.
 - **A06 = Task-052** tooling — hard; exit: API/CLI/plugin/AOT/JIT parity passes.
-- **A07 = Task-053** WASM — hard; exit: the pure bounded WASM surface matches native.
-- **A08 = Task-054** qualification gate — hard; exit: all 83 rows have attributable evidence.
+- **A07 = Task-054** qualification gate — hard; exit: all 82 rows have attributable evidence.
 
 ## Parallel Execution Summary
 
 ```text
-A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
+A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07
         \------ external producer/consumer pins merge before use ------/
 ```
 
@@ -303,8 +308,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
 | Task-050 | A04 | FR-056, IT-012, FR-150–153 | TC-145–148, TC-195–198 | not_started |
 | Task-051 | A05 | FR-180/181 | TC-209/210 | not_started |
 | Task-052 | A06 | FR-300/301/305/306, FR-339 | TC-180, TC-220/221/225/226 | not_started |
-| Task-053 | A07 | FR-308 | TC-228 | not_started |
-| Task-054 | A08 | FR-132/133, FR-270–272, FR-303, FR-311/336 | TC-047, TC-182/183, TC-223, TC-230/231, IT-070/071/076 | not_started |
+| Task-054 | A07 | FR-132/133, FR-270–272, FR-303, FR-311/336 | TC-047, TC-182/183, TC-223, TC-230/231, IT-070/071/076 | not_started |
 
 ## Coordination Rules
 

@@ -2,7 +2,7 @@
 //! FR-098 (TC-444): the replay executor over real complete-V1 source,
 //! recompiled through the spine.
 
-use qsl_foundation::diagnostic::Category;
+use quire_semantic_value::catalog::Category;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -24,6 +24,7 @@ use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 mod admitted_charge;
 use admitted_charge::admitted_charge_points;
 
+mod application_claim;
 mod child_composite;
 mod composite;
 mod composite_parity;
@@ -68,7 +69,7 @@ fn default_run() -> qsl_semantics::value::supplied::SuppliedRun {
 /// The parameter an input refusal of a stopped conversion names, whether it
 /// stopped as a plain refusal or inside the conversion phase.
 fn refused_parameter(stopped: &argument::Stopped) -> Option<usize> {
-    use qsl_semantics::value::supplied::{SuppliedCause, SuppliedFailure};
+    use quire_semantic_value::supplied_stop::{SuppliedCause, SuppliedFailure};
     let input = match stopped {
         argument::Stopped::Refusal(refusal) => refusal.input_refusal(),
         argument::Stopped::Supplied(SuppliedFailure::Stop(stop)) => match &stop.cause {
@@ -125,6 +126,28 @@ fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> WireNodeI
     WireNodeId::from_digest(*key.as_bytes())
 }
 
+/// The `declaration` occurrence of `function` in the package `package_id`
+/// names: the key of the predicate claim. A package composed on this thread
+/// must hold the function; a lookup that finds nothing there panics instead of
+/// carrying a placeholder key that would fail with a puzzling
+/// `ClaimOccurrence`. A package id no test composed (a stale or invented id)
+/// refuses before the claim is selected and carries the placeholder.
+fn declaration_key(package_id: &PackageId, function: &QualifiedName) -> OccurrenceKey {
+    let hex = package_id.hex();
+    if !crate::spine::composed_here(&hex) {
+        return crate::target::test_key();
+    }
+    let [segment] = function.segments() else {
+        panic!("declaration_key: `{function:?}` is not a single-segment function name");
+    };
+    crate::spine::composed_declaration(&hex, segment.as_str()).unwrap_or_else(|| {
+        panic!(
+            "declaration_key: no function `{}` in the package {hex} composed on this thread",
+            segment.as_str()
+        )
+    })
+}
+
 fn name(segments: &[&str]) -> QualifiedName {
     QualifiedName::new(
         segments
@@ -167,7 +190,10 @@ fn request(
             digest.hex(),
         )],
         dependencies: Vec::new(),
-        replay_target: crate::RequestTargetWire::function(function, crate::target::test_key()),
+        replay_target: crate::RequestTargetWire::function(
+            function.clone(),
+            declaration_key(&package_id, &function),
+        ),
         source,
         obligation_identity: [2; 32],
         backend: "kani-backend-1".to_owned(),
@@ -950,7 +976,7 @@ fn tc_444_stage_limits_bound_the_recompile() {
     assert_eq!(refused.code(), Code::InvalidRequest);
     assert_eq!(
         refused.code().category(),
-        qsl_foundation::diagnostic::Category::Refusal
+        quire_semantic_value::catalog::Category::Refusal
     );
     assert_eq!(refused.code().category().exit_code(), 20);
 

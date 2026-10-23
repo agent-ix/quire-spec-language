@@ -12,9 +12,11 @@ relationships:
 
 Verify positions and anchors of a model behaviour, the closed reading under
 a bounded profile and the terminal stutter under infinite-trace, interval
-and past operators over a lasso, the `over` binding, and the empty-initial subject.
+and past operators over a lasso, the `over` binding, its admitted and
+excluded keys, instance order and guard, and the order of the instancing
+outcomes.
 
-Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-12.
+Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-16.
 
 ## Test Procedure
 
@@ -35,22 +37,49 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-12.
    population, a population with no universe and an empty universe
    (FR-125-AC-7).
 7. Build a population `P` with member types `Lamp` and `Switch`, both
-   subtypes of `Thing`, where `Lamp`'s `DeclarationKey` orders before
-   `Switch`'s; instantiate `over (x: Lamp)`, then `over (x: Thing)`; then
-   instantiate `over (x: Lamp)` over a population with no member type
-   comparable with `Lamp` (FR-125-AC-8).
+   subtypes of `Thing`, whose universe keys `l` and `s` are admitted by
+   initial records of a `Lamp` and a `Switch`, plus a key `u` no initial
+   record admits; instantiate `over (x: Lamp)` and `over (x: Thing)`, read
+   `ModelSystem::excluded_keys`; then instantiate `over (x: Lamp)` over a
+   population with no member type comparable with `Lamp` (FR-125-AC-8).
 8. Read the bound parameter of `over (x: Thing)` at positions where the key's
    object is a `Lamp`, a `Switch`, and absent; read that of `over (x: Lamp)`
-   at the same positions (FR-125-AC-9).
-9. Instantiate a claim holding populations `P1` (universe `[d, c]`) and `P2`
-   (universe `[b, a]`) and list `ModelSystem::instances` (FR-125-AC-10).
+   at the same positions; read the instance in the obligation identity and the
+   FR-338 key context, and the refuted binding of `over (x: Thing)` at `s`
+   (FR-125-AC-9).
+9. Instantiate a claim over populations `P1` (universe `[d, c]`) and `P2`
+   (universe `[b, a]`), every key admitted, and list
+   `ModelSystem::instances`; repeat with `P2`'s universe `[c, a]`; repeat with
+   `P1`'s universe `[d, u]` and `P2`'s `[u, a]`, no initial record admitting
+   `u`, and read the excluded keys (FR-125-AC-10).
 10. At a position where the key's object is a `Switch`, evaluate `x = r` and
     `contains(allInstances<Thing>(P), x)` for `over (x: Thing)`, then the same
-    at a position holding a `Lamp` (FR-125-AC-11).
-11. Build `Dogs` (member `Dog`) and `Animals` (member `Animal`, holding a `Dog`
-    under key `k`, a `Cat` at another position and no object at a third);
-    instantiate `over (x: Dog)`, and separately over only `Animals`
-    (FR-125-AC-12).
+    at a position holding a `Lamp`; with `c` listed by `P1` and `P2` of
+    `Thing`, evaluate `contains(allInstances<Thing>(P2), x)` for the instance
+    `c` (FR-125-AC-11).
+11. Build `dogs` (member `Dog`, universe `[d]`) and `animals` (member
+    `Animal` declaring `age: Int[0, 9]`, universe `[k, t]`), with an initial
+    state holding a `Dog` under `k` and a `Cat` under `t` in `animals` and a
+    `Dog` under `d` in `dogs`; instantiate `over (x: Dog)`; check the unguarded
+    `always holds(x.age >= 0)`, the claim guarded by the disjunction `G` of
+    FR-125-AC-12 and a property guarded by `animals` alone; then instantiate
+    over a subject whose only population is `animals` holding only `Cat`
+    objects (FR-125-AC-12).
+12. Instantiate over a subject with a universe-less overlapping population
+    and an empty `initial` list; over an empty `initial` list with bounded
+    universes; over records under key `c` typed `Animal` in `animals` and
+    `Dog` in `dogs`, in one initial state and then split over two; over the
+    same records with agreeing types; over an initial state with no admitted
+    key (FR-125-AC-13).
+13. Build FR-125-AC-14's `P1` with `make`, check `always holds(x.value = 0)`
+    and read the instances and excluded keys (FR-125-AC-14).
+14. Instantiate a state-graph claim `over (x: Thing)` over step 9's
+    populations; read a hyper clause's parameter `v: V::Thing` over `P` at
+    positions holding a `Lamp` and a `Switch`, and a parameter typed `V::Lamp`
+    at the `Switch` position (FR-125-AC-15).
+15. Build FR-125-AC-16's `all` with `all = [c, e]` and check the unguarded
+    `always holds(x.value <= 0)`; repeat with `all = [e, c]` and compare the
+    request identities (FR-125-AC-16).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -72,15 +101,26 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
   subtype population contributes its objects; the universe-less population
   is `RequiresBound`; the empty universe gives zero instances and `NoInstance`, settled
   `inconclusive`.
-- Step 7: one instance per key for `Lamp`, one (not two) per key for `Thing`;
-  none for the unrelated population.
+- Step 7: instances `l` and `s` for both claims, one per key; excluded keys
+  `[u]`; none for the unrelated population.
 - Step 8: `over (x: Thing)` reads a reference typed `Lamp`, a reference typed
   `Switch`, and `absent-key` undefined for the absent object; `over (x: Lamp)`
   reads the `Lamp` reference and `absent-key` undefined for the `Switch` and
-  absent objects. The instance is named `P`/key in the identity, with no type.
-- Step 9: `P1/d`, `P1/c`, `P2/b`, `P2/a`.
-- Step 10: `true` for both formulas at both positions.
-- Step 11: instances for every key of `Dogs` and of `Animals`; `Animals/k` is
-  read as the `Dog` reference, and `absent-key` undefined at the `Cat` and
-  missing positions; over `Animals` alone the item has instances, not
+  absent objects. The obligation identity and key context hold the key alone;
+  the refuted binding at `s` is (`UniverseId`, `Switch`, `s`), with no
+  population.
+- Step 9: `d`, `c`, `b`, `a`; then `d`, `c`, `a`; then instances `d`, `a` and excluded keys `[u]`.
+- Step 10: `true` for every formula.
+- Step 11: instances `k`, `t`, `d`; `k` reads as the `Dog` reference; the
+  unguarded claim refutes with `undefined-evaluation` naming `t`; the claim
+  guarded by `G` evaluates everywhere and is `proved`; the `animals`-only
+  guard is false at `d`; the `Cat`-only subject has instances, not
   `NoInstance`.
+- Step 12: `RequiresBound` naming the population; `NoInitialState`;
+  `invalid_runtime_input`/`conflicting-identity` naming `c` and both types,
+  in both layouts; admitted; `NoInstance`. No state is explored in any run.
+- Step 13: instances `c` and `d`, excluded keys `[z]`, verdict `proved`.
+- Step 14: the temporal claim's instances, order and excluded keys; `v` reads
+  typed `Lamp` and typed `Switch`; the `V::Lamp` parameter reads `absent-key`
+  undefined.
+- Step 15: `refuted` in both orders; `[c, e]` reports `c` with no undefined cause, `[e, c]` reports `e` with `undefined-evaluation`; the request identities differ.

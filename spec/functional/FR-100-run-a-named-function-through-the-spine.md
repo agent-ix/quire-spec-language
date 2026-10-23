@@ -11,6 +11,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-027
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-028
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-099
@@ -50,7 +52,10 @@ declares, as compile does
 ([FR-027](FR-027-export-compiled-native-package.md)). A `1-draft` source
 compiles through the spine (S1 to S4) and the command calls the one
 function the request names through S6a (`CheckedPackage::call`), with the
-arguments the request supplies. This is ADR-011 §5's spine `run`. Every
+arguments the request supplies. If the request selects a package, the command
+verifies and executes it under FR-028 without falling back to source compilation;
+otherwise it compiles the source through the spine. This is ADR-011 §5's spine
+`run`. Every
 other declared edition, `0-draft` included, is one no runner reads, and the
 command refuses it with `unknown_edition`. A source that does not open with a
 `language "ix:native" edition` header goes to the spine, whose S1 refuses
@@ -228,6 +233,9 @@ A native-run/1 request (FR-026's closed envelope and shared limits). For a
   `quire-extraction` feature (ADR-011 §7.3 X-4), so the member refuses as
   the refusal table states, with every feature of the workspace enabled or
   none.
+- `package`: optional FR-028 selection, a closed object naming the package file
+  and canonical SHA-256 digest. When present, the verified package is executed
+  without fallback to source compilation.
 - `models`: zero or more `semantic-ir/2.0.0` domain package documents, each
   read and handed to spine `compile` as FR-056's
   package input, exactly as FR-027 does for compile.
@@ -434,7 +442,7 @@ exits with that code's exit status:
 | Refusal | Stage | Code | `details` | Exit |
 |---------|-------|------|-----------|------|
 | A declared edition other than `1-draft`, `0-draft` included | `profile` | `unknown_edition` | as FR-027 | 20 |
-| A `1-draft` request carrying `selection`, `snapshots`, `invocations`, `package`, a set `validation_work` or `expression_steps`, `clauses`, `extraction` (in every build), or a model in a format other than `semantic-ir/2.0.0`; or carrying no `call` | `request` | `invalid-request` | as FR-026 | 20 |
+| A `1-draft` request carrying `selection`, `snapshots`, `invocations`, a set `validation_work` or `expression_steps`, `clauses`, `extraction` (in every build), or a model in a format other than `semantic-ir/2.0.0`; or carrying no `call` | `request` | `invalid-request` | as FR-026 | 20 |
 | A `call` that is not the closed object above; an argument `value` that is not a JSON integer in the signed 64-bit range; an `accounting` member that is not the closed counter object above or has a value that is not a JSON integer from 0 to `u64::MAX` | `request` | `invalid-request` | as FR-026 | 20 |
 | A spine compile refusal | the refusing spine stage | that stage's cause code | as FR-027 | that code's |
 | A `function` that is empty, holds an empty segment or a segment that is not an identifier, has more than one segment, or names no function of the compiled package | `call` | `missing_declaration` | `{"function": "<the function string>"}` | 20 |
@@ -470,6 +478,22 @@ not bad input.
 Writing the result document or the refusal envelope to a stream, and a
 stream that fails or closes, are the driver's (FR-287, Overlap).
 
+### The call depth of an outcome
+
+S6a's `Evaluation` SHALL carry, beside `location`, `frame_depth: u32`: the
+number of package-function call frames open above the selected call's own
+frame when the outcome arose. It is 0 for an outcome of the selected
+function's own body, 1 for one inside a function that body calls, and one
+more for each further nested call, a recursive call of the same function
+included. A `Location` names a place in a body and no frame, so the same
+`Location` recurs at every depth of a recursive function; `frame_depth`
+tells those apart. A completed call's `frame_depth` is 0. The outcome
+document carries no `frame_depth` member. FR-098's application claim reads
+it to observe only the selected call's own evaluation of its claim site; the
+consumer is `qsl-replay`'s replay executor, and the producer is the S6a
+session's frame stack (FR-262), which already holds one frame per open call.
+
+
 ## Behavior
 
 - The run command shall read the program source's declared edition once,
@@ -498,10 +522,14 @@ stream that fails or closes, are the driver's (FR-287, Overlap).
 - If a `call` member, an argument `value` or `accounting` member is outside the
   shape Inputs states, then the run command shall refuse with
   `invalid-request` at stage `request`.
-- The run command shall hand the `1-draft` source, its domain packages, its
-  dependency input, the default spine stage limits, the `call` and its
-  accounting limits to `qsl_replay::spine::run`, and render its result by
-  the outcome mapping above.
+- When no `package` is selected, the run command shall hand the `1-draft`
+  source, its domain packages, its dependency input, the default spine stage
+  limits, the `call` and its accounting limits to `qsl_replay::spine::run`.
+- When `package` is selected, the command shall follow FR-028's verified
+  reader path and execute only the accepted package, without source-compilation
+  fallback.
+- The command shall render the selected execution path's result by the
+  outcome mapping above.
 - `qsl_replay::spine::run` shall compile the source with
   the FR-278 composition and carry a compile refusal unchanged, with
   its stage and cause code.
@@ -584,6 +612,7 @@ stream that fails or closes, are the driver's (FR-287, Overlap).
 | FR-100-AC-17 | Malformed identity bytes rejected by the actual constructor/reader never become supplied typed references. A well-formed real object absent only from the query population reaches the AC-14 lookup refusal; an object absent from the complete object world produces dangling-reference admission instead. An unresolved-reference context cannot turn the latter into AC-14. | Test |
 | FR-100-AC-18 | The scalar inputs, values, refusals, category/exit mapping and internal-fault oracles in AC-1 through AC-12 remain equal after adapting callers to the shared Value field and explicit context. All ten actual accounting limits reach evaluation unchanged. Requested and Deadline stops remain distinct before and during S6a; applicable pre-call denial has zero evaluation consumption. | Test |
 | FR-100-AC-19 | Public signatures use the carriers in Typed public call and no qsl_eval path. The source, binding and object context are admitted through their actual owner APIs, with no copied/trusted substitute model view or second engine. The driver executes TC-792 through this reviewed public boundary and retains the absent/present and invalid-admission distinctions. | Test (TC-792) |
+| FR-100-AC-20 | Calling `function d using v(n: Int[0, 9]): Integer pure decreases(n) { if n = 0 then 0 else d(n - 1) + 10 mod (n - 1) }` through S6a: `d(1)` returns `Undefined` at the `Location` of `10 mod (n - 1)` with `frame_depth` 0; `d(2)` and `d(3)` return `Undefined` at that same `Location` with `frame_depth` 1 and 2; `d(0)` completes `0` with `frame_depth` 0; and `function e using v(n: Int[0, 9]): Integer pure { d(n) }` called with `1` returns `Undefined` at that `Location` with `frame_depth` 1. | Test (TC-444) |
 
 The typed-call acceptance criteria supplement all existing scalar oracles;
 FR-100-AC-13 is the QSL-656 accounting-object criterion.
@@ -593,7 +622,7 @@ with inspection of the public signatures and actual owning admission and
 engine paths; inspection alone cannot discharge its driver-execution
 obligation. The existing test-case associations are unchanged: AC-1–3
 use TC-450; AC-4–6 TC-451; AC-7–9 and AC-12 TC-452; AC-10–11 TC-786;
-AC-14–19 TC-792. These associations do not replace executable trace tags.
+AC-14–19 TC-792; AC-20 TC-444. These associations do not replace executable trace tags.
 
 ## Dependencies
 
@@ -605,6 +634,8 @@ AC-14–19 TC-792. These associations do not replace executable trace tags.
   native-runtime interface contract.
 - [FR-026](FR-026-run-standalone-native-workflow.md): native-run/1, its
   intake limits and its command-error envelope.
+- [FR-028](FR-028-run-selected-native-package.md): verification and execution
+  when native-run/1 selects a compiled package.
 - [FR-027](FR-027-export-compiled-native-package.md): the edition reader,
   domain package and `libraries` intake, and spine compile refusals.
 - [FR-098](FR-098-execute-a-replay-request.md): name lookup and the canonical
@@ -640,10 +671,9 @@ only. Accounting setting member semantics are owned by QSL-656; this branch
 does not duplicate that amendment or TC-951. No implementation branch is
 created by this spec.
 
-Remaining work (implementation, with the native-run deletion change, FR-312):
-the code still requires a `sha256:` source digest on each source selection
-and checks the file against it; both go, and the command reads each named
-file's bytes as they are.
+A source selection carries no `sha256:` source digest and the command checks
+no file against one (FR-312); the command reads each named file's bytes as
+they are.
 
 Implemented. `qsl_replay::spine::run` and `command`'s `run` render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,
@@ -663,6 +693,5 @@ Every exit status is FR-285's `Category::exit_code` of the outcome's
 category, and an undefined outcome exits 10 (FR-100-AC-10, FR-100-AC-11,
 TC-786).
 
-Remaining work (implementation, Linear QSL-381): the program selection and the `source`
-member still carry the revision namespace and revision; they carry the two
-FR-001 labels (QSpec STD-150).
+The program selection and the `source` member carry the two FR-001 labels
+(QSpec STD-150), not a revision namespace and revision.

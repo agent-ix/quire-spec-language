@@ -545,8 +545,7 @@ D-2.
 - **O-6 `quire-canonical`.** The capabilities D-4.5 names (byte-only
   canonical encoding, an event API driven from the caller's stack, the
   shared non-recursive JSON reader, and a serde path for fixed-depth types
-  only) are `quire-canonical`'s to design and deliver, a `quire-canonical`
-  follow-up. QSL's slice 2 waits on them.
+  only) are `quire-canonical`'s to design and deliver. QSL's slice 2 waits on them.
 
 ### D-9. Rulings on the draft's questions
 

@@ -30,7 +30,7 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
    header.
 3. Run the `1-draft` fixture relabelled `edition "7-draft"`.
 4. Run the `1-draft` fixture request once with each of `selection`,
-   `snapshots`, `invocations`, `package`, `limits.validation_work`,
+   `snapshots`, `invocations`, `limits.validation_work`,
    `limits.expression_steps`, program `clauses`, program `extraction`, and a
    `native-rule-model/1` model whose file holds malformed bytes added; then
    with `call` removed; then with a `call.accounting` member `work_units` of

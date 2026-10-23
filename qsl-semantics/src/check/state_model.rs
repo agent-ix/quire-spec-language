@@ -3,10 +3,11 @@
 
 use qsl_forms::{ClauseKind, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::{CatalogCode, InternalFault, StageFailure, Staged};
+use qsl_foundation::diagnostic::{StageFailure, Staged};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, IllTypedCause, Presence, ValueType,
 };
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::location::Location;
 
 use super::check::Scope;

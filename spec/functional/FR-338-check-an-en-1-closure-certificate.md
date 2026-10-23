@@ -45,6 +45,17 @@ claims and finds every successor inside it and no bad state.
   the model subject re-admitted by FR-120 from its byte provision and
   universes (FR-125), and the item: a TP-1, TP-2 or TP-3 clause, or the
   deadlock-freedom item (FR-124).
+- Over a protocol subject with a weak `parallel` (FR-215, FR-221, FR-222),
+  the request's memory bounds: `max_store_buffer: Option<u64>` and
+  `max_messages: Option<u64>`, the values the run used, each `None`
+  meaning 4, the default FR-225 publishes.
+- Over a protocol subject with an `on each` protocol (FR-209), the
+  request's instance bound: `max_live_instances: Option<u64>`, the value
+  the run used, `None` meaning 3, the default ADR-027 AE-4 publishes.
+- For an SMT proof checked by FR-314, the request's encoding limits:
+  `smt_encoding: SmtEncodingLimits` (FR-315), the values of the run's
+  `ModelCheckRequest.smt_encoding` (FR-126), under which CG's SMT backend
+  encoded the item's queries. EN-1's own checks read no member of it.
 - A `ClosureCertificate`.
 
 ```rust
@@ -142,13 +153,12 @@ alternative `["deadlock-freedom"]`, selecting the fixed formula below.
 `binding` is the ordered vector of `[parameter_node,bound_value]` for the
 item's actual concrete over/argument binding, with NodeId as above.
 For a parameter bound to an instance (an `over` parameter, FR-125
-"Instancing"), `bound_value` is the closed array `["instance",population,key]`:
-`population` is the JSON string whose value is the instance's population's
-declaration identity text (FR-120 "Identities") and `key` the JSON string
-whose value is the instance's key in that population's universe. It
-carries no object type and no `UniverseId`, so two populations that share
-a key give two contexts, and the key's object changing its most-specific
-type across states leaves the context unchanged. For every other
+"Instancing"), `bound_value` is the closed array `["instance",key]`: `key`
+is the JSON string whose value is the instance's key. An instance is
+identified by its key alone (QSpec FR-361), so the context carries no
+population, no object type and no `UniverseId`: a key that several
+overlapping populations list gives one context, and two subjects that
+admit the key with different types give the same context. For every other
 parameter, `bound_value` is QSpec FR-181's complete typed canonical
 value. Parameter order is the
 checked item's binding order; a genuinely parameter-free item uses `[]`.
@@ -158,8 +168,8 @@ the existing obligation again. The certificate request still binds that
 subject through O-09 and FR-125. `profile` is the exact admitted temporal profile identity;
 `activation` is `"origin"` or `"each"` for a bounded monitor and
 `"infinite"` otherwise, except that a clause whose `on each` activation has
-a `when` condition uses `"each-when"` for each property form that admits one
-(TP-1, TP-2, TP-3; "Guarded `on each` activation" below). A deadlock-freedom item's existing derived
+a `when` condition uses `"each-when"` for every property form
+(TP-1 to TP-4; "Guarded `on each` activation" below). A deadlock-freedom item's existing derived
 obligation identity selects its `always holds(not deadlocked)` formula.
 No absent root/profile/activation is defaulted.
 
@@ -190,6 +200,7 @@ The closed alternatives for `state` are:
 | TP-2 undecided | `["bounded", clock, branches]`; `clock` is `["origin",remaining]` or `["each"]`. `remaining` is the remaining counted distance of the root's checked horizon. Each branch carries every still-open activation; it is not only the newest activation. |
 | TP-2 decided | `["accept"]` or `["reject"]`, absorbing under EN-5; under EN-1 `on each`, an accepted activation is removed from the live branches and new activations continue, so accepting one activation is not global acceptance. |
 | TP-1 / TP-3 / deadlock | `["safety", branches]`; these are the subset construction's viable elementary configurations of the formula itself after SM-6 trimming. The unique rejecting state is `["safety",[]]`. |
+| TP-4, guarded `on each` | `["guarded-buchi", phase, branch]`, only under activation `"each-when"`; `phase` is `"waiting"` or `"active"` ("Guarded `on each` activation" below). |
 | TP-4 | `["buchi", branch]`; one elementary configuration of the negated formula, with its acceptance membership. This is not a subset-determinized safety state. |
 
 `branches` is a set of elementary configurations; an elementary configuration
@@ -279,7 +290,10 @@ occurrence in the checked formula's closure, including a past occurrence in
 an operand of that occurrence. Memory remains present while a future carry
 can later read that occurrence, even when no current activation reads it;
 otherwise a delayed activation could lose earlier history. Memory is evaluated in operand dependency order
-and updated once per model position. Its alternatives are:
+and updated once per position the monitor reads: every activation position
+(a model position or an infinite-trace stutter position, "Guarded `on each`
+activation" below) and every terminal false-extension position, whose atoms
+read false. Its alternatives are:
 
 | Past operator | Entry and interpretation |
 | --- | --- |
@@ -380,7 +394,9 @@ A bounded monitor determinizes the finite branches: at the closure of its
 final counted-distance region any
 unfulfilled least-fixed-point finite debt rejects and fulfilled branches
 accept, with QSpec FR-091's closed boundary rules. `on each` adds the root
-activation at every model position and retains every prior live debt;
+activation at every activation position (a model position or an
+infinite-trace stutter position, never a terminal false-extension position)
+and retains every prior live debt;
 rejecting one activation rejects the monitor. Terminal false-extension
 advances precisely the remaining bounded positions with atoms false and
 constants unchanged; infinite-trace terminal stutter advances on the real
@@ -390,28 +406,34 @@ a state "closed" cannot bypass recomputation.
 
 ### Guarded `on each` activation
 
-A TP-1, TP-2 or TP-3 clause whose `on each` activation has a `when`
-condition (FR-126) SHALL use the state algebra above with the following
-rules; it adds no state alternative and no certificate member.
+A clause whose `on each` activation has a `when` condition (FR-126) SHALL
+use the state algebra above with the following rules. A TP-1, TP-2 or TP-3
+clause adds no state alternative and no certificate member; a TP-4 clause
+uses the `guarded-buchi` alternative ("Guarded TP-4 clause" below).
 
 - The condition is the `guard` term of the clause node's activation
   argument (QSpec FR-370). The context's root names that clause node, whose
   content identity covers the guard term, so the root binds the condition,
   and the activation member `"each-when"` selects the guarded reading. A key
   carries neither the condition nor any reading of it.
-- At every model position the monitor reads, the translation SHALL read
+- At every activation position the monitor reads, the translation SHALL read
   the condition through FR-125's letter seam for the item's binding, as part
   of that position's letter and before the clause's atoms. An infinite-trace
   terminal stutter position reads it on the real last model state's letter,
   as it reads the atoms. Where it reads true the position adds the root
-  activation exactly as an unguarded `on each` position does; where it reads
+  activation exactly as an unguarded `on each` position does (for TP-4, by
+  the selection rule of "Guarded TP-4 clause" below); where it reads
   false the position adds none. Prior live debt and past memory advance in
   both cases.
-- A guarded activation SHALL start only at a model position, as an unguarded
-  `on each` activation does. A terminal false-extension position is not a
-  model position: it reads no condition and adds no activation, whatever the
-  guard term, a constant `true` guard included; it only advances the debt
-  already live.
+- A guarded activation SHALL start only at an activation position: a
+  position of the trace the clause reads other than a terminal
+  false-extension position. A model position is an activation position, and
+  so is every infinite-trace terminal stutter position, which reads the
+  condition and the atoms on the real last model state's letter with the
+  past memory advanced to that stutter position. A terminal false-extension
+  position is not an activation position: it reads no condition and adds no
+  activation, whatever the guard term, a constant `true` guard included; it
+  only advances the debt already live.
 - The condition's truth SHALL NOT be a state member. It is a function of the
   position's model state and the binding, so a product state's successors
   are fixed by its model state, its automaton state and that reading, and
@@ -432,7 +454,8 @@ rules; it adds no state alternative and no certificate member.
   safety state.
 - In the protocol non-progress construction below, a `waiting`
   configuration of a guarded clause SHALL choose as the start of its
-  negated-root activation only a model position whose condition reads true.
+  negated-root activation only an activation position whose condition reads
+  true.
 
 The checker SHALL rebuild this guarded automaton from the recompiled
 clause and SHALL re-read the condition at every reached product state
@@ -465,6 +488,79 @@ fits, and the rejecting key is the one automaton state the checker derives
 from the context alone without reading the undefined letter. Every other
 outcome of the reading, an evaluation-meter stop included, follows the rule
 this requirement states for an atom of the letter.
+
+#### Guarded TP-4 clause
+
+A TP-4 clause whose `on each` activation has a `when` condition SHALL use
+a generalized Büchi automaton for the negation that selects one violating
+activation: the clause is violated exactly when, from some activation
+position (a model position or an infinite-trace stutter position, above)
+whose condition reads true, the formula is false. Its state is
+`["guarded-buchi", phase, branch]`:
+
+- `phase` `"waiting"`: no activation has been selected. `branch` is the
+  elementary configuration `[[],past,[],acceptance]`: no obligation and no
+  window, the complete past memory from origin, and the membership the
+  acceptance rule above derives for a configuration that carries no
+  occurrence.
+- `phase` `"active"`: one activation has been selected. `branch` is an
+  elementary configuration of the negated formula, expanded and advanced by
+  exactly the TP-4 rules above, with the past memory carried over from the
+  waiting configuration that selected it.
+
+The rules that tie the phases to the condition are:
+
+- On reading a position's letter, a waiting configuration SHALL have the
+  waiting successor that updates its past memory, and, when the condition
+  reads true at that position, also every active successor obtained by
+  expanding the negated root obligations at that position with that past
+  memory. Where the condition reads false it has only the waiting
+  successor.
+- An active configuration SHALL NOT return to waiting or select a second
+  activation; its successors do not depend on the condition. The condition
+  is still read at every position, as part of the letter, so an undefined
+  condition is found whatever the phase.
+- The initial automaton states are the successors of the waiting
+  configuration with origin past memory on position 0's letter, by the
+  rule above.
+- TP-4 is an infinite-trace form (ADR-018 TP-4), so a guarded TP-4 clause
+  has no false-extension position. A terminal model state's stutter edge
+  reads the condition on the real last model state's letter, as it reads
+  the atoms, so a waiting configuration can select an activation on a
+  stutter position, and an active one advances on it.
+- The generalized Büchi acceptance sets SHALL be one per signed
+  least-fixed-point occurrence `[o,s]` of the negated closure, with the
+  membership rule above, and one activation set `["activation"]` whose
+  members are exactly the active states. The activation set is derived from
+  `phase` and is never a supplied member. The sets are ordered by the
+  canonical bytes of their identities, so `["activation"]` is always the
+  first, index 0. An infinitely waiting run is therefore never accepting.
+- A waiting configuration has a move on every defined letter, so a guarded
+  TP-4 clause's automaton is never without a move (FR-126 "Model-only
+  pass").
+
+The checker SHALL refuse, as an admission negative: a `guarded-buchi` state
+under a context whose activation is not `"each-when"` or whose item is not
+a TP-4 clause; a `["buchi", branch]` state under an `"each-when"` context;
+a phase other than `"waiting"` or `"active"`; and a waiting `branch` with
+an obligation or a window entry.
+
+The checker SHALL recompute every successor by these rules, re-reading the
+condition at every reached product state through the letter seam and
+taking no reading or phase choice from the certificate or the engine. A
+certificate that omits the active successor a true condition produces is
+rejected `SuccessorMissing` at it (`InitialMissing` when it is an initial
+product state); one that pairs a waiting key with an obligation is refused
+`ShapeMismatch` as an admission negative. An undefined condition rejects
+`BadState` by the locus rule above. A TP-4 automaton has no rejecting state,
+so for an empty certificate the locus key is the waiting configuration
+before position 0, `K_C(["guarded-buchi","waiting",[[],P,[],A]])` with `P`
+the origin past memory of the complete-history rule, with position 0's
+letter not applied, and `A` its derived membership; when the condition is
+undefined there for several bindings, `C` is the context of the first
+binding in FR-125's canonical instance order: like the rejecting key of the safety and bounded forms, it is
+derived from the context alone, without reading the undefined letter.
+FR-339 checks the components over these states.
 
 ### Protocol non-progress acceptance and closure classification
 
@@ -553,11 +649,11 @@ new canonical original/auxiliary structural automaton state once. Reuse by
 partition/component checking does not reset these counters or charge the
 same fact twice. Before an allocation/charge that would exceed a configured
 limit, stop at its actual consumed value, using the corresponding existing
-MaxStates/MaxTransitions/MaxAutomatonStates and request setting. Atom and
+MaxStates/MaxTransitions/MaxAutomatonStates and FR-255 setting name. Atom and
 enabledness evaluation use the subject's existing FR-120 evaluation meter
 and candidate limits, preserving their actual limit/value/setting on a stop.
 The core checks the same Cancel handle at each charge (FR-276), and records
-the actual request settings used. Exhaustion returns the closed typed
+the actual FR-255 setting names used. Exhaustion returns the closed typed
 `Stopped(IncompleteCause::LimitReached{limit,value,setting})`; cancellation
 returns `Stopped(IncompleteCause::Cancelled{source})`, with its actual
 Requested/Deadline source. These are the existing FR-127 stop payloads,
@@ -599,6 +695,8 @@ after the encoded C and comma and ends with one additional `]`.
 | two distinct interval occurrences at `["0"]` and `["1"]` | Both windows remain even when their checked operands and counters are equal; changing either counter changes key bytes. |
 | a general offset set `{[0,2],[1,3]}` | Pairs encode `[["0","2"],["1","3"]]`; reversed materialization normalizes to these bytes, while that reversed array supplied as canonical input refuses. |
 | TP-4 `eventually holds(p)`, elementary negated G not-p carry | G is retained as `[[],"negative"]` with no least-fixed-point acceptance set for the dual G; this differs from a positive F carry lacking discharge. |
+| guarded TP-4 `eventually holds(p)` `on each` with a `when` condition, before any activation | `["guarded-buchi","waiting",[[],[],[],[]]]`; the negated `G not p` has no least-fixed-point set, so the derived acceptance is empty. |
+| the same clause after selecting an activation at a position where p is false | `["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]`; the waiting key above remains reachable beside it. |
 
 A full-key independent byte oracle uses TC-525 step 3's checked `Counter`
 subject with no terminal declaration and ADR-018 DL-3's derived
@@ -666,7 +764,7 @@ different materialization orders SHALL produce identical full octets.
 - `Rejected(CertificateRejection{rule, at})` naming an actual failed
   certificate rule and its product state locus.
 - `Stopped(IncompleteCause)` carrying exactly the existing resource limit,
-  actual charged value and request setting, or cancellation source, before
+  actual charged value and FR-255 setting name, or cancellation source, before
   completion. A stop is neither acceptance nor bad-certificate rejection;
   FR-127 settles it `Incomplete` with those same fields.
 - `PackageMismatch{certificate, recompiled}` naming the certificate's and
@@ -727,6 +825,49 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
   reached state is expanded and the required non-progress check completes
   with no admitted violating lasso.
 
+### Memory bounds
+
+- Over a protocol subject with a weak `parallel`, the checker SHALL build
+  each `Tso` component under the request's `max_store_buffer` and each `Ra`
+  component under its `max_messages`, as the run built them (FR-225), and
+  expand each reached state through the protocol system under them.
+- The checker SHALL NOT refuse a request for its memory bounds and SHALL
+  NOT compare them with the run's: they are method parameters outside the
+  obligation identity (FR-225), and the closure check decides.
+- If a reached state is bound-limited under the request's bounds, an
+  enabled store that the bound cuts (FR-225), then the checker SHALL reject
+  with `SuccessorMissing` at that product state: the cut store's successor
+  is a successor of the subject that the certificate does not show, and
+  FR-225 settles V-1 only when no state was bound-limited.
+- The checker SHALL check this rule at a reached state when it expands the
+  state, after that state's `BadState` checks and before its successors'
+  membership. Among reached states, the first in the checker's breadth-first
+  expansion order that fails any rule is the one reported, as for
+  `SuccessorMissing` above.
+- Over an `sc` subject the checker SHALL read neither bound.
+
+### Instance bound
+
+- Over a protocol subject with an `on each` protocol, the checker SHALL
+  expand each reached state through the protocol system under the request's
+  `max_live_instances`, as the run did (FR-209): an `activate` step at a
+  state with that many live instances is not expanded.
+- The checker SHALL NOT refuse a request for its instance bound and SHALL
+  NOT compare it with the run's: it is a method parameter outside the
+  obligation identity (ADR-027 AE-4), and the closure check decides.
+- If a reached state is instance-limited under the request's bound, an
+  enabled `activate` step that the bound leaves unexpanded (FR-209), then
+  the checker SHALL reject with `SuccessorMissing` at that product state:
+  the unexpanded activation's successor is a successor of the subject that
+  the certificate does not show, and FR-209 settles V-1 only when no state
+  was instance-limited.
+- The checker SHALL check this rule where it checks the memory-bound rule
+  above, after a reached state's `BadState` checks and before its
+  successors' membership, the first failing state in breadth-first
+  expansion order being reported.
+- Over a subject with no `on each` protocol the checker SHALL read no
+  instance bound.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -739,9 +880,12 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 | FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve, with a certificate whose `package_id` equals the recompiled one, is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
-| FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]`, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has two instances, and each instance's `context` is `[root, profile, "infinite", [[N, ["instance", T, "a"]]]]` with `N` the `over` parameter's NodeId and `T` the JSON string of `P1`'s, respectively `P2`'s, declaration identity text; the two contexts' octets differ exactly in `T`, and a certificate state carrying `P1`'s context is not admitted under `P2`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", T, "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the four-element `["instance", T, "a", O]` with `O` the JSON string of `Counter`'s declaration identity text; and `["instance", T, {"type":"text","value":"a"}]`. Over a subject with population `P1` of `Counter`, universe `["a"]`, and two initial states, one holding a `Counter` under key `a` and one holding a `Fast` (a subtype of `Counter`) under key `a`, the instance's context octets are equal in both. | Test (TC-1164) |
+| FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]` and `a` admitted, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has one instance, whose `context` is `[root, profile, "infinite", [[N, ["instance", "a"]]]]` with `N` the `over` parameter's NodeId; renaming `P1` or `P2` leaves the context's octets unchanged. Over populations `P1` with universe `["a"]` and `P2` with universe `["b"]`, the two instances' contexts differ exactly in the key, and a certificate state carrying `a`'s context is not admitted under `b`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the three-element `["instance", T, "a"]` with `T` the JSON string of `P1`'s declaration identity text; and `["instance", {"type":"text","value":"a"}]`. The context carries no type: over two subjects with population `P1` of `Counter` and universe `["a"]`, one whose initial state holds a `Counter` under `a` and one whose initial state holds a `Fast` (a subtype of `Counter`) under `a`, the instance's context octets are equal. | Test (TC-1164) |
 | FR-338-AC-10 | Fixture: the `Counter` subject (no `terminal` declaration) and a checked package of its unit that carries the guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation aggregate `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's Boolean guard term), built by the test because S4 refuses an `on each` clause `NotEmitted` (FR-337, QSL-926); the same package supplies the engine's clause and stands as the request's recompiled package, and each `when` condition is read by the test's own letters as in FR-126-AC-16. `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value = 7` returns `Holds` whose certificate holds values 0 to 3, each with activation `"each-when"` and state body `["safety",[[[],[],[],[]]]]`, and `check_closure` accepts it, so FR-127 settles `proved`. `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with the condition `c.value >= 2` returns `Holds` whose certificate `check_closure` accepts, its value-0 and value-1 states having body `["bounded",["each"],[[[],[],[],[]]]]` and its value-2 state body `["bounded",["each"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; that certificate with the value-2 state's body replaced by `["bounded",["each"],[[[],[],[],[]]]]` (the condition misread as false) is rejected `SuccessorMissing` at the value-2 product state with the deadline body; the same certificate with the misread value-2 state added beside the deadline one is accepted; the accepted certificate with every key's activation replaced by `"each"` is rejected `ShapeMismatch` at the least refused `ProductStateRef` (AC-8's order). With the condition false at values 0 and 1 and undefined at value 2, the certificate holding exactly the value-0 and value-1 states, each with activation `"each-when"` and body `["bounded",["each"],[[[],[],[],[]]]]`, is rejected `BadState` at the value-1 product state, whose expansion reads the undefined condition at value 2. | Test (TC-525) |
+| FR-338-AC-16 | Over FR-339-AC-5's fixture (the clause `eventually holds(c.versionNumber = 2)` `on each` with the condition `c.versionNumber = 1`, activation `"each-when"`), binding `a`'s waiting state at `(0,0)` has body `["guarded-buchi","waiting",[[],[],[],[]]]` and its active state at `(1,0)` has body `["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]`. Each of these is refused `ShapeMismatch` at `ProductState`: that active key rewritten as `["buchi",[[[[],"negative"]],[],[],[]]]`; that waiting key with `branch` `[[[[],"negative"]],[],[],[]]` under phase `"waiting"`; a `guarded-buchi` key under the same clause's context with activation `"infinite"`; the phase `"selected"`. With the condition undefined at version 0, the empty certificate is rejected `BadState` at `ProductState` with the initial model state `(0,0)` and binding `a`'s key `K_C(["guarded-buchi","waiting",[[],[],[],[]]])`, the waiting configuration before position 0's letter is read (binding `a`, the first in canonical instance order); and FR-339-AC-5's accepted certificate under that condition is rejected `BadState` at binding `a`'s waiting state at `(0,0)`, the least certificate state carrying that model state. | Test (TC-525) |
 | FR-338-AC-11 | Package identity. AC-1's certificate carries the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by that of the same unit with the claim's bound edited to `1001` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with its initial product state also removed (AC-2's `InitialMissing` defect) still returns `PackageMismatch`, because no rule is evaluated. A request whose clause root is the edited unit's clause node, which does not resolve in AC-1's recompiled package, with a certificate naming the edited unit's `package_id`, returns `PackageMismatch` and settles `Inconclusive(StaleDependency{requested, recompiled})`, not `Failed`, because the package comparison precedes the clause-root resolution. | Test (TC-1141) |
+| FR-338-AC-21 | Memory bounds. Over FR-225-AC-2's `tso` program with `always holds(x.v <= 1)`, the run with `max_store_buffer` 3 settles V-1 with a certificate; the request carrying `max_store_buffer` 3 is accepted, and the same certificate under a request carrying 2 is rejected `SuccessorMissing` at the shallowest bound-limited product state, the one whose storing branch has buffered its stores to `x` and `y` while the loading branch has taken no step, with no refusal. The same program under `ra`, run with `max_messages` unset, settles V-1, and its certificate is accepted under a request with `max_messages` unset (4) and rejected `SuccessorMissing` at the initial product state under a request with 1, where the first store would add a second message. | Test (TC-1230) |
+| FR-338-AC-22 | Instance bound. Over FR-209-AC-2's protocol with guard `{false}`, which has no `activate` step, the run settles V-1 with a certificate, and the certificate is accepted under a request with `max_live_instances` unset (3) and under one with 1. Over FR-209-AC-1's protocol (guard `{true}`), a certificate holding every product state the run with `max_live_instances` 2 explored, offered for `always holds(k.v <= 1)` under a request carrying 2, is rejected `SuccessorMissing` at the shallowest instance-limited product state, the one after two `activate(Tick)` steps with both instances at their start and `k.v` 0, with no refusal. | Test (TC-1230) |
 
 ## Dependencies
 

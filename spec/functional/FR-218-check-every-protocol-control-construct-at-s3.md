@@ -27,6 +27,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-228
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-146
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-065
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-051
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-054
@@ -162,22 +166,82 @@ reaches S4 (FR-383).
   `join any` or `join predicate` that lists no label, with
   `invalid_package`/`invalid-value` at the list (the count for `quorum`). A
   label listed twice is one joined label.
-- S3 SHALL refuse a role whose model is not an object type, a process, a
-  state machine, a systems interface or a persistence interface with
+- S3 SHALL refuse a role whose model is neither a model alias (Role on a
+  model alias) nor an object type, a process, a state machine, a systems
+  interface or a persistence interface with
   `invalid_model_binding`/`malformed-declaration` at the model name, and a
   channel whose `carries` type is none of a scalar type, a composite type, a
   record, an event type or a variant type with the same refusal at the type
   name. S3 SHALL NOT compare a `send` or `receive` binder, or a FIFO binder,
   with a refused `carries` type.
 
+### Predicate joins
+
+`join predicate(f) [l1, ..., ln]` settles when the function `f`, applied to
+the dispositions of the joined branches, is true (QSpec FR-171, FR-228). The
+function sees the joined labels only, which are the branch dispositions the
+join captures explicitly (QSpec shared grammar), and a branch the join does
+not list is not an argument.
+
+- S3 SHALL resolve `f` once, in the unit's own declaration scope, as a call's
+  name resolves (FR-065). `f` is an unqualified name, so it names a function
+  the unit declares. A name that resolves to no declaration of the unit SHALL
+  refuse with `missing_declaration`/`missing-name` at the name, retaining
+  `node` (the `parallel`) and `name`. A name that resolves to a declaration
+  that is not a `function`, such as a `predicate`, a clause, a type or a
+  protocol, SHALL refuse with `ill_typed`/`operator-ineligible` at the name,
+  naming the resolved kind, as QSpec FR-146 refuses a call to a declaration
+  that is not a checked pure function.
+- The joined labels, each counted once, are taken in ascending order of their
+  UTF-8 bytes, which is the order S4 writes the `joined` labels (FR-383).
+  The function SHALL have one parameter for each of those labels, the `k`-th
+  parameter receiving the disposition of the `k`-th label, and SHALL have the
+  result type `Boolean`. Each parameter SHALL have the type `Boolean`: the
+  argument is `true` when that branch thread is `completed` and `false` when
+  it is `running`. No third value is needed, because a branch thread is
+  `cancelled` only together with the thread that owns the join, and a
+  `cancelled` thread takes no step (FR-206), so no join step ever reads a
+  `cancelled` branch. S3 SHALL refuse a function whose parameter count
+  differs from the number of distinct joined labels, a parameter whose type
+  is not `Boolean`, or a result type that is not `Boolean`, with
+  `ill_typed`/`type-mismatch` at the name, retaining `node`, `function`,
+  `expected` (the required parameter types and result type) and `actual` (the
+  function's declared ones).
+- A function that reaches this check is an admitted function: QSpec FR-146
+  establishes its purity, its total definedness and the termination of every
+  call cycle it reaches when its own declaration is checked, and its body
+  reads its parameters and constants only, never model state, a binder or a
+  capture. The join therefore adds no purity or totality check of its own and
+  no refusal for one. A unit whose function is impure, partial or has an
+  unproved decrease refuses at that function's declaration by FR-146's
+  rules, whatever join names it.
+- S3 SHALL record the checked policy as `Predicate{function}`, `function`
+  the typed node key (`quire.checked-semantic-node/v1`) of the resolved
+  function's `function` node (FR-092), bound once and never looked up again
+  by name (FR-088). Two joins that name one function hold one key. The
+  joined labels stay recorded as for every other policy.
+
 ### Role on a model alias
 
-S3 SHALL refuse `role w on M`, `M` a model alias, by the role rule above,
-with `invalid_model_binding`/`malformed-declaration` at `M`. S4 cannot emit
-such a role: QSpec FR-322 has no `model` node form for a whole model alias,
-and QSpec FR-465 reader step 1 admits a role only on an `object_type`,
-`process`, `state_machine`, `systems_interface` or `persistence_interface`
-node (Admission for emission).
+S3 SHALL admit `role w on M`, `M` a model alias of the unit, as a static
+role on the whole model `M` selects, recording the identity of `M`'s
+`model_selections` row. It admits the role whatever the clause's `over` type
+is (a model type, a reference, a scalar, a record or a collection), and
+beside roles of the same clause on other aliases: `role w on M` and
+`role u on N` in one clause both check. S4 emits it as QSpec FR-465's role on
+a whole model, whose `model` argument is that identity text (QSpec
+FR-465-AC-9), and the subject builder binds it by construction (FR-205). A
+role on a whole model attempts, owns choices and repeats, and sends and
+receives as any static role does.
+
+A role on a whole model is static only (QSpec FR-465: a replicated role draws
+its instances from a population of a model type, so its `model` is a
+reference). S3 SHALL refuse a replicated role over a model alias,
+`role r each M from pop` with `M` a model alias, with
+`invalid_model_binding`/`malformed-declaration` at `M`, before it resolves
+`pop`: a replicated role needs an object type, and QSL's I2 reader refuses
+the same form under QSpec FR-465 step 1, so S3 admits nothing S4 cannot
+emit (Admission for emission).
 
 ### Channels
 
@@ -459,13 +523,14 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
 | FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each fail at the parser with a syntax diagnostic and build no form; two cases and two branches check. | Test (TC-1065) |
 | FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
-| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`), `role w on M` refuses `invalid_model_binding`/`malformed-declaration` at `M` and the unit produces no package (Role on a model alias); a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
+| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`), `role w on M` checks as a role on the whole model recording `M`'s `model_selections` identity, and so do `role w on M` beside `role u on N` in one clause over two aliases and `role w on M` in a clause whose `over` type is a scalar, a record and a `Set<M::Cell>` (Role on a model alias), while the replicated `role r each M from cells` refuses `invalid_model_binding`/`malformed-declaration` at `M` with no `pop` refusal and no package; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 | FR-218-AC-27 | The unit of TC-1056 with a second protocol `Billing` that also declares `channel Pay` with the same premises checks, and the checked clauses hold two channels: `Pipeline`'s `Pay` and `Billing`'s `Pay`. Each is recorded under its protocol's qualified identity and the handle `Pay`; the two have different qualified names and equal handles. | Test (TC-1056) |
 | FR-218-AC-28 | `role w each M::Worker from workers max 2 lifetime workflow` checks when `workers` is a population of `M::Worker` and the checked role holds that population; with `from absent` it refuses `missing_declaration`/`missing-name` at `absent`, and with `from jobs`, a population of `M::Job`, it refuses `ill_typed`/`type-mismatch` at `jobs`, each retaining `role` and `population`. | Test (TC-663) |
 | FR-218-AC-29 | In a protocol with channels `from w to c` and `from c to w`, the checked clause holds the owner `w` for the `send` on the first and `c` for its `receive`, and `c` for the `send` and `w` for the `receive` on the second; a lifetime `scope` role `w` with its `Work` nodes inside `sequence S` and a `send` from `w` after `S` has the region that holds `S` and the `send`, which is `S`'s parent control and not `S`. | Test (TC-663) |
 | FR-218-AC-30 | Over three visible Boolean facts `a`, `b`, `c`: a two-case `choice` with guards `a and b and c` and `not (a and b and c)` checks, and its unit's measured `s3.work_units` spend exceeds that of the same unit with guards `a and a and a` and `not (a and a and a)` (one distinct atom, two valuations, the same guard nodes) by exactly 6, so the proof charges one unit per valuation and the atom comparison charges nothing beyond the node charges. A `choice` of the same shape over 24 distinct atoms (`2^24` valuations) stops under the default `s3.work_units` (16777216) with a `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, at the choice's span, naming bound 16777216 and setting `s3.work_units`, and no `unproved-exhaustiveness`; it checks with `s3.work_units` set to 33554432 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation. Guards `a and b and c` and `not a`, over the three atoms `a`, `b`, `c`, leave a valuation uncovered and refuse `unproved-exhaustiveness` with `failed` `[missing-arm]`. | Test (TC-1172) |
+| FR-218-AC-31 | Over branches `a`, `b` and `c`, with `function f using v(x: Boolean, y: Boolean): Boolean pure { x and y }` declared in the unit, `join predicate(f) [a, c]` and `join predicate(f) [c, a, c]` each check to `Predicate{function}` holding `f`'s node key and the joined labels `a` and `c`, and a second join naming `f` holds the same key. `join predicate(g) [a, c]` with no `g` declared refuses `missing_declaration`/`missing-name` at `g`, retaining node and name; `g` declared as a `predicate` refuses `ill_typed`/`operator-ineligible` at `g`, naming the kind. `join predicate(f) [a, b, c]` (three labels, two parameters), a function `h(x: Boolean, y: Int[0, 1]): Boolean` joined on `[a, c]`, and a function `k(x: Boolean, y: Boolean): Int[0, 1]` joined on `[a, c]` each refuse `ill_typed`/`type-mismatch` at the name, retaining node, function, expected and actual. A unit whose joined function is `function r using v(x: Boolean, y: Boolean): Boolean pure { r(x, y) }`, which calls itself with no `decreases` measure, refuses `undefined_expression`/`unproved-decrease` (failed obligation `missing-measure`) at `r`'s declaration and gives no refusal at the join. Each refusal produces no package. | Test (TC-1065) |
 
 ## Dependencies
 
@@ -479,14 +544,15 @@ one protocol declared in the same unit. It carries no package selector.
   FR-383 (the emission of the checked clause), FR-086 (relationship kinds), FR-088 (type identity).
 - QSpec owns the grammar and contracts of every construct, and the catalog
   spellings of its refusals: QSpec FR-051, FR-052, FR-053, FR-054, FR-170,
-  FR-171, FR-172, FR-228.
+  FR-171, FR-172, FR-228. A predicate join's function is admitted by QSpec
+  FR-146 and resolved as FR-065 resolves a call.
   The protocol reference's resolution rules follow QSpec FR-322-AC-66, and
   its production and meaning are QSpec FR-463's.
 
-## Remaining work
+## AC-16 coverage
 
 - AC-16's binding of a clause with an `on each` activation or a capture (TC-1056
-  row 23a) is exercised once S4 emits those clauses: Linear QSL-926.
+  row 23a) is exercised over the clauses S4 emits.
 
 ## References
 
