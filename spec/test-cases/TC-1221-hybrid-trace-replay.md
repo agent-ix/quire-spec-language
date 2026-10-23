@@ -1,12 +1,12 @@
 ---
-id: TC-1202
+id: TC-1221
 title: "Hybrid traces replay statically and exactly against the checked hybrid model"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-450
     type: verifies
 ---
-# TC-1202: Hybrid traces replay statically and exactly against the checked hybrid model
+# TC-1221: Hybrid traces replay statically and exactly against the checked hybrid model
 
 ## Description
 
@@ -36,7 +36,7 @@ provider, each returning a scripted entry with a scripted `HybridTrace`.
 
 Run each step through both fixture providers.
 
-Tag the tests `#[trace("TC-1202", "FR-450-AC-n")]`.
+Tag the tests `#[trace("TC-1221", "FR-450-AC-n")]`.
 
 ## Expected Results
 

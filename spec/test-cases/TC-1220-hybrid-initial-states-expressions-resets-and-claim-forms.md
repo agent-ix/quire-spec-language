@@ -1,12 +1,12 @@
 ---
-id: TC-1201
+id: TC-1220
 title: "Hybrid initial states, expressions, resets and claim forms check to the checked model and claim"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-447
     type: verifies
 ---
-# TC-1201: Hybrid initial states, expressions, resets and claim forms check to the checked model and claim
+# TC-1220: Hybrid initial states, expressions, resets and claim forms check to the checked model and claim
 
 ## Description
 
@@ -41,7 +41,7 @@ clause under the infinite-trace profile.
    FR-447-AC-12 states them, and read it with QSpec's v2 reader; then over
    the package holding `Braking`.
 
-Tag the tests `#[trace("TC-1201", "FR-447-AC-n")]`.
+Tag the tests `#[trace("TC-1220", "FR-447-AC-n")]`.
 
 ## Expected Results
 
