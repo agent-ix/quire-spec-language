@@ -187,19 +187,26 @@ supplies for one checked closure, and read the closure only through it:
    The contract's call admission and expression admission take the
    session's meter beside the input and environment, so the
    implementation's supplied-value run polls the meter's installed handle
-   (FR-262 Begin).
+   (FR-262 Begin). A closure built over arguments its caller has already
+   admitted (FR-262's pre-admitted Begin) admits nothing at Begin: its call
+   and expression admission poll no handle and return no failure.
 4. **Interpreted transitions.** The contract SHALL advance an interpreted
    application or expression by one finite transition, returning a
    continuation, a child request or a terminal `Evaluation` /
    `CallFailure`, so the leaf's scheduler drives interpreted and registered
-   bodies through one task stack. A call site whose callee identity has a
-   host body bound in the session's sealed registry SHALL dispatch to that
-   host body, wherever the call site is: the root application, a host
+   bodies through one task stack. For an evaluator whose interpreted
+   transition returns each source application to the scheduler as a child
+   request (the steppable evaluator), a call site whose callee identity has
+   a host body bound in the session's sealed registry SHALL dispatch to
+   that host body wherever the call site is: the root application, a host
    body's child request, or a source application inside an interpreted
-   body. An interpreted transition therefore returns each source
-   application to the scheduler as a child request and never evaluates the
-   callee's interpreted body itself. The reference adapter follows the same
-   rule; it has no exception.
+   body; that evaluator never evaluates a callee's interpreted body itself.
+   For the std reference evaluator behind `qsl-eval`'s adapter, which runs
+   one interpreted frame to its terminal result in one transition, a call
+   site whose callee identity has a bound host body SHALL dispatch to that
+   host body at the root application and at a host body's child request; a
+   source application inside its interpreted code runs the callee's
+   interpreted body.
 5. **One closure per registry.** A registry SHALL be created from exactly one
    checked closure and hold it. Begin takes the registry, not a separate
    closure, so no session pairs a registry with another closure.
@@ -215,6 +222,22 @@ registration for its `NodeKey` returns `CallableNotAdmitted`, as `call`
 refuses it by name (TC-196 D07). `CheckedPackageEvaluation`'s `call` and `evaluate` resolve their
 `QualifiedName` or checked expression in the adapter and drive one session of
 the leaf to terminal, with their existing results and input refusals.
+
+`call` and `evaluate` admit their arguments through a supplied-value run
+of their own over a handle no caller holds, then begin the session with
+FR-262's pre-admitted Begin. `call_supplied` admits its arguments under the
+caller's run alone, polling only that run's handle, then begins the same
+way. None of the three polls the meter's installed handle before the
+application's first meter charge, and none returns the pre-charge
+`CallFailure::Cancelled` for a cancelled meter handle. When the meter's
+handle is cancelled, that first charge is denied: the result is `Ok` with
+the charge's located incomplete result (`limit_kind: work_units`, `limit`
+equal to `consumed`), the charge unrecorded and `tripped()` reporting the
+cause. For `call` that charge is the call's `function.call`. An evaluation
+that makes no meter charge returns the result it returns with an
+uncancelled meter. The meter's handle is polled only at meter charges, so a
+handle that trips at its n-th poll stops at the n-th charge. FR-262-AC-12
+binds `quire-eval`'s Begin with contract admission, not these entries.
 
 Which of C's checked terms the leaf's contract names, and the
 representation the `no_std` evaluator reads, are fixed by S6 (IR-590), not
@@ -263,7 +286,8 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 | FR-401-AC-5 | Through the reference adapter over a checked package with a function `f(x: Int[0, 9]): Boolean`, an FR-151 dispatched member call whose synthesized dispatch candidate is not callable by name, and a dependency package with a function `g(): Integer`, each registration into a fresh registry returns: for `f`'s `NodeKey` with signature `([Int[0, 9]], Boolean)`, `Accepted`; for `f`'s key with `([Int[0, 10]], Boolean)`, `SignatureMismatch`; for `g`'s key with `([], Integer)`, `Accepted`; for the synthesized candidate's key with its recorded signature, `CallableNotAdmitted`; for a `NodeKey` no function of the closure has, `CallableNotAdmitted`. | Test |
 | FR-401-AC-6 | The Begin operation takes the registry and no separate closure or `Cancel` argument, and `quire-eval`'s source names no item of a QSL crate, including `CheckedPackage`, `ObjectEnvironment` and FR-400's checker-side record. | Inspection |
 | FR-401-AC-7 | FR-059's direction check reports an RT resolved graph with a normal edge to `quire-eval` sourced from `agent-ix/quire-eval` as clean, and reports no FB-11 cycle through it. | Test |
-| FR-401-AC-8 | Through the reference adapter, over a checked package with `f(x: Int[0, 9]): Integer`, whose body is `x`, and an interpreted `g(x: Int[0, 9]): Integer` whose body is `f(x) + 1`, with a host body registered for `f`'s `NodeKey` that returns `7`: a session over `f(3)` returns `7`; a session over `g(3)` returns `8`; and a session over a second registered body that requests `f(3)` resumes that body with `7`. In each run the factory for `f` is invoked once per application of `f`, `f`'s interpreted body makes no charge, and each application of `f` makes one `function.call` charge. The test fails if any run evaluates `f`'s interpreted body. | Test |
+| FR-401-AC-8 | Through an evaluator that implements the closure contract's interpreted transition by returning each source application as a child request, over a checked package with `f(x: Int[0, 9]): Integer`, whose body is `x`, and an interpreted `g(x: Int[0, 9]): Integer` whose body is `f(x) + 1`, with a host body registered for `f`'s `NodeKey` that returns `7`: a session over `f(3)` returns `7`; a session over `g(3)` returns `8`; and a session over a second registered body that requests `f(3)` resumes that body with `7`. In each run the factory for `f` is invoked once per application of `f`, `f`'s interpreted body makes no charge, and each application of `f` makes one `function.call` charge. The test fails if any run evaluates `f`'s interpreted body. Through the std reference evaluator, the runs over `f(3)` and over the requesting body hold as stated, and the run over `g(3)` is not part of this criterion. | Test |
+| FR-401-AC-9 | With a meter whose installed handle is cancelled with `Requested` or `Deadline` before the call: over the TC-918 `Compare` package (`equality_matrix.rs`, `invariants.rs`), `call` returns `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(record))` where `record.charge_point` is `ChargePoint::FunctionCall`; over the FR-090 population query of `model_reference_queries.rs`, `call` and `evaluate` each return `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(_))`. In every run no charge is admitted, `tripped()` equals the cause and no run returns `CallFailure::Cancelled`. Over the population query, with a handle that trips at its n-th poll, `call` and `evaluate` stop at the n-th charge point of the suite's expected prefix, with the prefix before it admitted. | Test |
 
 ## Dependencies
 
