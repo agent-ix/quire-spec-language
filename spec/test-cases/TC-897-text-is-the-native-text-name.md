@@ -13,13 +13,14 @@ relationships:
 Verify that model intake admits a scalar type bound to `Text` with each of
 QSpec FR-141's six profiles as `Text[min, max; profile]`, refuses bounds
 outside `0 <= min <= max`, refuses a profile
-FR-141 does not define, refuses a bare `ix://quire/native/Text` that carries
-no profile, and refuses an undeclared native name,
+FR-141 does not define, admits bare `ix://quire/native/Text`,
+`ix://quire/native/Rational` and `ix://quire/native/Decimal` members with no
+checked type and refuses each use of them, and refuses an undeclared native name,
 `ix://quire/native/UnknownText`. K2's `String` remains a declared native;
 it is neither this unknown-name case nor a parameterized Text alias.
 Verify the exact native-payload controls of
 [FR-056](../functional/FR-056-admit-domain-package-model-declarations.md#fr-056-ac-17).
-Scope: FR-056-AC-11 and the canonical-payload part of FR-056-AC-17;
+Scope: FR-056-AC-11, FR-056-AC-43 and the canonical-payload part of FR-056-AC-17;
 QSpec TC-235 retains K2's model binding and complete business vectors.
 
 ## Test Procedure
@@ -27,10 +28,10 @@ QSpec TC-235 retains K2's model binding and complete business vectors.
 Steps 1, 2 and 5 declare `Label` as a Text value type in the form of
 FR-056-AC-37 and depend on the amended semantic-IR validator that FR-056's
 Text paragraph states (a length or format constraint applied to a value type
-of `scalar` `string` is applicable). Step 3 depends on the validator's native
-vocabulary naming `Text`: at the pinned validator, which has no `Text`, step 3
-refuses `invalid_model_binding`/`malformed-declaration` at `label`, as step 4
-does. Steps 4 and 6 and 7 are reachable today.
+of `scalar` `string` is applicable). Steps 3 and 8 depend on the validator's
+native vocabulary naming `Text`, `Rational` and `Decimal`: a validator whose
+native set lacks one refuses that `typeRef` `invalid_model_binding`/
+`malformed-declaration` at the member, as step 4 does.
 
 Start from a domain package whose object type `Note` declares a field
 `label` and an operation `rename(to): Boolean` that intake admits.
@@ -56,6 +57,18 @@ Start from a domain package whose object type `Note` declares a field
    digit; independently admitted Timestamp `0` values, then `0` versus `1`.
    Compare their same-kind canonical keys. Try UUID against Timestamp and
    each against `Int`, retaining the typed refusal and no Boolean.
+8. Build FR-056-AC-43's package: `Note` with `memo` (`Text`), `ratio`
+   (`Rational`), `amount` (`Decimal`), `amounts` (`Decimal`, `[0, 3]`) and
+   `scale(by: Rational): Integer`, every `typeRef` under
+   `ix://quire/native/`. Compile a unit selecting it with no clause naming
+   these members. Then, one at a time, add the invariants `self.memo =
+   self.memo`, `self.ratio = self.ratio`, `self.amount = self.amount`,
+   `self.amounts = self.amounts` and one comparing a call of `scale` with
+   argument `rational(1, 2)` to `1`. Then add an operation `touch()` with
+   `modifies memo` and no other clause.
+9. Over step 8's admitted unit, admit an FR-106 snapshot whose `Note` object
+   omits `memo`, then one that supplies `{"kind": "text", "text": "a"}` for
+   `memo`.
 
 ## Expected Results
 
@@ -64,8 +77,7 @@ Start from a domain package whose object type `Note` declares a field
 - Step 2: refused `unsupported_construct`/`declaration-form` at `Label`,
   naming `nfx`; then, for each pair of bounds, refused
   `unsupported_construct`/`declaration-form` at `Label`, naming the bounds.
-- Step 3: refused `unsupported_construct`/`declaration-form` at `label`,
-  naming `profile`.
+- Step 3: admitted, `label` with no checked type and no refusal.
 - Step 4: refused `invalid_model_binding`/`malformed-declaration` at
   `label`, naming `ix://quire/native/UnknownText`.
 - Step 5: the same outcomes at the parameter and at the result.
@@ -81,6 +93,14 @@ Start from a domain package whose object type `Note` declares a field
   give false or convert. Each native key orders canonical payload content
   unsigned ASCII bytewise with a proper prefix first; it grants no ordering
   operator. Payload/codec success alone is no claim that K2 was admitted.
+- Step 8: the unit with no such clause is admitted with no refusal at intake,
+  at the members or at the `model` declaration. Each added invariant refuses
+  `ill_typed`/`operator-ineligible` at its application, naming `Note` and
+  `Field.typeRef` (the call: `Operation.params[0].typeRef`). `touch()` is
+  admitted.
+- Step 9: both snapshots refuse `ill_typed`/`operator-ineligible` at
+  `fields.memo` naming `Note` and `memo`; the supplied Text value is not read,
+  and no `missing-member` refusal is reported.
 
 ### Step 6 adapter vectors
 
