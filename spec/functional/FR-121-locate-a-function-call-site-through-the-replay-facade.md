@@ -238,10 +238,11 @@ can bound a domain nested inside a state field's type as it bounds the field.
   UTF-8 byte order. A selection whose alias, object type or field does not
   resolve SHALL refuse `CallSiteRefusal::UnknownField`, pairing the
   `FieldName` with the compiled package's own `package_id` (FR-088-AC-6).
-- A `FieldStep` SHALL be one of `Element`, `Payload`, `Field(Identifier)`,
-  `Position(u32)` and `Member(Identifier, u32)`. A `FieldName` with steps
-  SHALL be built by `FieldName::nested(alias, object_type, field, steps)`;
-  `FieldName::new` builds one with no steps.
+- The `qsl_replay` facade SHALL define `FieldStep` with exactly the variants
+  `Element`, `Payload`, `Field(Identifier)`, `Position(u32)` and
+  `Member(Identifier, u32)`, and SHALL build a `FieldName` with steps through
+  `FieldName::nested(alias, object_type, field, steps)`, `FieldName::new`
+  building one with no steps.
 - For a field selection with steps, `call_site` SHALL resolve the field as
   for a field selection with none, then walk the steps in order from the
   field's declared value type, and SHALL return `DomainKey::Node` on the same
