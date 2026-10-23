@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-128
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-023
@@ -78,15 +80,31 @@ pub fn encode_smt_query(
     subject: &ModelSubject,
     item: ModelCheckItem<'_>,
     kind: SmtQueryKind,
+    limits: &SmtEncodingLimits,
 ) -> Result<Vec<u8>, SmtEncodingRefusal>;
+
+/// The encoding's size limits (Size limits), each a request setting
+/// `smt_encoding.<member>` (FR-255). `Default` gives every member its
+/// published default.
+pub struct SmtEncodingLimits {
+    pub max_constants: u64,      // `constants`, default 1048576 (2^20)
+    pub max_applications: u64,   // `applications`, default 65536 (2^16)
+    pub max_monitor_atoms: u64,  // `monitor-atoms`, default 8
+    pub max_monitor_states: u64, // `monitor-states`, default 64
+    pub max_candidates: u64,     // `candidates`, default 65536 (2^16)
+    pub max_script_bytes: u64,   // `script-bytes`, default 268435456 (2^28)
+}
 ```
 
-The call takes no meter and no limit setting. The encoding evaluates no
-clause: it prints terms over the subject's state copies, so FR-107's meter
-has nothing to charge. Its size limits (below) are fixed constants of this
-requirement, because FR-314's checker rebuilds the query from the recompiled
-package, the subject, the item and the kind alone, and a request setting
-would be one more input that a certificate would have to carry.
+The call takes no meter. The encoding evaluates no clause: it prints terms
+over the subject's state copies, so FR-107's meter has nothing to charge.
+Its size limits are the request's `SmtEncodingLimits` (Size limits). The
+limits decide only whether a script is printed, never its bytes: two calls
+that both print a script print the same bytes whatever their limits. CG's
+SMT backend encodes under the run's limits, and FR-314's checker rebuilds
+the query under the same values, which the item's certificate request
+records (FR-314 "Encoding limits"), so a query that fits only raised
+limits is rebuilt as the solver received it.
 
 ## Outputs
 
@@ -145,8 +163,8 @@ checked package. Such a request guarantees these invariants:
   predicate is that atom;
 - a `terminal when P` predicate is a state predicate over an object type of
   the subject (FR-124);
-- every monitor state number is below the tabulation limit of 64
-  (Size limits).
+- every monitor state number is below the request's `max_monitor_states`
+  (Size limits), which the `monitor-states` check has passed.
 
 The encoding's own build order guarantees one more: it reads a term (copy
 `i` terminal, an enabledness, an application count) only after building
@@ -680,7 +698,9 @@ below hold for every TP-2 item.
 ### Size limits
 
 The encoding SHALL refuse `too-large`, writing no script, naming the measure,
-its value and its limit, when a measure passes its limit. It SHALL compute
+its value, its limit and the setting that raises the limit, when a measure
+passes its limit. Each limit is a member of the call's `SmtEncodingLimits`,
+and the Limit column below is its published default. It SHALL compute
 each measure from the subject, the item and the kind, check the measures in
 this order, and check each before it builds the terms the measure counts:
 
@@ -694,10 +714,112 @@ this order, and check each before it builds the terms the measure counts:
 | `script-bytes` | bytes of the canonical script, counted as it is printed, stopping at the first byte past the limit | 268,435,456 (2^28) |
 
 The table of Outputs places each measure's check among the other refusals.
-`encode_hyper_query` carries the same measures and limits (Hyper
-self-composition queries). The limits are not request settings, and a refusal is not a run limit: no
-V-7 follows from it. CG's SMT backend reads a refusal as the backend having
-no query for the item.
+`encode_hyper_query` carries the same measures and limits, read from its
+request's `encoding` (Hyper self-composition queries).
+
+Each limit is a request setting with one name at every entry point (FR-255
+"Engine limit setting names", QSpec FR-461 Behavior 5): the library field of
+`SmtEncodingLimits`, a replay request's `stage_limits` entry and the driver
+CLI's `--limit <setting>=<n>` all raise it, and a model-check item
+carries the values as FR-126's `ModelCheckRequest.smt_encoding` and, on a
+provider request, as QSpec FR-368's `temporal.smt_encoding` member. Its
+value is a positive count. The values change the result (a `too-large`
+stop against a proof), so they are part of the request identity and the
+cache key (QSpec FR-368, FR-306), and a result is reused only for a request
+with equal values. A `too-large` refusal names the measure's limit and
+setting from this table:
+
+| Measure | Limit name | Setting | `ModelCheckLimit` |
+| --- | --- | --- | --- |
+| `constants` | `max_constants` | `smt_encoding.max_constants` | `SmtMaxConstants` |
+| `applications` | `max_applications` | `smt_encoding.max_applications` | `SmtMaxApplications` |
+| `monitor-atoms` | `max_monitor_atoms` | `smt_encoding.max_monitor_atoms` | `SmtMaxMonitorAtoms` |
+| `monitor-states` | `max_monitor_states` | `smt_encoding.max_monitor_states` | `SmtMaxMonitorStates` |
+| `candidates` | `max_candidates` | `smt_encoding.max_candidates` | `SmtMaxCandidates` |
+| `script-bytes` | `max_script_bytes` | `smt_encoding.max_script_bytes` | `SmtMaxScriptBytes` |
+
+```rust
+pub enum ModelCheckLimit {
+    // FR-126's members, FR-166's, FR-184's and FR-314's, plus the encoding
+    // limits above and the solver run limits (Solver run limits):
+    SmtMaxConstants, SmtMaxApplications, SmtMaxMonitorAtoms,
+    SmtMaxMonitorStates, SmtMaxCandidates, SmtMaxScriptBytes,
+    SmtMaxSolverSteps, SmtMaxSolverTime,
+}
+```
+
+- **A reached limit settles V-7.** A `too-large` refusal is a run limit: the
+  item's SMT method cannot go on under the request's limits. CG's SMT map
+  SHALL settle an item whose next query the encoding refuses `too-large`,
+  with no earlier query of the run having settled it, as V-7, `failed`,
+  execution `resource-incomplete`, `Incomplete(LimitReached{limit, value,
+  setting})`, naming the measure's `ModelCheckLimit`, the configured value
+  and the setting (ADR-018 V-7, FR-127), and never as `unsupported`, V-5 or
+  V-6. Raising the named setting to fit lets the same query encode. FR-182
+  settles an HP-2 `EncodingRefused` outcome carrying `too-large` the same
+  way.
+- **The values used are recorded.** CG's SMT backend SHALL encode every
+  query of an item under the one `SmtEncodingLimits` of the item's request
+  (`ModelCheckRequest.smt_encoding`), the defaults for every member the
+  request does not set. The item's terminal record SHALL state the values
+  used, as ADR-018 V-7 requires of every limit, and the certificate request
+  of an SMT proof SHALL record them as FR-338's
+  `CertificateRequest.smt_encoding`, so FR-314's checker rebuilds each query under the values the
+  backend encoded it under (FR-314 "Encoding limits").
+
+### Solver run limits
+
+CG's SMT backend SHALL run every query of an item's EN-2 and EN-3 methods
+(this requirement's proof queries, EN-2's counterexample and lasso
+searches, and an HP-2 item's base, step and lasso queries) under the
+request's `SmtRunLimits`, which bound the SMT run itself. A model-check
+item carries them as FR-126's `ModelCheckRequest.smt_run` and, on a
+provider request, as QSpec FR-368's `temporal.limits.max_solver_steps` and
+`max_solver_time`:
+
+```rust
+/// The SMT run's limits, each a request setting `smt.<member>` (FR-255).
+/// `Default` gives every member its published default.
+pub struct SmtRunLimits {
+    pub max_solver_steps: u64, // ModelCheckLimit::SmtMaxSolverSteps, default 100000000 steps
+    pub max_solver_time: u64,  // ModelCheckLimit::SmtMaxSolverTime, whole seconds, default 60
+}
+```
+
+- `max_solver_steps` SHALL bound each query to that many solver steps, as
+  the solver counts its own deterministic resource steps (cvc5's resource
+  units under `--rlimit-per`, Z3's `rlimit`), and a report of it SHALL state
+  the count as the solver counts it and SHALL NOT convert it to time. It is
+  deterministic, so it is part of the request identity and the cache key
+  (QSpec FR-306, FR-331).
+- `max_solver_time` SHALL bound each query to that many whole seconds of
+  wall-clock time, independent of the backend's own wall-clock limit and of
+  QSpec FR-331's `deadline_ms`. It is a wall-clock setting: the request
+  identity and the cache key exclude it, and a result it stops is stored by
+  no cache (QSpec FR-306).
+- Both are positive counts. Each has one setting name at every entry point:
+  `smt.max_solver_steps` and `smt.max_solver_time` (FR-255), with the limit
+  names `max_solver_steps` and `max_solver_time`.
+- **A stop under either settles V-7.** When the solver stops a query because
+  it reached one of these limits, CG SHALL report the stop as
+  `LimitStopped{limit: ReachedLimit{limit, value}}` (FR-126's
+  `ReachedLimit`), `limit` `SmtMaxSolverSteps` or `SmtMaxSolverTime` and
+  `value` its configured bound, and it settles V-7, `failed`, execution `resource-incomplete`,
+  `Incomplete(LimitReached{limit, value, setting})`, with `limit`
+  `max_solver_steps` or `max_solver_time`, `value` the configured bound and
+  `setting` `smt.max_solver_steps` or `smt.max_solver_time`, never
+  `InductionNotClosed`, `BoundReached` or `TimedOut` (ADR-018 V-6, V-7).
+  Raising the named setting lets the same query run further.
+- **Stop order.** A solver stop of a single-subject item and of an HP-2
+  item SHALL settle by the first of FR-182's stop rules that applies:
+  cancellation (`Cancelled{source}`), then the backend's own wall-clock
+  limit (`TimedOut`), then these two limits (`LimitReached`), then the
+  solver's own undecided answer, an internal resource stop that no request
+  limit names included (`InductionNotClosed{depth}`). A stop under
+  `max_solver_time` is rule 3, not rule 2: the backend's own wall clock is
+  a host bound the request does not name. When several apply, the first
+  wins, so no stop has two causes. CG's SMT map settles a single-subject
+  item's stop by these rules, as FR-182 settles an HP-2 item's.
 
 ### Refinement queries
 
@@ -749,6 +871,7 @@ pub struct HyperQueryRequest<'a> {
     pub subjects: &'a [ModelSubject],   // one per alias, in `clause.aliases` order
     pub instance: &'a [(Name, Key)],    // FR-183's object-parameter binding
     pub meter: Meter,                   // FR-107's meter, charged by `μ_U`
+    pub encoding: SmtEncodingLimits,    // the request's encoding limits (Size limits)
 }
 
 pub struct HyperQuery {
@@ -937,8 +1060,8 @@ impl HyperProductIdentity {
   constructor from members, so a caller cannot mint one (ADR-013 O-09: no
   re-mint of a clause identity). CG keeps the value it receives and passes
   it unchanged to `settle_hyper_smt` with the outcome.
-- **What it leaves out.** The query kind, the depth, the meter and every run
-  limit SHALL be no part of the identity: they choose a query of the
+- **What it leaves out.** The query kind, the depth, the meter, the
+  encoding limits and every run limit SHALL be no part of the identity: they choose a query of the
   product, or decide whether a run finishes, and `HyperQuery.kind` names the
   query. Two clauses that differ only in a fairness set give byte-equal
   scripts and different identities, because they are different items
@@ -1034,6 +1157,9 @@ impl HyperProductIdentity {
 | FR-315-AC-37 | Read by a `QF_LIA` solver: `Unrolling{depth: 3}` for AC-36's guarded `always holds(c.value <= 1)` `when c.value >= 3` is satisfiable, the monitor rejecting at position 3, where the activation starts at value 3; the model takes `inc` three times with no stutter, and CG reads the prefix `0, 1, 2, 3`, which FR-128 replays to `refuted`, FR-126-AC-16's counterexample. With the condition `c.value = 7`, `InductionStep{depth: 2}` is satisfiable, from two copies whose monitor state holds the activation, and `InductionBase{depth: 3}` and `InductionStep{depth: 3}` are both unsatisfiable, the outcome `Inductive{depth: 3}`. AC-36's false-extension query, whose condition `c.value + 2 = c.value` is defined and false at the values 0 and 1 and undefined at value 2, is satisfiable only by the condition failure at position 2; CG reads the prefix `0, 1, 2` (rule 4b, UE-3), which FR-128 replays to `refuted` with `kind: UndefinedEvaluation` at position 2, its site naming the activation (FR-126-AC-16). | Analysis (TC-1201) |
 | FR-315-AC-38 | Over a `Counter` subject with the universe `{c, d}`, both objects initially 0, and the operation `inc` with frame `modifies self.value` (FR-154's receiver scope), under infinite-trace, the TP-3 claim `always (holds(x.value = 1) implies eventually[0,1] holds(x.value = 2))` with `over (x: Counter)` has the instances `c` (index 0) and `d` (index 1). `Unrolling{depth: 2}` declares, at each position `i`, `s<i>.c.value`, `s<i>.d.value`, `m<i>.0`, `m<i>.1` in that order; asserts the monitor implications at each position for instance 0, whose letters read `s<i>.c.value`, and then for instance 1, whose letters read `s<i>.d.value`, both from the item's one tabulation; and its negated property has, at each position `p`, `(= m<p>.0 r)` and then `(= m<p>.1 r)`. `InductionStep{depth: 1}`'s distinctness assertion is `(not (and (= s1.c.value s0.c.value) (= s1.d.value s0.d.value) (= m1.0 m0.0) (= m1.1 m0.1)))`. FR-315-AC-23's TP-3 item over this subject encodes with `m<i>.0` and `m<i>.1` and is not refused. | Test (TC-1201) |
 | FR-315-AC-39 | Read by a `QF_LIA` solver: a model of AC-38's `Unrolling{depth: 2}` that applies `c.inc` and then `d.inc`, reaching `(1, 0)` and then `(1, 1)` as `(c, d)`, fails at position 2, where only instance 0's monitor rejects: `c` is 1 at position 1 and not 2 at position 2. CG names `over_binding` `c` (rule 4c) and reads the prefix of the two steps, which has no stutter, and FR-128 replays it to `refuted`. The model that applies `d.inc` and then `c.inc` names `over_binding` `d`. | Analysis (TC-1201) |
+| FR-315-AC-40 | Over FR-315-AC-1's `Counter` under event-position false-extension, `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)`, whose script declares eight constants, encoded under `SmtEncodingLimits` with `max_constants` 8 gives a script byte-equal to the one the defaults give; with `max_constants` 7 it refuses `too-large` naming the measure `constants`, value 8, limit 7 and setting `smt_encoding.max_constants`, with no script; with `max_script_bytes` 1 it refuses `too-large` naming `script-bytes`, limit 1 and setting `smt_encoding.max_script_bytes`. FR-315-AC-23's TP-3 item with `max_monitor_states` 1 refuses `too-large` naming `monitor-states`, a value above 1, limit 1 and setting `smt_encoding.max_monitor_states`. FR-315-AC-21's `Unrolling{depth: 1048576}` under the defaults names the setting `smt_encoding.max_constants` with its measure, value and limit. ADR-023 §8's `NonInterference` `InductionBase{depth: 1}` for instance `v`, whose script declares eight constants (FR-315-AC-7), with `encoding.max_constants` 7 refuses `too-large` naming `constants`, value 8, limit 7 and `smt_encoding.max_constants`, and its `HyperProductIdentity::of` equals the identity under the default encoding limits. Each call twice gives equal results. | Test (TC-1250) |
+| FR-315-AC-41 | CG's SMT map, read against these vectors: AC-40's `max_constants` 7 refusal, the item's next query with no earlier query having settled it, settles `failed`, execution `resource-incomplete`, `Incomplete(LimitReached{limit: SmtMaxConstants, value: 7, setting: smt_encoding.max_constants})`, never `unsupported`, V-5 or V-6, and its terminal record states the encoding limits used. For `always holds(c.value <= 3)` over `Counter`, an `InductionBase{depth: 1}` query that the solver stops at `max_solver_steps` 1 settles `Incomplete(LimitReached{max_solver_steps, 1, smt.max_solver_steps})`, and one stopped at `max_solver_time` 1 settles `Incomplete(LimitReached{max_solver_time, 1, smt.max_solver_time})`, each never `InductionNotClosed` or `TimedOut`; the same step-limit stop with the cancellation handle tripped settles `Incomplete(Cancelled{source})`, and with the backend's own wall-clock limit expired `Incomplete(TimedOut)`; a solver `unknown` with no limit reached settles `InductionNotClosed{depth: 1}`. Two requests that differ only in `max_solver_time` have equal request identity, and two that differ only in `max_solver_steps` differ. | Analysis (TC-1250) |
+| FR-315-AC-42 | A `ModelCheckRequest` (FR-126) for `always holds(c.value <= 3)` over `Counter` carries `smt_encoding` and `smt_run`, each `Default` when the caller sets no `smt_encoding.*` or `smt.*` setting. Two requests that differ only in `smt_encoding.max_constants` (7 and 8) have different request identities and cache keys, and a result recorded for one is not reused for the other; two that differ only in `smt.max_solver_time` have equal ones. The `CertificateRequest` that the settlement builds for an SMT proof of that item carries `smt_encoding` equal to the run's `ModelCheckRequest.smt_encoding`. | Test (TC-1250) |
 
 ## Dependencies
 
@@ -1059,6 +1185,8 @@ impl HyperProductIdentity {
   (its form), [FR-176](FR-176-check-a-universal-hyperproperty-by-self-composition.md)
   (the product the hyper queries encode), [FR-182](FR-182-settle-a-hyper-verdict.md)
   (the settlement of their outcomes).
+- [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) (the
+  settings of the encoding and solver run limits).
 - [FR-336](FR-336-bound-a-model-subject-by-its-universes.md) (the subject
   identity projection), ADR-013 O-07 and O-09 (the clause occurrence and
   its no-re-mint rule), [FR-059](FR-059-check-backend-dependency-direction.md)
@@ -1068,6 +1196,8 @@ impl HyperProductIdentity {
 ## References
 
 - SMT-LIB 2 standard.
+- The encoding limits as request settings and the solver run limits:
+  Linear STD-408.
 - Owning ticket: Linear QSL-366; hyper self-composition queries: Linear
   STD-311; hyper product identity: Linear STD-336; proof-query stutter,
   finite behaviours, deadlock-freedom, refusals and size limits: Linear
