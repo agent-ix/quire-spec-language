@@ -10,12 +10,23 @@ use quire_exact::Rational;
 use quire_semantic_value::checking::CheckingLimits;
 
 use crate::check::{
-    ArithmeticOp, CheckCause, CheckRefusal, CheckedGraph, CheckedHybridModel, CompareOp,
-    HybridTerm, ModeIndex, PackageDeclarations, ResetConstraint, VariableClass, VariableIndex,
+    ArithmeticOp, CaptureIndex, CheckCause, CheckRefusal, CheckedFunctionRef, CheckedGraph,
+    CheckedHybridClaim, CheckedHybridModel, CompareOp, HybridActivation, HybridClock,
+    HybridFormula, HybridHorizon, HybridInterval, HybridTerm, ModeIndex, PackageDeclarations,
+    ResetConstraint, TemporalProfile, TransitionIndex, VariableClass, VariableIndex,
 };
+use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-     profile p = \"quire.temporal.infinite-trace/v1\";\n";
+     profile v = \"quire.value.complete/v1\";\n\
+     profile p = \"quire.temporal.infinite-trace/v1\";\n\
+     profile t = \"quire.temporal.timed/v1\";\n\
+     profile e = \"quire.temporal.event-position.false-extension/v1\";\n\
+     dimension Time;\n\
+     dimension Mass;\n\
+     unit s : Time = rational(1, 1);\n\
+     unit ms : Time = rational(1, 1000) * s;\n\
+     unit kg : Mass = rational(1, 1);\n";
 
 /// FR-447's `Braking`, with the `{}`-marked holes mutations replace.
 fn braking(
@@ -550,5 +561,410 @@ fn pre_outside_a_reset_refuses() {
             "malformed-declaration",
             "pre(v)".to_owned()
         )
+    );
+}
+
+// ---------------------------------------------------------------- claims
+
+/// FR-447's `SlowEnough` over `Braking`, with `body` as its formula.
+fn slow_enough(body: &str) -> String {
+    format!(
+        "{}temporal SlowEnough using p over (h: Braking) clock \"model-time\" on origin {{ {body} }}\n",
+        use_case()
+    )
+}
+
+fn claim_of(declarations: &str) -> CheckedHybridClaim {
+    let graph = check(declarations).unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let claims = graph.hybrid_claims();
+    let [claim] = claims else {
+        panic!("one claim: {claims:?}");
+    };
+    claim.clone()
+}
+
+fn claim_refusal(declarations: &str) -> (Code, &'static str, String) {
+    sole_refusal(declarations)
+}
+
+fn rational(numerator: i64, denominator: i64) -> quire_exact::Rational {
+    quire_exact::Rational::new(numerator.into(), denominator.into()).expect("a denominator")
+}
+
+fn closed(lower: i64, upper: i64) -> HybridInterval {
+    HybridInterval {
+        lower: rational(lower, 1),
+        lower_open: false,
+        upper: Some(rational(upper, 1)),
+        upper_open: false,
+    }
+}
+
+fn holds_below_30() -> HybridFormula {
+    HybridFormula::Holds(HybridTerm::Compare(
+        CompareOp::Lt,
+        Box::new(variable(0)),
+        Box::new(constant(30)),
+    ))
+}
+
+/// FR-447-AC-3: `SlowEnough` checks to a `CheckedHybridClaim` over `Braking`
+/// with clock `ModelTime`, activation `Origin`, no capture and no fairness,
+/// the stated formula and horizon `Seconds(10)`; the nested, `until` and
+/// unbounded bodies give horizons 15, 4, `None` and `None`; `clock "wall"`
+/// and `h.w` refuse.
+#[trace("TC-1187", "FR-447-AC-3")]
+#[test]
+fn slow_enough_checks_to_a_claim_with_its_horizon() {
+    let claim = claim_of(&slow_enough("always [0, 10] holds(h.v < 30)"));
+    assert_eq!(claim.name.as_str(), "SlowEnough");
+    assert_eq!(claim.clock, HybridClock::ModelTime);
+    assert_eq!(claim.activation, HybridActivation::Origin);
+    assert!(claim.captures.is_empty() && claim.fairness.is_empty());
+    assert_eq!(
+        claim.formula,
+        HybridFormula::Always(Some(closed(0, 10)), Box::new(holds_below_30()))
+    );
+    assert_eq!(claim.horizon, Some(HybridHorizon::Seconds(rational(10, 1))));
+    assert_eq!(claim.profile, TemporalProfile::InfiniteTrace);
+
+    let horizon = |body: &str| claim_of(&slow_enough(body)).horizon;
+    assert_eq!(
+        horizon("always [0, 10] eventually [0, 5] holds(h.v < 30)"),
+        Some(HybridHorizon::Seconds(rational(15, 1)))
+    );
+    assert_eq!(
+        horizon("holds(h.v < 30) until [0, 4] holds(h.v = 0)"),
+        Some(HybridHorizon::Seconds(rational(4, 1)))
+    );
+    assert_eq!(horizon("always holds(h.v < 30)"), None);
+    assert_eq!(horizon("always [0, *] holds(h.v < 30)"), None);
+
+    let wall = slow_enough("always [0, 10] holds(h.v < 30)").replace("model-time", "wall");
+    assert_eq!(
+        claim_refusal(&wall),
+        (
+            Code::UnsupportedConstruct,
+            "declaration-form",
+            "\"wall\"".to_owned()
+        )
+    );
+    assert_eq!(
+        claim_refusal(&slow_enough("always [0, 10] holds(h.w < 30)")),
+        (Code::MissingDeclaration, "missing-name", "h.w".to_owned())
+    );
+}
+
+const SLOWS: &str = "temporal Slows using t over (h: Braking2) clock \"model-time\"\n\
+       on each (q: Braking2) when (q.v > 10) {\n\
+     fair Moving::Stopped;\n\
+     capture v0: Rational[0, 20; 1, 1] = q.v;\n\
+       eventually [0 s, 10500 ms] holds(h.v < v0 and h.v <= 10)\n\
+     }\n";
+
+fn with_braking2(claims: &str) -> String {
+    format!("{}{claims}", braking2())
+}
+
+/// FR-447-AC-9: `Slows` checks to a claim with the `Each` activation and its
+/// guard, one capture over the activation read, the weak whole fairness over
+/// `Moving`'s one transition, a body reading the capture, and horizon `None`;
+/// the same clause with no `clock` member and with `clock "model-time"` check
+/// equal; `fair strong each` resolves; and each mutation refuses.
+#[trace("TC-1220", "FR-447-AC-9")]
+#[test]
+fn slows_checks_activation_captures_and_fairness() {
+    let claim = claim_of(&with_braking2(SLOWS));
+    assert_eq!(claim.clock, HybridClock::ModelTime);
+    assert_eq!(claim.profile, TemporalProfile::Timed);
+    let HybridActivation::Each { parameter, guard } = &claim.activation else {
+        panic!("an each activation: {:?}", claim.activation);
+    };
+    assert_eq!(parameter.as_str(), "q");
+    assert_eq!(
+        guard,
+        &Some(HybridTerm::Compare(
+            CompareOp::Gt,
+            Box::new(HybridTerm::ActivationVariable(VariableIndex::new(0))),
+            Box::new(constant(10))
+        ))
+    );
+    let [capture] = claim.captures.as_slice() else {
+        panic!("one capture: {:?}", claim.captures);
+    };
+    assert_eq!(capture.name.as_str(), "v0");
+    assert_eq!(
+        capture.value,
+        HybridTerm::ActivationVariable(VariableIndex::new(0))
+    );
+    assert_eq!(claim.fairness.len(), 1);
+    assert_eq!(claim.fairness[0].kind, FairnessKind::Weak);
+    assert_eq!(claim.fairness[0].granularity, FairnessGranularity::Whole);
+    assert_eq!(
+        claim.fairness[0].transitions,
+        [(ModeIndex::new(0), TransitionIndex::new(0))]
+    );
+    let HybridFormula::Eventually(Some(interval), body) = &claim.formula else {
+        panic!("eventually: {:?}", claim.formula);
+    };
+    assert_eq!(interval.upper, Some(rational(21, 2)));
+    let HybridFormula::Holds(HybridTerm::Logic(_, left, _)) = &**body else {
+        panic!("a holds: {body:?}");
+    };
+    assert_eq!(
+        **left,
+        HybridTerm::Compare(
+            CompareOp::Lt,
+            Box::new(variable(0)),
+            Box::new(HybridTerm::Capture(CaptureIndex::new(0)))
+        )
+    );
+    assert_eq!(claim.horizon, None);
+
+    let without_clock = SLOWS.replace(" clock \"model-time\"", "");
+    assert_eq!(claim_of(&with_braking2(&without_clock)), claim);
+
+    let strong = SLOWS.replace("fair Moving::Stopped;", "fair strong each Moving;");
+    let strong = claim_of(&with_braking2(&strong));
+    assert_eq!(strong.fairness[0].kind, FairnessKind::Strong);
+    assert_eq!(strong.fairness[0].granularity, FairnessGranularity::Each);
+    assert_eq!(
+        strong.fairness[0].transitions,
+        [(ModeIndex::new(0), TransitionIndex::new(0))]
+    );
+
+    let refused = |text: String, code, tag, named: &str| {
+        assert_eq!(
+            claim_refusal(&with_braking2(&text)),
+            (code, tag, named.to_owned()),
+            "{text}"
+        );
+    };
+    refused(
+        SLOWS.replace("fair Moving::Stopped;", "fair Moving::Halted;"),
+        Code::MissingDeclaration,
+        "missing-name",
+        "Moving::Halted",
+    );
+    refused(
+        SLOWS.replace("on each (q: Braking2)", "on each (q: Braking)"),
+        Code::IllTyped,
+        "type-mismatch",
+        "Braking",
+    );
+    refused(
+        SLOWS.replace(
+            "capture v0: Rational[0, 20; 1, 1] = q.v;",
+            "capture v0: Rational[0, 20; 1, 1] = q.v;\ncapture v0: Boolean = true;",
+        ),
+        Code::ConflictingDeclaration,
+        "duplicate-declaration",
+        "v0",
+    );
+    refused(
+        SLOWS.replace("Rational[0, 20; 1, 1] = q.v", "Text[0, 3; nfc] = q.v"),
+        Code::IllTyped,
+        "type-mismatch",
+        "Text[0, 3; nfc]",
+    );
+    refused(
+        SLOWS
+            .replace("using t", "using e")
+            .replace("[0 s, 10500 ms]", "[0, 10]"),
+        Code::UnsupportedConstruct,
+        "expression-form",
+        "fair Moving::Stopped;",
+    );
+}
+
+/// FR-447-AC-10: past operators lower with their intervals and the reach
+/// rule gives their horizons; `model-steps` counts positions.
+#[trace("TC-1220", "FR-447-AC-10")]
+#[test]
+fn past_operators_lower_and_their_horizons_follow_the_reach_rule() {
+    let claim = claim_of(&slow_enough(
+        "always [0, 10] (holds(h.v = 0) implies once [0, 2] holds(h.v <= 1))",
+    ));
+    let HybridFormula::Always(_, body) = &claim.formula else {
+        panic!("always: {:?}", claim.formula);
+    };
+    let HybridFormula::Logic(crate::check::LogicOp::Implies, _, once) = &**body else {
+        panic!("implies: {body:?}");
+    };
+    assert!(matches!(&**once, HybridFormula::Once(Some(interval), _) if *interval == closed(0, 2)));
+    assert_eq!(claim.horizon, Some(HybridHorizon::Seconds(rational(10, 1))));
+
+    let horizon = |body: &str| claim_of(&slow_enough(body)).horizon;
+    assert_eq!(
+        horizon("always [0, 10] once [2, 3] holds(h.v < 30)"),
+        Some(HybridHorizon::Seconds(rational(10, 1)))
+    );
+    assert_eq!(
+        horizon("holds(h.v > 0) since [0, 3] eventually [0, 4] holds(h.v = 20)"),
+        Some(HybridHorizon::Seconds(rational(4, 1)))
+    );
+    assert_eq!(
+        horizon("historically holds(h.v <= 20)"),
+        Some(HybridHorizon::Seconds(rational(0, 1)))
+    );
+    assert_eq!(
+        horizon("holds(h.v = 0) triggered holds(h.v <= 20)"),
+        Some(HybridHorizon::Seconds(rational(0, 1)))
+    );
+    let steps =
+        slow_enough("eventually [0, 1] holds(h.v = 0)").replace("model-time", "model-steps");
+    assert_eq!(claim_of(&steps).horizon, Some(HybridHorizon::Positions(1)));
+}
+
+fn timed_claim(body: &str) -> String {
+    slow_enough(body).replace("using p", "using t")
+}
+
+/// FR-447-AC-11: timed intervals check to exact rational seconds, either end
+/// open or closed, `[q, *]`; the integer profile admits only whole closed
+/// bounds; bad dimensions, empty intervals and `model-steps` refuse.
+#[trace("TC-1220", "FR-447-AC-11")]
+#[test]
+fn timed_intervals_check_to_exact_rational_seconds_by_profile() {
+    let interval = |text: &str| -> HybridInterval {
+        let claim = claim_of(&timed_claim(text));
+        match claim.formula {
+            HybridFormula::Eventually(Some(interval), _)
+            | HybridFormula::Always(Some(interval), _) => interval,
+            other => panic!("an interval: {other:?}"),
+        }
+    };
+    assert_eq!(
+        interval("eventually [0 s, 1500 ms] holds(h.v < 19)"),
+        HybridInterval {
+            lower: rational(0, 1),
+            lower_open: false,
+            upper: Some(rational(3, 2)),
+            upper_open: false
+        }
+    );
+    assert_eq!(
+        interval("always (0.5 s, 2 s] holds(h.v <= 20)"),
+        HybridInterval {
+            lower: rational(1, 2),
+            lower_open: true,
+            upper: Some(rational(2, 1)),
+            upper_open: false
+        }
+    );
+    assert_eq!(
+        interval("eventually [0, 2] holds(h.v < 19)"),
+        HybridInterval {
+            lower: rational(0, 1),
+            lower_open: false,
+            upper: Some(rational(2, 1)),
+            upper_open: false
+        }
+    );
+    let unbounded = claim_of(&timed_claim(
+        "always [rational(1, 4) s, *] holds(h.v <= 20)",
+    ));
+    let HybridFormula::Always(Some(open), _) = &unbounded.formula else {
+        panic!("always: {:?}", unbounded.formula);
+    };
+    assert_eq!(open.lower, rational(1, 4));
+    assert_eq!(open.upper, None);
+    assert_eq!(unbounded.horizon, None);
+
+    let infinite = |body: &str| slow_enough(body);
+    for body in [
+        "eventually [0 s, 1500 ms] holds(h.v < 19)",
+        "always (0.5 s, 2 s] holds(h.v <= 20)",
+    ] {
+        assert_eq!(
+            claim_refusal(&infinite(body)).1,
+            "expression-form",
+            "{body}"
+        );
+    }
+    let whole = claim_of(&infinite("eventually [0 s, 2 s] holds(h.v < 19)"));
+    assert_eq!(whole.horizon, Some(HybridHorizon::Seconds(rational(2, 1))));
+    assert_eq!(
+        claim_of(&infinite("always [2, *] holds(h.v < 19)")).horizon,
+        None
+    );
+    assert_eq!(
+        claim_refusal(&timed_claim("eventually [2 kg, 3 kg] holds(h.v < 19)")),
+        (Code::IllTyped, "type-mismatch", "kg".to_owned())
+    );
+    assert_eq!(
+        claim_refusal(&timed_claim("eventually (1 s, 1 s] holds(h.v < 19)")),
+        (
+            Code::InvalidTimedModel,
+            "invalid-interval",
+            "(1 s, 1 s]".to_owned()
+        )
+    );
+    let steps =
+        slow_enough("eventually [0 s, 2 s] holds(h.v < 19)").replace("model-time", "model-steps");
+    assert_eq!(
+        claim_refusal(&steps),
+        (Code::IllTyped, "type-mismatch", "[0 s, 2 s]".to_owned())
+    );
+}
+
+/// FR-447 "Intervals": an operator with no interval is admitted only where
+/// the profile admits an unbounded operator.
+#[test]
+fn a_missing_interval_is_refused_under_a_bounded_profile() {
+    let bounded = slow_enough("always holds(h.v < 30)").replace("using p", "using e");
+    assert_eq!(
+        claim_refusal(&bounded),
+        (
+            Code::UnsupportedConstruct,
+            "expression-form",
+            "always".to_owned()
+        )
+    );
+    let timed = claim_of(&timed_claim("always holds(h.v < 30)"));
+    assert_eq!(timed.horizon, None);
+}
+
+/// FR-447-AC-7: a call of a pure function lowers to `Call`, a real argument
+/// to an `Integer` parameter refuses at the call, and a body outside the
+/// hybrid expression forms refuses at the call.
+#[trace("TC-1220", "FR-447-AC-7")]
+#[test]
+fn calls_of_pure_functions_lower_and_foreign_bodies_refuse() {
+    let drag = "function drag using v(s: Rational[-100, 100; 1, 1]): \
+                Rational[-100, 100; 1, 1] pure { -s }\n";
+    let with_flow = |flow: &str| {
+        format!(
+            "{drag}{}",
+            braking(INVARIANT, flow, TRANSITION, STOPPED_FLOW)
+        )
+    };
+    let model = model(&with_flow("v' = drag(v); a' = 0; t' = 1;"));
+    assert_eq!(
+        model.modes[0].rates[0],
+        HybridTerm::Call(CheckedFunctionRef::new(0), vec![variable(0)])
+    );
+    let integer = "function integral using v(n: Integer): Integer pure { n }\n";
+    let flow = braking(
+        INVARIANT,
+        "v' = integral(v); a' = 0; t' = 1;",
+        TRANSITION,
+        STOPPED_FLOW,
+    );
+    assert_eq!(
+        sole_refusal(&format!("{integer}{flow}")),
+        (Code::IllTyped, "type-mismatch", "integral(v)".to_owned())
+    );
+    let foreign = "function bad using v(s: Rational[0, 10; 1, 1]): Rational[0, 10; 1, 1] \
+                   pure { if \"x\" = \"x\" then s else s }\n";
+    let flow = braking(
+        INVARIANT,
+        "v' = bad(v); a' = 0; t' = 1;",
+        TRANSITION,
+        STOPPED_FLOW,
+    );
+    assert_eq!(
+        sole_refusal(&format!("{foreign}{flow}")),
+        (Code::IllTyped, "type-mismatch", "bad(v)".to_owned())
     );
 }

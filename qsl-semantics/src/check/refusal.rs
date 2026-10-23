@@ -1155,6 +1155,14 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// A clause over a non-hybrid subject that writes no `clock` member: its
+    /// subject's default clock (QSpec FR-252, QSL FR-233 "Default") is not
+    /// built, so the clause is refused rather than stepped by a guessed
+    /// clock. Located at the clause.
+    MissingClock {
+        /// The clause's span.
+        span: Span,
+    },
 }
 
 /// Why a quantity's unit is not a time unit (FR-230 "The time dimension and
@@ -1205,7 +1213,8 @@ impl TemporalCause {
             | Self::ZeroDenominator { span }
             | Self::TimeQuantity { span, .. }
             | Self::TimedProfileWithoutModelTime { span, .. }
-            | Self::TimedTraceSubject { span } => *span,
+            | Self::TimedTraceSubject { span }
+            | Self::MissingClock { span } => *span,
         }
     }
 
@@ -1220,7 +1229,8 @@ impl TemporalCause {
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
-            | Self::TimedTraceSubject { .. } => Code::UnsupportedConstruct,
+            | Self::TimedTraceSubject { .. }
+            | Self::MissingClock { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
             Self::InvalidTimedInterval { .. } | Self::ModelTimeOnUntimedModel { .. } => {
                 Code::InvalidTimedModel
@@ -1259,7 +1269,8 @@ impl TemporalCause {
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
-            | Self::TimedTraceSubject { .. } => "not-yet-implemented",
+            | Self::TimedTraceSubject { .. }
+            | Self::MissingClock { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",

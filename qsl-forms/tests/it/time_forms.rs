@@ -8,7 +8,8 @@ use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, BuiltinType, DeclarationForm, ExactValueKind, FormsCause, IntervalUpper,
     OperatorInterval, ParsedUnit, QuantityForm, TemporalNodeForm, TemporalOperatorForm,
-    TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TypeFormHead, UrgentForm, UrgentTarget,
+    TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedUpper, TypeFormHead, UrgentForm,
+    UrgentTarget,
 };
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::Integer;
@@ -74,6 +75,14 @@ fn quantity(form: &QuantityForm) -> ((ExactValueKind, Integer, Integer), &str) {
         ),
         form.unit.name.as_str(),
     )
+}
+
+/// The quantity of a finite upper end.
+fn finite(upper: &TimedUpper) -> &QuantityForm {
+    let TimedUpper::Finite(quantity) = upper else {
+        panic!("a finite upper end: {upper:?}");
+    };
+    quantity
 }
 
 fn time_source(form: &DeclarationForm) -> &TimeSourceForm {
@@ -294,7 +303,11 @@ fn timed_step_and_absent_intervals_build_as_written() {
             "{formula}"
         );
         assert_eq!(quantity(&timed.lower), (natural(lower), "ms"), "{formula}");
-        assert_eq!(quantity(&timed.upper), (natural(upper), "ms"), "{formula}");
+        assert_eq!(
+            quantity(finite(&timed.upper)),
+            (natural(upper), "ms"),
+            "{formula}"
+        );
     }
     assert_eq!(clause_operator("always (holds(k.done))").interval, None);
     let Some(OperatorInterval::Steps(steps)) =
@@ -320,7 +333,7 @@ fn exact_magnitudes_build_and_meaning_checks_wait_for_s3() {
         panic!("a timed interval");
     };
     assert_eq!(
-        quantity(&timed.upper),
+        quantity(finite(&timed.upper)),
         (exact(ExactValueKind::DecimalLiteral, 3, 3), "s")
     );
     for formula in [
@@ -377,15 +390,14 @@ fn diagnostic_span(parsed: &qsl_cst::ParsedSource) -> Span {
 }
 
 /// FR-393-AC-5 (TC-1078 step 5): a bracketed interval with a step bound at
-/// one end and a quantity at the other, or a timed interval with `*`, fails
-/// at S1 at the upper bound's span and builds no form.
+/// one end and a quantity at the other fails at S1 at the upper bound's span
+/// and builds no form. (`[q, *]` is FR-447's, admitted at S1.)
 #[trace("TC-1078", "FR-393-AC-5")]
 #[test]
 fn mixed_interval_bounds_fail_at_s1_at_the_upper_bound() {
     for (formula, interval, upper) in [
         ("eventually[0, 3 ms] holds(k.done)", "[0, 3 ms]", "3 ms"),
         ("eventually[0 ms, 3] holds(k.done)", "[0 ms, 3]", "3"),
-        ("eventually[0 ms, *] holds(k.done)", "[0 ms, *]", "*"),
     ] {
         let (text, parsed) = refused(formula);
         assert_eq!(

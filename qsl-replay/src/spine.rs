@@ -955,6 +955,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::Abstraction(refusal) => {
             message = format!("{message}: in an `abstraction` declaration: {refusal:?}");
         }
+        CheckCause::Hybrid(cause) => {
+            message = format!("{message}: in a `hybrid` declaration: {cause:?}");
+        }
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
         }
@@ -1222,6 +1225,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
                 TemporalCause::TimedTraceSubject { .. } => {
                     format!("{message}: a timed clause over a trace subject is not checked yet")
+                }
+                TemporalCause::MissingClock { .. } => {
+                    format!("{message}: a clause over this subject must write a `clock` member")
                 }
             };
         }
