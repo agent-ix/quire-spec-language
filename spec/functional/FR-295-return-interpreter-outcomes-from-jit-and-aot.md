@@ -40,10 +40,13 @@ the same package, entry, arguments, environment and accounting limits
    grouped if this holds.
 5. **Limits.** Node, byte and work limits bound a run, checked explicitly
    (FR-277); depth is not a limit, and no run recurses on the native stack. Compile work and code size are bounded by
-   `PrepareLimits`, and reaching one is a `Limit` failure of `prepare`.
+   `PrepareLimits.work_units` and `PrepareLimits.code_bytes` (settings
+   `prepare.work_units` and `prepare.code_bytes`, FR-294), and reaching one
+   is a `Limit` failure of `prepare`.
 6. **Failures.** An internal error of the backend is `Fault` (exit 30) and
    never a verdict. An entry the backend cannot translate settles
-   `Unsupported` for that entry.
+   FR-294's `UnsupportedEntry` for that entry, naming the first construct it
+   cannot translate.
 7. **No effects.** Generated code performs no I/O and calls only the kernel
    and the semantic-value runtime.
 
@@ -52,6 +55,32 @@ The outcome carries no member naming the backend that ran.
 Each non-interpreter backend runs the conformance corpus and generated
 programs against the interpreter, and any difference fails the gate (ADR-029
 EB-5, QSpec FR-306-AC-1).
+
+### The parity program generator
+
+The gate's generated programs come from one seeded generator. Given a 64-bit
+seed and a count, it yields that many native source units, each with its
+argument tuples, and the same seed and count yield byte-equal units and
+tuples. The gate's default seed is a fixed published constant; the caller
+may supply another.
+
+- **Forms.** A unit is built from ADR-012's `Value` family parsing forms:
+  literals, operators, `let`, `if`, calls, records, collections and function
+  declarations.
+- **Types.** Parameters and results range over `Boolean`, bounded `Int`,
+  `Rational`, `Decimal` and `Text`, and records and collections of them.
+- **Size.** A unit holds 1 to 8 `pure` functions, each with 0 to 4
+  parameters and a body of at most 64 expression nodes. A body calls only
+  functions declared earlier in the unit, so no unit recurses.
+- **Admission.** Only units that `check` admits count toward the requested
+  count; the generator draws again for a unit `check` refuses, and the gate
+  reports how many it discarded.
+- **Arguments.** Each function gets 4 argument tuples within its declared
+  parameter types, among them each bounded `Int` parameter's two range ends
+  and, where a body divides by a parameter, a zero divisor.
+- **Report.** A difference names the seed, the unit's index, the unit's
+  source bytes, the entry, the arguments and both outcomes; running the
+  generator with that seed and taking that index reproduces the unit.
 
 QSL's code-generation boundary for AOT is the v2 package (ADR-029 EB-6). CG
 generates from S5 IR, negotiated per item before emission. An item not
@@ -88,15 +117,28 @@ from `prepare`.
 - The parity gate shall run each non-interpreter backend over the
   conformance corpus and generated programs, and fail on any difference from
   the interpreter.
+- The parity gate shall take its generated programs from the parity program
+  generator, at the gate's default seed unless the caller supplies another.
+- The parity program generator shall yield byte-equal source units and
+  argument tuples for the same seed and count.
+- The parity program generator shall count only units that `check` admits.
+- If the parity gate finds a difference, then it shall report the seed, the
+  unit's index, its source bytes, the entry, the arguments and both
+  outcomes.
+- When a backend settles a generated entry `UnsupportedEntry`, the parity
+  gate shall list the entry with its cause in its report and compare every
+  other entry.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-295-AC-1 | Over the conformance corpus and 10,000 property-generated programs with arguments, each backend's outcome, cause, `Location` and loss records equal the interpreter's; a deliberately wrong backend that rounds one decimal operation fails the gate, naming the program and both outcomes. | Test (TC-779) |
-| FR-295-AC-2 | For FR-100-AC-6's `seven` with `work_units` 0 to 5, and for a property-generated set of programs and accounting limits, each backend's `Incomplete` names the same limit at the same charge point as the interpreter's. | Test (TC-780) |
-| FR-295-AC-3 | FR-262-AC-1's `count` called with `100000`, on a thread with a 512 KiB stack, returns the interpreter's outcome on each backend, both with `work_units` sized for it and with `work_units` one below the run's measured spend; a `PrepareLimits` code-size bound of 1 makes `prepare` return a `Limit` failure naming it. | Test (TC-780) |
+| FR-295-AC-1 | Over the conformance corpus and the 10,000 programs the parity program generator yields at the gate's default seed, with their arguments, each backend's outcome, cause, `Location` and loss records equal the interpreter's; a deliberately wrong backend that rounds one decimal operation fails the gate, naming the program and both outcomes. | Test (TC-779) |
+| FR-295-AC-2 | For FR-100-AC-6's `seven` with `work_units` 0 to 5, and for the first 1,000 generated programs at the default seed, each call run with `work_units` drawn by the same seed from 0 to the interpreter's measured spend for that call, each backend's `Incomplete` names the same limit at the same charge point as the interpreter's. | Test (TC-780) |
+| FR-295-AC-3 | FR-262-AC-1's `count` called with `100000`, on a thread with a 512 KiB stack, returns the interpreter's outcome on each backend, both with `work_units` sized for it and with `work_units` one below the run's measured spend; `prepare.code_bytes` set to 1 makes `prepare` return `PrepareFailure::Limit(LimitExceeded)` naming `prepare.code_bytes`, and `prepare.work_units` set to 0 makes it return the same failure naming `prepare.work_units`. | Test (TC-780) |
 | FR-295-AC-4 | A backend made to hit an injected internal error returns `Fault`, exit 30, and no value. The JSON outcome documents (FR-286) of one call on the interpreter and on each other backend are byte-equal. | Test (TC-780) |
+| FR-295-AC-5 | Two generator runs at the default seed and count 10,000 yield byte-equal source units and argument tuples, and a run at another seed yields a different first unit. Every unit the run yields is admitted by `check`, holds 1 to 8 functions of 0 to 4 parameters with bodies of at most 64 expression nodes, and calls only earlier functions. Over the 10,000 units, each of the eight listed forms and each of the five scalar types occurs in at least 100 units, every bounded `Int` parameter's tuples include both range ends, and the interpreter's outcomes include at least one `Completed` and one `Undefined`. A gate run with FR-295-AC-1's rounding backend names the seed, the unit's index, its source bytes, the entry, the arguments and both outcomes, and regenerating at that seed and index yields byte-equal source. | Test (TC-779) |
+| FR-295-AC-6 | A test backend that cannot translate one expression form, run through the gate at the default seed, settles each generated entry using that form `UnsupportedEntry` with construct `ExpressionForm` naming the form; the gate report lists each such entry with its `UnsupportedEntry`, compares every other entry with the interpreter, and passes; the same backend with FR-295-AC-1's rounding fault added fails the gate. | Test (TC-779) |
 
 ## Dependencies
 
@@ -115,5 +157,5 @@ benchmark picks the JIT's code generator, which these rules bind either way.
 
 - QSL-393 (V1-A06a): checked-only AOT and JIT.
 - QSL-390 (ARCH-50): owner ruling 3, recorded on the ticket.
-- RES-56: the JIT code-generator benchmark.
+- RES-56: the JIT code-generator benchmark, which these rules do not depend on.
 - QSpec FR-306 (STD-141): the QSpec half.

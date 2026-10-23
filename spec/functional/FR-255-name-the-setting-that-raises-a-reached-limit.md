@@ -77,7 +77,7 @@ used as given. The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`),
 NFR-012 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-111
 (`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
-FR-003 (`format.*`), and FR-101 (`explore.*`). The analysis engines' limits
+FR-003 (`format.*`), FR-294 (`prepare.*`), and FR-101 (`explore.*`). The analysis engines' limits
 have their own table (Engine limit setting names).
 
 | Setting | Stage | Limit kind | Library field | Default |
@@ -126,6 +126,8 @@ have their own table (Engine limit setting names).
 | `i2.work_units` | I2 v2 reader | work budget | the v2 read limits' work | 1000000 units |
 | `explore.states` | exploration | node count | exploration `Limits` max_states | 10000000 states |
 | `explore.transitions` | exploration | edge count | exploration `Limits` max_transitions | 100000000 transitions |
+| `prepare.work_units` | execution-backend prepare | work budget | `PrepareLimits` work_units | 16777216 units |
+| `prepare.code_bytes` | execution-backend prepare | input bytes | `PrepareLimits` code_bytes | 67108864 bytes |
 
 S2 has no limit of its own (FR-257). `replay.input_bytes` bounds the replay
 request and envelope bytes themselves, so it is raised from the library and
@@ -268,7 +270,7 @@ these names through the same operand grammar as the stage settings
    | --- | --- | --- |
    | `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1` (caller budgets) | `resource_exhausted`/`insufficient-next-charge` for a denied charge, a walk ceiling (`model.ancestor_steps`, `model.family_steps`, `admission.ancestor_steps`) being a denied one-edge charge (FR-082-AC-3, FR-083, QSpec FR-150-AC-11), wherever the ceiling is read, observation admission's re-run walks included | `model.*`, `admission.*` |
    | the format, intake and library resolution budgets | `resource_exhausted`/`input-bytes-exceeded`, `resource_exhausted`/`intake-limit-exceeded`, `resource_exhausted`/`insufficient-next-charge` | `format.output_bytes`, `intake.input_bytes`, `library.*` |
-   | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes` |
+   | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes`, `prepare.*` |
    | the supplied-value limits type (pre-call phase budgets) | no catalog code: the phase-marked pre-call limit record of FR-277 (replay: `inconclusive`/`NoValue`), never a kernel charge point | FR-277's `supplied.admission_work_units` and `supplied.conversion_work_units`, which are not setting-table rows |
    | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
    | an engine's limits type | no catalog code: the engine stops and the item settles `incomplete`, `LimitReached{limit, value, setting}` (FR-127 V-7, QSpec FR-461 Behavior 5) | the engine table's names |
