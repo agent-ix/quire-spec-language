@@ -20,10 +20,11 @@ use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::{CatalogCode, CatalogCoded, IdentityLimits, InternalFault};
+use qsl_foundation::IdentityLimits;
 use qsl_semantics::family::ClassifyFailure;
 use quire_canonical::{Document, FixedShape};
 use quire_exact::{Integer, IntegerInterval, ValueType};
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
 
@@ -809,7 +810,7 @@ fn cancellation_stops_the_run_and_returns_the_frontier() {
     );
     assert_eq!(
         outcome.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
 }
 
@@ -836,7 +837,7 @@ fn horizon_n_reaches_its_bound_and_n_plus_one_is_exhaustive() {
     );
     assert_eq!(
         stopped.category(),
-        qsl_foundation::diagnostic::Category::Inconclusive
+        quire_semantic_value::catalog::Category::Inconclusive
     );
 
     let completed = explore_to_horizon(&system, generous_limits(), 3);
@@ -1155,7 +1156,7 @@ fn bounded_domain_request_explores() {
 #[trace("TC-439", "FR-097-AC-5")]
 #[test]
 fn tc_439_explore_outcomes_map_to_their_o16_category() {
-    use qsl_foundation::diagnostic::Category;
+    use quire_semantic_value::catalog::Category;
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("a"), "1"), ("1", op("b"), "2")]);
     let exhaustive = explore_outcome(
         &system,
@@ -1835,7 +1836,7 @@ fn sample_474(system: &EdgeGraph, seed: u64, max_steps: usize) -> Trace<Transiti
 #[trace("TC-474", "FR-101-AC-12", "FR-097-AC-5")]
 #[test]
 fn tc_474_an_expansion_stop_ends_exploration_stopped() {
-    use qsl_foundation::diagnostic::Category;
+    use quire_semantic_value::catalog::Category;
     for (cause, category) in [
         (EXHAUSTED, Category::Incomplete),
         (BROKEN, Category::InternalFailure),

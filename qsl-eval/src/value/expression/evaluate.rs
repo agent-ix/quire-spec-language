@@ -20,19 +20,21 @@ use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
     SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
-use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
+use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
+use qsl_foundation::source::provenance::SourceRegion;
 use qsl_semantics::check::{
     Arithmetic, AuthoredBound, CheckedGraph, CheckedLiteral, CheckedNode, Connective,
     DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind,
     RecordSlot, Scope, Slot, Visit,
 };
-use qsl_semantics::family::FamilyOutcome;
-use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
+use quire_eval::Evaluation;
+use quire_eval::FamilyOutcome;
+use quire_eval::FamilyResult;
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
@@ -52,6 +54,7 @@ use quire_exact::{
 };
 use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
     operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
     EqualityOperator, FieldRef, TypeEnvironment,
@@ -65,53 +68,37 @@ use quire_semantic_value::quantity::{
 use quire_semantic_value::relationship_extent::Resolution;
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 
-/// A completed, undefined, refused, incomplete or family-owned evaluation
-/// result, located at the expression where a non-completed outcome
-/// originated (FR-090, ruling on FR-090-OQ-3). No `Clone`: `FamilyOutcome`'s
-/// `FamilyEvaluated` arm holds a `Box<dyn CatalogCoded>` or
-/// `Box<dyn UndefinedCoded>`, neither `Clone`.
+/// FR-096, ADR-013 O-17: `evaluation`'s refusal as an O-17 [`RefusalRecord`]:
+/// the family cause's code and catalog fields, and, as its locus, the
+/// evaluation's location resolved by `resolve`. The locus is absent when the
+/// location is `None` or `resolve` names no region for it (a tree not read
+/// from a source unit).
 ///
-/// quire:canonical
-#[derive(Debug)]
-pub struct Evaluation {
-    /// The outcome.
-    pub outcome: FamilyOutcome<Value>,
-    /// Where a non-completed outcome originated; `None` when completed.
-    pub location: Option<Location>,
-    /// The loss records of the operations a completed evaluation performed,
-    /// in evaluation order; empty unless completed.
-    pub losses: Vec<LocatedLoss>,
-}
-
-impl Evaluation {
-    /// FR-096, ADR-013 O-17: this evaluation's refusal as an O-17
-    /// [`RefusalRecord`]: the family cause's code and catalog fields, and,
-    /// as its locus, [`Self::location`] resolved by `graph`, the checked
-    /// package the evaluation ran. The locus is absent when the location is
-    /// `None` or names a tree not read from a source unit.
-    ///
-    /// `graph` must be the checked package this evaluation ran: a location
-    /// is a position in that package's declarations, and another graph
-    /// resolves it to another package's region.
-    ///
-    /// `None` when no record exists: the outcome is no refusal, a family
-    /// cause has no FR-096 key-table row, or a kernel refusal has no
-    /// catalog code (FR-096-AC-8, [`kernel_refusal_record`]).
-    pub fn refusal_record(&self, graph: &CheckedGraph) -> Option<RefusalRecord> {
-        let locus = self
-            .location
-            .as_ref()
-            .and_then(|location| graph.region(location))
-            .map(Locus::Region);
-        match &self.outcome {
-            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
-                cause.refusal_record(locus)
-            }
-            FamilyOutcome::Evaluated(Outcome::Refused(refusal)) => {
-                kernel_refusal_record(refusal, locus)
-            }
-            _ => None,
+/// `resolve` must be the region resolver of the checked package the
+/// evaluation ran (`CheckedGraph::region`): a location is a position in that
+/// package's declarations, and another package resolves it to another
+/// region.
+///
+/// `None` when no record exists: the outcome is no refusal, a family cause
+/// has no FR-096 key-table row, or a kernel refusal has no catalog code
+/// (FR-096-AC-8, [`kernel_refusal_record`]).
+pub fn refusal_record(
+    evaluation: &Evaluation,
+    resolve: impl Fn(&Location) -> Option<SourceRegion>,
+) -> Option<RefusalRecord> {
+    let locus = evaluation
+        .location
+        .as_ref()
+        .and_then(resolve)
+        .map(Locus::Region);
+    match &evaluation.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+            qsl_foundation::diagnostic::refusal_record(cause.as_ref(), locus)
         }
+        FamilyOutcome::Evaluated(Outcome::Refused(refusal)) => {
+            kernel_refusal_record(refusal, locus)
+        }
+        _ => None,
     }
 }
 
@@ -3763,7 +3750,6 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
-    use qsl_foundation::diagnostic::Category;
     use qsl_semantics::check::PackageDeclarations;
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
@@ -3777,6 +3763,7 @@ mod tests {
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;
 

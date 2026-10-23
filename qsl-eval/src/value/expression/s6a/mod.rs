@@ -12,9 +12,10 @@
 //! (`qsl_semantics::check::ValueFunctionFamily`) sits in the trait's own crate once
 //! `check` is `qsl-semantics`, which the orphan rule (E0117) requires.
 
-use qsl_foundation::diagnostic::InternalFault;
-use qsl_semantics::family::{EvalOutcome, FamilyContract, FamilyKind};
+use qsl_semantics::family::{FamilyContract, FamilyKind};
+use quire_eval::EvalOutcome;
 use quire_exact::Meter;
+use quire_semantic_value::catalog::InternalFault;
 
 /// FR-107: `ProtocolClause`'s own `ReferenceEvaluation` half,
 /// nested here since it implements this module's own trait (TC-170's own
