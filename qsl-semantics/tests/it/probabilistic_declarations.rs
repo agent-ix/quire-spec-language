@@ -3054,3 +3054,52 @@ fn a_cancelled_check_ends_cancelled() {
         }
     }
 }
+
+/// [`service_document`] plus a process `Flow` declaring `go`.
+fn service_document_with_flow() -> Vec<u8> {
+    let mut envelope: Value =
+        serde_json::from_slice(&service_document()).expect("the document is JSON");
+    envelope["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(construct(
+            "process",
+            meaning::PROCESS,
+            "record",
+            json!({"identityFields": "required", "steps": "required"}),
+        ));
+    let go = id("Flow/go");
+    let step = id("Flow/receive");
+    envelope["types"]
+        .as_array_mut()
+        .expect("types")
+        .push(definition(
+            "Flow",
+            "process",
+            json!({
+                "identityFields": [id("Flow/x")],
+                "fields": [wire_field(&id("Flow/x"), "x", "ix://quire/native/Boolean", "required", 1)],
+                "operations": [{
+                    "identity": go, "name": "go", "params": [], "pre": [], "post": [],
+                    "origin": generated("Flow/go"),
+                    "frame": {"modifies": [], "creates": [], "deletes": []},
+                }],
+                "steps": [{
+                    "identity": step, "name": "receive", "stepKind": "command",
+                    "consumes": [], "emits": [], "origin": generated("Flow/receive"),
+                }],
+            }),
+        ));
+    envelope.to_string().into_bytes()
+}
+
+/// TC-620: a process in the domain package is not an object type of the
+/// workload's model, so `Steady` over `Service`'s `Server` operations stays
+/// complete and checks.
+#[trace("TC-620")]
+#[test]
+fn a_process_in_the_package_does_not_make_a_workload_incomplete() {
+    assemble_over(&service_document_with_flow(), &service(None, ""))
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+}

@@ -10,8 +10,8 @@ use qsl_semantics::check::{
     CheckCause, CheckRefusal, CollectionLoss, CollectionProperty, Obligation, PackageDeclarations,
     ProvedInterval,
 };
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::FamilyOutcome;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -1445,9 +1445,9 @@ fn coerce_and_count_refusals_carry_the_declared_domain() {
             &mut Meter::new(UNLIMITED),
         )
         .unwrap();
-    let record = evaluation
-        .refusal_record(package.graph())
-        .expect("integer_out_of_domain has a record");
+    let record =
+        qsl_eval::value::refusal_record(&evaluation, |location| package.graph().region(location))
+            .expect("integer_out_of_domain has a record");
     assert_eq!(
         (record.code().code(), record.code().cause()),
         ("integer_out_of_domain", "outside-domain")
