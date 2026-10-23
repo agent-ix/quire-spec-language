@@ -36,5 +36,5 @@ Tag the tests `#[trace("TC-569", "FR-152-AC-n")]`.
 - Step 2: 10 and 18 stored model states; every check holds.
 - Step 3: each result is in the orbit with its permutation; one or two stored states for the orbit.
 - Step 4: byte-equal keys and equal permutations; the state and the identity.
-- Step 5: 2 `work_units`; none; 3 or 4; `Stopped{ResourceExhausted,
+- Step 5: 2 or 3 `work_units`; none; 3 to 7; `Stopped{ResourceExhausted,
   Some({EvaluationMeter, 1})}` with no state expanded; a completed run.

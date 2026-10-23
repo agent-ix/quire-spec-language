@@ -217,6 +217,10 @@ member of its own.
     state, or false at an earlier state (a boundary state, which the engine
     never expands), or a different cause, SHALL settle `inconclusive`,
     `ReplayParity`.
+  A protocol counterexample whose `where.locus` names a state constraint
+  replays by this rule through `ProtocolSystem` (FR-217), the constraint
+  read over each replayed state's model state as FR-158 "Protocol subjects"
+  reads it (FR-227).
 - For `kind: Deadlock` the executor SHALL enumerate the transition
   identities enabled at the last replayed state through `ModelSystem`, and
   evaluate the `terminal when` predicate declared for the state model
