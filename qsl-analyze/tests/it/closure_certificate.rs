@@ -269,7 +269,7 @@ impl Invariant {
     }
 
     /// A request for `item` over this clause's package.
-    fn request_with<'w>(
+    pub(crate) fn request_with<'w>(
         &'w self,
         world: &'w World,
         item: ModelCheckItem<'w>,

@@ -34,7 +34,7 @@ use crate::model_check::replay::{
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
-    TerminalRecord, TerminalValue, UnavailabilityCause,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 use qsl_eval::simulation::protocol::{
     activates_on_each, live_instance_bound, ProtocolTransition, SubjectMemory, WeakAccessShape,
@@ -145,8 +145,25 @@ impl<T: SubjectTransition> ModelCheckRecord<T> {
     /// `request_index`, produced by `backend` (FR-280, FR-281). Its
     /// counterexample stays on this record: the terminal record carries the
     /// value alone.
-    pub fn into_terminal(self, request_index: RequestIndex, backend: BackendId) -> TerminalRecord {
-        TerminalRecord::settled(request_index, Some(backend), self.value, None)
+    ///
+    /// # Errors
+    ///
+    /// [`TerminalRecordRefusal::RefutedWithoutCounterexample`] for a
+    /// `refuted` value with no counterexample: the settlement keeps one only
+    /// when replay reproduced it.
+    pub fn to_terminal(
+        &self,
+        request_index: RequestIndex,
+        backend: BackendId,
+    ) -> Result<TerminalRecord, TerminalRecordRefusal> {
+        if matches!(self.value, TerminalValue::Refuted) && self.counterexample.is_none() {
+            return Err(TerminalRecordRefusal::RefutedWithoutCounterexample);
+        }
+        Ok(TerminalRecord::with_backend(
+            request_index,
+            backend,
+            self.value.clone(),
+        ))
     }
 }
 

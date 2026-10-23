@@ -11,21 +11,16 @@
 //! registry; an item whose claim kind no engine advertises settles
 //! `unsupported`, naming the kind.
 //!
-//! Settlement is one of two maps, never a second opinion on the other:
-//!
-//! - An engine whose results already have a layer-6 settlement map (EN-1's
-//!   `settle_model_check`, EN-4's `settle_statistical`) reports the settled
-//!   record ([`EngineReport::Model`], [`EngineReport::Statistical`]). EN-4
-//!   settles through [`crate::statistical::provider::serve_request`], the
-//!   same call the FR-280 provider entry makes, so `analyze` and the entry
-//!   write one record for one item.
-//! - Any other engine reports a [`Proof`] or a [`CounterexampleReplay`] and
-//!   `analyze` settles it: a proof is `certified` only after the engine's
-//!   certificate checker accepts, a rejected certificate is `inconclusive`
-//!   with `CertificateRejected`, a proof with no core checker is `proved`,
-//!   `uncertified`; a counterexample is `refuted` only after replay
-//!   reproduces it, and is `inconclusive` with `replay_parity` or
-//!   `replay_refused` otherwise.
+//! Settlement is the engine's own layer-6 map, never `analyze`'s opinion of
+//! an engine's evidence: EN-1's results settle through `settle_model_check`
+//! (its certificate checker and counterexample replay), EN-4's through
+//! [`crate::statistical::provider::serve_request`], the same call the FR-280
+//! provider entry makes, so `analyze` and the entry write one record for one
+//! item. The item adapters ([`model_item`], [`statistical_item`]) are the
+//! only constructors of an engine's work, so no caller can hand `analyze` a
+//! pre-built verdict, a checker of its own choosing or a replay outcome. An
+//! engine with no adapter has no way to report a proof or a counterexample
+//! until its checker and replay exist in the core (EN-5: QSL-574..576).
 //!
 //! A cancelled [`Cancel`] settles every item not yet run `incomplete`, with
 //! the cancellation cause kept. An item an engine refuses with no FR-331
@@ -37,12 +32,11 @@ mod items;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::StatisticalRecord;
 use qsl_replay::statistical::UnsettledRefusal;
+use qsl_replay::CounterexampleKind;
 use qsl_replay::{
-    CertificateLocus, CertificateRule, DisagreementCause, IncompleteCause, InconclusiveCause,
-    ModelCheckRecord, OutcomeItem, ProofBasis, ReplayRefusal, TerminalRecord, TerminalValue,
+    IncompleteCause, ModelCheckRecord, OutcomeItem, TerminalRecord, TerminalValue,
     UnavailabilityCause, UndefinedEvaluation,
 };
-use qsl_replay::{Certification, CounterexampleKind};
 use qsl_route::{
     BackendDescriptor, CandidateOutcome, ItemEvidence, ManifestDigest, ProviderOrigin,
     RegistrationRefusal, Registry,
@@ -62,8 +56,9 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// The engine a descriptor describes.
-    pub fn new(descriptor: BackendDescriptor) -> Self {
+    /// The engine a descriptor describes: only the crate's own adapters name
+    /// one.
+    pub(crate) fn new(descriptor: BackendDescriptor) -> Self {
         Self { descriptor }
     }
 
@@ -107,41 +102,9 @@ pub fn layer_a_engines() -> Result<Vec<Engine>, RegistrationRefusal> {
     Ok(vec![Engine::model_check()?, Engine::statistical()?])
 }
 
-/// A certificate checker's rejection: the rule that failed and where
-/// (FR-282).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CertificateRejection {
-    /// The check rule that failed.
-    pub rule: CertificateRule,
-    /// Where the rule failed.
-    pub at: CertificateLocus,
-}
-
-/// What replaying an engine's counterexample through layer-6 `replay`
-/// settled (FR-098).
-#[derive(Debug)]
-pub enum CounterexampleReplay {
-    /// The replay reproduced the counterexample.
-    Reproduced,
-    /// The replay completed and disagrees with the engine.
-    NotReproduced(DisagreementCause),
-    /// The replay refused.
-    Refused(ReplayRefusal),
-}
-
-/// An engine's proof: how the claim was established, and the checker of the
-/// certificate that backs it, when the qualified core holds one.
-pub struct Proof<'a> {
-    /// How the claim was established.
-    pub basis: ProofBasis,
-    /// The core's checker over the engine's certificate (FR-282); `None`
-    /// when the core holds no checker for the engine, which settles the
-    /// proof `uncertified`.
-    pub certificate: Option<Box<dyn FnOnce() -> Result<(), CertificateRejection> + 'a>>,
-}
-
-/// What an engine reports for one item.
-pub enum EngineReport<'a> {
+/// What an engine reports for one item. Only the crate's item adapters
+/// construct one, from the engine's own layer-6 settlement.
+pub(crate) enum EngineReport {
     /// EN-1's record, settled by `settle_model_check`.
     Model(Box<ModelCheckRecord>),
     /// EN-4's record, settled by FR-192's map.
@@ -149,11 +112,6 @@ pub enum EngineReport<'a> {
     /// The engine refused the item, and no layer-6 map gives the refusal a
     /// terminal record.
     Refused(Unsettled),
-    /// A proof for `analyze` to settle.
-    Proof(Proof<'a>),
-    /// A counterexample for `analyze` to replay and settle: the closure
-    /// replays it.
-    Counterexample(Box<dyn FnOnce() -> CounterexampleReplay + 'a>),
 }
 
 /// A refusal that has no FR-331 terminal record.
@@ -165,30 +123,45 @@ pub enum Unsettled {
     Statistical(UnsettledRefusal),
 }
 
+/// The work an engine runs for one item.
+type Work<'a> = Box<dyn FnOnce(&Cancel) -> EngineReport + 'a>;
+
 /// One item to analyze: its request index, its claim and the work an engine
-/// runs for it.
+/// runs for it, when the claim kind has an item adapter.
 pub struct AnalyzeItem<'a> {
     index: RequestIndex,
     kind: Capability,
     evidence: ItemEvidence,
-    work: Box<dyn FnOnce(&Cancel) -> EngineReport<'a> + 'a>,
+    work: Option<Work<'a>>,
 }
 
 impl<'a> AnalyzeItem<'a> {
     /// An item of claim kind `kind` and probabilistic evidence `evidence`
     /// (ignored for a kind that is not probabilistic) whose engine runs
     /// `work`.
-    pub fn new(
+    pub(crate) fn new(
         index: RequestIndex,
         kind: Capability,
         evidence: ItemEvidence,
-        work: impl FnOnce(&Cancel) -> EngineReport<'a> + 'a,
+        work: impl FnOnce(&Cancel) -> EngineReport + 'a,
     ) -> Self {
         Self {
             index,
             kind,
             evidence,
-            work: Box::new(work),
+            work: Some(Box::new(work)),
+        }
+    }
+
+    /// An item of claim kind `kind` that no item adapter builds: it settles
+    /// `unsupported`, naming the kind, even when an engine advertises it,
+    /// since there is no work to hand the engine.
+    pub fn unadapted(index: RequestIndex, kind: Capability) -> Self {
+        Self {
+            index,
+            kind,
+            evidence: ItemEvidence::Absent,
+            work: None,
         }
     }
 }
@@ -313,41 +286,36 @@ fn run(item: AnalyzeItem<'_>, backend: Option<BackendId>, cancel: &Cancel) -> An
     let AnalyzeItem {
         index, kind, work, ..
     } = item;
-    let record = |value, backend| AnalyzeRecord {
+    let record = |terminal| AnalyzeRecord {
         request_index: index,
-        result: Ok(TerminalRecord::settled(index, backend, value, None)),
+        result: Ok(terminal),
         model_check: None,
     };
-    let Some(backend) = backend else {
-        return record(
-            TerminalValue::Unsupported(UnavailabilityCause::ClaimKind { kind }),
-            None,
-        );
+    let (Some(backend), Some(work)) = (backend, work) else {
+        return record(TerminalRecord::unrouted(
+            index,
+            UnavailabilityCause::ClaimKind { kind },
+        ));
     };
     if let Some(source) = cancel.cause() {
-        return record(
-            TerminalValue::Incomplete(IncompleteCause::Cancelled { source }),
-            Some(backend),
-        );
+        return record(TerminalRecord::incomplete(
+            index,
+            backend,
+            IncompleteCause::Cancelled { source },
+        ));
     }
     settle(index, backend, work(cancel))
 }
 
-fn settle(index: RequestIndex, backend: BackendId, report: EngineReport<'_>) -> AnalyzeRecord {
-    let settled = |value| AnalyzeRecord {
-        request_index: index,
-        result: Ok(TerminalRecord::settled(
-            index,
-            Some(backend.clone()),
-            value,
-            None,
-        )),
-        model_check: None,
-    };
+fn settle(index: RequestIndex, backend: BackendId, report: EngineReport) -> AnalyzeRecord {
     match report {
         EngineReport::Model(record) => AnalyzeRecord {
             request_index: index,
-            result: Ok(record.clone().into_terminal(index, backend)),
+            // A refuted value without its reproduced counterexample is an
+            // engine fault, never a verdict.
+            result: Ok(record
+                .to_terminal(index, backend.clone())
+                .unwrap_or_else(|_| TerminalRecord::failed(index, backend))),
             model_check: Some(record),
         },
         EngineReport::Statistical(record) => AnalyzeRecord {
@@ -360,27 +328,69 @@ fn settle(index: RequestIndex, backend: BackendId, report: EngineReport<'_>) -> 
             result: Err(refusal),
             model_check: None,
         },
-        EngineReport::Proof(Proof { basis, certificate }) => settled(match certificate {
-            Some(check) => match check() {
-                Ok(()) => TerminalValue::Proved {
-                    basis,
-                    certification: Certification::Certified,
-                },
-                Err(CertificateRejection { rule, at }) => {
-                    TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { rule, at })
-                }
-            },
-            None => TerminalValue::Proved {
-                basis,
-                certification: Certification::Uncertified,
-            },
-        }),
-        EngineReport::Counterexample(replay) => settled(match replay() {
-            CounterexampleReplay::Reproduced => TerminalValue::Refuted,
-            CounterexampleReplay::NotReproduced(cause) => {
-                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(cause))
-            }
-            CounterexampleReplay::Refused(refusal) => TerminalValue::from_replay_refusal(&refusal),
-        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use qsl_foundation::bound::DomainKind;
+    use qsl_route::{descriptor_from_manifest, Candidate, Mode};
+
+    use super::*;
+
+    fn engine(id: &str, kind: Capability) -> Engine {
+        Engine::new(
+            descriptor_from_manifest(
+                Candidate::new(BackendId::new(id)),
+                ProviderOrigin::Linked,
+                ManifestDigest::from_digest([9; 32]),
+                [(Some(kind.to_wire()), Some(Mode::Bounded.to_wire()))],
+                Some(&[DomainKind::Population.to_wire()]),
+                Some(qsl_route::FairnessKindsMember::List(&[])),
+                None,
+            )
+            .expect("a well-formed test engine"),
+        )
+    }
+
+    /// Two engines advertising one claim kind give an item two candidates,
+    /// which routing never chooses between: `analyze` refuses before
+    /// running it.
+    #[test]
+    fn two_engines_for_one_kind_are_refused_not_chosen_between() {
+        let engines = [
+            engine("test-a", Capability::OperationContract),
+            engine("test-b", Capability::OperationContract),
+        ];
+        let items = vec![AnalyzeItem::new(
+            RequestIndex::new(0),
+            Capability::OperationContract,
+            ItemEvidence::Absent,
+            |_| panic!("an ambiguous item runs nothing"),
+        )];
+        let refusal = analyze(&engines, items, &Cancel::new()).expect_err("an ambiguous route");
+        assert!(
+            matches!(&refusal, AnalyzeRefusal::Ambiguous { candidates, .. } if candidates.len() == 2),
+            "{refusal:?}"
+        );
+    }
+
+    /// An item an engine advertises but no adapter builds settles
+    /// `unsupported`, naming the kind, and runs nothing.
+    #[test]
+    fn an_unadapted_item_settles_unsupported_even_when_an_engine_advertises_it() {
+        let engines = [engine("test-a", Capability::OperationContract)];
+        let items = vec![AnalyzeItem::unadapted(
+            RequestIndex::new(0),
+            Capability::OperationContract,
+        )];
+        let records = analyze(&engines, items, &Cancel::new()).expect("registers");
+        let terminal = records[0].result.as_ref().expect("a record");
+        assert_eq!(
+            terminal.value(),
+            &TerminalValue::Unsupported(UnavailabilityCause::ClaimKind {
+                kind: Capability::OperationContract
+            })
+        );
     }
 }

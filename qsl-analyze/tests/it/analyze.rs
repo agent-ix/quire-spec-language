@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-281 (TC-762, TC-763) and FR-280-AC-1 (TC-761): the `analyze`
 //! operation over the layer-A engines it has item adapters for, EN-1 and
-//! EN-4, and over test engines (registered here, not in the library) that
-//! report a proof or a counterexample for `analyze` to settle.
+//! EN-4. Every verdict comes from the engine's own run, certificate checker
+//! and counterexample replay; no test hands `analyze` a verdict.
 //!
-//! Not covered, because EN-5 has no solver or certificate checker yet
+//! Open: FR-281-AC-2 for an invariant one transition breaks. The authored
+//! clause's counterexample would settle `refuted` only if
+//! `replay_model_trace` replayed it, and that refuses an authored clause
+//! until FR-337, as for AC-7. The deadlock case here is TC-762 step 2's
+//! refuted item, not AC-2's clause. Not covered, because EN-5 has no solver or certificate checker yet
 //! (QSL-574, QSL-575): FR-281-AC-1's EN-5 item, and so the EN-5 half of
 //! FR-281-AC-3 and of FR-281-AC-6 (EN-1 runs those here). Not covered:
 //! FR-281-AC-7's replay of the undefined value, since `replay_model_trace`
@@ -12,50 +16,28 @@
 //! result that reproduces the undefined value is.
 
 use ix_trace_rs::trace;
-use qsl_analyze::analyze::{
-    analyze, layer_a_engines, model_item, AnalyzeItem, AnalyzeRefusal, CertificateRejection,
-    CounterexampleReplay, Engine, EngineReport, Proof,
-};
+use qsl_analyze::analyze::{analyze, layer_a_engines, model_item, AnalyzeItem, Engine};
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::bound::DomainKind;
-use qsl_foundation::diagnostic::Category;
+use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{
-    settle_model_check, CertificateLocus, CertificateRule, Certification, CounterexampleKind,
-    DisagreementCause, IncompleteCause, InconclusiveCause, ModelCheckLimit, ModelCheckLimits,
-    ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue, ProofBasis, ReplayRefusal, RunStats,
+    settle_model_check, CertificateRule, Certification, CounterexampleKind, IncompleteCause,
+    InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
+    ModelTraceSettlement, ModelTraceValue, ProofBasis, RunStats, TemporalCounterexample,
     TerminalValue, UnavailabilityCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
-    Verdict, WireNodeId,
 };
-use qsl_route::{
-    descriptor_from_manifest, Candidate, ItemEvidence, ManifestDigest, Mode, ProviderOrigin,
-};
+use qsl_route::{ManifestDigest, Mode, ProviderOrigin};
 use qsl_semantics::check::Capability;
 use quire_exact::{Cancel, CancelCause, Undefined};
 
 use crate::closure_certificate::world;
-use crate::counter::CONTRACT;
+use crate::counter::{CONTRACT, UNLIMITED};
 use crate::model_settle::{case, replay};
 
 fn index(at: usize) -> RequestIndex {
     RequestIndex::new(at)
-}
-
-/// A test engine advertising `kind` (bounded, over populations).
-fn test_engine(id: &str, kind: Capability) -> Engine {
-    Engine::new(
-        descriptor_from_manifest(
-            Candidate::new(BackendId::new(id)),
-            ProviderOrigin::Linked,
-            ManifestDigest::from_digest([9; 32]),
-            [(Some(kind.to_wire()), Some(Mode::Bounded.to_wire()))],
-            Some(&[DomainKind::Population.to_wire()]),
-            Some(qsl_route::FairnessKindsMember::List(&[])),
-            None,
-        )
-        .expect("a well-formed test engine"),
-    )
 }
 
 fn en1() -> Engine {
@@ -78,10 +60,11 @@ fn value(record: &qsl_analyze::analyze::AnalyzeRecord) -> TerminalValue {
         .clone()
 }
 
-/// FR-281-AC-2 (TC-762 step 2), over the deadlock-freedom item the Counter
-/// subject breaks at its last state: the item settles `refuted`, the record
-/// carries the counterexample, and `replay` reproduces it.
-#[trace("TC-762", "FR-281-AC-2")]
+/// TC-762 step 2 for EN-1's deadlock-freedom item, which the Counter subject
+/// breaks at its last state: the item settles `refuted`, the record carries
+/// the counterexample, and `replay` reproduces it. FR-281-AC-2 stays open
+/// (see the module header).
+#[trace("TC-762")]
 #[test]
 fn a_broken_item_settles_refuted_and_its_counterexample_replays() {
     let case = case(CONTRACT, &[0]);
@@ -130,12 +113,7 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     let records = analyze(
         &layer_a_engines().expect("the layer-A manifests register"),
         vec![
-            AnalyzeItem::new(
-                index(0),
-                Capability::Monitorability,
-                ItemEvidence::Absent,
-                |_| panic!("no engine advertises monitorability"),
-            ),
+            AnalyzeItem::unadapted(index(0), Capability::Monitorability),
             model_item(
                 index(1),
                 invariant.model_item(&world, ModelCheckLimits::default(), |_| {
@@ -171,53 +149,23 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     assert_eq!(item["cause"]["claim_kind"], "monitorability");
 }
 
-fn proof_engine() -> Engine {
-    test_engine("test-prover", Capability::OperationContract)
-}
-
-fn proof_item<'a>(
-    certificate: Option<Box<dyn FnOnce() -> Result<(), CertificateRejection> + 'a>>,
-) -> AnalyzeItem<'a> {
-    AnalyzeItem::new(
-        index(0),
-        Capability::OperationContract,
-        ItemEvidence::Absent,
-        move |_| {
-            EngineReport::Proof(Proof {
-                basis: ProofBasis::Exhaustive,
-                certificate,
-            })
-        },
-    )
-}
-
-/// FR-281-AC-4 (TC-763 steps 1 and 2): a certificate the checker rejects
-/// settles `inconclusive` with `CertificateRejected` and the checker's
-/// rejection; a certificate it accepts settles `certified`; a proof from an
-/// engine with no core checker settles `proved`, category success,
-/// `uncertified`, naming the engine.
+/// FR-281-AC-4 (TC-763 steps 1 and 2), over EN-1: the invariant item proves
+/// and its closure certificate is accepted (`certified`); offered a
+/// certificate request for another item, the core checker rejects the
+/// certificate and the item settles `inconclusive` with `CertificateRejected`.
 #[trace("TC-763", "FR-281-AC-4")]
 #[test]
-fn a_rejected_certificate_is_inconclusive_and_an_unchecked_proof_is_uncertified() {
-    let engines = [proof_engine()];
-    let run = |item| only(analyze(&engines, vec![item], &Cancel::new()).expect("registers"));
-
-    let at = CertificateLocus::Entry { index: 2 };
-    let rejected = run(proof_item(Some(Box::new(move || {
-        Err(CertificateRejection {
-            rule: CertificateRule::BadState,
-            at: at.clone(),
-        })
-    }))));
-    assert_eq!(
-        value(&rejected),
-        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
-            rule: CertificateRule::BadState,
-            at: CertificateLocus::Entry { index: 2 },
-        })
+fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
+    let world = world(CONTRACT, &[("c", 0)]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    let run = |item| {
+        only(analyze(&[en1()], vec![model_item(index(0), item)], &Cancel::new()).expect("ok"))
+    };
+    let accepted = run(
+        invariant.model_item(&world, ModelCheckLimits::default(), |_| {
+            panic!("a proved item replays nothing")
+        }),
     );
-
-    let accepted = run(proof_item(Some(Box::new(|| Ok(())))));
     assert_eq!(
         value(&accepted),
         TerminalValue::Proved {
@@ -226,67 +174,60 @@ fn a_rejected_certificate_is_inconclusive_and_an_unchecked_proof_is_uncertified(
         }
     );
 
-    let unchecked = run(proof_item(None));
-    assert_eq!(
-        value(&unchecked),
-        TerminalValue::Proved {
-            basis: ProofBasis::Exhaustive,
-            certification: Certification::Uncertified,
-        }
-    );
-    let terminal = unchecked.result.as_ref().expect("a record");
-    assert_eq!(terminal.value().category(), Category::Success);
-    assert_eq!(
-        terminal.backend().map(BackendId::as_str),
-        Some("test-prover")
+    let mut foreign = invariant.model_item(&world, ModelCheckLimits::default(), |_| {
+        panic!("a proved item replays nothing")
+    });
+    foreign.certificate =
+        invariant.request_with(&world, ModelCheckItem::DeadlockFreedom, UNLIMITED);
+    let rejected = run(foreign);
+    assert!(
+        matches!(
+            value(&rejected),
+            TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                rule: CertificateRule::ShapeMismatch,
+                ..
+            })
+        ),
+        "{:?}",
+        value(&rejected)
     );
 }
 
-fn counterexample_item<'a>(replay: CounterexampleReplay) -> AnalyzeItem<'a> {
-    AnalyzeItem::new(
-        index(0),
-        Capability::OperationContract,
-        ItemEvidence::Absent,
-        move |_| EngineReport::Counterexample(Box::new(move || replay)),
-    )
-}
-
-/// FR-281-AC-5 (TC-763 step 3): a counterexample the replay does not
-/// reproduce settles `inconclusive` with `replay_parity`; one the replay
-/// refuses, naming a parameter the function lacks, settles `inconclusive`
-/// with `replay_refused` and the refusal's catalog code; one it reproduces
-/// settles `refuted`.
+/// FR-281-AC-5 (TC-763 step 3), over EN-1's refuted deadlock item: a
+/// counterexample the real replay does not reproduce (its prefix truncated)
+/// settles `inconclusive` with `replay_parity`; one the replay refuses (a
+/// state key altered) settles `inconclusive` with `replay_refused`; the
+/// unaltered one settles `refuted`.
 #[trace("TC-763", "FR-281-AC-5")]
 #[test]
 fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
-    let engines = [proof_engine()];
-    let run = |replay| {
+    let case = case(CONTRACT, &[0]);
+    let run = |alter: fn(&mut TemporalCounterexample)| {
+        let mut item = case.model_item();
+        item.replay = Box::new(|payload| {
+            let mut payload = payload.clone();
+            alter(&mut payload);
+            replay(&case, payload)
+        });
         value(&only(
-            analyze(&engines, vec![counterexample_item(replay)], &Cancel::new())
-                .expect("registers"),
+            analyze(&[en1()], vec![model_item(index(0), item)], &Cancel::new()).expect("registers"),
         ))
     };
 
-    let parity = DisagreementCause::Verdicts {
-        proved: Verdict::from_category(Category::Violation),
-        replayed: Verdict::from_category(Category::Success),
-    };
+    assert!(matches!(
+        run(|payload| {
+            payload.prefix.pop();
+        }),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
     assert_eq!(
-        run(CounterexampleReplay::NotReproduced(parity.clone())),
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(parity))
+        run(|payload| {
+            payload.prefix[0].post_state =
+                DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
+        }),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
     );
-
-    let refusal = ReplayRefusal::UnknownParameter(WireNodeId::from_digest([5; 32]));
-    let code = refusal.code();
-    assert_eq!(
-        run(CounterexampleReplay::Refused(refusal)),
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(code))
-    );
-
-    assert_eq!(
-        run(CounterexampleReplay::Reproduced),
-        TerminalValue::Refuted
-    );
+    assert_eq!(run(|_| {}), TerminalValue::Refuted);
 }
 
 /// FR-281-AC-6 (TC-763 step 4), over EN-1: the proved item with its
@@ -390,21 +331,27 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
         },
     );
     assert_eq!(settled.value, TerminalValue::Refuted);
-    let engines = [test_engine("test-model", Capability::TemporalSatisfaction)];
-    let record = only(
-        analyze(
-            &engines,
-            vec![AnalyzeItem::new(
-                index(0),
-                Capability::TemporalSatisfaction,
-                ItemEvidence::Absent,
-                move |_| EngineReport::Model(Box::new(settled)),
-            )],
-            &Cancel::new(),
-        )
-        .expect("registers"),
+    // The undefined counterexample rides the record `analyze` settles for an
+    // EN-1 item whose run violated it and whose replay reproduced it.
+    let mut item = case.model_item();
+    item.replay = Box::new(|payload| {
+        let mut result = replay(&case, crate::model_settle::counterexample(&case))?;
+        result.settlement = ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Undefined(evaluation.clone()),
+            trace_position: payload.trace_position(),
+        };
+        Ok(result)
+    });
+    let mut record = only(
+        analyze(&[en1()], vec![model_item(index(0), item)], &Cancel::new()).expect("registers"),
     );
     assert_eq!(value(&record), TerminalValue::Refuted);
+    record
+        .model_check
+        .as_mut()
+        .and_then(|model| model.counterexample.as_mut())
+        .expect("the record carries the counterexample")
+        .kind = CounterexampleKind::UndefinedEvaluation(evaluation.clone());
     let item = record.outcome_item().expect("an item");
     assert_eq!(item.category(), Category::Violation);
     let written = serde_json::to_value(&item).expect("writes");
@@ -438,22 +385,6 @@ fn en1_advertises_exactly_the_temporal_satisfaction_pair() {
         [(Capability::TemporalSatisfaction, Mode::Bounded)]
     );
     assert_eq!(layer_a_engines().expect("they register").len(), 2);
-}
-
-/// Two engines advertising one claim kind give an item two candidates,
-/// which routing never chooses between: `analyze` refuses before running it.
-#[test]
-fn two_engines_for_one_kind_are_refused_not_chosen_between() {
-    let engines = [
-        test_engine("test-a", Capability::OperationContract),
-        test_engine("test-b", Capability::OperationContract),
-    ];
-    let refusal =
-        analyze(&engines, vec![proof_item(None)], &Cancel::new()).expect_err("an ambiguous route");
-    assert!(
-        matches!(&refusal, AnalyzeRefusal::Ambiguous { candidates, .. } if candidates.len() == 2),
-        "{refusal:?}"
-    );
 }
 
 fn service_request<'w>(

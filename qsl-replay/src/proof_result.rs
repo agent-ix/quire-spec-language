@@ -449,6 +449,11 @@ pub enum UnavailabilityCause {
     /// FR-281: no layer-A engine advertises the item's claim kind, so
     /// `analyze` routes it to none. Wire cause `unsupported-claim-kind`,
     /// naming the claim kind.
+    ///
+    /// Pending spec: FR-281 asks for a typed cause that names the claim kind,
+    /// but FR-286 and the QSpec FR-331 cause vocabulary define no spelling
+    /// for it. The cause and its `claim_kind` outcome member are provisional
+    /// until the spec names them.
     ClaimKind {
         /// The claim kind no engine advertises.
         kind: qsl_semantics::check::Capability,
@@ -1189,25 +1194,10 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Failed)
     }
 
-    /// FR-281: a record for an item `analyze` settled itself, after it ran
-    /// the item's certificate checker or replayed its counterexample, with
-    /// the settled `value` and the one diagnostic the settlement names, if
-    /// any. The settlement owns the evidence check: this constructor does
-    /// not re-derive it, so a caller outside `analyze`'s settlement map has
-    /// no reason to use it.
-    pub fn settled(
-        request_index: RequestIndex,
-        backend: Option<BackendId>,
-        value: TerminalValue,
-        diagnostic: Option<CatalogCode>,
-    ) -> Self {
-        Self {
-            request_index,
-            backend,
-            value,
-            replay: None,
-            diagnostic,
-        }
+    /// FR-281: the `unsupported` record of an item no engine took, so it has
+    /// no producing backend. It carries no evidence-bearing value.
+    pub fn unrouted(request_index: RequestIndex, cause: UnavailabilityCause) -> Self {
+        Self::from_value(request_index, TerminalValue::Unsupported(cause))
     }
 
     pub(crate) fn with_backend(
@@ -1287,6 +1277,10 @@ pub enum TerminalRecordRefusal {
     /// Only a reproduced witness arm can provide refutation evidence.
     #[error("input-arm replay does not carry backend witness evidence")]
     ReplayLacksWitness,
+    /// A `refuted` value arrived without the counterexample its replay
+    /// reproduced.
+    #[error("a refuted value carries no reproduced counterexample")]
+    RefutedWithoutCounterexample,
 }
 
 /// FR-069/ADR-013 O-24: the typed proof-result envelope for one requested
