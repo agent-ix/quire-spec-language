@@ -649,12 +649,13 @@ kills the process.
   The driver never makes up a basis: a plugin proof never carries a
   `Checks{success_checks}` count the plugin did not report. The bases a
   plugin proof can carry are `exhaustive`, `bounded-complete{depth}`,
-  `inductive{depth}`, `reduced{reductions}` and
-  `bounded-solver{method, horizon, jumps}`. Each carries `trusted` and the
+  `inductive{depth}`, `reduced{reductions}`,
+  `bounded-solver{method, horizon, jumps, exhaustive}` and `inductive-solver{method}`.
+  Each carries `trusted` and the
   plugin's `BackendId`, whatever certification the same basis carries from
   a first-party engine. ADR-026 HY-2's `Uncertified` on a `BoundedSolver`
-  proof is the label of a solver QSL runs. A plugin-reported
-  `bounded-solver` is `trusted`, as QSpec FR-331's certification table
+  or `InductiveSolver` proof is the label of a solver QSL runs. A
+  plugin-reported `bounded-solver` or `inductive-solver` is `trusted`, as QSpec FR-331's certification table
   gives every plugin `proved`.
 
   A basis that only the core establishes is refused ("Refused plugin

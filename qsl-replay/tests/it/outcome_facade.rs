@@ -5,9 +5,9 @@
 use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_replay::{
-    Category, ItemLabel, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, RequestIndex,
-    TerminalRecord,
+    ItemLabel, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, RequestIndex, TerminalRecord,
 };
+use quire_semantic_value::catalog::Category;
 
 /// FR-286-AC-3: a `prove` document built and written through the facade
 /// carries its items in request order under the `quire-outcome/1` format.

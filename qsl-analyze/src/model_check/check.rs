@@ -89,7 +89,6 @@ use qsl_eval::simulation::{
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::InternalFault;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
@@ -103,6 +102,7 @@ use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
 

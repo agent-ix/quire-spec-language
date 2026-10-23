@@ -13,7 +13,7 @@ relationships:
 Verify the node set, bodies, types, dependencies and occurrences S4 emits for
 state clauses, and the totality of the clause-kind mapping.
 
-Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9.
+Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9, FR-105-AC-10.
 
 ## Test Procedure
 
@@ -23,7 +23,7 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9.
    `dependencies` and occurrences with FR-105's Outputs table.
 3. Walk `VersionUnchanged`'s, `NoCycle`'s and `ParentOrder`'s condition
    terms.
-4. Run `CheckedClauseKind`'s mapping forward over all seven variants and
+4. Run `CheckedClauseKind`'s mapping forward over all eight variants and
    backward over every triple the forward pass gives and over
    (`state`, `frame`); run `cargo mutants` over the mapping functions.
 5. Spine-compile a unit holding TC-459 step 7's `P`, `Q` and `I` against
@@ -33,6 +33,12 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9.
    occurrence; recompile with a second `post` clause naming `attemptUpdate`
    placed before `VersionUnchanged`; compile TC-1043's fixture R; emit a package
    whose frame occurrence has its region removed (FR-105-AC-9).
+7. Spine-compile step 1's unit with `constraint Low using v on
+   Config::ConfigVersion at current { self.versionNumber <= 1 }` added, then
+   with `constraint` replaced by `invariant`; read each package with QSL's I2
+   read; decode (`state`, `state_clause`, `quire.op.state.clause`,
+   `constraint`).
+
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 
@@ -73,3 +79,7 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
   same (node id, role, ordinal); in R, each operation's first naming span;
   the regionless occurrence refuses
   `UnlocatedOccurrence`.
+- Step 7: one more `state_clause` node, kind member `constraint`, parameter
+  aggregate `[self]`, anchor the `ConfigVersion` node, one `claim`
+  occurrence, no new anchor or frame; the `invariant` variant has another
+  node id; both packages read; the triple decodes to `Constraint`.

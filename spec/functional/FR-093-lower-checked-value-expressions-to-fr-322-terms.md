@@ -141,8 +141,6 @@ both branches of an `if`.
 | `Literal` of a Boolean, integer or rational value (`true`, `false`, an integer literal, `rational(n, d)`) | `value` / `literal`; `semantic_type` its type node; body `literal{type, value_kind, value}` spelled as FR-092 fixes. An integer literal that is an operand of `quire.op.integer.add`, `sub`, `mul` or `negate` is no node: it is the same `literal{type, value_kind, value}` term, typed at the builtin `Integer` node, in that application's `arguments` (FR-357, FR-358, ADR-013 O-09), as is an integer literal operand of an integer `quire.op.integer.eq` or `ne` (FR-358 step 6); every other literal operand, including the integer literal of an ordering, the literal that an equality over a bounded integer peer wraps in a `numeric.narrow` application (the operand is that application, identified `graph_child` by FR-358 step 6), and the operands of a composite or non-integer equality, is a reference to its node |
 | `Literal` of a String, UUID or Timestamp value (`"abc"`, `UUID("...")`, `Timestamp(n)`, as check resolves the two calls) | `value` / `literal`; `semantic_type` the node of the native `string`, `uuid` or `timestamp` scalar type; body `literal{type, value_kind, value}` with `value_kind` `string`, `uuid` or `timestamp` and `value` spelled as FR-092 fixes |
 | `Literal` of a quantity value (`3 ms`) | `value` / `literal`; `semantic_type` its unit's `scalar_type`/`unit` node; body `literal{type, value_kind, value}` with `value_kind` `quantity` and `value` the canonical magnitude ("Quantity literals") |
-| `FloatBits{width, bits}` (`float32(bits: 0x3f800000)`, `float64(bits: ..)`; [FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)) | `value` / `literal`; `semantic_type` the node of its checked float type; body `literal{type, value_kind, value}` with `value_kind` `float32_bits` or `float64_bits` and `value` the bits as 8 or 16 lowercase hexadecimal digits without a prefix; an operand position holds a reference to the node |
-| `DecimalValue{coefficient, scale}` (`decimal(125, 2)`; "Decimal constructors") | `value` / `literal`; `semantic_type` the node of its checked decimal type; body `literal{type, value_kind, value}` with `type` that same node, `value_kind` `decimal` and `value` spelled as FR-092 fixes; an operand position holds a reference to the node |
 | `Literal` of an enum member (`E::m`) | the enum member's QSpec `value` / `enum_value` node (FR-092 rule 1) |
 | `Record{declaration, slots}` (`R { f: e, g: null }`) | `value` / `record_value`; `semantic_type` the record's node; body `aggregate` of one binding per slot in declaration order: `f` = `reference(e)` for a present slot, and `f` = `literal{type: the field's Option node, value_kind: "none", value: null}` for a `null` slot and for an omitted optional slot, which denote one value |
 | `Tuple{declaration, arguments}` (`Q(a, b)`) | `value` / `tuple_value`; `semantic_type` the tuple's node; body `aggregate{[reference(a), reference(b)]}` |
@@ -165,22 +163,9 @@ type `Quantity<u>`, and its checked value is the reduced magnitude in that
 unit.
 
 A magnitude carries a sign only inside `rational(n, d)`, so a negative
-quantity literal is written `rational(-3, 1) ms`, of value `"-3"`. A unary `-`
-is never part of a literal. The literal `n u` (a magnitude followed by its
-unit) is a primary expression that binds tighter than the prefix `-`, so `-3 ms`
-parses as `-(3 ms)`, the one negation of the literal `3 ms`, and the prefix `-`
-binds tighter than the binary `/`, so `d / -3 ms` is `d / -(3 ms)`.
-
-**Negation.** `check` SHALL admit the unary `-` over a quantity operand of a
-non-affine unit `u` (QSpec FR-142 "Quantity negation"). Its checked type is
-`Quantity<u>`, the operand's own type, and its checked value is the exact
-negation of the operand's value, so `-(3 ms)` is `-3` in `ms`, still in `ms`
-and not in the root unit, and `-(0 ms)` is `0 ms`. The negation of a negation
-is admitted, to any depth. It lowers by the `QuantityNegate` row to one
-`unary` `quire.op.quantity.negate` node whose argument is `[ref(e)]` and whose
-`result_type` is the operand's unit node. The negated operand is any quantity
-expression, a literal, a parameter, a sum, a product or a quotient, and a
-compound-unit operand is negated in its compound unit.
+quantity literal is written `rational(-3, 1) ms`, of value `"-3"`. `-3 ms` is
+the unary negation of the literal `3 ms`, and negation takes no quantity
+operand.
 
 A literal never changes type to fit its slot (FR-056-AC-41). A quantity
 literal is admitted where its operand position takes `Quantity<u>` of the
@@ -193,62 +178,8 @@ conversion, and conversion never occurs implicitly (QSpec FR-142 Behavior),
 so a quantity in another unit, of the same dimension or another, stands
 where `Quantity<u>` is required only through `convert<Quantity<u>>(…)`
 (QSpec FR-142), which lowers by the `ConvertScalar` rows to
-`quire.op.quantity.convert` with mode `rounding` = `exact`.
-
-**Dimension equivalence.** A dimension equivalence the unit declares
-(`dimension A ~ B by x U = y V;`, FR-091) puts the units of the two dimensions in one
-equivalence class and states the ratio of their canonical roots, and `check` applies
-QSpec FR-142 "Dimension equivalence" "Effect" to every quantity operand. The identification
-edge from one root to another carries that ratio, so a conversion across a class whose roots
-differ in size (`1 beat` is `rational(1, 4) s`) scales the value by it, and a conversion
-across equal roots leaves it unchanged. `convert<Quantity<u>>(e)` is admitted when
-the dimension nodes of `e`'s unit and of `u` are equal or in one class, lowers
-as any conversion does, and charges the class graph's edges as FR-142 states;
-its value is the exact one. Addition, subtraction, equality and ordering still
-require the identical unit, so a quantity of one unit of a class and a quantity
-of another unit of that class refuse `ill_typed`/`type-mismatch` at the
-operation or the argument, as `1 m` and `100 cm` do, and meet only through
-`convert`. A product, quotient or integer power takes each operand in the
-canonical root of its class, so the unit of `d / e` over `d: Quantity<s>` and
-`e: Quantity<sec>` of two equivalent dimensions is the dimensionless unit with
-the value of `d` in the class root over the value of `e` in the class root, and
-the product of `s` and `sec` has the compound unit of the class root squared,
-the one the product of `s` and `s` has. A conversion between units of two
-dimension nodes that no equivalence relates, directly or through a class,
-refuses `ill_typed` as before.
-
-**Division by a literal.** `check` SHALL admit a quotient `e / n u` whose
-divisor is a quantity literal of nonzero reduced magnitude, or the negation of
-such a literal (`e / -(n u)`, `e / -n u`, and a negation of a negation of it),
-and SHALL record that literal or negation as a nonzero fact that discharges
-the division's nonzero obligation (QSpec FR-146), whatever the dividend. The quotient follows QSpec
-FR-142's division. Each operand is taken in the canonical root of its unit,
-where a literal of magnitude `n` in unit `u` is `n` times the composed scale
-of `u` to its root, so a magnitude that is a rational, a decimal or a
-negative `rational(-3, 1)` composes its scale exactly. The quotient's
-dimension is the dividend's dimension with the divisor's exponents
-subtracted, zero exponents removed. Its unit is the compound unit over the
-canonical root units with those exponents (FR-094), which is the dimensionless
-unit when every exponent cancels, and its value is the exact quotient of the
-two root values. So with `d: Quantity<ms>` and `a: Quantity<m>`, `d / 3 ms`
-is dimensionless, with the value of `d` divided by three, and `a / 3 ms` has
-the unit `m` per `s` and `1000/3` times the value of `a`. A negative literal
-divisor and the negation of a literal divisor each negate the quotient, so
-`a / -(3 ms)` is `-1000/3` times the value of `a`. A divisor in another unit of the same
-dimension composes its own scale: `d / 3 s` is `d`, taken in seconds,
-divided by three, and is dimensionless as well. The division lowers by the
-`Quantity(operator)` row to one `binary` `quire.op.quantity.div` node whose
-arguments are `[ref(l), ref(r)]`, `r` the literal's node or, for a negated
-literal, its `quire.op.quantity.negate` node, and whose
-`result_type` is the node of the quotient's compound unit (FR-094).
-
-A divisor that is neither a quantity literal nor the negation of one is never
-proved nonzero: a parameter, the negation of a parameter, the negation of a
-zero literal, a `let` name, a call, a conversion, or a product or quotient of
-quantities, even one whose value is a nonzero literal, refuses
-`undefined_expression`/`unproved-nonzero` at the division, and no guard
-changes that (QSpec FR-146). A quantity literal of zero magnitude is a
-legitimate value where it is not a divisor, such as `d = 0 ms`.
+`quire.op.quantity.convert` with mode `rounding` = `exact`. A quantity
+divisor, a literal included, is never proved nonzero (FR-094).
 
 **Lowering.** The literal's node has as `semantic_type` the
 `scalar_type`/`unit` node of its unit (FR-094: a declared unit's quantity
@@ -308,92 +239,11 @@ ceiling, zero-denominator or unit-name refusal is located at the whole literal.
   or no quantity, then `check` SHALL refuse it `ill_typed`/`type-mismatch`,
   at the argument of a call and at the comparison or operation otherwise
   (QSpec FR-142).
-- If the operand of a unary `-` is a quantity of an affine unit (a unit whose
-  composed offset to its root is not zero), then `check` SHALL refuse the
-  negation `ill_typed`/`operator-ineligible` at the negation, because QSpec
-  FR-142 allows no arithmetic on an affine unit.
-- If the divisor of a quantity division is a quantity literal of zero
-  magnitude (`d / 0 ms`, `d / rational(0, 1) ms`, `d / 0.0 ms`), then `check`
-  SHALL refuse the division `undefined_expression`/`unproved-nonzero` at the
-  division. A literal refusal above is reached first and is the one reported:
-  `d / rational(1, 0) ms` refuses at the literal for its zero denominator.
+- If a quantity literal is the operand of unary `-`, then `check` SHALL
+  refuse the negation `ill_typed`/`operator-ineligible`.
 
 A magnitude is always an exact rational, so no quantity literal is refused
 for its magnitude's kind.
-
-### Decimal constructors
-
-A `decimal(c, s)` constructor (FR-091 "Decimal constructor") denotes the exact
-rational `c / 10^s` and keeps its coefficient `c` and scale `s` as written
-(QSpec FR-140, FR-148). It is a value of a `Decimal[lo, hi; smin, smax; mode]`
-type that it takes whole from its position: no coefficient range, scale,
-rounding mode or target scale is inferred from the spelling.
-
-**Expected type.** The constructor takes exactly its unique expected type, which
-is, in this order of position:
-
-- the declared type of a parameter of the call that holds it, of a record field
-  it initializes, of the function result it forms, of the element of the
-  collection type that its constructor is expected to produce; a `let` binds an
-  expression of its own type and gives its value no expected type;
-- for an operand of `+`, `-`, `*` or `/` and of unary `-`, the static type of
-  the other operand when that operand is not itself a decimal constructor, and
-  otherwise the expected type of the whole application; for an operand of a
-  comparison `=`, `!=`, `<`, `<=`, `>` or `>=`, the static type of the other
-  operand when that is not a decimal constructor, and otherwise none;
-- the target of a `convert<Decimal[..]>(decimal(c, s))`, whose operand is the
-  constructor typed as that target (no conversion node is built).
-
-**Typing.**
-- The checker SHALL type the constructor as its expected type, with the
-  expected type's own range, scale range and rounding mode.
-- The checker SHALL refuse a constructor with no expected type, such as
-  `decimal(15, 1) = decimal(15, 1)` or an unannotated `let` right side, as
-  `ill_typed`/`ambiguous-literal` at the constructor.
-- The checker SHALL refuse a constructor whose expected type is not a
-  `Decimal[..]` type (an `Int[..]`, `Rational[..]`, `Float32`/`Float64`,
-  `Boolean`, `Text` or quantity position) as `ill_typed`/`type-mismatch` at
-  the constructor: a literal never changes type to fit its slot.
-- The checker SHALL decide whether a constructor is a member of the expected
-  type by its value under QSpec FR-140, not by its written coefficient or
-  scale: the value `c / 10^s` is normalized to the scale `s_n`, its membership
-  scale is `s* = max(s_n, smin)`, and it is a member exactly when
-  `s* <= smax` and its membership coefficient `v x 10^s*` lies in `[lo, hi]`.
-  The checker SHALL refuse a constructor that is not a member as
-  `ill_typed`/`type-mismatch` at the constructor, naming the bound
-  (`coefficient` or `scale`) that the membership coefficient or scale
-  violates. A member keeps the coefficient and scale as written: `decimal(5, 0)`
-  is a member of `Decimal[-1000, 1000; 1, 2; nearest-even]` (`s* = 1`,
-  `c* = 50`) and `decimal(100000, 2)` a member of `Decimal[0, 1000; 0, 2;
-  nearest-even]` (normalized `1000`, `s* = 0`).
-- The checker SHALL measure a constructor's written coefficient and scale
-  against the rational-bits ceiling that NFR-011 applies to a quantity
-  literal, and refuse one past it `stage_limit_exceeded`/`rational-bits-exceeded`.
-
-**Definedness.** A `Decimal[..]` divisor satisfies the nonzero obligation of
-QSpec FR-146 only as a constructor with `c != 0`.
-- The checker SHALL accept `x / decimal(c, s)` for `c != 0` without the
-  `unproved-nonzero` refusal, and record no fact about any path.
-- The checker SHALL refuse a `/` whose divisor is `decimal(0, s)`, or any
-  decimal expression that is not a constructor with `c != 0`, as
-  `undefined_expression`/`unproved-nonzero` at the divisor.
-
-**Lowering.** The constructor lowers to one `value`/`literal` node (the row in
-"Non-application nodes"), so `decimal(125, 2)` at `Decimal[0, 1000; 0, 2;
-nearest-even]` has `value` `"1.25"` and `type` that decimal node. Two
-constructors with one type, coefficient and scale are one node; `decimal(10, 1)`
-and `decimal(100, 2)` are two. An operand position holds a reference to the
-node, and `x / decimal(4, 0)` lowers to `quire.op.decimal.div` with mode
-`rounding` the type's mode and arguments `[ref(x), ref(literal)]` (the
-`Decimal{operator, target}` row).
-
-**Evaluation.** The evaluator SHALL evaluate the node to the decimal whose
-coefficient is `c` and whose scale is `s`. Conversions to and from `Decimal[..]`
-are the `ConvertDecimal` rows: `convert<Rational[..]>(d)` of a decimal is
-exact, `convert<Decimal[..]>(i)` of an integer is exact when the range fits,
-and a conversion to a smaller scale is a scale reduction that rounds under the
-target's mode (QSpec FR-140, FR-149). A float reaches a decimal only through
-`Rational[..]` (FR-397).
 
 ### Application nodes
 
@@ -401,7 +251,7 @@ Each application's `operation` is built by FR-322's rules from its catalog
 entry: `laws` holds one law per role the entry names, `mode` is a value of
 the entry's mode kind, `member` is of the entry's member kind, and `leaves`
 is empty unless the entry names a leaf source. For a leaf source, `leaves`
-is the leaf list (Text leaves, below: its text leaves and float leaves) of the compared type
+is the text-leaf list (Text leaves, below) of the compared type
 (`operand:0`, `inner:0`), or for `result_inner` of the element type of a
 `set`, `bag` or `ordered_set` result. `laws` is `[]`, `mode` is
 `null`, `member` is `null` and `leaves` is `[]` unless the row says
@@ -423,21 +273,15 @@ to `x`'s node.
 | `Decimal{operator, target}` | `binary` | `quire.op.decimal.add`, `.sub`, `.mul`, `.div` | mode `rounding` = `target`'s rounding mode | `[ref(l), ref(r)]` |
 | `DecimalNegate` | `unary` | `quire.op.decimal.negate` | | `[ref(e)]` |
 | `Quantity(operator)` | `binary` | `quire.op.quantity.add`, `.sub`, `.mul`, `.div` | | `[ref(l), ref(r)]` |
-| `QuantityNegate` | `unary` | `quire.op.quantity.negate` | | `[ref(e)]` |
 | `Ieee(operator)` of width `w` | `binary` | `quire.op.ieee.float32.*` or `quire.op.ieee.float64.*` | law `ieee_profile`; mode `rounding` = the operand types' mode | `[ref(l), ref(r)]` |
-| `IeeeNegate(e)` (unary `-` over a `Float32` or `Float64`) | `unary` | `quire.op.ieee.float32.negate` or `quire.op.ieee.float64.negate` | law `ieee_profile`; no mode | `[ref(e)]` |
-| `IeeeCompare(operator)` over two operands of one float type (`=`, `!=`, `<`, `<=`, `>`, `>=`) | `call` for `quire.op.ieee.numeric_equal` and `quire.op.ieee.total_order`; `unary` for `quire.op.boolean.not`; `binary` for `quire.op.boolean.and` and `.or` | the Boolean composition of FR-397's Comparison bullets, each operand node shared by every use; `bitIdentical` appears in no comparison | `numeric_equal` and `total_order`: law `ieee_profile`, no mode; `boolean.*`: none | `numeric_equal`, `total_order` and `boolean.*` nodes take their operands in the order the composition names them |
-| `IeeeIntrinsic` `sqrt(x)`, `fma(a, b, c)` of width `w` (`quire::value::ieee::sqrt`, `quire::value::ieee::fma`) | `call` | `quire.op.ieee.float32.sqrt`, `.fma` or `quire.op.ieee.float64.sqrt`, `.fma` | law `ieee_profile`; mode `rounding` = the operand types' mode | `[ref(x)]` or `[ref(a), ref(b), ref(c)]` |
-| `IeeeIntrinsic` `numericEqual(a, b)`, `totalOrder(a, b)`, `bitIdentical(a, b)` | `call` | `quire.op.ieee.numeric_equal`, `quire.op.ieee.total_order`, `quire.op.ieee.bit_identical` | law `ieee_profile`; no mode | `[ref(a), ref(b)]` |
 | `Order(operator, kind)` (`<`, `<=`, `>`, `>=`) | `binary` | `quire.op.<f>.lt`, `.le`, `.gt`, `.ge`, where `<f>` is `integer`, `rational`, `decimal`, `enum`, `text` or `quantity` for `kind` `Integers`, `Rationals`, `Decimals`, `Enums`, `Texts`, `Quantities` | for `text`: law `text_profile`, mode `text_profile` = the operands' profile | `[ref(l), ref(r)]` |
-| `Equality(operator, schedule)` (`=`, `!=`) | `binary` | `quire.op.<f>.eq` or `.ne` for an operand family `<f>` of `boolean`, `integer`, `rational`, `decimal`, `text`, `enum`, `quantity`, `reference`, `string`, `uuid` or `timestamp`; `quire.op.structural.eq` or `.ne` for an `option`, record, tuple, union or collection operand | for `text`: law `text_profile`, mode `text_profile`; for `string`, `uuid` and `timestamp`: no law, no mode, no member and no leaves; for `structural`: leaves `operand:0`, the compared type's leaf list (its text leaves and float leaves) | `[ref(l), ref(r)]` |
+| `Equality(operator, schedule)` (`=`, `!=`) | `binary` | `quire.op.<f>.eq` or `.ne` for an operand family `<f>` of `boolean`, `integer`, `rational`, `decimal`, `text`, `enum`, `quantity`, `reference`, `string`, `uuid` or `timestamp`; `quire.op.structural.eq` or `.ne` for an `option`, record, tuple, union or collection operand | for `text`: law `text_profile`, mode `text_profile`; for `string`, `uuid` and `timestamp`: no law, no mode, no member and no leaves; for `structural`: leaves `operand:0`, the compared type's text-leaf list | `[ref(l), ref(r)]` |
 | `Coerce(e, interval)` (an integer admitted into an `Int[..]` that does not contain its type) | `convert` | `quire.op.numeric.narrow` | member `type_argument{declaration: T(Int[interval])}` | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand type is an exact numeric type other than the target | `convert` | `quire.op.numeric.convert` | member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand is a quantity | `convert` | `quire.op.quantity.convert` | member `type_argument` of the target type node; mode `rounding` = `exact` (Quantity conversion) | `[ref(e)]` |
+| `ConvertText(target, e)` (`convert<T>(e)` whose operand has a `Text[..]` or `String` type, QSpec FR-478) | `convert` | `quire.op.text.to_<k>` for a `Text[..]` operand, `quire.op.string.to_<k>` for a `String` operand, where `<k>` is `integer` (`Integer`, `Int[..]`), `decimal` (`Decimal`, `Decimal[..]`), `rational` (`Rational`, `Rational[..]`), `float32`, `float64` or `quantity` (`Quantity<u>`) for the target | law `text_profile` for a `Text[..]` operand, then law `ieee_profile` for a `float32` or `float64` target; mode `rounding` = the target's mode for a decimal or IEEE target (`exact` when the target omits it) and `exact` for a quantity target, no mode for an integer or rational target; member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertDecimal(e, target)` (`convert<T>(e)` to a decimal) | `convert` | `quire.op.numeric.convert` when exact, `quire.op.numeric.convert_rounding` when FR-149 classifies it as scale reduction | member `type_argument` of `target`'s node; for `convert_rounding`, mode `rounding` = `target`'s mode | `[ref(e)]` |
 | `IeeeToRational(e, domain)` | `convert` | `quire.op.ieee.to_rational` | law `ieee_profile`; member `type_argument` of `domain`'s node | `[ref(e)]` |
-| `IeeeFromExact(e, target)` (`convert<Float64[m]>(e)` over an `Integer`, `Int[..]`, `Rational[..]` or `Decimal[..]` operand) | `convert` | `quire.op.ieee.from_exact` | law `ieee_profile`; mode `rounding` = `target`'s mode; member `type_argument` of `target`'s node | `[ref(e)]` |
-| `IeeeConvert(e, target)` (`convert<Float32[m]>(e)` over a `Float64`; `convert<Float64[m]>(e)` over a `Float32`) | `convert` | `quire.op.ieee.to_float32`; `quire.op.ieee.to_float64` | law `ieee_profile`; `to_float32`: mode `rounding` = `target`'s mode; `to_float64`: no mode; member `type_argument` of `target`'s node | `[ref(e)]` |
 | `ConvertCollection{target, operand}` | `convert` | `quire.op.collection.convert` | member `type_argument` of `target`'s node; leaves `result_inner` | `[ref(e)]` |
 | `Field{declaration, name}` (`e.f`; the checked read of a record field carries the field's identity, FR-359 item 2, and a tuple read keeps its position) | `query` | `quire.op.record.project` | member `field{declaration: the record's node, name: f}` | `[ref(e)]` |
 | `Present` | `present` | `quire.op.option.present` | | `[ref(e)]` |
@@ -476,28 +320,6 @@ nevertheless reaches it refuses `ill_typed`/`operator-ineligible` at the
 comparison, and no node is built.
 No text-profile lock evidence is needed to lower these identities.
 
-**Native Bytes and JsonObject.** An `Equality` whose operands are both
-`ValueType::Bytes` or both `ValueType::JsonObject` lowers to
-`quire.op.bytes.eq`/`.ne` or `quire.op.json_object.eq`/`.ne` (QSpec FR-322 and
-its FR-322-AC-103): a `binary` expression with result type `boolean`,
-arguments `[ref(l), ref(r)]`, and no law, mode, member or leaves. `length(b)`
-lowers to `quire.op.bytes.length` with result type the builtin `Integer` node
-and arguments `[ref(b)]`, and `concat(a, b)` to `quire.op.bytes.concat` with
-result type the `bytes` type node and arguments `[ref(a), ref(b)]`, each with
-no law, mode, member or leaves. `Bytes("...")` and `JsonObject("...")` lower to
-one `value`/`literal` node whose `semantic_type` and body `type` are the
-`bytes` or `json_object` type node, with `value_kind` `bytes` or `json_object`
-and `value` the canonical text as JSON, shared by equal values within one unit.
-A field, parameter or result typed `Bytes` or `JsonObject` has that type node
-(QSpec FR-322-AC-102). A `Duration` lowers as the `Quantity<s>` it is: its
-type is the `scalar_type`/`unit` node of `s`, its literals are quantity
-literals and its comparisons, conversions and arithmetic are the quantity
-identities above, with no node of its own. `check` refuses unlike operand types
-and the ordering and arithmetic operators before lowering (FR-056), so lowering
-sees only same-type pairs; a pair that nevertheless reaches it refuses
-`ill_typed`/`operator-ineligible` at the comparison, and no node is built. No
-text-profile lock evidence is needed to lower these identities.
-
 A checked quantity type, `ValueType::Quantity(UnitId)`, has an exact
 rational magnitude and no numeric domain, so the rounding mode it pins is
 `exact`. FR-322 takes a `rounding` mode from the types
@@ -505,21 +327,49 @@ rational magnitude and no numeric domain, so the rounding mode it pins is
 into an exact target with no loss. `quire.op.quantity.convert` therefore
 carries mode `rounding` = `exact`.
 
+**Text to number.** `check` SHALL build a `convert<T>(e)` whose `e` has a
+`Text[..]` or `String` type as a `ConvertText(T, e)` node of type `T` when `T`
+is an integer, decimal, rational, `Float32`, `Float64` or `Quantity<u>` type
+(QSpec FR-478). A target equal to `e`'s own type builds no node, as for
+every `convert` (below). For any other target there is no conversion from
+text, and `check` refuses it with `ill_typed`/`operator-ineligible` at the `convert`,
+building no node. A `ConvertText` is never a `ConvertScalar`,
+`ConvertDecimal`, `Coerce` or `IeeeToRational`: it lowers by its own row,
+inside or outside an `Equality`.
+
+It is a `convert`, so its `rounding` mode is pinned by the target type alone
+(QSpec FR-322 `type_pinned_modes`): a decimal or IEEE target's declared mode,
+`exact` for a quantity, and no mode for an integer or rational target. A
+`Text[..]` operand gives its `text_profile` law, with the lock's text-profile
+definition as for every text identity, and its profile is read from the
+operand's type node, not from a `text_profile` mode. A `String` operand takes
+no `text_profile` law, as for `quire.op.string.eq`, and lowering selects a
+`quire.op.string.to_*` identity for it, never a `quire.op.text.*` one. An IEEE
+target adds the `ieee_profile` law, whose lock evidence is FR-397's selection.
+The operand's text-leaf list is unchanged. In a pure function body a
+`ConvertText` carries no obligation (QSpec FR-146). Its undefined outcome for
+text that is not a number, and its refusals for a number outside `T` or a
+strict `exact` rounding, are FR-478's at evaluation.
+
 A `Coerce` exists only for a narrowing: an integer whose type an `Int[..]`
 contains is admitted with no node, and a `ConvertScalar` whose operand type
 equals its target builds no node; its parent references the operand's node.
 
 **Converted equality operand.** An `Equality` operand written `convert<T>(e)`,
-whose `e` has a type other than `T`, is checked as a `ConvertScalar(T, e)`
-node of type `T`. It lowers by the `ConvertScalar` rows:
-`quire.op.numeric.convert`, or `quire.op.quantity.convert` for a quantity.
-The equality's operand family `<f>` is that of the compared type `T`, and its
+whose `e` has an exact numeric or quantity type other than `T`, is checked as
+a `ConvertScalar(T, e)` node of type `T`. It lowers by the `ConvertScalar`
+rows: `quire.op.numeric.convert`, or `quire.op.quantity.convert` for a
+quantity. An `Equality` operand written `convert<T>(e)` whose `e` has a
+`Text[..]` or `String` type is checked as a `ConvertText(T, e)` node, by the
+"Text to number" rule above, and lowers by the `ConvertText` row. Either way,
+the equality's operand family `<f>` is that of the compared type `T`, and its
 argument at that operand's position references the convert node, never `e`'s
-node. A `convert<T>(e)` whose `e` already has type `T` builds no node. A
-conversion keeps the value, so a guard (`=`, `!=` or an ordering) comparing an
-integer-typed chain of conversions with an integer literal bounds the
-chain's innermost integer operand as the comparison of that operand itself
-does.
+node. A `convert<T>(e)` whose `e` already has type `T` builds no node. An
+exact numeric conversion keeps the value, so a guard (`=`, `!=` or an
+ordering) comparing an integer-typed chain of such conversions with an integer
+literal bounds the chain's innermost integer operand as the comparison of that
+operand itself does. A `ConvertText` reads a number out of text, so a guard over
+it bounds no operand.
 
 The model nodes, the `Reference<T>` and `Population<T>[N]` type nodes and
 the model rows' vectors E4 to E9 are
@@ -561,7 +411,7 @@ keys to one id whichever family lowers the clause that holds it.
 
 ### Text leaves
 
-`check` SHALL build the **leaf list** of a type (the text leaves and the float leaves; the "text-leaf list" elsewhere is this list) by walking it from an
+`check` SHALL build the **text-leaf list** of a type by walking it from an
 empty path and appending leaves in the order the walk reaches them. The walk
 keeps the **open composites**: each declared record, tuple or union whose
 fields, positions or member payloads it is walking, with the number of
@@ -569,22 +419,18 @@ segments the path had when the walk entered it. At a type `U` and a path `p`:
 
 1. `Text[min, max; profile]`: append the text leaf
    `{path: p, laws: [the text_profile law], mode: {kind: "text_profile", value: profile}}`.
-   `Float32[m]` or `Float64[m]`: append the float leaf
-   `{path: p, laws: [the ieee_profile law], mode: null}`; the leaf is the same
-   whatever the rounding mode `m`. A **leaf type** is a `Text` type or a float
-   type.
 2. `Option<V>`, or `K<V>` or `K<V>[min, max]` for a collection kind `K`:
    walk `V` at `p` + `inner`.
 3. A declared record, tuple or union `C` that is open, entered at `d` segments:
    append the **recursion leaf**
-   `{path: p + "recursion:d", laws: [], mode: null}` when a leaf type is
+   `{path: p + "recursion:d", laws: [], mode: null}` when a `Text` type is
    reachable from `C`, and nothing otherwise. The walk does not enter `C`
    again.
 4. A declared record `C` that is not open: open `C` at the length of `p`;
    for each field in declaration order, walk a required field `f: V`'s `V`
    at `p` + `field:f` and an optional field `f: V?`'s `V` at `p` + `field:f`
    + `inner`; then close `C`. A record, tuple or union `C` from which no
-   leaf type is reachable is not entered, here or in steps 5 and 6, and
+   `Text` type is reachable is not entered, here or in steps 5 and 6, and
    appends nothing.
 5. A declared tuple `C` that is not open: open `C` at the length of `p`;
    walk each position `n`'s type, in position order, at `p` + `position:n`;
@@ -596,9 +442,9 @@ segments the path had when the walk entered it. At a type `U` and a path `p`:
    declared member, independently of any value's active member.
 7. Any other type: nothing.
 
-A leaf type is **reachable** from `C` when some finite sequence of steps
+A `Text` type is **reachable** from `C` when some finite sequence of steps
 2, 4, 5 and 6, applied without regard to open composites, leads from `C` to a
-leaf type. A type alias walks as its resolved type (FR-091). `d` is
+`Text` type. A type alias walks as its resolved type (FR-091). `d` is
 written as its canonical decimal string, as FR-322 writes `position:n`.
 
 `member:m` contains the exact declared member identifier, with the same
@@ -610,7 +456,7 @@ carries no union node key, `VariantId`, member ordinal or active-value tag.
 Member identity remains (union identity, member identifier), as FR-319
 requires. The type and its identity remain bound by the application's
 operand/result types; the leaf list does not identify the whole type.
-Two union types can therefore have the same leaf list.
+Two union types can therefore have the same text-leaf list.
 
 An optional field's path passes through `inner` because the field's slot
 holds a value of its `Option<V>` node: FR-092 types the field by that node,
@@ -618,17 +464,17 @@ and an omitted or `null` slot is a literal of it (Non-application nodes).
 So `f: V?` and `f: Option<V>`, which hold one set of values, have one leaf
 path.
 
-A recursion leaf stands for every leaf below its path. For a
+A recursion leaf stands for every text leaf below its path. For a
 recursion leaf whose path is `q` + `recursion:d`, let `r` be the first `d`
 segments of `q`. The value at `q` has the type of the value at `r`: the
-composite `C`, entered at `r` and reentered at `q`. Each leaf at a path
+composite `C`, entered at `r` and reentered at `q`. Each text leaf at a path
 `r` + `s` therefore has a counterpart at `q` + `s` with the same laws and
 mode. The **expanded leaf set** of a list is the least set that holds each
-of the list's text and float leaves and, for each of its recursion leaves and each
-leaf in the set at a path `r` + `s`, that leaf re-rooted at `q` + `s`.
-Every leaf of the type's unfolding is in the set: a path through a
+of the list's text leaves and, for each of its recursion leaves and each
+text leaf in the set at a path `r` + `s`, that leaf re-rooted at `q` + `s`.
+Every text leaf of the type's unfolding is in the set: a path through a
 reentry at `q` is `q` + `s`, and `r` + `s` is a shorter path to a leaf of the
-same type, so induction on path length ends at a leaf of the list.
+same type, so induction on path length ends at a text leaf of the list.
 
 The list has these properties:
 
@@ -641,27 +487,24 @@ The list has these properties:
   Because rule 3 ends each path at its first reentry, a recursive type's
   walk is as deep as its composites' nesting.
 - **Lossless.** The expanded leaf set is computed from the list alone, so
-  the list determines every leaf of the type's unfolding, with its path
-  and law. Two types whose leaves differ in any path, law or profile
+  the list determines every text leaf of the type's unfolding, with its path
+  and profile. Two types whose text leaves differ in any path or profile
   therefore have different lists.
 - **Without recursion.** A walk that reaches no open composite appends no
-  recursion leaf. Its leaves use `inner` for an optional field and
+  recursion leaf. Its text leaves use `inner` for an optional field and
   `member:<identifier>` for a union payload; these paths await a QSpec
   FR-322 extension (ADR-013 QC-24). A recursive composite that reaches no
-  leaf type, such as FR-092's `List`, adds no leaf.
+  `Text` type, such as FR-092's `List`, adds no leaf.
 - **Independent of keys and group order.** `d` counts path segments. It is
   not a FR-092 group ordinal, and the list names no node, so an application
   node's leaves do not depend on its operand types' recursion group order or
   keys, and they name no member of that group.
 
-A recursion leaf carries no law: each leaf it stands for carries its
-own. A type from which a leaf type is reachable has at least one leaf
-in its list, because the shortest walk from the type to a leaf type
+A recursion leaf carries no law: each text leaf it stands for carries its
+own. A type from which a `Text` type is reachable has at least one text leaf
+in its list, because the shortest walk from the type to a `Text` type
 enters no composite twice. The `missing-selection` refusal of a node whose
-leaf needs the text-profile law or the IEEE profile law therefore holds for
-recursive types too. A float leaf carries the lock's `ieee_profile`
-`DefinitionRef`, which the package selects because it declares a float
-(FR-397).
+leaf needs the text-profile law therefore holds for recursive types too.
 
 Each appended leaf, text or recursion, costs one unit of the check stage's
 node limit (`CheckingLimits`), because the list is bounded per path but not
@@ -1134,18 +977,9 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-31 | `function f using v(a: Int[-100,100], b: Decimal[-100,100;0,0;nearest-even]): Boolean pure { convert<Decimal[-100,100;0,0;nearest-even]>(a) = b }` lowers to one `quire.op.numeric.convert` node over `a`'s parameter node, whose `result_type` is `b`'s type node, and one `quire.op.decimal.eq` whose arguments are `[ref(convert), ref(b)]`. `!=` gives `quire.op.decimal.ne`, and `b = convert<..>(a)` puts the convert node second. `convert<Decimal[..]>(a) = convert<Decimal[..]>(c)` builds one convert per operand. A conversion between Rational, Decimal and Int types in either direction, and a Quantity conversion `convert<Km>(q) = r` (`quire.op.quantity.convert` with mode `rounding` = `exact`, then `quire.op.quantity.eq`), each lowers a convert node and the equality of the converted type. `a = b` over two `Int[-100,100]` parameters builds no convert node and gives `quire.op.integer.eq` over the two parameters. IR's v2 reader admits each package, and evaluating each equality gives the result of comparing the converted values. | Test (TC-415) |
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
 | FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. In one unit beside `h`, `function h2 using v(): Boolean pure { f(0.5 ms) }` and `function h3 using v(): Boolean pure { f(rational(2, 4) ms) }` lower their arguments to one shared literal node of value `"1/2"`, and `function h4 using v(): Boolean pure { f(3 ms) }` references `h`'s `3 ms` node; `function n using v(): Boolean pure { f(rational(-3, 1) ms) }` lowers a literal of value `"-3"`; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
-| FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
-| FR-093-AC-36 | With FR-091-AC-44's units and `dimension Length;`, `unit m : Length = rational(1, 1);`, `dimension Velocity = Length / Time;` and `unit mps : Velocity = rational(1, 1);`, each of these checks and lowers: `function p1 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, two `quire.op.quantity.div` nodes with arguments `[ref(d), ref(L)]` and `[ref(e), ref(L)]`, `L` the one shared `3 ms` literal node, each with `result_type` the dimensionless compound-unit node, under one `quire.op.quantity.eq`; `function p2 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / 3 ms) = b }`, a quotient whose compound unit has the terms `m` to the power 1 and `s` to the power -1, which `convert` admits to `mps`; `function p3 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / rational(-3, 1) ms) = b }`, divisor literal of value `"-3"`; `function p4 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / 0.5 s) = b }`, divisor literal of value `"1/2"` at the `s` node; `function p5 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 s = e / 3 s }`; and `function p6 using v(d: Quantity<ms>): Boolean pure { d = 0 ms }`. Evaluating the lowered bodies gives: `p1` true for `d` = `6 ms`, `e` = `6 ms` and false for `d` = `6 ms`, `e` = `3 ms`; `p2` true for `a` = `6 m`, `b` = `2000 mps`; `p3` true for `a` = `6 m`, `b` = `-2000 mps`; `p4` true for `a` = `6 m`, `b` = `12 mps`; `p5` true for `d` = `6000 ms`, `e` = `6000 ms` and false for `d` = `6000 ms`, `e` = `3000 ms`; `p6` true for `d` = `0 ms`. IR's v2 reader admits each package. | Test (TC-483) |
-| FR-093-AC-37 | Under AC-36's units, each of these refuses and emits no node: `function z1 using v(d: Quantity<ms>): Boolean pure { d / 0 ms = d / 0 ms }`, `function z2 using v(d: Quantity<ms>): Boolean pure { d / rational(0, 1) ms = d / 0 ms }` and `function z3 using v(d: Quantity<ms>): Boolean pure { d / 0.0 ms = d / 0.0 ms }`, each `undefined_expression`/`unproved-nonzero` at the first division; `function z4 using v(d: Quantity<ms>): Boolean pure { d / rational(1, 0) ms = d / 3 ms }`, `undefined_expression`/`unproved-nonzero` at the literal; `function z5 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / e = d / e }`, `function z6 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { if e = 3 ms then d / e = d / e else true }`, `function z7 using v(d: Quantity<ms>): Boolean pure { let k = 3 ms in d / k = d / k }` and `function z8 using v(d: Quantity<ms>): Boolean pure { d / convert<Quantity<ms>>(3 s) = d / 3 ms }`, each `undefined_expression`/`unproved-nonzero` at the first division; `function z9 using v(d: Quantity<ms>): Boolean pure { d / -(0 ms) = d / 3 ms }`, `function z10 using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / -e = d / 3 ms }`, each `undefined_expression`/`unproved-nonzero` at the first division, the negation of a zero literal and of a parameter being no nonzero fact. | Test (TC-483) |
-| FR-093-AC-38 | `function b1 using v(a: Bytes, b: Bytes): Boolean pure { a = b }`, its `!=`, and the same over `JsonObject` lower to one `expression` node whose operation is `quire.op.bytes.eq`, `.ne`, `quire.op.json_object.eq` or `.ne`, result type `boolean`, arguments `[ref(a's node), ref(b's node)]`, and no law, mode, member or leaves, with no text-profile definition in the lock evidence. `function l1 using v(a: Bytes): Integer pure { length(a) }` lowers to `quire.op.bytes.length` over `[ref(a's node)]` with result type the `Integer` node, and `function c1 using v(a: Bytes, b: Bytes): Bytes pure { concat(a, b) }` to `quire.op.bytes.concat` over `[ref(a), ref(b)]` with result type the `bytes` node. `function k1 using v(): Bytes pure { Bytes("00ff") }` and `function j1 using v(): JsonObject pure { JsonObject("{\"a\":1}") }` lower to one `value`/`literal` node each of `value_kind` `bytes` with `value` `"00ff"` and `json_object` with `value` `"{\"a\":1}"`, and two `Bytes("00ff")` in one unit share one node. IR's v2 reader admits each package. | Test (TC-1231) |
-| FR-093-AC-39 | Under `Decimal[0, 1000; 0, 2; nearest-even]`, `function add using v(a: Decimal[0, 1000; 0, 2; nearest-even]): Decimal[0, 1000; 0, 2; nearest-even] pure { a + decimal(125, 2) }` checks, types the constructor at the parameter's type node, and lowers to one `value`/`literal` node of `value_kind` `decimal` and `value` `"1.25"` and one `quire.op.decimal.add` with mode `rounding` `nearest-even` over `[ref(a), ref(literal)]`. The constructors `decimal(5, 2)`, `decimal(10, 0)`, `decimal(0, 2)` and `decimal(-5, 1)` in the same position have values `"0.05"`, `"10"`, `"0.00"` and `"-0.5"`; `decimal(10, 1)` and `decimal(100, 2)` are two nodes and two equal `decimal(125, 2)` are one. `function k using v(): Decimal[0, 1000; 2, 2; nearest-even] pure { decimal(125, 2) }` checks and evaluates to the decimal of coefficient 125 and scale 2; `function z using v(a: Decimal[0, 1000; 0, 2; nearest-even]): Decimal[0, 1000; 0, 2; nearest-even] pure { decimal(3, 0) * a }` takes its type from `a`; `convert<Decimal[0, 1000; 2, 2; nearest-even]>(decimal(125, 2))` is the constructor and builds no conversion node. | Test (TC-1232) |
-| FR-093-AC-40 | `decimal(15, 1) = decimal(15, 1)` and `let x = decimal(15, 1) in x` refuse `ill_typed`/`ambiguous-literal` at the constructor; `decimal(15, 1)` at an `Int[0, 10]`, a `Rational[0, 10; 1, 10]`, a `Float64[nearest-even]`, a `Boolean` and a `Quantity<ms>` position refuses `ill_typed`/`type-mismatch` at the constructor; at `Decimal[0, 1000; 0, 2; nearest-even]`, `decimal(1001, 0)`, `decimal(-1, 0)` and `decimal(1, 3)` (membership scale 3 above `smax`) refuse `ill_typed`/`type-mismatch`, and at `Decimal[0, 1000; 1, 2; nearest-even]`, `decimal(1001, 0)` (membership coefficient 10010) refuses the same. Membership is by value, so `decimal(5, 0)` at `Decimal[-1000, 1000; 1, 2; nearest-even]`, `decimal(5, 0)` at `Decimal[0, 1000; 1, 2; nearest-even]` and `decimal(100000, 2)` at `Decimal[0, 1000; 0, 2; nearest-even]` check, and their literal nodes keep the values `"5"`, `"5"` and `"1000.00"` as written. A constructor whose coefficient exceeds the rational-bits ceiling refuses `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`. | Test (TC-1232) |
-| FR-093-AC-41 | With `x: Decimal[0, 10000; 0, 2; nearest-even]` holding the decimal of coefficient 600 and scale 2, `x / decimal(4, 0)` checks without `unproved-nonzero`, lowers to one `quire.op.decimal.div` with mode `rounding` `nearest-even` over `[ref(x), ref(literal)]` and evaluates to coefficient 150 and scale 2; `x / decimal(0, 0)`, `x / decimal(0, 2)` and `x / y` for a parameter `y` of the same type each refuse `undefined_expression`/`unproved-nonzero` at the divisor. | Test (TC-1232) |
-| FR-093-AC-42 | With `i: Int[0, 10]` and `e: Decimal[0, 1000; 0, 2; nearest-even]` holding coefficient 125 and scale 2: `convert<Decimal[0, 1000; 0, 2; nearest-even]>(i)` lowers to `quire.op.numeric.convert`, `convert<Rational[0, 1000; 1, 100]>(e)` evaluates to the rational `5/4` through `quire.op.numeric.convert`, `convert<Decimal[0, 1000; 0, 1; nearest-even]>(e)` lowers to `quire.op.numeric.convert_rounding` with mode `nearest-even` and evaluates to coefficient 12 and scale 1, and `convert<Float64[nearest-even]>(e)` lowers to `quire.op.ieee.from_exact` (FR-397); `convert<Decimal[0, 1000; 0, 2; nearest-even]>(f)` over a `Float64[nearest-even]` parameter `f` refuses `ill_typed`/`type-mismatch`. | Test (TC-1232) |
-| FR-093-AC-43 | With FR-091-AC-44's units (`Time`, `s`, `ms`), `dimension Period;`, `unit sec : Period = rational(1, 1);`, `unit msec : Period = rational(1, 1000) * sec;` and `dimension Period ~ Time by 1 sec = 1 s;` (root ratio 1), each of these checks and lowers: `function c1 using v(d: Quantity<s>): Boolean pure { convert<Quantity<sec>>(d) = 3 sec }`, a `quire.op.quantity.convert` node with mode `rounding` = `exact` over `d` then `quire.op.quantity.eq` over it and the `3 sec` literal at the `sec` node; `function c2 using v(d: Quantity<s>): Boolean pure { convert<Quantity<msec>>(d) = 3000 msec }`; and `function c3 using v(e: Quantity<msec>): Boolean pure { convert<Quantity<s>>(e) = rational(3, 2) s }`. IR's v2 reader admits each package, and evaluating the lowered bodies gives: `c1` true for `d` = `3 s` and false for `d` = `4 s`; `c2` true for `d` = `3 s`; `c3` true for `e` = `1500 msec`. With `dimension Length;` and `unit m : Length = rational(1, 1);` beside them, `function c4 using v(d: Quantity<s>): Boolean pure { convert<Quantity<m>>(d) = 3 m }` refuses `ill_typed` at the conversion, and in the same units without `dimension Period ~ Time by 1 sec = 1 s;` `c1` refuses `ill_typed` at the conversion. | Test (TC-483) |
-| FR-093-AC-44 | Under AC-43's units, each of these refuses `ill_typed`/`type-mismatch` at the operation and emits no node: `function a1 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d + p = d + p }`, `function a2 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d = p }`, `function a3 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d < p }` and, with `function f using v(d: Quantity<s>): Boolean pure { true }`, `function a4 using v(): Boolean pure { f(3 sec) }`. Each of these checks and lowers: `function a5 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { convert<Quantity<s>>(p) + d = 6 s }`, true for `d` = `3 s` and `p` = `3 sec`; `function a6 using v(): Boolean pure { f(convert<Quantity<s>>(3 sec)) }`; `function a7 using v(d: Quantity<s>): Boolean pure { d / 3 sec = d / 3 s }`, two `quire.op.quantity.div` nodes whose `result_type` is the one dimensionless compound-unit node, true for `d` = `6 s`; and `function a8 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d * p = d * d }`, whose two products have one compound-unit node over the class root unit squared, true for `d` = `2 s` and `p` = `2 sec`. | Test (TC-483) |
-| FR-093-AC-45 | With FR-093-AC-36's units and `dimension Temperature;`, `unit kelvin : Temperature = rational(1, 1);` and `unit celsius : Temperature = rational(1, 1) * kelvin + decimal(27315, 2);`, each of these checks and lowers: `function n1 using v(d: Quantity<ms>): Boolean pure { -(3 ms) + d = d - 3 ms }` and `function n2 using v(d: Quantity<ms>): Boolean pure { -3 ms + d = d - 3 ms }`, each one `quire.op.quantity.negate` node with arguments `[ref(L)]`, `L` the `3 ms` literal node and `result_type` the `ms` unit node, under `quire.op.quantity.add` (`n2` parses `-3 ms` as `-(3 ms)`, so the two bodies lower to the same nodes); `function n3 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / -(3 ms)) = b }` and `function n4 using v(a: Quantity<m>, b: Quantity<mps>): Boolean pure { convert<Quantity<mps>>(a / -3 ms) = b }`, a `quire.op.quantity.div` with arguments `[ref(a), ref(N)]`, `N` the negate node of the `3 ms` literal, and a compound-unit result type with the terms `m` to the power 1 and `s` to the power -1; `function n5 using v(d: Quantity<ms>): Boolean pure { -(-(3 ms)) + d = d + 3 ms }`, two nested negate nodes; and `function n6 using v(d: Quantity<ms>): Boolean pure { -(0 ms) = d - d }`. Evaluating the lowered bodies gives: `n1` and `n2` true for `d` = `5 ms`; `n3` and `n4` true for `a` = `6 m`, `b` = `-2000 mps` and false for `b` = `2000 mps`; `n5` true for `d` = `5 ms`; `n6` true for `d` = `7 ms`. `function n7 using v(t: Quantity<celsius>): Boolean pure { -t = -t }` refuses `ill_typed`/`operator-ineligible` at the negation and emits no node. IR's v2 reader admits each admitted package. | Test (TC-483) |
-| FR-093-AC-46 | Unequal roots (QSpec FR-142-AC-26). With FR-091-AC-44's units, `dimension Beat;`, `unit beat : Beat = rational(1, 1);`, `unit bar : Beat = rational(4, 1) * beat;` and `dimension Beat ~ Time by 1 beat = rational(1, 4) s;` (root ratio 1/4: a beat is a quarter of a second), each of these checks and lowers: `function u1 using v(d: Quantity<beat>): Boolean pure { convert<Quantity<s>>(d) = rational(1, 4) s }`, true for `d` = `1 beat` and false for `d` = `2 beat`; `function u2 using v(d: Quantity<s>): Boolean pure { convert<Quantity<beat>>(d) = 12 beat }`, true for `d` = `3 s`; `function u3 using v(d: Quantity<bar>): Boolean pure { convert<Quantity<ms>>(d) = 1000 ms }`, true for `d` = `1 bar`; and `function u4 using v(d: Quantity<s>): Boolean pure { d / 3 beat = d / rational(3, 4) s }`, two `quire.op.quantity.div` nodes with the one dimensionless compound-unit node, true for `d` = `6 s` (both quotients are `8`). In the same units with `dimension Beat ~ Time by 1 beat = 1 s;` (root ratio 1) `u1` is false for `d` = `1 beat` and true for `d` = `rational(1, 4) beat`, and `u2` is true for `d` = `12 s`. `function u5 using v(d: Quantity<s>, p: Quantity<beat>): Boolean pure { d + p = d + p }` refuses `ill_typed`/`type-mismatch` at the operation under either declaration. | Test (TC-483) |
+| FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
+| FR-093-AC-35 | Over `t: Text[0, 8; nfc]`, each of `convert<Int[0, 99]>(t)`, `convert<Decimal[0, 1000; 0, 2; nearest-even]>(t)`, `convert<Rational[-9, 9; 1, 9]>(t)`, `convert<Float32[toward-zero]>(t)`, `convert<Float64>(t)` and, with FR-091-AC-44's units, `convert<Quantity<ms>>(t)` as a pure function body lowers to one `convert` node over `[ref(t)]` with member `type_argument` naming the target type node. The identities are `quire.op.text.to_integer`, `to_decimal`, `to_rational`, `to_float32`, `to_float64` and `to_quantity`. Each carries law `text_profile` with the lock's `quire.value.text.unicode-17.0.0/v1` definition; `to_float32` and `to_float64` also carry law `ieee_profile`. The modes are: none for `to_integer` and `to_rational`, `{"kind":"rounding","value":"nearest-even"}` for `to_decimal`, `toward-zero` for `to_float32`, `exact` for `to_float64` and `exact` for `to_quantity`. No node carries a `text_profile` mode. Over `s: String` the same six bodies lower to `quire.op.string.to_integer` to `quire.op.string.to_quantity` with the same members and modes, the `ieee_profile` law for the two IEEE targets and no `text_profile` law. No function carries a body obligation. | Test (TC-1196) |
+| FR-093-AC-47 | `function g using v(t: Text[0, 8; nfc]): Boolean pure { convert<Integer>(t) = 3 }` lowers the comparison to `quire.op.integer.eq` with arguments `[ref(the convert node), ref(the literal 3)]`, where the convert node is `quire.op.text.to_integer` over `[ref(t)]` and no `ConvertScalar` or `quire.op.numeric.convert` node is built. Over the same `t`, `convert<Boolean>(t)`, `convert<Text[0, 4; nfc]>(t)`, `convert<String>(t)` and, for `s: String`, `convert<Text[0, 8; nfc]>(s)` each refuse `ill_typed`/`operator-ineligible` at the `convert` and build no node; `convert<Text[0, 8; nfc]>(t)` builds no node. | Test (TC-1196) |
 
 ## Dependencies
 

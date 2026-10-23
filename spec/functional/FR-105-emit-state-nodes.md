@@ -66,9 +66,11 @@ source map (FR-095).
 | `state`/`operation_anchor` | the declaring type's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) | `aggregate[ binding("context", reference(declaring type node)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)) ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
 | `state`/`frame` | the declaring type's node (as the anchor's) | QSpec FR-340's frame term: `modifies`, `creates`, `deletes` and `deletes_scoped`, with each field `modifies` entry an (object type node, field name) pair carrying its `scope`, each `creates`/`deletes` entry an `object_type` node, and each `deletes_scoped` entry `receiver` or a reference parameter's name (FR-154) | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way. Each occurrence carries one region: the span of the operation reference (the qualified operation name) in the first clause or protocol attempt, in source order, that names the operation |
 
-- `<kind>` is `invariant`, `precondition` or `postcondition`. The anchor is
-  the context's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) for an invariant, and the
-  operation's `state`/`operation_anchor` node otherwise.
+- `<kind>` is `invariant`, `constraint` (a state constraint, FR-158),
+  `precondition` or `postcondition`. The anchor is the context's node
+  (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) for an
+  invariant or a constraint, and the operation's `state`/`operation_anchor`
+  node otherwise. An invariant and a constraint bind `self` alone.
 - `self`, `result` and each operation parameter are `value`/`parameter`
   nodes, as a function's parameters are (FR-092). `result` is present only in
   a postcondition of an operation with a result.
@@ -114,10 +116,12 @@ source map (FR-095).
   receiver-scoped entry (FR-154), so its node holds `every-object` `modifies`
   entries and an empty or parameter-only `deletes_scoped`. An invariant on a
   process is anchored at the process node.
-- The checker SHALL add `Invariant`, `Precondition` and `Postcondition` to
-  `CheckedClauseKind` (FR-088, as amended), each spelled with the node pair
-  (`state`, `state_clause`), the clause operation `quire.op.state.clause` and
-  its own kind member, so the three spellings differ only in the kind member.
+- The checker SHALL add `Invariant`, `Constraint`, `Precondition` and
+  `Postcondition` to `CheckedClauseKind` (FR-088, as amended), each spelled
+  with the node pair (`state`, `state_clause`), the clause operation
+  `quire.op.state.clause` and its own kind member (`invariant`, `constraint`,
+  `precondition`, `postcondition`), so the four spellings differ only in the
+  kind member.
 - The checker SHALL spell `StateTransition` with the node pair
   (`state`, `transition`), its QSpec form as STD-111 item 5 defines it (the
   `state`/`transition` body root is a `quire.op.state.transition`
@@ -155,11 +159,12 @@ source map (FR-095).
 | FR-105-AC-2 | Each emitted node's body, `semantic_type`, `dependencies` and occurrences match the Outputs table; `VersionUnchanged`'s condition holds a `quire.op.state.pre` application over the field read of `versionNumber`; `NoCycle`'s holds a `quire.op.model.reaches_field` application whose member is `{kind: "field", declaration: <ConfigVersion node>, name: "parent"}`, the same member shape `ParentOrder`'s `self.parent` read carries. | Test (TC-462); covered |
 | FR-105-AC-3 | The emitted package passes QSL's I2 read (`qsl-package` `checked_v2` reader), including its frame step, and its recomputed `package_id` equals the emitted one. | Test (TC-463) |
 | FR-105-AC-4 | Compiling the unit twice gives identical bytes. Renaming `ParentOrder` changes no node id; changing its `<` to `<=` changes its `state_clause` node id and the `package_id`; adding `ParentOrder2` with `ParentOrder`'s body adds no node and a second `claim` occurrence (ordinal 1) to `ParentOrder`'s node; adding a second `post` clause on `attemptUpdate` adds one `state_clause` node and no second anchor or frame. Over a package where `Sub` specializes `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and `pre B ... on Config::Sub::attemptUpdate` share one anchor whose context is `ConfigVersion`. | Test (TC-463); covered |
-| FR-105-AC-5 | `CheckedClauseKind`'s mapping is total over all seven variants: forward, each variant gives one (node pair, clause operation, kind member) triple and no two variants give the same triple; backward, each triple decodes to its variant; (`state`, `frame`) decodes to no variant; `StateTransition` gives (`state`, `transition`). A mutant that swaps two kind members, or deletes an arm, fails the test. | Test (TC-462); covered |
+| FR-105-AC-5 | `CheckedClauseKind`'s mapping is total over all eight variants: forward, each variant gives one (node pair, clause operation, kind member) triple and no two variants give the same triple; backward, each triple decodes to its variant; (`state`, `frame`) decodes to no variant; `StateTransition` gives (`state`, `transition`). A mutant that swaps two kind members, or deletes an arm, fails the test. | Test (TC-462); covered |
 | FR-105-AC-6 | When the emitter cannot emit one of a clause's nodes (fault injected at the `frame` node), the compile refuses and emits no `state` node and no package bytes. | Test (TC-463 step 4); covered: `qsl-package`'s `a_fault_injected_partway_through_node_emission_writes_nothing` proves the all-or-nothing mechanism generically over the node-emission loop, and `qsl-replay`'s `a_fault_on_the_frame_node_refuses_the_whole_config_version_package` drives it at the ConfigVersion state clause's own `frame` node |
 | FR-105-AC-7 | Over TC-1043's fixture R, where `all` and `same` have equal frames, the package holds one `state`/`frame` node for the two operations, whose body is vector W5 and which carries a `generated` occurrence for `all` and then one for `same`, and two `operation_anchor` nodes, one per operation, whose `frame` bindings reference that node; the package passes QSL's I2 read. | Test (TC-1043 step 2b) |
 | FR-105-AC-8 | Compiling FR-104-AC-10's `P` and `Q` yields exactly one `operation_anchor` node for `go`, whose `context` is the `Flow` `model`/`process` node and whose operation is the text literal `"go"`, one `frame` node whose `modifies` is exactly (`Flow` node, `n`, scope `every-object`) with `creates`, `deletes` and `deletes_scoped` empty, one `operation-contract` frame record for `go`, and one `anchor` occurrence of the anchor per clause; `I` is anchored at the `Flow` node. A package with no clause or attempt naming `go` holds no anchor, frame node or frame record for `go`. | Test (TC-462) |
 | FR-105-AC-9 | In FR-105-AC-1's package, the frame node's `generated` occurrence for `attemptUpdate` carries exactly one region, the byte span of `attemptUpdate`'s qualified operation reference in `VersionUnchanged`, the first clause naming it. Adding, before `VersionUnchanged`, a second `post` clause naming `attemptUpdate` moves the region to that clause's reference and leaves the occurrence's (node id, role, ordinal) unchanged. Over TC-1043's fixture R, the occurrences for `all` and `same` carry the span of each operation's reference in the first clause naming it. A `generated` frame occurrence with no region refuses `UnlocatedOccurrence` (FR-062). | Test (TC-462) |
+| FR-105-AC-10 | Adding `constraint Low using v on Config::ConfigVersion at current { self.versionNumber <= 1 }` to the ConfigVersion unit of FR-104-AC-1 adds exactly one `state_clause` node, whose body is a `quire.op.state.clause` application with kind member `{kind: "state_clause", clause: "constraint"}`, a parameter aggregate holding only the `self` `value`/`parameter` node, the `ConfigVersion` `model`/`object_type` node as anchor, and the lowered condition; it has one `claim` occurrence and adds no `operation_anchor` or `frame` node. Replacing `constraint` with `invariant` in that declaration gives a node with a different node id, and the package passes QSL's I2 read in both cases. `(state, state_clause, quire.op.state.clause, constraint)` decodes to `Constraint`. | Test (TC-462) |
 
 ## Dependencies
 

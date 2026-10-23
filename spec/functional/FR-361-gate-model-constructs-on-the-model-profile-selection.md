@@ -68,8 +68,10 @@ identity of a row whose `requires` closure names it, which is
    `requires` closure names it; the header need not name both layers. QSL SHALL
    NOT infer the selection from a construct, from a `model` declaration, from
    a supplied domain package, from an alias or from the fixture a unit belongs
-   to, and SHALL NOT fall back to `quire.value.complete/v1` when the selection
-   is absent.
+   to. `model_gate::selects_model` SHALL determine selection from this
+   requires-expanded union, so selecting `quire.temporal.complete/v1` selects
+   `quire.model.complete/v1`. It SHALL NOT fall back to
+   `quire.value.complete/v1` when the selection is absent.
 2. **One resolution path.** E3 resolves the identity against the same
    `header_selectable_layers` rows FR-110 uses for all six layers. The
    model profile adds no second header-profile mechanism and no new refusal
