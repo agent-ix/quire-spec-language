@@ -14,9 +14,9 @@ use quire_semantic_value::catalog::{
     CatalogCode, CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
 
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::observation::AdmissionRecord;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::call::WrongSnapshotCause;
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called

@@ -26,13 +26,14 @@ use std::collections::HashMap;
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::admitted::AdmittedPackage;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
-use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::model::key::EffectiveId;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use crate::model::systems::{
     check_allocation, check_connection, resolve_kind, wrong_export, AllocationCheckOutcome,
     ConditionFailure, ConnectionCheckOutcome, ConnectionOutcome, Kind, ResolvedElement,
 };
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 
 /// A model alias of the unit being checked and the selection it names.
 #[derive(Clone, Copy, Debug)]

@@ -112,11 +112,12 @@ use crate::model::domain_package::{
 };
 use crate::model::index::{ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
-    canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
-    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, RuleRef, RuleRefWire,
-    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
+    canonical_len, sha256_and_len, EffectiveDeclarationPreimage, EffectiveDeclarationWire,
+    EffectiveId, EffectiveIdWire, Fact, RuleRef, RuleRefWire, RULE_INHERIT, RULE_QUALIFY,
+    RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_foundation::diagnostic::{Code, JsonPointer};
+use quire_checked::key::DeclarationKey;
 use quire_exact::{length_amount, Cancel};
 use serde::Serialize;
 

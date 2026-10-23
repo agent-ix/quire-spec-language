@@ -7,8 +7,8 @@
 
 use crate::model::domain_package::{DomainPackageRecord, EventTypeRecord};
 use crate::model::intake::{read_record_value_type, NodeCtx};
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::ModelRefusal;
+use quire_checked::key::DeclarationKey;
 
 use super::meaning_dispatch::MeaningBindingContext;
 

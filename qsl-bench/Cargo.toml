@@ -22,6 +22,7 @@ qsl-eval = { path = "../qsl-eval" }
 # `deep_input`: the S1-to-S4 spine compile the deep-input fuzz target drives.
 qsl-replay = { path = "../qsl-replay" }
 quire-exact = { workspace = true }
+quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 # ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
 quire-eval = { workspace = true }

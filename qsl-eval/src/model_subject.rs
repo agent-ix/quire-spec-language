@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use qsl_foundation::bound::ProofBound;
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::FormulaNodeId;
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Incomplete, Meter};
 
 use crate::simulation::model::{ModelSimState, ModelSimulationRequest};

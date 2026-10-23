@@ -47,7 +47,7 @@ fn obligation_model() -> crate::model::intake::SelectedModel {
     use crate::model::domain_package::{
         DomainPackageRecord, Extent, ObjectTypeRecord, PopulationRecord,
     };
-    use crate::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
     let key = |name: &str| DeclarationKey {
         package: "example/protocol-obligations".to_owned(),
         node: format!("ix://example/protocol-obligations/{name}"),

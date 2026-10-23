@@ -176,7 +176,7 @@ fn integer_operator(operator: &str, profile: Option<DivisionProfile>) -> Checked
 
 fn admitted_integer_division(
     profile: DivisionProfile,
-) -> qsl_semantics::value::AdmittedIntegerDivision {
+) -> quire_checked::integer_division::AdmittedIntegerDivision {
     let role = match profile {
         DivisionProfile::Truncating => CatalogRole::IntegerDivisionTruncating,
         DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,

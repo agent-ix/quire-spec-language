@@ -80,7 +80,6 @@ use crate::model::domain_package::{
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
 use crate::value::definition::DefinitionLock;
 use crate::value::enumeration::{
@@ -89,6 +88,7 @@ use crate::value::enumeration::{
 use crate::value::environment_stage::stage_limit;
 use crate::value::layer::{HeaderLayer, LayerForm};
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageUnit, TypeEnvironment,

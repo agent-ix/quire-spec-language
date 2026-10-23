@@ -11,11 +11,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
 use qsl_forms::Expression;
 use quire_canonical::FixedShape;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Presence, TextType};
 use quire_semantic_value::location::OperationClauseKind;
 

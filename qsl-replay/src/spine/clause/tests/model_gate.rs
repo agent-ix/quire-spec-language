@@ -535,11 +535,11 @@ fn an_abstraction_declaration_needs_the_model_profile() {
     // source writes (`Config::ConfigVersion`, `Config::config_history`,
     // `Config::ConfigVersion::attemptUpdate`) in the domain package, not read
     // back from the compiled relation.
-    let object = qsl_semantics::model::key::DeclarationKey {
+    let object = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: config_version_type(),
     };
-    let population = qsl_semantics::model::key::DeclarationKey {
+    let population = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: config_version_population_identity(),
     };

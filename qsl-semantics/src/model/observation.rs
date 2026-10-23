@@ -37,10 +37,11 @@ use quire_semantic_value::catalog::{CatalogCoded, InternalFault};
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
 use crate::model::intake::{admit_selections, read_records, DigestMismatch};
-use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use crate::model::key::{hex, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 // ---------------------------------------------------------------------------

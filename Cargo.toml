@@ -16,6 +16,11 @@ quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1 item 2),
 # its own repository so IR, RT and CG depend on it without the QSL repo.
 quire-walk = { git = "https://github.com/agent-ix/quire-walk", branch = "main" }
+# ADR-011 §6.1 layer C: the checked terms the evaluator reads (FR-400), its own
+# repository so IR, RT and CG depend on it without the QSL repo. Only
+# `qsl-semantics` enables `construct`. Branch is the stacked IR-586 S2 PR until
+# it merges, then `main`.
+quire-checked = { git = "https://github.com/agent-ix/quire-eval", branch = "ir-586-s2-eval" }
 # ADR-011 §6.1 layer E: the shared evaluation-core interface (FR-262, FR-401),
 # its own repository so RT and CG depend on it without the QSL repo.
 quire-eval = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
@@ -55,6 +60,7 @@ population-fixtures = []
 quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the expression `Origin` the run output renders; the
 # tests also assert its refusal vocabulary and runtime enum values.
+quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 # ADR-013 §2 (ADR-013:113): the FR-051/FR-052 checked-handoff and
 # native-temporal document identities encode through the one RFC 8785
@@ -105,6 +111,7 @@ serde_json_canonicalizer = "0.3.2"
 # (`no_shipped_dependency_enables_test_support`) refuses a normal or build
 # dependency that does. Resolver 2 turns it on only when a test target is
 # built, so it never reaches the production lib.
+quire-checked = { workspace = true, features = ["test-support"] }
 qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
 # ADR-011 §7.3 X-9: layer R, extracted out of this crate. No
 # shipped module of this crate calls it, so it is a dev dependency only

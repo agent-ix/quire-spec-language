@@ -38,8 +38,8 @@ use qsl_semantics::check::{
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::refusal::MemberPath;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::catalog::CatalogCoded;
 pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageUnit;

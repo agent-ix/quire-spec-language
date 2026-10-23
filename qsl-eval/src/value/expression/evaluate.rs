@@ -27,11 +27,11 @@ use qsl_semantics::check::{
     DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind,
     RecordSlot, Scope, Slot, Visit,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
+use quire_checked::key::DeclarationKey;
 use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_eval::FamilyResult;
@@ -3757,12 +3757,12 @@ mod tests {
         DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
         PopulationRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
     use qsl_semantics::model::population::{
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_checked::key::DeclarationKey;
     use quire_semantic_value::catalog::Category;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use quire_semantic_value::object_closure::ObjectClosure;

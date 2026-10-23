@@ -33,6 +33,7 @@ quire-exact = { workspace = true }
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
 # ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
+quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 # ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
 quire-eval = { workspace = true }
@@ -64,6 +65,7 @@ serde_path_to_error = "0.1.20"
 # built (`tests/it/family_outcome_layering.rs`'s
 # `no_shipped_dependency_enables_test_support`, in the root crate, covers
 # every workspace crate), so it never reaches the production lib.
+quire-checked = { workspace = true, features = ["test-support"] }
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The ordered charge log (`Meter::admitted_charges`) FR-107-AC-3's
 # `reaches` charge-sequence test asserts. A production meter keeps a count

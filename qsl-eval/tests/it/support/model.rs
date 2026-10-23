@@ -6,7 +6,7 @@ use qsl_semantics::check::AdmittedModel;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::EffectiveId;
 
 /// The domain package `package` declaring the object type `label`, under

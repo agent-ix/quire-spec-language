@@ -635,7 +635,7 @@ fn tc235_m02_record_values_compare_every_field_at_runtime() {
     .expect("M02 checks");
 
     let types = package.graph().scope().types();
-    let declaration = |node: &str| qsl_semantics::model::key::DeclarationKey {
+    let declaration = |node: &str| quire_checked::key::DeclarationKey {
         package: crate::tc235_k2::PACKAGE.to_owned(),
         node: crate::tc235_k2::id(node),
     };
@@ -1440,12 +1440,12 @@ fn process_observation(
     qsl_semantics::model::observation::Observation,
     Vec<ObjectReference>,
 ) {
-    let fulfilment = view.type_identities()[&qsl_semantics::model::key::DeclarationKey {
+    let fulfilment = view.type_identities()[&quire_checked::key::DeclarationKey {
         package: crate::tc235_k2::PACKAGE.to_owned(),
         node: crate::tc235_k2::id("Fulfilment"),
     }];
     let universe = view
-        .object_universe_of(&qsl_semantics::model::key::DeclarationKey {
+        .object_universe_of(&quire_checked::key::DeclarationKey {
             package: crate::tc235_k2::PACKAGE.to_owned(),
             node: crate::tc235_k2::id("Fulfilment"),
         })

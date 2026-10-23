@@ -23,7 +23,7 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
+use qsl_semantics::model::key::EffectiveId;
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome, OfferedSelection,
 };
@@ -34,6 +34,7 @@ use qsl_semantics::model::population::{
     LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits, PopulationBinding,
     PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
+use quire_checked::key::DeclarationKey;
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

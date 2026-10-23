@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord};
 use crate::model::intake::member_identity_name;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
+use quire_checked::key::DeclarationKey;
 
 /// What a type-level clause is (FR-366 "Classification").
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -827,8 +827,8 @@ mod tests {
         use qsl_semantics::model::domain_package::{
             DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
         };
-        use qsl_semantics::model::key::DeclarationKey;
         use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+        use quire_checked::key::DeclarationKey;
         use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
         let declaration = DeclarationKey::fixture("model.A");

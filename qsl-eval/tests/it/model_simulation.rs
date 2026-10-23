@@ -20,12 +20,13 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
-use qsl_semantics::model::key::{hex, DeclarationKey};
+use qsl_semantics::model::key::hex;
 use qsl_semantics::model::observation::{
     declared_type_universe_for, AdmissionFailure, AnchorKind, DocumentRef, ObservationLimits,
     SelectedAnchor,
 };
 use qsl_semantics::model::state::{ModelState, StateModel};
+use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::catalog::CatalogCode;

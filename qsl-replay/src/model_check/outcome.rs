@@ -11,7 +11,7 @@ use crate::proof_result::{
 };
 use qsl_eval::simulation::protocol::WeakAccessShape;
 use qsl_eval::simulation::SubjectTransition;
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
 use quire_semantic_value::model_transition::ModelTransition;
 

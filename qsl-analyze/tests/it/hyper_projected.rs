@@ -23,7 +23,7 @@ use qsl_replay::{
     UndecidedCause,
 };
 use qsl_semantics::check::{FormulaNodeId, OperationKey};
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, Charge, ChargePoint, Identifier, Incomplete, Meter, Undefined};
 use std::cell::RefCell;
 

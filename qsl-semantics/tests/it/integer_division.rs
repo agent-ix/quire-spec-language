@@ -5,13 +5,12 @@
 //! every `DefinitionRef` is built from the catalog's own entries rather than
 //! authored ad hoc.
 
+use quire_checked::integer_division::AdmittedIntegerDivision;
 use std::num::NonZeroU32;
 use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{
-    divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
-};
+use qsl_semantics::value::{divide, modulo, CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::{
     ChargePoint, DivisionMember, DivisionProfile, Incomplete, InjectedDenial, Integer,
     IntegerDomain, IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,

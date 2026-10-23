@@ -145,13 +145,14 @@ use crate::model::domain_package::{
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::{
-    hex, DeclarationKey, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
+    declaration_key_wire, hex, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
 };
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::catalog::InternalFault;
 use serde::Serialize;
 
@@ -880,7 +881,7 @@ fn population_id_preimage<'a>(
             universe: hex(key.universe.as_bytes()),
             r#type: PopulationMemberTypeIdentityWire(&key.type_identity),
             object: &key.object,
-            declaration: declaration.wire(),
+            declaration: declaration_key_wire(declaration),
         };
         #[cfg(test)]
         record_population_identity_member_encoding();
@@ -909,7 +910,7 @@ fn population_id_preimage<'a>(
             digest_domain: SHA256_JCS_DIGEST_DOMAIN,
             digest: hex(&domain_package.model_selection.digest),
         },
-        population_key: population_key.wire(),
+        population_key: declaration_key_wire(population_key),
         admission_role: role.as_str(),
         declared_maximum: declared_maximum.map(|maximum| maximum.to_string()),
         members: encoded_members
@@ -2975,7 +2976,7 @@ mod tests {
             universe: "cd".repeat(32),
             r#type: PopulationMemberTypeIdentityWire(&type_identity),
             object: "obj-1",
-            declaration: declaration.wire(),
+            declaration: declaration_key_wire(&declaration),
         };
         let encoded = quire_canonical::to_vec(&member, quire_canonical::Limits::new(4096))
             .expect("member wire has a fixed canonical shape");

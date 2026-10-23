@@ -389,7 +389,7 @@ impl World {
                 digest,
             });
         }
-        let population = qsl_semantics::model::key::DeclarationKey {
+        let population = quire_checked::key::DeclarationKey {
             package: model.package.to_owned(),
             node: model.ident(model.population),
         };

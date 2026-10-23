@@ -21,6 +21,7 @@ qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
+quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 # ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
 quire-eval = { workspace = true }
@@ -60,6 +61,7 @@ qsl-cst = { path = "../qsl-cst" }
 # dev-dependency enables `test-support`: the root crate's
 # `no_shipped_dependency_enables_test_support` refuses a normal or build
 # dependency that does.
+quire-checked = { workspace = true, features = ["test-support"] }
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The ordered charge log (`Meter::admitted_charges`) the
 # charge-sequence tests assert. A production meter keeps a count only; only

@@ -7,7 +7,7 @@
 //! import of it a module cycle (#141 finding 4). `normalize` re-exports this
 //! type at its own path (`crate::model::normalize::ModelRefusalCause`), so
 //! nothing outside this crate's module tree observes a rename. This module
-//! imports [`crate::model::key::DeclarationKey`]/[`crate::model::key::EffectiveId`]
+//! imports [`quire_checked::key::DeclarationKey`]/[`crate::model::key::EffectiveId`]
 //! back from `key`: a mutual `use` between sibling modules is not a cycle
 //! Rust's compiler rejects (#163 re-review ruling 3) — only a real cyclic
 //! type/const definition would be.
@@ -15,10 +15,11 @@
 use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
-use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::model::key::EffectiveId;
 use crate::model::origin::JsonValue;
 use qsl_foundation::diagnostic::{JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
+use quire_checked::key::DeclarationKey;
 use quire_exact::UniverseId;
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -1530,8 +1531,8 @@ pub mod fixtures {
     //! `qsl-semantics` crate boundary through `test-support`.
     use super::{MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
-    use crate::model::key::DeclarationKey;
     use qsl_foundation::source::{LocatedSpan, Position};
+    use quire_checked::key::DeclarationKey;
     use quire_exact::UniverseId;
 
     fn key(identity: &str) -> DeclarationKey {

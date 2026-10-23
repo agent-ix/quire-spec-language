@@ -27,8 +27,8 @@ use crate::model::domain_package::{
     OperationParameterRecord, PopulationRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{normalize, NormalizeOutcome};
+use quire_checked::key::DeclarationKey;
 
 #[allow(dead_code)]
 mod fixture {

@@ -51,6 +51,7 @@ quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", 
 quire-canonical = { workspace = true, optional = true }
 # ADR-011 §6.1 layer SV: the expression `Location` and the `CheckingLimits`
 # the emitter reads, and the `UnitTable` the emitter's tests build.
+quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 thiserror = { version = "2.0.20", default-features = false, optional = true }
 
@@ -65,6 +66,7 @@ qsl-cst = { path = "../qsl-cst" }
 # Only this dev-dependency enables it: the root crate's
 # `no_shipped_dependency_enables_test_support` refuses a normal or build
 # dependency that does.
+quire-checked = { workspace = true, features = ["test-support"] }
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The tests build v2 wires and golden preimages as JSON.
 # The tests derive `Deserialize` for QSpec fixture envelopes.

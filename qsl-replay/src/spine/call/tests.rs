@@ -3,8 +3,9 @@ use super::*;
 use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::model::key::{hex, DeclarationKey};
+use qsl_semantics::model::key::hex;
 use qsl_semantics::model::refusal::ModelRefusalCause;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{
     BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, UniverseId, Value,
 };

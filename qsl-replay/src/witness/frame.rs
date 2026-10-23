@@ -24,10 +24,10 @@ use super::FamilyPayload;
 use crate::identity::QualifiedName;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     DocumentRef, FrameChange, FrameWitness, LinkDifference, SelectedObject,
 };
+use quire_checked::key::DeclarationKey;
 
 /// The operation a frame counterexample refutes, QSpec FR-323's
 /// `frame_operation` replay target: its declaring object type's [`QualifiedName`] (`M::T`, the model alias then the type) and the

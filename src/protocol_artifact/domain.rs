@@ -21,8 +21,9 @@ use qsl_semantics::model::admitted::{AdmittedPackage, Declaration};
 use qsl_semantics::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, PopulationRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 use qsl_semantics::model::refusal::ModelRefusalCause;
+use quire_checked::key::DeclarationKey;
 
 /// Revision namespace of a domain-package export locus: the formal revision
 /// is the package's own version.

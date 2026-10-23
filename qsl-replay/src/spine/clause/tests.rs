@@ -868,7 +868,7 @@ fn tc_792_native_argument_refusal_preserves_typed_fields() {
                 code: qsl_foundation::diagnostic::Code::ForeignReference,
                 cause: qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
                     member: "w".to_owned(),
-                    type_name: qsl_semantics::model::key::DeclarationKey::fixture("foreign/W"),
+                    type_name: quire_checked::key::DeclarationKey::fixture("foreign/W"),
                 },
                 detail: "foreign type".to_owned(),
             },
@@ -1394,7 +1394,7 @@ fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
         qsl_semantics::model::normalize::NormalizeOutcome::Completed(view) => view,
         other => panic!("expected the fixture package to normalize cleanly, got {other:?}"),
     };
-    let node_key = qsl_semantics::model::key::DeclarationKey {
+    let node_key = quire_checked::key::DeclarationKey {
         package: PACKAGE_IDENTITY.to_owned(),
         node: node_type(),
     };
@@ -3866,7 +3866,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     // consistently named the wrong node (say, the population node), this
     // lookup would still find the real one and the comparison below would
     // catch the mismatch.
-    let expected_declaration = qsl_semantics::model::key::DeclarationKey {
+    let expected_declaration = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: config_version_type(),
     };
@@ -4099,7 +4099,7 @@ fn a_fault_on_the_frame_node_refuses_the_whole_config_version_package() {
 fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
     let compiled = config_version_compiled();
     let graph = compiled.package.graph();
-    let expected_declaration = qsl_semantics::model::key::DeclarationKey {
+    let expected_declaration = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: config_version_type(),
     };
@@ -4177,7 +4177,7 @@ fn s4_state_package_emission_is_stable_across_compiles() {
 /// checking, independently of whatever anchor/frame/field-read this test
 /// is itself checking.
 fn config_version_node_key(graph: &qsl_semantics::check::CheckedGraph) -> NodeKey {
-    let expected_declaration = qsl_semantics::model::key::DeclarationKey {
+    let expected_declaration = quire_checked::key::DeclarationKey {
         package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
         node: config_version_type(),
     };

@@ -29,6 +29,7 @@ qsl-forms = { path = "../qsl-forms" }
 qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { workspace = true }
 # ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
+quire-checked = { workspace = true, features = ["construct"] }
 quire-semantic-value = { workspace = true }
 # ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1).
 quire-walk = { workspace = true }
@@ -67,6 +68,7 @@ quire-exact = { workspace = true, features = ["test-support"] }
 # build their input; its shipped code reads no CST.
 qsl-cst = { path = "../qsl-cst" }
 
+quire-checked = { workspace = true, features = ["test-support"] }
 [[test]]
 name = "it"
 path = "tests/it/main.rs"

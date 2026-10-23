@@ -56,13 +56,14 @@ use crate::model::domain_package::{
     PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
     RelationshipRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef, VariantRecord,
 };
-use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
 use crate::model::refusal::{Inexact, IntakeLimit, MemberPath, MemberRoot};
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 use qsl_foundation::source::{LocatedSpan, Position};
 use qsl_foundation::IntakeLimits;
 use quire_canonical::Node;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Presence, TextProfile, TextType};
 
 mod unit;

@@ -6,8 +6,8 @@
 //! to any identity, and reading charges no normalization work.
 
 use crate::model::domain_package::{DomainPackageRecord, StateMachineRecord};
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
+use quire_checked::key::DeclarationKey;
 
 /// One effective state of a state machine: a state its declaring machine
 /// authored.

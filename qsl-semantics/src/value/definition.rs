@@ -6,6 +6,25 @@
 //! They call `quire_exact::divide`/`modulo` and carry the kernel
 //! [`Outcome`](quire_exact::Outcome) straight through.
 //!
+//! `AdmittedIntegerDivision` is a checked term of `quire-checked` (FR-400,
+//! ADR-011 X-13); this module constructs it through `quire-checked`'s
+//! `construct` module and does not re-export it. Its old paths no longer
+//! resolve:
+//!
+//! ```compile_fail
+//! use qsl_semantics::value::AdmittedIntegerDivision;
+//! ```
+//!
+//! ```compile_fail
+//! use qsl_semantics::value::definition::AdmittedIntegerDivision;
+//! ```
+//!
+//! Its new owner does:
+//!
+//! ```no_run
+//! use quire_checked::integer_division::AdmittedIntegerDivision;
+//! ```
+//!
 //! Profile misuse is refused here, at semantic admission, before any expression
 //! is evaluated. Selection refusals use QSpec's closed
 //! `selection_refusal_codes`; definition-closure refusals use the I04
@@ -654,7 +673,7 @@ impl DefinitionLock {
         &self,
         div_rem: &[DefinitionReference],
         modulo: Option<&DefinitionReference>,
-    ) -> Result<AdmittedIntegerDivision, PackageRefusal> {
+    ) -> Result<quire_checked::integer_division::AdmittedIntegerDivision, PackageRefusal> {
         let mut profiles = Vec::new();
         for reference in div_rem {
             profiles.push(self.resolve_division(reference)?);
@@ -675,7 +694,7 @@ impl DefinitionLock {
                 ));
             }
         }
-        Ok(AdmittedIntegerDivision { profile })
+        Ok(quire_checked::construct::admitted_integer_division(profile))
     }
 
     /// Resolve `reference` to a division law by authority and identity.
@@ -739,25 +758,11 @@ impl AdmittedSelection {
     }
 }
 
-/// The admitted `div`/`rem` law of one checked package. Only
-/// [`DefinitionLock::admit_integer_division`] constructs it.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct AdmittedIntegerDivision {
-    profile: DivisionProfile,
-}
-
-impl AdmittedIntegerDivision {
-    /// The selected law.
-    pub fn profile(&self) -> DivisionProfile {
-        self.profile
-    }
-}
-
 /// Evaluate the one member of `div`/`rem` an expression exposes (`div` is the
 /// quotient, `rem` the remainder) under the admitted package law. Both members
 /// are computed exactly; only the exposed `member` must lie in `domain`.
 pub fn divide(
-    selection: &AdmittedIntegerDivision,
+    selection: &quire_checked::integer_division::AdmittedIntegerDivision,
     member: DivisionMember,
     dividend: &Integer,
     divisor: &Integer,

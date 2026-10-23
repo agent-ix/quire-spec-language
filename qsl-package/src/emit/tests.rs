@@ -2435,7 +2435,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     )
     .expect("the package admits");
     let object = |artifact: &str| {
-        let key = qsl_semantics::model::key::DeclarationKey {
+        let key = quire_checked::key::DeclarationKey {
             package: "acme/orders".to_owned(),
             node: format!("ix://acme/orders/{artifact}"),
         };
@@ -3058,8 +3058,8 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
         NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+    use quire_checked::key::DeclarationKey;
 
     let key = |name: &str| DeclarationKey {
         package: "example/config-version".to_owned(),

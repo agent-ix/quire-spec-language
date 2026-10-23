@@ -112,8 +112,8 @@ use crate::model::dispatch::{
     LinkCheckOutcome,
 };
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, OperationMemberRecord};
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
+use quire_checked::key::DeclarationKey;
 use std::ops::ControlFlow;
 
 use qsl_forms::{
@@ -1266,7 +1266,7 @@ mod tests {
     use crate::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
     };
-    use crate::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
     use quire_exact::EffectiveId;
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {

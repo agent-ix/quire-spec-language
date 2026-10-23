@@ -24,12 +24,12 @@ use crate::model::domain_package::DomainPackage;
 use crate::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, ParsedOperationClause, ParsedTypeInvariant,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize_on, EffectiveView, NormalizeOutcome, Refusals};
 use crate::model::refusal::{MemberPath, MemberRoot};
 use crate::model::type_invariant::ClauseRole;
 use qsl_forms::Expression;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::location::OperationClauseKind;
 
 /// One `model` declaration of a unit, admitted at I1: its alias, the span
