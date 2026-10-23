@@ -378,13 +378,15 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 trace the caller supplies. It is the same semantics replay uses (ADR-014
 A-4).
 
-- **Input.** The checked package; one or more temporal clause selections; a
-  trace document holding a finite trace or a lasso (prefix positions, then a
-  non-empty loop), whose positions are admitted as snapshots and invocations
-  (FR-106) before any evaluation; the evaluator limits; `&Cancel`.
+- **Input.** The checked package; one or more temporal clause selections; the
+  bytes of a `quire.monitor-trace/1` trace document holding a finite trace or
+  a lasso (prefix positions, then a non-empty loop) of snapshot
+  `DocumentRef`s, with the snapshot provision they name, each position
+  admitted as an FR-106 snapshot before any evaluation (FR-283); the
+  evaluator limits; `&Cancel`.
 - **Output.** `MonitorOutcome`: one record per clause. The record holds the
   verdict under ADR-014 A-4. Over a finite trace the verdict is a violation
-  at a position, with the QSpec FR-351 separating witness, or pending. Over a
+  at a position, with FR-330's `TemporalCounterexample`, or pending. Over a
   lasso it is a violation or `tested`.
 - **Terminal records.** A violation is category violation (exit 10). An
   evaluation undefined at a position is a violation there, with cause
