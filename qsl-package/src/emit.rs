@@ -200,6 +200,13 @@ pub enum EmitRefusal {
         /// The unit's selected header profile identity, when it selects one.
         profile: Option<&'static str>,
     },
+    /// A checked time source has no checked-package/v2 node. Emission cannot
+    /// omit it because the time source is part of the package's meaning.
+    #[error("timed model `{model}` cannot be written to a checked-package/v2 graph yet")]
+    TimedModelNotEmitted {
+        /// The first timed model's alias.
+        model: String,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -220,7 +227,9 @@ impl EmitRefusal {
             Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
-            Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
+                Code::UnsupportedConstruct
+            }
         }
     }
 
@@ -228,7 +237,9 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
-            Self::ProbabilisticModelNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
+                Some("not-yet-implemented")
+            }
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -1234,6 +1245,11 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
+    if let Some(source) = graph.time_sources().first() {
+        return Err(EmitRefusal::TimedModelNotEmitted {
+            model: source.model.clone(),
+        });
+    }
     let abstraction = package
         .abstraction()
         .map(|relation| graph.abstraction_nodes(relation))

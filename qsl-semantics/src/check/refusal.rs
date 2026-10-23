@@ -999,6 +999,55 @@ impl ProtocolAnchorCause {
 /// no expression tree for a `Location` path to walk.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TemporalCause {
+    /// FR-230: a timed declaration requires the temporal facet selected by
+    /// the unit header. Located at the declaration itself.
+    TimedFacetRequired {
+        /// The timed family written by the source.
+        construct: TimedConstruct,
+        /// The model alias for a time source, or the declaration name.
+        owner: String,
+        /// The unit's selected header layers, before closure.
+        selected: Vec<crate::value::layer::HeaderLayer>,
+        /// The facet that would admit the timed declaration.
+        required: crate::value::layer::HeaderLayer,
+        /// The declaration's span.
+        span: Span,
+    },
+    /// FR-230: a second `time` declaration for the same model.
+    DuplicateTimeSource {
+        /// The model alias.
+        model: String,
+        /// The first declaration's span.
+        first: Span,
+        /// The second declaration's span.
+        span: Span,
+    },
+    /// FR-230: a `time` declaration names no admitted model alias.
+    MissingTimedModel {
+        /// The alias as written.
+        name: String,
+        /// The alias name's span.
+        span: Span,
+    },
+    /// FR-230: a tick source's period is zero or negative.
+    InvalidTickPeriod {
+        /// The period quantity's span.
+        span: Span,
+    },
+    /// FR-230: a tick source names no operation of its model.
+    MissingTickOperation {
+        /// The operation as written.
+        name: String,
+        /// The operation name's span.
+        span: Span,
+    },
+    /// FR-230: a tick source's operation name resolves more than once.
+    AmbiguousTickOperation {
+        /// The operation as written.
+        name: String,
+        /// The operation name's span.
+        span: Span,
+    },
     /// FR-326 "Profile identity": the unit selects no temporal profile, or
     /// more than one. `found` names the identity of each selection it
     /// found, in source order. Located at the clause.
@@ -1187,7 +1236,13 @@ impl TemporalCause {
     /// `Location`'s path).
     pub fn span(&self) -> Span {
         match self {
-            Self::ProfileSelection { span, .. }
+            Self::TimedFacetRequired { span, .. }
+            | Self::DuplicateTimeSource { span, .. }
+            | Self::MissingTimedModel { span, .. }
+            | Self::InvalidTickPeriod { span }
+            | Self::MissingTickOperation { span, .. }
+            | Self::AmbiguousTickOperation { span, .. }
+            | Self::ProfileSelection { span, .. }
             | Self::MissingInterval { span }
             | Self::OpenInterval { span }
             | Self::InvertedInterval { span, .. }
@@ -1212,6 +1267,12 @@ impl TemporalCause {
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
+            Self::TimedFacetRequired { .. } => Code::UnsupportedConstruct,
+            Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
+            Self::MissingTimedModel { .. } => Code::MissingDeclaration,
+            Self::InvalidTickPeriod { .. } => Code::InvalidModelBinding,
+            Self::MissingTickOperation { .. } => Code::MissingDeclaration,
+            Self::AmbiguousTickOperation { .. } => Code::AmbiguousDeclaration,
             Self::ProfileSelection { .. } => Code::UnknownProfile,
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
@@ -1246,6 +1307,12 @@ impl TemporalCause {
     /// This cause's catalog tag.
     pub fn tag(&self) -> &'static str {
         match self {
+            Self::TimedFacetRequired { .. } => "declaration-form",
+            Self::DuplicateTimeSource { .. } => "duplicate-time-source",
+            Self::MissingTimedModel { .. } => "missing-name",
+            Self::InvalidTickPeriod { .. } => "malformed-declaration",
+            Self::MissingTickOperation { .. } => "missing-name",
+            Self::AmbiguousTickOperation { .. } => "ambiguous-name",
             Self::ProfileSelection { .. } => "unsupported-selection",
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }

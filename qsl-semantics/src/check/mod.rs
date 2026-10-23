@@ -241,8 +241,8 @@ pub use ir::{
 };
 
 pub use assemble::{
-    AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, TopologyFault,
-    DEFAULT_DECIMAL_SCALE,
+    AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal,
+    TimedDeclaration, TopologyFault, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
@@ -504,6 +504,8 @@ pub struct CheckedGraph {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// FR-230: checked time sources, in source declaration order.
+    time_sources: Vec<ModelTimeSource>,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
     /// FR-366: every checked type-level invariant, in declaration order of
@@ -929,10 +931,211 @@ impl PackageDeclarations {
     /// refusal list like a reached work budget; a caller that holds the
     /// handle reads [`Cancel::tripped`] to tell the two apart.
     pub fn check_with_cancel(
-        self,
+        mut self,
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        // FR-230: S2 retains every timed declaration independent of header
+        // selection. S3 owns the facet gate and keeps incomplete timed
+        // constructs from silently entering the checked package.
+        if !self.timed_forms.is_empty() {
+            let required = crate::value::layer::HeaderLayer::TemporalComplete;
+            let selected = self.header_layers.clone();
+            let admitted = crate::value::definition::DefinitionLock::pinned()
+                .closure(&selected)
+                .contains(&required);
+            let units = time_units::TimeUnits::new(&self.units, self.nominal_spans.keys().copied());
+            let mut seen_time_sources = BTreeMap::new();
+            let refusals = self
+                .timed_forms
+                .iter()
+                .filter_map(|form| {
+                    if admitted {
+                        if let TimedDeclaration::TimeSource(source) = form {
+                            if let Some(&first) = seen_time_sources.get(source.model.name.as_str())
+                            {
+                                return Some(CheckRefusal {
+                                    location: root(Origin::Expression),
+                                    cause: CheckCause::Temporal(Box::new(
+                                        TemporalCause::DuplicateTimeSource {
+                                            model: source.model.name.clone(),
+                                            first,
+                                            span: source.span,
+                                        },
+                                    )),
+                                });
+                            }
+                            seen_time_sources.insert(source.model.name.as_str(), source.span);
+                            if let Some(model) = self
+                                .models
+                                .iter()
+                                .find(|model| model.alias() == Some(source.model.name.as_str()))
+                            {
+                                // Source-unit lookup has no package owner table yet.
+                                // A qualified unit must never be mistaken for a
+                                // missing unqualified source unit.
+                                if source.unit.name.contains("::") {
+                                    return Some(CheckRefusal {
+                                        location: root(Origin::Expression),
+                                        cause: CheckCause::TimedNotChecked {
+                                            construct: TimedConstruct::TimeSource,
+                                            span: source.unit.span,
+                                        },
+                                    });
+                                }
+                                let target = match units.target(&source.unit.name) {
+                                    Ok(Some(target)) => target,
+                                    Ok(None) => {
+                                        return Some(CheckRefusal {
+                                            location: root(Origin::Expression),
+                                            cause: CheckCause::TimedNotChecked {
+                                                construct: TimedConstruct::TimeSource,
+                                                span: source.unit.span,
+                                            },
+                                        })
+                                    }
+                                    Err(cause) => {
+                                        return Some(CheckRefusal {
+                                            location: root(Origin::Expression),
+                                            cause: CheckCause::Temporal(Box::new(
+                                                TemporalCause::TimeQuantity {
+                                                    cause: Box::new(cause),
+                                                    span: source.unit.span,
+                                                },
+                                            )),
+                                        })
+                                    }
+                                };
+                                let source_kind = match &source.source {
+                                    qsl_forms::TimeSourceSyntax::Dense => TimeSourceKind::Dense,
+                                    qsl_forms::TimeSourceSyntax::Tick { operation, period } => {
+                                        if period.unit.name.contains("::") {
+                                            return Some(CheckRefusal {
+                                                location: root(Origin::Expression),
+                                                cause: CheckCause::TimedNotChecked {
+                                                    construct: TimedConstruct::TimeSource,
+                                                    span: period.unit.span,
+                                                },
+                                            });
+                                        }
+                                        let count = model.tick_operation_count(&operation.name);
+                                        if count != 1 {
+                                            let cause = if count == 0 {
+                                                TemporalCause::MissingTickOperation {
+                                                    name: operation.name.clone(),
+                                                    span: operation.span,
+                                                }
+                                            } else {
+                                                TemporalCause::AmbiguousTickOperation {
+                                                    name: operation.name.clone(),
+                                                    span: operation.span,
+                                                }
+                                            };
+                                            return Some(CheckRefusal {
+                                                location: root(Origin::Expression),
+                                                cause: CheckCause::Temporal(Box::new(cause)),
+                                            });
+                                        }
+                                        let magnitude = match probabilistic::exact_value(
+                                            &period.magnitude,
+                                            limits.rational_bits(),
+                                        ) {
+                                            Ok(value) => value,
+                                            Err(_) => {
+                                                return Some(CheckRefusal {
+                                                    location: root(Origin::Expression),
+                                                    cause: CheckCause::TimedNotChecked {
+                                                        construct: TimedConstruct::TimeSource,
+                                                        span: period.span,
+                                                    },
+                                                })
+                                            }
+                                        };
+                                        let converted = match units.convert(
+                                            &magnitude,
+                                            &period.unit.name,
+                                            &target,
+                                        ) {
+                                            Ok(value) => value,
+                                            Err(cause) => {
+                                                return Some(CheckRefusal {
+                                                    location: root(Origin::Expression),
+                                                    cause: CheckCause::Temporal(Box::new(
+                                                        TemporalCause::TimeQuantity {
+                                                            cause: Box::new(cause),
+                                                            span: period.unit.span,
+                                                        },
+                                                    )),
+                                                })
+                                            }
+                                        };
+                                        if converted.is_zero()
+                                            || converted.numerator().is_negative()
+                                        {
+                                            return Some(CheckRefusal {
+                                                location: root(Origin::Expression),
+                                                cause: CheckCause::Temporal(Box::new(
+                                                    TemporalCause::InvalidTickPeriod {
+                                                        span: period.span,
+                                                    },
+                                                )),
+                                            });
+                                        }
+                                        TimeSourceKind::Tick {
+                                            operation: operation.name.clone(),
+                                            period: converted,
+                                        }
+                                    }
+                                };
+                                self.time_sources.push(ModelTimeSource {
+                                    model: source.model.name.clone(),
+                                    source: source_kind,
+                                    unit: source.unit.name.clone(),
+                                });
+                                return None;
+                            }
+                            return Some(CheckRefusal {
+                                location: root(Origin::Expression),
+                                cause: CheckCause::Temporal(Box::new(
+                                    TemporalCause::MissingTimedModel {
+                                        name: source.model.name.clone(),
+                                        span: source.model.span,
+                                    },
+                                )),
+                            });
+                        }
+                    }
+                    let cause = if admitted {
+                        CheckCause::TimedNotChecked {
+                            construct: form.construct(),
+                            span: form.span(),
+                        }
+                    } else {
+                        let owner = match form {
+                            TimedDeclaration::TimeSource(source) => source.model.name.clone(),
+                            TimedDeclaration::TimeInvariant(invariant) => {
+                                invariant.name.name.clone()
+                            }
+                            TimedDeclaration::Urgent(urgent) => urgent.name.name.clone(),
+                        };
+                        CheckCause::Temporal(Box::new(TemporalCause::TimedFacetRequired {
+                            construct: form.construct(),
+                            owner,
+                            selected: selected.clone(),
+                            required,
+                            span: form.span(),
+                        }))
+                    };
+                    Some(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if !refusals.is_empty() {
+                return Err(refusals);
+            }
+        }
         // FR-096: a family limit's locus resolves through the unit's spans.
         let regions = self.regions();
         let body_location = |index: usize, name: &str| {
@@ -3377,6 +3580,7 @@ impl PackageDeclarations {
             embedding,
             model_selections,
             header_layers,
+            time_sources: self.time_sources,
             state_clauses,
             type_invariants,
             terminals,
@@ -3627,6 +3831,10 @@ fn population_domain_key(
 }
 
 impl CheckedGraph {
+    /// Checked time sources of this package, in declaration order.
+    pub fn time_sources(&self) -> &[ModelTimeSource] {
+        &self.time_sources
+    }
     /// FR-380: every `bound` declaration of the unit, ascending by label.
     pub fn population_bounds(&self) -> &[CheckedPopulationBound] {
         &self.population_bounds

@@ -465,11 +465,13 @@ pub struct PackageDeclarations {
     /// checked under the one of them, or refuses when there is none or
     /// several.
     pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// The complete timed declaration forms S2 built, in source order for
+    /// FR-230's S3 check and located refusals.
+    pub timed_forms: Vec<super::assemble::TimedDeclaration>,
     /// FR-230, FR-233: the time source of each timed model, which a
-    /// `model-time` clause binds (FR-234). The assembler builds none: FR-230's
-    /// "Timed facet gate" refuses every `time` member, since no catalog holds
-    /// `quire.temporal.complete/v1`, so no model reaching S3 is timed. A
-    /// caller that holds a model's checked time source supplies it here.
+    /// `model-time` clause binds (FR-234). The assembler starts this empty;
+    /// S3 checks source `time` members into it. A caller that already holds
+    /// a model's checked time source may supply it directly.
     pub time_sources: Vec<super::temporal_clause::ModelTimeSource>,
     /// FR-110, FR-186: every header profile selection of the unit, in source
     /// order, for a `probabilistic` claim's `using` alias to resolve against.
@@ -646,6 +648,7 @@ impl PackageDeclarations {
             probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
+            timed_forms: Vec::new(),
             time_sources: Vec::new(),
             profile_selections: Vec::new(),
             hyper_clauses: Vec::new(),

@@ -539,6 +539,34 @@ impl AdmittedModel {
         self.alias.as_deref()
     }
 
+    /// Number of package operations matching a tick source's written
+    /// `Owner::operation` name. The owner is the declaration's last path
+    /// segment; a fully qualified `M::Owner::operation` may name this model.
+    pub(crate) fn tick_operation_count(&self, written: &str) -> usize {
+        let Some((owner, operation)) = written.rsplit_once("::") else {
+            return 0;
+        };
+        let owner = match owner.split_once("::") {
+            Some((qualifier, owner))
+                if self.alias() == Some(qualifier) && !owner.contains("::") =>
+            {
+                owner
+            }
+            Some(_) => return 0,
+            None => owner,
+        };
+        self.index
+            .operations()
+            .filter(|record| {
+                record.owner.node.rsplit('/').next() == Some(owner)
+                    && crate::model::intake::member_identity_name(
+                        &record.owner.node,
+                        &record.key.node,
+                    ) == Some(operation)
+            })
+            .count()
+    }
+
     /// The domain package's model selection.
     pub fn selection(&self) -> &DomainPackageRef {
         &self.selection
