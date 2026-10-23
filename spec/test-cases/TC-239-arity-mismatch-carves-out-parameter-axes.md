@@ -26,9 +26,7 @@ reported even when arity also fails. No existing test constructs this
 combined fixture: `r04` deliberately keeps the result type and effect
 frame conforming so it isolates the arity carve-out alone. Part B follows
 from `check_operation_redefinition`'s own structure (the result/effect
-checks are unconditional, outside the arity `if`/`else`), but until an
-implementation PR adds a test asserting it, this clause's combined-failure
-coverage is a known gap. Remaining work: #120.
+checks are unconditional, outside the arity `if`/`else`), 
 
 Catches an implementation that does not carve out the parameter axes at
 all — reporting spurious per-parameter-type or per-parameter-multiplicity

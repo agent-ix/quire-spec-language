@@ -286,8 +286,6 @@ E9 details:
   `StageFailure::Refused` cause (an ADR-013 O-26 refusal) and `Fault` as an
   internal fault. Neither yields a parity verdict; ADR-013 C-09 gives the item's terminal
   value.
-  AD-016 arrow 7 is stale here. Remaining work:
-  agent-ix/quire-specification#141.
 - A packet whose `package_id` differs from the recompiled package's refuses
   with a typed cause and yields no verdict.
 - The packet's `source` is a `ReplaySource`: `Witness(Witness)` or
@@ -444,9 +442,7 @@ An expectation that evaluates through a `quire-exact` operation shares that
 operation with any function under proof that calls it (ADR-013 O-13). For a
 proof of a `quire-exact` operation, or of an RT op that calls one, the
 expectation comes from the QSpec operation vectors or from a checked-in
-specification model that calls no `quire-exact` operation. AD-016 arrow 4 and
-its crate-table line 406 are stale here. Remaining work:
-agent-ix/quire-specification#141.
+specification model that calls no `quire-exact` operation.
 
 For each module a counted gate claims, the gate passes only if all of these
 hold:
@@ -1129,8 +1125,7 @@ Rules:
   type. It adds no crate edge, and no QSL test reads a path inside a cargo
   checkout. The parity comparator stays in
   agent-ix/quire-contract-codegen#50. The end-to-end run of proof and replay is
-  agent-ix/quire-contract-codegen#87. Remaining work:
-  agent-ix/quire-contract-ir#146.
+  agent-ix/quire-contract-codegen#87.
 - A dependency needed only by tests is a dev dependency.
 
 ### 7.2 Extraction criteria
@@ -1217,7 +1212,7 @@ is not blocked.
 | M-4 | Add the S4 v2 emitter and I2 reader in `package` (ADR-010 OBS-001) | 4 | linked package → `EmittedPackage` v2 bytes; v2 bytes → `VerifiedPackage` through the layer-3 `library` binding | before M-6 | none |
 | M-5 | Split `value::expression`: checking moves to layer-3 `check` (S3), and evaluation stays in layer-5 `value::expression` (S6a) | 3 and 5 | check entry; the S6a `CheckedPackage::call` entry | after M-3a | none |
 | M-6 | Retire SEAM-1 to SEAM-4, split by lane. Each old path is deleted in the PR that lands its spine replacement (owner ruling, 2026-09-19). | none | removed | per lane, below | none: nothing runs side by side |
-| X-2 | Extract crate `qsl-foundation`. **Extracted**: `absence`, `json_number`, `serde_object`, `digest`, `wire_format`, `source` (with `source_map`) and `diagnostic` moved. `located_json` stays in the root crate -- it still imports `formal_source` (SEAM-2), which M-6e retires; it moves to `qsl-foundation` in a follow-up once that import is gone. From X-13 or X-14, whichever lands first, `qsl-foundation` also depends on `quire-semantic-value` (SV), where the F values a checked term carries (FR-400) and the catalog vocabulary (FR-401) live; SV depends on no QSL crate, so the edge closes no cycle. `ByteDigest`'s SHA-256 constructor stays an F function over SV's `ByteDigest`, so SV takes no hashing dependency and its X-11 dependency set is unchanged. | F | the F modules' public items | once no F module imports a seam module or a higher layer | none: no root-crate re-export (§7.2) |
+| X-2 | Extract crate `qsl-foundation`. **Extracted**: `absence`, `json_number`, `serde_object`, `digest`, `wire_format`, `source` (with `source_map`) and `diagnostic` moved. `located_json` stays in the root crate while it imports `formal_source` (SEAM-2), which M-6e retires; once that import is gone it belongs to `qsl-foundation`. From X-13 or X-14, whichever lands first, `qsl-foundation` also depends on `quire-semantic-value` (SV), where the F values a checked term carries (FR-400) and the catalog vocabulary (FR-401) live; SV depends on no QSL crate, so the edge closes no cycle. `ByteDigest`'s SHA-256 constructor stays an F function over SV's `ByteDigest`, so SV takes no hashing dependency and its X-11 dependency set is unchanged. | F | the F modules' public items | once no F module imports a seam module or a higher layer | none: no root-crate re-export (§7.2) |
 | X-3 | Extract crate `qsl-cst`. **Extracted**: `token`, `lexer` and, from `complete`, `cst`, `parser`, `grammar` and `diagnostic` moved, along with the `ParsedSource` type and the plain `parse`/`parse_source` entry points (pure layer-1 concepts, not named as a separate module in the ticket text but owned by the same crate for the same reason `parser::parse` already built them there). `complete::editor`, `complete::edit` and `format` stay in the root crate, and `complete::parse_with_catalog` with them; `complete::package` (layer 3) moved to `qsl-semantics` with X-6. It depended on the layer-3 `ProfileCatalog` until X-6 moved `ProfileCatalog` and the selection values to F `selection`. | 1 | the layer-1 modules' public items | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
 | X-4 | Extract crate `qsl-source`. **Extracted**: the I3 adapter is the crate `qsl-source` (its crate root and `preflight`), which depends only on `qsl-foundation` (F), and on quire-rs under its own feature `quire-extraction`; the root crate's `quire-extraction` feature enables it. | I3 | the adapter (`clause_context`, `extract`, `ExtractedSource`, `Selection`, `Limits`, `Error`, `Cause`, `PreflightFailure`, the Quire contract constants) and the pinned Quire result and failure types the root crate renders, with feature `quire-extraction` | after X-2, on the same condition | none: no root-crate re-export (§7.2) |
 | X-5 | Extract crate `qsl-forms`. **Extracted**: the `forms` core is the crate `qsl-forms` (its crate root, `dispatch` and `syntax`), which depends only on `qsl-cst` (1), `qsl-foundation` (F) and `quire-exact` (K). The root crate depends on `qsl-forms`, so Cargo refuses a normal-dependency edge from `qsl-forms` back to it; TC-398's dependency check also refuses one in `qsl-forms`'s `[dev-dependencies]`, where Cargo accepts a cycle. | 2 | the layer-2 modules' public items: `build_form`, `ParsedForm`, `FormsRefusal`, `FormsCause`, `LeadingTokenKind`, and the parsed-form types (`Expression`, `TypeForm`, `TypeFormHead`, `BuiltinType`, `FunctionDeclaration` with its `clause_kind` and `callable_by_name` accessors, `ClauseKind`, `DeclaredClauseKind`, `BinaryOperator`, `BinderQuery`, `Accumulation`, `FieldInitializer`) | after X-3, on the same condition | none: no root-crate re-export (§7.2) |
@@ -1295,11 +1290,11 @@ The approved crate extractions are X-1 to X-11.
 | OBS-029 | The IR root → QSL edge is removed: neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (§7.1, FB-05). |
 | OBS-030 | `CheckedPackage::call` on `qsl_package::CheckedPackage`, through the layer-5 `CheckedPackageEvaluation` trait (§4, as amended), is the S6a entry. The CG replay adapter wires it, first in the skeleton spine and then in #217. |
 | OBS-031 | #215 runs the backend direction and API-surface checks (§7.1, T-12). |
-| OBS-036 | The replay executor is QSL S6a (`CheckedPackage::call` on `qsl_package::CheckedPackage` through `CheckedPackageEvaluation`, §4 as amended; AD-016 arrow 7). agent-ix/quire-contract-ir#140 is the implementing change: it amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. FR-031-AC-3 gets its own coverage row, discharged by the replay crossing test in agent-ix/quire-integration (§7.1), after agent-ix/quire-contract-ir#145 removes the stub tags. Remaining work: agent-ix/quire-contract-ir#146. |
+| OBS-036 | The replay executor is QSL S6a (`CheckedPackage::call` on `qsl_package::CheckedPackage` through `CheckedPackageEvaluation`, §4 as amended; AD-016 arrow 7). agent-ix/quire-contract-ir#140 amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. FR-031-AC-3 gets its own coverage row, discharged by the replay crossing test in agent-ix/quire-integration (§7.1), after agent-ix/quire-contract-ir#145 removes the stub tags. |
 | OBS-037 | Forbidden bypass FB-03. The handoffs to IR are deleted in the PRs that land S4 emission over the checked graph (#218, #223; M-6d). |
 | OBS-038 | Closed against #205 as amended (2026-09-19): "Runtime owns executable operations, exact numeric predicates and the host ABI. QSL owns reference semantics and the native replay executor (`CheckedPackage::call`, AD-016 arrow 7); Codegen reconstructs the replay request and Contract IR holds the counterexample packet." ADR-013 OQ-H and QC-29 amend its last clause: QSL `qsl-replay` owns the counterexample packet (`WitnessEnvelope`) and CG builds it. No native replay surface belongs in IR (agent-ix/quire-contract-ir#140). |
 | OBS-039 | Closed against the same #205 text. #205 and AD-016 agree. |
-| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in `quire-contract-model`, already a dependency (Remaining work: agent-ix/quire-contract-ir#146). The replay crossing test lives in agent-ix/quire-integration, which depends on QSL, CG and IR, so the test adds no QSL → CG edge; the parity comparator is agent-ix/quire-contract-codegen#50 and the end-to-end run is agent-ix/quire-contract-codegen#87 (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
+| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in `quire-contract-model`, already a dependency. The replay crossing test lives in agent-ix/quire-integration, which depends on QSL, CG and IR, so the test adds no QSL → CG edge; the parity comparator is agent-ix/quire-contract-codegen#50 and the end-to-end run is agent-ix/quire-contract-codegen#87 (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
 | OBS-041 | The QSL → FCD edge is admitted, confined to `model::intake`. A test-only crate stays a dev dependency. PR #200 meets these before merge. |
 | OBS-005 (secondary) | `quire-exact` exists as a leaf crate in the QSL repo (X-1, #213 S-1). The primary decision is #211's. |
 | OBS-017 (secondary) | One QSL type per QSL stage output, met by deleting the native-v1 type with no rename (§4). Stage type names are ADR-013 T-1's. |

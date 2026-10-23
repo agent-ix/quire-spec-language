@@ -101,7 +101,6 @@ providers give their manifests (ADR-029 PV-3).
 
 - QSL-393 (V1-A06): provider negotiation.
 - QSpec FR-305, FR-462 (STD-141): the QSpec half.
-- Implementation follow-up: replace `qsl_route::BackendId` and
-  `qsl_replay::identity::Backend` with the one `qsl-foundation` `BackendId`;
-  this record changes the specification only. `BackendDescriptor` already
+- `qsl-foundation` holds the one `BackendId`, with no `qsl_route::BackendId`
+  or `qsl_replay::identity::Backend`. `BackendDescriptor` already
   carries no tool identity.

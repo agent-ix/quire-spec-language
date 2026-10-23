@@ -175,10 +175,7 @@ outright before the target-kind charge.
   record for the five systems meanings beyond binding to their FR-152 kind.
 - `ComponentRecord::has_part_signature` (`qsl-semantics/src/model/domain_package.rs`) and
   `classify`'s `unsupplied("part-signature", ...)` refusal arm for it are
-  dead code: `qsl-semantics/src/model/intake.rs` hardcodes `has_part_signature: true`
-  unconditionally (F1's finding), so that arm can never fire, and this
-  requirement's own meaning-id classification (the "Classification is by
-  declared meaning id and end kind" clause above) names no check against
-  it. Something ships today that nothing in this specification, corrected
-  or otherwise, specifies. Remaining work: #120 removes the dead field and
-  arm once the binder classifies Parts by meaning id alone.
+  not part of the model: this requirement's meaning-id classification (the
+  "Classification is by declared meaning id and end kind" clause above)
+  names no check against it, and the binder classifies Parts by meaning id
+  alone.
