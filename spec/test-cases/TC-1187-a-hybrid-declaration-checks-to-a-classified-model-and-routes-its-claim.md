@@ -69,6 +69,8 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 - Step 7: a `quire.op.temporal.true` formula node under the `always` node
   and no `holds` node over a Boolean literal; the law `p` selects.
 - Step 8: the interval `[0, 10]` with closed ends and horizon 10, emitted in
-  the timed form with the `timed/v1` law and admitted; each of the two
-  claims refused `unsupported_construct`/`expression-form` at the span
-  FR-447-AC-15 states, naming the profile.
+    the timed form with the `timed/v1` law and admitted; `always [0, *]`
+  under `timed/v1` admitted with `upper: None`, emitted with `upper` `null`;
+  `always holds(h.v < 30)` under the event-position profile refused
+  `unsupported_construct`/`expression-form` at the operator's span, naming
+  the profile, as FR-447-AC-15 states.
