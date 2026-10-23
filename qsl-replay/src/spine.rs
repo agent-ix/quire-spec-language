@@ -325,9 +325,12 @@ impl CompileRefusal {
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.setting() {
-                // Formatting returns FormatRefusal and is never a compile stage.
-                Setting::FormatOutputBytes => {
-                    unreachable!("format limits are not compile refusals")
+                // Formatting, rendering and backend prepare are never compile stages.
+                Setting::FormatOutputBytes
+                | Setting::RenderOutputBytes
+                | Setting::PrepareCompileWorkUnits
+                | Setting::PrepareCodeBytes => {
+                    unreachable!("format, render and prepare limits are not compile refusals")
                 }
                 Setting::S1InputBytes
                 | Setting::S1Tokens
