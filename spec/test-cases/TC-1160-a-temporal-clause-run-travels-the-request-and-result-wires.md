@@ -56,9 +56,9 @@ step asserts.
 
 ## Expected Results
 
-- Step 1: exit 10 then exit 0, stdout byte-identical to the in-process
+- Step 1: exit 10 then exit 0, result document byte-identical to the in-process
   report's document; each malformed request refuses `invalid-request` at
-  stage `request`, exit 20, empty stdout, naming `trace` or the member; the
+  stage `request`, exit 20, no result document, naming `trace` or the member; the
   empty `finite` array reports stage `evaluate`, `refusal`.
 - Step 2: the document of FR-267-AC-13, whose counterexample
   `trace_position` is the JSON integer `0`; the replay settles
