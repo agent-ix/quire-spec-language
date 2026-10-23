@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: verifies
 ---
 # TC-444: The replay executor recompiles, selects, calls, and refuses each O-26 case
 
@@ -15,8 +17,9 @@ request's byte provision, requires its `package_id`, selects and calls the
 function, settles the verdict, and refuses each ADR-013 O-26 case with a
 typed variant and no partial result.
 
-Scope: FR-098-AC-1 to FR-098-AC-7, FR-098-AC-22 to FR-098-AC-26, and FR-001-AC-6 for the recompile's
-source labels.
+Scope: FR-098-AC-1 to FR-098-AC-7, FR-098-AC-22 to FR-098-AC-27, FR-100-AC-20
+for the call depth S6a reports, and FR-001-AC-6 for the recompile's source
+labels.
 
 ## Test Procedure
 
@@ -78,6 +81,12 @@ occurrence key unless a step names another occurrence.
     FR-098-AC-22 to FR-098-AC-26, with the occurrence key each names (an
     application's key read from the compiled package's requirement records
     at the site the AC names, never by ordinal alone).
+
+11. Compile the unit of FR-098-AC-27 and FR-100-AC-20 (`d`, recursive with
+    `decreases(n)`, and `e`, which calls `d`). Call `d` with 0, 1, 2 and 3
+    and `e` with 1 through S6a and read each `Evaluation`'s outcome,
+    `location` and `frame_depth`; then replay `d` at its
+    `10 mod (n - 1)` record's occurrence with `n` = 0, 1, 2 and 3.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -147,3 +156,9 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   its right operand's occurrence with `x = 0`, `b` with `t = [3, 0]` and `u`
   with only `x = 0` assigned; `s` at its `then` branch's occurrence with
   `x = 0` settles `NoValue`.
+- Step 11: `d(0)` completes `0` at depth 0; `d(1)` is `Undefined` at the
+  `10 mod (n - 1)` `Location` with `frame_depth` 0, `d(2)` with 1, `d(3)`
+  with 2, and `e(1)` with 1 (FR-100-AC-20). The replay with `n = 1` settles
+  `reproduced-without-witness` with value `false`; `n = 2` and `n = 3`
+  settle `inconclusive` with cause `NoValue`; `n = 0` settles
+  `inconclusive` with cause `Verdicts` and value `true` (FR-098-AC-27).

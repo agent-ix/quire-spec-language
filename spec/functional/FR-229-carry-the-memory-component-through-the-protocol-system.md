@@ -108,8 +108,10 @@ matters.
   `view(b)`; a store or RMW SHALL read and write both; a fence SHALL read
   and write `view(b)`, and a `seq_cst` fence also `S`; every `seq_cst`
   access and fence SHALL also read and write the SC event graph.
-- Under both, an access to a location with a non-atomic access SHALL also
-  read and write `race(ℓ)`.
+- Under both, when the subject has a shared location with a non-atomic
+  access, every access, fence, `flush`, `send` and `receive` inside the weak
+  `parallel` SHALL also read and write `race(ℓ)` for each such `ℓ`, the
+  location holding `ℓ`'s race summary and every carrier's Booleans of `ℓ`.
 - A step SHALL be visible when it writes a memory value an atom reads: under
   `tso` a flush or locked access to such a location; under `ra` a store or
   RMW to it. For the race-freedom item, every access to a location with a

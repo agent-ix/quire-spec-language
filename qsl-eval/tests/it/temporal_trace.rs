@@ -14,8 +14,8 @@ use qsl_eval::temporal::{
     evaluate, evaluate_at, unrolling, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
     TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, UndefinedCause, Unrolling,
 };
-use qsl_foundation::diagnostic::{Category, StageFailure};
-use qsl_foundation::{CatalogCode, SourceIdentity};
+use qsl_foundation::diagnostic::StageFailure;
+use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
     check_clauses, CheckedTemporalClause, FormulaNode, FormulaNodeId, PackageDeclarations,
     SCALAR_LIMITS_UNLIMITED,
@@ -24,6 +24,8 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input, SelectedModels};
 use qsl_semantics::model::key::hex;
 use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits, Undefined};
+use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use crate::model_simulation::{acquire, counters_document, increment, release, PACKAGE};
