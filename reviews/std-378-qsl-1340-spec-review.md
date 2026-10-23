@@ -44,3 +44,12 @@ Examined, clean:
 Mergeable after FND-001, FND-002 (medium) are fixed or dispositioned by the lead.
 
 Conflicts with main: none. Clean merge-tree with open #1303, #1326, #1332 and #1334.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix 89f7c65b. Atom `A` is now written `count where holds(c.value != 2) over past[0, 0] min_count 1 >= 1`, which checks on main, so the vector no longer depends on #1334. |
+| FND-002 | fixed | The rule now says an activation has no truth value even when another atom of the same letter at that position is false (ADR-018 UE-1: the letter is the value of every atom there). AC-7 and TC-847 step 6 add `always[0,0] (holds(c.value != 0) and B)` on each: at position 0 `holds` is false and `B` short, so the activation has no truth value; positions 1 and 2 are true; the result is `InsufficientData{where 0, B, 1, 2}`. Hand-checked. |
+
+Round 1 verdict at 89f7c65b: Mergeable: both findings fixed, no new defect. Gate: exit 0, 19 warnings, none in touched files. Merge-tree clean with main and with #1334.
