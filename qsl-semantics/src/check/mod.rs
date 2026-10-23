@@ -534,12 +534,14 @@ pub struct CheckedGraph {
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
-    /// FR-115: each `model` alias's object types, by artifact id: the table
+    /// FR-115: each `model` alias's operation owners (object types, processes
+    /// and state machines), by artifact id: the table
     /// [`Self::resolve_operation`] resolves a `Frame` selection's alias and
     /// type in.
     model_objects: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
-    /// FR-116: each `model` alias's top-level declarations that are not object
-    /// types, by artifact id: the nodes that cannot declare operations.
+    /// FR-116: each `model` alias's top-level declarations that are not
+    /// operation owners, by artifact id: the nodes that cannot declare
+    /// operations a frame names.
     model_non_objects: BTreeMap<String, std::collections::BTreeSet<Identifier>>,
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
@@ -3430,7 +3432,7 @@ fn model_object_tables(
     let mut identities = BTreeMap::new();
     for model in models {
         let mut objects = BTreeMap::new();
-        for (key, id) in model.object_types() {
+        for (key, id) in model.operation_owners() {
             identities.insert(key.clone(), id);
             if let Some(artifact) =
                 crate::model::intake::type_identity_segment(&key.package, &key.node)
@@ -3456,7 +3458,7 @@ fn model_non_object_tables(
         .filter_map(|model| {
             let alias = model.alias()?;
             let names = model
-                .non_object_declarations()
+                .non_owner_declarations()
                 .filter_map(|key| {
                     crate::model::intake::type_identity_segment(&key.package, &key.node)
                         .and_then(|artifact| Identifier::new(artifact).ok())
@@ -3865,10 +3867,11 @@ impl CheckedGraph {
         })
     }
 
-    /// FR-116: whether `object` names a declaration of the `model` alias's
-    /// package that cannot declare operations (a value type, an enum, a
-    /// record, ...), as against naming nothing or an object type. QSpec
-    /// FR-323 refuses such a `frame_operation` `malformed-declaration`.
+    /// FR-116, FR-121: whether `object` names a declaration of the `model`
+    /// alias's package that is no operation owner (a value type, an enum, a
+    /// record, ...), as against naming nothing or an object type, a process
+    /// or a state machine. QSpec FR-323 refuses such a `frame_operation`
+    /// `malformed-declaration`.
     pub fn names_non_object_declaration(&self, model: &Identifier, object: &Identifier) -> bool {
         self.model_non_objects
             .get(model.as_str())

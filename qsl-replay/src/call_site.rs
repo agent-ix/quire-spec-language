@@ -302,6 +302,31 @@ pub enum CallSiteRefusal {
         /// The compiled package's own `package_id`.
         package: DigestRecord,
     },
+    /// `selection`'s owner `T` names a declaration of the compiled `package`
+    /// that is not an object type, a process or a state machine (a record
+    /// value type, an event type, a persistence interface, an enum, a
+    /// population, ...), so it declares no operation (FR-121). Mirrors QSpec
+    /// FR-323's refusal of such a `frame_operation.object`. Paired with the
+    /// package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("invalid_model_binding/malformed-declaration: package {} declares {selection}'s owner as no object type, process or state machine", .package.hex())]
+    NotAnOperationOwner {
+        /// The operation `call_site` was given.
+        selection: OperationName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
+    /// `selection`'s operation name resolves, in its owner's effective view,
+    /// to declarations of two supertypes neither of which hides the other
+    /// (QSpec FR-342). Decided before the operation's frame is looked for,
+    /// so an ambiguous name is never an [`Self::UnknownOperation`]. Paired
+    /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("ambiguous_declaration/ambiguous-name: package {} exposes operation {selection} through two supertypes", .package.hex())]
+    AmbiguousOperation {
+        /// The operation `call_site` was given.
+        selection: OperationName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
     /// `selection` names no state clause of the compiled `package`. Paired
     /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
     #[error("missing_declaration/missing-name: package {} declares no state clause {selection}", .package.hex())]
@@ -360,6 +385,8 @@ impl CallSiteRefusal {
             | Self::UnknownClause { .. }
             | Self::UnknownField { .. }
             | Self::UnknownPopulation { .. } => Code::MissingDeclaration,
+            Self::NotAnOperationOwner { .. } => Code::InvalidModelBinding,
+            Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -573,15 +600,26 @@ impl sealed::Locate for OperationName {
         package_id: DigestRecord,
     ) -> Result<OperationSite, Box<CallSiteRefusal>> {
         let graph = package.graph();
-        let (_, frame) = graph
+        let refuse = |build: fn(OperationName, DigestRecord) -> CallSiteRefusal| {
+            Box::new(build(self.clone(), package_id))
+        };
+        if graph.names_non_object_declaration(&self.model, &self.object) {
+            return Err(refuse(|selection, package| {
+                CallSiteRefusal::NotAnOperationOwner { selection, package }
+            }));
+        }
+        let unknown = || {
+            refuse(|selection, package| CallSiteRefusal::UnknownOperation { selection, package })
+        };
+        let selection = graph
             .resolve_operation(&self.model, &self.object, &self.operation)
-            .and_then(|resolved| graph.operation_frame(&resolved))
-            .ok_or_else(|| {
-                Box::new(CallSiteRefusal::UnknownOperation {
-                    selection: self.clone(),
-                    package: package_id,
-                })
-            })?;
+            .ok_or_else(unknown)?;
+        if graph.operation_is_ambiguous(&selection) {
+            return Err(refuse(|selection, package| {
+                CallSiteRefusal::AmbiguousOperation { selection, package }
+            }));
+        }
+        let (_, frame) = graph.operation_frame(&selection).ok_or_else(unknown)?;
         operation_site(graph, &self.model, frame)
     }
 }

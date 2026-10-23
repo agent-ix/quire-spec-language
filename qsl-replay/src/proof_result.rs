@@ -994,6 +994,8 @@ impl TerminalValue {
             | CallSiteRefusal::Dependency { .. }
             | CallSiteRefusal::UnknownFunction { .. }
             | CallSiteRefusal::UnknownOperation { .. }
+            | CallSiteRefusal::NotAnOperationOwner { .. }
+            | CallSiteRefusal::AmbiguousOperation { .. }
             | CallSiteRefusal::UnknownClause { .. }
             | CallSiteRefusal::UnknownField { .. }
             | CallSiteRefusal::UnknownPopulation { .. } => Self::Declined {
