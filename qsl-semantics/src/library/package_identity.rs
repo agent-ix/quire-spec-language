@@ -303,7 +303,7 @@ const NODE_TAGS: [&str; 14] = [
     "extension",
 ];
 
-/// The node tags [`projected_node`] admits, for a dependent crate's test that
+/// The node tags `projected_node` admits, for a dependent crate's test that
 /// they equal IR's `CheckedNodeTag` wire spellings.
 #[cfg(any(test, feature = "test-support"))]
 pub fn node_tags() -> &'static [&'static str] {
