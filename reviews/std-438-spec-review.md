@@ -62,3 +62,13 @@ The TC-1164 rename leaves no stale reference outside committed reviews.
 Not mergeable until FND-001 to FND-004 are fixed. The instancing rules follow
 QSpec FR-361, and the hand-derived order and guard vectors are correct.
 FND-001 is an internal contradiction in the new text.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (c6783c87): the identity bullet now limits the key-alone rule to the obligation identity and the FR-338 context. A refuted binding and an `over_binding` are (`UniverseId`, admitted type, key) with no population, as QSpec FR-361 states. FR-125-AC-9 tests the refuted binding at `s` as (`UniverseId`, `Switch`, `s`). The two bullets now agree. |
+| FND-002 | fixed | Round 1: FR-125-AC-12 and TC-520 step 11 name the initial records: a `Dog` under `k` and a `Cat` under `t` in `animals`, and a `Dog` under `d` in `dogs`. Derived by hand: instances `k, t, d`; first refuted `t`; `G` true at `k` and `d`. |
+| FND-003 | fixed | Round 1: the new FR-125-AC-16 and TC-520 step 15 use `all` of `Entity`, with `c` a `Counter` and `inc` enabled, and `e` a non-`Counter`. Derived by hand: `c` refutes by a false evaluation after `inc`, and `e` by `absent-key`. `[c, e]` reports `c` with no undefined cause, and `[e, c]` reports `e` with `undefined-evaluation`. The request identities differ. This matches QSpec FR-361-AC-10. |
+| FND-004 | fixed | Round 1: FR-338-AC-9 and TC-1164 step 4 now compare two subjects that admit `a` as a `Counter` and as a `Fast`. Each subject is valid under one-type-per-key. Both contexts are `[root, profile, "infinite", [[N, ["instance", "a"]]]]`, so their octets are equal. FR-338's prose says the same. |
+| FND-005 | fixed | Round 1: FR-125-AC-10 adds `P1 [d, u]` and `P2 [u, a]` with `u` not admitted. Derived by hand: instances `d, a`; excluded keys `[u]`, listed once. TC-520 step 9 follows. |
