@@ -445,7 +445,10 @@ Each of these objects denotes one QSpec FR-181 form, which fixes its meaning in
 a state key: a String object the `string` form with its `text` as `value`, a
 Rational object the `rational` form, a `float32` or `float64` object the form
 of that name with the same `bits`, and a Quantity object the `rational` form
-with `unit`, over the normalized magnitude.
+with `unit`, over the normalized magnitude. A quantity value has one state key
+whatever magnitude spelling was supplied: the exact normalized rational with its
+unit (`1.50` metre and `3`/`2` metre are the one key), and a Decimal magnitude is
+accepted on read and normalized to that key.
 
 A field, parameter or result of declared type `String` admits only a String
 object, one of declared type `UUID` only a UUID object, one of declared
