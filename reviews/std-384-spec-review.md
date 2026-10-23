@@ -71,3 +71,26 @@ byte-equality do not follow from the stated rules. FND-002 is a scope-deferral
 of FR-027's command shape. FND-003 and FND-004 are real gaps. The namespace,
 alias, header, ownership and U11q parts are correct and consistent with
 QSpec. A main merge is needed (clean).
+
+## New findings (disposition pass 1)
+
+Re-checked at 5ff99f20 (fix commit 411029e1; origin/main is an ancestor;
+`make check-spec-validation` exits 0).
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-006 | high | The FR-027 amendment copies open #1303's FR-027 (STD-343, stacked on #1326 STD-355 and #1321 STD-352) and adds this PR's array rule. It brings in three other tickets' changes without the rest of their PRs. It deletes `0-draft` compilation ("Every other declared edition, `0-draft` included, ... `command` refuses it with `unknown_edition`"). It removes FR-027-AC-1, AC-4 and AC-6, retitles the FR, and drops FR-019 and FR-020. It moves stream behaviour to the driver and adds AC-13. Merged alone, this head leaves dangling and contradicting references. TC-430's scope still lists FR-027-AC-4. TC-435 still traces FR-027-AC-6 (step 3, a `0-draft` compile). Main's `tests/it/compile_command.rs` still traces FR-027-AC-1, AC-4 and AC-6 over `0-draft` programs that the command compiles. The head also conflicts textually with #1303, #1326 and #1321. Fix: amend FR-027 from main's text with only this PR's change: the array `program`, the per-unit digest and edition rule, the unit-list `dependent_bytes` rule and AC-14. State the `0-draft` case against main's behaviour (a unit list is `1-draft` only, so a `0-draft` unit in an array refuses). Otherwise stack this PR on #1303 once it merges. | spec/functional/FR-027-export-compiled-native-package.md:1-140; spec/test-cases/TC-430-native-requests-and-outputs-carry-the-four-source-labels.md:23,42; spec/test-cases/TC-435-cli-compile-routes-a-program-by-its-declared-edition.md:46 | wrong-requirement |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-480 numbers occurrences, ordinals and `source_map` rows across units in canonical unit order, with insertion order within a unit. FR-093 and FR-092 are amended to match. AC-1 adds the shared `false` body node, numbered `U1`'s first in both orders. Byte-equality now follows from the stated rules. |
+| FND-002 | fixed | FR-027 now states the array `program`, the per-unit digest and edition check in request order, the refusal of a `0-draft` unit and of an empty array, and the unit-list `dependent_bytes` rule, with FR-027-AC-14 (TC-1210 step 9). The way it was amended introduces FND-006. |
+| FND-003 | fixed | FR-098 and FR-480 accept `sources` in any order and recompile it in canonical unit order. The out-of-order refusal is removed, and AC-7 expects the reversed reference to replay. |
+| FND-004 | fixed | A dependency-input library whose source has a unit's (authority, identity) refuses `invalid_package`/`conflicting-definition` before any parse, naming the unit and the library entry. AC-2 and TC-1210 step 2 carry the vector. |
+| FND-005 | fixed | ADR-033's process language is removed and replaced by the FR-151 and FR-322 rationale. AC-1 says "again in both link orders" for the second placement. |
+| FND-006 | still-open | New in this pass. It needs a fix round. |
+
+Verdict after disposition pass 1: FND-001 to FND-005 are fixed. Not mergeable
+until FND-006 is fixed.
