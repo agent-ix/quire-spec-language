@@ -102,7 +102,6 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 11: closure and component states ascending by `ProductStateRef`,
   binding `a`'s components before binding `b`'s, each binding's components
   in the computed order, and byte-equal certificates across the two runs;
-  `Holds{Exhaustive}` whose first component holds vertex index 0, whose
-  phase-2 components precede its phase-1 components, whose phase-1
-  components carry `MissingAcceptance` and the rest `Trivial`, and which the
-  checker accepts; the `UnfairStrong` entry listing `acq(1)` before `acq(2)`.
+  `Holds{Exhaustive}` whose five components are listed `(0,q0)`, `(0,q1)`, `(2,q0)`, `(1,q0)`,
+  `(2,q1)`, whose `(1,q0)` carries `MissingAcceptance` and the rest `Trivial`,
+  and which the checker accepts; the `UnfairStrong` entry listing `acq(1)` before `acq(2)`.
