@@ -52,8 +52,18 @@ The seam's types:
 | `UnsupportedCause` | `NotSupplied`: the caller supplied no such backend (FR-296); or `Untranslatable { location: Location }`: the source location of the first construct of the entry, in clause-node order, that the backend cannot translate. |
 
 Beside its admission, fault and cancellation arms, `CallFailure` has
-`Unsupported(UnsupportedEntry)` and `Limit(LimitExceeded)`; `Limit` comes
-only from `prepare` (FR-279).
+`Unsupported(UnsupportedEntry)` and `Limit(PrepareLimitReached)`; `Limit`
+comes only from `prepare` (FR-279). `CallFailure` lives in the `quire-eval`
+leaf, which depends on no QSL crate (FR-401), so its arm cannot hold
+`qsl-foundation`'s `LimitExceeded` and its `Locus`.
+`PrepareLimitReached { setting, bound, actual }` is the leaf's own,
+locus-free record of a reached prepare limit: `setting` is
+`PrepareSetting::CompileWorkUnits` or `PrepareSetting::CodeBytes`, whose
+`name()` is `prepare.compile_work_units` or `prepare.code_bytes`; `bound` is
+the configured value; `actual` is the counter the refused charge reached. A
+prepare budget is charged over the selected entries, not at a source
+location, so the record has no locus. Its O-16 category is incomplete and
+its catalog code is `stage_limit_exceeded`.
 Unsupported is not an evaluation
 outcome (ADR-013 O-16), so it is a `CallFailure` arm and never an
 `Evaluation`.

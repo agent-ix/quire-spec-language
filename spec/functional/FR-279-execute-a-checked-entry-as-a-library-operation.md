@@ -73,8 +73,8 @@ pub struct ExecuteLimits {
 
 `Result<Evaluation<Value>, CallFailure>`: the `Evaluation` the backend's
 `call` or `evaluate` returns, or a `CallFailure`: `Input`, `Fault` or
-`Cancelled` from the call or from `prepare`; `Limit` when `prepare` reaches
-a `PrepareLimits` bound; `Unsupported` with the `UnsupportedEntry` when the
+`Cancelled` from the call or from `prepare`; `Limit(PrepareLimitReached)`
+(FR-294) when `prepare` reaches a `PrepareLimits` bound; `Unsupported` with the `UnsupportedEntry` when the
 chosen backend is not supplied or did not prepare the entry.
 
 ## Behavior
@@ -88,9 +88,13 @@ chosen backend is not supplied or did not prepare the entry.
 - If the chosen backend's `prepare` lists the entry `unsupported`, then
   `execute` shall return `CallFailure::Unsupported` with that entry's
   `UnsupportedEntry`.
-- If `prepare` returns `PrepareFailure::Limit`, `Cancelled` or `Fault`, then
-  `execute` shall return `CallFailure::Limit`, `Cancelled` or `Fault` with
-  the same payload.
+- If `prepare` returns `PrepareFailure::Limit(LimitExceeded)`, then
+  `execute` shall return `CallFailure::Limit(PrepareLimitReached)` holding
+  that `LimitExceeded`'s setting, configured value and counter reached, and
+  no locus.
+- If `prepare` returns `PrepareFailure::Cancelled` or `Fault`, then
+  `execute` shall return `CallFailure::Cancelled` or `Fault` with the same
+  payload.
 - The `execute` operation shall return the same `Evaluation` as
   `CheckedPackage::call` (for a function) or `CheckedPackage::evaluate` (for
   a clause) when the chosen backend is the interpreter.
@@ -102,7 +106,7 @@ chosen backend is not supplied or did not prepare the entry.
 | FR-279-AC-1 | `execute` with the interpreter backend over FR-100-AC-4's unit returns, for `lt(5, 3)`, `flag(1)` and `id(4)`, the `Evaluation` `CheckedPackage::call` returns for the same arguments, and for `id(12)` the same `CallFailure::Input`. | Test (TC-760) |
 | FR-279-AC-2 | `execute` with a clause selection over FR-109's ConfigVersion unit returns the `Evaluation` `qsl_replay::spine::run_clause` reports for the same clause and input. | Test (TC-760) |
 | FR-279-AC-3 | For each FR-100-AC-1, AC-4 and AC-6 request, the `outcome` member of FR-100's `spine-run-result/1` document equals the rendering of `execute`'s result for the same source, function, arguments and accounting limits. | Test (TC-760) |
-| FR-279-AC-4 | `execute` choosing a supplied test backend standing in for `aot` whose `prepare` returns `PrepareFailure::Limit` naming `prepare.code_bytes` returns `CallFailure::Limit` with the same `LimitExceeded`; with one whose `prepare` returns `PrepareFailure::Fault`, `CallFailure::Fault` with the same `InternalFault`. | Test (TC-760) |
+| FR-279-AC-4 | `execute` choosing a supplied test backend standing in for `aot` whose `prepare` returns `PrepareFailure::Limit` naming `prepare.code_bytes` with configured value 1 and counter 2 returns `CallFailure::Limit(PrepareLimitReached { setting: PrepareSetting::CodeBytes, bound: 1, actual: 2 })`, whose `setting.name()` is `prepare.code_bytes`, whose category is incomplete (exit 22) and which is built at the path `quire_eval::PrepareLimitReached`; with one whose `prepare` returns `PrepareFailure::Fault`, `CallFailure::Fault` with the same `InternalFault`. | Test (TC-760) |
 
 ## Dependencies
 
