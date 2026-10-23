@@ -66,8 +66,9 @@ use qsl_foundation::digest::{ByteDigest, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
-use qsl_foundation::{InternalFault, Setting, Span};
+use qsl_foundation::{Setting, Span};
 use quire_exact::ValueType;
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation, PropertyForm,
 };
@@ -1532,6 +1533,25 @@ pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
         name: checked.name.clone(),
         span: checked.span,
     })
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl CheckedTemporalClause {
+    /// The clause with its profile replaced after S3 (test-support only): a
+    /// clause no well-formed request carries.
+    #[must_use]
+    pub fn with_profile_after_s3(mut self, profile: TemporalProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// The clause with its property form replaced after S3 (test-support
+    /// only): a clause no well-formed request carries.
+    #[must_use]
+    pub fn with_property_form_after_s3(mut self, form: Option<PropertyForm>) -> Self {
+        self.property_form = form;
+        self
+    }
 }
 
 /// Every `temporal` clause of `package`, checked by the family alone, as

@@ -78,7 +78,8 @@ use crate::model::population::{
     ReferenceKey,
 };
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
+use quire_semantic_value::catalog::InternalFault;
 
 use quire_exact::{
     from_admitted, CollectionType, Incomplete, Meter, ObjectId, ObjectReference, OptionValue,

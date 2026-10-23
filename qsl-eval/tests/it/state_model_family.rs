@@ -5,13 +5,13 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_foundation::diagnostic::{category_of, Category};
+use qsl_foundation::diagnostic::category_of;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     checked_dispatch_operation, CheckCause, CheckedGraph, DispatchRoot, DispatchTable, NodeKind,
     OperationClauses, PackageDeclarations,
 };
-use qsl_semantics::family::{FamilyKind, FamilyOutcome, FamilyResult};
+use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::accounting::{Meter as ModelMeter, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
@@ -24,10 +24,12 @@ use qsl_semantics::model::population::{
     admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits, PopulationDocument,
     PopulationMember,
 };
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     CollectionKind, EffectiveId, FieldValue, IllTypedCause, Meter, ObjectId, ObjectReference,
     Outcome, Value, ValueType,
 };
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldRef;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -616,7 +618,9 @@ fn source_lookup_function_carries_model_refusal_and_present_control_completes() 
     );
     assert_eq!(category_of(&code), Some(Category::Refusal));
     assert_eq!(
-        cause.refusal_record(None).unwrap().category(),
+        qsl_foundation::diagnostic::refusal_record(cause.as_ref(), None)
+            .unwrap()
+            .category(),
         Category::Refusal
     );
     let control = package

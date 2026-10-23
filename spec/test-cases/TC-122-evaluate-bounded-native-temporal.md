@@ -120,6 +120,20 @@ profiles compiles one declaration per profile from identical clause text.
     timestamp unit, the declared sequence authority and one ceiling; require each
     to produce a distinct result identity whose premises record the changed
     dimension. Require the earlier result to be neither reused nor rewritten.
+14. Emit a strict `/2` package with one fixed-sample (`epoch` 0, `period` 1,
+    `unit` `ms`), one event-position (`sequence_authority` `seq`) and one
+    timestamped-event (`timestamp_unit` `ns`) declaration through FR-050's
+    producer, read it with the strict `/2` reader, and evaluate each declaration
+    through `evaluate_v2` with its exact trace; require the report's
+    authenticated binding to hold the package digest, declaration, definition
+    identity and revision, clock name and parameter map. Then apply each single
+    change of FR-043-AC-14 and require `Refusal::Binding` with that AC's
+    dimension, no position visited, no truth and no authenticated binding.
+    Evaluate the same mutated traces through the `/1` `evaluate` over the same
+    source: require the profile and clock-name mutations to refuse
+    `Refusal::Binding` (`Profile`, `Clock`), the parameter mutations (key set,
+    `epoch`, `period`, `unit`, `sequence_authority`, `timestamp_unit`) to
+    evaluate without refusal, and no result to carry an authenticated binding.
 
 ## Expected Results
 
@@ -135,6 +149,7 @@ Activation is asserted separately in
 [TC-123](./TC-123-activate-temporal-obligations.md), resource behavior in
 [TC-124](./TC-124-bound-temporal-evaluation.md) and mapping support in
 [TC-125](./TC-125-classify-temporal-mapping-support.md); this case makes no claim
-about any of the three. The emitted temporal body carries no declared sample
-period, epoch, timestamp unit or sequence-authority value, so group 13 establishes
-that changing one changes result identity, not that the artifact authenticates it.
+about any of the three. A `/1` body carries no declared sample period, epoch,
+timestamp unit or sequence-authority value, so group 13 establishes that changing
+one changes result identity; group 14 establishes that a `/2` package
+authenticates each of them before any position is visited.

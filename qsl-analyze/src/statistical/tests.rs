@@ -1766,7 +1766,10 @@ fn okamoto_sprt_and_regenerative_results_settle_measured() {
         &mut Service::new(5),
     ));
     assert_eq!(okamoto.measured(), Some(Decision::Accepted));
-    assert_eq!(okamoto.category(), qsl_replay::Category::Success);
+    assert_eq!(
+        okamoto.category(),
+        quire_semantic_value::catalog::Category::Success
+    );
     let verdict = measured(&okamoto);
     assert!(verdict.interval.is_some());
     assert_eq!(verdict.basis.coverage, Coverage::FiniteSample);
@@ -1779,7 +1782,10 @@ fn okamoto_sprt_and_regenerative_results_settle_measured() {
         &mut Service::new(2),
     ));
     assert_eq!(sprt.measured(), Some(Decision::Rejected));
-    assert_eq!(sprt.category(), qsl_replay::Category::Violation);
+    assert_eq!(
+        sprt.category(),
+        quire_semantic_value::catalog::Category::Violation
+    );
     assert_eq!(measured(&sprt).interval, None);
 
     let long = long_run(Comparison::AtLeast, ratio(999, 1000));
@@ -1803,7 +1809,8 @@ fn okamoto_sprt_and_regenerative_results_settle_measured() {
 #[trace("TC-627", "FR-192-AC-3")]
 #[test]
 fn a_rejected_measurement_fails_the_gate_as_a_violation() {
-    use qsl_replay::{Category, Operation, OutcomeDocument, OutcomeItem, RequestIndex};
+    use qsl_replay::{Operation, OutcomeDocument, OutcomeItem, RequestIndex};
+    use quire_semantic_value::catalog::Category;
 
     let tests = one_test();
     let sampler = sampler_ref();
@@ -1880,7 +1887,10 @@ fn an_undefined_sample_settles_measured_rejected() {
     );
     let record = settle(&outcome);
     assert_eq!(record.measured(), Some(Decision::Rejected));
-    assert_eq!(record.category(), qsl_replay::Category::Violation);
+    assert_eq!(
+        record.category(),
+        quire_semantic_value::catalog::Category::Violation
+    );
     let undefined = measured(&record).tests[0]
         .undefined
         .clone()
@@ -1904,7 +1914,10 @@ fn an_undefined_sample_settles_measured_rejected() {
     assert_eq!(json["cause"]["cause"], "division-by-zero");
     let gate =
         qsl_replay::OutcomeDocument::settled(qsl_replay::Operation::Analyze, None, vec![entry]);
-    assert_eq!(gate.category(), qsl_replay::Category::Violation);
+    assert_eq!(
+        gate.category(),
+        quire_semantic_value::catalog::Category::Violation
+    );
 }
 
 /// FR-193 "Keeping witnesses" over `Service` and the 2 ms claim with seed

@@ -146,6 +146,11 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   requiring it to equal the request's declared `package_id` — needs an
   actual compile and is #243's (TK-01 executor, ADR-013 C-13), not this
   requirement's.
+- The closed known set of semantic profiles is exactly the one profile
+  identifier `quire.profile.v1`; a v2 lock's clause-profile definition
+  identities (such as `quire.temporal.infinite-trace/v1` or
+  `quire.protocol.finite-global/v1`) are not members, since those bind
+  through `package_id` (ADR-013 O-25).
 - When a semantic profile selection names a profile outside the closed
   known set, the reader SHALL refuse the request at decode with
   `unknown_profile`/`unsupported-selection`, keeping the supplied selection
