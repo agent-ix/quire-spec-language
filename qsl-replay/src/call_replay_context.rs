@@ -213,6 +213,7 @@ mod tests {
     use crate::witness::WitnessValue;
     use crate::ReplayLimits;
     use crate::{TerminalRecord, TerminalValue};
+    use ix_trace_rs::trace;
     use qsl_foundation::SettingLimits;
 
     const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -310,17 +311,9 @@ mod tests {
         }]
     }
 
-    /// The run's context with its one member moved to `p`'s function-contract
-    /// item, the only kind of item `PluginReplayContext::request` replays
-    /// until application claims do (QSL-980).
-    fn at_p(result: RunWithReplayContext, key: OccurrenceKey) -> CallReplayContext {
-        let mut context = result.into_parts().3;
-        context.members = vec![CallRequirement::new(key, RequestIndex::new(0))];
-        context
-    }
-
     /// A member's request carries the run's package, its
-    /// source and the run's limits, and replays and settles.
+    /// source and the run's limits (FR-404-AC-6), and replays and settles.
+    #[trace("TC-1173", "FR-404-AC-6")]
     #[test]
     fn a_member_request_carries_the_run_and_replays() {
         let limits = CallerLimits::from_operands([
@@ -331,18 +324,20 @@ mod tests {
         .unwrap();
         let result = run(SOURCE, limits);
         let package_id = result.package_id();
-        let (key, parameter) = declaration(SOURCE, "p");
-        let context = at_p(result, key.clone());
+        let (_, parameter) = declaration(SOURCE, "q");
+        let member = result.requirements().members()[0].clone();
+        let key = member.occurrence().clone();
+        let context = result.into_parts().3;
         let bounds = [bound_at(parameter)];
         let wire = context
             .request(
                 package_id,
-                RequestIndex::new(0),
+                member.request_index(),
                 &bounds,
                 &plugin(),
-                input(parameter, 0),
+                input(parameter, 9),
             )
-            .expect("a function-contract item");
+            .expect("an application item");
         assert_eq!(wire.package_id.1, package_id.hex());
         assert_eq!(wire.replay_target.occurrence_key.as_ref(), Some(&key));
         assert_eq!(wire.byte_provision[0].2, SOURCE.as_bytes());
@@ -359,10 +354,13 @@ mod tests {
             }
         }
         let replayed = crate::replay(wire, ReplayLimits::default());
-        let refuted =
+        let settled =
             TerminalRecord::from_plugin_counterexample(RequestIndex::new(0), plugin(), &replayed);
-        assert_eq!(refuted.value(), &TerminalValue::Refuted);
-        assert_eq!(refuted.backend(), Some(&plugin()));
+        assert!(matches!(
+            settled.value(),
+            TerminalValue::Inconclusive(crate::InconclusiveCause::ReplayParity(_))
+        ));
+        assert_eq!(settled.backend(), Some(&plugin()));
 
         // Another package's id is refused before the item is looked at.
         let other = SOURCE.replace("x + 1", "x + 2");
@@ -372,7 +370,7 @@ mod tests {
             context
                 .request(
                     foreign,
-                    RequestIndex::new(0),
+                    member.request_index(),
                     &bounds,
                     &plugin(),
                     Vec::new()
@@ -382,31 +380,62 @@ mod tests {
         ));
     }
 
-    /// Two packages that hold `p` hold equal keys for it, and
-    /// each context's request carries its own package and source.
+    /// The member's `obligation_identity` is the `process-provider` identity
+    /// of its node, occurrence and proof bounds (FR-404-AC-3), and its
+    /// replay finds the application undefined.
+    #[trace("TC-1173", "FR-404-AC-3")]
     #[test]
-    fn equal_keys_in_two_packages_carry_each_their_own_package() {
-        let other = format!("{SOURCE}function s using v(x: Int[0, 9]): Integer pure {{ x + 2 }}\n");
-        let (key, parameter) = declaration(SOURCE, "p");
-        assert_eq!((key.clone(), parameter), declaration(&other, "p"));
-        let mut digests = Vec::new();
-        for source in [SOURCE, other.as_str()] {
-            let result = run(source, CallerLimits::default());
-            let package_id = result.package_id();
-            let context = at_p(result, key.clone());
-            let wire = context
-                .request(
-                    package_id,
-                    RequestIndex::new(0),
-                    &[bound_at(parameter)],
-                    &plugin(),
-                    input(parameter, 0),
-                )
-                .expect("a request");
-            assert_eq!(wire.package_id.1, package_id.hex());
-            assert_eq!(wire.byte_provision[0].2, source.as_bytes());
-            digests.push(wire.source_digests[0].clone());
-        }
-        assert_ne!(digests[0], digests[1]);
+    fn a_member_request_carries_the_process_provider_identity() {
+        let source = SOURCE.replace(
+            "function q",
+            "function r using v(x: Int[0, 9]): Integer pure { 10 mod x }\nfunction q",
+        );
+        let call = Call {
+            function: "r".to_owned(),
+            arguments: vec![crate::CallArgument {
+                parameter: "x".to_owned(),
+                value: Value::Integer(Integer::from(0_i64)),
+            }],
+            accounting: default_accounting(1_000_000),
+            supplied: crate::SuppliedLimits::default(),
+        };
+        let result = run_with_replay_context(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            source.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            CallerLimits::default(),
+            &call,
+            &ObjectEnvironment::default(),
+            &Cancel::new(),
+        )
+        .expect("the call runs");
+        assert!(matches!(result.outcome(), CallOutcome::Undefined { .. }));
+        let (_, parameter) = declaration(&source, "r");
+        let member = result.requirements().members()[0].clone();
+        let bounds = [bound_at(parameter)];
+        let wire = result
+            .context()
+            .request(
+                result.package_id(),
+                member.request_index(),
+                &bounds,
+                &plugin(),
+                input(parameter, 0),
+            )
+            .expect("an application item");
+        let expected = crate::execute::process_provider_obligation(
+            member.occurrence().node(),
+            member.occurrence().origin(),
+            &crate::BoundEntries::new(bounds.to_vec()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(wire.obligation_identity, *expected.as_bytes());
+        let replayed = crate::replay(wire, ReplayLimits::default());
+        let refuted =
+            TerminalRecord::from_plugin_counterexample(RequestIndex::new(0), plugin(), &replayed);
+        assert_eq!(refuted.value(), &TerminalValue::Refuted);
+        assert_eq!(refuted.backend(), Some(&plugin()));
     }
 }

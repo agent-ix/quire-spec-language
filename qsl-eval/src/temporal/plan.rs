@@ -11,10 +11,10 @@
 //! runs over the arena in index order, forward or reverse, so none recurses.
 
 use qsl_foundation::bound::TemporalUpper;
-use qsl_foundation::InternalFault;
 use qsl_semantics::check::{
     BinaryTemporal, CheckedFormula, CheckedInterval, FormulaNode, UnaryTemporal,
 };
+use quire_semantic_value::catalog::InternalFault;
 
 pub(super) const STAGE: &str = "eval.temporal";
 

@@ -61,4 +61,4 @@ Qualification uses actual IR types and Rust assertions, including an
 independent coordinate oracle and deliberately misleading constructor-valid IR
 locations. There are no new dependencies or non-Rust qualification helpers.
 Type/definedness checking, native model semantic roles, lowering and evaluation
-are not yet implemented here.
+are outside this stage.

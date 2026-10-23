@@ -249,6 +249,22 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
   map (ADR-018 DS-2) construct the values of their backends; this
   settlement map covers QSL's native engine, EN-1, and the SMT certificate
   check.
+- **Bounded-complete basis rule.** Before it settles an SMT
+  `BoundedComplete{depth}` result, with a certificate or without one, and
+  before every other rule for that result above, the settlement map SHALL
+  check the basis against the item: when the item is not a TP-2 `on origin`
+  item, or `depth` is below the item's ADR-014 TR-4 horizon `h` (ADR-018
+  V-2), it SHALL settle `inconclusive`, `unsettled`,
+  `Inconclusive(CertificateRejected{ShapeMismatch, Query { part: Unrolling
+  }})`, run no certificate check and charge nothing, never `proved`
+  `Certified` or `Uncertified`. Below `h` the claim can fail at a position
+  the query does not reach (FR-315 "Monitors"). This rule is the
+  settlement's first step whichever entry settles the result; under the
+  `qsl-replay` handoff entry for an SMT proof of a temporal item it is that
+  entry's first step, ahead of its rule that a result with no certificate
+  runs no check and settles `Uncertified`, which applies only to a basis
+  this rule admits. FR-314's checker applies the same rule to a certificate
+  it is given.
 - Downstream need (IR/CG overlap): QSL needs CG's SMT backend to build its
   queries with FR-315's encoding and to hand each SMT `BoundedComplete` or
   `Inductive` result over with the solver's proof certificate, each refuted
@@ -282,6 +298,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-12 | FR-127-AC-3's counterexample replayed with a request whose `package_id` is another package's refuses `PackageIdMismatch` and settles `inconclusive`, `Inconclusive(StaleDependency{requested, recompiled})` naming the request's and the recompiled `package_id`, written `stale-dependency{requested, recompiled}` on the FR-331 record, not `ReplayRefused`. | Test (TC-1141) |
 | FR-127-AC-13 | FR-338-AC-11's stale closure certificate and FR-339-AC-4's stale component certificate each settle `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id` and `recompiled` the recompiled one, written `stale-dependency{requested, recompiled}` on the FR-331 record, never `certificate-rejected` and never `proved`. | Test (TC-1141) |
 | FR-127-AC-14 | `settle_smt_proof`, a `qsl-replay` entry, settles each `SmtProofOutcome` for FR-314-AC-1's `Counter` items: `BoundedComplete{depth: 3}` with FR-314-AC-1's accepted certificate as `Proved{BoundedComplete{depth: 3}, Certified}`, `proved`, success; `Inductive{depth: 1}` with its accepted certificate as `Proved{Inductive{depth: 1}, Certified}`; `BoundedComplete{depth: 3}` with `certificate: None` as `Proved{BoundedComplete{depth: 3}, Uncertified}`, with no check run and the request's meters unchanged; FR-314-AC-2's `QueryMismatch` certificate as `Inconclusive(CertificateRejected{QueryMismatch, Query { part: Unrolling }})`; FR-314-AC-2's `hole` certificate as `Proved{BoundedComplete{depth: 3}, Uncertified}`; FR-314-AC-5's limit-stopped certificate as `Incomplete(LimitReached{MaxCertificateBytes, 1, certificate_check.max_certificate_bytes})`; FR-315-AC-30's faulting rebuild as `Failed`. A crate whose only QSL dependency is `qsl-replay` names `SmtProofOutcome`, `SmtProofBasis`, `SmtProofCertificate` and `settle_smt_proof` and compiles. | Test (TC-1199) |
+| FR-127-AC-15 | Over FR-314-AC-1's `Counter` under event-position false-extension, an SMT `BoundedComplete{depth: 0}` result for `always[0,3] eventually[0,1] holds(c.value = 3)` (horizon 4) with no certificate settles `inconclusive`, `Inconclusive(CertificateRejected{ShapeMismatch, Query { part: Unrolling }})`, with no check run and the request's certificate meters unchanged, never `Proved{.., Uncertified}`; the same result with a certificate settles the same before any query is encoded; `BoundedComplete{depth: 3}` with no certificate for the TP-1 item `always holds(c.value <= 3)` settles the same; `BoundedComplete{depth: 3}` with no certificate for `always[0,3] holds(c.value <= 3)` (horizon 3) still settles `Proved{BoundedComplete{depth: 3}, Uncertified}`. | Test (TC-1201) |
 
 ## Dependencies
 

@@ -35,9 +35,9 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_exact::{Cancel, ScalarLimits};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::automaton::{
     translate_body, AutomatonError, Letter, Monitor, PropertyAutomaton, StateId,

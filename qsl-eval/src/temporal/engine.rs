@@ -28,9 +28,9 @@
 
 use std::collections::HashMap;
 
-use qsl_foundation::InternalFault;
 use qsl_semantics::check::{Activation, CheckedFormula, CheckedTemporalClause, TemporalProfile};
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::input::TemporalTrace;

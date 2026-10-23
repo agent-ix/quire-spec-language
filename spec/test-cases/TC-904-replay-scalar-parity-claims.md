@@ -20,7 +20,13 @@ Scope: FR-357-AC-1 to FR-357-AC-11, FR-357-AC-13 to FR-357-AC-20.
 
 Function level, over `inc(x: Int[0, 9]): Integer { x + 1 }`,
 `inv(x: Int[1, 9]): Rational[0, 1; 1, 9] { 1 / x }` and the
-predicate `small`:
+predicate `small`, each request built from the `call_site` `FunctionSite`
+of the function it selects, so it carries that function's `declaration`
+occurrence and its `value_parity.obligation_identity` (FR-484) and passes
+the occurrence and identity checks before the argument join (step 4's
+assignment naming `inv`'s parameter node therefore reaches the join and
+refuses `UnknownParameter`; step 5's `small` has no `value_parity` and its
+request carries `inc`'s identity, refusing `NotAValueFunction` first):
 
 1. Replay `inc(3)` against generated 5, `inc(3)` against out-of-range and
    `inv(2)` against generated 1/3.
