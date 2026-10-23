@@ -2,6 +2,7 @@
 //! Public admitted-artifact state evaluation controls.
 
 use crate::support::native_protocol as setup;
+use crate::support::static_authority::canonical;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
@@ -11,13 +12,13 @@ use quire_spec_language::protocol_artifact::{
 };
 use quire_spec_language::state::{
     self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
-    CanonicalizationDomain, ContextualSlot, ContextualValue, ContextualValueKind, Dimension,
-    EvaluationOutcome, EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot,
-    Limits, MissingInput, ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity,
-    ObservationKey, PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind,
-    ValuePathSegment,
+    ContextualSlot, ContextualValue, ContextualValueKind, Dimension, EvaluationOutcome,
+    EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, MissingInput,
+    ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
+    PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind, ValuePathSegment,
 };
 use setup::{Inputs, Unit};
+use sha2::{Digest, Sha256};
 
 fn admitted(test: impl FnOnce(&quire_spec_language::protocol_artifact::AdmittedPackage)) {
     let inputs = Inputs::new(&[
@@ -249,13 +250,138 @@ fn admitted_postcondition(
     );
 }
 
-fn canonical(value: char) -> CanonicalDigest {
-    CanonicalDigest {
-        domain: CanonicalizationDomain::FilamentCanonicalJson1,
-        value: format!("sha256:{}", value.to_string().repeat(64))
-            .parse()
-            .expect("a sha256 digest"),
+/// Trace: FR-049-AC-10, FR-049-AC-11, TC-136.
+#[trace("TC-136", "FR-049-AC-10", "FR-049-AC-11")]
+#[test]
+fn static_authority_jcs_vectors_and_refusal_order() {
+    let vectors = [
+        (
+            "{ \"version\": 1, \"name\": \"orders\" }",
+            "{\"name\":\"orders\",\"version\":1}",
+            canonical('1'),
+        ),
+        (
+            "{\"objects\": [\"Order\", \"Line\"], \"id\": \"orders-model\"}",
+            "{\"id\":\"orders-model\",\"objects\":[\"Order\",\"Line\"]}",
+            canonical('2'),
+        ),
+        (
+            "{\"limits\": {\"depth\": 8}, \"profile\": \"strict\"}",
+            "{\"limits\":{\"depth\":8},\"profile\":\"strict\"}",
+            canonical('3'),
+        ),
+        (
+            "{\"enabled\": true, \"mode\": \"batch\"}",
+            "{\"enabled\":true,\"mode\":\"batch\"}",
+            canonical('4'),
+        ),
+    ];
+    for (source, expected_preimage, expected_digest) in vectors {
+        let parsed: serde_json::Value = serde_json::from_str(source).expect("source parses");
+        let preimage = serde_json_canonicalizer::to_vec(&parsed).expect("independent JCS encoding");
+        assert_eq!(preimage, expected_preimage.as_bytes());
+        let hex = Sha256::digest(&preimage)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert_eq!(
+            expected_digest,
+            CanonicalDigest(format!("sha256-jcs:{hex}"))
+        );
     }
+    let raw_hex = Sha256::digest(b"{ \"version\": 1, \"name\": \"orders\" }")
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(
+        raw_hex,
+        "5cc151d5d5c229b536b0e36f1c2fc47ef5f5f26f36f038f129777d4c53c90200"
+    );
+    assert_ne!(format!("sha256-jcs:{raw_hex}"), canonical('1').0);
+
+    admitted_graph(|package| {
+        let (owner, root, view) = graph_view(package);
+        let request = EvaluationRequest {
+            declaration: owner,
+            value: root,
+        };
+        assert!(matches!(
+            state::evaluate(package, request.clone(), &view, Limits::default()).outcome(),
+            EvaluationOutcome::Completed(_)
+        ));
+        let mutate = |member: state::StaticAuthorityMember, spelling: String| {
+            let mut changed = view.clone();
+            let authority = changed.binders[0]
+                .authority
+                .as_mut()
+                .expect("binder authority");
+            let digest = match member {
+                state::StaticAuthorityMember::Document => {
+                    &mut authority.static_selection.document_digest
+                }
+                state::StaticAuthorityMember::Model => &mut authority.static_selection.model_digest,
+                state::StaticAuthorityMember::Profile => {
+                    &mut authority.static_selection.profile_digest
+                }
+                state::StaticAuthorityMember::Configuration => {
+                    &mut authority.static_selection.configuration_digest
+                }
+            };
+            *digest = CanonicalDigest(spelling);
+            changed
+        };
+        for (member, good) in [
+            (state::StaticAuthorityMember::Document, canonical('1')),
+            (state::StaticAuthorityMember::Model, canonical('2')),
+            (state::StaticAuthorityMember::Profile, canonical('3')),
+            (state::StaticAuthorityMember::Configuration, canonical('4')),
+        ] {
+            let wrong = mutate(member, good.0.replacen("sha256-jcs:", "sha256:", 1));
+            let report = state::evaluate(package, request.clone(), &wrong, Limits::default());
+            assert_eq!(
+                report.outcome(),
+                &EvaluationOutcome::Refused(Refusal::StaticAuthorityDigest {
+                    member,
+                    cause: state::StaticAuthorityDigestCause::WrongDomain,
+                })
+            );
+            assert_eq!(report.usage().expression_work, 0);
+        }
+        for spelling in [
+            format!("sha256-jcs:{}", "a".repeat(63)),
+            format!("sha256-jcs:{}", "a".repeat(65)),
+            format!("sha256-jcs:{}", "A".repeat(64)),
+            format!("sha256-jcs:{}x", "a".repeat(63)),
+        ] {
+            let wrong = mutate(state::StaticAuthorityMember::Document, spelling);
+            let report = state::evaluate(package, request.clone(), &wrong, Limits::default());
+            assert_eq!(
+                report.outcome(),
+                &EvaluationOutcome::Refused(Refusal::StaticAuthorityDigest {
+                    member: state::StaticAuthorityMember::Document,
+                    cause: state::StaticAuthorityDigestCause::Malformed,
+                })
+            );
+            assert_eq!(report.usage().expression_work, 0);
+        }
+        let mut two_invalid = mutate(
+            state::StaticAuthorityMember::Configuration,
+            format!("sha256-jcs:{}", "A".repeat(64)),
+        );
+        two_invalid.binders[0]
+            .authority
+            .as_mut()
+            .expect("binder authority")
+            .static_selection
+            .model_digest = CanonicalDigest(format!("sha256:{}", "0".repeat(64)));
+        assert_eq!(
+            state::evaluate(package, request, &two_invalid, Limits::default()).outcome(),
+            &EvaluationOutcome::Refused(Refusal::StaticAuthorityDigest {
+                member: state::StaticAuthorityMember::Model,
+                cause: state::StaticAuthorityDigestCause::WrongDomain,
+            })
+        );
+    });
 }
 
 fn observation_digest(value: char) -> ObservationDigest {
@@ -1823,19 +1949,18 @@ fn tc_129_130_131_full_occurrences_authority_and_graph_limits_are_exact() {
             EvaluationOutcome::Refused(Refusal::Authority(_))
         ));
 
-        let mut raw_digest_in_canonical_domain = view.clone();
-        raw_digest_in_canonical_domain.binders[0]
+        let mut changed_static_digest = view.clone();
+        changed_static_digest.binders[0]
             .authority
             .as_mut()
             .expect("binder authority")
             .static_selection
-            .model_digest
-            .value = package.digest();
+            .model_digest = canonical('1');
         assert!(matches!(
             state::evaluate(
                 package,
                 request.clone(),
-                &raw_digest_in_canonical_domain,
+                &changed_static_digest,
                 Limits::default()
             )
             .outcome(),

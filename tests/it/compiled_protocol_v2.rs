@@ -2,6 +2,7 @@
 //! TC-138: strict compiled-protocol v2 production, admission and L5 handoff.
 
 use crate::support::native_protocol as setup;
+use crate::support::static_authority::canonical;
 
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -19,12 +20,11 @@ use quire_spec_language::protocol_artifact::{
     NumberComponent, NumberError, NumberWire, ProtocolNumber, Unsupported,
 };
 use quire_spec_language::state::{
-    self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
-    CanonicalizationDomain, ContextualSlot, Dimension as StateDimension, EvaluationOutcome,
-    EvaluationRequest, FieldInput, FieldValue, InputSlot, Limits as StateLimits, MissingInput,
-    ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
-    PopulationInput, Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
-    ValueKind as StateValueKind,
+    self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, ContextualSlot,
+    Dimension as StateDimension, EvaluationOutcome, EvaluationRequest, FieldInput, FieldValue,
+    InputSlot, Limits as StateLimits, MissingInput, ObjectInput, ObjectKey, ObservationDigest,
+    ObservationIdentity, ObservationKey, PopulationInput, Refusal as StateRefusal, StateView,
+    StaticAuthority, Value as StateValue, ValueKind as StateValueKind,
 };
 use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
@@ -173,15 +173,6 @@ fn compensation_inputs() -> Inputs {
     ]);
     let _ = inputs.step_contracts("Before", "After");
     inputs
-}
-
-fn canonical(value: char) -> CanonicalDigest {
-    CanonicalDigest {
-        domain: CanonicalizationDomain::FilamentCanonicalJson1,
-        value: format!("sha256:{}", value.to_string().repeat(64))
-            .parse()
-            .expect("a sha256 digest"),
-    }
 }
 
 fn observation_digest(value: char) -> ObservationDigest {
