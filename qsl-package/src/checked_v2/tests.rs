@@ -84,9 +84,8 @@ fn dependency_selection(identity: &str, label: &str) -> Value {
 /// Fields shared by a `semantic_graph` node and its identity-projection
 /// counterpart: `quire_contract_model::CheckedNodeProjectionV2::from`'s own
 /// definition of the projection is exactly a `CheckedSemanticNodeV2` with
-/// `occurrences` dropped, so IR's own reader requires the two to describe
-/// literally the same node (`identity_preimage.identity_projection` must
-/// equal `semantic_graph.nodes` mapped through that `From` impl). A
+/// `occurrences` dropped; IR derives the package-id hash input's projection
+/// from `semantic_graph.nodes` that way and the wire carries none. A
 /// self-typed scalar with an empty aggregate body needs no other
 /// node's identity and no frame/nominal validation. `export` is `R`'s own
 /// `declaration`, paired with a `declaration`-role occurrence
@@ -196,6 +195,17 @@ fn package_id_member(preimage: &Value) -> Value {
     })
 }
 
+/// `preimage` as the wire carries it: the seven selections, without the
+/// `identity_projection` that only the package-id hash input holds (QSpec
+/// FR-322 `identity_preimage`).
+fn wire_preimage(preimage: &Value) -> Value {
+    let mut wire = preimage.clone();
+    wire.as_object_mut()
+        .expect("preimage is an object")
+        .remove("identity_projection");
+    wire
+}
+
 /// A structurally valid `quire.checked-package/v2` envelope wrapping
 /// `preimage`, with a correctly recomputed `package_id` and one graph node.
 fn valid_envelope(preimage: &Value) -> Value {
@@ -203,7 +213,7 @@ fn valid_envelope(preimage: &Value) -> Value {
         "capability_report": [],
         "contract_version": CHECKED_PACKAGE_V2,
         "diagnostics": diagnostics(),
-        "identity_preimage": preimage,
+        "identity_preimage": wire_preimage(preimage),
         "lock": lock(preimage["dependency_selections"].as_array().unwrap().clone()),
         "package_id": package_id_member(preimage),
         "semantic_graph": {
@@ -336,7 +346,7 @@ fn envelope_in_graph_order(exports: &[(&str, &str)]) -> (Value, Value) {
         })
         .collect();
     rekey_stale(&mut envelope);
-    let preimage = envelope["identity_preimage"].clone();
+    let preimage = identity_hash_preimage(&envelope);
     (preimage, envelope)
 }
 
@@ -787,7 +797,7 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
         },
     ]);
     rekey_stale(&mut envelope);
-    let preimage = envelope["identity_preimage"].clone();
+    let preimage = identity_hash_preimage(&envelope);
     let bytes = jcs(&envelope);
     let outcome = read(&bytes, &pinned_for(&preimage));
     let Read::Refused(
@@ -884,10 +894,9 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
 }
 
 /// A valid wire of at least `min_bytes`, made large by one export whose
-/// qualified name is long (it appears in both the identity projection and
-/// the semantic graph).
+/// qualified name is long (it appears in the semantic graph).
 fn wire_of_at_least(min_bytes: usize) -> (Value, Vec<u8>) {
-    let export = format!("R{}", "r".repeat(min_bytes / 2));
+    let export = format!("R{}", "r".repeat(min_bytes));
     let (preimage, envelope) = envelope_declaring(&[("pkg::R", &export)]);
     let bytes = jcs(&envelope);
     assert!(bytes.len() >= min_bytes);
@@ -1407,35 +1416,32 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
     }
 }
 
-/// `envelope` as the wire IR's reader takes it: the published fixture ships
-/// no `identity_projection` (QSpec FR-322 `identity_preimage`); the reader
-/// derives it from `semantic_graph.nodes`, every node in graph order without
-/// `occurrences`. IR's reader still requires the member on the wire (IR-275
-/// removes that), so the derived projection is installed here, from the
-/// nodes and never from a shipped copy.
-fn with_derived_projection(envelope: &Value) -> Value {
-    let mut wire = envelope.clone();
+/// The package-identity hash input of `envelope`: its wire selections plus
+/// the `identity_projection` derived from `semantic_graph.nodes`, every node
+/// in graph order without `occurrences`. The wire never carries the
+/// projection (QSpec FR-322 `identity_preimage`).
+fn identity_hash_preimage(envelope: &Value) -> Value {
+    let mut preimage = envelope["identity_preimage"].clone();
     let projection = projection_of(
         envelope["semantic_graph"]["nodes"]
             .as_array()
             .expect("semantic_graph.nodes is an array"),
     );
-    wire["identity_preimage"]
+    preimage
         .as_object_mut()
         .expect("identity_preimage is an object")
         .insert("identity_projection".to_owned(), Value::Array(projection));
-    wire
+    preimage
 }
 
-/// The `package_id` of `envelope`: the JCS SHA-256 of its selection object
-/// with the identity projection derived from its graph.
-fn derived_package_id(envelope: &Value) -> PackageId {
-    PackageId::of_preimage(&jcs(&with_derived_projection(envelope)["identity_preimage"]))
+/// The `package_id` of `envelope`: the JCS SHA-256 of its hash input.
+pub(crate) fn derived_package_id(envelope: &Value) -> PackageId {
+    PackageId::of_preimage(&jcs(&identity_hash_preimage(envelope)))
 }
 
 /// The canonical bytes IR's reader receives for `envelope`.
 fn fixture_wire_bytes(envelope: &Value) -> Vec<u8> {
-    jcs(&with_derived_projection(envelope))
+    jcs(envelope)
 }
 
 /// QSL's whole I2 read of the fixture `envelope`, pinned at the
@@ -1727,6 +1733,96 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
         mutations.len()
     );
     unknown_temporal_profile_is_unknown_profile(&base);
+}
+
+/// FR-322-AC-100: each `adverse.json` `shipped_projection_cases` entry is
+/// `positive-all-families.json` with an `identity_projection` member added to
+/// its `identity_preimage`, as the occurrence-free graph or as `[]`. QSL's I2
+/// read refuses it `malformed_wire` at that member; with the member removed
+/// the package is admitted under the published `package_id`, so the shipped
+/// copy never entered the package-id preimage. Skipped when `QSPEC_DIR` is
+/// unset; `make conformance` requires it.
+#[trace("TC-233", "FR-322-AC-100")]
+#[test]
+fn conformance_shipped_projection_cases_are_refused_and_admitted_once_removed() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let adverse = read_fixture(&directory.join("adverse.json"));
+    let base = read_fixture(&directory.join("positive-all-families.json"));
+    let cases = adverse["shipped_projection_cases"]
+        .as_array()
+        .expect("shipped_projection_cases");
+    assert!(
+        !cases.is_empty(),
+        "adverse.json holds no shipped_projection_cases"
+    );
+    for case in cases {
+        let id = case["id"].as_str().expect("id");
+        assert_eq!(case["base"], "positive-all-families", "{id}");
+        let shipped = match &case["identity_projection"] {
+            Value::String(form) if form == "occurrence-free-graph" => Value::Array(projection_of(
+                base["semantic_graph"]["nodes"].as_array().expect("nodes"),
+            )),
+            literal @ Value::Array(_) => literal.clone(),
+            other => panic!("{id}: unknown shipped projection {other}"),
+        };
+        let locus = case["expected_locus"].as_str().expect("locus");
+        let (parent, member) = locus.rsplit_once('/').expect("locus has a parent");
+        assert_eq!(case["expected_code"], "malformed_wire", "{id}");
+        assert_eq!(locus, "/identity_preimage/identity_projection", "{id}");
+
+        let mut candidate = base.clone();
+        candidate
+            .pointer_mut(parent)
+            .and_then(Value::as_object_mut)
+            .expect("locus parent is an object")
+            .insert(member.to_owned(), shipped);
+        let (_, refused) = read_fixture_wire(&candidate);
+        match refused {
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
+                assert_eq!(
+                    refusal.code,
+                    CheckedPackageRefusalCode::MalformedWire,
+                    "{id}"
+                );
+                assert_eq!(
+                    refusal.path.as_ref().map(|path| path.as_str()),
+                    Some(locus),
+                    "{id}"
+                );
+            }
+            other => panic!("{id}: expected malformed_wire at {locus}, got {other:?}"),
+        }
+
+        candidate
+            .pointer_mut(parent)
+            .and_then(Value::as_object_mut)
+            .expect("locus parent is an object")
+            .remove(member);
+        assert_eq!(
+            candidate, base,
+            "{id}: removing the member restores the base"
+        );
+        let published = PackageId::of_preimage(&jcs(&identity_hash_preimage(&candidate)));
+        assert_eq!(
+            published.hex(),
+            base["package_id"]["digest"].as_str().expect("digest"),
+            "{id}: the id rebuilt from the graph is the published one"
+        );
+        match read_fixture_wire(&candidate) {
+            (package_id, Read::Verified { package, .. }) => {
+                assert_eq!(package.package_id(), package_id, "{id}");
+                assert_eq!(package_id, published, "{id}");
+            }
+            (_, other) => panic!("{id}: expected the repaired package admitted, got {other:?}"),
+        }
+    }
+    println!(
+        "conformance: {} shipped-projection cases refused and admitted once removed",
+        cases.len()
+    );
 }
 
 /// FR-250's five temporal profiles are the only identities a temporal
@@ -2132,7 +2228,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
     let node_id = edged["semantic_graph"]["nodes"][0]["node_id"].clone();
     edged["semantic_graph"]["nodes"][0]["dependencies"] = json!([node_id]);
     rekey_stale(&mut edged);
-    let edge_preimage = with_derived_projection(&edged)["identity_preimage"].clone();
+    let edge_preimage = identity_hash_preimage(&edged);
 
     let cases = [
         (
@@ -2332,7 +2428,7 @@ fn modifies_entries(name: &str, entries: &[Value]) -> Value {
 
 /// `nodes` mapped through `CheckedNodeProjectionV2::from`'s own definition
 /// of an identity projection entry: each node minus its `occurrences` (see
-/// this module's `node_fields` doc). Shared by [`with_derived_projection`]
+/// this module's `node_fields` doc). Shared by [`identity_hash_preimage`]
 /// (which derives an existing envelope's projection from its own graph) and
 /// [`valid_envelope_over`] (which builds one fresh).
 fn projection_of(nodes: &[Value]) -> Vec<Value> {
@@ -2398,13 +2494,11 @@ pub(crate) fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
     panic!("rekeying does not settle within {limit} renames");
 }
 
-/// Brings an emitted envelope's wire (the projection IR's reader still
-/// requires on the wire) and its `package_id` in line with its current
-/// `semantic_graph.nodes`: the projection is derived from them. Every other
+/// Brings an emitted envelope's `package_id` in line with its current
+/// `semantic_graph.nodes`: the hashed projection is derived from them. Every
 /// `identity_preimage` field is left as the envelope's own, so a frame-only
 /// mutation changes no other identity input.
 fn refresh_frame_identity(envelope: &mut Value) {
-    envelope["identity_preimage"] = with_derived_projection(envelope)["identity_preimage"].clone();
     envelope["package_id"]["digest"] = json!(derived_package_id(envelope).hex());
 }
 
@@ -2635,7 +2729,7 @@ fn valid_envelope_over(nodes: Vec<Value>) -> Value {
         "capability_report": [],
         "contract_version": CHECKED_PACKAGE_V2,
         "diagnostics": diagnostics(),
-        "identity_preimage": preimage.clone(),
+        "identity_preimage": wire_preimage(&preimage),
         "lock": lock(vec![]),
         "package_id": package_id_member(&preimage),
         "semantic_graph": {
