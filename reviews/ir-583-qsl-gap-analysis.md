@@ -114,3 +114,13 @@ FR-401-AC-10 and TC-1191.
 | --- | --- | --- |
 | FND-008 | still-open | Two parts are resolved. The FR-401-AC-8 std half is fixed in 2ad3aec61 by `a_registered_body_for_f_runs_for_the_root_and_the_requesting_body`. It asserts 7 for `f(3)` and for the requester, the factory begun once, and one or two admitted charges. #1292 dropped the caller-supplied-run variants of AC-12. One part stays open: AC-12's second run, the meter's handle tripping with `Deadline` at the supplied-value run's first poll point for the second argument, still has no test. The test comment says such a handle "cannot trip at the supplied-value run's poll point (`Cancel`'s observer fires on meter charges only)". That is not so. `Cancel::poll` calls the observer at every poll, and quire-semantic-value's `check_cancel` and quire-exact's membership `poll` call `cancel.poll()`. A local probe at this head shows it: an observing handle on the meter saw 18 polls during Begin admission of `g(3, 4)`, and cancelling at poll 10 made `begin_call` return `CallFailure::Cancelled(Deadline)` with zero work. Add that run. Also update the comment, which still says runs 3 and 4 await a draco ruling. |
 | FND-010 | fixed 2ad3aec61 | `received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged` and `empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_prefixes` now carry `FR-401-AC-9`. |
+
+## Dispositions (round 4)
+
+Round 4 was reviewed at 4f912ded65f7502d4bde2d91275f58a05c1cb4e5. The fix
+commits are 95bd08a7b and 4f912ded6 (fmt).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed 95bd08a7b | `begin_observes_a_handle_that_trips_during_admission` (traced FR-262-AC-12 and TC-1191) trips the meter's observing handle with `Deadline` at the tenth admission poll. `begin_call` and `begin_expression` of `g(3, 4)` each return `Cancelled(Deadline)`, with no session and zero consumption. The stale "await a draco ruling" comment is removed. |
+| FND-011 | fixed 95bd08a7b | The `call_supplied` test is traced FR-401-AC-10 and TC-1191, and asserts `caller.tripped() == None`. The TC-918 `Compare` run in invariants.rs now calls `call_supplied` under a run over an uncancelled handle with a cancelled meter handle. It asserts the located incomplete result at `FunctionCall`, no admitted charge, the meter handle tripped with the cause, and the run's handle untripped. |
