@@ -301,8 +301,6 @@ impl SettingLimits for CallerLimits {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use ix_trace_rs::trace;
     use qsl_foundation::UsageCause;
 
