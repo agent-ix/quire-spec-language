@@ -115,5 +115,6 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 - Step 19: `peek`'s postcondition failure `(or U1 (and (not A1) U2))` and
   postcondition part `(or A1 A2)`, results `false` then `true`.
 - Step 20: the prefixes `0, 1, 2, 3` (replayed to `refuted`) and `0, 1, 2`;
-  the altered model's replay refused naming the altered step, settled V-6
-  `ReplayRefused`.
+  the altered model's replay refused naming the altered step, settled as
+  FR-127 settles that refusal (V-6 `ReplayRefused`); the
+  `always[0,5] holds(c.value <= 1)` model at depth 2 gives no outcome.

@@ -235,12 +235,10 @@ the single-subject check of an instance's object is `instance-type`.
      `invalid_runtime_input`/`invalid-value` naming the `terminal-stutter`
      step, so it is the terminality check, and FR-315 adds no facade entry.
      CG SHALL read as "no candidate" only that refusal: `invalid-value`
-     naming the lasso's `terminal-stutter` loop step. Every other refusal of
-     a model built by these rules (a prefix step not enabled or naming a
-     digest no successor has, an initial state outside the subject's, an
-     unfair lasso) is a disagreement between the encoding and replay, and CG
-     SHALL settle it as FR-127 settles a refused replay, V-6
-     `ReplayRefused` naming the refusal, never as `InductionNotClosed` or no
+     naming the lasso's `terminal-stutter` loop step. Every other result of
+     replaying a model built by these rules SHALL settle as FR-127's
+     settlement table settles that result, which this requirement does not
+     restate, and never as "no candidate", `InductionNotClosed` or no
      outcome.
   4a. When failures of several kinds hold at the failing position `p`, a
      failure that is a property of the state alone (rule 3: a definedness
@@ -254,11 +252,13 @@ the single-subject check of an instance's object is `instance-type`.
      path is the live copies, `0` to `e`, `e` the last live position within
      `0..=u`. A definedness failure at a least live position `p`, read
      first as in rule 4a, gives the prefix to `p` (UE-3). Otherwise the
-     violation gives the prefix to `e`, which covers the horizon or ends at
-     a terminal state (CX-1): for `always[0,u]`, cut at the least position
-     where `I` fails for some instance or, when that position is past the
-     end, at `e`; for `eventually[0,u]`, whose violation sits at no single
-     position, the whole live prefix to `e`.
+     violation gives the prefix to `e`, uncut, for `always[0,u]` and
+     `eventually[0,u]` alike. ADR-018 CX-1 requires a bounded-profile
+     prefix to cover the horizon or end at a terminal state, so that the
+     evaluator decides it exactly: the prefix to `e` does when `e = u` or
+     copy `e` is terminal. When neither holds, which can happen only for
+     `always[0,u]` at `depth < u`, the model is a bad prefix that is no CX-1
+     counterexample, and the query gives no outcome at that depth.
   5. After a model that is no candidate, CG SHALL settle from that query
      with no further model: a base query gives `InductionNotClosed{depth}`
      (V-6), and an `Unrolling` query gives no outcome at that depth. It
@@ -815,7 +815,7 @@ impl HyperProductIdentity {
 | FR-315-AC-25 | Over a `Holder` subject (universe `{s}`, an optional field `held: Int[0, 3]`, initially absent; operation `put` with frame `modifies [held]` and postcondition `present(self.held)`), under infinite-trace, `InductionStep{depth: 1}` for `always holds(present(s.held) or not present(s.held))` prints the stutter between copies 0 and 1 as `(and (= s1.s.held.present s0.s.held.present) (or (not s1.s.held.present) (= s1.s.held s0.s.held)))`, and its distinctness assertion as the negation of that field equality. Two copies with `held` absent therefore agree on `held` whatever their value constants hold. | Test (TC-900) |
 | FR-315-AC-26 | Over FR-315-AC-1's `Counter` under infinite-trace, a model of `InductionBase{depth: 3}` for `always holds(c.value <= 1)` that takes `inc` twice and then the stutter at value 2, where `inc` is still enabled, has failing position 2. CG reads it as the prefix `0, 1, 2`, a counterexample that FR-128 replays to `refuted`, and the stutter after position 2 is not read. For `always (holds(c.value = 0) implies eventually[0,1] holds(c.value = 1))`, a base model that stutters at value 0 and then fails is no candidate: rebuilt as the lasso with the `terminal-stutter` loop at value 0, it is refused by `replay_model_trace` with `invalid-value` naming the `terminal-stutter` loop step, and the base query settles `InductionNotClosed{depth}`, not `ReplayParity` or `ReplayRefused`. | Analysis (TC-900) |
 | FR-315-AC-27 | Over FR-315-AC-4's `Tally` with an added operation `peek(): Boolean` (empty frame, postcondition `post P { result = (self.tally < 3 and self.next = self.tally + 1) }`), `bump` unchanged, the postcondition failure of `peek` at copy `i` is printed over its one candidate as `(or U1 (and (not A1) U2))`: `U1` and `A1` read with `result` `false` (first in FR-120's result order), `U2` with `true`. `peek`'s disjunct has the postcondition part `(or A1 A2)`. | Test (TC-900) |
-| FR-315-AC-28 | Over FR-315-AC-1's `Counter` under event-position false-extension, a model of `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` has live copies `0` to `3` and `h4`, `h5` true; CG reads it as the prefix `0, 1, 2, 3` ending at the terminal state 3, which FR-128 replays to `refuted`. A model of `Unrolling{depth: 2}` for `eventually[0,2] holds(c.value = 3)` gives the prefix `0, 1, 2`. Over the AC-26 base model for `always holds(c.value <= 1)` with a prefix step altered so that it is not enabled at its pre-state, replay refuses naming that step, and CG settles V-6 `ReplayRefused`, not `InductionNotClosed`. | Analysis (TC-900) |
+| FR-315-AC-28 | Over FR-315-AC-1's `Counter` under event-position false-extension, a model of `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` has live copies `0` to `3` and `h4`, `h5` true; CG reads it as the prefix `0, 1, 2, 3` ending at the terminal state 3, which FR-128 replays to `refuted`. A model of `Unrolling{depth: 2}` for `eventually[0,2] holds(c.value = 3)` gives the prefix `0, 1, 2`. Over the AC-26 base model for `always holds(c.value <= 1)` with a prefix step altered so that it is not enabled at its pre-state, replay refuses naming that step, and CG settles it as FR-127's table settles that refusal, V-6 `ReplayRefused` (FR-127-AC-3), not `InductionNotClosed`. A model of `Unrolling{depth: 2}` for `always[0,5] holds(c.value <= 1)` fails at the live, non-terminal position 2, below the horizon 5, so it is no CX-1 counterexample and the query gives no outcome at depth 2. | Analysis (TC-900) |
 
 ## Dependencies
 
