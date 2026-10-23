@@ -1150,7 +1150,11 @@ mod tests {
             );
         }
         for layer in HeaderLayer::ALL {
-            write_witness(corpus, layer, &format!("{}-witness", layer.identity()));
+            write_witness(
+                corpus,
+                layer,
+                &format!("{}-witness", layer.identity().replace('/', "-")),
+            );
         }
 
         let mut calls = 0;
