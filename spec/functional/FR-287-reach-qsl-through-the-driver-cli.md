@@ -102,7 +102,10 @@ configuration file its arguments do not name, and stream-write failures
 request-file operand, the option spelling that sets the `request_bytes` and
 `dependent_bytes` settings, usage and arity errors before any file is read
 (exit 20), writing `command`'s package bytes or result document to stdout
-and its refusal envelope to stderr.
+unchanged and its refusal envelope to stderr. For `parse` and `format` it
+owns the command and label operands, their OS encoding (a non-UTF-8 command
+or label refuses, exit 20), the operand count, writing the outcome document
+or formatted source to stdout, and a write failure (exit 30).
 
 ## References
 
