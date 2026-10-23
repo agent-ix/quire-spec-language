@@ -118,7 +118,7 @@ them needs no facade.
 | The supplied-value stop records: `SuppliedFailure`, `SuppliedStop`, `SuppliedContext`, `SuppliedCause`, `SuppliedPhase`, `SuppliedEvent`, `SuppliedLocus`, `SuppliedLimit`, `SuppliedLimitKind`, `AttemptedCount`, `SuppliedNumericOperand`, `SuppliedStorage`, `SuppliedStorageUnit`, `UnsupportedHelperStop`, and the limit-field name constants `SuppliedLimitKind::field` returns | SV, `quire_semantic_value::supplied_stop` | S0, from `qsl_semantics::value::supplied` |
 | `FamilyOutcome`, `FamilyResult`, `EvalOutcome` (the S6a result vocabulary) | E, `quire_eval` | S0, from `qsl_semantics::family` |
 | `Evaluation`, `CallFailure` | E, `quire_eval` | S0, from `qsl-eval`'s `value::expression`, public at `qsl_eval::value` |
-| `UnsupportedEntry`, `UnsupportedConstruct` (`CallFailure::Unsupported`'s payload, FR-294) | E, `quire_eval` | S0, new |
+| `UnsupportedEntry`, `UnsupportedCause` and `ExecutionBackendChoice` (`CallFailure::Unsupported`'s payload, FR-294 and FR-296) | E, `quire_eval` | S0, new |
 | The registry, its admission result (`Accepted`, `RegistrySealed`, `CallableNotAdmitted`, `SignatureMismatch`, `DuplicateBinding`), the admitted signature, the session, the step result, the body factory and invocation-state contract, and the child request | E, `quire_eval` | S0, new |
 | `WrongSnapshotCause` | SV, `quire_semantic_value::call` | S1, from `qsl_semantics::check::refusal`, unless FR-400's X-13 has moved it |
 
@@ -155,9 +155,11 @@ type, or is called from a crate, that does not:
 `CallFailure` has the arm `Unsupported(UnsupportedEntry)`: an entry the
 chosen execution backend cannot run
 ([FR-294](FR-294-run-every-execution-backend-behind-one-seam.md)).
-`UnsupportedEntry` and `UnsupportedConstruct` name only `NodeKey`,
-`ValueType` (K) and `Location` (SV), so the leaf depends on no QSL crate for
-them. `CallFailure::category` returns `Category::Unsupported` for the arm,
+`UnsupportedEntry { backend, cause }` names an `ExecutionBackendChoice`
+(`Interpreter`, `Aot` or `Jit`, FR-296) and an `UnsupportedCause`
+(`NotSupplied`, or `Untranslatable { location }` with an SV `Location`), so
+the leaf depends on no QSL crate for them, and QSL names them at their
+`quire_eval` paths. `CallFailure::category` returns `Category::Unsupported` for the arm,
 and its catalog code is `unimplemented_capability`. No evaluator in the leaf
 returns it; only a non-interpreter `PreparedEntries` and `execute` do.
 
@@ -299,7 +301,7 @@ model index, which are not leaf vocabulary. No slice of this requirement moves
 | FR-401-AC-8 | Through an evaluator that implements the closure contract's interpreted transition by returning each source application as a child request, over a checked package with `f(x: Int[0, 9]): Integer`, whose body is `x`, and an interpreted `g(x: Int[0, 9]): Integer` whose body is `f(x) + 1`, with a host body registered for `f`'s `NodeKey` that returns `7`: a session over `f(3)` returns `7`; a session over `g(3)` returns `8`; and a session over a second registered body that requests `f(3)` resumes that body with `7`. In each run the factory for `f` is invoked once per application of `f`, `f`'s interpreted body makes no charge, and each application of `f` makes one `function.call` charge. The test fails if any run evaluates `f`'s interpreted body. Through the std reference evaluator, the runs over `f(3)` and over the requesting body hold as stated, and the run over `g(3)` is not part of this criterion. | Test |
 | FR-401-AC-9 | With a meter whose installed handle is cancelled with `Requested` or `Deadline` before the call: over the TC-918 `Compare` package (`equality_matrix.rs`, `invariants.rs`), `call` returns `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(record))` where `record.charge_point` is `ChargePoint::FunctionCall`; over the FR-090 population query of `model_reference_queries.rs`, `call` and `evaluate` each return `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(_))`. In every run no charge is admitted, `tripped()` equals the cause and no run returns `CallFailure::Cancelled`. Over the population query, with a handle that trips at its n-th poll, `call` and `evaluate` stop at the n-th charge point of the suite's expected prefix, with the prefix before it admitted. | Test (TC-1191) |
 | FR-401-AC-10 | Over a package whose call's first meter charge is `function.call` (the TC-918 `Compare` package, and the two-argument `g(x: Int[0, 9], y: Int[0, 9]): Boolean` package): `call_supplied` with a supplied-value run over an uncancelled handle and a meter whose installed handle is a different handle cancelled with `Requested` or `Deadline` returns `Ok` with `FamilyOutcome::Evaluated(Outcome::Incomplete(record))` where `record.charge_point` is `ChargePoint::FunctionCall`; no charge is admitted, the meter's `tripped()` equals the cause, the run's handle is not tripped, and the result is never `CallFailure::Cancelled`. With the caller's run over a handle cancelled with `Requested` and the meter's handle not cancelled, `call_supplied` returns `CallFailure::Cancelled` with cause `Requested`, since admission under the caller's run polls that run's handle at FR-277's poll points; the meter's consumed counters are all zero and no charge is admitted. | Test (TC-1191) |
-| FR-401-AC-11 | `quire_eval::{UnsupportedEntry, UnsupportedConstruct}` resolve, `quire_eval::CallFailure::Unsupported(UnsupportedEntry)` constructs from a `NodeKey` and an `UnsupportedConstruct::ExpressionForm` with a `Location`, its `category()` is `Category::Unsupported` and its catalog code is `unimplemented_capability`; `cargo tree -p quire-eval` lists no QSL crate; and the `no_std` evaluator's suite over FR-403's vectors returns no `CallFailure::Unsupported`. | Test |
+| FR-401-AC-11 | `quire_eval::{UnsupportedEntry, UnsupportedCause, ExecutionBackendChoice}` resolve; `quire_eval::CallFailure::Unsupported(UnsupportedEntry { backend: ExecutionBackendChoice::Jit, cause: UnsupportedCause::Untranslatable { location } })` constructs from an SV `Location`, and with cause `NotSupplied`; for both, `category()` is `Category::Unsupported` and the catalog code is `unimplemented_capability`; `cargo tree -p quire-eval` lists no QSL crate; and the `no_std` evaluator's suite over FR-403's vectors returns no `CallFailure::Unsupported`. | Test |
 
 ## Dependencies
 

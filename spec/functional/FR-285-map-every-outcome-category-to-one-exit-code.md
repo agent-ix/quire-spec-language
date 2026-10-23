@@ -67,8 +67,8 @@ FR-301's order: 30, 20, 21, 22, 10, 0.
 its cause, so a profile-gated construct is unsupported (21) and any other
 refusal is refusal (20); `Limit` and `Cancelled` are incomplete (22); `Fault`
 is internal failure (30). `CallFailure::Input` is refusal, `Cancelled` is
-incomplete, `Fault` is internal failure and `Unsupported` (an entry the
-chosen execution backend cannot run, FR-294) is unsupported (21).
+incomplete and `Fault` is internal failure; `CallFailure::Unsupported`
+(FR-294, FR-296) is unsupported and `CallFailure::Limit` is incomplete.
 
 ## Inputs
 
@@ -102,9 +102,10 @@ One exit code.
 | --- | --- | --- |
 | FR-285-AC-1 | For each of the nine table rows, the exit function returns the code the table states: an inconclusive `analyze` item with cause `CertificateRejected` exits 22, and FR-283-AC-1's pending clause exits 0. FR-281-AC-2's `refuted` terminal record reports its category as `Category::Violation`, which the same function maps to 10. | Test (TC-769) |
 | FR-285-AC-2 | Multi-item outcomes with item codes {10, 22} exit 22; {0, 30, 20} exit 30; {21, 22} exit 21; {20, 21} exit 20; {0, 10} exit 10; {0} exit 0. | Test (TC-769) |
-| FR-285-AC-3 | `StageFailure::Refused` with a profile-gated cause exits 21 and with an `ill_typed` cause exits 20; `StageFailure::Limit` and `StageFailure::Cancelled` exit 22; `StageFailure::Fault` exits 30; `CallFailure::Input`, `Cancelled`, `Fault` and `Unsupported` exit 20, 22, 30 and 21. | Test (TC-769) |
+| FR-285-AC-3 | `StageFailure::Refused` with a profile-gated cause exits 21 and with an `ill_typed` cause exits 20; `StageFailure::Limit` and `StageFailure::Cancelled` exit 22; `StageFailure::Fault` exits 30; `CallFailure::Input`, `Cancelled` and `Fault` exit 20, 22 and 30. | Test (TC-769) |
 | FR-285-AC-4 | FR-100's outcome mapping renders FR-100-AC-10's `sum-out-of-domain` evaluation as `{"kind": "undefined", "reason": "sum-out-of-domain"}` and exits 10. | Test (TC-769) |
 | FR-285-AC-5 | A `run` whose compile reaches a stage limit (the source byte limit set to 1, and `s3.nodes` set to 1) refuses with the `stage_limit_exceeded` code in category `incomplete`, exits 22 and not 20, and the refusal names the limits field and the configured bound. | Test (TC-769) |
+| FR-285-AC-6 | `CallFailure::Unsupported` with cause `NotSupplied` and with cause `Untranslatable` each exit 21, and `CallFailure::Limit` naming `prepare.compile_work_units` exits 22. | Test (TC-769) |
 
 ## Dependencies
 

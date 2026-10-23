@@ -28,4 +28,4 @@ Tag the tests `#[trace("TC-779", "<AC id>")]`.
 - Step 1: every comparison is equal and the gate passes.
 - Step 2: the gate fails, naming the seed, the unit's index, its source bytes, the entry, the arguments and both outcomes.
 - Step 3: the two default-seed runs are byte-equal and the other seed's first unit differs; every unit is admitted and within 1 to 8 functions, 0 to 4 parameters and 64 body nodes, calling only earlier functions; each of the eight forms and five scalar types occurs in at least 100 units; bounded `Int` tuples include both range ends; the interpreter's outcomes include `Completed` and `Undefined`; the regenerated unit is byte-equal to the reported source.
-- Step 4: entries using the form are listed with `UnsupportedEntry`/`ExpressionForm` and every other entry is compared, and the gate passes; with the rounding fault the gate fails.
+- Step 4: entries using the form are listed with `UnsupportedEntry` and cause `Untranslatable` at the form's first use and every other entry is compared, and the gate passes; with the rounding fault the gate fails.
