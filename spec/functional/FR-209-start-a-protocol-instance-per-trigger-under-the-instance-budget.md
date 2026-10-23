@@ -157,11 +157,6 @@ is never mistaken for a proof over every instance count.
 | FR-209-AC-7 | FR-209-AC-1's protocol with its body `repeat R by p visible() while { true } attempt Done on set` (no `max`, the shared grammar's `repetition` with `p` the protocol's role) and `always eventually holds(k.v = 0)`, with `max_live_instances` 1, settles V-4 with a lasso whose loop is the `attempt(set)` self-loop at the instance-limited state after `activate(Tick)`, where `activate` is enabled at every loop state and never taken; the lasso is fair and replays. A checker that counts `activate` in a fairness class rejects that loop and settles V-6 instead, so this AC fails for it. | Test (TC-654) |
 | FR-209-AC-8 | With `record Tick { n: Int[0, 2]; up: Boolean; }`, `on each (x: Tick) when {x.n > 0}` over FR-209-AC-1's `Cell` and body gives, at the initial state with `max_live_instances` 1, exactly four `activate(Tick)` steps, for `{n: 1, up: false}`, `{n: 1, up: true}`, `{n: 2, up: false}` and `{n: 2, up: true}`, and building the system refuses nothing; with `record Tick { n: Integer; }` the run returns `RequiresBound` naming `x`, `Tick` and `n` before any state is explored. With `Tick` holding a field `key: Reference<M::Cell>` and `cells` a population of `Cell`, the guard `{present(lookup<M::Cell>(M::cells, x.key) absent empty)}` refuses `ill_typed`/`operator-ineligible` at the `lookup`, naming the stage `protocol-activation`, and no `missing-name`. | Test (TC-654) |
 
-Remaining work: QSL-968. A record-typed trigger `T` refuses
-`UnenumerableRecord` in the protocol program, so the tests of these ACs use the
-`Int` range trigger `Level` until it lands; the ACs themselves are written
-over the record type `Tick` and are unchanged.
-
 ## Dependencies
 
 - ADR-027 §2.2 ST-13, §2.2a AE-1 to AE-4, §3.2 PD-5; ADR-014 B-5 (run
