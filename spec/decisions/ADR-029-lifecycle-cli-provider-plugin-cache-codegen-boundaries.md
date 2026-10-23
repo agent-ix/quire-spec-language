@@ -781,7 +781,8 @@ holds every execution backend:
 pub trait ExecutionBackend {
     type Prepared: PreparedEntries;
     /// Prepare the selected entries of one checked package. An entry this
-    /// backend cannot run settles `Unsupported` for that entry only.
+    /// backend cannot run is listed by `PreparedEntries::unsupported`, for
+    /// that entry only; `PrepareFailure` fails the whole call.
     fn prepare(
         &self,
         package: &CheckedPackage,
@@ -792,7 +793,10 @@ pub trait ExecutionBackend {
 }
 
 pub trait PreparedEntries {
-    /// The same contract as `CheckedPackageEvaluation::call`.
+    /// The selected entries this backend did not prepare, with their causes.
+    fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)];
+    /// The same contract as `CheckedPackageEvaluation::call`; an entry
+    /// listed by `unsupported` returns `CallFailure::Unsupported`.
     fn call(
         &self,
         entry: &QualifiedName,
@@ -812,8 +816,9 @@ pub trait PreparedEntries {
 }
 ```
 
-`PrepareFailure` holds per-entry `Unsupported` causes, `Limit`, `Cancelled`
-and `Fault`. Three backends implement the seam:
+`PrepareFailure` is `Limit`, `Cancelled` or `Fault`, with no per-entry arm;
+FR-294 defines `EntrySelection`, `PrepareLimits`, `PrepareFailure` and
+`UnsupportedEntry`. Three backends implement the seam:
 
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
