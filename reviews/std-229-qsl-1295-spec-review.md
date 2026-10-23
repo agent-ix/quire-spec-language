@@ -70,3 +70,12 @@ the compared-bytes table and the lead defaults are sound. Every finding is
 about making AC-6 observable and non-vacuous: the bytes need a source
 (FND-001), the sample must hold only vectors that run (FND-002), and the
 thread contrast must be real and comparable across processes (FND-003).
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-350 Outputs now say a `passed` outcome holds the output bytes its entry point returned, and that these bytes are a runner output, not part of the FR-352 report (fix commit cfd2dec2, head dc581113). |
+| FND-002 | fixed | The sample takes the smallest id among the vectors of each class that the runner executes, meaning those whose own applicability names a QSL consumer type. A class with no such vector contributes none. TC-1192 step 1 now expects at most one vector per pair, each one executed. |
+| FND-003 | fixed | AC-6 now names the mechanism. One parent test starts four child `cargo test` processes: two with `RUST_TEST_THREADS=1`, and two with `RUST_TEST_THREADS=2` in which a companion test runs the same sample concurrently after one shared barrier. Each child writes its report and output bytes to its own directory, and the parent compares them. TC-1192 step 2 also records that the runs overlapped. |
+| FND-004 | fixed | Vector ids are ordered bytewise on their id strings, as FR-075 orders `BackendId`s, and FR-350 states that the FR-352 report uses the same order. |
