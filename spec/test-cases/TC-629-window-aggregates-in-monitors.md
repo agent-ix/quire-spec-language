@@ -12,7 +12,7 @@ relationships:
 
 Verify aggregate evaluation under both profiles, nearest-rank quantiles, insufficient data, the window-value limit and work charge, S3 refusals, and the Boolean temporal input.
 
-Scope: FR-194-AC-1 to FR-194-AC-9.
+Scope: FR-194-AC-1 to FR-194-AC-10.
 
 ## Test Procedure
 
@@ -27,6 +27,7 @@ Fixtures: the timestamped response trace of FR-194-AC-1; event-position traces o
 7. Check each FR-194-AC-7 clause and read each refusal's code, cause and locus.
 8. Check each FR-194-AC-8 clause and read the full ordered list of refusals.
 9. Check `count over past[0, 9] >= 1` beside the same term written `min_count 1`, compare the checked terms and the node ids of two clauses that differ only in that spelling, and evaluate both over a one-event trace; evaluate FR-194-AC-9's filtered `count` without `min_count` and the `min_count 2` count over `x` values `1, 2`.
+10. Over `x` values `1, 2`, evaluate FR-194-AC-10's `count` and `sum` terms with `min_count 0` and the `count` without it at position 1; check the `min`, `max`, `fraction` and `quantile` terms with `min_count 0`.
 
 Tag the tests `#[trace("TC-629", "FR-194-AC-n")]`.
 
@@ -41,3 +42,4 @@ Tag the tests `#[trace("TC-629", "FR-194-AC-n")]`.
 - Step 7: each code, cause and locus FR-194-AC-7 names, the two-fault clause reporting both in source order.
 - Step 8: exactly the refusals FR-194-AC-8 lists, in that order, and no others.
 - Step 9: equal terms with `min_count` 1 and one node id, each atom `true`; `Undefined(InsufficientData{0, 1})` at position 1 for the filtered count; `Undefined(InsufficientData{1, 2})` at position 0 and `true` at position 1 for `min_count 2`.
+- Step 10: `true`, `false` and `true`, never `InsufficientData`; `Undefined(InsufficientData{0, 1})` without `min_count`; `invalid_package`/`invalid-value` at `0` for each of the four other terms.
