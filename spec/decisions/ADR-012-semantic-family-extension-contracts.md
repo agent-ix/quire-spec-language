@@ -1344,10 +1344,15 @@ by SEAM-3 (`src/protocol_artifact/mod.rs`). So the order is:
    runs both paths.
 2. M-6c retires the `0-draft` native path as a whole: FR-100's
    `0-draft` route of CLI `run`, native `compile` and `lower`, `NativePackage`
-   and the native-linked-package/1 reader. The same PR deletes native `run`,
-   `state`, `runtime`, `mapped` and `model_source`, the modules only those
-   paths reach (ADR-011 §7.3 M-6c), and FR-108's parity test. FR-108's check
-   against its independent expected dispositions stays.
+   and the native-linked-package/1 reader, with native `run`, `state`,
+   `runtime`, `mapped`, `model_source` and `located_json`, the modules only
+   those paths reach (ADR-011 §7.3 M-6c), and FR-108's parity test. Each
+   path is deleted in the slice that makes it unreachable, and no two paths
+   run side by side: `model_source`, with `located_json`, which only
+   `model_source` imports, goes in the slice that deletes the native front
+   end (the `0-draft` parser). `formal_source` is SEAM-2 and is not deleted in step 2 (ADR-011
+   §7.3 X-2, M-6e). FR-108's check against its independent expected
+   dispositions stays.
 3. `native_model` goes last. SEAM-2 (`src/checking/composed/solver.rs`) and
    SEAM-3 (`src/protocol_artifact/mod.rs`) import `NativeModel`, so it is
    deleted in the PR that removes the last of those importers (ADR-011 §7.3
