@@ -84,9 +84,9 @@ causes, and the report counts as a refutation only then.
   refuse a step that takes it with `invalid_runtime_input`/`invalid-value`,
   naming the step. The executor SHALL NOT otherwise compare the bound with
   the run's.
-- Wherever replay reads enabledness, the lasso fairness check included, it
-  SHALL read such an `activate` as enabled, as FR-209 reads it (ADR-018
-  FA-2).
+- The executor SHALL read such an `activate` as enabled wherever it reads
+  enabledness, the lasso fairness check included, as FR-209 reads it
+  (ADR-018 FA-2).
 - The executor SHALL read the fairness set, scheduler constraints included,
   from the recompiled clause, and SHALL refuse a payload fairness set that
   differs with `stale_dependency`/`content-mismatch`, naming both sets.

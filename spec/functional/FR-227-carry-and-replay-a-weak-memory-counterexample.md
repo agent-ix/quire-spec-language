@@ -76,9 +76,9 @@ happens-before computation, so a summary bug cannot produce a false race.
   takes it: the executor SHALL refuse a step that takes it with
   `invalid_runtime_input`/`invalid-value`, naming the step. The executor
   SHALL NOT otherwise compare the bounds with the run's.
-- Wherever replay reads enabledness, the lasso fairness check against the
-  memory and scheduler constraints included, it SHALL read a cut store as
-  enabled, as FR-225 does (ADR-025 MB-3).
+- The executor SHALL read a cut store as enabled wherever it reads
+  enabledness, the lasso fairness check against the memory and scheduler
+  constraints included, as FR-225 does (ADR-025 MB-3).
 - When a step names a message or slot depth that does not exist at its
   pre-state, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
