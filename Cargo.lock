@@ -1372,7 +1372,7 @@ dependencies = [
  "quire-canonical",
  "quire-checked",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "serde_json",
  "thiserror",
 ]
@@ -1394,7 +1394,7 @@ dependencies = [
  "quire-checked",
  "quire-eval",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "serde_json",
  "sha2",
 ]
@@ -1424,7 +1424,7 @@ dependencies = [
  "quire-checked",
  "quire-eval",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "serde",
  "serde_json",
  "sha2",
@@ -1450,7 +1450,7 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "serde",
  "sha2",
  "thiserror",
@@ -1470,7 +1470,7 @@ dependencies = [
  "quire-checked",
  "quire-contract-model",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "serde",
  "serde_json",
  "sha2",
@@ -1497,7 +1497,7 @@ dependencies = [
  "quire-contract-model",
  "quire-eval",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -1512,7 +1512,7 @@ dependencies = [
  "qsl-foundation",
  "qsl-semantics",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "tempfile",
  "thiserror",
 ]
@@ -1533,7 +1533,7 @@ dependencies = [
  "quire-canonical",
  "quire-checked",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "quire-walk",
  "serde",
  "serde_json",
@@ -1606,7 +1606,7 @@ source = "git+https://github.com/agent-ix/quire-eval?branch=main#5317524d2a040d8
 dependencies = [
  "quire-canonical",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=main)",
+ "quire-semantic-value",
  "quire-walk",
  "serde",
  "thiserror",
@@ -1650,10 +1650,10 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#2b2f41d264871c544cd9530d63da6ac792136005"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#5317524d2a040d8f030286ecd8f5d0edecd8e177"
 dependencies = [
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "thiserror",
 ]
 
@@ -1705,7 +1705,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#f118e458346ed92e2c57df02d044c6eb1930684a"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#aaa37436765a8176980b1fdd1e753bfde42c7d45"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1735,7 +1735,7 @@ dependencies = [
  "quire-checked",
  "quire-contract-model",
  "quire-exact",
- "quire-semantic-value 0.1.0 (git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv)",
+ "quire-semantic-value",
  "serde",
  "serde_json",
  "serde_json_canonicalizer",
