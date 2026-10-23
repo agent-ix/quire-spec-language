@@ -58,9 +58,9 @@ tests.
 
 ## Dispositions
 
-Round 1. `QSPEC_DIR=~/dev/quire-specification make check-spec-validation` exits 0, and origin/main is an ancestor of the head.
+Round 1, at head cd3b7687 (fix diff checked against the original review head).
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | FR-104 now says that a wider result `W` needs its operands converted (`convert<W>(a) + convert<W>(b)`). A declared result or `convert` target gives the arithmetic no type: `convert<W>(a + b)` evaluates the sum in the operands' type first. FR-104-AC-13 and TC-1084 step 4 assert both forms at `a = 0.99`, `b = 0.01`: `decimal(100, 2)` against `outside-domain`. |
-| FND-002 | fixed | FR-104-AC-13 and TC-1084 step 4 add `a / b` typed `P`, with the `nearest-even` tie 0.01 / 0.08 giving `decimal(12, 2)` and 0.05 / 0.02 = 2.50 refused `outside-domain`. They also add `-a = b` typed `P`, and `a / b` with `b: R` refusing `type-mismatch` at `a / b`. |
+| FND-001 | fixed | fixed; after: result that needs a wider type `W` SHALL be written with its operands converted to `W`, as in `convert<W>(a) + convert<W>(b)`. A declared result or `convert` target gives the arithmetic no type of its own: `convert<W>(a + b)` evaluates `a + b` in the operands' type first, and a sum outside that type… |
+| FND-002 | fixed | fixed; after:  2)` returns `decimal(100, 2)`, while the body `convert<W>(a + b)` at the same values is refused `decimal_out_of_domain`/`outside-domain`. `function d using v(a: P, b: P): P pure { a / b }` checks with `a / b` typed `P`; evaluated at `a = decimal(1, 2)`, `b = decimal(8, 2)` (exactly 0.125, a tie at … |
