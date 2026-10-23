@@ -449,6 +449,26 @@ fn the_package_check_refuses_a_clause_no_emission_writes() {
     ));
 }
 
+/// FR-325 and FR-337: S2 preserves indexed-read syntax, while an ordinary
+/// temporal clause has no bound trace variable and refuses it at S3.
+#[trace("FR-325", "FR-337")]
+#[test]
+fn ordinary_temporal_hyper_read_refuses_outside_a_hyper_clause() {
+    let text = source(&[INFINITE], "Counter", "holds(c.level @ a = 3)");
+    let package = assemble(&text);
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("an ordinary temporal clause cannot read a trace variable");
+    assert!(
+        refusals.iter().any(|refusal| {
+            matches!(&refusal.cause, CheckCause::Hyper(cause)
+            if cause.code() == Code::UnsupportedConstruct
+                && cause.tag() == "expression-form")
+        }),
+        "{refusals:?}"
+    );
+}
+
 /// FR-337: a `holds` condition is typed over the clause's `over` parameter
 /// as a Boolean: a condition naming no binding refuses at its own source,
 /// and a non-Boolean condition refuses as a non-Boolean root.

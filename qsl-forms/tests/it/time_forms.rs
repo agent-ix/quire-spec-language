@@ -391,7 +391,7 @@ fn diagnostic_span(parsed: &qsl_cst::ParsedSource) -> Span {
 
 /// FR-393-AC-5 (TC-1078 step 5): a bracketed interval with a step bound at
 /// one end and a quantity at the other fails at S1 at the upper bound's span
-/// and builds no form. (`[q, *]` is FR-447's, admitted at S1.)
+/// and builds no form.
 #[trace("TC-1078", "FR-393-AC-5")]
 #[test]
 fn mixed_interval_bounds_fail_at_s1_at_the_upper_bound() {
@@ -407,6 +407,23 @@ fn mixed_interval_bounds_fail_at_s1_at_the_upper_bound() {
             parsed.diagnostics()
         );
     }
+}
+
+/// FR-393-AC-5 (TC-1078 step 5): a timed interval may have an open upper end.
+#[trace("TC-1078", "FR-393-AC-5")]
+#[test]
+fn timed_interval_with_open_upper_end_builds_at_s2() {
+    let operator = clause_operator("always [2 s, *] holds(k.done)");
+    let Some(OperatorInterval::Timed(interval)) = operator.interval else {
+        panic!("a timed interval: {:?}", operator.interval);
+    };
+    assert_eq!(quantity(&interval.lower), (natural(2), "s"));
+    assert!(matches!(interval.upper, TimedUpper::Open));
+    assert!(interval.lower_closed);
+    assert!(
+        interval.upper_closed,
+        "the written closing bracket is retained"
+    );
 }
 
 /// FR-393-AC-6 (TC-1078 step 6): the `Rpc` unit builds equal forms with no

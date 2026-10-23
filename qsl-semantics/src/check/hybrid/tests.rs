@@ -730,12 +730,27 @@ fn slow_enough_checks_to_a_claim_with_its_horizon() {
         (
             Code::UnsupportedConstruct,
             "declaration-form",
-            "\"wall\"".to_owned()
+            "clock \"wall\"".to_owned()
         )
     );
     assert_eq!(
         claim_refusal(&slow_enough("always [0, 10] holds(h.w < 30)")),
         (Code::MissingDeclaration, "missing-name", "h.w".to_owned())
+    );
+}
+
+/// FR-447: a hyper expression in a hybrid claim is refused at S3 at the
+/// expression, after S2 has preserved its syntax.
+#[trace("TC-1220", "FR-447-AC-3")]
+#[test]
+fn hybrid_claim_hyper_expression_refuses_at_s3() {
+    assert_eq!(
+        claim_refusal(&slow_enough("holds(h.v @ a > 0)")),
+        (
+            Code::UnsupportedConstruct,
+            "expression-form",
+            "h.v @ a > 0".to_owned()
+        )
     );
 }
 

@@ -956,7 +956,7 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
             message = format!("{message}: in an `abstraction` declaration: {refusal:?}");
         }
         CheckCause::Hybrid(cause) => {
-            message = format!("{message}: in a `hybrid` declaration: {cause:?}");
+            message = format!("{message}: in a hybrid model or temporal claim: {cause:?}");
         }
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
@@ -1592,12 +1592,33 @@ mod wide_integer_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::{compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SpineStage};
+    use super::{
+        check_message, compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits,
+        SpineStage,
+    };
     use ix_trace_rs::trace;
-    use qsl_foundation::{Code, SourceIdentity};
+    use qsl_foundation::{Code, SourceIdentity, Span};
+    use qsl_semantics::check::{CheckCause, CheckRefusal, HybridCause};
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
     use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    /// FR-447: a hybrid checker refusal may belong to a temporal claim, so
+    /// its message must not identify every cause as a hybrid declaration.
+    #[trace("FR-447-AC-3")]
+    #[test]
+    fn hybrid_claim_refusal_message_does_not_mislabel_its_declaration() {
+        let refusal = CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::Hybrid(Box::new(HybridCause::UnsupportedClock {
+                span: Span { start: 0, end: 12 },
+            })),
+        };
+        let message = check_message(&[refusal]);
+        assert!(message.contains("temporal claim"), "{message}");
+        assert!(!message.contains("in a `hybrid` declaration"), "{message}");
+    }
 
     /// FR-096 at the CLI's compile: `Typer`'s package-wide node stop on
     /// `not not not true`, after `g`'s one node, under a node limit of 4

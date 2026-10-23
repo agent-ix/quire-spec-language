@@ -154,6 +154,12 @@ pub enum HybridCause {
         /// The clock string's span.
         span: Span,
     },
+    /// A hyper expression in a hybrid claim's `holds`: `unsupported_construct`
+    /// / `expression-form`, at the expression.
+    HyperExpression {
+        /// The expression's span.
+        span: Span,
+    },
     /// A fairness constraint on a claim whose profile is bounded:
     /// `unsupported_construct` / `expression-form`.
     FairnessUnderBoundedProfile {
@@ -234,6 +240,7 @@ impl HybridCause {
             | Self::DuplicateCapture { span, .. }
             | Self::NotTemporalProfile { span, .. }
             | Self::UnsupportedClock { span }
+            | Self::HyperExpression { span }
             | Self::FairnessUnderBoundedProfile { span }
             | Self::ProfileFit { span, .. }
             | Self::InvalidInterval { span }
@@ -260,6 +267,7 @@ impl HybridCause {
             }
             Self::NotTemporalProfile { .. } => Code::UnknownProfile,
             Self::UnsupportedClock { .. }
+            | Self::HyperExpression { .. }
             | Self::FairnessUnderBoundedProfile { .. }
             | Self::ProfileFit { .. }
             | Self::HorizonOutOfRange { .. } => Code::UnsupportedConstruct,
@@ -293,6 +301,7 @@ impl HybridCause {
             Self::TypeMismatch { .. } | Self::CalleeForm { .. } => "type-mismatch",
             Self::NotTemporalProfile { .. } => "unsupported-selection",
             Self::UnsupportedClock { .. } => "declaration-form",
+            Self::HyperExpression { .. } => "expression-form",
             Self::FairnessUnderBoundedProfile { .. }
             | Self::ProfileFit { .. }
             | Self::HorizonOutOfRange { .. } => "expression-form",
