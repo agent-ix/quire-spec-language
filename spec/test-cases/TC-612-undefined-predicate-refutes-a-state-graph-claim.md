@@ -45,7 +45,9 @@ for `c = a`.
    the undefined `terminal when` predicate, and replay its evidence.
 7. Run FR-168-AC-13's `ReachesTwo` with the undefined state constraint
    `Half`, and replay its evidence through a request that selects `Half`
-   and through one that selects no constraint.
+   and through one that selects no constraint; then with its stem's last
+   step removed; then with its cause changed; then in an envelope over the
+   unit declaring `Half` as an `invariant`, with that unit's `package_id`.
 
 Tag the tests `#[trace("TC-612", "<AC id>")]`.
 
@@ -73,4 +75,5 @@ Tag the tests `#[trace("TC-612", "<AC id>")]`.
 - Step 7: `Undefined` at `va = 2` with the constraint's locus; no
   `ConstraintBoundary` node there; the item settles `refuted`,
   `decisive-counterexample`, cause `UndefinedEvaluation`; both replays
-  settle `reproduced-with-evaluated-witness`.
+  settle `reproduced-with-evaluated-witness`; `inconclusive`, `Verdicts`,
+  twice; refused `stale_dependency`/`content-mismatch` naming the locus.
