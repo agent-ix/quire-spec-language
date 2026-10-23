@@ -33,6 +33,7 @@ mod tests;
 use qsl_semantics::check::{
     CheckedFunctionRef, CheckedGraph, CheckedHybridClaim, CheckedHybridModel, HybridModelIndex,
 };
+use quire_exact::LimitKind;
 
 pub use expand::{ExpansionGap, TermLocus};
 pub use qsl_foundation::diagnostic::JsonPointer;
@@ -295,6 +296,49 @@ pub enum HybridReplayRefusal {
     /// Exact replay does not decide this claim form.
     #[error(transparent)]
     Exact(#[from] ExactGap),
+    /// The caller's accounting work limit denied the next replay step.
+    #[error("hybrid replay exhausted the caller's accounting counter {counter:?}")]
+    ResourceExhausted {
+        /// The accounting counter whose bound was reached.
+        counter: LimitKind,
+    },
+}
+
+/// Caller-supplied work budget shared by static and exact hybrid replay.
+/// One admitted step consumes one `accounting.work_units` unit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HybridReplayMeter {
+    /// The caller's configured accounting bound.
+    pub work_units: u64,
+    /// Successfully charged work units.
+    pub consumed: u64,
+}
+
+impl HybridReplayMeter {
+    /// Create a replay meter from the caller's `accounting.work_units` bound.
+    pub const fn new(work_units: u64) -> Self {
+        Self {
+            work_units,
+            consumed: 0,
+        }
+    }
+
+    /// The number of admitted work units.
+    pub const fn consumed(&self) -> u64 {
+        self.consumed
+    }
+
+    fn charge(&mut self) -> Result<(), HybridReplayRefusal> {
+        match self.consumed.checked_add(1) {
+            Some(next) if next <= self.work_units => {
+                self.consumed = next;
+                Ok(())
+            }
+            _ => Err(HybridReplayRefusal::ResourceExhausted {
+                counter: LimitKind::WorkUnits,
+            }),
+        }
+    }
 }
 
 fn model_of<'g>(
@@ -313,11 +357,12 @@ pub fn static_replay(
     graph: &CheckedGraph,
     claim: &CheckedHybridClaim,
     trace: &HybridTrace,
+    meter: &mut HybridReplayMeter,
 ) -> Result<StaticReplay, HybridReplayRefusal> {
     let model = model_of(graph, claim)?;
     admit(model, trace)?;
     let mut expander = expand::Expander::new(graph);
-    Ok(static_replay::replay(model, &mut expander, trace)?)
+    static_replay::replay(model, &mut expander, trace, meter)
 }
 
 /// FR-450 "Exact replay": `trace` against `claim` and its model in `graph`,
@@ -326,9 +371,10 @@ pub fn exact_replay(
     graph: &CheckedGraph,
     claim: &CheckedHybridClaim,
     trace: &HybridTrace,
+    meter: &mut HybridReplayMeter,
 ) -> Result<ExactReplay, HybridReplayRefusal> {
     let model = model_of(graph, claim)?;
     admit(model, trace)?;
     let mut expander = expand::Expander::new(graph);
-    exact::replay(model, claim, &mut expander, trace)
+    exact::replay(model, claim, &mut expander, trace, meter)
 }

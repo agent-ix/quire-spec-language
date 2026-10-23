@@ -137,9 +137,9 @@ pub use hybrid::{
 pub use hybrid_replay::{
     admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
     ExactReal, ExactReplay, ExpansionGap, ExpressionLocus, ExpressionSite, HybridCounterexample,
-    HybridCounterexampleKind, HybridReplayRefusal, HybridTrace, JsonPointer, Root, StaticCheck,
-    StaticReplay, TermLocus, TraceBefore, TraceFault, TraceJump, TraceRefusal, TraceState,
-    UndefinedCause, UndefinedInstant,
+    HybridCounterexampleKind, HybridReplayMeter, HybridReplayRefusal, HybridTrace, JsonPointer,
+    Root, StaticCheck, StaticReplay, TermLocus, TraceBefore, TraceFault, TraceJump, TraceRefusal,
+    TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,

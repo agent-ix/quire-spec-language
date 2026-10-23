@@ -130,6 +130,22 @@ fn claim<'g>(unit: &'g Unit, name: &str) -> &'g CheckedHybridClaim {
     &unit.graph.hybrid_claims()[position]
 }
 
+fn static_replay(
+    graph: &CheckedGraph,
+    claim: &CheckedHybridClaim,
+    trace: &HybridTrace,
+) -> Result<StaticReplay, HybridReplayRefusal> {
+    super::static_replay(graph, claim, trace, &mut HybridReplayMeter::new(u64::MAX))
+}
+
+fn exact_replay(
+    graph: &CheckedGraph,
+    claim: &CheckedHybridClaim,
+    trace: &HybridTrace,
+) -> Result<ExactReplay, HybridReplayRefusal> {
+    super::exact_replay(graph, claim, trace, &mut HybridReplayMeter::new(u64::MAX))
+}
+
 fn q(numerator: i64, denominator: i64) -> Rational {
     Rational::new(numerator.into(), denominator.into()).expect("nonzero")
 }
@@ -422,8 +438,11 @@ fn the_decisive_instant_decides_formula_or_undefined_evaluation() {
         panic!("the guard is a comparison");
     };
     let mut expander = Expander::new(&guarded);
-    let call = expander.term(call).expect("expands");
-    let mut evaluator = IntervalEvaluator::new(&mut expander, n(0));
+    let call = expander
+        .term(call, &mut HybridReplayMeter::new(u64::MAX))
+        .expect("expands");
+    let mut meter = HybridReplayMeter::new(u64::MAX);
+    let mut evaluator = IntervalEvaluator::new(&mut expander, n(0), &mut meter);
     let over = |lower: Rational, upper: Rational| {
         vec![
             Interval {
@@ -435,15 +454,90 @@ fn the_decisive_instant_decides_formula_or_undefined_evaluation() {
         ]
     };
     assert_eq!(
-        evaluator.evaluate(&call, &over(n(0), q(1, 100))),
+        evaluator.evaluate(call.clone(), &over(n(0), q(1, 100))),
         Ok(IValue::Number(Interval {
             lower: Some(n(-100)),
             upper: Some(n(100)),
         }))
     );
     assert_eq!(
-        evaluator.evaluate(&call, &over(q(1, 2), q(1, 2))),
+        evaluator.evaluate(call, &over(q(1, 2), q(1, 2))),
         Ok(IValue::Number(Interval::point(q(1, 2))))
+    );
+}
+
+/// FR-450-AC-5: a definite recursive measure still yields a bounded
+/// approximation before a long call chain can exhaust the process stack.
+#[trace("TC-1221", "FR-450-AC-5")]
+#[test]
+fn static_replay_bounds_a_deep_definite_recursive_call() {
+    let source = format!(
+        "function long using v(s: Rational[-100, 100; 1, 1], n: Int[0, 100000]): \
+           Rational[-100, 100; 1, 1] pure decreases(n) \
+           {{ if n > 0 then long(s, n - 1) else s }}\n\
+         function deep using v(s: Rational[-100, 100; 1, 1]): \
+           Rational[-100, 100; 1, 1] pure {{ long(s, 300) }}\n\
+         {}",
+        braking(FLOW, "deep(v) = 0")
+    );
+    let graph = check(&source);
+    let HybridTerm::Compare(_, call, _) = &graph.hybrid_models()[0].modes[0].transitions[0].guard
+    else {
+        panic!("the guard is a comparison");
+    };
+    let mut expander = Expander::new(&graph);
+    let call = expander
+        .term(call, &mut HybridReplayMeter::new(u64::MAX))
+        .expect("expands");
+    let variables = [
+        Interval::point(n(1)),
+        Interval::point(n(2)),
+        Interval::point(n(0)),
+    ];
+    let mut limited = HybridReplayMeter::new(100);
+    assert_eq!(
+        IntervalEvaluator::new(&mut expander, n(0), &mut limited)
+            .evaluate(call.clone(), &variables),
+        Err(HybridReplayRefusal::ResourceExhausted {
+            counter: quire_exact::LimitKind::WorkUnits,
+        })
+    );
+    assert_eq!(limited.consumed(), 100);
+    let mut full = HybridReplayMeter::new(u64::MAX);
+    assert_eq!(
+        IntervalEvaluator::new(&mut expander, n(0), &mut full).evaluate(call, &variables),
+        Ok(IValue::Number(Interval::point(n(1))))
+    );
+}
+
+/// FR-450-AC-8: a deep, definite recursive guard charges the caller's
+/// meter and completes without using the Rust call stack for its depth.
+#[trace("TC-1221", "FR-450-AC-8")]
+#[test]
+fn static_replay_uses_caller_fuel_for_twenty_thousand_recursive_edges() {
+    let source = format!(
+        "function descend using v(n: Int[0, 20000]): Boolean pure decreases(n) \
+           {{ if n = 0 then true else descend(n - 1) }}\n\
+         function descending using v(s: Rational[-100, 100; 1, 1]): Boolean pure \
+           {{ descend(20000) }}\n\
+         {}{CLAIMS}",
+        braking(FLOW, "descending(v) and v = 0")
+    );
+    let graph = check(&source);
+    let trace = braking_trace(10, 0);
+    let checked_claim = claim(&graph, "SlowEnough");
+    let mut limited = HybridReplayMeter::new(100);
+    assert_eq!(
+        super::static_replay(&graph, checked_claim, &trace, &mut limited),
+        Err(HybridReplayRefusal::ResourceExhausted {
+            counter: quire_exact::LimitKind::WorkUnits,
+        })
+    );
+    assert_eq!(limited.consumed(), 100);
+    let mut full = HybridReplayMeter::new(u64::MAX);
+    assert_eq!(
+        super::static_replay(&graph, checked_claim, &trace, &mut full),
+        Ok(StaticReplay::Consistent)
     );
 }
 
@@ -530,6 +624,68 @@ fn a_lasso_reproduces_as_a_periodic_behaviour() {
     );
 }
 
+/// FR-450-AC-7: the same point lasso fits a nearby window within the
+/// caller's work budget, while a far finite window stops at that budget.
+#[trace("TC-1221", "FR-450-AC-7")]
+#[test]
+fn a_large_future_window_exhausts_caller_work_units() {
+    let graph = check(&format!(
+        "{BOUNCE}temporal Far using p over (h: Bounce) clock \"model-time\" on origin {{\n\
+           eventually [999999, 1000000] holds(h.x = 2)\n\
+         }}\n"
+    ));
+    let lasso = bounce_trace(n(0), 0);
+    let mut nearby_meter = HybridReplayMeter::new(100);
+    assert_eq!(
+        super::exact_replay(&graph, claim(&graph, "Settles"), &lasso, &mut nearby_meter),
+        Ok(reproduced_formula(&lasso))
+    );
+    let mut far_meter = HybridReplayMeter::new(100_000);
+    assert_eq!(
+        super::exact_replay(&graph, claim(&graph, "Far"), &lasso, &mut far_meter),
+        Err(HybridReplayRefusal::ResourceExhausted {
+            counter: quire_exact::LimitKind::WorkUnits,
+        })
+    );
+    assert_eq!(far_meter.consumed(), 100_000);
+}
+
+/// FR-450-AC-6: a lasso with an undefined claim atom does not reproduce
+/// when a continuously enabled fair transition is never taken.
+#[trace("TC-1221", "FR-450-AC-6")]
+#[test]
+fn an_unfair_lasso_with_an_undefined_atom_is_not_reproduced() {
+    let graph = check(
+        "hybrid Idle using p {\n\
+           mode Staying invariant { x = 0 } flow { x' = 0; }\n\
+             transition to Staying when { true } reset { x = 0 };\n\
+             transition to Exiting when { true } reset { x = 0 };\n\
+           mode Exiting invariant { x = 0 } flow { x' = 0; }\n\
+         }\n\
+         temporal UndefinedFair using p over (h: Idle) clock \"model-time\" on origin {\n\
+           fair Staying::Exiting;\n\
+           always holds(1 / h.x != 0)\n\
+         }\n",
+    );
+    let trace = HybridTrace {
+        start: state(0, n(0), &[n(0)]),
+        jumps: vec![TraceJump {
+            transition: 0,
+            before: Some(before(n(1), &[n(0)])),
+            state: state(0, n(1), &[n(0)]),
+        }],
+        delta: None,
+        loop_to: Some(0),
+    };
+    assert_eq!(
+        exact_replay(&graph, claim(&graph, "UndefinedFair"), &trace),
+        Ok(ExactReplay::NotReproduced {
+            at: JsonPointer::root(),
+            check: ExactCheck::Claim,
+        })
+    );
+}
+
 /// Exact real arithmetic under exact replay's sign decisions: the
 /// irrational roots of `t^2 - 2` order against rationals and each other,
 /// and a polynomial's sign at one is exact.
@@ -557,4 +713,27 @@ fn irrational_roots_compare_and_sign_exactly() {
     let other = Poly::new(vec![n(-1), n(-2), n(1)]).roots_in(&n(2), &n(3));
     assert_eq!(other.len(), 1);
     assert_eq!(positive.shifted(&n(1)), other[0]);
+}
+
+/// FR-450-AC-8: expression expansion consumes the same caller work budget.
+#[trace("TC-1221", "FR-450-AC-8")]
+#[test]
+fn expanding_a_deep_term_uses_caller_fuel() {
+    let graph = check(&braking(FLOW, "v = 0"));
+    let mut term = HybridTerm::Boolean(true);
+    for _ in 0..1024 {
+        term = HybridTerm::Not(Box::new(term));
+    }
+    let mut expander = Expander::new(&graph);
+    let mut limited = HybridReplayMeter::new(1024);
+    assert!(matches!(
+        expander.term(&term, &mut limited),
+        Err(HybridReplayRefusal::ResourceExhausted {
+            counter: quire_exact::LimitKind::WorkUnits
+        })
+    ));
+    assert_eq!(limited.consumed(), 1024);
+    let mut enough = HybridReplayMeter::new(1025);
+    assert!(expander.term(&term, &mut enough).is_ok());
+    assert_eq!(enough.consumed(), 1025);
 }

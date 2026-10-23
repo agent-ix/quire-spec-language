@@ -18,9 +18,7 @@ use qsl_semantics::check::{
 use quire_exact::{ArithmeticOperator, Integer, OrderingOperator, Rational, Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;
 
-/// The expression nodes an expansion may build before it stops, so a body
-/// whose `let` substitutions multiply stays bounded.
-const EXPANSION_NODES: usize = 1 << 20;
+use super::{HybridReplayMeter, HybridReplayRefusal};
 
 /// Where, inside one expression of the model or claim, an evaluation is:
 /// the path of child positions from the expression's root `HybridTerm`
@@ -142,38 +140,38 @@ pub(crate) enum Exp {
 impl Exp {
     /// Whether a recursive call occurs anywhere in `self`.
     pub(crate) fn calls_recursive(&self) -> bool {
-        match self {
-            Self::Recursive(_) => true,
-            Self::Variable(_)
-            | Self::Activation(_)
-            | Self::Capture(_)
-            | Self::Parameter(_)
-            | Self::Number(_)
-            | Self::Boolean(_) => false,
-            Self::Negate(a) | Self::Not(a) | Self::Ranged { value: a, .. } => a.calls_recursive(),
-            Self::Arithmetic(_, a, b, _) | Self::Compare(_, a, b) | Self::Logic(_, a, b) => {
-                a.calls_recursive() || b.calls_recursive()
-            }
-            Self::Conditional(a, b, c) => {
-                a.calls_recursive() || b.calls_recursive() || c.calls_recursive()
-            }
-        }
+        self.any_node(|node| matches!(node, Self::Recursive(_)))
     }
 
     /// Whether `self` reads a capture or an activation variable.
     pub(crate) fn reads_activation(&self) -> bool {
-        match self {
-            Self::Activation(_) | Self::Capture(_) => true,
-            Self::Recursive(call) => call.arguments.iter().any(Self::reads_activation),
-            Self::Variable(_) | Self::Parameter(_) | Self::Number(_) | Self::Boolean(_) => false,
-            Self::Negate(a) | Self::Not(a) | Self::Ranged { value: a, .. } => a.reads_activation(),
-            Self::Arithmetic(_, a, b, _) | Self::Compare(_, a, b) | Self::Logic(_, a, b) => {
-                a.reads_activation() || b.reads_activation()
+        self.any_node(|node| matches!(node, Self::Activation(_) | Self::Capture(_)))
+    }
+
+    fn any_node(&self, predicate: impl Fn(&Self) -> bool) -> bool {
+        let mut pending = vec![self];
+        while let Some(node) = pending.pop() {
+            if predicate(node) {
+                return true;
             }
-            Self::Conditional(a, b, c) => {
-                a.reads_activation() || b.reads_activation() || c.reads_activation()
+            match node {
+                Self::Negate(a) | Self::Not(a) | Self::Ranged { value: a, .. } => pending.push(a),
+                Self::Arithmetic(_, a, b, _) | Self::Compare(_, a, b) | Self::Logic(_, a, b) => {
+                    pending.extend([a.as_ref(), b.as_ref()])
+                }
+                Self::Conditional(a, b, c) => {
+                    pending.extend([a.as_ref(), b.as_ref(), c.as_ref()]);
+                }
+                Self::Recursive(call) => pending.extend(call.arguments.iter()),
+                Self::Variable(_)
+                | Self::Activation(_)
+                | Self::Capture(_)
+                | Self::Parameter(_)
+                | Self::Number(_)
+                | Self::Boolean(_) => {}
             }
         }
+        false
     }
 
     /// `self` with every activation variable read as the current variable.
@@ -234,9 +232,57 @@ pub enum ExpansionGap {
         /// The node's index in its checked body.
         node: usize,
     },
-    /// The expansion passed its node bound.
-    #[error("the expansion of a term passed {EXPANSION_NODES} nodes")]
-    TooLarge,
+}
+
+struct Frame {
+    slots: Vec<Option<Exp>>,
+}
+
+enum Build {
+    Negate,
+    Not,
+    Arithmetic(ArithmeticOp, TermLocus),
+    Compare(CompareOp),
+    Logic(LogicOp),
+    Conditional,
+}
+
+/// The explicit work stack for expanding source and checked-body terms.
+enum Task<'t, 'g> {
+    Term {
+        term: &'t HybridTerm,
+        locus: TermLocus,
+    },
+    Node {
+        function: CheckedFunctionRef,
+        node: CheckedNode<'g>,
+        frame: usize,
+        locus: TermLocus,
+    },
+    Build(Build),
+    Call {
+        function: CheckedFunctionRef,
+        count: usize,
+        locus: TermLocus,
+    },
+    WrapRange {
+        range: ValueRange,
+        function: CheckedFunctionRef,
+        locus: TermLocus,
+    },
+    BindLet {
+        function: CheckedFunctionRef,
+        body: CheckedNode<'g>,
+        frame: usize,
+        slot: usize,
+        locus: TermLocus,
+    },
+    RestoreLet {
+        frame: usize,
+        slot: usize,
+        saved: Box<Option<Exp>>,
+    },
+    FinishBody,
 }
 
 /// Expands terms against one checked package, remembering which functions
@@ -244,7 +290,6 @@ pub enum ExpansionGap {
 pub(crate) struct Expander<'g> {
     graph: &'g CheckedGraph,
     recursive: BTreeMap<usize, bool>,
-    nodes: usize,
 }
 
 impl<'g> Expander<'g> {
@@ -252,16 +297,389 @@ impl<'g> Expander<'g> {
         Self {
             graph,
             recursive: BTreeMap::new(),
-            nodes: 0,
         }
     }
 
-    fn charge(&mut self) -> Result<(), ExpansionGap> {
-        self.nodes += 1;
-        if self.nodes > EXPANSION_NODES {
-            return Err(ExpansionGap::TooLarge);
+    fn charge(meter: &mut HybridReplayMeter) -> Result<(), HybridReplayRefusal> {
+        meter.charge()
+    }
+
+    fn expand<'t>(
+        &mut self,
+        initial: Task<'t, 'g>,
+        meter: &mut HybridReplayMeter,
+        mut frames: Vec<Frame>,
+    ) -> Result<Exp, HybridReplayRefusal> {
+        let mut pending = vec![initial];
+        let mut values = Vec::new();
+        while let Some(task) = pending.pop() {
+            match task {
+                Task::Term { term, locus } => {
+                    Self::charge(meter)?;
+                    match term {
+                        HybridTerm::Variable(index) => values.push(Exp::Variable(index.get())),
+                        HybridTerm::ActivationVariable(index) => {
+                            values.push(Exp::Activation(index.get()));
+                        }
+                        HybridTerm::Capture(index) => values.push(Exp::Capture(index.get())),
+                        HybridTerm::Constant(value) => values.push(Exp::Number(value.clone())),
+                        HybridTerm::Boolean(value) => values.push(Exp::Boolean(*value)),
+                        HybridTerm::Negate(child) | HybridTerm::Not(child) => {
+                            pending.push(Task::Build(if matches!(term, HybridTerm::Negate(_)) {
+                                Build::Negate
+                            } else {
+                                Build::Not
+                            }));
+                            pending.push(Task::Term {
+                                term: child,
+                                locus: locus.child(0),
+                            });
+                        }
+                        HybridTerm::Arithmetic(op, left, right) => {
+                            pending.push(Task::Build(Build::Arithmetic(*op, locus.clone())));
+                            for (position, child) in
+                                [(0, left.as_ref()), (1, right.as_ref())].into_iter().rev()
+                            {
+                                pending.push(Task::Term {
+                                    term: child,
+                                    locus: locus.child(position),
+                                });
+                            }
+                        }
+                        HybridTerm::Compare(op, left, right) => {
+                            pending.push(Task::Build(Build::Compare(*op)));
+                            for (position, child) in
+                                [(0, left.as_ref()), (1, right.as_ref())].into_iter().rev()
+                            {
+                                pending.push(Task::Term {
+                                    term: child,
+                                    locus: locus.child(position),
+                                });
+                            }
+                        }
+                        HybridTerm::Logic(op, left, right) => {
+                            pending.push(Task::Build(Build::Logic(*op)));
+                            for (position, child) in
+                                [(0, left.as_ref()), (1, right.as_ref())].into_iter().rev()
+                            {
+                                pending.push(Task::Term {
+                                    term: child,
+                                    locus: locus.child(position),
+                                });
+                            }
+                        }
+                        HybridTerm::Conditional(condition, yes, no) => {
+                            pending.push(Task::Build(Build::Conditional));
+                            for (position, child) in
+                                [(0, condition.as_ref()), (1, yes.as_ref()), (2, no.as_ref())]
+                                    .into_iter()
+                                    .rev()
+                            {
+                                pending.push(Task::Term {
+                                    term: child,
+                                    locus: locus.child(position),
+                                });
+                            }
+                        }
+                        HybridTerm::Call(function, arguments) => {
+                            pending.push(Task::Call {
+                                function: *function,
+                                count: arguments.len(),
+                                locus: locus.clone(),
+                            });
+                            for (position, argument) in arguments.iter().enumerate().rev() {
+                                pending.push(Task::Term {
+                                    term: argument,
+                                    locus: locus.child(position),
+                                });
+                            }
+                        }
+                    }
+                }
+                Task::Node {
+                    function,
+                    node,
+                    frame,
+                    locus,
+                } => {
+                    Self::charge(meter)?;
+                    let locus = locus.at_node(node.id().index());
+                    let unsupported = ExpansionGap::UnsupportedBodyForm {
+                        function,
+                        node: node.id().index(),
+                    };
+                    match node.kind() {
+                        NodeKind::Literal(literal) => values.push(match &literal.0 {
+                            Value::Boolean(value) => Exp::Boolean(*value),
+                            Value::Integer(value) => {
+                                Exp::Number(Rational::from_integer(value.clone()))
+                            }
+                            Value::Rational(value) => Exp::Number(value.clone()),
+                            Value::Decimal(value) => Exp::Number(value.normalized().to_rational()),
+                            _ => return Err(unsupported.into()),
+                        }),
+                        NodeKind::Local(slot) => {
+                            let value = frames
+                                .get(frame)
+                                .and_then(|frame| frame.slots.get(*slot))
+                                .and_then(Option::as_ref)
+                                .ok_or(unsupported)?;
+                            values.push(value.clone());
+                        }
+                        NodeKind::Let { slot, value, body } => {
+                            pending.push(Task::BindLet {
+                                function,
+                                body: node.at(*body),
+                                frame,
+                                slot: *slot,
+                                locus: locus.clone(),
+                            });
+                            pending.push(Task::Node {
+                                function,
+                                node: node.at(*value),
+                                frame,
+                                locus,
+                            });
+                        }
+                        kind => {
+                            let build = match kind {
+                                NodeKind::If { .. } => Some(Build::Conditional),
+                                NodeKind::Arithmetic(op, _, _) => Some(Build::Arithmetic(
+                                    match op {
+                                        Arithmetic::Add => ArithmeticOp::Add,
+                                        Arithmetic::Subtract => ArithmeticOp::Sub,
+                                        Arithmetic::Multiply => ArithmeticOp::Mul,
+                                    },
+                                    locus.clone(),
+                                )),
+                                NodeKind::Rational { operator, .. }
+                                | NodeKind::Decimal { operator, .. } => Some(Build::Arithmetic(
+                                    match operator {
+                                        ArithmeticOperator::Add => ArithmeticOp::Add,
+                                        ArithmeticOperator::Subtract => ArithmeticOp::Sub,
+                                        ArithmeticOperator::Multiply => ArithmeticOp::Mul,
+                                        ArithmeticOperator::Divide => ArithmeticOp::Div,
+                                    },
+                                    locus.clone(),
+                                )),
+                                NodeKind::Divide { .. } => {
+                                    Some(Build::Arithmetic(ArithmeticOp::Div, locus.clone()))
+                                }
+                                NodeKind::Negate(_)
+                                | NodeKind::RationalNegate(_, _)
+                                | NodeKind::DecimalNegate(_, _) => Some(Build::Negate),
+                                NodeKind::Order(op, _, _, _) => Some(Build::Compare(match op {
+                                    OrderingOperator::Less => CompareOp::Lt,
+                                    OrderingOperator::LessOrEqual => CompareOp::Le,
+                                    OrderingOperator::Greater => CompareOp::Gt,
+                                    OrderingOperator::GreaterOrEqual => CompareOp::Ge,
+                                })),
+                                NodeKind::Equality(op, _, _, _) => Some(Build::Compare(match op {
+                                    EqualityOperator::Equal => CompareOp::Eq,
+                                    EqualityOperator::NotEqual => CompareOp::Ne,
+                                })),
+                                NodeKind::Connective(op, _, _) => Some(Build::Logic(match op {
+                                    Connective::And => LogicOp::And,
+                                    Connective::Or => LogicOp::Or,
+                                    Connective::Implies => LogicOp::Implies,
+                                })),
+                                NodeKind::Not(_) => Some(Build::Not),
+                                NodeKind::Coerce(_, _)
+                                | NodeKind::ConvertScalar(_, _)
+                                | NodeKind::ConvertDecimal(_, _) => None,
+                                NodeKind::Call {
+                                    function: callee,
+                                    arguments,
+                                } => {
+                                    pending.push(Task::Call {
+                                        function: CheckedFunctionRef::new(*callee),
+                                        count: arguments.len(),
+                                        locus: locus.clone(),
+                                    });
+                                    None
+                                }
+                                _ => return Err(unsupported.into()),
+                            };
+                            if let Some(build) = build {
+                                pending.push(Task::Build(build));
+                            }
+                            for child in node.children().into_iter().rev() {
+                                pending.push(Task::Node {
+                                    function,
+                                    node: child,
+                                    frame,
+                                    locus: locus.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
+                Task::Build(build) => {
+                    let value = match build {
+                        Build::Negate => Exp::Negate(Box::new(values.pop().expect("operand"))),
+                        Build::Not => Exp::Not(Box::new(values.pop().expect("operand"))),
+                        Build::Arithmetic(op, locus) => {
+                            let right = values.pop().expect("right operand");
+                            let left = values.pop().expect("left operand");
+                            Exp::Arithmetic(op, Box::new(left), Box::new(right), locus)
+                        }
+                        Build::Compare(op) => {
+                            let right = values.pop().expect("right operand");
+                            let left = values.pop().expect("left operand");
+                            Exp::Compare(op, Box::new(left), Box::new(right))
+                        }
+                        Build::Logic(op) => {
+                            let right = values.pop().expect("right operand");
+                            let left = values.pop().expect("left operand");
+                            Exp::Logic(op, Box::new(left), Box::new(right))
+                        }
+                        Build::Conditional => {
+                            let no = values.pop().expect("otherwise branch");
+                            let yes = values.pop().expect("then branch");
+                            let condition = values.pop().expect("condition");
+                            Exp::Conditional(Box::new(condition), Box::new(yes), Box::new(no))
+                        }
+                    };
+                    values.push(value);
+                }
+                Task::Call {
+                    function,
+                    count,
+                    locus,
+                } => {
+                    let start = values.len().checked_sub(count).expect("call arguments");
+                    let arguments = values.split_off(start);
+                    let unreachable = ExpansionGap::UnreachableFunction(function);
+                    let state = self
+                        .graph
+                        .function_state(function.get())
+                        .ok_or_else(|| unreachable.clone())?;
+                    let signature = self
+                        .graph
+                        .callable(state.name)
+                        .ok_or_else(|| unreachable.clone())?;
+                    if signature.parameters.len() != arguments.len() {
+                        return Err(unreachable.into());
+                    }
+                    let arguments = arguments
+                        .into_iter()
+                        .zip(signature.parameters)
+                        .enumerate()
+                        .map(|(parameter, (argument, (_, ty)))| match result_kind(ty) {
+                            Some(ResultKind::Number(range)) if !range.is_unbounded() => {
+                                Exp::Ranged {
+                                    value: Box::new(argument),
+                                    range,
+                                    role: RangeRole::Parameter {
+                                        function,
+                                        parameter,
+                                    },
+                                    locus: locus.clone(),
+                                }
+                            }
+                            _ => argument,
+                        })
+                        .collect::<Vec<_>>();
+                    let result =
+                        result_kind(signature.result).ok_or(ExpansionGap::UnsupportedBodyForm {
+                            function,
+                            node: state.body.id().index(),
+                        })?;
+                    if self.is_recursive(function.get()) {
+                        let measured = signature
+                            .parameters
+                            .iter()
+                            .map(|(_, ty)| matches!(ty, ValueType::Integer | ValueType::Int(_)))
+                            .collect();
+                        values.push(Exp::Recursive(RecursiveCall {
+                            function,
+                            arguments,
+                            measured,
+                            result,
+                            locus,
+                        }));
+                        continue;
+                    }
+                    let slots = state.slots.max(arguments.len());
+                    let mut frame_slots = vec![None; slots];
+                    for (slot, argument) in frame_slots.iter_mut().zip(arguments) {
+                        *slot = Some(argument);
+                    }
+                    let frame = frames.len();
+                    frames.push(Frame { slots: frame_slots });
+                    if let ResultKind::Number(range) = result {
+                        if !range.is_unbounded() {
+                            pending.push(Task::WrapRange {
+                                range,
+                                function,
+                                locus: locus.clone(),
+                            });
+                        }
+                    }
+                    pending.push(Task::FinishBody);
+                    pending.push(Task::Node {
+                        function,
+                        node: state.body,
+                        frame,
+                        locus: locus.in_body(function, state.body.id().index()),
+                    });
+                }
+                Task::WrapRange {
+                    range,
+                    function,
+                    locus,
+                } => {
+                    let value = values.pop().expect("function body");
+                    values.push(Exp::Ranged {
+                        value: Box::new(value),
+                        range,
+                        role: RangeRole::Result { function },
+                        locus,
+                    });
+                }
+                Task::BindLet {
+                    function,
+                    body,
+                    frame,
+                    slot,
+                    locus,
+                } => {
+                    let bound = values.pop().expect("let value");
+                    let entry = frames
+                        .get_mut(frame)
+                        .and_then(|frame| frame.slots.get_mut(slot))
+                        .ok_or(ExpansionGap::UnsupportedBodyForm {
+                            function,
+                            node: body.id().index(),
+                        })?;
+                    let saved = entry.replace(bound);
+                    pending.push(Task::RestoreLet {
+                        frame,
+                        slot,
+                        saved: Box::new(saved),
+                    });
+                    pending.push(Task::Node {
+                        function,
+                        node: body,
+                        frame,
+                        locus,
+                    });
+                }
+                Task::RestoreLet { frame, slot, saved } => {
+                    let entry = frames
+                        .get_mut(frame)
+                        .and_then(|frame| frame.slots.get_mut(slot))
+                        .expect("let slot exists until body finishes");
+                    *entry = *saved;
+                }
+                Task::FinishBody => {
+                    frames
+                        .pop()
+                        .expect("function frame exists until body finishes");
+                }
+            }
         }
-        Ok(())
+        Ok(values.pop().expect("expansion produced a value"))
     }
 
     /// The functions `function`'s body calls.
@@ -301,268 +719,48 @@ impl<'g> Expander<'g> {
         recursive
     }
 
-    /// `term` expanded, its loci rooted at `locus`.
-    pub(crate) fn term(&mut self, term: &HybridTerm) -> Result<Exp, ExpansionGap> {
-        self.term_at(term, &TermLocus::default())
-    }
-
-    fn term_at(&mut self, term: &HybridTerm, locus: &TermLocus) -> Result<Exp, ExpansionGap> {
-        self.charge()?;
-        let sub = |this: &mut Self, position: usize, child: &HybridTerm| {
-            this.term_at(child, &locus.child(position)).map(Box::new)
-        };
-        Ok(match term {
-            HybridTerm::Variable(index) => Exp::Variable(index.get()),
-            HybridTerm::ActivationVariable(index) => Exp::Activation(index.get()),
-            HybridTerm::Capture(index) => Exp::Capture(index.get()),
-            HybridTerm::Constant(value) => Exp::Number(value.clone()),
-            HybridTerm::Boolean(value) => Exp::Boolean(*value),
-            HybridTerm::Negate(a) => Exp::Negate(sub(self, 0, a)?),
-            HybridTerm::Not(a) => Exp::Not(sub(self, 0, a)?),
-            HybridTerm::Arithmetic(op, a, b) => {
-                Exp::Arithmetic(*op, sub(self, 0, a)?, sub(self, 1, b)?, locus.clone())
-            }
-            HybridTerm::Compare(op, a, b) => Exp::Compare(*op, sub(self, 0, a)?, sub(self, 1, b)?),
-            HybridTerm::Logic(op, a, b) => Exp::Logic(*op, sub(self, 0, a)?, sub(self, 1, b)?),
-            HybridTerm::Conditional(c, a, b) => {
-                Exp::Conditional(sub(self, 0, c)?, sub(self, 1, a)?, sub(self, 2, b)?)
-            }
-            HybridTerm::Call(function, arguments) => {
-                let arguments = arguments
-                    .iter()
-                    .enumerate()
-                    .map(|(position, argument)| self.term_at(argument, &locus.child(position)))
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.call(*function, arguments, locus)?
-            }
-        })
-    }
-
-    /// A call of `function` on `arguments` at `locus`.
-    fn call(
+    /// Expand a source term using caller-supplied work fuel.
+    pub(crate) fn term(
         &mut self,
-        function: CheckedFunctionRef,
-        arguments: Vec<Exp>,
-        locus: &TermLocus,
-    ) -> Result<Exp, ExpansionGap> {
-        let graph = self.graph;
-        let unreachable = ExpansionGap::UnreachableFunction(function);
-        let state = graph
-            .function_state(function.get())
-            .ok_or_else(|| unreachable.clone())?;
-        let signature = graph
-            .callable(state.name)
-            .ok_or_else(|| unreachable.clone())?;
-        if signature.parameters.len() != arguments.len() {
-            return Err(unreachable);
-        }
-        let arguments = arguments
-            .into_iter()
-            .zip(signature.parameters)
-            .enumerate()
-            .map(|(parameter, (argument, (_, ty)))| match result_kind(ty) {
-                Some(ResultKind::Number(range)) if !range.is_unbounded() => Exp::Ranged {
-                    value: Box::new(argument),
-                    range,
-                    role: RangeRole::Parameter {
-                        function,
-                        parameter,
-                    },
-                    locus: locus.clone(),
-                },
-                _ => argument,
-            })
-            .collect::<Vec<_>>();
-        let result = result_kind(signature.result).ok_or(ExpansionGap::UnsupportedBodyForm {
-            function,
-            node: state.body.id().index(),
-        })?;
-        if self.is_recursive(function.get()) {
-            let measured = signature
-                .parameters
-                .iter()
-                .map(|(_, ty)| matches!(ty, ValueType::Integer | ValueType::Int(_)))
-                .collect();
-            return Ok(Exp::Recursive(RecursiveCall {
-                function,
-                arguments,
-                measured,
-                result,
-                locus: locus.clone(),
-            }));
-        }
-        self.body(function, arguments, locus)
-            .map(|body| match result {
-                ResultKind::Number(range) if !range.is_unbounded() => Exp::Ranged {
-                    value: Box::new(body),
-                    range,
-                    role: RangeRole::Result { function },
-                    locus: locus.clone(),
-                },
-                ResultKind::Number(_) | ResultKind::Boolean => body,
-            })
+        term: &HybridTerm,
+        meter: &mut HybridReplayMeter,
+    ) -> Result<Exp, HybridReplayRefusal> {
+        self.expand(
+            Task::Term {
+                term,
+                locus: TermLocus::default(),
+            },
+            meter,
+            Vec::new(),
+        )
     }
 
-    /// `function`'s checked body over `arguments`, its parameters, with
-    /// every non-recursive call in it expanded.
+    /// Expand a checked function body over its arguments.
     pub(crate) fn body(
         &mut self,
         function: CheckedFunctionRef,
         arguments: Vec<Exp>,
         locus: &TermLocus,
-    ) -> Result<Exp, ExpansionGap> {
+        meter: &mut HybridReplayMeter,
+    ) -> Result<Exp, HybridReplayRefusal> {
         let state = self
             .graph
             .function_state(function.get())
             .ok_or(ExpansionGap::UnreachableFunction(function))?;
-        let mut slots: Vec<Option<Exp>> = vec![None; state.slots.max(arguments.len())];
+        let mut slots = vec![None; state.slots.max(arguments.len())];
         for (slot, argument) in slots.iter_mut().zip(arguments) {
             *slot = Some(argument);
         }
-        let inner = locus.in_body(function, state.body.id().index());
-        self.node(function, state.body, &mut slots, &inner)
-    }
-
-    fn node(
-        &mut self,
-        function: CheckedFunctionRef,
-        node: CheckedNode<'_>,
-        slots: &mut Vec<Option<Exp>>,
-        locus: &TermLocus,
-    ) -> Result<Exp, ExpansionGap> {
-        self.charge()?;
-        let locus = locus.at_node(node.id().index());
-        let unsupported = ExpansionGap::UnsupportedBodyForm {
-            function,
-            node: node.id().index(),
-        };
-        let child = |this: &mut Self, id, slots: &mut Vec<Option<Exp>>| {
-            this.node(function, node.at(id), slots, &locus)
-                .map(Box::new)
-        };
-        let arithmetic = |op: ArithmeticOperator| match op {
-            ArithmeticOperator::Add => ArithmeticOp::Add,
-            ArithmeticOperator::Subtract => ArithmeticOp::Sub,
-            ArithmeticOperator::Multiply => ArithmeticOp::Mul,
-            ArithmeticOperator::Divide => ArithmeticOp::Div,
-        };
-        Ok(match node.kind() {
-            NodeKind::Literal(literal) => match &literal.0 {
-                Value::Boolean(value) => Exp::Boolean(*value),
-                Value::Integer(value) => Exp::Number(Rational::from_integer(value.clone())),
-                Value::Rational(value) => Exp::Number(value.clone()),
-                Value::Decimal(value) => Exp::Number(value.normalized().to_rational()),
-                _ => return Err(unsupported),
+        self.expand(
+            Task::Node {
+                function,
+                node: state.body,
+                frame: 0,
+                locus: locus.in_body(function, state.body.id().index()),
             },
-            NodeKind::Local(slot) => slots.get(*slot).cloned().flatten().ok_or(unsupported)?,
-            NodeKind::Let { slot, value, body } => {
-                let bound = self.node(function, node.at(*value), slots, &locus)?;
-                let Some(entry) = slots.get_mut(*slot) else {
-                    return Err(unsupported);
-                };
-                let saved = entry.replace(bound);
-                let body = self.node(function, node.at(*body), slots, &locus);
-                if let Some(entry) = slots.get_mut(*slot) {
-                    *entry = saved;
-                }
-                body?
-            }
-            NodeKind::If {
-                condition,
-                then,
-                otherwise,
-            } => Exp::Conditional(
-                child(self, *condition, slots)?,
-                child(self, *then, slots)?,
-                child(self, *otherwise, slots)?,
-            ),
-            NodeKind::Arithmetic(op, left, right) => {
-                let op = match op {
-                    Arithmetic::Add => ArithmeticOp::Add,
-                    Arithmetic::Subtract => ArithmeticOp::Sub,
-                    Arithmetic::Multiply => ArithmeticOp::Mul,
-                };
-                Exp::Arithmetic(
-                    op,
-                    child(self, *left, slots)?,
-                    child(self, *right, slots)?,
-                    locus.clone(),
-                )
-            }
-            NodeKind::Rational {
-                operator,
-                left,
-                right,
-                ..
-            }
-            | NodeKind::Decimal {
-                operator,
-                left,
-                right,
-                ..
-            } => Exp::Arithmetic(
-                arithmetic(*operator),
-                child(self, *left, slots)?,
-                child(self, *right, slots)?,
-                locus.clone(),
-            ),
-            NodeKind::Divide { left, right, .. } => Exp::Arithmetic(
-                ArithmeticOp::Div,
-                child(self, *left, slots)?,
-                child(self, *right, slots)?,
-                locus.clone(),
-            ),
-            NodeKind::Negate(operand)
-            | NodeKind::RationalNegate(operand, _)
-            | NodeKind::DecimalNegate(operand, _) => Exp::Negate(child(self, *operand, slots)?),
-            // A real argument is passed as the real it is: a coercion's
-            // range and a conversion's precision do not apply (QSpec FR-193
-            // "Continuous values and expressions").
-            NodeKind::Coerce(operand, _)
-            | NodeKind::ConvertScalar(_, operand)
-            | NodeKind::ConvertDecimal(operand, _) => {
-                self.node(function, node.at(*operand), slots, &locus)?
-            }
-            NodeKind::Order(op, _, left, right) => Exp::Compare(
-                match op {
-                    OrderingOperator::Less => CompareOp::Lt,
-                    OrderingOperator::LessOrEqual => CompareOp::Le,
-                    OrderingOperator::Greater => CompareOp::Gt,
-                    OrderingOperator::GreaterOrEqual => CompareOp::Ge,
-                },
-                child(self, *left, slots)?,
-                child(self, *right, slots)?,
-            ),
-            NodeKind::Equality(op, _, left, right) => Exp::Compare(
-                match op {
-                    EqualityOperator::Equal => CompareOp::Eq,
-                    EqualityOperator::NotEqual => CompareOp::Ne,
-                },
-                child(self, *left, slots)?,
-                child(self, *right, slots)?,
-            ),
-            NodeKind::Connective(op, left, right) => Exp::Logic(
-                match op {
-                    Connective::And => LogicOp::And,
-                    Connective::Or => LogicOp::Or,
-                    Connective::Implies => LogicOp::Implies,
-                },
-                child(self, *left, slots)?,
-                child(self, *right, slots)?,
-            ),
-            NodeKind::Not(operand) => Exp::Not(child(self, *operand, slots)?),
-            NodeKind::Call {
-                function: callee,
-                arguments,
-            } => {
-                let arguments = arguments
-                    .iter()
-                    .map(|id| self.node(function, node.at(*id), slots, &locus))
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.call(CheckedFunctionRef::new(*callee), arguments, &locus)?
-            }
-            _ => return Err(unsupported),
-        })
+            meter,
+            vec![Frame { slots }],
+        )
     }
 }
 

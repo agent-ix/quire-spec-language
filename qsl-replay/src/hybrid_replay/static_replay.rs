@@ -8,10 +8,10 @@ use qsl_foundation::diagnostic::JsonPointer;
 use qsl_semantics::check::{CheckedHybridModel, CompareOp, HybridTerm};
 use quire_exact::Rational;
 
-use super::expand::{Expander, ExpansionGap};
+use super::expand::Expander;
 use super::interval::{compare, Interval, IntervalEvaluator, Tri};
 use super::trace::{before_pointer, jump_pointer, loop_pointer, state_pointer, ExactInterval};
-use super::{HybridTrace, StaticCheck, StaticReplay};
+use super::{HybridReplayMeter, HybridReplayRefusal, HybridTrace, StaticCheck, StaticReplay};
 
 fn intervals(enclosure: &[ExactInterval]) -> Vec<Interval> {
     enclosure
@@ -35,23 +35,27 @@ fn possibly(op: CompareOp, a: &Interval, b: &Interval, delta: &Rational) -> bool
     compare(op, a, b, delta) != Tri::False
 }
 
-struct Checker<'m, 'e, 'g> {
+struct Checker<'m, 'e, 'g, 'b> {
     model: &'m CheckedHybridModel,
-    evaluator: IntervalEvaluator<'e, 'g>,
+    evaluator: IntervalEvaluator<'e, 'g, 'b>,
 }
 
-impl Checker<'_, '_, '_> {
+impl Checker<'_, '_, '_, '_> {
     /// Whether `term` is at least possibly true over `variables`.
     fn possible(
         &mut self,
         term: &HybridTerm,
         variables: &[Interval],
-    ) -> Result<bool, ExpansionGap> {
-        let exp = self.evaluator.expander().term(term)?;
-        Ok(self.evaluator.truth(&exp, variables)? != Tri::False)
+    ) -> Result<bool, HybridReplayRefusal> {
+        let exp = self.evaluator.expand(term)?;
+        Ok(self.evaluator.truth(exp, variables)? != Tri::False)
     }
 
-    fn invariant(&mut self, mode: usize, variables: &[Interval]) -> Result<bool, ExpansionGap> {
+    fn invariant(
+        &mut self,
+        mode: usize,
+        variables: &[Interval],
+    ) -> Result<bool, HybridReplayRefusal> {
         let model = self.model;
         self.possible(&model.modes[mode].invariant, variables)
     }
@@ -62,11 +66,12 @@ pub(super) fn replay(
     model: &CheckedHybridModel,
     expander: &mut Expander<'_>,
     trace: &HybridTrace,
-) -> Result<StaticReplay, ExpansionGap> {
+    meter: &mut HybridReplayMeter,
+) -> Result<StaticReplay, HybridReplayRefusal> {
     let delta = trace.tolerance();
     let mut checker = Checker {
         model,
-        evaluator: IntervalEvaluator::new(expander, delta.clone()),
+        evaluator: IntervalEvaluator::new(expander, delta.clone(), meter),
     };
     let inconsistent =
         |at: JsonPointer, check: StaticCheck| Ok(StaticReplay::Inconsistent { at, check });
@@ -144,8 +149,8 @@ pub(super) fn replay(
                 }
                 let variable = reset.variable.get();
                 constrained[variable] = true;
-                let exp = checker.evaluator.expander().term(&reset.value)?;
-                let value = match checker.evaluator.evaluate(&exp, &before_variables)? {
+                let exp = checker.evaluator.expand(&reset.value)?;
+                let value = match checker.evaluator.evaluate(exp, &before_variables)? {
                     super::interval::IValue::Number(value) => value,
                     super::interval::IValue::Boolean(_) => Interval::whole(),
                 };

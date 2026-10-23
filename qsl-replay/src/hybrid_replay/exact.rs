@@ -22,8 +22,8 @@ use super::signal::{Piece, Signal, Span, Timeline, Window};
 use super::trace::{before_pointer, jump_pointer, loop_pointer, state_pointer, zero};
 use super::{
     ExactCheck, ExactGap, ExactReplay, ExpressionLocus, ExpressionSite, HybridCounterexample,
-    HybridCounterexampleKind, HybridReplayRefusal, HybridTrace, JsonPointer, UndefinedCause,
-    UndefinedInstant,
+    HybridCounterexampleKind, HybridReplayMeter, HybridReplayRefusal, HybridTrace, JsonPointer,
+    UndefinedCause, UndefinedInstant,
 };
 
 /// One state of a point trace: its time and point.
@@ -194,6 +194,7 @@ fn window(interval: Option<&HybridInterval>) -> Window {
 
 struct Converter<'x, 'g> {
     expander: &'x mut Expander<'g>,
+    meter: &'x mut HybridReplayMeter,
     atoms: Vec<Exp>,
     period: Option<Period>,
 }
@@ -210,7 +211,7 @@ impl Converter<'_, '_> {
         let onset = || self.period.as_ref().map_or_else(zero, |p| p.onset.clone());
         Ok(match formula {
             HybridFormula::Holds(term) => {
-                let exp = self.expander.term(term)?;
+                let exp = self.expander.term(term, self.meter)?;
                 self.atoms.push(exp);
                 (Formula::Atom(self.atoms.len() - 1), onset())
             }
@@ -420,6 +421,7 @@ fn rational_of(value: &RatFunc) -> Option<Rational> {
 struct Replay<'m, 'x, 'g> {
     model: &'m CheckedHybridModel,
     expander: &'x mut Expander<'g>,
+    meter: &'x mut HybridReplayMeter,
     points: PointTrace,
     flows: BTreeMap<usize, Flow>,
     invariants: BTreeMap<usize, Exp>,
@@ -466,7 +468,7 @@ impl Replay<'_, '_, '_> {
             if initial.mode.get() != mode {
                 continue;
             }
-            let condition = self.expander.term(&initial.condition)?;
+            let condition = self.expander.term(&initial.condition, self.meter)?;
             let condition = Self::point_value(&condition, &start)?;
             match (&condition, &invariant) {
                 (Ev::Boolean(true), Ev::Boolean(true)) => {
@@ -574,7 +576,7 @@ impl Replay<'_, '_, '_> {
         let before = self.points.befores[k].clone();
         let (target, reached) = self.state(k + 1).clone();
         let at = ExactReal::Rational(before.time.clone());
-        let guard = self.expander.term(&transition.guard)?;
+        let guard = self.expander.term(&transition.guard, self.meter)?;
         match Self::point_value(&guard, &before)? {
             Ev::Boolean(false) => return Ok(false),
             Ev::Number(_) => return Err(ExactGap::IllKindedTerm.into()),
@@ -597,7 +599,7 @@ impl Replay<'_, '_, '_> {
         for (constraint, reset) in transition.resets.iter().enumerate() {
             let variable = reset.variable.get();
             constrained[variable] = true;
-            let value = self.expander.term(&reset.value)?;
+            let value = self.expander.term(&reset.value, self.meter)?;
             match Self::point_value(&value, &before)? {
                 Ev::Number(value) => {
                     let value = rational_of(&value).ok_or(ExactGap::IllKindedTerm)?;
@@ -690,27 +692,28 @@ impl Replay<'_, '_, '_> {
     /// starts at: the whole finite trace, or, on a lasso, its periodic
     /// behaviour unrolled past `horizon` clock units.
     fn claim_segments(
-        &self,
+        &mut self,
         clock: HybridClock,
         lasso: Option<usize>,
         horizon: &Rational,
-    ) -> (Vec<ClaimSegment>, ExactReal) {
+    ) -> Result<(Vec<ClaimSegment>, ExactReal), HybridReplayRefusal> {
         let n = self.points.befores.len();
         let steps = clock == HybridClock::ModelSteps;
         let count = |k: usize| Rational::from_integer(k.into());
-        let mut segments: Vec<ClaimSegment> = (0..n)
-            .map(|k| {
-                if steps {
-                    self.step_segment(k, count(k))
-                } else {
-                    self.dwell_segment(k, &zero())
-                }
-            })
-            .collect();
+        let mut segments = Vec::new();
+        for k in 0..n {
+            self.meter.charge()?;
+            segments.push(if steps {
+                self.step_segment(k, count(k))
+            } else {
+                self.dwell_segment(k, &zero())
+            });
+        }
         let Some(loop_to) = lasso else {
+            self.meter.charge()?;
             if steps {
                 segments.push(self.step_segment(n, count(n)));
-                return (segments, count(n + 1).into());
+                return Ok((segments, count(n + 1).into()));
             }
             let (_, last) = self.state(n);
             let at: ExactReal = last.time.clone().into();
@@ -725,7 +728,7 @@ impl Replay<'_, '_, '_> {
                 state: n,
                 time: None,
             });
-            return (segments, at);
+            return Ok((segments, at));
         };
         let period = if steps {
             count(n - loop_to)
@@ -737,6 +740,7 @@ impl Replay<'_, '_, '_> {
         loop {
             let shift = period.mul(&count(copy));
             for k in loop_to..n {
+                self.meter.charge()?;
                 segments.push(if steps {
                     self.step_segment(k, count(k).add(&shift))
                 } else {
@@ -747,7 +751,7 @@ impl Replay<'_, '_, '_> {
                 .last()
                 .map_or_else(|| zero().into(), |segment| segment.span.high.clone());
             if end > enough {
-                return (segments, end.shifted(&Rational::from_integer(1_i64.into())));
+                return Ok((segments, end.shifted(&Rational::from_integer(1_i64.into()))));
             }
             copy += 1;
         }
@@ -1126,12 +1130,14 @@ fn fair(
                             }
                             .into());
                         }
-                        posts[reset.variable.get()] = Some(replay.expander.term(&reset.value)?);
+                        posts[reset.variable.get()] =
+                            Some(replay.expander.term(&reset.value, replay.meter)?);
                     }
-                    let guard = replay.expander.term(&transition.guard)?;
-                    let target = replay
-                        .expander
-                        .term(&model.modes[transition.target.get()].invariant)?;
+                    let guard = replay.expander.term(&transition.guard, replay.meter)?;
+                    let target = replay.expander.term(
+                        &model.modes[transition.target.get()].invariant,
+                        replay.meter,
+                    )?;
                     exps.push(Exp::Logic(
                         LogicOp::And,
                         Box::new(guard),
@@ -1173,15 +1179,18 @@ pub(super) fn replay(
     claim: &CheckedHybridClaim,
     expander: &mut Expander<'_>,
     trace: &HybridTrace,
+    meter: &mut HybridReplayMeter,
 ) -> Result<ExactReplay, HybridReplayRefusal> {
     let Some(points) = PointTrace::of(trace) else {
         return Ok(ExactReplay::NotExact);
     };
+    meter.charge()?;
     let n = points.befores.len();
     let lasso = trace.loop_to.and_then(|l| usize::try_from(l).ok());
     // Every mode the trace dwells in has a polynomial flow.
     let mut flows = BTreeMap::new();
     for k in 0..n {
+        meter.charge()?;
         let mode = points.states[k].0;
         if flows.contains_key(&mode) {
             continue;
@@ -1189,7 +1198,7 @@ pub(super) fn replay(
         let rates = model.modes[mode]
             .rates
             .iter()
-            .map(|rate| expander.term(rate))
+            .map(|rate| expander.term(rate, meter))
             .collect::<Result<Vec<_>, _>>()?;
         let Some(flow) = Flow::of(rates) else {
             return Ok(ExactReplay::NotExact);
@@ -1201,7 +1210,7 @@ pub(super) fn replay(
     let mut invariants = BTreeMap::new();
     for (mode, _) in &points.states {
         if !invariants.contains_key(mode) {
-            invariants.insert(*mode, expander.term(&model.modes[*mode].invariant)?);
+            invariants.insert(*mode, expander.term(&model.modes[*mode].invariant, meter)?);
         }
     }
     evaluated.extend(invariants.values().cloned());
@@ -1210,24 +1219,25 @@ pub(super) fn replay(
         .iter()
         .filter(|e| e.mode.get() == points.states[0].0)
     {
-        evaluated.push(expander.term(&initial.condition)?);
+        evaluated.push(expander.term(&initial.condition, meter)?);
     }
     for k in 0..n {
+        meter.charge()?;
         let transition = &model.modes[points.states[k].0].transitions[points.transitions[k]];
-        evaluated.push(expander.term(&transition.guard)?);
+        evaluated.push(expander.term(&transition.guard, meter)?);
         for reset in &transition.resets {
-            evaluated.push(expander.term(&reset.value)?);
+            evaluated.push(expander.term(&reset.value, meter)?);
         }
     }
     let captures = claim
         .captures
         .iter()
-        .map(|capture| expander.term(&capture.value))
+        .map(|capture| expander.term(&capture.value, meter))
         .collect::<Result<Vec<_>, _>>()?;
     let guard = match &claim.activation {
         HybridActivation::Each {
             guard: Some(guard), ..
-        } => Some(expander.term(guard)?),
+        } => Some(expander.term(guard, meter)?),
         HybridActivation::Each { guard: None, .. } | HybridActivation::Origin => None,
     };
     let period = match lasso {
@@ -1243,6 +1253,7 @@ pub(super) fn replay(
     };
     let mut converter = Converter {
         expander,
+        meter,
         atoms: Vec::new(),
         period: period.clone(),
     };
@@ -1289,6 +1300,7 @@ pub(super) fn replay(
     let mut replay = Replay {
         model,
         expander,
+        meter,
         points,
         flows,
         invariants,
@@ -1301,6 +1313,7 @@ pub(super) fn replay(
         return not_reproduced(state_pointer(0), ExactCheck::Initial);
     }
     for k in 0..n {
+        replay.meter.charge()?;
         if !replay.dwell_holds(k)? {
             return not_reproduced(before_pointer(k), ExactCheck::Dwell);
         }
@@ -1315,6 +1328,9 @@ pub(super) fn replay(
         if last_mode != mode || last.values != target.values || last.time <= target.time {
             return not_reproduced(loop_pointer(), ExactCheck::Loop);
         }
+        if !fair(&mut replay, claim, loop_to)? {
+            return not_reproduced(JsonPointer::root(), ExactCheck::Claim);
+        }
     }
     // Check 5 and the decisive instant.
     let horizon_clock = match (&claim.activation, claim.clock) {
@@ -1324,7 +1340,7 @@ pub(super) fn replay(
         _ => zero(),
     };
     let horizon = horizon_clock.add(&reach(&formula));
-    let (segments, tail) = replay.claim_segments(claim.clock, lasso, &horizon);
+    let (segments, tail) = replay.claim_segments(claim.clock, lasso, &horizon)?;
     let claim_reading = Claim {
         claim,
         formula,
@@ -1348,11 +1364,11 @@ pub(super) fn replay(
         }),
         cause: record.cause,
     };
-    if let Some(loop_to) = lasso {
+    if lasso.is_some() {
         if let Some(record) = records.0 {
             return reproduced(undefined(record));
         }
-        if value == Tri::False && fair(&mut replay, claim, loop_to)? {
+        if value == Tri::False {
             return reproduced(HybridCounterexampleKind::Formula);
         }
         return not_reproduced(JsonPointer::root(), ExactCheck::Claim);
@@ -1393,10 +1409,11 @@ pub(super) mod probe {
         mode: usize,
         start: &[Rational],
     ) -> Option<Vec<Poly>> {
+        let mut meter = HybridReplayMeter::new(u64::MAX);
         let rates = model.modes[mode]
             .rates
             .iter()
-            .map(|rate| expander.term(rate))
+            .map(|rate| expander.term(rate, &mut meter))
             .collect::<Result<Vec<_>, _>>()
             .ok()?;
         Flow::of(rates).map(|flow| flow.solve(start))

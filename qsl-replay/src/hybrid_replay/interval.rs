@@ -11,18 +11,15 @@
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use qsl_semantics::check::{ArithmeticOp, CompareOp, LogicOp};
 use quire_exact::Rational;
 
-use super::expand::{Exp, Expander, ExpansionGap, RecursiveCall, ResultKind, ValueRange};
+use super::expand::{Exp, Expander, RecursiveCall, ResultKind, ValueRange};
 use super::poly::sign;
 use super::trace::zero;
-
-/// How many recursive call evaluations one interval evaluation makes before
-/// every further recursive call takes its result type's whole range, which
-/// encloses its value, so static replay always terminates.
-const RECURSIVE_EVALUATIONS: usize = 1 << 14;
+use super::{HybridReplayMeter, HybridReplayRefusal};
 
 /// A closed interval of the reals, either end absent when unbounded.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -291,30 +288,106 @@ pub(crate) fn compare(op: CompareOp, a: &Interval, b: &Interval, delta: &Rationa
 /// A recursive body's undecided base case: the call takes its result range.
 struct Undecided;
 
-/// The interval evaluator over one state's enclosure.
-pub(crate) struct IntervalEvaluator<'e, 'g> {
-    expander: &'e mut Expander<'g>,
-    delta: Rational,
-    bodies: BTreeMap<usize, Exp>,
-    evaluations: usize,
+/// A pending interval-expression step. Recursive calls push their bodies on
+/// this heap stack, so their depth does not consume the Rust call stack.
+enum Work {
+    Eval {
+        exp: Box<Exp>,
+        parameters: Arc<[IValue]>,
+        in_recursive_body: bool,
+    },
+    Negate,
+    Not,
+    Ranged(ValueRange),
+    BinaryLeft {
+        op: Binary,
+        right: Box<Exp>,
+        parameters: Arc<[IValue]>,
+        in_recursive_body: bool,
+    },
+    BinaryRight {
+        op: Binary,
+        left: IValue,
+    },
+    Conditional {
+        yes: Box<Exp>,
+        no: Box<Exp>,
+        parameters: Arc<[IValue]>,
+        in_recursive_body: bool,
+    },
+    ConditionalUnknownLeft {
+        no: Box<Exp>,
+        parameters: Arc<[IValue]>,
+        in_recursive_body: bool,
+    },
+    ConditionalUnknownRight {
+        yes: IValue,
+    },
+    RecursiveArguments {
+        call: Box<RecursiveCall>,
+        count: usize,
+    },
+    RecursiveResult {
+        whole: IValue,
+    },
 }
 
-impl<'e, 'g> IntervalEvaluator<'e, 'g> {
-    pub(crate) fn new(expander: &'e mut Expander<'g>, delta: Rational) -> Self {
+#[derive(Clone, Copy)]
+enum Binary {
+    Arithmetic(ArithmeticOp),
+    Compare(CompareOp),
+    Logic(LogicOp),
+}
+
+fn number(value: IValue) -> Interval {
+    match value {
+        IValue::Number(interval) => interval,
+        IValue::Boolean(_) => Interval::whole(),
+    }
+}
+
+fn truth(value: IValue) -> Tri {
+    match value {
+        IValue::Boolean(tri) => tri,
+        IValue::Number(_) => Tri::Unknown,
+    }
+}
+
+fn whole_result(result: &ResultKind) -> IValue {
+    match result {
+        ResultKind::Boolean => IValue::Boolean(Tri::Unknown),
+        ResultKind::Number(range) => IValue::Number(Interval::from_range(range)),
+    }
+}
+
+/// The interval evaluator over one state's enclosure.
+pub(crate) struct IntervalEvaluator<'e, 'g, 'b> {
+    expander: &'e mut Expander<'g>,
+    meter: &'b mut HybridReplayMeter,
+    delta: Rational,
+    bodies: BTreeMap<usize, Exp>,
+}
+
+impl<'e, 'g, 'b> IntervalEvaluator<'e, 'g, 'b> {
+    pub(crate) fn new(
+        expander: &'e mut Expander<'g>,
+        delta: Rational,
+        meter: &'b mut HybridReplayMeter,
+    ) -> Self {
         Self {
             expander,
+            meter,
             delta,
             bodies: BTreeMap::new(),
-            evaluations: 0,
         }
     }
 
     /// The value of `exp` over `variables`.
     pub(crate) fn evaluate(
         &mut self,
-        exp: &Exp,
+        exp: Exp,
         variables: &[Interval],
-    ) -> Result<IValue, ExpansionGap> {
+    ) -> Result<IValue, HybridReplayRefusal> {
         match self.value(exp, variables, &[], false)? {
             Ok(value) => Ok(value),
             Err(Undecided) => Ok(IValue::Boolean(Tri::Unknown)),
@@ -322,158 +395,373 @@ impl<'e, 'g> IntervalEvaluator<'e, 'g> {
     }
 
     /// The truth value of a Boolean `exp` over `variables`.
-    pub(crate) fn truth(&mut self, exp: &Exp, variables: &[Interval]) -> Result<Tri, ExpansionGap> {
+    pub(crate) fn truth(
+        &mut self,
+        exp: Exp,
+        variables: &[Interval],
+    ) -> Result<Tri, HybridReplayRefusal> {
         Ok(match self.evaluate(exp, variables)? {
             IValue::Boolean(tri) => tri,
             IValue::Number(_) => Tri::Unknown,
         })
     }
 
-    pub(crate) fn expander(&mut self) -> &mut Expander<'g> {
-        self.expander
+    pub(crate) fn expand(
+        &mut self,
+        term: &qsl_semantics::check::HybridTerm,
+    ) -> Result<Exp, HybridReplayRefusal> {
+        self.expander.term(term, self.meter)
     }
 
     fn value(
         &mut self,
-        exp: &Exp,
+        exp: Exp,
         variables: &[Interval],
         parameters: &[IValue],
         in_recursive_body: bool,
-    ) -> Result<Result<IValue, Undecided>, ExpansionGap> {
-        macro_rules! sub {
-            ($e:expr) => {
-                match self.value($e, variables, parameters, in_recursive_body)? {
-                    Ok(value) => value,
-                    Err(Undecided) => return Ok(Err(Undecided)),
-                }
-            };
-        }
-        let number = |value: IValue| match value {
-            IValue::Number(interval) => interval,
-            IValue::Boolean(_) => Interval::whole(),
-        };
-        let truth = |value: IValue| match value {
-            IValue::Boolean(tri) => tri,
-            IValue::Number(_) => Tri::Unknown,
-        };
-        Ok(Ok(match exp {
-            Exp::Variable(i) => {
-                IValue::Number(variables.get(*i).cloned().unwrap_or_else(Interval::whole))
-            }
-            // Static replay checks the model's expressions, which read no
-            // activation state; such a read is unconstrained.
-            Exp::Activation(_) | Exp::Capture(_) => IValue::Number(Interval::whole()),
-            Exp::Parameter(i) => parameters
-                .get(*i)
-                .cloned()
-                .unwrap_or(IValue::Number(Interval::whole())),
-            Exp::Number(value) => IValue::Number(Interval::point(value.clone())),
-            Exp::Boolean(value) => IValue::Boolean(Tri::from_bool(*value)),
-            Exp::Negate(a) => IValue::Number(number(sub!(a)).neg()),
-            Exp::Arithmetic(op, a, b, _) => {
-                let (a, b) = (number(sub!(a)), number(sub!(b)));
-                IValue::Number(match op {
-                    ArithmeticOp::Add => a.add(&b),
-                    ArithmeticOp::Sub => a.add(&b.neg()),
-                    ArithmeticOp::Mul => a.mul(&b),
-                    ArithmeticOp::Div => a.div(&b),
-                })
-            }
-            Exp::Compare(op, a, b) => {
-                let (a, b) = (number(sub!(a)), number(sub!(b)));
-                IValue::Boolean(compare(*op, &a, &b, &self.delta))
-            }
-            Exp::Not(a) => IValue::Boolean(truth(sub!(a)).not()),
-            Exp::Logic(op, a, b) => {
-                let left = truth(sub!(a));
-                match (op, left) {
-                    (LogicOp::And, Tri::False) => IValue::Boolean(Tri::False),
-                    (LogicOp::Or, Tri::True) | (LogicOp::Implies, Tri::False) => {
-                        IValue::Boolean(Tri::True)
+    ) -> Result<Result<IValue, Undecided>, HybridReplayRefusal> {
+        let mut work = vec![Work::Eval {
+            exp: Box::new(exp),
+            parameters: Arc::from(parameters),
+            in_recursive_body,
+        }];
+        let mut values: Vec<Result<IValue, Undecided>> = Vec::new();
+        while let Some(step) = work.pop() {
+            match step {
+                Work::Eval {
+                    exp,
+                    parameters,
+                    in_recursive_body,
+                } => {
+                    self.meter.charge()?;
+                    match *exp {
+                        Exp::Variable(i) => {
+                            let interval = if in_recursive_body {
+                                None
+                            } else {
+                                variables.get(i)
+                            };
+                            values.push(Ok(IValue::Number(
+                                interval.cloned().unwrap_or_else(Interval::whole),
+                            )));
+                        }
+                        // Model expressions read no activation state.
+                        Exp::Activation(_) | Exp::Capture(_) => {
+                            values.push(Ok(IValue::Number(Interval::whole())));
+                        }
+                        Exp::Parameter(i) => values.push(Ok(parameters
+                            .get(i)
+                            .cloned()
+                            .unwrap_or(IValue::Number(Interval::whole())))),
+                        Exp::Number(value) => {
+                            values.push(Ok(IValue::Number(Interval::point(value))));
+                        }
+                        Exp::Boolean(value) => {
+                            values.push(Ok(IValue::Boolean(Tri::from_bool(value))));
+                        }
+                        Exp::Negate(a) => {
+                            work.push(Work::Negate);
+                            work.push(Work::Eval {
+                                exp: a,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                        Exp::Not(a) => {
+                            work.push(Work::Not);
+                            work.push(Work::Eval {
+                                exp: a,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                        Exp::Ranged { value, range, .. } => {
+                            work.push(Work::Ranged(range));
+                            work.push(Work::Eval {
+                                exp: value,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                        Exp::Arithmetic(op, a, b, _) => {
+                            work.push(Work::BinaryLeft {
+                                op: Binary::Arithmetic(op),
+                                right: b,
+                                parameters: parameters.clone(),
+                                in_recursive_body,
+                            });
+                            work.push(Work::Eval {
+                                exp: a,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                        Exp::Compare(op, a, b) => {
+                            work.push(Work::BinaryLeft {
+                                op: Binary::Compare(op),
+                                right: b,
+                                parameters: parameters.clone(),
+                                in_recursive_body,
+                            });
+                            work.push(Work::Eval {
+                                exp: a,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                        Exp::Logic(op, a, b) => {
+                            work.push(Work::BinaryLeft {
+                                op: Binary::Logic(op),
+                                right: b,
+                                parameters: parameters.clone(),
+                                in_recursive_body,
+                            });
+                            work.push(Work::Eval {
+                                exp: a,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                        Exp::Conditional(c, a, b) => {
+                            work.push(Work::Conditional {
+                                yes: a,
+                                no: b,
+                                parameters: parameters.clone(),
+                                in_recursive_body,
+                            });
+                            work.push(Work::Eval {
+                                exp: c,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                        Exp::Recursive(mut call) => {
+                            let arguments = std::mem::take(&mut call.arguments);
+                            let count = arguments.len();
+                            work.push(Work::RecursiveArguments {
+                                call: Box::new(call),
+                                count,
+                            });
+                            for argument in arguments.into_iter().rev() {
+                                work.push(Work::Eval {
+                                    exp: Box::new(argument),
+                                    parameters: parameters.clone(),
+                                    in_recursive_body,
+                                });
+                            }
+                        }
                     }
-                    _ => {
-                        let right = truth(sub!(b));
-                        IValue::Boolean(match op {
-                            LogicOp::And => left.and(right),
-                            LogicOp::Or => left.or(right),
-                            LogicOp::Implies => left.not().or(right),
-                        })
-                    }
                 }
-            }
-            Exp::Conditional(c, a, b) => match truth(sub!(c)) {
-                Tri::True => sub!(a),
-                Tri::False => sub!(b),
-                Tri::Unknown if in_recursive_body => return Ok(Err(Undecided)),
-                Tri::Unknown => match (sub!(a), sub!(b)) {
-                    (IValue::Number(a), IValue::Number(b)) => IValue::Number(a.hull(&b)),
-                    (IValue::Boolean(a), IValue::Boolean(b)) if a == b => IValue::Boolean(a),
-                    (IValue::Boolean(_), _) | (_, IValue::Boolean(_)) => {
-                        IValue::Boolean(Tri::Unknown)
+                Work::Negate => {
+                    let result = values
+                        .pop()
+                        .expect("operand is evaluated")
+                        .map(|v| IValue::Number(number(v).neg()));
+                    values.push(result);
+                }
+                Work::Not => {
+                    let result = values
+                        .pop()
+                        .expect("operand is evaluated")
+                        .map(|v| IValue::Boolean(truth(v).not()));
+                    values.push(result);
+                }
+                Work::Ranged(range) => {
+                    let result = values
+                        .pop()
+                        .expect("operand is evaluated")
+                        .map(|v| match v {
+                            IValue::Number(interval) => IValue::Number(
+                                interval
+                                    .intersect(&Interval::from_range(&range))
+                                    .unwrap_or_else(Interval::whole),
+                            ),
+                            boolean @ IValue::Boolean(_) => boolean,
+                        });
+                    values.push(result);
+                }
+                Work::BinaryLeft {
+                    op,
+                    right,
+                    parameters,
+                    in_recursive_body,
+                } => match values.pop().expect("left operand is evaluated") {
+                    Err(undecided) => values.push(Err(undecided)),
+                    Ok(left) => {
+                        let shortcut = match (op, truth(left.clone())) {
+                            (Binary::Logic(LogicOp::And), Tri::False) => Some(Tri::False),
+                            (Binary::Logic(LogicOp::Or), Tri::True)
+                            | (Binary::Logic(LogicOp::Implies), Tri::False) => Some(Tri::True),
+                            _ => None,
+                        };
+                        if let Some(result) = shortcut {
+                            values.push(Ok(IValue::Boolean(result)));
+                        } else {
+                            work.push(Work::BinaryRight { op, left });
+                            work.push(Work::Eval {
+                                exp: right,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
                     }
                 },
-            },
-            Exp::Ranged { value, range, .. } => match sub!(value) {
-                IValue::Number(interval) => IValue::Number(
-                    interval
-                        .intersect(&Interval::from_range(range))
-                        // No argument in range: the call has no value, which
-                        // decides no check.
-                        .unwrap_or_else(Interval::whole),
-                ),
-                boolean @ IValue::Boolean(_) => boolean,
-            },
-            Exp::Recursive(call) => {
-                let mut arguments = Vec::with_capacity(call.arguments.len());
-                for argument in &call.arguments {
-                    arguments.push(sub!(argument));
+                Work::BinaryRight { op, left } => {
+                    let result = values
+                        .pop()
+                        .expect("right operand is evaluated")
+                        .map(|right| match op {
+                            Binary::Arithmetic(op) => {
+                                let (a, b) = (number(left), number(right));
+                                IValue::Number(match op {
+                                    ArithmeticOp::Add => a.add(&b),
+                                    ArithmeticOp::Sub => a.add(&b.neg()),
+                                    ArithmeticOp::Mul => a.mul(&b),
+                                    ArithmeticOp::Div => a.div(&b),
+                                })
+                            }
+                            Binary::Compare(op) => IValue::Boolean(compare(
+                                op,
+                                &number(left),
+                                &number(right),
+                                &self.delta,
+                            )),
+                            Binary::Logic(op) => {
+                                let (a, b) = (truth(left), truth(right));
+                                IValue::Boolean(match op {
+                                    LogicOp::And => a.and(b),
+                                    LogicOp::Or => a.or(b),
+                                    LogicOp::Implies => a.not().or(b),
+                                })
+                            }
+                        });
+                    values.push(result);
                 }
-                self.recursive(call, arguments)?
+                Work::Conditional {
+                    yes,
+                    no,
+                    parameters,
+                    in_recursive_body,
+                } => match values.pop().expect("condition is evaluated") {
+                    Err(undecided) => values.push(Err(undecided)),
+                    Ok(condition) => match truth(condition) {
+                        Tri::True => work.push(Work::Eval {
+                            exp: yes,
+                            parameters,
+                            in_recursive_body,
+                        }),
+                        Tri::False => work.push(Work::Eval {
+                            exp: no,
+                            parameters,
+                            in_recursive_body,
+                        }),
+                        Tri::Unknown if in_recursive_body => values.push(Err(Undecided)),
+                        Tri::Unknown => {
+                            work.push(Work::ConditionalUnknownLeft {
+                                no,
+                                parameters: parameters.clone(),
+                                in_recursive_body,
+                            });
+                            work.push(Work::Eval {
+                                exp: yes,
+                                parameters,
+                                in_recursive_body,
+                            });
+                        }
+                    },
+                },
+                Work::ConditionalUnknownLeft {
+                    no,
+                    parameters,
+                    in_recursive_body,
+                } => match values.pop().expect("first branch is evaluated") {
+                    Err(undecided) => values.push(Err(undecided)),
+                    Ok(yes) => {
+                        work.push(Work::ConditionalUnknownRight { yes });
+                        work.push(Work::Eval {
+                            exp: no,
+                            parameters,
+                            in_recursive_body,
+                        });
+                    }
+                },
+                Work::ConditionalUnknownRight { yes } => {
+                    let result =
+                        values.pop().expect("second branch is evaluated").map(|no| {
+                            match (yes, no) {
+                                (IValue::Number(a), IValue::Number(b)) => {
+                                    IValue::Number(a.hull(&b))
+                                }
+                                (IValue::Boolean(a), IValue::Boolean(b)) if a == b => {
+                                    IValue::Boolean(a)
+                                }
+                                _ => IValue::Boolean(Tri::Unknown),
+                            }
+                        });
+                    values.push(result);
+                }
+                Work::RecursiveArguments { call, count } => {
+                    let mut arguments = Vec::with_capacity(count);
+                    let mut undecided = false;
+                    for _ in 0..count {
+                        match values.pop().expect("call argument is evaluated") {
+                            Ok(value) => arguments.push(value),
+                            Err(Undecided) => undecided = true,
+                        }
+                    }
+                    if undecided {
+                        values.push(Err(Undecided));
+                        continue;
+                    }
+                    arguments.reverse();
+                    let whole = whole_result(&call.result);
+                    let definite = call.measured.iter().zip(&arguments).all(|(measured, argument)| {
+                        !measured
+                            || matches!(argument, IValue::Number(Interval { lower: Some(l), upper: Some(u) }) if l == u)
+                    });
+                    if !definite {
+                        values.push(Ok(whole));
+                        continue;
+                    }
+                    self.meter.charge()?;
+                    let function = call.function.get();
+                    if !self.bodies.contains_key(&function) {
+                        let parameters = (0..count).map(Exp::Parameter).collect();
+                        let body = self.expander.body(
+                            call.function,
+                            parameters,
+                            &call.locus,
+                            self.meter,
+                        )?;
+                        self.bodies.insert(function, body);
+                    }
+                    let body = self
+                        .bodies
+                        .get(&function)
+                        .cloned()
+                        .unwrap_or(Exp::Boolean(true));
+                    work.push(Work::RecursiveResult { whole });
+                    work.push(Work::Eval {
+                        exp: Box::new(body),
+                        parameters: Arc::from(arguments),
+                        in_recursive_body: true,
+                    });
+                }
+                Work::RecursiveResult { whole } => {
+                    let result = match values.pop().expect("recursive body is evaluated") {
+                        Err(Undecided) => whole,
+                        Ok(IValue::Number(interval)) => match &whole {
+                            IValue::Number(range) => IValue::Number(
+                                interval.intersect(range).unwrap_or_else(Interval::whole),
+                            ),
+                            IValue::Boolean(_) => IValue::Number(interval),
+                        },
+                        Ok(boolean) => boolean,
+                    };
+                    values.push(Ok(result));
+                }
             }
-        }))
-    }
-
-    /// A recursive call over argument intervals: its body while every
-    /// parameter a measure can name is a point and the body's conditions
-    /// are decided, else the result type's whole range (FR-450 "Static
-    /// replay").
-    fn recursive(
-        &mut self,
-        call: &RecursiveCall,
-        arguments: Vec<IValue>,
-    ) -> Result<IValue, ExpansionGap> {
-        let whole = match &call.result {
-            ResultKind::Boolean => IValue::Boolean(Tri::Unknown),
-            ResultKind::Number(range) => IValue::Number(Interval::from_range(range)),
-        };
-        let definite = call.measured.iter().zip(&arguments).all(|(measured, argument)| {
-            !measured
-                || matches!(argument, IValue::Number(Interval { lower: Some(l), upper: Some(u) }) if l == u)
-        });
-        if !definite || self.evaluations >= RECURSIVE_EVALUATIONS {
-            return Ok(whole);
         }
-        self.evaluations += 1;
-        let function = call.function.get();
-        if !self.bodies.contains_key(&function) {
-            let parameters = (0..call.arguments.len()).map(Exp::Parameter).collect();
-            let body = self.expander.body(call.function, parameters, &call.locus)?;
-            self.bodies.insert(function, body);
-        }
-        let body = self
-            .bodies
-            .get(&function)
-            .cloned()
-            .unwrap_or(Exp::Boolean(true));
-        Ok(match self.value(&body, &[], &arguments, true)? {
-            Err(Undecided) => whole,
-            Ok(IValue::Number(interval)) => match &whole {
-                IValue::Number(range) => {
-                    IValue::Number(interval.intersect(range).unwrap_or_else(Interval::whole))
-                }
-                IValue::Boolean(_) => IValue::Number(interval),
-            },
-            Ok(boolean) => boolean,
-        })
+        Ok(values.pop().expect("root expression is evaluated"))
     }
 }
