@@ -522,6 +522,35 @@ unsupported.
 Amended by ADR-027 ST-12 (protocol transition system). The `Unsupported`
 causes gain `RecoveryView{predicate}`, category unsupported.
 
+Agreement across backends ([FR-448](../functional/FR-448-cross-check-verification-backends-over-the-conformance-corpus.md)).
+When two or more backends answer the same requirement item, their terminal
+records are compared after the proof column above has mapped each one,
+including the E9 replay of every counterexample:
+
+- Definite records are `proved` (any `ProofBasis` that maps to success) and
+  `refuted` (a counterexample whose replay settles
+  `ReproducedWithEvaluatedWitness`). Every other record is not definite:
+  `tested`, `measured`, and the inconclusive, incomplete, unsupported,
+  refusal and internal-failure categories, including a vacuous `Proved`
+  and a counterexample settled `replay_parity` or `replay_refused`. A
+  record that is not definite agrees and conflicts with nothing.
+- Every success-category `proved` record is compared, whatever its basis.
+  A `BoundedComplete{depth}` proof is complete: ADR-018 V-2 issues it only
+  when the unrolling reaches the formula's horizon. A proof that covers
+  only a depth is V-5's `Inconclusive(BoundReached{depth})`, which is not
+  definite.
+- A `proved` record from a backend that negotiated the item `supported`
+  in `bounded` mode holds only over the item's declared finite domain
+  (O-20). A `refuted` record is comparable with it only when the
+  counterexample's witness lies inside that domain; otherwise the pair is
+  not comparable, and a report names the domain. Every other pair of
+  definite records is comparable: a reproduced counterexample refutes the
+  item whatever run produced it.
+- Two comparable definite records conflict when one is `proved` and the
+  other `refuted`, and agree otherwise. A conflict means at least one
+  backend gave a wrong verdict; it is never settled by preferring one
+  backend, by `certification`, or by majority.
+
 Invariants: no category collapses into a boolean, string or another category
 through any conversion; missing anchors, exhausted limits and false predicates
 stay distinct (FR-323-AC-3); a timeout and a cancellation keep their cause. The
