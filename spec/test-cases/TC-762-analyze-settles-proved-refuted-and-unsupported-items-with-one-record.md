@@ -12,13 +12,15 @@ relationships:
 
 Verify `analyze` over QSL's layer-A engines: a `certified` proof, a replayed counterexample, and an item no engine accepts.
 
-Scope: FR-281-AC-1 to FR-281-AC-3.
+Scope: FR-281-AC-1 to FR-281-AC-3, FR-281-AC-8, FR-281-AC-9.
 
 ## Test Procedure
 
 1. Over a finite probabilistic model, run `analyze` with one EN-5 item claiming a reachability probability bound that holds.
 2. Over a finite model whose invariant one transition breaks, run `analyze` with one EN-1 item claiming that invariant; replay the record's counterexample through `replay`.
-3. Run `analyze` with three items: one of a claim kind no layer-A engine advertises, step 1's item and step 2's item.
+3. Run `analyze` over `Engines::qsl()` with three items: one of a claim kind no layer-A engine advertises, settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability` naming that kind, then step 1's and step 2's items, each settled `Supported` on its engine.
+4. Build `engines` with `Engines::with` holding test engines `qsl.test-a` and `qsl.test-b`, both advertising (`value-validity`, `bounded`), each counting its runs. Run one `value-validity` bounded item settled `Supported(qsl.test-b)`; settled `InvalidRequest` with `invalid_capability`/`ambiguous-backend` naming both; settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability`; settled `RequiresBound`; and settled `Supported(qsl.test-c)`.
+5. Run step 3's request with a binding whose `universes` name a population the package does not declare.
 
 Tag the tests `#[trace("TC-762", "<AC id>")]`.
 
@@ -26,4 +28,6 @@ Tag the tests `#[trace("TC-762", "<AC id>")]`.
 
 - Step 1: the item settles `proved`, category success, after the EN-5 checker accepts; the record carries the certificate.
 - Step 2: the item settles `refuted` and carries the counterexample; `replay` reproduces it.
-- Step 3: three records return in request order; the first is `unsupported` with a cause naming the claim kind.
+- Step 3: three records return in `request_index` order 0, 1, 2; the first is settled by its `unsupported` disposition with the diagnostic naming the claim kind.
+- Step 4: `qsl.test-b` alone runs and the record names it; then records settled by `invalid-request` (`ambiguous-backend`, both named), `unsupported` and `requires-bound` (no diagnostic) dispositions with no run; then `invalid-request` with `invalid_capability`/`unknown-backend` naming `qsl.test-c` and no run. Neither test engine runs except in the first case.
+- Step 5: `StageFailure::Refused(AnalyzeRefusal::Binding)` holding `invalid_runtime_input`/`wrong-role-mapping`, no record, no engine run.
