@@ -366,7 +366,7 @@ analysis, which QSL runs natively as engine EN-7.
 | --- | --- |
 | RT-1 | **Task sets.** A package declares a task set for one preemptive uniprocessor: `taskset S { task τ … }`. Each task declares its arrival, periodic with period `T` or sporadic with minimum inter-arrival time `T`; its relative deadline `D`; its WCET `C`; its priority, under fixed-priority scheduling; and its criticality, `LO` or `HI`, with budgets `C(LO) <= C(HI)` for a `HI` task, the dual-criticality model of Vestal. Optional members are release jitter `J` and a blocking term `B`. Every value is an exact rational time quantity (QSpec FR-142). Spelling is illustrative; QSpec's shared grammar owns it (OV-10). |
 | RT-2 | **Premises.** `C`, `C(LO)`, `C(HI)`, `B` and `J` are stated premises of the claim. They are part of the task set, so part of the subject and its obligation identity (ADR-013 O-09), and a verdict holds for exactly those values. |
-| RT-3 | **Claims and engine.** A schedulability claim names a task set and a policy: `schedulable S under fixed-priority`, `under edf` or `under amc`. A response claim bounds one task's worst-case response time: `response S.τ <= d under fixed-priority`. EN-7 lives in QSL layer A, crate `qsl-analyze`, module `schedulability`, runs in stage S6c, and is placed by negotiation under a new QSpec FR-290 capability kind, `schedulability` (OV-10). |
+| RT-3 | **Claims and engine.** A schedulability claim names a task set and a policy: `schedulable N on S under fixed_priority;`, `under edf` or `under amc`, `N` the claim's name. A response claim bounds one task's worst-case response time: `response N on S.τ <= d under fixed_priority;`. EN-7 lives in QSL layer A, crate `qsl-analyze`, module `schedulability`, runs in stage S6c, and is placed by negotiation under a new QSpec FR-290 capability kind, `schedulability` (OV-10). |
 | RT-4 | **Fixed priority.** EN-7 computes each task's worst-case response time by response-time analysis (Joseph and Pandya; Audsley et al.): the least fixpoint of `R = C_i + B_i + Σ_{j ∈ hp(i)} ⌈(R + J_j) / T_j⌉ · C_j`, iterated from `C_i + B_i` in exact rationals, and the response time is `R + J_i`. The iteration stops at the fixpoint or as soon as `R + J_i` exceeds `D_i`, so it terminates with no iteration cap. Deadlines beyond the period use the busy-period extension (Lehoczky). |
 | RT-5 | **EDF.** EN-7 runs the processor-demand test (Baruah, Rosier and Howell) with Quick Processor-demand Analysis (Zhang and Burns): utilization above 1 fails, and otherwise the demand bound `dbf(t) = Σ_i max(0, ⌊(t − D_i) / T_i⌋ + 1) · C_i` must not exceed `t` at any absolute deadline up to the synchronous busy-period length. |
 | RT-6 | **Mixed criticality.** EN-7 runs AMC-rtb (Baruah, Burns and Davis): low-mode response times with `C(LO)`, high-mode response times with `C(HI)` over higher-priority `HI` tasks, and the mode-change bound that charges higher-priority `LO` tasks only up to the low-mode response time. A low-mode miss is a miss. AMC-rtb is sufficient and not necessary, so a high-mode criterion that fails settles `inconclusive`, `SufficientTestFailed` (V-6). |
@@ -375,9 +375,9 @@ analysis, which QSL runs natively as engine EN-7.
 
 **Example.** Task set `Ctl` under fixed priority, priorities by period, with
 `(C, T = D)` of `(1, 4)`, `(2, 6)` and `(5, 12)` ms. RT-4 gives response
-times 1, 3 and 12 (the third iterates 5, 9, 12, 12), so `schedulable Ctl`
+times 1, 3 and 12 (the third iterates 5, 9, 12, 12), so `schedulable CtlFp on Ctl under fixed_priority;`
 settles `proved` with the fixpoints `(1, 3, 12)` as evidence; utilization is
-exactly 1, and `under edf` is also `proved`. With `C = 6` for the third task,
+exactly 1, and `schedulable CtlEdf on Ctl under edf;` is also `proved`. With `C = 6` for the third task,
 its RT-4 iterates are 6, 10 and 13, and 13 exceeds its deadline 12, so the claim settles `refuted` with job 0 and those iterates as evidence; under EDF the utilization is 13/12 and the claim is `refuted`.
 
 ### 13. Hybrid dynamics
