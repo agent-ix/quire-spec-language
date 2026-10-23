@@ -77,6 +77,33 @@ different order does not count as a different state.
   protocol instance is live, and treat QSpec FR-171's spawn ordinal as trace
   data that replay recomputes.
 
+### The `retire` predicate
+
+The `retire` predicate `p` of `lifetime until(p)` holds for an instance over
+the names in scope and the model observation (ADR-027 ST-15, QSpec FR-428).
+Its names in scope are the role's instance binder, of type `Reference<T>`
+for `role r each T`, the protocol captures and constants (QSpec FR-464,
+stage `role-lifetime`).
+
+- S3 SHALL check `p` through the clause checker over those names with the
+  model observation in scope, and SHALL admit in it every model-state read
+  a state clause admits (FR-104): a field read through the instance binder
+  or another reference-typed value, an explicit dereference, a navigation or
+  reachability over a relationship end, and a `lookup` or `allInstances`
+  read of a population. No rule of FR-218 or FR-381 that bars model state
+  applies to `p`.
+- A population that `p` reads SHALL be named by its qualified name through
+  the alias of the domain package that declares it, as in a state clause
+  (`M::jobs`, QSpec FR-153), and S3 SHALL resolve it to that package's population. A name
+  that resolves to no population of the package SHALL refuse with
+  `missing_declaration`/`missing-name` at the name, retaining `role` and
+  `name`.
+- The protocol system SHALL evaluate `p` at each state for each live
+  instance of the role, over that state's model observation, and its read
+  footprint is FR-216's (ADR-027 FT-1): the fields it reads for each object
+  of the universe, the membership of each population it reads, and
+  `role(r)`.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -86,6 +113,7 @@ different order does not count as a different state.
 | FR-208-AC-3 | With lifetime `workflow`, every live instance retires in the `finish` step, which removes the protocol instance with its role instances, so the state after `finish` holds none. With lifetime `scope`, an instance retires in the step after which the last `by r` node of its region is unreachable from every live thread, and no `retire` step exists. | Test (TC-653) |
 | FR-208-AC-4 | Under `activation on each` with protocol instances 0 and 1 live and `spawn` enabled for `w1` in each, the two `spawn(r, w1)` steps have different transition identities that differ in the instance ordinal and hold no `thread` member; the same holds for the two `retire(r, w1)` steps. | Test (TC-653) |
 | FR-208-AC-5 | A channel `from r to c` with `r` replicated, `max 2` and two live instances gives two `send` steps whose identities name `w1` and `w2`; a channel `from c to r` gives two `receive` steps likewise; with an empty universe a thread at the `send` waits with `NoRoleInstance{r}`. | Test (TC-653) |
+| FR-208-AC-6 | In FR-216-AC-6's protocol, `role w each M::Worker from workers max 2 lifetime until(w.done and present(lookup<M::Job>(M::jobs, j) absent empty))`, with `j` a protocol capture of type `Reference<M::Job>`, checks, and `retire(w, w1)` is enabled exactly at the states where `w1.done` holds and `j` is a member of `jobs`; the same predicate with `M::absent` in place of `M::jobs` refuses `missing_declaration`/`missing-name` at `absent`, retaining `role` and `name`. | Test (TC-653) |
 
 ## Dependencies
 
