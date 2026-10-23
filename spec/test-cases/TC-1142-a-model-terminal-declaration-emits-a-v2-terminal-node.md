@@ -34,8 +34,8 @@ Use FR-126-AC-9's `Counter` unit.
    unit with `terminal Halt using v on Counter any;` in its place.
 4. Edit step 1's `when` node to `mode` `some`, and separately to `condition`
    the empty aggregate; after each edit set `dependencies` to the body's
-   targets, recompute the node key, rewrite the `identity_projection` entry
-   and recompute the `package_id`, and feed the package to the I2 reader.
+   targets, recompute the node key and the
+   `package_id`, and feed the package to the I2 reader.
 
 Tag the tests `#[trace("TC-1142", "FR-411-AC-n")]` with the AC each step
 backs.
