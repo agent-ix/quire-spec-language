@@ -80,3 +80,9 @@ correct.
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
 | FND-005 | medium | The cross-check table has no row for cvc5 `inconclusive`. A cvc5 `inconclusive` with Z3 `Proved` or `Refuted` is a disagreement, but the table does not say whether it settles `inconclusive` with `CrossCheckDisagreement { primary: Inconclusive, .. }`, as QSpec #412's `primary` enum allows, or with cvc5's own cause. The table is also silent on whether a certified proof with Z3 `Inconclusive` counts as a disagreement. Add the cvc5-`inconclusive` row, and state the outcome to match QSpec #412 (SR-16250 FND-003). | spec/functional/FR-290-settle-plugin-results-as-typed-terminal-records.md (cross-check table) | missing-requirement |
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | 0c39ff1f: the cross-check table adds "`inconclusive` / `Proved` or `Refuted` -> `CrossCheckDisagreement { tool, primary: Inconclusive, cross_check }`" and "`inconclusive` / `Inconclusive` -> cvc5's `inconclusive` with its own cause, with no `cross_check`". The certified row now names `Proved`, `Refuted` or `Inconclusive`. The table is "QSpec FR-349's cross-check table (STD-423), row for row". Checked row by row against #412 4bae564d: all seven rows match, and QSL adds the absent-cross-check row from FR-349's prose. FR-290-AC-16 and TC-774 step 12 cover the new rows. |
