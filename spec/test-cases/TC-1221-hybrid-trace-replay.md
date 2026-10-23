@@ -14,7 +14,7 @@ Verify static replay, exact replay and the settlement each gives, for a
 trace from a `solver-inconclusive` cause and from a provider's `refuted`
 entry.
 
-Scope: FR-450-AC-1 to FR-450-AC-6.
+Scope: FR-450-AC-1 to FR-450-AC-8.
 
 ## Test Procedure
 
@@ -33,6 +33,11 @@ provider, each returning a scripted entry with a scripted `HybridTrace`.
 5. Replay AC-2's trace against each claim FR-450-AC-5 lists, and statically replay the guard calling the recursive function.
 6. Replay each `Bounce` trace FR-450-AC-6 lists, with and without
    `fair Up;`.
+7. Replay the `loop_to` 0 point lasso from AC-6 against
+   `eventually [999999, 1000000] holds(h.x = 2)` from a provider's `refuted`
+   entry with `work_units` 100000.
+8. Statically replay the `Up`-to-`Down` point trace over AC-8's `Bounce`
+   variant, first with `work_units` 100 and then with `work_units` `u64::MAX`.
 
 Run each step through both fixture providers.
 
@@ -56,4 +61,18 @@ Tag the tests `#[trace("TC-1221", "FR-450-AC-n")]`.
 - Step 6: `Reproduced` with and without the fairness constraint;
   `NotReproduced` at `Loop` for `loop_to` 1 and at `Jump` for the `x = 1/2`
   trace; the `loop_to` 2 trace refused at `/loop`.
+- Step 7: the 2-second lasso requires at least 500,000 `ClaimSegment`s to
+  reach the interval's upper endpoint at 1,000,000 seconds. At
+  `work_units` 100000, the meter cannot cover all segment charges and
+  exhausts before deciding the formula; replay therefore returns
+  `HybridReplayRefusal::ResourceExhausted{counter: WorkUnits}` and the item
+  settles `incomplete`, `LimitReached{limit: work_units, value: 100000,
+  setting: accounting.work_units}`, with no verdict or counterexample.
+- Step 8: at `work_units` 100, static replay returns
+  `HybridReplayRefusal::ResourceExhausted{counter: WorkUnits}` and the item
+  settles `incomplete`, `LimitReached{limit: work_units, value: 100,
+  setting: accounting.work_units}`, with no verdict or counterexample; under
+  `u64::MAX`, the `Int[0, 20000]` measure admits 20,000 recursive edges
+  (20,001 recursive call expansions), the call completes on the explicit stack,
+  static replay returns `Consistent`, and no stack overflow occurs.
 - Both fixture providers give the same outcomes.
