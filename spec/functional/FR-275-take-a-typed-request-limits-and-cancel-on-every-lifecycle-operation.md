@@ -47,7 +47,7 @@ qualification runner call it. The driver-owned operations `lower`, `generate` an
 | `monitor` | `&CheckedPackage`, clause selections, a trace document | `Staged<MonitorOutcome>` | FR-283 |
 | `replay` | `ReplayRequest` with its byte provision | `Staged<ReplayResult>` | FR-098 |
 | `inspect` | a package, outcome or graph, and a view selector | `Staged<View>` | FR-297 |
-| `render` | an outcome or `View`, and the source byte provision | `Staged<Rendered>`, the rendered bytes | FR-298 |
+| `render` | an outcome or `View`, the output form, and `RenderSources`, the source byte provision | `Staged<Rendered>`, the rendered bytes | FR-298 |
 
 Each operation also takes its limits value (FR-277) and `&Cancel` (FR-276).
 A failure is `StageFailure<C>` with the operation's own cause type `C`
