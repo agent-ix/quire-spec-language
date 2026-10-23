@@ -143,3 +143,31 @@ reported where none occurred. None of the findings makes a `proved` result
 unsound. Fix FND-001 to FND-009 in this PR. The lows may be fixed or
 deferred. Merge origin/main (#1288) into the head before merging, and
 retarget #1287's AC-4 test from `Slot` to `Tally`.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-015 | medium | The new rule for models that stutter at a non-terminal state throws away real counterexamples. CG sends a model to replay "only when every stutter step is at a terminal state". A base or Unrolling model must still reach `depth` after its failing position `p`, and the solver may take the stutter there at a non-terminal copy. Example: over `Counter`, `always holds(c.value <= 1)` with `InductionBase{depth: 3}` can return 0, 1, 2, then a stutter at 2, while `inc` is enabled at 2. The rule rejects that model, although its prefix to position 2 is a counterexample (CX-1, UE-3), and the false item can settle V-6 `InductionNotClosed`. "A base or step query that has only such models" also presumes that CG enumerates every model, which no rule states. Fix: cut the model at its first failing position, and apply the terminal check only to stutter steps before it. Say how CG gets another model or settles after the first spurious one, and note that a satisfiable step query is `InductionNotClosed` whatever its model. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:208-220 |
+| FND-016 | medium | "The replay facade's transition enumeration" is not a public `qsl-replay` entry. FR-128 enumerates transition identities only inside a deadlock replay. FR-059 and FR-060 let CG call QSL only through `qsl-replay`'s facade from its `replay` module, so CG has no named function that returns whether a concrete state has an enabled transition. Fix: name the facade entry and its signature (for example, `enabled_transitions(subject, state)`) and give its FR, or have `replay_model_trace` read a non-terminal stutter as a distinct no-candidate result. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:211-216; spec/functional/FR-128-replay-a-model-counterexample.md:172-174 |
+| FND-017 | medium | The postcondition failure of an operation that declares a result does not follow FR-120's pair rule. FR-120 evaluates a candidate's (candidate, result) pairs in ascending typed-JCS order of the result, and evaluates a pair only when no earlier pair was accepted. An undefined clause on a pair after an accepted pair therefore yields no `ContractUndetermined`, so UE-6 does not refute and EN-1 and replay never see it. FR-315 counts any pair, in value-domain order, so it can report refutations that EN-1 never reaches and replay cannot reproduce. Fix: print the failure for a pair conjoined with "no earlier pair of that candidate accepted", with the earlier pairs in FR-120's result order. Or state the difference and make it UE-6's rule. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:164-172, :240-242, :333-339; spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:451-466 |
+| FND-018 | low | The live-copy guard for a TP-2 claim's atom failures has no printed form. `(and (not h<p>) F)` is pinned only for precondition and postcondition failures. For an atom the text says "only at a live copy" in words, and `eventually[0,u]` needs that guard, or else an atom failure at a copy past the end satisfies the query. Fix: print every atom failure under false-extension as `(and (not h<p>) F)` too. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:325-328, :344-347 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-22 now expects instances `d` then `c`, FR-125's universe-list order (FR-125-AC-10). |
+| FND-002 | fixed | The Results bullet prints the postcondition part as a disjunction over result values with no result constant, and `parameter-domain` covers a result with no finite domain. AC-24 is the vector. The failure semantics of the new rule raise FND-017. |
+| FND-003 | fixed | The new `field-domain` row 10 refuses an expanded application that writes a field with no finite domain, and AC-24 refuses `id: Integer` at `c.id`. |
+| FND-004 | fixed | Every precondition and postcondition failure under false-extension prints as `(and (not h<p>) F)`. It is sound: a live copy is reachable, and a copy past the end is excluded. |
+| FND-005 | fixed | `Unrolling{depth}` with `depth < u` for `eventually[0,u]` refuses `query-kind` (row 3, AC-17), and the violation reads `0..=u`. |
+| FND-006 | fixed | The step assertion is exactly `(and (= h<i+1> (or h<i> T)) (or h<i+1> D))`, and terminality is `(not (or E1 ... En))` with single-term collapse. It is equivalent to the earlier reading, and AC-17 pins it. |
+| FND-007 | fixed | The candidate order is defined: written fields in (object, field) order, values in value-domain order, absent first, pairs candidate-major. |
+| FND-008 | fixed | The completeness cost (IV-7) and a CG-side rule are stated. The new rule raises FND-015 and FND-016. |
+| FND-009 | fixed | Optional-field equality `(and (= P<k> P<j>) (or (not P<k>) (= V<k> V<j>)))` is used for the stutter, the frame and distinctness. AC-25 is the vector. |
+| FND-010 | fixed | The stutter conjuncts are in declaration order with the later copy first, `P`'s failure stands last among a position's disjuncts, and item 7's conjunct forms are pinned. |
+| FND-011 | fixed | A TP-2 claim's atom failures read `0..=min(depth, u)` only. |
+| FND-012 | fixed | The code set of `SmtEncodingRefusal` is closed and includes `refinement-any-row` and `refinement-open-argument`. `instance-binding` is for hyper only, and the single-subject check is `instance-type`. |
+| FND-013 | fixed | The `too-large` measures are ordered rows 15 and 17 of the table, and the hyper order lists its `too-large` checks. |
+| FND-014 | fixed | AC-23 names one item with `over (c: Counter)`, and AC-17 and TC-900 step 9 use `always[0,3]`. |

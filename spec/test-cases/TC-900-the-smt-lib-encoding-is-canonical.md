@@ -13,9 +13,10 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-25.
+Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-27.
 
-Steps 8 and 10 read scripts with a `QF_LIA` solver; every other step reads
+Steps 8, 10 and 18 read scripts with a `QF_LIA` solver, step 18 with
+replay as well; every other step reads
 the printed script.
 
 ## Test Procedure
@@ -58,6 +59,10 @@ the printed script.
     false-extension query of FR-315-AC-17 with the written `id: Integer`
     field.
 17. Encode `InductionStep{depth: 1}` over FR-315-AC-25's `Holder`.
+18. Read the two `Counter` base models FR-315-AC-26 describes by the rules
+    of Reading a satisfiable model, and replay what they yield.
+19. Encode `Unrolling{depth: 1}` for `always holds(t.tally < 3)` over
+    FR-315-AC-27's `Tally` with `peek`.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -101,3 +106,9 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
   result constant; the `id` query refused `field-domain` at `c.id`.
 - Step 17: the stutter and distinctness printed with the optional field
   equality FR-315-AC-25 gives.
+- Step 18: the first model yields the prefix `0, 1, 2`, which replays to
+  `refuted`; the second is refused by `replay_model_trace` as a stutter loop
+  on a non-terminal state, read as no candidate, and the base query settles
+  `InductionNotClosed{depth}`.
+- Step 19: `peek`'s postcondition failure `(or U1 (and (not A1) U2))` and
+  postcondition part `(or A1 A2)`, results `false` then `true`.

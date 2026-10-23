@@ -165,7 +165,8 @@ the single-subject check of an instance's object is `instance-type`.
   candidate with each value of the result's domain, and a candidate is a
   successor when some pair satisfies the postcondition. The encoding SHALL
   print the postcondition part of the disjunct as the disjunction, over the
-  result values in the result type's value-domain order, of the conjunction
+  result values in FR-120's result order (ascending typed canonical JCS
+  bytes of the value), of the conjunction
   of the postcondition clauses read with that value as a literal for
   `result`. It declares no constant for a result. For an operation with no
   result the postcondition part is the conjunction of its postcondition
@@ -205,19 +206,45 @@ the single-subject check of an instance's object is `instance-type`.
   satisfiable at every depth by stuttering at value 0, so its `k`-induction
   never closes and the item is settled by EN-1. The encoding accepts this
   loss of completeness and keeps soundness.
-- **A model that stutters at a non-terminal state.** A satisfiable query is
-  not a refutation by itself. A model whose stutter is taken at a copy that
-  is not terminal is a path of the over-approximation only, and it is no
-  counterexample candidate. CG's SMT backend SHALL find each stutter step
-  of a model and send the model to FR-128's replay only when every stutter
-  step is at a terminal state. CG decides terminality of a concrete state
-  through the replay facade's transition enumeration (FR-128, CX-3), and
-  reads a stutter at a state with an enabled transition as "no candidate",
-  never as `ReplayParity` or `ReplayRefused`. A base or step query that has
-  only such models settles as an undecided query does,
-  `InductionNotClosed{depth}` (V-6). An `Unrolling` query with only such
-  models gives no outcome at that depth. The item settles `refuted` only
-  through FR-128's replay of a counterexample built from a model.
+- **Reading a satisfiable model.** A satisfiable query is not a refutation
+  by itself, because its model may take the stutter where an operation is
+  enabled, a path of the over-approximation only. CG's SMT backend SHALL
+  read a satisfiable `Unrolling` or `InductionBase` model as follows; a
+  satisfiable `InductionStep` model is a counterexample-to-induction and is
+  never replayed.
+  1. CG cuts the model at its **failing position** `p`, the least position
+     at which a disjunct of the negated property holds in the model. Steps
+     after `p` are never read, so a stutter the solver takes after the
+     failure cannot discard the model.
+  2. A stutter before `p` that is followed, still before `p`, by an
+     operation step is at a non-terminal state: the operation step leaves
+     the same state, so its operation is enabled there. CG decides this from
+     the model alone.
+  3. When the failure at `p` is a property of the state alone (a TP-1
+     violation, a deadlock, or a definedness failure), CG SHALL drop every
+     stutter step before `p`. A stutter repeats its state, so the remaining
+     operation steps are a real path from an initial state to the failing
+     state, and that prefix is a counterexample (ADR-018 CX-1, UE-3).
+  4. When the failure is a TP-3 monitor violation, which can depend on
+     positions a stutter adds (IV-7), a model with a stutter of rule 2 is no
+     counterexample candidate. A model whose stutters before `p` form one
+     tail, from a position `q` to `p`, is the lasso of CX-1 with the prefix
+     to `q` and the `terminal-stutter` loop, which CG replays through
+     `qsl_replay::replay_model_trace` (FR-128). That entry already refuses a
+     `terminal-stutter` loop on a state that is not terminal
+     (`invalid_runtime_input`/`invalid-value`), so it is the terminality
+     check, and FR-315 adds no facade entry. CG SHALL read that refusal of a
+     model built by this rule as "no candidate", never as `ReplayParity` or
+     `ReplayRefused`.
+  5. After a model that is no candidate, CG SHALL settle from that query
+     with no further model: a base query gives `InductionNotClosed{depth}`
+     (V-6), and an `Unrolling` query gives no outcome at that depth. It
+     need not ask for another model. This keeps each query to one solver
+     answer and one replay. Every outcome stays sound, because a refutation
+     still needs FR-128's replay. The only cost is completeness, for TP-3
+     items that are not stutter-invariant, which EN-1 settles. A search that
+     blocks the spurious path and asks again is an EN-2 counterexample
+     search, the backend's own (ADR-018 DS-3).
 
 ### Finite behaviours
 
@@ -239,7 +266,7 @@ after it are read by the closed-boundary rule, every atomic predicate false
   read as literals: each written field's constant of copy `i+1` is replaced
   by its value, an absent field's presence by `false`. For an operation that
   declares a result the encoding SHALL read each (candidate, result) pair,
-  candidate-major, the results in value-domain order.
+  candidate-major, the results in FR-120's result order.
 - An application is **enabled** at copy `i` exactly when its precondition
   clauses all hold on copy `i` and some candidate, with some result value for
   an operation that declares one, satisfies all of its postcondition
@@ -336,13 +363,23 @@ after it are read by the closed-boundary rule, every atomic predicate false
     undefined, FR-120's `ContractUndetermined` on a candidate. The encoding
     SHALL print it as `(and <precondition clauses> (or <pair 1> ...
     <pair n>))`, each pair that condition read with the pair's literals,
-    the pairs in the candidate order of Finite behaviours;
+    the pairs in the candidate order of Finite behaviours. FR-120 evaluates
+    a candidate's results in its result order and stops at the first one
+    the postcondition accepts, so an undefined clause on a later result
+    records no finding. For an operation that declares a result, the pair
+    of a candidate's `k`-th result SHALL therefore be printed as
+    `(and (not A1) ... (not Ak-1) Uk)`, `Aj` the conjunction of the
+    postcondition clauses read with that candidate and its `j`-th result
+    (the pair accepted) and `Uk` the failure condition read with the `k`-th;
+    the first result's pair is `U1` alone. SMT then reports exactly the
+    failures EN-1 records and replay reproduces;
     for an application none of whose postcondition clauses holds a
     construct with a definedness condition (a division or modulo, a `value`
     read, a reduction or a range coercion), it prints no term;
   - for the deadlock-freedom item, `P` is undefined at a terminal copy `p`.
-- Under false-extension every precondition and postcondition failure at `p`
-  SHALL be conjoined with `(not h<p>)`, printed as `(and (not h<p>) F)`: a
+- Under false-extension every atom, precondition and postcondition failure
+  at `p` SHALL be conjoined with `(not h<p>)`, printed as
+  `(and (not h<p>) F)`, `F` the failure's term: a
   copy past the end is no reachable state, and a failure there would make the
   query satisfiable with no counterexample.
 - Each failure at `p` reads copy `p` and literals only. It needs no
@@ -753,6 +790,8 @@ impl HyperProductIdentity {
 | FR-315-AC-23 | For the TP-3 item `always (holds(c.value = 3) implies always holds(c.value = 3))` with `over (c: Counter)` over FR-315-AC-1's `Counter` under infinite-trace, `Unrolling{depth: 2}` asserts `0 <= m<i> <= n-1` for each position, `n` the tabulated monitor states with the initial state numbered 0; at position 0 one implication per letter from the initial state, the letter of position 0 implying `m0` at that move's target; and at positions 1 and 2 one implication per tabulated move, `m<i-1>` at its source and the letter of position `i` implying `m<i>` at its target, all after the step assertions. `InductionStep{depth: 2}` asserts no implication at position 0, so `m0` is constrained by its range assertion only. | Test (TC-900) |
 | FR-315-AC-24 | Over FR-315-AC-1's `Counter` with an added operation `isZero(): Boolean` (empty frame, postcondition `post Z { result = (self.value = 0) }`), each step assertion's `isZero` disjunct has the postcondition part `(or Z0 Z1)`, `Z0` being `Z` read with `result` the literal `false` and `Z1` with `true`, and the script declares no constant for the result. With `Counter` given a field `id: Integer` that `inc`'s frame also writes, the false-extension query of FR-315-AC-17, which expands `inc`'s candidates, refuses `field-domain` at `c.id`. | Test (TC-900) |
 | FR-315-AC-25 | Over a `Holder` subject (universe `{s}`, an optional field `held: Int[0, 3]`, initially absent; operation `put` with frame `modifies [held]` and postcondition `present(self.held)`), under infinite-trace, `InductionStep{depth: 1}` for `always holds(present(s.held) or not present(s.held))` prints the stutter between copies 0 and 1 as `(and (= s1.s.held.present s0.s.held.present) (or (not s1.s.held.present) (= s1.s.held s0.s.held)))`, and its distinctness assertion as the negation of that field equality. Two copies with `held` absent therefore agree on `held` whatever their value constants hold. | Test (TC-900) |
+| FR-315-AC-26 | Over FR-315-AC-1's `Counter` under infinite-trace, a model of `InductionBase{depth: 3}` for `always holds(c.value <= 1)` that takes `inc` twice and then the stutter at value 2, where `inc` is still enabled, has failing position 2. CG reads it as the prefix `0, 1, 2`, a counterexample that FR-128 replays to `refuted`, and the stutter after position 2 is not read. For `always (holds(c.value = 0) implies eventually[0,1] holds(c.value = 1))`, a base model that stutters at value 0 and then fails is no candidate: rebuilt as the lasso with the `terminal-stutter` loop at value 0, it is refused by `replay_model_trace` as a loop on a non-terminal state, and the base query settles `InductionNotClosed{depth}`, not `ReplayParity` or `ReplayRefused`. | Analysis (TC-900) |
+| FR-315-AC-27 | Over FR-315-AC-4's `Tally` with an added operation `peek(): Boolean` (empty frame, postcondition `post P { result = (self.tally < 3 and self.next = self.tally + 1) }`), `bump` unchanged, the postcondition failure of `peek` at copy `i` is printed over its one candidate as `(or U1 (and (not A1) U2))`: `U1` and `A1` read with `result` `false` (first in FR-120's result order), `U2` with `true`. `peek`'s disjunct has the postcondition part `(or A1 A2)`. | Test (TC-900) |
 
 ## Dependencies
 
