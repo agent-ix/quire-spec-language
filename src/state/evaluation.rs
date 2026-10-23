@@ -2469,6 +2469,7 @@ fn declaration_root_type(declaration: &w::Declaration, handle: &w::Handle) -> Re
         .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))
 }
 
+#[ix_trace_rs::string_edge]
 fn static_authority_digest_refusal(authority: &StaticAuthority) -> Option<Refusal> {
     let members = [
         (StaticAuthorityMember::Document, &authority.document_digest),
