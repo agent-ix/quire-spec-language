@@ -18,7 +18,7 @@ the V2 reader admits the emitted packages, and that every float source form
 (bit constructors, arithmetic, comparison operators, the reserved intrinsic
 calls and the conversions into and out of a float) checks, lowers and evaluates
 as FR-397 states, with the ill-formed inputs refused. Scope: FR-397-AC-1 to
-FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-20, FR-091-AC-48 and FR-091-AC-49
+FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-22, FR-091-AC-48 and FR-091-AC-49
 (FR-397-AC-9 is TC-917's).
 
 ## Test Procedure
@@ -28,7 +28,7 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-20, FR-091-AC-48 and FR-091-AC-49
    IEEE node.
 2. Compile `keep` and `plain` of FR-397-AC-2; read the lock.
 3. Compile `to_r` of FR-397-AC-3.
-4. Read the packages of steps 1, 3, 6, 9, 10, 13 and 14 through the V2 reader.
+4. Read the packages of steps 1, 3, 6, 9, 10, 13, 14, 16 and 17 through the V2 reader.
 5. Compile a unit with the header `profile w` naming the `ieee_profile`
    identity, once with `add` and once with `plain`.
 6. Parse and compile the bodies of FR-091-AC-48, then each malformed
@@ -37,7 +37,7 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-20, FR-091-AC-48 and FR-091-AC-49
 7. Check `+`, `-`, `*`, `/` and the six comparison operators over unlike
    float widths, unlike rounding modes and float/exact pairs in either order
    (FR-397-AC-6). Check `=`, `!=` over the option, record, tuple and
-   sequence types of FR-397-AC-14 and the unary `-` over a float.
+   sequence types of FR-397-AC-14, the unary `-` over a float and a Boolean.
 8. Compile the six operators over two `Float64[nearest-even]` parameters and
    over two `Float32[nearest-even]` parameters; read each node tree
    (FR-397-AC-12).
@@ -53,7 +53,10 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-20, FR-091-AC-48 and FR-091-AC-49
 13. Check and run the conversions of FR-397-AC-18 (float to exact, and the
     refused pairs).
 14. Compile the functions of FR-397-AC-19; read the lock of each.
-15. Evaluate the state clauses of FR-397-AC-20 through `evaluate_clause_set`.
+15. Evaluate the state clauses of FR-397-AC-20 and FR-397-AC-21 through `evaluate_clause_set`.
+16. Compile and run the negations of FR-397-AC-21; read the `negate` nodes.
+17. Compile the structural comparisons of FR-397-AC-22; read the
+    `structural` nodes and their leaves; run the equality vectors.
 
 ## Expected Results
 
@@ -71,7 +74,8 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-20, FR-091-AC-48 and FR-091-AC-49
    value, and evaluate to exactly their bits.
 7. Every mixed comparison and arithmetic operation refuses
    `ill_typed`/`type-mismatch`; the structural comparisons and the unary `-`
-   refuse `ill_typed`/`operator-ineligible`; `r.x = r.x` checks.
+   over a float check, and the unary `-` over a Boolean refuses
+   `ill_typed`/`type-mismatch`; `r.x = r.x` checks.
 8. `=` is one `numeric_equal` node, `!=` its `not`, `<` and `<=` the
    compositions with `N(a)` and `N(b)`, `>` and `>=` the exchanged
    compositions; no `bit_identical` node; every IEEE node has the law.
@@ -91,4 +95,10 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-20, FR-091-AC-48 and FR-091-AC-49
 14. Each package selects the `ieee_profile` row once and its IEEE node carries
     the law.
 15. The NaN clause is `Completed(true)`, the strict-exact clause is the kernel
-    `Refused` `ieee_not_exact`, and the clause set is `Undecided`.
+    `Refused` `ieee_not_exact`, and the clause set is `Undecided`; the
+    negated-NaN clause is `Completed(true)`.
+16. Each negation is one `negate` node with the law and no mode, and every
+    vector gives the listed bits with no refusal in any mode.
+17. `=` is one `structural.eq` node and `!=` one `structural.ne`, each listing
+    the float leaves with the law `ieee_profile`; every vector gives the listed
+    Boolean.

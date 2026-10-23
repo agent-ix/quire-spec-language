@@ -250,7 +250,7 @@ Each application's `operation` is built by FR-322's rules from its catalog
 entry: `laws` holds one law per role the entry names, `mode` is a value of
 the entry's mode kind, `member` is of the entry's member kind, and `leaves`
 is empty unless the entry names a leaf source. For a leaf source, `leaves`
-is the text-leaf list (Text leaves, below) of the compared type
+is the leaf list (Text leaves, below: its text leaves and float leaves) of the compared type
 (`operand:0`, `inner:0`), or for `result_inner` of the element type of a
 `set`, `bag` or `ordered_set` result. `laws` is `[]`, `mode` is
 `null`, `member` is `null` and `leaves` is `[]` unless the row says
@@ -273,11 +273,12 @@ to `x`'s node.
 | `DecimalNegate` | `unary` | `quire.op.decimal.negate` | | `[ref(e)]` |
 | `Quantity(operator)` | `binary` | `quire.op.quantity.add`, `.sub`, `.mul`, `.div` | | `[ref(l), ref(r)]` |
 | `Ieee(operator)` of width `w` | `binary` | `quire.op.ieee.float32.*` or `quire.op.ieee.float64.*` | law `ieee_profile`; mode `rounding` = the operand types' mode | `[ref(l), ref(r)]` |
+| `IeeeNegate(e)` (unary `-` over a `Float32` or `Float64`) | `unary` | `quire.op.ieee.float32.negate` or `quire.op.ieee.float64.negate` | law `ieee_profile`; no mode | `[ref(e)]` |
 | `IeeeCompare(operator)` over two operands of one float type (`=`, `!=`, `<`, `<=`, `>`, `>=`) | `call` for `quire.op.ieee.numeric_equal` and `quire.op.ieee.total_order`; `unary` for `quire.op.boolean.not`; `binary` for `quire.op.boolean.and` and `.or` | the Boolean composition of FR-397's Comparison bullets, each operand node shared by every use; `bitIdentical` appears in no comparison | `numeric_equal` and `total_order`: law `ieee_profile`, no mode; `boolean.*`: none | `numeric_equal`, `total_order` and `boolean.*` nodes take their operands in the order the composition names them |
 | `IeeeIntrinsic` `sqrt(x)`, `fma(a, b, c)` of width `w` (`quire::value::ieee::sqrt`, `quire::value::ieee::fma`) | `call` | `quire.op.ieee.float32.sqrt`, `.fma` or `quire.op.ieee.float64.sqrt`, `.fma` | law `ieee_profile`; mode `rounding` = the operand types' mode | `[ref(x)]` or `[ref(a), ref(b), ref(c)]` |
 | `IeeeIntrinsic` `numericEqual(a, b)`, `totalOrder(a, b)`, `bitIdentical(a, b)` | `call` | `quire.op.ieee.numeric_equal`, `quire.op.ieee.total_order`, `quire.op.ieee.bit_identical` | law `ieee_profile`; no mode | `[ref(a), ref(b)]` |
 | `Order(operator, kind)` (`<`, `<=`, `>`, `>=`) | `binary` | `quire.op.<f>.lt`, `.le`, `.gt`, `.ge`, where `<f>` is `integer`, `rational`, `decimal`, `enum`, `text` or `quantity` for `kind` `Integers`, `Rationals`, `Decimals`, `Enums`, `Texts`, `Quantities` | for `text`: law `text_profile`, mode `text_profile` = the operands' profile | `[ref(l), ref(r)]` |
-| `Equality(operator, schedule)` (`=`, `!=`) | `binary` | `quire.op.<f>.eq` or `.ne` for an operand family `<f>` of `boolean`, `integer`, `rational`, `decimal`, `text`, `enum`, `quantity`, `reference`, `string`, `uuid` or `timestamp`; `quire.op.structural.eq` or `.ne` for an `option`, record, tuple, union or collection operand | for `text`: law `text_profile`, mode `text_profile`; for `string`, `uuid` and `timestamp`: no law, no mode, no member and no leaves; for `structural`: leaves `operand:0`, the compared type's text-leaf list | `[ref(l), ref(r)]` |
+| `Equality(operator, schedule)` (`=`, `!=`) | `binary` | `quire.op.<f>.eq` or `.ne` for an operand family `<f>` of `boolean`, `integer`, `rational`, `decimal`, `text`, `enum`, `quantity`, `reference`, `string`, `uuid` or `timestamp`; `quire.op.structural.eq` or `.ne` for an `option`, record, tuple, union or collection operand | for `text`: law `text_profile`, mode `text_profile`; for `string`, `uuid` and `timestamp`: no law, no mode, no member and no leaves; for `structural`: leaves `operand:0`, the compared type's leaf list (its text leaves and float leaves) | `[ref(l), ref(r)]` |
 | `Coerce(e, interval)` (an integer admitted into an `Int[..]` that does not contain its type) | `convert` | `quire.op.numeric.narrow` | member `type_argument{declaration: T(Int[interval])}` | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand type is an exact numeric type other than the target | `convert` | `quire.op.numeric.convert` | member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand is a quantity | `convert` | `quire.op.quantity.convert` | member `type_argument` of the target type node; mode `rounding` = `exact` (Quantity conversion) | `[ref(e)]` |
@@ -386,7 +387,7 @@ keys to one id whichever family lowers the clause that holds it.
 
 ### Text leaves
 
-`check` SHALL build the **text-leaf list** of a type by walking it from an
+`check` SHALL build the **leaf list** of a type (the text leaves and the float leaves; the "text-leaf list" elsewhere is this list) by walking it from an
 empty path and appending leaves in the order the walk reaches them. The walk
 keeps the **open composites**: each declared record, tuple or union whose
 fields, positions or member payloads it is walking, with the number of
@@ -394,18 +395,22 @@ segments the path had when the walk entered it. At a type `U` and a path `p`:
 
 1. `Text[min, max; profile]`: append the text leaf
    `{path: p, laws: [the text_profile law], mode: {kind: "text_profile", value: profile}}`.
+   `Float32[m]` or `Float64[m]`: append the float leaf
+   `{path: p, laws: [the ieee_profile law], mode: null}`; the leaf is the same
+   whatever the rounding mode `m`. A **leaf type** is a `Text` type or a float
+   type.
 2. `Option<V>`, or `K<V>` or `K<V>[min, max]` for a collection kind `K`:
    walk `V` at `p` + `inner`.
 3. A declared record, tuple or union `C` that is open, entered at `d` segments:
    append the **recursion leaf**
-   `{path: p + "recursion:d", laws: [], mode: null}` when a `Text` type is
+   `{path: p + "recursion:d", laws: [], mode: null}` when a leaf type is
    reachable from `C`, and nothing otherwise. The walk does not enter `C`
    again.
 4. A declared record `C` that is not open: open `C` at the length of `p`;
    for each field in declaration order, walk a required field `f: V`'s `V`
    at `p` + `field:f` and an optional field `f: V?`'s `V` at `p` + `field:f`
    + `inner`; then close `C`. A record, tuple or union `C` from which no
-   `Text` type is reachable is not entered, here or in steps 5 and 6, and
+   leaf type is reachable is not entered, here or in steps 5 and 6, and
    appends nothing.
 5. A declared tuple `C` that is not open: open `C` at the length of `p`;
    walk each position `n`'s type, in position order, at `p` + `position:n`;
@@ -417,9 +422,9 @@ segments the path had when the walk entered it. At a type `U` and a path `p`:
    declared member, independently of any value's active member.
 7. Any other type: nothing.
 
-A `Text` type is **reachable** from `C` when some finite sequence of steps
+A leaf type is **reachable** from `C` when some finite sequence of steps
 2, 4, 5 and 6, applied without regard to open composites, leads from `C` to a
-`Text` type. A type alias walks as its resolved type (FR-091). `d` is
+leaf type. A type alias walks as its resolved type (FR-091). `d` is
 written as its canonical decimal string, as FR-322 writes `position:n`.
 
 `member:m` contains the exact declared member identifier, with the same
@@ -431,7 +436,7 @@ carries no union node key, `VariantId`, member ordinal or active-value tag.
 Member identity remains (union identity, member identifier), as FR-319
 requires. The type and its identity remain bound by the application's
 operand/result types; the leaf list does not identify the whole type.
-Two union types can therefore have the same text-leaf list.
+Two union types can therefore have the same leaf list.
 
 An optional field's path passes through `inner` because the field's slot
 holds a value of its `Option<V>` node: FR-092 types the field by that node,
@@ -439,17 +444,17 @@ and an omitted or `null` slot is a literal of it (Non-application nodes).
 So `f: V?` and `f: Option<V>`, which hold one set of values, have one leaf
 path.
 
-A recursion leaf stands for every text leaf below its path. For a
+A recursion leaf stands for every leaf below its path. For a
 recursion leaf whose path is `q` + `recursion:d`, let `r` be the first `d`
 segments of `q`. The value at `q` has the type of the value at `r`: the
-composite `C`, entered at `r` and reentered at `q`. Each text leaf at a path
+composite `C`, entered at `r` and reentered at `q`. Each leaf at a path
 `r` + `s` therefore has a counterpart at `q` + `s` with the same laws and
 mode. The **expanded leaf set** of a list is the least set that holds each
-of the list's text leaves and, for each of its recursion leaves and each
-text leaf in the set at a path `r` + `s`, that leaf re-rooted at `q` + `s`.
-Every text leaf of the type's unfolding is in the set: a path through a
+of the list's text and float leaves and, for each of its recursion leaves and each
+leaf in the set at a path `r` + `s`, that leaf re-rooted at `q` + `s`.
+Every leaf of the type's unfolding is in the set: a path through a
 reentry at `q` is `q` + `s`, and `r` + `s` is a shorter path to a leaf of the
-same type, so induction on path length ends at a text leaf of the list.
+same type, so induction on path length ends at a leaf of the list.
 
 The list has these properties:
 
@@ -462,24 +467,27 @@ The list has these properties:
   Because rule 3 ends each path at its first reentry, a recursive type's
   walk is as deep as its composites' nesting.
 - **Lossless.** The expanded leaf set is computed from the list alone, so
-  the list determines every text leaf of the type's unfolding, with its path
-  and profile. Two types whose text leaves differ in any path or profile
+  the list determines every leaf of the type's unfolding, with its path
+  and law. Two types whose leaves differ in any path, law or profile
   therefore have different lists.
 - **Without recursion.** A walk that reaches no open composite appends no
-  recursion leaf. Its text leaves use `inner` for an optional field and
+  recursion leaf. Its leaves use `inner` for an optional field and
   `member:<identifier>` for a union payload; these paths await a QSpec
   FR-322 extension (ADR-013 QC-24). A recursive composite that reaches no
-  `Text` type, such as FR-092's `List`, adds no leaf.
+  leaf type, such as FR-092's `List`, adds no leaf.
 - **Independent of keys and group order.** `d` counts path segments. It is
   not a FR-092 group ordinal, and the list names no node, so an application
   node's leaves do not depend on its operand types' recursion group order or
   keys, and they name no member of that group.
 
-A recursion leaf carries no law: each text leaf it stands for carries its
-own. A type from which a `Text` type is reachable has at least one text leaf
-in its list, because the shortest walk from the type to a `Text` type
+A recursion leaf carries no law: each leaf it stands for carries its
+own. A type from which a leaf type is reachable has at least one leaf
+in its list, because the shortest walk from the type to a leaf type
 enters no composite twice. The `missing-selection` refusal of a node whose
-leaf needs the text-profile law therefore holds for recursive types too.
+leaf needs the text-profile law or the IEEE profile law therefore holds for
+recursive types too. A float leaf carries the lock's `ieee_profile`
+`DefinitionRef`, which the package selects because it declares a float
+(FR-397).
 
 Each appended leaf, text or recursion, costs one unit of the check stage's
 node limit (`CheckingLimits`), because the list is bounded per path but not
