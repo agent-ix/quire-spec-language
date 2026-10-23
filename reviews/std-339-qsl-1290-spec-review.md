@@ -98,3 +98,13 @@ and the new id are sound.
 
 FND-001 and FND-002 need a decision: either AC-12 binds only Begin, or #1269
 changes `call_supplied`. FND-003 to FND-005 are wording fixes.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | At d3b96b93, FR-262 defines the pre-admitted Begin: the caller admits under its own run, and Begin admits nothing, polls no handle and returns no admission failure. FR-401 Behaviour 3 says a closure built over already-admitted arguments admits nothing at Begin. `call` and `evaluate` begin through it. |
+| FND-002 | fixed | FR-262-AC-12 binds only `quire-eval`'s Begin with contract admission. `call_supplied` admits under the caller's run alone and then uses the pre-admitted Begin, which matches #1269 at 99b62b56 (lead default for `call_supplied`). |
+| FND-003 | fixed | The `Compare` vector in FR-401-AC-9 is `call` only, at `ChargePoint::FunctionCall`. The population-query vectors cover `call` and `evaluate`, and the n-th-poll vector stops at the n-th charge of the suite's prefix. This matches `equality_matrix.rs`, `invariants.rs` and `model_reference_queries.rs`. |
+| FND-004 | fixed | Behaviour 4 has two scoped SHALLs: the steppable evaluator dispatches at every call site, and the std reference evaluator dispatches at the root application and at a child request. |
+| FND-005 | fixed | "keep the result", "as they did before the interface" and "FR-405's switch replaces it" are gone. |
