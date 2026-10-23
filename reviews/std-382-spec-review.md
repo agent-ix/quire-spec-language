@@ -72,3 +72,25 @@ cut step "not enabled", which contradicts the engine's enabledness ruling
 that the fairness check reads. FND-002 leaves the new rejections unordered
 and their locus unchecked. A main merge is needed (clean), and the FR-338 AC
 table conflicts textually with #1311.
+
+## New findings (disposition pass 1)
+
+Re-checked at 31db6cff (fix commits eb8608cf, 7d3b7827, a6cae898 and the
+renumber 31db6cff; origin/main is an ancestor; `make check-spec-validation`
+exits 0; FR-338-AC-21, AC-22 and TC-1230 are unique across the 79 open PRs).
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-003 | medium | No vector can fail for a replay that reads a cut step as not enabled. FR-217-AC-8's added FR-209-AC-7 lasso cannot tell the two readings apart. `activate` is in no fairness class (FR-212 "Classes"), so the fairness check never reads whether it is enabled, and the lasso is fair under either reading. The ruling matters on the store side. A cut store belongs to its `parallel` branch's `fair weak whole` scheduler class (FR-212), and FR-227 now reads it as enabled in the fairness check, but FR-227-AC-5 has no lasso. Fix: add an FR-227 vector (TC-1230) with a lasso through a bound-limited state in which a branch's only enabled step is a cut store that the loop never takes. Example: FR-228-AC-2's `w`/`r` program under `ra` with `max_messages` 1, where `w`'s store is cut and `r` loops on reading 0. Replay must refuse it `invalid_runtime_input`/`invalid-value` as unfair under `w`'s scheduler constraint, as the engine judges it. | spec/functional/FR-217-replay-a-protocol-counterexample.md:143; spec/functional/FR-227-carry-and-replay-a-weak-memory-counterexample.md:80-82,111; spec/functional/FR-212-derive-scheduler-fairness-with-an-adversarial-opt-out.md:79-88 | missing-requirement |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-217 and FR-227 now say that the cut `activate` or store is enabled but left unexpanded. Replay refuses a step that takes it and reads it as enabled wherever it reads enabledness, the lasso fairness check included, as FR-209 and FR-225 do. The contradiction is gone. The discriminating vector is FND-003. |
+| FND-002 | fixed | FR-338 places both bound rules after a reached state's `BadState` checks and before its successors' membership, with the first failing state in breadth-first expansion order reported. AC-21, AC-22 and TC-1230 name the state. Recomputed: the depth-2 `tso` state with `x` and `y` buffered, and the depth-2 state with two `activate(Tick)`, are each the unique shallowest limited state. Under `ra` with `max_messages` 1 the first store is cut at the initial state. |
+| FND-003 | still-open | New in this pass. It needs a fix round. |
+
+Verdict after disposition pass 1: FND-001 and FND-002 are fixed. The
+re-derived FR-338-AC-21 and AC-22 states hold. Not mergeable until FND-003 is
+fixed.
