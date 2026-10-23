@@ -44,7 +44,9 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   `ambiguous_declaration`/`ambiguous-name`, and the nominal-admission-fault
   cause `runtime_invariant`/`established-invariant-broken`.
 - The duplicate dimension or unit name cause returns
-  `ambiguous_declaration`/`ambiguous-name`, the unresolved unit dimension
+  `ambiguous_declaration`/`ambiguous-name`, the dimension name shared with a
+  domain package cause `conflicting_declaration`/`duplicate-declaration`, the
+  unresolved unit dimension
   name cause `missing_declaration`/`missing-name`, the zero-denominator
   cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale
   limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph
