@@ -71,6 +71,9 @@ QSL supplies their types and categories.
   (FR-128), or the `ReplayRefusal` that stopped it.
 - For a cancelled run: the `CancelCause` its `Cancel` handle carries
   (FR-276).
+- For an SMT proof of a temporal item: the `SmtProofOutcome` CG's SMT map
+  hands over, the item's FR-338 `CertificateRequest`, and the request's
+  FR-245 `CertificateCheckLimits` and FR-276 `Cancel` handle.
 
 ## Outputs
 
@@ -104,6 +107,41 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 //   Cancelled { source: CancelCause }, written cancelled{source} (QSpec FR-331),
 //   source the CancelCause wire name: requested or deadline (FR-276).
 ```
+
+An SMT proof of a temporal item reaches the settlement map through this
+handoff, a type and an entry of the `qsl-replay` facade:
+
+```rust
+/// The proof bases an SMT backend reports (ADR-018 V-2, V-3).
+pub enum SmtProofBasis {
+    BoundedComplete { depth: u64 },
+    Inductive { depth: u64 },
+}
+
+/// What CG's SMT map hands QSL for an SMT proof of a temporal item: the
+/// proof's basis and the solver's certificate when one came with it.
+pub struct SmtProofOutcome {
+    pub basis: SmtProofBasis,
+    pub certificate: Option<SmtProofCertificate>,   // FR-314
+}
+
+pub fn settle_smt_proof(
+    request: &CertificateRequest<'_>,   // FR-338: the item, its recompiled package and re-admitted subject
+    outcome: &SmtProofOutcome,
+    limits: &CertificateCheckLimits,     // FR-245: the request's actual limits
+    cancel: &Cancel,                     // FR-276: the request's actual handle
+) -> TerminalValue;
+```
+
+CG calls `settle_smt_proof` from its `replay` adapter module, as it calls
+FR-182's `settle_hyper_smt` for an HP-2 item. An SMT proof of a temporal
+item settles through `settle_smt_proof` and through no other entry, so no
+SMT proof value is built outside QSL's certificate check. CG's SMT map
+constructs every other SMT outcome of a temporal item (V-5,
+`InductionNotClosed`, V-7 and replayed counterexamples, ADR-018 DS-2).
+`SmtProofBasis` names only the two SMT bases, so a `Checks` or `Exhaustive`
+basis cannot reach FR-314's checker. A refinement item's SMT records settle
+through FR-146.
 
 The certificate types and checkers are FR-338's and FR-339's. Their closed
 `TemporalCertificateCheck` result has four alternatives: `Accepted`,
@@ -185,13 +223,18 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 - The checkers SHALL be FR-338's `check_closure` and FR-339's
   `check_components`; a rejection names the rule and the product state at
   which it failed.
-- For an SMT `BoundedComplete` or `Inductive` result that CG's SMT map
-  hands it, the settlement map SHALL run FR-314's `check_smt_proof` on the
-  result's `SmtProofCertificate` and settle `proved` with
+- For an `SmtProofOutcome` that CG's SMT map hands it, `settle_smt_proof`
+  SHALL run FR-314's `check_smt_proof` on the request, the outcome's
+  `basis` and its `SmtProofCertificate`, and settle `Proved{basis, ..}` with
+  `basis` the outcome's `BoundedComplete{depth}` or `Inductive{depth}`, and
+  with
   `certification: Certified` when it returns `Verified`,
   `Inconclusive(CertificateRejected{rule, at})` when it rejects, and
   `proved` with `Uncertified` when it returns `Unverifiable` or the
-  result carries no certificate (ADR-018 PC-6). The map SHALL supply the
+  outcome's `certificate` is `None` (ADR-018 PC-6). With no certificate it
+  SHALL run no check and charge nothing. When `check_smt_proof` returns
+  `Fault`, it SHALL settle `failed`, `TerminalValue::Failed` (the table's
+  row). The map SHALL supply the
   request's actual `CertificateCheckLimits` and `Cancel` handle to
   `check_smt_proof` and `check_refinement_smt_proof`; when either returns
   `Stopped(cause)`, the map SHALL settle V-7 as for `check_closure` above:
@@ -238,6 +281,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the QSpec FR-331 record. | Test (TC-522) |
 | FR-127-AC-12 | FR-127-AC-3's counterexample replayed with a request whose `package_id` is another package's refuses `PackageIdMismatch` and settles `inconclusive`, `Inconclusive(StaleDependency{requested, recompiled})` naming the request's and the recompiled `package_id`, written `stale-dependency{requested, recompiled}` on the FR-331 record, not `ReplayRefused`. | Test (TC-1141) |
 | FR-127-AC-13 | FR-338-AC-11's stale closure certificate and FR-339-AC-4's stale component certificate each settle `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id` and `recompiled` the recompiled one, written `stale-dependency{requested, recompiled}` on the FR-331 record, never `certificate-rejected` and never `proved`. | Test (TC-1141) |
+| FR-127-AC-14 | `settle_smt_proof`, a `qsl-replay` entry, settles each `SmtProofOutcome` for FR-314-AC-1's `Counter` items: `BoundedComplete{depth: 3}` with FR-314-AC-1's accepted certificate as `Proved{BoundedComplete{depth: 3}, Certified}`, `proved`, success; `Inductive{depth: 1}` with its accepted certificate as `Proved{Inductive{depth: 1}, Certified}`; `BoundedComplete{depth: 3}` with `certificate: None` as `Proved{BoundedComplete{depth: 3}, Uncertified}`, with no check run and the request's meters unchanged; FR-314-AC-2's `QueryMismatch` certificate as `Inconclusive(CertificateRejected{QueryMismatch, Query { part: Unrolling }})`; FR-314-AC-2's `hole` certificate as `Proved{BoundedComplete{depth: 3}, Uncertified}`; FR-314-AC-5's limit-stopped certificate as `Incomplete(LimitReached{MaxCertificateBytes, 1, certificate_check.max_certificate_bytes})`; FR-315-AC-30's faulting rebuild as `Failed`. A crate whose only QSL dependency is `qsl-replay` names `SmtProofOutcome`, `SmtProofBasis`, `SmtProofCertificate` and `settle_smt_proof` and compiles. | Test (TC-1194) |
 
 ## Dependencies
 
