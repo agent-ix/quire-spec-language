@@ -13,9 +13,9 @@
 //! wire's raw hex) from the same already-admitted preimage and asserts that
 //! mint agrees with IR's own already-verified `package_id.digest`, refusing
 //! if it does not (M-4 L2: defense against this reader's own
-//! canonicalization ever diverging from IR's -- e.g. if IR's `digest_json`
-//! were to switch to a real JCS encoder -- not a second, independent
-//! admission decision). What remains this layer's own job:
+//! encoding of the preimage and graph projection ever diverging from IR's
+//! (a different projection or byte ceiling, say) -- not a second,
+//! independent admission decision). What remains this layer's own job:
 //!
 //! - minting the package's own typed `PackageId` from the admitted identity
 //!   preimage via [`qsl_semantics::library::PackageId::of_preimage`] -- the only
@@ -694,9 +694,9 @@ pub(crate) fn read_checked_package_v2(
             // already-verified `package_id.digest` (see the module doc).
             // `verify_package` below re-recomputes from the same
             // `preimage_bytes` this `package_id` was itself minted from, so
-            // it cannot by itself catch this reader's canonicalization ever
-            // diverging from IR's own -- only this comparison, against a
-            // value IR derived independently, can.
+            // it cannot by itself catch this reader's encoding of the
+            // preimage and graph projection diverging from IR's own -- only
+            // this comparison, against the digest IR verified, can.
             let ir_digest = package.package_id().digest.as_ref();
             if package_id.hex() != ir_digest {
                 return refused(V2ReadRefusal::Structural(Box::new(

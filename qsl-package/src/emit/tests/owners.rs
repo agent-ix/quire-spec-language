@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-093-AC-21 and AC-22 (TC-416 steps 12 and 13): the v2 emission writes each
 //! structural node's `owner` onto the node, exactly where the node's
-//! `quire.structural-node/v1` preimage carries one. Each key is recomputed from the wire node alone, and every package is
-//! read back through IR's v2 reader.
+//! `quire.structural-node/v1` preimage carries one. Each key is recomputed
+//! from the wire node alone, and every package is read back through IR's v2
+//! reader.
 
 use qsl_semantics::check::{
     checked_dispatch_operation, AdmittedModel, DispatchRoot, OperationClauses,
