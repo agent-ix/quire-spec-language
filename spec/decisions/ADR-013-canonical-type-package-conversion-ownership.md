@@ -534,14 +534,18 @@ including the E9 replay of every counterexample:
   refusal and internal-failure categories, including a vacuous `Proved`
   and a counterexample settled `replay_parity` or `replay_refused`. A
   record that is not definite agrees and conflicts with nothing.
-- A record is bounded when its basis is `BoundedComplete{depth}`, or when
-  the backend ran the item in `bounded` mode (ADR-012 §7.1); its bound is
-  that depth or the item's result bound. Every other definite record is
-  unbounded.
-- A bounded `proved` record is comparable only with a record bounded at
-  the same bound, because it says nothing beyond its bound. Every other
-  pair of definite records is comparable: a reproduced counterexample
-  refutes the item whatever bound produced it.
+- Every success-category `proved` record is compared, whatever its basis.
+  A `BoundedComplete{depth}` proof is complete: ADR-018 V-2 issues it only
+  when the unrolling reaches the formula's horizon. A proof that covers
+  only a depth is V-5's `Inconclusive(BoundReached{depth})`, which is not
+  definite.
+- A `proved` record from a backend that negotiated the item `supported`
+  in `bounded` mode holds only over the item's declared finite domain
+  (O-20). A `refuted` record is comparable with it only when the
+  counterexample's witness lies inside that domain; otherwise the pair is
+  not comparable, and a report names the domain. Every other pair of
+  definite records is comparable: a reproduced counterexample refutes the
+  item whatever run produced it.
 - Two comparable definite records conflict when one is `proved` and the
   other `refuted`, and agree otherwise. A conflict means at least one
   backend gave a wrong verdict; it is never settled by preferring one
