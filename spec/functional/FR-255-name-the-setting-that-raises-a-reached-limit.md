@@ -371,7 +371,8 @@ these names through the same operand grammar as the stage settings
    `--limit accounting.<counter>=<n>`. An engine item stopped by the
    evaluation meter names the same setting in its `LimitReached` (FR-203-AC-7:
    `LimitReached{work_units, B, accounting.work_units}` for a `work_units`
-   stop). FR-286 serializes the setting as the
+   stop), an EN-1 model check's meter stop included (FR-126
+   `EvaluationMeter { counter }`, FR-127-AC-16). FR-286 serializes the setting as the
    incomplete limit's `setting` member.
 10. **A request's `stage_limits` sets an accounting budget.** When a replay
    request's `stage_limits` holds an entry whose name is in the accounting

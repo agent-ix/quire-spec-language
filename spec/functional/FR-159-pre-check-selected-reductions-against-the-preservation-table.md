@@ -56,6 +56,12 @@ pub struct Reductions {
 // ModelCheckRequest (FR-126) gains: pub reductions: Reductions
 ```
 
+`constraint` is the declared name of a `constraint` clause of the unit
+(FR-158). The library request takes the name; the pre-check resolves it to
+the clause, and the request writer writes the node key of that clause's
+`state`/`state_clause` node as QSpec FR-382's `reductions.constraint`
+(FR-158 "Wire form").
+
 - The checked clause's property form (FR-123), whether it has an interval
   operator, and its fairness set; or the deadlock-freedom item; or a
   refinement item (ADR-020).
@@ -111,8 +117,12 @@ offers.
   states and judge C3 on canonical product states (FR-162).
 - **No substitution.** The engine SHALL NOT run a request without a
   reduction it selected, or with one it did not select.
-- **Capability.** EN-1's provider manifest SHALL advertise the reductions it
-  applies: `symmetry`, `partial-order` and `state-constraint`. Negotiation
+- **Capability.** EN-1's provider manifest entry SHALL advertise the
+  reductions it applies as QSpec FR-382's `reductions` member:
+  `["symmetry", "partial-order", "constraint"]`. `constraint` is the one wire
+  spelling of the state-constraint reduction wherever a reduction is named
+  (the manifest, the `reduction-not-preserving` cause and the applied
+  reductions of a proof basis, QSpec FR-331). Negotiation
   (FR-075) SHALL route an item that selects reductions only to a candidate
   advertising every one of them, and SHALL settle the item V-8
   `unsupported-requested-capability` when no candidate does. It SHALL NOT
@@ -130,6 +140,7 @@ offers.
 | FR-159-AC-2 | `preserves` returns, for partial-order reduction: `true` for TP-1, for TP-3 with no interval, for TP-4 with no interval under the empty fairness set, under `fair weak whole` and under `fair weak each`, and for the deadlock-freedom item; `false` for TP-2, for TP-4 with an interval under an unbounded operator, and for each refinement half. It returns `true` for symmetry and for the constraint for every one of these. A request selecting symmetry and partial-order reduction for TP-2 settles `ReductionNotPreserving{PartialOrder, TP-2}`, naming partial-order reduction, not symmetry. | Test (TC-582) |
 | FR-159-AC-3 | A request selecting partial-order reduction, one selecting symmetry and one selecting a constraint, each over a test `TransitionSystem` whose `offered_reductions` is `NONE`, each settle V-8 `unsupported-requested-capability` in the pre-check, naming the reduction, with no state expanded. A registry whose only model-check candidate advertises `symmetry` alone settles a request selecting `partial-order` V-8, and routes a request selecting `symmetry` to that candidate; negotiation never routes the first to the candidate without partial-order reduction. | Test (TC-583) |
 | FR-159-AC-4 | Over ADR-021 §7.1's subject, the request with `[[a, b, c]]` and the request with no reduction for the same claim have different obligation identities; requests that differ only by constraint `Low` versus none have equal identities. After `ReductionNotPreserving`, the outcome records no exploration statistics. | Test (TC-583) |
+| FR-159-AC-5 | EN-1's provider manifest entry carries `reductions` `["symmetry", "partial-order", "constraint"]` and validates against QSpec's backend-provider schema; the same entry with `state-constraint` in place of `constraint` fails that schema. A registry whose only model-check candidate advertises `["symmetry", "partial-order"]` settles a request selecting constraint `Low` V-8 `unsupported-requested-capability` naming the constraint; with EN-1 registered beside it, the same request routes to EN-1 only. | Test (TC-583) |
 
 ## Dependencies
 
