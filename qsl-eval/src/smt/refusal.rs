@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-315 Outputs: `SmtEncodingRefusal`, the refusal that names the construct
-//! the encoding has no form for, with its locus. Each variant is one code of
-//! FR-315's refusal table, and [`SmtEncodingRefusal::code`] spells it.
+//! FR-315 Outputs: `SmtEncodingRefusal`, the two arms of an encoding that
+//! wrote no script: [`Refusal`], which names the construct the encoding has
+//! no form for with its locus (each variant is one code of FR-315's table,
+//! and [`Refusal::code`] spells it), and an internal fault (FR-096).
 
+use qsl_foundation::InternalFault;
 use qsl_semantics::model::observation::AdmissionFailure;
 
 use crate::automaton::AutomatonError;
@@ -64,9 +66,10 @@ impl Measure {
     }
 }
 
-/// Why no script was written (FR-315 Outputs).
+/// A refusal: the construct the encoding has no form for, or the size limit
+/// passed (FR-315 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum SmtEncodingRefusal {
+pub enum Refusal {
     /// `item-form`: the item has no proof query of this form.
     #[error("the item is {form}, which FR-315 gives no proof query")]
     ItemForm {
@@ -170,7 +173,7 @@ pub enum SmtEncodingRefusal {
     },
 }
 
-impl SmtEncodingRefusal {
+impl Refusal {
     /// The refusal's code in FR-315's table.
     pub const fn code(&self) -> &'static str {
         match self {
@@ -219,10 +222,48 @@ impl SmtEncodingRefusal {
             Self::OutOfFragment { .. } => 16,
         }
     }
+}
 
-    /// An invariant the encoding relies on did not hold for this item: the
-    /// item is refused as one the encoding cannot read.
-    pub const fn unreadable(invariant: &'static str) -> Self {
-        Self::ItemForm { form: invariant }
+/// Why no script was written (FR-315 Outputs).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum SmtEncodingRefusal {
+    /// The item or the subject uses a construct the encoding has no form
+    /// for, or a size limit passed.
+    #[error("{0}")]
+    Refused(Refusal),
+    /// An invariant that a well-formed request guarantees did not hold
+    /// (FR-096: `runtime_invariant`, `established-invariant-broken`). It
+    /// settles `failed`.
+    #[error("encoding broke invariant {0:?}")]
+    Fault(InternalFault),
+}
+
+impl From<Refusal> for SmtEncodingRefusal {
+    fn from(refusal: Refusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+impl SmtEncodingRefusal {
+    /// A broken invariant of a well-formed request, named by `invariant`.
+    pub const fn fault(invariant: &'static str) -> Self {
+        Self::Fault(InternalFault::new("smt-encoding", invariant))
+    }
+
+    /// The refusal's code in FR-315's table; `None` for a fault.
+    pub const fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::Refused(refusal) => Some(refusal.code()),
+            Self::Fault(_) => None,
+        }
+    }
+
+    /// The row of FR-315's table the refusal is on; a fault precedes every
+    /// row.
+    pub const fn row(&self) -> u8 {
+        match self {
+            Self::Refused(refusal) => refusal.row(),
+            Self::Fault(_) => 0,
+        }
     }
 }

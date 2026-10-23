@@ -9,7 +9,7 @@ use std::ops::Not;
 
 use crate::simulation::model::SymbolicSubject;
 use crate::smt::script::{symbol, Script, Sort, Term};
-use crate::smt::SmtEncodingRefusal;
+use crate::smt::{Refusal, SmtEncodingRefusal};
 
 /// One state copy: the prefix of the names of its constants, `s<i>`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -163,16 +163,16 @@ impl StateLayout {
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::FieldSort`] naming the first field, in object and
+    /// [`Refusal::FieldSort`] naming the first field, in object and
     /// field order, whose sort has no SMT form;
-    /// [`SmtEncodingRefusal::ConstantName`] for a name that cannot be
+    /// [`Refusal::ConstantName`] for a name that cannot be
     /// printed.
     pub(crate) fn of(subject: &SymbolicSubject<'_>) -> Result<Self, SmtEncodingRefusal> {
         // Names first, then sorts, in the order of FR-315's refusal table.
         for object in &subject.objects {
             for name in std::iter::once(&object.key).chain(object.fields.iter().map(|f| &f.name)) {
                 if name.chars().any(|c| c == '.') {
-                    return Err(SmtEncodingRefusal::ConstantName { name: name.clone() });
+                    return Err(Refusal::ConstantName { name: name.clone() }.into());
                 }
             }
             for field in &object.fields {
@@ -183,12 +183,11 @@ impl StateLayout {
         for object in &subject.objects {
             let mut fields = Vec::new();
             for field in &object.fields {
-                let sort =
-                    sort_of(&field.value_type).map_err(|sort| SmtEncodingRefusal::FieldSort {
-                        object: object.key.clone(),
-                        field: field.name.clone(),
-                        sort,
-                    })?;
+                let sort = sort_of(&field.value_type).map_err(|sort| Refusal::FieldSort {
+                    object: object.key.clone(),
+                    field: field.name.clone(),
+                    sort,
+                })?;
                 fields.push(FieldLayout {
                     name: field.name.clone(),
                     optional: field.optional,
@@ -273,7 +272,7 @@ impl StateLayout {
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::ItemForm`] when an initial value is of no
+    /// [`Refusal::ItemForm`] when an initial value is of no
     /// supported sort.
     pub(crate) fn initial(
         &self,
@@ -291,7 +290,7 @@ impl StateLayout {
                         None => conjuncts.push(present.not()),
                         Some(value) => {
                             let term = value_term(value).ok_or_else(|| {
-                                SmtEncodingRefusal::unreadable("an initial value of no SMT sort")
+                                SmtEncodingRefusal::fault("an initial value of no SMT sort")
                             })?;
                             if field.optional {
                                 conjuncts.push(present);

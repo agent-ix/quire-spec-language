@@ -38,7 +38,7 @@ use crate::smt::relation::{
     MAX_APPLICATIONS,
 };
 use crate::smt::script::{Script, Sort, Term, MAX_SCRIPT_BYTES};
-use crate::smt::{Measure, SmtEncodingRefusal, SmtQueryKind};
+use crate::smt::{Measure, Refusal, SmtEncodingRefusal, SmtQueryKind};
 
 /// The most constants a script declares.
 pub const MAX_CONSTANTS: u64 = 1 << 20;
@@ -85,7 +85,7 @@ impl Atoms<'_, '_> {
         let (condition, _): (CheckedNode<'_>, usize) = self
             .node
             .condition(atom)
-            .ok_or(SmtEncodingRefusal::unreadable("an atom with no condition"))?;
+            .ok_or(SmtEncodingRefusal::fault("an atom with no condition"))?;
         let views = Views::of(StateRef::Copy(copy.clone()));
         Reader::new(
             self.layout,
@@ -101,15 +101,16 @@ impl Atoms<'_, '_> {
 }
 
 fn fault(invariant: &'static str) -> SmtEncodingRefusal {
-    SmtEncodingRefusal::unreadable(invariant)
+    SmtEncodingRefusal::fault(invariant)
 }
 
 fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
-    SmtEncodingRefusal::TooLarge {
+    Refusal::TooLarge {
         measure,
         value,
         limit,
     }
+    .into()
 }
 
 fn script_bytes() -> SmtEncodingRefusal {
@@ -206,65 +207,87 @@ pub fn encode_smt_query(
     let mut monitor = None;
     if let Some(clause) = clause {
         // Row 1: item-form.
-        let form = clause.property_form().ok_or(SmtEncodingRefusal::ItemForm {
+        let form = clause.property_form().ok_or(Refusal::ItemForm {
             form: "a clause with no recorded property form",
         })?;
         if form == PropertyForm::Liveness {
-            return Err(SmtEncodingRefusal::ItemForm {
+            return Err(Refusal::ItemForm {
                 form: "a TP-4 liveness clause, whose refutations are lassos",
-            });
+            }
+            .into());
         }
         if form == PropertyForm::BoundedMltl {
             if clause.activation() != Activation::Origin {
-                return Err(SmtEncodingRefusal::ItemForm {
+                return Err(Refusal::ItemForm {
                     form: "a TP-2 `on each` clause",
-                });
+                }
+                .into());
             }
-            bounded = Some(bounded_shape(clause).ok_or(SmtEncodingRefusal::ItemForm {
+            bounded = Some(bounded_shape(clause).ok_or(Refusal::ItemForm {
                 form: "a TP-2 `on origin` clause other than a bounded `always` or `eventually` of one state predicate",
             })?);
         }
         if matches!(clause.activation(), Activation::Each { guarded: true }) {
-            return Err(SmtEncodingRefusal::ItemForm {
+            return Err(Refusal::ItemForm {
                 form: "a clause guarded by a `when` condition",
-            });
-        }
-        if bounded.is_none() && invariant_atom(clause).is_none() {
-            let table = MonitorTable::of(clause);
-            if let Err(refusal @ SmtEncodingRefusal::ItemTranslation(_)) = &table {
-                return Err(refusal.clone());
             }
-            monitor = Some(table);
+            .into());
+        }
+        // A TP-1, TP-3 or deadlock-freedom item binds infinite-trace; only a
+        // TP-2 item binds false-extension (FR-315 "Internal faults").
+        if bounded.is_none() && clause.profile() == TemporalProfile::EventPositionFalseExtension {
+            return Err(SmtEncodingRefusal::fault(
+                "a TP-1 or TP-3 item binds infinite-trace",
+            ));
+        }
+        if bounded.is_none() {
+            if form == PropertyForm::ReachableInvariant && invariant_atom(clause).is_none() {
+                return Err(SmtEncodingRefusal::fault("a TP-1 item holds its one atom"));
+            }
+            if invariant_atom(clause).is_none() {
+                let table = MonitorTable::of(clause);
+                if let Err(refusal @ SmtEncodingRefusal::Refused(Refusal::ItemTranslation(_))) =
+                    &table
+                {
+                    return Err(refusal.clone());
+                }
+                if table.as_ref().is_ok_and(|table| table.atoms().is_empty()) {
+                    return Err(SmtEncodingRefusal::fault("a TP-3 item has an atom"));
+                }
+                monitor = Some(table);
+            }
         }
         // Row 2: profile.
         if !matches!(
             clause.profile(),
             TemporalProfile::InfiniteTrace | TemporalProfile::EventPositionFalseExtension
         ) {
-            return Err(SmtEncodingRefusal::Profile);
+            return Err(Refusal::Profile.into());
         }
         // Row 3: query-kind.
         if bounded.is_some() && !matches!(kind, SmtQueryKind::Unrolling { .. }) {
-            return Err(SmtEncodingRefusal::QueryKind {
+            return Err(Refusal::QueryKind {
                 kind: kind.name(),
                 form: "a TP-2 `on origin` item",
-            });
+            }
+            .into());
         }
         if let (Some((BoundedKind::Eventually, upper, _)), SmtQueryKind::Unrolling { depth }) =
             (bounded, kind)
         {
             if depth < upper {
-                return Err(SmtEncodingRefusal::QueryKind {
+                return Err(Refusal::QueryKind {
                     kind: kind.name(),
                     form: "an `eventually[0,u]` item below its horizon",
-                });
+                }
+                .into());
             }
         }
     }
-    let infinite = clause.is_none_or(|clause| clause.profile() == TemporalProfile::InfiniteTrace);
+    // Only a TP-2 item is read past the end of a finite behaviour.
+    let infinite = bounded.is_none();
     // Rows 4 to 8: the subject.
-    let system = ModelSystem::new(subject.simulation.clone())
-        .map_err(SmtEncodingRefusal::SubjectAdmission)?;
+    let system = ModelSystem::new(subject.simulation.clone()).map_err(Refusal::SubjectAdmission)?;
     let symbolic = system.symbolic()?;
     let layout = StateLayout::of(&symbolic)?;
     // Row 9: parameter-domain.
@@ -277,7 +300,7 @@ pub fn encode_smt_query(
     if count_applications(&symbolic) <= MAX_APPLICATIONS {
         let built = applications(&symbolic)?;
         let read = CopyFacts::read(&symbolic, &layout, &built, &StateCopy::at(0), expands);
-        if let Err(refusal @ SmtEncodingRefusal::FieldDomain { .. }) = &read {
+        if let Err(refusal @ SmtEncodingRefusal::Refused(Refusal::FieldDomain { .. })) = &read {
             return Err(refusal.clone());
         }
         first = Some(read);
@@ -294,9 +317,9 @@ pub fn encode_smt_query(
         };
         let found = system
             .instances(&clause.over().1)
-            .map_err(SmtEncodingRefusal::RequiresBound)?;
+            .map_err(Refusal::RequiresBound)?;
         if found.is_empty() {
-            return Err(SmtEncodingRefusal::NoInstance);
+            return Err(Refusal::NoInstance.into());
         }
         for instance in &found {
             let position = symbolic
@@ -310,7 +333,7 @@ pub fn encode_smt_query(
                         .types
                         .conforms(symbolic.objects[*position].type_id, over)
                 })
-                .ok_or_else(|| SmtEncodingRefusal::InstanceType {
+                .ok_or_else(|| Refusal::InstanceType {
                     key: instance.key.clone(),
                 })?;
             instances.push(position);
@@ -322,15 +345,16 @@ pub fn encode_smt_query(
                 .temporal_clauses()
                 .iter()
                 .find(|node| node.clause() == clause)
-                .ok_or(SmtEncodingRefusal::ItemForm {
+                .ok_or(Refusal::ItemForm {
                     form: "a clause the package does not emit",
                 })?,
         );
     }
     if monitor.is_some() && instances.len() != 1 {
-        return Err(SmtEncodingRefusal::SeveralInstances {
+        return Err(Refusal::SeveralInstances {
             count: instances.len(),
-        });
+        }
+        .into());
     }
 
     // Row 15: the size measures, in order.

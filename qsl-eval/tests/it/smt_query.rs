@@ -8,16 +8,19 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
-use qsl_eval::smt::{encode_smt_query, Measure, SmtEncodingRefusal, SmtItem, SmtQueryKind};
+use qsl_eval::smt::{
+    encode_smt_query, Measure, Refusal, SmtEncodingRefusal, SmtItem, SmtQueryKind,
+};
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedTemporalClause, PackageDeclarations};
+use qsl_semantics::check::{CheckedTemporalClause, PackageDeclarations, TemporalProfile};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_exact::ScalarLimits;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::fairness::PropertyForm;
 use serde_json::{json, Value as Json};
 
 const PACKAGE: &str = "test/smt";
@@ -753,11 +756,11 @@ fn a_field_with_no_smt_sort_is_refused_by_name() {
     );
     assert_eq!(
         world.query(0, SmtQueryKind::Unrolling { depth: 1 }),
-        Err(SmtEncodingRefusal::FieldSort {
+        Err(SmtEncodingRefusal::Refused(Refusal::FieldSort {
             object: "c".to_owned(),
             field: "label".to_owned(),
             sort: "a String",
-        })
+        }))
     );
 }
 
@@ -856,7 +859,7 @@ fn the_base_case_steps_the_initial_monitor_over_position_zero() {
 fn a_nonlinear_atom_is_refused_with_its_locus() {
     let world = counter(INFINITE, &["always holds(c.value * c.value <= 3)"]);
     match world.query(0, SmtQueryKind::Unrolling { depth: 1 }) {
-        Err(SmtEncodingRefusal::OutOfFragment { form, locus }) => {
+        Err(SmtEncodingRefusal::Refused(Refusal::OutOfFragment { form, locus })) => {
             assert_eq!(form, "nonlinear multiplication");
             assert_eq!(locus.clause, "C0");
         }
@@ -877,15 +880,15 @@ fn items_without_a_proof_query_are_refused() {
     );
     assert!(matches!(
         world.query(0, SmtQueryKind::InductionStep { depth: 1 }),
-        Err(SmtEncodingRefusal::QueryKind {
+        Err(SmtEncodingRefusal::Refused(Refusal::QueryKind {
             kind: "induction-step",
             ..
-        })
+        }))
     ));
     let live = counter(INFINITE, &["eventually holds(c.value = 3)"]);
     assert!(matches!(
         live.query(0, SmtQueryKind::Unrolling { depth: 1 }),
-        Err(SmtEncodingRefusal::ItemForm { .. })
+        Err(SmtEncodingRefusal::Refused(Refusal::ItemForm { .. }))
     ));
 }
 
@@ -910,10 +913,10 @@ fn a_bounded_eventually_is_violated_where_every_position_is_false() {
 fn a_query_too_large_to_write_is_refused_with_its_measure() {
     let deep = counter(INFINITE, &["always holds(c.value <= 3)"]);
     match deep.query(0, SmtQueryKind::Unrolling { depth: u64::MAX }) {
-        Err(SmtEncodingRefusal::TooLarge {
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
             measure: Measure::Constants,
             ..
-        }) => {}
+        })) => {}
         other => panic!("expected too-large, got {other:?}"),
     }
 }
@@ -1210,11 +1213,11 @@ fn the_false_extension_step_is_exactly_the_end_flag_equation() {
     }
     assert!(matches!(
         world.query(1, SmtQueryKind::InductionBase { depth: 3 }),
-        Err(SmtEncodingRefusal::QueryKind { .. })
+        Err(SmtEncodingRefusal::Refused(Refusal::QueryKind { .. }))
     ));
     assert!(matches!(
         world.query(2, SmtQueryKind::Unrolling { depth: 2 }),
-        Err(SmtEncodingRefusal::QueryKind { .. })
+        Err(SmtEncodingRefusal::Refused(Refusal::QueryKind { .. }))
     ));
 }
 
@@ -1307,7 +1310,7 @@ fn a_granted_field_without_a_finite_domain_is_not_frozen() {
         )
     };
     match bounded.query(0, SmtQueryKind::Unrolling { depth: 2 }) {
-        Err(SmtEncodingRefusal::FieldDomain { object, field }) => {
+        Err(SmtEncodingRefusal::Refused(Refusal::FieldDomain { object, field })) => {
             assert_eq!((object.as_str(), field.as_str()), ("c", "id"));
         }
         other => panic!("expected field-domain, got {other:?}"),
@@ -1481,7 +1484,7 @@ fn the_monitor_implications_follow_the_step_assertions() {
 #[test]
 fn each_refusal_has_its_code() {
     let code = |result: Result<String, SmtEncodingRefusal>| match result {
-        Err(refusal) => refusal.code(),
+        Err(refusal) => refusal.code().expect("a refusal, not a fault"),
         Ok(script) => panic!("expected a refusal, got\n{script}"),
     };
     let counter_world = counter(
@@ -1496,11 +1499,11 @@ fn each_refusal_has_its_code() {
     assert_eq!(code(counter_world.query(0, kind)), "item-form");
     assert_eq!(code(counter_world.query(1, kind)), "out-of-fragment");
     match counter_world.query(2, SmtQueryKind::Unrolling { depth: 1 << 20 }) {
-        Err(SmtEncodingRefusal::TooLarge {
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge {
             measure,
             value,
             limit,
-        }) => assert_eq!(
+        })) => assert_eq!(
             (measure, value, limit),
             (Measure::Constants, 1_048_577, 1_048_576)
         ),
@@ -1515,7 +1518,7 @@ fn each_refusal_has_its_code() {
     assert_eq!(
         encode_smt_query(&subject, SmtItem::Clause(&counter_world.clauses[2]), kind)
             .map_err(|refusal| refusal.code()),
-        Err("no-initial-state")
+        Err(Some("no-initial-state"))
     );
     let none = world(
         ("Counter", "c"),
@@ -1543,7 +1546,7 @@ fn each_refusal_has_its_code() {
         &[("c", json!({"value": {"integer": "0"}}))],
     );
     match spawning.query(0, kind) {
-        Err(SmtEncodingRefusal::ObjectLifecycle(locus)) => {
+        Err(SmtEncodingRefusal::Refused(Refusal::ObjectLifecycle(locus))) => {
             assert!(format!("{locus:?}").contains("spawn"), "{locus:?}");
         }
         other => panic!("expected object-lifecycle, got {other:?}"),
@@ -1568,10 +1571,10 @@ fn each_refusal_has_its_code() {
         &[("c", json!({"value": {"integer": "0"}}))],
     );
     match unbounded.query(0, kind) {
-        Err(SmtEncodingRefusal::ParameterDomain {
+        Err(SmtEncodingRefusal::Refused(Refusal::ParameterDomain {
             operation,
             parameter,
-        }) => assert_eq!((operation.as_str(), parameter.as_str()), ("setTo", "n")),
+        })) => assert_eq!((operation.as_str(), parameter.as_str()), ("setTo", "n")),
         other => panic!("expected parameter-domain, got {other:?}"),
     }
     let several = world(
@@ -1607,7 +1610,7 @@ fn a_step_case_over_the_byte_limit_refuses_before_it_builds_the_pairs() {
             depth: (1 << 20) - 1,
         },
     ) {
-        Err(SmtEncodingRefusal::TooLarge { measure, limit, .. }) => {
+        Err(SmtEncodingRefusal::Refused(Refusal::TooLarge { measure, limit, .. })) => {
             assert_eq!((measure, limit), (Measure::ScriptBytes, 1 << 28));
         }
         other => panic!(
@@ -1669,4 +1672,84 @@ fn a_later_result_fails_only_where_the_earlier_ones_are_rejected() {
     );
     assert_eq!(step.len(), 3, "bump, peek, stutter");
     assert!(step[1].starts_with("(and (or "), "{}", step[1]);
+}
+
+fn invariant_of(result: Result<String, SmtEncodingRefusal>) -> &'static str {
+    match result {
+        Err(SmtEncodingRefusal::Fault(fault)) => {
+            assert_eq!(fault.stage(), "smt-encoding");
+            fault.invariant()
+        }
+        other => panic!("expected a fault, got {other:?}"),
+    }
+}
+
+/// FR-315-AC-29: a TP-1 or TP-3 item that binds false-extension is no
+/// well-formed request; the call returns a fault, not a refusal code.
+#[trace("TC-900", "FR-315-AC-29")]
+#[test]
+fn an_item_other_than_tp2_under_false_extension_is_a_fault() {
+    let world = counter(
+        INFINITE,
+        &[
+            "always holds(c.value <= 3)",
+            "always (holds(c.value = 3) implies always holds(c.value = 3))",
+        ],
+    );
+    let kind = SmtQueryKind::Unrolling { depth: 1 };
+    for clause in &world.clauses {
+        let altered = clause
+            .clone()
+            .with_profile_after_s3(TemporalProfile::EventPositionFalseExtension);
+        let result = encode_smt_query(&world.subject(&["c"]), SmtItem::Clause(&altered), kind)
+            .map(|script| String::from_utf8(script).expect("UTF-8"));
+        assert_eq!(
+            invariant_of(result),
+            "a TP-1 or TP-3 item binds infinite-trace"
+        );
+    }
+}
+
+/// FR-315-AC-32: a TP-1 item whose atom is gone is a fault naming the atom
+/// invariant, and none of the refusals of AC-21 is a fault.
+#[trace("TC-900", "FR-315-AC-32")]
+#[test]
+fn a_tp1_item_without_its_atom_is_a_fault_not_item_form() {
+    let world = counter(
+        INFINITE,
+        &["always (holds(c.value = 3) implies always holds(c.value = 3))"],
+    );
+    let altered = world.clauses[0]
+        .clone()
+        .with_property_form_after_s3(Some(PropertyForm::ReachableInvariant));
+    let result = encode_smt_query(
+        &world.subject(&["c"]),
+        SmtItem::Clause(&altered),
+        SmtQueryKind::Unrolling { depth: 1 },
+    )
+    .map(|script| String::from_utf8(script).expect("UTF-8"));
+    assert_eq!(invariant_of(result), "a TP-1 item holds its one atom");
+}
+
+/// FR-315-AC-31 (the violation order): the violation of `always[0,3]` is
+/// `h<p>` and then the negation of the atom, as two disjuncts, at positions
+/// 0 to 3 and at no position past 3. S3 proves no range for AC-31's
+/// `pre(self.value) + 1` form (`Unproved(Range)`), so this fixture reads the
+/// subtraction form, whose postcondition holds no partial construct and has
+/// no failure term; the `(and (not h<p>) F)` shape is read in the tests of
+/// AC-4 and AC-27 under infinite-trace only.
+#[trace("TC-900", "FR-315-AC-31")]
+#[test]
+fn the_always_violation_is_two_disjuncts_per_position() {
+    let world = counter(BOUNDED, &["always[0,3] holds(c.value <= 3)"]);
+    let script = world
+        .query(0, SmtQueryKind::Unrolling { depth: 5 })
+        .expect("encodes");
+    let negated = operands(assertions(&script).last().expect("negated"), "or");
+    let mut expected = Vec::new();
+    for position in 0..=3 {
+        expected.push(format!("h{position}"));
+        expected.push(format!("(not (<= s{position}.c.value 3))"));
+    }
+    assert_eq!(negated, expected);
 }

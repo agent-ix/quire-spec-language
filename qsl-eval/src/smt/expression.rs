@@ -24,7 +24,7 @@ use crate::simulation::model::SymbolicSubject;
 use crate::smt::layout::{FieldSort, StateLayout, StateRef};
 use crate::smt::refusal::ExpressionLocus;
 use crate::smt::script::{Comparison, Term};
-use crate::smt::SmtEncodingRefusal;
+use crate::smt::{Refusal, SmtEncodingRefusal};
 
 /// The deepest expression nesting the encoding reads; a deeper body refuses
 /// rather than recursing.
@@ -146,13 +146,14 @@ impl<'r, 'a> Reader<'r, 'a> {
     }
 
     fn refuse(&self, node: CheckedNode<'_>, form: &'static str) -> SmtEncodingRefusal {
-        SmtEncodingRefusal::OutOfFragment {
+        Refusal::OutOfFragment {
             form,
             locus: ExpressionLocus {
                 clause: self.clause.to_owned(),
                 node: node.id().index(),
             },
         }
+        .into()
     }
 
     fn observation_of(&self, location: &Location) -> Observation {

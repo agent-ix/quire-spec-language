@@ -26,7 +26,7 @@ use crate::simulation::model::{ParameterValues, ResultValues, SymbolicOperation,
 use crate::smt::expression::{Reader, Sym, Views};
 use crate::smt::layout::{value_term, FieldSort, FieldTerms, StateCopy, StateLayout, StateRef};
 use crate::smt::script::Term;
-use crate::smt::{Measure, SmtEncodingRefusal};
+use crate::smt::{Measure, Refusal, SmtEncodingRefusal};
 
 /// The most applications of one step (FR-315 "Size limits").
 pub const MAX_APPLICATIONS: u64 = 1 << 16;
@@ -45,27 +45,29 @@ pub struct Application<'s, 'a> {
 ///
 /// # Errors
 ///
-/// [`SmtEncodingRefusal::ParameterDomain`] naming the operation and the
+/// [`Refusal::ParameterDomain`] naming the operation and the
 /// parameter, or `result`.
 pub fn check_domains(subject: &SymbolicSubject<'_>) -> Result<(), SmtEncodingRefusal> {
     for object in &subject.objects {
         for operation in &object.operations {
             for ((name, _), domain) in operation.parameters.iter().zip(&operation.domains) {
                 if matches!(domain, ParameterValues::Unbounded) {
-                    return Err(SmtEncodingRefusal::ParameterDomain {
+                    return Err(Refusal::ParameterDomain {
                         operation: operation.name.clone(),
                         parameter: name.clone(),
-                    });
+                    }
+                    .into());
                 }
             }
             if let ResultValues::Declared(
                 ParameterValues::Unbounded | ParameterValues::TooMany(_),
             ) = &operation.result
             {
-                return Err(SmtEncodingRefusal::ParameterDomain {
+                return Err(Refusal::ParameterDomain {
                     operation: operation.name.clone(),
                     parameter: "result".to_owned(),
-                });
+                }
+                .into());
             }
         }
     }
@@ -99,18 +101,19 @@ pub fn count_applications(subject: &SymbolicSubject<'_>) -> u64 {
 ///
 /// # Errors
 ///
-/// [`SmtEncodingRefusal::TooLarge`] for `applications`, before any vector is
+/// [`Refusal::TooLarge`] for `applications`, before any vector is
 /// built.
 pub fn applications<'s, 'a>(
     subject: &'s SymbolicSubject<'a>,
 ) -> Result<Vec<Application<'s, 'a>>, SmtEncodingRefusal> {
     let total = count_applications(subject);
     if total > MAX_APPLICATIONS {
-        return Err(SmtEncodingRefusal::TooLarge {
+        return Err(Refusal::TooLarge {
             measure: Measure::Applications,
             value: total,
             limit: MAX_APPLICATIONS,
-        });
+        }
+        .into());
     }
     let mut applications = Vec::new();
     for (receiver, object) in subject.objects.iter().enumerate() {
@@ -162,7 +165,7 @@ impl StepRelation {
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::OutOfFragment`] naming the first construct of an
+    /// [`Refusal::OutOfFragment`] naming the first construct of an
     /// applicable clause outside the fragment.
     pub(crate) fn build(
         subject: &SymbolicSubject<'_>,
@@ -253,9 +256,9 @@ impl CopyFacts {
     /// # Errors
     ///
     /// The refusal of the earliest row of FR-315's table that any
-    /// application's reading meets: [`SmtEncodingRefusal::FieldDomain`],
-    /// [`SmtEncodingRefusal::TooLarge`] for `candidates`, or
-    /// [`SmtEncodingRefusal::OutOfFragment`].
+    /// application's reading meets: [`Refusal::FieldDomain`],
+    /// [`Refusal::TooLarge`] for `candidates`, or
+    /// [`Refusal::OutOfFragment`].
     pub(crate) fn read(
         subject: &SymbolicSubject<'_>,
         layout: &StateLayout,
@@ -490,9 +493,9 @@ impl<'a> Application<'_, 'a> {
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::FieldDomain`] for the first written field, in
+    /// [`Refusal::FieldDomain`] for the first written field, in
     /// object and field order, with no finite domain, then
-    /// [`SmtEncodingRefusal::TooLarge`] for `candidates`.
+    /// [`Refusal::TooLarge`] for `candidates`.
     fn candidates(
         &self,
         subject: &SymbolicSubject<'_>,
@@ -502,10 +505,11 @@ impl<'a> Application<'_, 'a> {
         for (index, object) in subject.objects.iter().enumerate() {
             for (field, symbolic) in object.fields.iter().enumerate() {
                 if self.writes(subject, index, field) && symbolic.domain_len.is_none() {
-                    return Err(SmtEncodingRefusal::FieldDomain {
+                    return Err(Refusal::FieldDomain {
                         object: object.key.clone(),
                         field: symbolic.name.clone(),
-                    });
+                    }
+                    .into());
                 }
             }
         }
@@ -526,11 +530,12 @@ impl<'a> Application<'_, 'a> {
                     .saturating_add(u128::from(symbolic.optional));
                 count = count.saturating_mul(u64::try_from(radix).unwrap_or(u64::MAX));
                 if count > MAX_CANDIDATES {
-                    return Err(SmtEncodingRefusal::TooLarge {
+                    return Err(Refusal::TooLarge {
                         measure: Measure::Candidates,
                         value: count,
                         limit: MAX_CANDIDATES,
-                    });
+                    }
+                    .into());
                 }
                 let sort = layout.objects()[index].fields()[field].sort();
                 let zero = match sort {
@@ -546,9 +551,8 @@ impl<'a> Application<'_, 'a> {
                 }
                 for value in &symbolic.values {
                     options.push(FieldTerms {
-                        value: value_term(value).ok_or_else(|| {
-                            SmtEncodingRefusal::unreadable("candidate-value-sort")
-                        })?,
+                        value: value_term(value)
+                            .ok_or_else(|| SmtEncodingRefusal::fault("candidate-value-sort"))?,
                         present: symbolic.optional.then(|| Term::literal(true)),
                     });
                 }

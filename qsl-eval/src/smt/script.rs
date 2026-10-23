@@ -16,7 +16,7 @@ use std::ops::Not;
 
 use quire_exact::Integer;
 
-use crate::smt::SmtEncodingRefusal;
+use crate::smt::{Refusal, SmtEncodingRefusal};
 
 /// An SMT sort the encoding declares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -334,7 +334,7 @@ fn apply<'t>(head: &str, operands: impl IntoIterator<Item = &'t Term>, out: &mut
 ///
 /// # Errors
 ///
-/// [`SmtEncodingRefusal::ConstantName`] when `name` holds a character a
+/// [`Refusal::ConstantName`] when `name` holds a character a
 /// quoted symbol cannot hold.
 ///
 /// `#[string_edge]`: classifies the characters of a name from the package, to
@@ -351,9 +351,10 @@ pub fn symbol(name: &str) -> Result<String, SmtEncodingRefusal> {
         return Ok(name.to_owned());
     }
     if name.is_empty() || name.contains(['|', '\\']) {
-        return Err(SmtEncodingRefusal::ConstantName {
+        return Err(Refusal::ConstantName {
             name: name.to_owned(),
-        });
+        }
+        .into());
     }
     Ok(format!("|{name}|"))
 }

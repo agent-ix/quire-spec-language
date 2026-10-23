@@ -17,7 +17,7 @@ use super::domain::Domain;
 use super::encode::value_enc;
 use super::frames::text_limits;
 use super::{ClauseInfo, ModelSystem};
-use crate::smt::{LifecycleLocus, SmtEncodingRefusal};
+use crate::smt::{LifecycleLocus, Refusal, SmtEncodingRefusal};
 
 /// One declared field of a universe object.
 #[derive(Clone, Debug)]
@@ -118,7 +118,7 @@ const MAX_DOMAIN: u128 = 1 << 16;
 const MAX_FIELD_VALUES: u128 = 1 << 16;
 
 fn fault(invariant: &'static str) -> SmtEncodingRefusal {
-    SmtEncodingRefusal::unreadable(invariant)
+    SmtEncodingRefusal::fault(invariant)
 }
 
 impl<'a> ModelSystem<'a> {
@@ -133,10 +133,7 @@ impl<'a> ModelSystem<'a> {
     /// creates or deletes objects.
     pub(crate) fn symbolic(&self) -> Result<SymbolicSubject<'a>, SmtEncodingRefusal> {
         let package: &'a CheckedPackage = self.package;
-        let first = self
-            .initial
-            .first()
-            .ok_or(SmtEncodingRefusal::NoInitialState)?;
+        let first = self.initial.first().ok_or(Refusal::NoInitialState)?;
         let mut rows: Vec<(DeclarationKey, String, DeclarationKey)> = Vec::new();
         for (population, objects) in &first.state.populations {
             for (key, object) in objects {
@@ -153,9 +150,9 @@ impl<'a> ModelSystem<'a> {
                     .iter()
                     .any(|(held, held_key, _)| held == population && held_key == key)
                 {
-                    return Err(SmtEncodingRefusal::ObjectLifecycle(LifecycleLocus::Object(
-                        key.to_string(),
-                    )));
+                    return Err(
+                        Refusal::ObjectLifecycle(LifecycleLocus::Object(key.to_string())).into(),
+                    );
                 }
             }
         }
@@ -188,9 +185,9 @@ impl<'a> ModelSystem<'a> {
                         })
                 });
             if let Some(object) = mismatch {
-                return Err(SmtEncodingRefusal::ObjectLifecycle(LifecycleLocus::Object(
-                    object.to_string(),
-                )));
+                return Err(
+                    Refusal::ObjectLifecycle(LifecycleLocus::Object(object.to_string())).into(),
+                );
             }
         }
         rows.sort_by(|left, right| (&left.1, &left.0).cmp(&(&right.1, &right.0)));
@@ -252,9 +249,10 @@ impl<'a> ModelSystem<'a> {
         }
 
         if let Some(pair) = rows.windows(2).find(|pair| pair[0].1 == pair[1].1) {
-            return Err(SmtEncodingRefusal::ConstantName {
+            return Err(Refusal::ConstantName {
                 name: pair[0].1.clone(),
-            });
+            }
+            .into());
         }
 
         let initial = self
@@ -300,9 +298,10 @@ impl<'a> ModelSystem<'a> {
                 || effect.deletes_receiver
                 || !effect.deletes_arguments.is_empty();
             if lifecycle {
-                return Err(SmtEncodingRefusal::ObjectLifecycle(
-                    LifecycleLocus::Operation(application.name.clone()),
-                ));
+                return Err(Refusal::ObjectLifecycle(LifecycleLocus::Operation(
+                    application.name.clone(),
+                ))
+                .into());
             }
             let parameters = application.declaration.parameters().to_vec();
             let ordered =

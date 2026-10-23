@@ -11,7 +11,7 @@
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 
 use crate::automaton::{translate, AutomatonError, Letter, Monitor, StateId};
-use crate::smt::{Measure, SmtEncodingRefusal};
+use crate::smt::{Measure, Refusal, SmtEncodingRefusal};
 
 /// The most `holds` atoms of a letter the encoding tabulates.
 pub const MAX_ATOMS: usize = 8;
@@ -43,12 +43,13 @@ impl MonitorTable {
     /// The refusal for an automaton error: the state limit is a size limit.
     fn translation(error: AutomatonError) -> SmtEncodingRefusal {
         match error {
-            AutomatonError::StateLimit { limit } => SmtEncodingRefusal::TooLarge {
+            AutomatonError::StateLimit { limit } => Refusal::TooLarge {
                 measure: Measure::MonitorStates,
                 value: limit.saturating_add(1),
                 limit,
-            },
-            other => SmtEncodingRefusal::ItemTranslation(other),
+            }
+            .into(),
+            other => Refusal::ItemTranslation(other).into(),
         }
     }
 
@@ -56,18 +57,19 @@ impl MonitorTable {
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::ItemTranslation`] when the translation does not
-    /// build and [`SmtEncodingRefusal::TooLarge`] when the monitor has more
+    /// [`Refusal::ItemTranslation`] when the translation does not
+    /// build and [`Refusal::TooLarge`] when the monitor has more
     /// atoms or states than the encoding tabulates.
     pub fn of(clause: &CheckedTemporalClause) -> Result<Self, SmtEncodingRefusal> {
         let automaton = translate(clause, MAX_STATES as u64).map_err(Self::translation)?;
         let atoms = automaton.atoms().to_vec();
         if atoms.len() > MAX_ATOMS {
-            return Err(SmtEncodingRefusal::TooLarge {
+            return Err(Refusal::TooLarge {
                 measure: Measure::MonitorAtoms,
                 value: atoms.len() as u64,
                 limit: MAX_ATOMS as u64,
-            });
+            }
+            .into());
         }
         let bits = atoms.len();
         let mut monitor =

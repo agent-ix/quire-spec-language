@@ -7,7 +7,7 @@
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::smt::SmtItem;
-pub use qsl_eval::smt::{SmtEncodingRefusal, SmtQueryKind};
+pub use qsl_eval::smt::{Refusal, SmtEncodingRefusal, SmtQueryKind};
 
 use crate::model_check::item::ModelCheckItem;
 
