@@ -34,3 +34,10 @@ Fidelity:
 | --- | --- | --- | --- |
 | FND-001 | medium | CS-2 says admission applies FR-144's rules so that "duplicates are refused and never removed", with no restriction by collection kind. For a bag, FR-144 and FR-106 group equal elements into one member whose multiplicity is their count, and refuse nothing. The decision text is wrong for bags. Say "in a set or ordered set, duplicates are refused and never removed; a bag groups equal elements into one member with their multiplicity". | spec/decisions/ADR-034-timestamp-payload-collection-spelling-and-one-evaluator.md:61 |
 | FND-002 | low | CS-1 says "A FR-106 document never contains a QSpec FR-181 typed form `{"type": ..., ...}`". FR-106's record value is `{"record": {"type": "<declaration identity>", "fields": ...}}`, which contains an object with a `type` member, so the sentence can be read as excluding records. Name the excluded form by its FR-181 tag: an object whose `type` is an FR-181 tag, such as `{"type": "set", "elements": [...]}`. Also "A FR-106" should read "An FR-106". | spec/decisions/ADR-034-timestamp-payload-collection-spelling-and-one-evaluator.md:60 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 299278250: CS-2 reads "in a set or ordered set a duplicate is refused and never removed, while a bag groups equal elements into one member whose multiplicity is their count", matching FR-106 and QSpec FR-144. |
+| FND-002 | fixed | 299278250: CS-1 reads "An FR-106 document never contains a QSpec FR-181 typed form, an object whose `type` member is an FR-181 tag such as `{"type": "set", "elements": [...]}`", and adds that FR-106's record payload `type` names a declaration, not an FR-181 tag. The "An FR-106" article is fixed. |
