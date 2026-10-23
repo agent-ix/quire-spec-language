@@ -96,7 +96,9 @@ pub enum GraphEvidence {
   predicate values, as FR-128 carries its evaluated value; or a typed
   `ReplayRefusal` with no partial result.
 - For a trap, the replay result also carries the closure exploration's
-  node count.
+  node count and, when the closure holds a target node, the first such
+  node in FR-101 canonical breadth-first order of that exploration, as its
+  `quire.simulation.state-key/v1` digest.
 
 ## Behavior
 
@@ -143,7 +145,10 @@ pub enum GraphEvidence {
   node: `possible`'s and `always possible`'s target, or `unique path`'s `to`.
 - Exploration that completes with no target node SHALL settle
   `reproduced-with-evaluated-witness`. A target node SHALL settle
-  `inconclusive`, `Verdicts`. A node of the closure where the target
+  `inconclusive`, `Verdicts`, and the replay result SHALL name the first
+  target node the exploration reaches. This replay is the trap's whole
+  closure check: a trap carries no certificate, and no certificate
+  checker's rule settles it (FR-282). A node of the closure where the target
   evaluates `Undefined` SHALL settle `inconclusive`, `Verdicts`: the engine
   would have reported it as `Undefined` evidence (QSpec FR-391), not as a
   trap. Exploration a limit stops SHALL return the replay result stopped, naming
@@ -206,6 +211,7 @@ pub enum GraphEvidence {
 | FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`, and so does the evidence with `where.locus` naming another expression, with the same cause. Over the same subject, `always possible PDiv using v over (c: Config::ConfigVersion) from (c.versionNumber >= 1) { 2 / (2 - c.versionNumber) = 2 }` for `c = a`, a claim with two predicates, returns `Undefined` evidence with the same stem whose `where.predicate` names the body; it replays to `reproduced-with-evaluated-witness`, and the same evidence with `where.predicate` naming the `from` predicate `c.versionNumber >= 1`, same cause, settles `inconclusive`, `Verdicts`. | Test (TC-612) |
 | FR-170-AC-6 | A `Witness` arm holding a `WitnessPath::Lasso` over §7.1's subject whose loop is `upd(a)` from `(2, 0)` back to `(2, 0)`, for `possible c.versionNumber = 2`, replays the loop by FR-128's rules; the same lasso with its loop entry moved so the loop does not close refuses as FR-128 refuses. A `Trap` with `TrapClosure::Product` is routed to FR-181's product replay and never explored as a state-graph closure. | Test (TC-595) |
 | FR-170-AC-7 | FR-168-AC-11's guard evidence, FR-168-AC-12's terminal-predicate evidence and FR-168-AC-13's state-constraint evidence each replay to `reproduced-with-evaluated-witness`, and FR-168-AC-13's evidence does so through a request that selects `Half` and through one that selects no constraint, since the replay reads `Half` from `where.locus`; the guard evidence with `where.transition` naming another transition, or with its stem's last step removed, settles `inconclusive`, `Verdicts`. FR-168-AC-13's evidence with its stem's last step removed, which ends at `va = 1` where `Half` is defined, and with its cause changed to another reason, each settle `inconclusive`, `Verdicts`; the same evidence in an envelope over the unit where `Half` is declared `invariant` instead, with that unit's own `package_id`, refuses `stale_dependency`/`content-mismatch` naming the locus. | Test (TC-612) |
+| FR-170-AC-8 | Over ADR-022 §7.2's game model, `CanStillWin`'s trap at `Lost` replays by exploring its forward closure `{Lost}`, which holds no target node, reports node count 1, reproduces, and FR-169 settles it `refuted`, `closed-scope` (V-10) with no certificate checked. The same trap with its stem ending at `Mid`, whose forward closure reaches `Won`, settles `inconclusive`, `Verdicts`, and its replay result names `Won`'s state-key digest as the first target node. | Test (TC-595) |
 
 ## Dependencies
 
