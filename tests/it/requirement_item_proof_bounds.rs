@@ -11,13 +11,14 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::{CatalogCode, CatalogCoded, RequestIndex};
+use qsl_foundation::RequestIndex;
 use qsl_route::request::{
     items_from_requirements, BoundRefusal, ExtentClassification, RequirementItem,
 };
 use qsl_route::Registry;
 use qsl_semantics::check::Capability;
 use quire_exact::Integer;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
 use super::request_builder::package;
 

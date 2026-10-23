@@ -71,7 +71,7 @@ fn ill_typed() -> CheckCause {
 
 fn invariant() -> CheckCause {
     CheckCause::InternalFault(Box::new(KeyFault::StageFault(
-        qsl_foundation::InternalFault::new("S3", "refinement-test"),
+        quire_semantic_value::catalog::InternalFault::new("S3", "refinement-test"),
     )))
 }
 
@@ -570,7 +570,7 @@ fn an_exhausted_budget_is_incomplete_naming_work_units() {
 #[trace("TC-862", "FR-342-AC-4")]
 #[test]
 fn dispositions_the_gate_never_produces_are_tool_failures() {
-    let fault = || qsl_foundation::InternalFault::new("test", "refinement-test");
+    let fault = || quire_semantic_value::catalog::InternalFault::new("test", "refinement-test");
     let dispositions = [
         ClauseDisposition::UnknownLanguage {
             language: "ix:other".to_owned(),
@@ -930,7 +930,7 @@ fn a_model_budget_denial_at_s3_is_incomplete_naming_the_limit() {
                 node: "op".to_owned(),
             },
             code: Code::ResourceExhausted,
-            catalog: qsl_foundation::CatalogCode::new(
+            catalog: quire_semantic_value::catalog::CatalogCode::new(
                 "resource_exhausted",
                 "insufficient-next-charge",
             ),

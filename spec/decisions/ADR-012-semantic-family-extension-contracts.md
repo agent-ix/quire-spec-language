@@ -276,9 +276,9 @@ it is the hook's return type and the `check` core defines the hook.
 
 The rule for a family that sits out a stage depends on the stage. At an
 evaluation stage, the family is absent from the stage's input type, so no arm
-and no refusal exists for it. This follows the #214 precedent below: a
-contract part that nothing can legitimately construct is left out, not
-stubbed. Nothing produces an S6a evaluation of a `Relation` declaration:
+and no refusal exists for it, by the rule for contract parts with no
+construction below: a contract part that nothing can legitimately construct
+is left out, not stubbed. Nothing produces an S6a evaluation of a `Relation` declaration:
 the abstraction relation has no FR-057 capability kind (§7.2), so no
 counterexample of it exists, and the refinement gates are test gates whose
 cases reach S6a as clause runs (ADR-017 RF-1), not as a `Relation` declaration
@@ -323,103 +323,39 @@ Decided under QSL-242, for these reasons:
   F1/F2) had no consumer: its caller discarded its output and built the
   bytes another way.
 
-**#214's implementation record.** #214 (FR-062/FR-065) implements this
-contract for real, migrating `Value`'s function-declaration and
-function-application forms as the one representative family, and finds
-that several parts of the design-level shape above have no real
-construction with only one family migrated and that family carrying no
-FR-057 capability kind and no typed refusal cause distinct from its
-existing checking refusals. Rather than keep a part of the contract that
-nothing can ever legitimately construct (an uninhabited type whose own
-`#[allow(dead_code)]` would be the only way past the lint gate), #214
-narrows the implemented trait shape to what it can back with a real
-caller, and records what is deferred here so the intent survives past this
-one PR:
+**Contract parts with no construction.** A family implements a contract
+part only where that part has a real construction site in the family. A part
+that nothing can legitimately construct is left out, not stubbed: no
+uninhabited type, no method that returns `None` unconditionally, and no
+variant that no caller builds. The parts above therefore hold for every
+family as follows.
 
-- `FamilyContract::requirements()` and the `Requirements`/`CapabilityKind`/
-  `Extent`/`Bound` types are **not implemented**. FR-057/#229 states plainly that function-application has no FR-057 capability
-  kind at all ("no kind for an expression nested in a clause, such as a
-  function application"), so a `requirements()` for this family would
-  return `None` unconditionally -- not a real function, its own absence
-  wearing a signature. ADR-013 §7 S-6 adds
-  `Requirements` and `requirements()` back to the contract with the ADR-014
-  bound types; each family with a real FR-057 kind implements it in its own
-  migration, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
-- `FamilyContract::Cause` is **not a trait associated type**; `check`
-  returns `CheckOutcome<Self::Checked>` with no cause type parameter.
-  Function declaration has no typed refusal cause distinct from `Value`'s
-  existing checking refusals (`CheckCause`), so a `Cause` enum for it would
-  have zero real variants; a probe over such an enum tests only its own
-  `catalog_code()` mapping, not a seam (S4, §5.1). The family whose
-  migration first has a real typed cause adds `Cause` back to the trait and
-  to FR-063's seam-probe checked-in list (S4) in that change.
-- `PackageRefusal` is **deleted**; `FamilyContract::package` itself is
-  **deleted entirely** (PR #262 review, findings F1/F2, a correction to
-  this paragraph's earlier "`package` returns `()`" text). Its one real
-  caller, `CheckedPackage::emit_function_package_v2` (deleted itself, along with the second `quire.checked-function-package/v2`
-  producer it belonged to), wrote `package`'s output into a scratch buffer
-  it never read back, then built its actual returned bytes independently
-  through `family::emit_v2` -- a hook nothing consumed. QSL-242 settled
-  that the contract has no `package` part ("Packaging" above).
-- `StageFailure` carries only `Limit`, not `Fault` (this paragraph's
-  earlier text) and not a family-typed `Refused`. `Fault(InternalFault)`'s
-  one construction site compared `mint_declaration_identity`'s output
-  against itself -- a pure function called twice with the same arguments,
-  which cannot fail by construction -- so PR #262 review (finding F7)
-  deleted it along with the fabricated comparison that was its only
-  caller. `src/diagnostic.rs`'s own `InternalFault` (landed after #214's
-  first pass, from #213 S-5) is that type's real eventual home for a
-  future stage entry with a genuine internal-fault outcome.
-- The S1 stage-participation table (`stage_hooks(FamilyKind, Stage) ->
-  HookStatus`) is **deleted** (PR #262 review, finding F7): its only
-  non-test callers were three `assert_eq!` sites asserting a hand-written
-  `match`'s own literal result against itself, and removing those
-  fabricated callers left the table with no real reader. FR-063-AC-6's
-  checked-in S1 list narrows from two locations to one accordingly (see
-  FR-063's and `xtask/src/seam_probe.rs`'s own correction notes).
-- `ReferenceEvaluation::EvaluateRefusal` carries only `Refused(String)`, not
-  an `Incomplete` variant carrying a real meter state: `quire-exact`'s own
-  `Meter::charge`/`charge_plan` are `pub(crate)`
-  (`quire-exact/src/accounting.rs:551,595`), not exported, so no family
-  migrated so far can construct a real `Incomplete` from outside
-  `quire-exact`. This is an export gap in `quire-exact` (#213's own scope),
-  not a QSL-side design choice; #214 defers `Incomplete` to when that gap
-  closes rather than fabricate a caller for an unreachable variant.
+- `Cause`: every family's `check` refuses with `StageFailure::Refused` of its
+  own `Cause`, which implements `CatalogCoded`. A family whose refusals are
+  the shared checking refusals takes `CheckRefusal` as its `Cause`, and adds
+  its own enum, with its seam-probe entry (§5.3), when it has a refusal
+  `CheckRefusal` does not name.
+- `requirements()`: every family implements it, and a family whose claim
+  forms carry no FR-057 kind returns no claim (§7.2). Its value is read from
+  the extents `check` classified, so the method stays pure and total.
+- `StageFailure` holds `Limit`, `Refused`, `Cancelled` (ADR-029 LC-3) and
+  `Fault`. `Fault` carries an `InternalFault` (FR-275) only from a check
+  whose failure is possible: never from a pure function compared with its
+  own output.
+- There is no `package` part ("Packaging" above) and no stage-participation
+  table. A family's participation in a stage is the hooks it implements and
+  the stage input types it appears in, and both are checked by the compiler.
+- An `evaluate` hook charges the meter it is given. A charge the meter cannot
+  afford returns the kernel `Outcome`'s incomplete result inside
+  `EvalOutcome::Kernel`, while `check` answers an exhausted meter with
+  `StageFailure::Limit` and never with an incomplete result (FR-062-AC-5).
+- A family's `check` makes the family's admission decision: the typing,
+  definedness and termination verdict of its forms, beside its identity and
+  provenance. The S3 typer reaches a migrated form only through a thin
+  dispatch seam (§4.3) and holds no second checker for it (FR-065-CON-2).
 
-**What #214 actually delivers against the design intent above (PR #262
-review headline finding).** The narrowing recorded here is about which
-contract *parts* have a real construction site; it is not a claim that the
-part which remains -- `check` -- performs the family's admission decision.
-It does not, for either form #214 migrates: `ValueFunctionFamily::check`
-mints an identity and records one diagnostic, refusing only on a
-checking resource limit; the real typing, definedness and termination verdict
-for function declarations is made entirely by the unchanged `Typer`,
-invoked unconditionally immediately after, for every declaration, and
-`Expression::Call` (function application) never calls any
-`FamilyContract` method at all -- `Self::call` in `check.rs` is Typer's own
-unchanged method, with one incidental call to `family::mint_call_identity`
-added for identity. Both the contract's `check` and the unchanged `Typer`
-run for every declaration and every call. This is not the ADR-011 §7.3
-M-6e side-by-side hazard in the narrow sense that rule targets -- `Typer`
-was never a separate, deprecated *old* admission path left running by
-oversight; it is the only checker either form has ever had, and the
-contract's `check` was never built to replace it, only to mint identity
-alongside it -- but it does mean FR-065's own text ("check... exclusively
-through the contract") is delivered only for identity and provenance
-minting, not for the checking decision itself. FR-065's Status section
-records this by Acceptance Criterion; the real migration (moving the
-checking itself into `ValueFunctionFamily::check` and removing it from
-`Typer`) is filed as its own, separate ticket rather than attempted as
-part of #214.
-
-None of this changes the six-part contract's design intent above, which
-remains the target shape; it is what #214 could back with a real,
-non-fabricated caller against the one family it migrated, and -- for the
-checking decision itself -- less than #214's own first-pass report
-claimed. See
-[docs/family-migration-recipe.md](../../docs/family-migration-recipe.md)
-for the recipe each later family migration follows, including when each
-deferred part comes back.
+[docs/family-migration-recipe.md](../../docs/family-migration-recipe.md) is
+the procedure a family migration follows to meet these rules.
 
 ## 3. Family-owned responsibilities
 
@@ -557,7 +493,7 @@ listed seam.
 
 | # | Closed enum | Seams that must fail to compile | Owner |
 |---|---|---|---|
-| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over the S6a family kind, a closed enum beside `ReferenceEvaluation` in layer-5 `value::expression` (ADR-011 §6.2 `family` row) with one variant per family that implements `ReferenceEvaluation`, matched with one arm per variant and no `_` arm, so `Relation` and `StateModel` have no evaluation arm (§2, FR-090-AC-4, ADR-016 FP-3). The calls into a family's `check`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
+| S1 | `FamilyKind` | every `match` on `FamilyKind`: the `catalog_code()` family prefix. Which hook a family has at a stage is the set of hooks it implements and the stage input types it appears in, so no table states it (§2). The ADR-011 S6a seam dispatches over the S6a family kind, a closed enum beside `ReferenceEvaluation` in layer-5 `value::expression` (ADR-011 §6.2 `family` row) with one variant per family that implements `ReferenceEvaluation`, matched with one arm per variant and no `_` arm, so `Relation` and `StateModel` have no evaluation arm (§2, FR-090-AC-4, ADR-016 FP-3). The calls into a family's `check`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
 | S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum. Every selected extension's declaration forms are one `Extension` variant of each, carrying the extension's definition identity, the production and its clauses (amended for FR-354). | parser entry table; check seam | QSL, owning family |
 | S3 | checked node enum (today `NodeKind`). Every admitted extension form is one `Extension` variant carrying the extension's definition identity, its schema node kind and its typed subnodes, built by §4.2's schema-driven builder (amended for FR-354). | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
@@ -1098,7 +1034,7 @@ item settles `invalid-request` with no preference order
 
 | Question | Answer |
 |---|---|
-| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` (which lowers the family's checked nodes, FR-093) and `requirements`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). ADR-011 S4 has no family hook: the v2 emitter writes every family's lowered nodes (§2 "Packaging"). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). At ADR-011 S6a a family that sits out evaluation is absent from the input type (for `Relation`, the S6a family kind has no `Relation` variant), so it has no arm and no refusal (§2). At lowering and proof stages a family that sits out the stage has an explicit, hand-written arm that returns `unsupported` with a catalog code. |
+| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` (which lowers the family's checked nodes, FR-093) and `requirements`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). ADR-011 S4 has no family hook: the v2 emitter writes every family's lowered nodes (§2 "Packaging"). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and a family takes part in a stage exactly through the hooks it implements (§2, §5.1). At ADR-011 S6a a family that sits out evaluation is absent from the input type (for `Relation`, the S6a family kind has no `Relation` variant), so it has no arm and no refusal (§2). At lowering and proof stages a family that sits out the stage has an explicit, hand-written arm that returns `unsupported` with a catalog code. |
 | ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per occurrence of a claim site that has `Requirements`: a clause, or a scalar operation application in a `Value` function body (FR-062). The record is keyed by that site's occurrence key (ADR-013 O-07): for an operation application, the application node's `expression` occurrence recorded at the site's own location, so the key names the node CG generates an obligation for and tells two occurrences of it apart. An operation-application record also holds the application's result bound and path condition (FR-062). `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind and, for `probabilistic-satisfaction`, its exact evidence kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes `Value`'s `check` lowers; temporal admission reads the v2 temporal nodes `TemporalTrace`'s `check` lowers. The S4 v2 emitter writes both (§2 "Packaging"). QSpec owns their spelling. IR decodes them at v2 intake (agent-ix/quire-contract-ir#141) and admits them there (#218 and #223 with agent-ix/quire-contract-ir#109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19), which identifies the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
@@ -1135,7 +1071,7 @@ item settles `invalid-request` with no preference order
 | Decision: `FamilyContract` has no `package` part, and S4's all-or-nothing rule is the emitter's omission closure (§2 "Packaging"); FR-062-AC-1, AC-5's third clause and AC-9 amended to match | Done |
 | Tests for the amended FR-062-AC-1 (TC-160 step 1: `compile_fail` doctests on `FamilyContract` for omitting `requirements` and the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case), AC-5's third clause (`check` and `emit_checked` never return `Incomplete`) and AC-9 (TC-160 step 8), all backed | Done |
 | `StageLimits`'/`LimitKind`'s (then `StageLimitKind`) input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | Done |
-| FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until the S2/S3 probes, the S4 probe and `stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | Done |
+| FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | Done |
 | Spec defects: FR-063-AC-5's gate-stubbing test, and FR-064-AC-6's second half (corrected; the gate now runs `xtask string-edge`) | Done (spec defect) |
 | The add-then-remove-reappears scan sequence, the CLI process-exit-code assertion, and a real test against the ADR-010 §4.3 production dispatch sites still in the tree (FR-064-AC-2, AC-4, AC-5; the AC-5 real-site half landed with the detector widening) | Done |
 | A compile-fail test that the function packaging/lowering public API accepts no raw-CST/source-string overload (backed: `.into()` and a direct `link(..)` call both fail to compile), and a real occurrence-span-survives-linking test (a call's source occurrence resolves to the same byte span before linking, after linking and after a real v2 emit/decode round trip, with a corrupted-alternate control) (FR-065-AC-1, AC-3 -- both now backed, `TC-163`) | Done |
