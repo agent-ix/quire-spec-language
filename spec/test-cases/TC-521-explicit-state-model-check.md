@@ -52,6 +52,15 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
 9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each from a
    test-built checked package carrying its `temporal_clause` node in QSpec
    FR-370's shape, with its `when` condition read by the test's own letters.
+   Then, from the same package form, the guarded TP-4 clauses of
+   FR-126-AC-16: over the example unit, `eventually holds(c.versionNumber =
+   2)` `on each` when `c.versionNumber = 1` under a weak `each` constraint and
+   under a weak constraint with no granularity, then when `c.versionNumber =
+   7` with no fairness, then with the condition undefined at version 1; over
+   `Counter`, `always eventually holds(c.value = 0)` `on each` when
+   `c.value = 3` and when `c.value = 7`. Replay the weak no-granularity lasso
+   and the `Counter` stutter lasso by FR-128, then replay the first with the
+   condition's letters reading false at every position.
 10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
     counterexample replayed.
 
@@ -91,7 +100,15 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 9: `Violated` with the prefix `0 -inc-> 1 -inc-> 2`; `Holds{Exhaustive}`;
   `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; `Holds` with the
   closure certificate of its explored product states, keyed `"each-when"`; `Violated`, `kind: UndefinedEvaluation` naming
-  the activation at position 2.
+  the activation at position 2. For the guarded TP-4 clauses:
+  `Holds{Exhaustive}` with an accepted component certificate; `Violated`
+  bound to `a` with the stem `(0,0) -upd(a)-> (1,0)` and the three-step
+  `upd(b)` loop, length 4; `Holds{Exhaustive}`; `Violated`, `kind:
+  UndefinedEvaluation` naming the activation at position 1; `Violated` with
+  the prefix to value 3 and the terminal stutter loop; `Holds{Exhaustive}`.
+  Both lassos replay to `reproduced-with-evaluated-witness`; with the
+  condition false everywhere the replay settles `inconclusive`,
+  `ReplayParity`.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then
   `reproduced-with-evaluated-witness`.

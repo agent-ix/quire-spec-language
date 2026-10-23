@@ -16,16 +16,16 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
     InvocationBinding, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
-use qsl_semantics::value::supplied::SuppliedStop;
 use quire_exact::{compare_keys, Incomplete, ScalarLimits, Value};
 use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::supplied_stop::SuppliedStop;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 
 mod wire;
 use crate::identity::TracePosition;
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::provenance::SourceRegion;
+use quire_semantic_value::catalog::Category;
 pub use wire::CauseCodecError;
 pub(crate) use wire::{validate_state_element, RecordWire};
 

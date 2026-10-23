@@ -20,7 +20,6 @@
 //! [`crate::spine::Call`]; it names a call site, it does not make one.
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
@@ -29,6 +28,7 @@ use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClau
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
 use quire_exact::{Cancel, Identifier, NodeKey, Origin, Role};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::execute::callable_parameter_keys;
 use crate::identity::QualifiedName;
@@ -302,6 +302,31 @@ pub enum CallSiteRefusal {
         /// The compiled package's own `package_id`.
         package: DigestRecord,
     },
+    /// `selection`'s owner `T` names a declaration of the compiled `package`
+    /// that is not an object type, a process or a state machine (a record
+    /// value type, an event type, a persistence interface, an enum, a
+    /// population, ...), so it declares no operation (FR-121). Mirrors QSpec
+    /// FR-323's refusal of such a `frame_operation.object`. Paired with the
+    /// package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("invalid_model_binding/malformed-declaration: package {} declares {selection}'s owner as no object type, process or state machine", .package.hex())]
+    NotAnOperationOwner {
+        /// The operation `call_site` was given.
+        selection: OperationName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
+    /// `selection`'s operation name resolves, in its owner's effective view,
+    /// to declarations of two supertypes neither of which hides the other
+    /// (QSpec FR-342). Decided before the operation's frame is looked for,
+    /// so an ambiguous name is never an [`Self::UnknownOperation`]. Paired
+    /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("ambiguous_declaration/ambiguous-name: package {} exposes operation {selection} through two supertypes", .package.hex())]
+    AmbiguousOperation {
+        /// The operation `call_site` was given.
+        selection: OperationName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
     /// `selection` names no state clause of the compiled `package`. Paired
     /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
     #[error("missing_declaration/missing-name: package {} declares no state clause {selection}", .package.hex())]
@@ -360,6 +385,8 @@ impl CallSiteRefusal {
             | Self::UnknownClause { .. }
             | Self::UnknownField { .. }
             | Self::UnknownPopulation { .. } => Code::MissingDeclaration,
+            Self::NotAnOperationOwner { .. } => Code::InvalidModelBinding,
+            Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -573,15 +600,26 @@ impl sealed::Locate for OperationName {
         package_id: DigestRecord,
     ) -> Result<OperationSite, Box<CallSiteRefusal>> {
         let graph = package.graph();
-        let (_, frame) = graph
+        let refuse = |build: fn(OperationName, DigestRecord) -> CallSiteRefusal| {
+            Box::new(build(self.clone(), package_id))
+        };
+        if graph.names_non_owner_declaration(&self.model, &self.object) {
+            return Err(refuse(|selection, package| {
+                CallSiteRefusal::NotAnOperationOwner { selection, package }
+            }));
+        }
+        let unknown = || {
+            refuse(|selection, package| CallSiteRefusal::UnknownOperation { selection, package })
+        };
+        let selection = graph
             .resolve_operation(&self.model, &self.object, &self.operation)
-            .and_then(|resolved| graph.operation_frame(&resolved))
-            .ok_or_else(|| {
-                Box::new(CallSiteRefusal::UnknownOperation {
-                    selection: self.clone(),
-                    package: package_id,
-                })
-            })?;
+            .ok_or_else(unknown)?;
+        if graph.operation_is_ambiguous(&selection) {
+            return Err(refuse(|selection, package| {
+                CallSiteRefusal::AmbiguousOperation { selection, package }
+            }));
+        }
+        let (_, frame) = graph.operation_frame(&selection).ok_or_else(unknown)?;
         operation_site(graph, &self.model, frame)
     }
 }
@@ -789,6 +827,7 @@ mod tests {
         bytes: &[u8],
         package_id: DigestRecord,
         function: QualifiedName,
+        declaration: qsl_foundation::source::provenance::OccurrenceKey,
         assignments: Vec<CanonicalAssignment>,
     ) -> ReplayRequestWire {
         let source_digest_record = DigestRecord::mint(
@@ -810,7 +849,7 @@ mod tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            replay_target: crate::RequestTargetWire::function(function, crate::target::test_key()),
+            replay_target: crate::RequestTargetWire::function(function, declaration),
             source: ReplaySource::Input(assignments),
             obligation_identity: [0; 32],
             backend: "kani-backend-1".to_owned(),
@@ -847,6 +886,7 @@ mod tests {
             bytes,
             site.package_id,
             name("p"),
+            site.site.declaration.clone(),
             vec![CanonicalAssignment {
                 parameter: *node_id,
                 value: crate::witness::WitnessValue::Integer(3),
@@ -943,15 +983,36 @@ mod tests {
         let wire: serde_json::Value =
             serde_json::from_slice(&site.package).expect("the package bytes are JSON");
         assert_eq!(wire["contract_version"], "quire.checked-package/v2");
-        let document =
-            quire_canonical::read(&site.package, u64::MAX).expect("the package bytes read");
-        let identity_preimage = document
-            .root()
-            .get("identity_preimage")
-            .expect("the package carries an identity preimage");
-        let digest =
-            quire_canonical::sha256(&identity_preimage, quire_canonical::Limits::new(u64::MAX))
-                .expect("the identity preimage is canonical JSON");
+        // The wire `identity_preimage` holds the seven selections only; the
+        // hashed preimage adds the `identity_projection` derived from the
+        // admitted `semantic_graph` (QSL-1009), so rebuild it from IR's own
+        // admitted view of the bytes.
+        let mut evidence = quire_contract_model::CheckedPackageEvidence::new();
+        for feature in wire["lock"]["required_features"].as_array().unwrap() {
+            evidence.support_feature(feature.as_str().unwrap());
+        }
+        let quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) =
+            quire_contract_model::read_checked_package(
+                &site.package,
+                quire_contract_model::CheckedPackageReadLimits::bounded(),
+                &evidence,
+            )
+        else {
+            panic!("IR admits the package bytes");
+        };
+        let selections = package.identity_preimage();
+        let preimage = quire_contract_model::CheckedPackageIdentityPreimageRefV2 {
+            version: &selections.version,
+            edition: &selections.edition,
+            profile_selections: &selections.profile_selections,
+            definition_selections: &selections.definition_selections,
+            model_selections: &selections.model_selections,
+            required_features: &selections.required_features,
+            dependency_selections: &selections.dependency_selections,
+            identity_projection: &package.graph().nodes,
+        };
+        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
+            .expect("the identity preimage is canonical JSON");
         assert_eq!(
             DigestRecord::mint(DigestDomain::PackageSemanticV2, *digest.as_bytes()),
             site.package_id
