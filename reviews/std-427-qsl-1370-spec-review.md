@@ -77,3 +77,7 @@ Round 1, against head ae1210a5. Gate `make check-spec-validation` at ae1210a5 ex
 | FND-008 | fixed | - |
 | FND-009 | fixed | - |
 | FND-010 | fixed | - |
+| FND-011 | fixed | - |
+| FND-012 | fixed | - |
+| FND-013 | fixed | - |
+| FND-014 | fixed | - |
