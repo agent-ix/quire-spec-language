@@ -15,10 +15,12 @@ fn unit() -> String {
          function b using v(t: Sequence<Int[0, 9]>[0, 3]): Boolean pure {{ forall(v in t: 10 mod v > 0) }}\n\
          function u using v(x: Int[0, 9], y: Int[0, 9]): Integer pure {{ 10 mod x }}\n\
          function inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
-         function ub using v(x: Int[0, 9], flag: Boolean): Integer pure {{ 10 mod x }}\n\
-         function ur using v(x: Int[0, 9], y: Int[3, 9]): Integer pure {{ 10 mod x }}\n\
-         function un using v(x: Int[0, 9], y: Int[-9, -2]): Integer pure {{ 10 mod x }}\n\
+         function ub using v(x: Int[0, 9], flag: Boolean): Integer pure {{ 10 mod x + (if flag then 0 else 10 mod (x - 1)) }}\n\
+         function ur using v(x: Int[0, 9], y: Int[3, 9]): Integer pure {{ 10 mod x + 10 mod (y - 3) }}\n\
+         function un using v(x: Int[0, 9], y: Int[-9, -2]): Integer pure {{ 10 mod x + 10 mod (y + 2) }}\n\
          function us using v(x: Int[0, 9], t: Sequence<Int[0, 9]>[0, 3]): Integer pure {{ 10 mod x }}\n\
+         function g using v(x: Int[0, 9]): Integer pure decreases(x) {{ 10 mod x + (if x > 0 then h(x - 1) else 0) }}\n\
+         function h using v(x: Int[0, 9]): Integer pure decreases(x) {{ if x > 0 then g(x - 1) else 0 }}\n\
          function f using v(x: Int[0, 9]): Integer pure decreases(x) {{ 10 mod x + (if x > 0 then f(x - 1) else 0) }}\n"
     )
 }
@@ -525,19 +527,24 @@ fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
 }
 
 /// FR-098-AC-24, the unread-parameter rule per type: a `Boolean` fills
-/// `false`, a range without 0 fills its end nearest 0, and a parameter of any
+/// `false`, a range without 0 fills its end nearest 0 (observably), and a parameter of any
 /// other type stays unbound and refuses `UnboundParameter`.
 #[trace("TC-444", "FR-098-AC-24")]
 #[test]
 fn tc_444_unread_parameters_fill_by_type() {
     let source = unit();
     let compiled = spine(&source, &BTreeMap::new());
+    // Each body also reads the unread parameter so that only the correct
+    // fill is undefined there: the claim site (`10 mod x`) is defined at
+    // `x = 1`, and the later undefined step is another location, so only the
+    // correct fill (`false`, 3, -2) settles `NoValue`. Any other in-range
+    // fill completes and settles `Verdicts(true)`.
     for function in ["ub", "ur", "un"] {
         let x = parameter(&compiled, function, 0);
         let key = record(&compiled, &source, function, "10 mod x", 0);
         assert_eq!(
-            settled(run(&source, &compiled, function, &key, &[(x, int(0))])),
-            Settled::Reproduced(boolean(false)),
+            settled(run(&source, &compiled, function, &key, &[(x, int(1))])),
+            Settled::NoValue,
             "{function}"
         );
     }
@@ -564,6 +571,22 @@ fn tc_444_a_stop_inside_a_recursive_call_is_not_the_outer_observation() {
     let key = record(&compiled, &source, "f", "10 mod x", 0);
     assert_eq!(
         settled(run(&source, &compiled, "f", &key, &[(x, int(1))])),
+        Settled::NoValue
+    );
+}
+
+/// The same hole through mutual recursion: `g` calls `h` calls `g`, and the
+/// nested `g(0)` stops at `g`'s claim site. At `x = 2` the outer `10 mod 2`
+/// is defined, so the claim holds and replay settles `NoValue`.
+#[trace("TC-444", "FR-098-AC-22")]
+#[test]
+fn tc_444_a_stop_inside_a_mutually_recursive_call_is_not_the_outer_observation() {
+    let source = unit();
+    let compiled = spine(&source, &BTreeMap::new());
+    let x = parameter(&compiled, "g", 0);
+    let key = record(&compiled, &source, "g", "10 mod x", 0);
+    assert_eq!(
+        settled(run(&source, &compiled, "g", &key, &[(x, int(2))])),
         Settled::NoValue
     );
 }
