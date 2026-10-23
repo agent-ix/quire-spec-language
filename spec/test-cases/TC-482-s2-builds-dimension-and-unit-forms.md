@@ -34,11 +34,14 @@ alias is `v`.
    `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);`.
 4. Run S1 and S2 on a unit declaring `unit m : Length = rational(1, 1);`.
 
-5. Run S1 and S2 on a unit declaring `dimension Distance ~ Length;`, then
-   `dimension R::Time ~ F::Time;`, then `dimension R::Time ~ F::Time;`
-   followed by `dimension F::Time ~ R::Time;`.
+5. Run S1 and S2 on a unit declaring `dimension Distance ~ Length by 1 dist = 1 km;`, then
+   `dimension R::Time ~ F::Time by 1 R::s = rational(1, 1000) F::ms;`, then a ratio term with
+   `decimal(5, 1)`, then `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`
+   followed by `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;`.
 6. Run S1 and S2 on each of `dimension R::Time;`, `dimension A ~ B ~ C;`,
-   `dimension A ~;` and `dimension A ~ B = C;`.
+   `dimension A ~;`, `dimension A ~ B = C;`, `dimension A ~ B;`,
+   `dimension A ~ B by 1 u;`, `dimension A ~ B by u = 1 v;`,
+   `dimension A ~ B by 1 u = 1;` and `dimension A ~ B by 1 u = 1 v w;`.
 
 Tag the test `#[trace("FR-091-AC-31", "TC-482")]` and the steps 5 and 6 tests
 `#[trace("FR-091-AC-59", "TC-482")]`.
