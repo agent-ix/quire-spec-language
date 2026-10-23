@@ -97,7 +97,7 @@ naming a real, profile-gated capability this build does not admit — a later
 native model profile or a rational scalar/value declared outside its admitting
 profile — has exit code 21; incomplete (exhausted) failures have exit code 22.
 Writing the package bytes to a stream, and a stream that fails or closes,
-are the driver's (FR-287, Overlap).
+are the driver's, specified by FR-287-AC-3 to FR-287-AC-9 (FR-287, Overlap).
 
 ## Behavior
 

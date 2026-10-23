@@ -87,7 +87,7 @@ regardless of how many of each are present or their order in the list.
 An intake failure's outcome carries a JSON error with request digest when
 read, typed stage/code and relevant original source/reference details.
 Writing the outcome to a stream, and a stream that fails or closes, are the
-driver's (FR-287, Overlap). This output is a local native result, not a
+driver's, specified by FR-287-AC-3 to FR-287-AC-9 (FR-287, Overlap). This output is a local native result, not a
 portable verification envelope or assurance claim.
 Serialized results are constructed from typed status/stage payloads; incomplete
 or refused payloads cannot carry truth. Command error spellings belong to the

@@ -17,7 +17,7 @@ When QSL's `parse` or `format` operation finishes, QSL shall report the observed
 A CLI frontend reaches these operations through the driver's `parse` and
 `format` verbs (FR-287). The frontend's arguments, their OS encoding, its
 refusal of a bad invocation and its writes to the process streams are the
-driver's (FR-287, Overlap).
+driver's, specified by FR-287-AC-3 to FR-287-AC-9 (FR-287, Overlap).
 
 ## Inputs
 
