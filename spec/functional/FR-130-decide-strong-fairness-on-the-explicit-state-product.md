@@ -101,8 +101,9 @@ constraint.
   none does.
 - With `Holds`, the engine SHALL return FR-126's `ComponentCertificate`,
   whose component that fails (c) carries `UnfairStrong{constraints, sub}`:
-  every member of `B`, and the sub-components of `fair(S \ R)`, each with
-  its own witness (ADR-019 AM-7), which FR-339's core checker verifies;
+  every member of `B`, ascending by resolved constraint index, and the
+  sub-components of `fair(S \ R)`, each with its own witness (ADR-019 AM-7),
+  listed by FR-126's certificate order, which FR-339's core checker verifies;
   the engine and the checker both remove the states where any listed
   constraint is enabled.
 

@@ -434,9 +434,45 @@ automaton states and the depth reached.
   state, and the second phase's SCCs in topological order, each with the
   first witness that holds for it in the order `Trivial`,
   `MissingAcceptance{set}` (the lowest such set), `UnfairWeak{constraint}`
-  (the first such constraint of the fairness set), and, for an `ra` subject, `UnfairVisibility{constraints, sub}` (ADR-025 MF-2), whose `constraints` index the visibility pairs resolved per (thread, location) (FR-339) (ADR-018 PC-4).
+  (the first such constraint of the fairness set), `UnfairStrong{constraints, sub}`
+  (FR-130), and, for an `ra` subject, `UnfairVisibility{constraints, sub}` (ADR-025 MF-2), whose `constraints` index the visibility pairs resolved per (thread, location) (FR-339) (ADR-018 PC-4).
+  When strong constraints and visibility pairs both fail on one component,
+  its witness is the `UnfairStrong`, and the failing pairs that still load
+  an edge among the remaining states are stated as one `UnfairVisibility`
+  over those states, the only member of the `UnfairStrong`'s `sub`.
 - The certificate SHALL be a function of the subject, the item and the
-  limits.
+  limits, and SHALL list every sequence in the following order, so two runs
+  over the same inputs produce equal certificates:
+  - **Closure states.** The closure's `states` SHALL be ascending by
+    `ProductStateRef`: the `model_state` digest octets, then the
+    `automaton_state` octets, ascending unsigned lexicographic (FR-338's
+    locus order), with no duplicate.
+  - **Bindings.** Every component of one `over` binding's product SHALL
+    precede every component of a later binding's, the bindings in FR-125's
+    canonical instance order. No edge joins two bindings' products, so this
+    order is topological.
+  - **Components within a binding.** A component's vertex index is the least
+    FR-101 canonical breadth-first index, in its binding's product, of any of
+    its states. The components SHALL be listed one at a time: next is the
+    component with the least vertex index among those not yet listed whose
+    every predecessor component (one with an edge into it) is already
+    listed. The order is topological, and it is the least-vertex order
+    whenever that order is itself topological.
+  - **States within a component.** A component's `states` SHALL be
+    ascending by `ProductStateRef`, as the closure's are, so its first
+    listed state is its least.
+  - **Refinements.** A `sub` SHALL list the components of the refined
+    subgraph (the states at which no listed strong constraint is enabled,
+    or the component's states without the edges that load a listed pair)
+    by the same component rule over that subgraph, with the vertex indices
+    of the binding's product, each with the first witness that holds for
+    it in the witness order above.
+  - **Constraint lists.** `UnfairStrong.constraints` and
+    `UnfairVisibility.constraints` SHALL be ascending by resolved
+    constraint index (FR-339), with no duplicate, and SHALL list every
+    failing member: every strong constraint enabled at some state of the
+    component and taken by no edge inside it, or every visibility pair
+    loaded and never taken inside it.
 
 ### Determinism
 
@@ -464,6 +500,7 @@ automaton states and the depth reached.
 | FR-126-AC-15 | With initial versions `a` 0 and `b` 1 and the AC-12 claim, whose first phase ends in `a` with a finding at depth 2, `max_states` 6 returns `Stopped{ResourceExhausted, {MaxStates, 6}}`, since binding `b` stops before it completes depth 1; `max_states` 1,000 returns the AC-14 finding for `b`; with both versions 0, `max_states` 1,000 returns the AC-12 finding for `a`, the tie going to the earlier binding. | Test (TC-1085) |
 | FR-126-AC-16 | Given to the engine directly as a checked package of the unit that carries each guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's guard term), built by the test because S3/S4 refuse an `on each` clause `NotEmitted` (FR-337, QSL-926), so that the clause root a certificate key names resolves in that package, and with each condition the reading the letter seam returns rather than source text, over the `Counter` subject, `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with a `when` condition returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` when the condition is `c.value = 1`, and `Holds{Exhaustive}` when it is `c.value >= 2`; `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value >= 3` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, and with the condition `c.value = 7` returns `Holds{Exhaustive}` with the `ClosureCertificate` of its explored product states, keyed with activation `"each-when"` (FR-338-AC-10); `eventually[0,3] holds(c.value = 3)` `on each` with a condition undefined at value 2 returns `Violated` with `kind: UndefinedEvaluation` at position 2 and the prefix `0 -inc-> 1 -inc-> 2`, its site naming the activation. A partial-order run of such a clause asks the letter seam for the condition's footprint: a footprint with no rule refuses the run `Footprint`, and the transitions the footprint meets are visible. | Test (TC-521) |
 | FR-126-AC-17 | Over the `Counter` subject under infinite-trace, `always (holds(c.value = 3) implies eventually[1,1] not holds(c.value = 3))` `on origin`, violated only at the stutter position after value 3, returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a loop at position 3 with the terminal stutter marker set, and length 4; the counterexample replays to `reproduced-with-evaluated-witness`. | Test (TC-521) |
+| FR-126-AC-18 | Certificate order. AC-1's weak `each` proof returns a `ComponentCertificate` whose closure `states` are ascending by `ProductStateRef` with no duplicate, every component of binding `a` listed before every component of binding `b`, each component's `states` ascending by `ProductStateRef`, and each binding's components in the order the "Components within a binding" rule computes from the retained product graph; running the request twice gives byte-equal certificates. The `Fork` unit (population `forks`, field `phase: Int[0, 2]`, universe `{f}`, initial phase 0, operations `left` from phase 0 to 1, `right` from phase 0 to 2 and `back` from phase 2 to 1, no `terminal` declaration) with `always eventually holds(f.phase = 1)` and no fairness constraint returns `Holds{Exhaustive}` with a certificate in which the component holding vertex index 0 is first, every component holding a phase-2 state precedes every component holding a phase-1 state whatever their vertex indices, every component holding a phase-1 state (the terminal stutter edge a self-edge) carries `MissingAcceptance`, every other component carries `Trivial`, and FR-339's checker accepts it. FR-130-AC-5's entry lists `acq(1)` before `acq(2)`. | Test (TC-521) |
 
 ## Dependencies
 

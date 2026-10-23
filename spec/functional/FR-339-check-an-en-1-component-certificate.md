@@ -97,10 +97,25 @@ constraint, in FR-123's order.
   not bad for a TP-4 item, whose terminal state reads by its stutter edge
   (ADR-018 DL-6). It SHALL pass the same request limits and Cancel handle
   to the closure check, and immediately propagate `Rejected` or `Stopped`
-  unchanged. The checker SHALL charge those same existing budgets during
-  component enumeration, partition and acceptance/fairness work, and check
-  cancellation at each charge as FR-338 specifies. `Accepted` requires every
-  component check to finish; no stop is translated into a defect or an accepted proof.
+  unchanged.
+- The checker SHALL charge component enumeration, partition and
+  acceptance/fairness work to the same counters, continuing the closure
+  check's consumption within the one invocation (FR-338). The checker SHALL
+  charge once each product state, edge or automaton state that the
+  component rules materialize first, and SHALL NOT charge again one that
+  the closure check charged. The checker SHALL charge the subject's FR-120
+  evaluation meter once per model state for each FR-120 enabled-set or
+  fairness-enabledness evaluation the component rules perform, and the
+  checker SHALL reuse, charging nothing, a value the closure check already
+  evaluated.
+- The checker SHALL check the Cancel handle at each charge and at each
+  component, listed state and computed edge it reads. When component work
+  reaches a limit, the checker SHALL return
+  `Stopped(IncompleteCause::LimitReached{limit, value, setting})` with the
+  actual consumed value and the request setting; when the handle is
+  cancelled, it SHALL return `Stopped(IncompleteCause::Cancelled{source})`,
+  as FR-338 specifies.
+  `Accepted` requires every component check to finish; no stop is translated into a defect or an accepted proof.
 - The checker SHALL reject with `NotPartition` when the components do not
   partition the closure's reached states.
 - The checker SHALL reject with `BackwardEdge` when an edge it computed
@@ -134,6 +149,7 @@ constraint, in FR-123's order.
 | FR-339-AC-2 | Rejected vectors: AC-1's certificate with the witness of `{(*, 0, q1)}` changed to `UnfairWeak` naming `upd(a)`, which edges inside the component take, is rejected `WitnessFails` at that component's first state; with those two components listed before the components that reach them, `BackwardEdge`; with one state listed in two components, `NotPartition`; with a component's witness `Trivial` over a state with a self-edge, `WitnessFails`. | Test (TC-526) |
 | FR-339-AC-3 | Accepted vector: FR-228-AC-5's synthesized SCC with `r` the only accepting state yields a component certificate whose component `{p, q, r}` carries `UnfairVisibility` naming the pair (`b`, `ℓ`), with `sub` `{r}` (`Trivial`) then `{p, q}` (`MissingAcceptance`), and `check_components` accepts it although the removed edge `q → r` goes from `{p, q}` to the earlier `{r}`; the same certificate with the witness `UnfairWeak` over that pair, or with `q → r` not removed (so `BackwardEdge` fires), is rejected. | Test (TC-526) |
 | FR-339-AC-4 | Package identity. AC-1's certificate carries in its closure the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its closure's `package_id` replaced by that of the same unit with the claim's target edited to `c.versionNumber = 1` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the closure's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with AC-2's `upd(a)` witness (a `WitnessFails` defect) still returns `PackageMismatch`, because no rule is evaluated. | Test (TC-1141) |
+| FR-339-AC-5 | Charges. AC-1's certificate checked with `max_states`, `max_transitions` and `max_automaton_states` equal to the product states, edges and automaton states its closure holds is `Accepted`, since component work charges no fact the closure check charged; with `max_states` one below that count it returns `Stopped(LimitReached{MaxStates, value, setting})` with the consumed value and the request's setting, never `Rejected` or `Accepted`. AC-1's certificate checked with a Cancel handle cancelled at its first check after the closure check completes returns `Stopped(Cancelled{source: Requested})`. Each stop settles `incomplete` (FR-127), never `CertificateRejected` or `proved`. | Test (TC-526) |
 
 ## Dependencies
 

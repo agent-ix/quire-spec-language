@@ -15,7 +15,7 @@ granularities, bounded clauses `on origin` and `on each`, an invariant,
 deadlock detection, a mixed formula, every limit with its value, the second
 phase at `max_depth`, `max_automaton_states`, and determinism.
 
-Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11, FR-126-AC-16 and FR-126-AC-17.
+Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11, FR-126-AC-16, FR-126-AC-17 and FR-126-AC-18.
 
 ## Test Procedure
 
@@ -53,6 +53,11 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    FR-370's shape, with its `when` condition read by the test's own letters.
 10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
     counterexample replayed.
+11. Step 1's weak `each` proof twice, comparing its certificate's order with
+    the order FR-126's certificate rules compute from the retained product
+    graph; the `Fork` unit's `always eventually holds(f.phase = 1)` with no
+    fairness constraint, then its certificate checked by FR-339's checker;
+    FR-130-AC-5's three-process mutex proof.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
@@ -94,3 +99,10 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then
   `reproduced-with-evaluated-witness`.
+- Step 11: closure and component states ascending by `ProductStateRef`,
+  binding `a`'s components before binding `b`'s, each binding's components
+  in the computed order, and byte-equal certificates across the two runs;
+  `Holds{Exhaustive}` whose first component holds vertex index 0, whose
+  phase-2 components precede its phase-1 components, whose phase-1
+  components carry `MissingAcceptance` and the rest `Trivial`, and which the
+  checker accepts; the `UnfairStrong` entry listing `acq(1)` before `acq(2)`.
