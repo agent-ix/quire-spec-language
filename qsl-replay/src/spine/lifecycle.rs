@@ -840,6 +840,18 @@ fn record_declarations(package: &pkg::CheckedPackage, package_id: &str) {
     }
 }
 
+/// Whether a package with this `package_id` hex was [`compose`]d on this
+/// thread.
+#[cfg(test)]
+pub(crate) fn composed_here(package_id: &str) -> bool {
+    DECLARATIONS.with(|declarations| {
+        declarations
+            .borrow()
+            .keys()
+            .any(|(composed, _)| composed == package_id)
+    })
+}
+
 /// The `declaration` occurrence of `function` in a package [`compose`]d on
 /// this thread, by its `package_id` hex.
 #[cfg(test)]

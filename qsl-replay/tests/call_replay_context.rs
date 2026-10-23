@@ -280,6 +280,14 @@ fn member_request(
     assert_eq!(ours.accounting_limits, theirs.accounting_limits);
     assert_eq!(ours.byte_provision, theirs.byte_provision);
     assert_eq!(ours.declared_domains.len(), theirs.declared_domains.len());
+    for (a, b) in ours.declared_domains.iter().zip(&theirs.declared_domains) {
+        assert_eq!(format!("{a:?}"), format!("{b:?}"));
+    }
+    assert_eq!(ours.source, theirs.source);
+    assert_eq!(ours.profile_selections, theirs.profile_selections);
+    assert_eq!(ours.state_environment, theirs.state_environment);
+    assert_eq!(ours.supplied_limits, theirs.supplied_limits);
+    assert_eq!(ours.object_environment, theirs.object_environment);
     assert_eq!(ours.package_id.1, result.package_id().hex());
     assert_eq!(
         ours.replay_target

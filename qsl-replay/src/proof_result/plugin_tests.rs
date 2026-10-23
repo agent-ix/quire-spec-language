@@ -768,6 +768,24 @@ fn tc_774_function_contract_and_application_items_replay() {
         qsl_foundation::diagnostic::Category::Violation
     );
 
+    // `p`'s `x > 3` application item is the application claim: at `x = 0`
+    // the application is defined (`replay-parity`) while `p`'s
+    // function-contract item for the same assignment is `refuted`.
+    let p_application = fixture
+        .checked
+        .package()
+        .graph()
+        .requirements()
+        .iter()
+        .find(|(_, record)| record.owner() == Some("p"))
+        .map(|(key, _)| key.clone())
+        .expect("p's application has a requirement record");
+    assert_ne!(p_application, p);
+    assert!(matches!(
+        settle(&context, &p_application, &bounds, input(p_x, 0)).value(),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
+
     let refuted = settle(&context, &p, &bounds, input(p_x, 0));
     assert_eq!(refuted.value(), &TerminalValue::Refuted);
     assert_eq!(refuted.backend(), Some(&plugin()));
@@ -799,6 +817,16 @@ fn tc_774_function_contract_and_application_items_replay() {
         .collect();
     assert_eq!(r_applications.len(), 2, "`+` and `>`");
     for application in &r_applications {
+        // The item's identity is the process-provider preimage of its node
+        // and occurrence.
+        let wire = context
+            .request(application, &[bound_at(r_x)], &plugin(), input(r_x, 0))
+            .expect("an application item");
+        let entries = BoundEntries::new(vec![bound_at(r_x)]).unwrap();
+        let identity =
+            process_provider_obligation(application.node(), application.origin(), &entries)
+                .unwrap();
+        assert_eq!(wire.obligation_identity, *identity.as_bytes());
         let record = settle(&context, application, &[bound_at(r_x)], input(r_x, 0));
         assert!(
             matches!(

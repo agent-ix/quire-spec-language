@@ -14,7 +14,12 @@ fn unit() -> String {
          function s using v(x: Int[0, 9]): Integer pure {{ (if x > 0 then 10 mod x else 0) + 10 mod x }}\n\
          function b using v(t: Sequence<Int[0, 9]>[0, 3]): Boolean pure {{ forall(v in t: 10 mod v > 0) }}\n\
          function u using v(x: Int[0, 9], y: Int[0, 9]): Integer pure {{ 10 mod x }}\n\
-         function inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n"
+         function inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n\
+         function ub using v(x: Int[0, 9], flag: Boolean): Integer pure {{ 10 mod x }}\n\
+         function ur using v(x: Int[0, 9], y: Int[3, 9]): Integer pure {{ 10 mod x }}\n\
+         function un using v(x: Int[0, 9], y: Int[-9, -2]): Integer pure {{ 10 mod x }}\n\
+         function us using v(x: Int[0, 9], t: Sequence<Int[0, 9]>[0, 3]): Integer pure {{ 10 mod x }}\n\
+         function f using v(x: Int[0, 9]): Integer pure decreases(x) {{ 10 mod x + (if x > 0 then f(x - 1) else 0) }}\n"
     )
 }
 
@@ -241,6 +246,23 @@ fn tc_444_the_occurrence_key_selects_the_predicate_or_the_application_claim() {
         settled(replay(identified, ReplayLimits::default())),
         Settled::Verdicts(boolean(true))
     );
+    // The identity is carried unchanged into the request the result settles
+    // from: a distinct identity per request survives decoding.
+    for identity in [[1; 32], [2; 32]] {
+        let mut wire = at(
+            &source,
+            &compiled,
+            "p",
+            &p_application,
+            ReplaySource::Input(vec![CanonicalAssignment {
+                parameter: x("p"),
+                value: int(0),
+            }]),
+        );
+        wire.obligation_identity = identity;
+        let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
+        assert_eq!(request.obligation_identity().as_bytes(), &identity);
+    }
 }
 
 /// FR-098-AC-23: two records of one node are two claims, each at its own
@@ -500,4 +522,48 @@ fn tc_444_claim_selection_comes_after_the_function_and_before_the_join() {
         replay(stray, ReplayLimits::default()).unwrap_err(),
         ReplayRefusal::ClaimOccurrence { .. }
     ));
+}
+
+/// FR-098-AC-24, the unread-parameter rule per type: a `Boolean` fills
+/// `false`, a range without 0 fills its end nearest 0, and a parameter of any
+/// other type stays unbound and refuses `UnboundParameter`.
+#[trace("TC-444", "FR-098-AC-24")]
+#[test]
+fn tc_444_unread_parameters_fill_by_type() {
+    let source = unit();
+    let compiled = spine(&source, &BTreeMap::new());
+    for function in ["ub", "ur", "un"] {
+        let x = parameter(&compiled, function, 0);
+        let key = record(&compiled, &source, function, "10 mod x", 0);
+        assert_eq!(
+            settled(run(&source, &compiled, function, &key, &[(x, int(0))])),
+            Settled::Reproduced(boolean(false)),
+            "{function}"
+        );
+    }
+    let x = parameter(&compiled, "us", 0);
+    let key = record(&compiled, &source, "us", "10 mod x", 0);
+    let refused = run(&source, &compiled, "us", &key, &[(x, int(0))]).unwrap_err();
+    assert!(
+        matches!(refused, ReplayRefusal::UnboundParameter(_)),
+        "{refused:?}"
+    );
+}
+
+/// FR-098 "Application claim: the observation", recursion: `Location` has no
+/// frame, so a stop at the claim site inside a recursive call cannot be told
+/// from the outer evaluation. At `x = 1` the outer `10 mod 1` is defined and
+/// the nested `f(0)` stops at the same site: the claim holds at `x = 1`, so
+/// replay must not reproduce a violation. It settles `NoValue`.
+#[trace("TC-444", "FR-098-AC-22")]
+#[test]
+fn tc_444_a_stop_inside_a_recursive_call_is_not_the_outer_observation() {
+    let source = unit();
+    let compiled = spine(&source, &BTreeMap::new());
+    let x = parameter(&compiled, "f", 0);
+    let key = record(&compiled, &source, "f", "10 mod x", 0);
+    assert_eq!(
+        settled(run(&source, &compiled, "f", &key, &[(x, int(1))])),
+        Settled::NoValue
+    );
 }

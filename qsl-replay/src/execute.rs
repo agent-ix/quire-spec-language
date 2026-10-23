@@ -849,10 +849,13 @@ pub fn replay_with_cancel(
     // FR-098 "Application claim: the observation": the call stopped
     // undefined at the application step of the claim's own site. A stop
     // inside an operand, in a nested function or at another occurrence of
-    // the node is a different location and no observation.
+    // the node is a different location and no observation. `Location` has
+    // no frame, so in a recursive function a stop at the site may belong to
+    // a nested call of the function itself: it then settles `NoValue`, which
+    // loses a reproduction and never invents one.
     let failed_at_site = match &claim {
         FunctionClaim::Application(application) => {
-            evaluation.location.as_ref() == Some(&application.site)
+            !application.recursive && evaluation.location.as_ref() == Some(&application.site)
         }
         FunctionClaim::Predicate => false,
     };
@@ -867,7 +870,10 @@ pub fn replay_with_cancel(
                 Some(EvaluatedValue::Boolean(holds)),
             ),
             // A completed call with no failing observation holds the claim,
-            // whether or not it evaluated the occurrence on any path.
+            // whether or not it evaluated the occurrence on any path. FR-098's
+            // "completes outside the record's result bound" arm is not
+            // implemented: no checked package reaches it, and omitting it
+            // fails safe (a missed reproduction, never an invented one).
             (FunctionClaim::Application(_), _) => {
                 (Category::Success, Some(EvaluatedValue::Boolean(true)))
             }
@@ -1282,6 +1288,9 @@ struct ApplicationClaim {
     site: Location,
     /// The extent roots that are parameter nodes of the function.
     roots: BTreeSet<NodeKey>,
+    /// The owning function is in a recursion group (FR-092). A stop at the
+    /// site may then be a nested call's, and `Location` carries no frame.
+    recursive: bool,
 }
 
 impl FunctionClaim {
@@ -1355,7 +1364,14 @@ fn function_claim(
                 .ok_or_else(|| fault("extent-root-is-a-node"))
         })
         .collect::<Result<_, _>>()?;
-    Ok(FunctionClaim::Application(ApplicationClaim { site, roots }))
+    let recursive = semantic
+        .node(callable.identity)
+        .is_some_and(|node| node.recursion().is_some());
+    Ok(FunctionClaim::Application(ApplicationClaim {
+        site,
+        roots,
+        recursive,
+    }))
 }
 
 /// The selected function: its S6a name, and its parameter nodes and

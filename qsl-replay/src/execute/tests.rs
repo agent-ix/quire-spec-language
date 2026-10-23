@@ -127,15 +127,25 @@ fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> WireNodeI
 }
 
 /// The `declaration` occurrence of `function` in the package `package_id`
-/// names, when the test composed it: the key of the predicate claim. A
-/// package the test did not compose has no such key, and its request carries
-/// a placeholder (it refuses before the claim is selected).
+/// names: the key of the predicate claim. A package composed on this thread
+/// must hold the function; a lookup that finds nothing there panics instead of
+/// carrying a placeholder key that would fail with a puzzling
+/// `ClaimOccurrence`. A package id no test composed (a stale or invented id)
+/// refuses before the claim is selected and carries the placeholder.
 fn declaration_key(package_id: &PackageId, function: &QualifiedName) -> OccurrenceKey {
-    let [segment] = function.segments() else {
+    let hex = package_id.hex();
+    if !crate::spine::composed_here(&hex) {
         return crate::target::test_key();
+    }
+    let [segment] = function.segments() else {
+        panic!("declaration_key: `{function:?}` is not a single-segment function name");
     };
-    crate::spine::composed_declaration(&package_id.hex(), segment.as_str())
-        .unwrap_or_else(crate::target::test_key)
+    crate::spine::composed_declaration(&hex, segment.as_str()).unwrap_or_else(|| {
+        panic!(
+            "declaration_key: no function `{}` in the package {hex} composed on this thread",
+            segment.as_str()
+        )
+    })
 }
 
 fn name(segments: &[&str]) -> QualifiedName {

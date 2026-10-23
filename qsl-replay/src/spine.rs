@@ -51,9 +51,9 @@ pub use lifecycle::{
 pub use qsl_semantics::check::LockEvidence;
 
 #[cfg(test)]
-pub(crate) use lifecycle::composed_declaration;
-#[cfg(test)]
 pub(crate) use lifecycle::{compose, ComposedUnit};
+#[cfg(test)]
+pub(crate) use lifecycle::{composed_declaration, composed_here};
 
 mod bind;
 pub use bind::{
