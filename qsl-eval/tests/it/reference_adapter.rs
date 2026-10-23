@@ -678,6 +678,11 @@ fn call_supplied_polls_the_callers_handle_and_the_meters_at_the_first_charge() {
     }
 }
 
+/// FR-262-AC-12 runs 2, 3 and 4 are not asserted here: a handle cannot trip at
+/// the supplied-value run's poll point (`Cancel`'s observer fires on meter
+/// charges only), and `quire-eval`'s contract-admission Begin takes no
+/// caller-supplied run; both await a draco ruling.
+///
 /// FR-262-AC-12 for `Begin` of a call and of a checked expression through the
 /// adapter: the meter's cancelled handle ends it with the handle's cause and
 /// no consumption; an uncancelled handle, or none, gives a session.
@@ -729,4 +734,92 @@ fn begin_of_a_call_and_of_an_expression_observes_the_meters_handle() {
             .begin_expression(&expression, vec![int(3), int(4)], &objects, &mut meter)
             .is_ok());
     }
+}
+
+/// A host body that returns a constant and counts how often it is begun.
+struct Counted {
+    value: i64,
+    begun: Arc<AtomicUsize>,
+}
+
+impl BodyFactory for Counted {
+    fn begin(&self) -> Box<dyn Body> {
+        self.begun.fetch_add(1, Ordering::SeqCst);
+        Box::new(ConstantBody(self.value))
+    }
+}
+
+/// FR-401-AC-8, the std reference evaluator's half: over
+/// `f(x: Int[0, 9]): Integer { x }` with a host body registered for `f` that
+/// returns `7`, a session over `f(3)` returns `7`, and a session over a second
+/// registered body that requests `f(3)` resumes that body with `7`. The
+/// factory for `f` is begun once per application, `f`'s interpreted body makes
+/// no charge, and each application of `f` makes one `function.call` charge.
+/// The run over an interpreted `g(3)` is IR-590's: the reference `Machine`
+/// runs a registered identity applied inside interpreted code as interpreted.
+#[trace("FR-401-AC-8")]
+#[test]
+fn a_registered_body_for_f_runs_for_the_root_and_the_requesting_body() {
+    let integer_f = FunctionDeclaration::new(
+        "f",
+        vec![("x".to_owned(), form(&range(0, 9)))],
+        form(&ValueType::Integer),
+        None,
+        Expression::name("x".to_owned()),
+    );
+    let package = package(vec![integer_f, stand_in("requester")]);
+    let objects = ObjectEnvironment::default();
+    let (f_key, requester) = (identity(&package, "f"), identity(&package, "requester"));
+    let integer = Signature::new(vec![range(0, 9)], ValueType::Integer);
+    let fresh = || {
+        let begun = Arc::new(AtomicUsize::new(0));
+        let mut registry = Registry::new(Closure::new(&package));
+        assert_eq!(
+            registry.register(
+                f_key,
+                &integer,
+                Counted {
+                    value: 7,
+                    begun: Arc::clone(&begun),
+                },
+            ),
+            Admission::Accepted
+        );
+        (registry, begun)
+    };
+
+    let (mut registry, begun) = fresh();
+    let mut meter = Meter::new(UNLIMITED);
+    let result = registry
+        .begin_call(f_key, vec![int(3)], &objects, &mut meter)
+        .unwrap()
+        .run()
+        .unwrap();
+    assert_eq!(completed_int(&result), Some(7));
+    assert_eq!(begun.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        meter.admitted_charges().len(),
+        1,
+        "one function.call, no body charge"
+    );
+
+    let (mut registry, begun) = fresh();
+    register_request(&mut registry, requester, f_key, vec![int(3)]);
+    let mut meter = Meter::new(UNLIMITED);
+    let result = registry
+        .begin_call(requester, vec![int(1)], &objects, &mut meter)
+        .unwrap()
+        .run()
+        .unwrap();
+    assert_eq!(
+        completed_int(&result),
+        Some(7),
+        "the requester resumed with 7"
+    );
+    assert_eq!(begun.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        meter.admitted_charges().len(),
+        2,
+        "one function.call per application"
+    );
 }

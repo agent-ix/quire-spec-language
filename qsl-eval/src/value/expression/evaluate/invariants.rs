@@ -1354,7 +1354,7 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
 }
 
 #[test]
-#[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17")]
+#[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17", "FR-401-AC-9")]
 fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
     use super::super::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
