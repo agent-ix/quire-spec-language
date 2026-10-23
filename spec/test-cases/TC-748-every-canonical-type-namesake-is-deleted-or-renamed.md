@@ -38,5 +38,5 @@ Tag the tests `#[trace("TC-748", "FR-273-AC-1")]`.
 - Step 4: FR-273-AC-n holds for every row: a `delete` row's item does not
   exist, a `rename` row's item carries the row's name in its definition and
   every use, `qsl_replay::identity::QualifiedName` does not exist and
-  `qsl-replay` names `qsl_eval::value::expression::family::QualifiedName`,
+  `qsl-replay` names `qsl_eval::value::expression::family::QualifiedName`, which implements no `From<&str>` or `From<String>`, and a `compile_fail` doctest passing a string literal to the replay request's function selection fails to compile,
   each `keep` row's `pub use` names the row's path with no `as`, and the gate reports no `copy` finding for `quire_semantic_value::location::{Location, Origin}` (FR-273-AC-49).

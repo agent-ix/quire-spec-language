@@ -77,6 +77,18 @@ items.
   `qsl_eval::value::expression::family::QualifiedName`, which FR-401 keeps
   out of the leaf. `qsl-replay` reaches it through its existing `qsl-eval`
   dependency.
+- The replay request SHALL keep FR-071-AC-3 over that one type. Its
+  function-selection entry points (`ReplayRequest::decode` and
+  `ReplayRequestWire::replay_target`) take a `QualifiedName` value, never a
+  `&str`, a `String` or an `impl Into<QualifiedName>`. `QualifiedName` SHALL
+  implement no `From<&str>` and no `From<String>`, so no string converts into
+  it through `Into`, and a string literal in the selection position fails to
+  compile. Its `FromStr` implementation and its
+  `unqualified(impl Into<String>)` constructor are explicit, fallible
+  constructors of the name that refuse a non-identifier
+  (`InvalidQualifiedName`). They are not constructors or decoders of the
+  request and no implicit conversion, so FR-071-AC-3 holds with them in
+  place.
 
 ## Verdict table
 
@@ -177,7 +189,7 @@ FR-273-AC-n.
 | FR-273-AC-37 | No module-level item at root `linking::composed::ParsedSource` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `ParsedSource` at its former path. | Test (TC-748) |
 | FR-273-AC-38 | No module-level item at root `checking::CheckedPackage<'a>` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `CheckedPackage` at its former path. | Test (TC-748) |
 | FR-273-AC-39 | No module-level item at root `protocol_artifact::native::EmittedPackage` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `EmittedPackage` at its former path. | Test (TC-748) |
-| FR-273-AC-40 | No module-level item `qsl_replay::identity::QualifiedName` exists; `qsl-replay`'s former uses name `qsl_eval::value::expression::family::QualifiedName`, which has no `From<&str>` or `From<String>` implementation, so FR-071-AC-3 holds; and the canonical-types gate reports no `identifier` finding for `QualifiedName` in `qsl-replay`. | Test (TC-748) |
+| FR-273-AC-40 | No module-level item `qsl_replay::identity::QualifiedName` exists; `qsl-replay`'s former uses name `qsl_eval::value::expression::family::QualifiedName`, which implements no `From<&str>` or `From<String>`; `ReplayRequest::decode` and `ReplayRequestWire::replay_target` take a `QualifiedName` value, and a string literal passed in the selection position fails to compile (FR-071-AC-3); and the canonical-types gate reports no `identifier` finding for `QualifiedName` in `qsl-replay`. | Test (TC-748) |
 | FR-273-AC-41 | No module-level item at root `runtime::input::QualifiedName` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `QualifiedName` at its former path. | Test (TC-748) |
 | FR-273-AC-42 | No module-level item at root `runtime::input::wire::QualifiedName` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `QualifiedName` at its former path. | Test (TC-748) |
 | FR-273-AC-43 | No module-level item at root `syntax::composed::QualifiedName` exists in the QSL workspace, and the canonical-types gate reports no `identifier` finding for `QualifiedName` at its former path. | Test (TC-748) |
