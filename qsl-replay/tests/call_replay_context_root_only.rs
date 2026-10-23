@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1173 (FR-404-AC-9): a consumer runs a call, builds a request and
+//! TC-1173 step 9, the root-path half of FR-404-AC-9, which is not tagged: the
+//! request here is refused `NotACallItem` (a member's request is refused
+//! `NotReplayable` until QSL-980) and FR-060's T12-A rule is unmet (see
+//! QSL-1006). A consumer runs a call, builds a request and
 //! settles its refusal through the `qsl_replay` root alone. This file names
 //! no `qsl_replay::spine`, `qsl_semantics`, `qsl_foundation` or `quire_exact`
 //! item, so it stops compiling if the facade needs one. The six
@@ -7,7 +10,6 @@
 
 use std::collections::BTreeMap;
 
-use ix_trace_rs::trace;
 use qsl_replay::CanonicalAssignment;
 use qsl_replay::ScalarLimits;
 use qsl_replay::{
@@ -21,7 +23,6 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\
      function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }\n";
 
-#[trace("TC-1173", "FR-404-AC-9")]
 #[test]
 fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
     let call = Call {
