@@ -32,3 +32,9 @@ the amended criterion adds.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-393-AC-5 now requires `[q, *]` to parse, while TC-1078 step 5 and its expected results mention only the two rejection cases. The criterion's named verification case cannot establish its new positive assertion. Add a positive fixture and expected S1/S2 result to TC-1078, or move that assertion entirely to FR-447/TC-1220. | spec/functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md:171; spec/test-cases/TC-1078-s2-builds-time-declaration-quantity-and-timed-interval-forms.md:25,37 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-1078 step 5 now includes `always [2 s, *] holds(p)` and an expected S2 timed interval with an open upper end. |

@@ -44,3 +44,9 @@ Plan completion: not assessed. Matrix status: unavailable in this run; targeted
 trace inspection only. FR-447-AC-3, AC-7, AC-9, AC-10 and AC-11 have tagged
 tests with assertions that can fail. FR-447-AC-15 has partial S3 evidence in
 this PR and awaits its S4 evidence in the stacked emission PR.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The new `timed_interval_with_open_upper_end_builds_at_s2` test is tagged `TC-1078`, `FR-393-AC-5` and asserts the parsed timed interval's lower quantity and open upper end. |
