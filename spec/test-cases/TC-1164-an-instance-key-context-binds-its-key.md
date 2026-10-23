@@ -30,10 +30,10 @@ Scope: FR-338-AC-9.
    key object's FR-181 reference value, `["instance", T, "a"]` (`T` the JSON
    string of `P1`'s declaration identity text) and
    `["instance", {"type":"text","value":"a"}]`, and check the certificate.
-4. Over a subject with population `P1` of `Counter`, universe `["a"]`, an
-   initial `Counter` under `a` and an operation that replaces it by a `Fast`
-   (a subtype of `Counter`), encode the instance's context in a product state
-   before and after that operation.
+4. Over two subjects with population `P1` of `Counter` and universe
+   `["a"]`, one whose initial state holds a `Counter` under `a` and one whose
+   initial state holds a `Fast` (a subtype of `Counter`) under `a`, encode the
+   instance's context in each.
 
 Tag the tests `#[trace("TC-1164", "FR-338-AC-9")]`.
 

@@ -16,7 +16,7 @@ and past operators over a lasso, the `over` binding, its admitted and
 excluded keys, instance order and guard, and the order of the instancing
 outcomes.
 
-Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-15.
+Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-16.
 
 ## Test Procedure
 
@@ -44,20 +44,23 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-15.
    population with no member type comparable with `Lamp` (FR-125-AC-8).
 8. Read the bound parameter of `over (x: Thing)` at positions where the key's
    object is a `Lamp`, a `Switch`, and absent; read that of `over (x: Lamp)`
-   at the same positions; read the instance's name in the obligation identity
-   and in a refuted binding (FR-125-AC-9).
+   at the same positions; read the instance in the obligation identity and the
+   FR-338 key context, and the refuted binding of `over (x: Thing)` at `s`
+   (FR-125-AC-9).
 9. Instantiate a claim over populations `P1` (universe `[d, c]`) and `P2`
    (universe `[b, a]`), every key admitted, and list
-   `ModelSystem::instances`; repeat with `P2`'s universe `[c, a]`
-   (FR-125-AC-10).
+   `ModelSystem::instances`; repeat with `P2`'s universe `[c, a]`; repeat with
+   `P1`'s universe `[d, u]` and `P2`'s `[u, a]`, no initial record admitting
+   `u`, and read the excluded keys (FR-125-AC-10).
 10. At a position where the key's object is a `Switch`, evaluate `x = r` and
     `contains(allInstances<Thing>(P), x)` for `over (x: Thing)`, then the same
     at a position holding a `Lamp`; with `c` listed by `P1` and `P2` of
     `Thing`, evaluate `contains(allInstances<Thing>(P2), x)` for the instance
     `c` (FR-125-AC-11).
 11. Build `dogs` (member `Dog`, universe `[d]`) and `animals` (member
-    `Animal` declaring `age: Int[0, 9]`, universe `[k, t]`, `k` holding a
-    `Dog`, `t` a `Cat`); instantiate `over (x: Dog)`; check the unguarded
+    `Animal` declaring `age: Int[0, 9]`, universe `[k, t]`), with an initial
+    state holding a `Dog` under `k` and a `Cat` under `t` in `animals` and a
+    `Dog` under `d` in `dogs`; instantiate `over (x: Dog)`; check the unguarded
     `always holds(x.age >= 0)`, the claim guarded by the disjunction `G` of
     FR-125-AC-12 and a property guarded by `animals` alone; then instantiate
     over a subject whose only population is `animals` holding only `Cat`
@@ -74,6 +77,9 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-15.
     populations; read a hyper clause's parameter `v: V::Thing` over `P` at
     positions holding a `Lamp` and a `Switch`, and a parameter typed `V::Lamp`
     at the `Switch` position (FR-125-AC-15).
+15. Build FR-125-AC-16's `all` with `all = [c, e]` and check the unguarded
+    `always holds(x.value <= 0)`; repeat with `all = [e, c]` and compare the
+    request identities (FR-125-AC-16).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -100,9 +106,10 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 - Step 8: `over (x: Thing)` reads a reference typed `Lamp`, a reference typed
   `Switch`, and `absent-key` undefined for the absent object; `over (x: Lamp)`
   reads the `Lamp` reference and `absent-key` undefined for the `Switch` and
-  absent objects. The instance is named by its key alone, with no population
-  and no type.
-- Step 9: `d`, `c`, `b`, `a`; then `d`, `c`, `a`.
+  absent objects. The obligation identity and key context hold the key alone;
+  the refuted binding at `s` is (`UniverseId`, `Switch`, `s`), with no
+  population.
+- Step 9: `d`, `c`, `b`, `a`; then `d`, `c`, `a`; then instances `d`, `a` and excluded keys `[u]`.
 - Step 10: `true` for every formula.
 - Step 11: instances `k`, `t`, `d`; `k` reads as the `Dog` reference; the
   unguarded claim refutes with `undefined-evaluation` naming `t`; the claim
@@ -116,3 +123,4 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 - Step 14: the temporal claim's instances, order and excluded keys; `v` reads
   typed `Lamp` and typed `Switch`; the `V::Lamp` parameter reads `absent-key`
   undefined.
+- Step 15: `refuted` in both orders; `[c, e]` reports `c` with no undefined cause, `[e, c]` reports `e` with `undefined-evaluation`; the request identities differ.
