@@ -30,9 +30,8 @@ route's request members (`call`, `libraries`), outcome document
 and exit statuses. The members, outcome and exit
 contract below apply to `0-draft` programs.
 
-The code applies fixed 1 MiB, 64-file and
-8 MiB ceilings; they become the configurable `request_bytes` and
-`dependent_bytes` limits in Behavior (FR-026-AC-4).
+The command's intake limits are the two byte limits `request_bytes` and
+`dependent_bytes` (Behavior). No intake limit counts files.
 
 The `0-draft` request and result identities carry `revision_namespace` and
 `revision` (QSpec STD-150).
@@ -87,7 +86,7 @@ status. This output is a local native result, not a
 portable verification envelope or assurance claim.
 Serialized results are constructed from typed status/stage payloads; incomplete
 or refused payloads cannot carry truth. Command error spellings belong to the
-native code catalog. Resource causes distinguish file-byte and file-count limits.
+native code catalog. A resource cause names the byte limit reached, `request_bytes` or `dependent_bytes`.
 
 ## Behavior
 
@@ -104,6 +103,10 @@ them with `--request-bytes` and `--dependent-bytes`; neither has a ceiling.
 The command shall verify selected source and runtime digests before consumption.
 The command shall use the existing source frontend, admission, parser, linker,
 checker, package constructor and runtime execute APIs.
+The command shall count every dependent file toward `dependent_bytes` by its
+size, whatever its role (model, program (each unit of an array `program`
+counting separately), library, snapshot, invocation or
+package), and shall apply no limit on the number of files.
 The command shall preserve refused and incomplete stage outcomes without truth.
 The command shall begin each invocation with fresh budgets.
 The CLI shall parse its command and operands once before I/O and report usage
