@@ -70,7 +70,8 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   checker shall reject the certificate with a cause naming both identities.
   A state-graph certificate (FR-169) and an EN-1 closure certificate
   (FR-338) each carry their own `package_id`, and an EN-1 component
-  certificate (FR-339) carries it once, as its closure's. Each of these
+  certificate (FR-339) and a product-closure certificate (FR-163) each
+  carry it once, as their closure's. Each of these
   checkers compares it with the recompiled `package_id` before any other
   rule, and its rejection `PackageMismatch{certificate, recompiled}` settles
   `Inconclusive(StaleDependency{requested, recompiled})` with `requested`

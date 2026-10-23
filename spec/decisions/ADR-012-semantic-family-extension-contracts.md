@@ -113,7 +113,7 @@ and the stage hooks it implements.
 | `Value` | scalar and composite values, types, expressions, function application | none | none | #214 (function application), #120, #164, #170, #175 |
 | `StateModel` | state, model population, lookup, inheritance, dispatch | `Value` | #220 | #120, #121, #164 |
 | `SumCase` | sum types and `case` with its exhaustiveness obligation | `Value` | #221 | #187 |
-| `TemporalTrace` | temporal and trace semantics, and the control-to-temporal mapping (QSpec FR-300, PR #59) | `Value`, `StateModel`, `ProtocolClause` | #222 | #188, #189 |
+| `TemporalTrace` | temporal and trace semantics, and the control-to-temporal activation map (FR-449, QSpec FR-464 "Activation relation") | `Value`, `StateModel`, `ProtocolClause` | #222 | #188, #189 |
 | `ProtocolClause` | protocols, clauses, frames, scoped anchors | `Value`, `StateModel` | #223 | #218 |
 | `Relation` | refinement and model-to-implementation relations. Amended by ADR-020 §1: the refinement declaration between two QSL models is a `Relation` declaration with `check` and `requirements` hooks at S3, checked into `CheckedRefinement` (ADR-020 RM-1 to RM-8, AX-1) | `StateModel`, `ProtocolClause` | #223 | #191, #192, #198 |
 
@@ -131,7 +131,7 @@ the `check` core:
 | checked expression node (today `NodeKind`, `value::expression::ir`, moved by ADR-011 M-5) and checked type node | `Value` | every other family |
 | checked model element reference, population extent and dispatch target | `StateModel` | `TemporalTrace`, `ProtocolClause`, `Relation` |
 | canonical checked clause kind (S5) | `ProtocolClause` | `TemporalTrace`, `Relation`, the layer-4 `package` emitter |
-| checked operation header and checked clause subnodes (frame, scoped anchor, pre- and postcondition) | `ProtocolClause` | `TemporalTrace` (the FR-300 control-to-temporal mapping), `Relation` |
+| checked operation header and checked clause subnodes (frame, scoped anchor, pre- and postcondition) | `ProtocolClause` | `TemporalTrace` (the FR-449 control-to-temporal activation map), `Relation` |
 
 The same rule holds in layer 2 `forms`, layer 4 `package` and layer 5
 `value::expression`: a family module depends on its layer's core only.
@@ -826,7 +826,7 @@ states the contract; the change belongs to their own tickets (§14).
 | ADR-010 OBS-014 | The five production string sites are the rows marked "yes" in §9. Each is typed at its intake edge. |
 | ADR-010 OBS-033 | Cross-repository dispatch is on closed enums decoded at v2 intake; no vocabulary is re-derived from a wire string after intake (§9, seams S6 and S9). The enum sets follow the vocabulary as widened by agent-ix/quire-specification#134. agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 implement it; RT owns its edits. |
 | ADR-010 DA-11 | One authority per role. Vocabulary and wire spelling: agent-ix/quire-specification#134 (FR-290). QSL alignment and the claim form → kind table: #229 (FR-057, QSL PR #237). Rust type: #213. Requirement derivation: each family's `requirements` hook. Advertisement: each backend's descriptor. Registry and routing: #185, using the candidate mechanism in §7.2. Per-item disposition: CG `negotiate_*` only. Runtime availability: the executing adapter. #210 owns DA-11; #229 is its secondary owner for QSL's alignment to the vocabulary. |
-| FR-300 control-to-temporal mapping (deferred to #210 by ADR-010 §8) | The mapping belongs to `TemporalTrace`, which reads checked `ProtocolClause` output (§1). It does not wait on #210. Its QSL consumer is #188. |
+| Control-to-temporal activation map (derived by FR-449) | The map belongs to `TemporalTrace`, which reads checked `ProtocolClause` output (§1): FR-449 derives it from the `protocol_clause` node's `activation` and `requirements` (QSpec FR-464 "Activation relation"), with no wire of its own. Its QSL consumer is #188. |
 
 ## 11. L1-D1: which ladder tickets wait on #185
 
@@ -1058,7 +1058,7 @@ item settles `invalid-request` with no preference order
 | Remaining `Value` forms | #120, #164, #170, #175 |
 | `StateModel` migration, including the `StateModel` arms of `infer_form` | #120, #121, #164 via #220 |
 | `SumCase` | #187 via #221 (§16) |
-| `TemporalTrace`, including the FR-300 mapping | #188, #189 via #222 |
+| `TemporalTrace`, including the FR-449 activation map | #188, #189 via #222 |
 | `ProtocolClause` | #218 via #223 |
 | `Relation` | #191, #192, #198 via #223 |
 | IR tag and form enums decoded at v2 intake; removal of the post-intake `as_str()` sites in IR `src/kani/` | agent-ix/quire-contract-ir#141 |
