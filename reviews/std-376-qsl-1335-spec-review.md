@@ -42,3 +42,18 @@ Examined, clean:
 Mergeable after FND-001, FND-002 (medium) are fixed or dispositioned by the lead.
 
 Conflicts with main: none. FR-091 and FR-093 AC-row and paragraph conflicts with open #1351, #1355, #1357, #1360, #1369, #1374 and #1379 (FR-093/FR-091 regions); clean with #1333 and #1347.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The new unordered-enum sentence cites "QSpec FR-141-AC-5, as FR-360 states for an unordered type". FR-141-AC-5 says only `ill_typed`, and FR-360 is the infinite-trace result disposition; it says nothing about unordered types or `operator-ineligible`. The cause `operator-ineligible` is QSL's own choice, consistent with FR-093's existing rule for orderings over these types. Fix: drop the FR-360 citation and cite FR-093 for the cause. | spec/functional/FR-317-resolve-member-references-and-check-union-construction.md:68-80 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix 2c425982. AC-5 now uses the unordered `Phase`: `x.phase < Mid` refuses `ill_typed`/`operator-ineligible` once with no `missing-name`, and `Lost = Won` refuses `missing-name` twice, at `Lost` then `Won`. Hand-checked against the new "Each unresolved bare name is refused on its own" bullet and the unordered-enum comparison rule. |
+| FND-002 | fixed | The ordering operators now supply the expected type when the other operand is typed by an `ordered enum`; AC-5 gains an ordered `Level` fixture: `l >= Mid` equals `l >= Level::Mid` with one node id, `Mid <= l` checks the same, `l > Top` refuses `missing-name`. The FR-104 citation is gone. Hand-checked: `Low < Mid < High` by declaration order, `Mid` names no value in scope. |
+
+Round 1 verdict at 2c425982: Mergeable: FND-001 and FND-002 are fixed. FND-003 (low) is open and does not block. Gate: `make check-spec-validation` with QSpec origin/main: exit 0, 19 warnings, none in touched files. The ordered-enum capability is a lead default; its vectors hold by hand.

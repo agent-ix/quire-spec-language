@@ -74,7 +74,7 @@ check the construction against QSpec FR-143's construction rule (ADR-012
     type `E`.
   An ordering whose typed operand is an unordered `enum` is refused
   `ill_typed`/`operator-ineligible` at the comparison (QSpec FR-141-AC-5,
-  as FR-360 states for an unordered type), because an unordered enum has
+  FR-093), because an unordered enum has
   no case order to compare by; the checker SHALL report that one refusal
   and SHALL NOT resolve a bare operand of that comparison. An operand of an
   arithmetic operator, and either operand of a comparison whose other operand
