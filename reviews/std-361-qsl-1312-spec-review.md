@@ -34,3 +34,11 @@ Examined, clean:
 ## Verdict
 
 Mergeable after FND-001 is resolved in the merge with origin/main: FR-127 and FR-314 conflict with main and with open #1354/#1356 (FR-314) and #723 (FR-127).
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fix verified at 1fa2658b |
+
+Round 1 verdict at 1fa2658b: Mergeable: one broader QueryMismatch rule replaces main's `too-large` bullet, one Fault bullet remains; merge-tree against main is clean.
