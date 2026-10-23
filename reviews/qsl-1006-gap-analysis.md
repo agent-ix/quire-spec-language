@@ -43,3 +43,18 @@ Ticket: QSL-1006. PR: quire-spec-language#1285, head eab4e9af3. Method: quoin ga
 ## Verdict
 
 No untraced production code: everything new is FR-404's `run_with_replay_context`, `RunWithReplayContext`, `CallReplayContext`, the two `PluginReplayRefusal` variants and the root `BackendId` re-export. No stubs, no `todo!`, no placeholder returns. The coverage gap is real but bounded. AC-2 and AC-3 cannot pass until QSL-980 replays application claims, and the PR body states this. The in-crate tests are a reasonable stand-in for request building, package binding and the limits copy. A partial delivery is acceptable once the tags tell the truth and Linear carries the follow-up (FND-001). Once QSL-980 lands, the tests need a rewrite, not just stronger asserts (SR-12358 FND-007).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The QSL-980 follow-up comment lists TC-1173 steps 2, 3, 7 (DuplicateBoundKey) and 9. It leaves out step 5 (each context's request for its own q member) and step 6 (the request's stage and accounting limits on a q member), which QSL-1006's comment 9a40ef37 says also wait on QSL-980 and which are now untagged. No Linear relation links QSL-980 and QSL-1006, so someone working only from QSL-980 would miss FR-404-AC-5 and AC-6. Edit the QSL-980 comment to name steps 5 and 6, or add a relation. | Linear QSL-980 |
+
+## Dispositions
+
+Round 1, reviewed at a6540897991f13e502669310dddc573521bf42dc (fix commit fb2c5d325).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | fb2c5d325 |
+| FND-002 | fixed | fb2c5d325 |

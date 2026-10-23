@@ -52,3 +52,24 @@ Ticket: QSL-1006. PR: quire-spec-language#1285, head eab4e9af3. Method: code-rev
 ## Verdict
 
 The production code is correct and has no defects; every finding is in the tests and traces. `run_with_replay_context` compiles once: the members, `PluginReplayContext::new(checked, emitted, models, limits)` and the outcome all come from the one `run_reading` pass. Only `limits.spine` bounds parse, select and check. `package` uses `PackageLimits::default()`, and the call charges `call.accounting`. `run_reading`'s new `read(&checked, &emitted, &models)` is called at the same point as before. `run_with_requirements` reads `checked.package().graph()`, which is the same graph as the old `package.graph()` (`package = checked.package()`), so its behaviour is unchanged. `CallReplayContext` has private fields and no constructor, Default, Deserialize, Deref, AsRef, Borrow, From/Into or accessor for the wrapped context. Its `Clone`/`Debug` derives cannot forge one, and all six compile_fail doctests fail for the intended reason (probed). `request` checks ForeignRun, then NotACallItem, then delegates to FR-290 at the member's key. The codes match FR-098 (`stale_dependency`/`content-mismatch`) and FR-290 (`missing_declaration`/`missing-name`). Both new variants settle `failed`. `CallRequirement::new` and `CallRequirements::new` are `pub(crate)` and also back production `associate`, so they are not test-only seams. Rust lane: no new panic or unsafe surface in shipped code, no integer conversions, clippy clean. No other crate matches `PluginReplayRefusal` exhaustively. The PR's public-API changelog is accurate; `BackendId` really is new at the root. One small inaccuracy: the body says the root-only test "builds bounds by hand", but it builds no bounds. PR #1269 (S0 repoint) will conflict on imports; whichever PR lands second rebases. Verdict: mergeable after one small fix round. Remove the AC-2/AC-3 tags that assert nothing and the wrong AC-2 tag on the in-crate test (FND-001..003), add the ordering case (FND-004), and record the QSL-980-gated tests as a tracked follow-up (see SR-12359).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The fix round untags every AC it does not fully meet (AC-2, -3, -5, -6, -7), but keeps FR-404-AC-9 on the root-only test. That test still builds no request: it gets `NotACallItem` at index 99, where AC-9 asks it to build AC-2's request. The T12-A clause is also unmet (FND-006). The matrix shows AC-9 covered, while the QSL-1006 fix-round comment itself says TC-1173 step 9 completes only after QSL-980. Drop the tag, or keep it on the six doctests' half only, for consistency. | qsl-replay/tests/call_replay_context_root_only.rs:24 |
+
+## Dispositions
+
+Round 1, reviewed at a6540897991f13e502669310dddc573521bf42dc (fix commit fb2c5d325). Evidence: `cargo test -p qsl-replay --test call_replay_context --test call_replay_context_root_only` 7 + 1 passed. In-crate `call_replay_context` 2 passed. `cargo test --test it call_replay_context_items` 1 passed. `cargo clippy -p qsl-replay -p quire-spec-language --all-targets --all-features -- -D warnings` clean.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | fb2c5d325 |
+| FND-002 | fixed | fb2c5d325 |
+| FND-003 | fixed | fb2c5d325 |
+| FND-004 | fixed | fb2c5d325 |
+| FND-005 | fixed | fb2c5d325 |
+| FND-006 | deferred | Spec fix for draco, recorded in QSL-1006 comment 9a40ef37: scope AC-9's T12-A clause to `qsl_replay::spine`. The TC-1089 precedent has the same defect. |
+| FND-007 | deferred | QSL-980: the oracle `Ok` arm is unreachable until application claims replay. The follow-up is recorded on QSL-980 (2026-10-22 comment) and on QSL-1006 (comment 9a40ef37). |
+| FND-008 | fixed | fb2c5d325 |
