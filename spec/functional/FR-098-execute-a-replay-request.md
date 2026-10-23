@@ -27,6 +27,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-016
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: depends_on
 ---
 # FR-098: Execute a replay request through the layer-6 replay facade
 
@@ -35,7 +37,7 @@ relationships:
 QSL SHALL provide the replay executor entry, `qsl_replay::replay`, as the
 layer-6 `replay` facade's public API (ADR-013 O-26, C-13, TK-01; ADR-011
 §2.1 E9, §6.1). It takes an FR-071 replay request. It recompiles the proved
-package's one source unit through the spine (S1 to S4, the same
+package's source units, one or more (FR-480), through the spine (S1 to S4, the same
 the FR-278 composition the CLI `compile` uses, FR-027) from the
 request's digest-addressed byte provision, against the dependency input the
 package reference's `dependencies` entries name (ADR-015 D-4). It requires
@@ -102,13 +104,15 @@ list.
   `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value`
   at `/package/dependencies`), before it checks any source count or builds
   any dependency input.
-- The package reference's `sources` SHALL name exactly one
-  `quire.source.bytes/v1` source, the proved package's, and each of its
-  `dependencies` entries (QSpec FR-323) SHALL name exactly one such source,
-  that dependency's. The executor recompiles each source under its four
-  FR-001 labels. A `sources` list or an entry naming a definition document,
-  or other than one source, refuses: the recompile reads no definition
-  document, and each package compiles from one unit.
+- The package reference's `sources` SHALL name the proved package's source
+  units, one or more `quire.source.bytes/v1` sources in any order, and each
+  of its `dependencies` entries (QSpec FR-323) SHALL name that dependency's
+  source units the same way. The executor recompiles each list as one unit
+  list in FR-480's canonical unit order, each source under its four FR-001
+  labels. A `sources` list or an entry that is empty, names a definition
+  document or repeats one (authority, identity) refuses before any
+  recompile, `invalid_package`/`invalid-value` at that list's pointer: the
+  recompile reads no definition document.
 - The executor SHALL read the optional `refinement_internals` value of the
   package reference, at `/package/refinement_internals`, and of each
   `dependencies` entry, at `/package/dependencies/<n>/refinement_internals`,
@@ -473,13 +477,18 @@ request occurrence key.
 An FR-357 request carries the occurrence key of the packet it is built from,
 as ADR-013 C-12 copies it: the scalar node's occurrence for an operator
 claim, and the function's `declaration` occurrence for a value-parity claim.
-Neither FR-357 entry reads it; each takes its claim from its own inputs.
+The operator entry does not read it and takes its claim from its own
+inputs; the value-parity entry requires it to be the selected function's
+`declaration` occurrence and recomputes the request's obligation identity
+from the recompiled package (FR-484).
 
 The executor SHALL carry the request's `obligation_identity` unchanged and
 SHALL NOT check it against the selected claim. The identity is provenance:
 a decode refusal names it (FR-070), and its preimage form is its producer's
 (ADR-013 O-09's function-contract or application form, or FR-290's
-`process-provider` form), which the request does not carry. The occurrence
+`process-provider` form), which the request does not carry. This rule is
+the executor's: the FR-357 entries check the identity of their own claims
+(FR-357, FR-484). The occurrence
 key, not the identity, selects the claim.
 
 **Predicate claim.** The call settles by the Boolean the function
@@ -522,6 +531,19 @@ occurrence only on the path its guards select (left-to-right short circuit
 and the selected conditional branch, FR-016), so every observed evaluation is
 one under which the record's path condition holds.
 
+The executor SHALL tell the selected call's own evaluation from a nested
+one by the call depth S6a reports with the outcome (FR-100
+`Evaluation.frame_depth`): an evaluation stopping at the claim site
+`Location` is observed only when its `frame_depth` is 0, the selected call's
+own frame. A `Location` names a place in a body and no frame, so in a
+recursive function the same `Location` is reached at every depth; the depth,
+with the `Location`, decides whether a stop belongs to the selected call. An
+undefined stop at the claim site with `frame_depth` 1 or more is a nested
+call's stop: it is no observation, the call completes no value, and the
+replay settles `inconclusive` with cause `NoValue`. A recursive function's
+application claim is therefore reproduced exactly when the selected call's
+own evaluation of the site fails, as for a function that is not recursive.
+
 - When an observed evaluation of the application step is undefined at its
   operands (a division by zero, as in FR-141-AC-7), the claim fails there.
   The claim's Boolean is `false`, the replayed category is `violation`, and
@@ -548,7 +570,7 @@ predicate claim (ADR-031 SW-7).
 
 - Each ADR-013 O-26 refusal SHALL be a typed `ReplayRefusal` variant with no
   partial result: request decode refusals (FR-071), a limit above the
-  reader limit, a source reference that is not one source unit, a
+  reader limit, a `sources` list that is empty, repeats a unit or names a definition document (FR-480), a
   `dependencies` entry whose `package_id` differs from the recompiled
   closure's selection of its identity (`DependencyIdentityMismatch`), a
   `dependencies` list that is not strictly ascending or holds an entry the
@@ -575,7 +597,7 @@ predicate claim (ADR-031 SW-7).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-098-AC-1 | A request whose byte provision carries its one source and, under their `sha256-jcs` digests, the domain packages the source selects recompiles from those bytes alone, keeps its `package_id`, and replays. A package reference naming a definition document or two sources refuses before any recompile. | Test (TC-444) |
+| FR-098-AC-1 | A request whose byte provision carries its one source and, under their `sha256-jcs` digests, the domain packages the source selects recompiles from those bytes alone, keeps its `package_id`, and replays. A package reference naming a definition document refuses before any recompile; one naming a package's two source units in canonical unit order recompiles them as one unit list and replays (FR-480-AC-7). | Test (TC-444) |
 | FR-098-AC-2 | The selection resolves by `QualifiedName` in the recompiled package; `Input` assignments and `Witness` entries join the function's parameters by parameter node id, in declared parameter order (`Input` assignments in any order; transcript entries in FR-070's ascending node-id order), and a Boolean parameter takes a witness entry `0` or `1` and an `Input` assignment's `WitnessValue::Boolean` (an `Input` `WitnessValue::Integer` for it refuses `WrongValueKind`); the call runs through S6a, and an agreeing replay settles `reproduced-without-witness` (`Input`) or `reproduced-with-evaluated-witness` (`Witness`) with no QSpec FR-351 record, since a function call's result has no decisive occurrence (ADR-031 SW-7), carrying the call's charges. | Test (TC-444) |
 | FR-098-AC-3 | A meaning-affecting source edit refuses `stale_dependency`/`content-mismatch` by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
 | FR-098-AC-4 | Each refusal in Behavior -- a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
@@ -601,6 +623,7 @@ predicate claim (ADR-031 SW-7).
 | FR-098-AC-24 | Over `function b using v(t: Sequence<Int[0, 9]>[0, 3]): Boolean pure { forall(v in t: 10 mod v > 0) }` and `function u using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { 10 mod x }`: `b` at its `10 mod v` record's occurrence with `t = [3, 0]` settles `reproduced-without-witness`, the second evaluation of the binder body being undefined, and with `t = [3]` settles `inconclusive` with cause `Verdicts`; the same `b` request with an assignment naming `v`'s binder node refuses `UnknownParameter`. `u` at its `10 mod x` record's occurrence with only `x = 0` assigned binds `y` to `0` and settles `reproduced-without-witness`; with only `y = 1` assigned it refuses `UnboundParameter` naming `x`, an extent root. | Test (TC-444) |
 | FR-098-AC-25 | Over AC-22's unit with `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }` added, each of these refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming the request's occurrence key and the selected function, before any call and with no charge: `p` with the occurrence of `r`'s `10 mod x` record (a record `r` owns); `p` with `r`'s `declaration` occurrence; `inc` with the `expression` occurrence of the narrow that wraps its `x + 1` (no record); and `p` with an occurrence key whose node is 64 `1` hex digits (no node of the package). `r` at its `declaration` occurrence refuses `NotAPredicate`, and `r` at its `10 mod x` record's occurrence with `x = 12` refuses `WrongValueKind` naming position 0. | Test (TC-444) |
 | FR-098-AC-26 | Refusal order: AC-25's request of `p` with `r`'s occurrence refuses `PackageIdMismatch` when its `package_id` is stale and `UnknownFunction` when its `function` names no declaration, rather than `ClaimOccurrence`; with an assignment naming a node that is no parameter of `p` added, it still refuses `ClaimOccurrence`, not `UnknownParameter`; AC-21's `frame_operation` request refuses at its target before the recompile and reads no occurrence key. | Test (TC-444) |
+| FR-098-AC-27 | Over `function d using v(n: Int[0, 9]): Integer pure decreases(n) { if n = 0 then 0 else d(n - 1) + 10 mod (n - 1) }`, each request at the occurrence of its `10 mod (n - 1)` record, from an `Input` assignment: `n = 1` settles `reproduced-without-witness` with value `false`, the selected call's own evaluation of the site being undefined (`frame_depth` 0) after `d(0)` completes `0`; `n = 2` and `n = 3` settle `inconclusive` with cause `NoValue`, the call stopping undefined at the same `Location` inside a nested call (`frame_depth` 1 for `n = 2`, 2 for `n = 3`), which is no observation; `n = 0` evaluates the site on no path and settles `inconclusive` with cause `Verdicts` and value `true`. Calling `d` through S6a directly, the `Evaluation` of `d(1)` is undefined at that `Location` with `frame_depth` 0 and that of `d(3)` with `frame_depth` 2. | Test (TC-444) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
@@ -627,6 +650,9 @@ QSpec FR-142's `Quantity<u>`, S1's `Quantity<qualified-name>` production and FR-
   records, their owner and result bound, which the application claim reads;
   [FR-016](FR-016-check-native-clauses.md): the short-circuit and
   conditional evaluation order that keeps an observation on its path.
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md): S6a's
+  `Evaluation` with its `location` and `frame_depth`, which tell the
+  selected call's own evaluation of a claim site from a nested call's.
 - [FR-072](FR-072-implement-typed-replay-result.md): the result and its
   settlement.
 - [FR-027](FR-027-export-compiled-native-package.md): the spine compile.

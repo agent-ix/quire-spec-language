@@ -2,7 +2,7 @@
 //! TC-189 collection kind algebra over the real `value` boundary (FR-144).
 
 use ix_trace_rs::trace;
-use qsl_semantics::family::FamilyOutcome;
+use quire_eval::FamilyOutcome;
 use quire_exact::EffectiveId;
 use quire_exact::FloatType;
 use quire_exact::NodeKey;
