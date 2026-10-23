@@ -290,6 +290,17 @@ site:
   a literal contributes none. A claim with no root is `Bounded`. The result
   bound is a finite range or the application's own result type, and adds
   no root.
+- **Extent roots.** The set of the claim's extent roots, each as the
+  `WireNodeId` of its parameter or binder node, exposed as
+  `RequirementRecord::extent_roots()` (a `BTreeSet<WireNodeId>`). The set
+  holds every root, including a root whose checked type adds no unbounded
+  domain: `ClaimExtent` keeps only the unbounded domains, so a `Bounded`
+  claim's extent names none of its roots, while its extent roots still name
+  each parameter and binder the claim reads. A record with no root, and every
+  `operation-contract` and `temporal-satisfaction` record, has the empty set.
+  FR-098's application claim reads it to decide which owner parameters the
+  replay source need not bind ("Application claim: unread parameters"); the
+  consumer is `qsl-replay`'s function-claim selection.
 - **Result bound and path condition**, as the site holds them, the result
   bound as its checked `ValueType` and the `WireNodeId` of its FR-092 type
   node.
@@ -367,6 +378,7 @@ condition.
 | FR-062-AC-12 | A family `check` that reaches one of its two stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. A family `check` compares no measured node count before typing: its node limit is `CheckingLimits::nodes`, charged at the node (FR-062-AC-7). With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
 | FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound, direct conversion context and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound, direct conversion context and guards are those of its own occurrence. RR-16's two records retain their own narrow occurrence identities along with bounds `Int[0, 10]` and `Int[0, 20]`; no conversion identity is recovered by looking up the shared application node alone. A record whose result bound is the application's own result type has no conversion context. For a narrowed bound, zero or multiple matching direct narrow occurrences cause `KeyFault::UnkeyableRequirements` and no checked package. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160, TC-449) |
 | FR-062-AC-14 | For each fixture RR-1 to RR-17, every record has exactly one owner, the qualified name of the function that holds its claim site; for RR-5's three records the owner is `sq`. The `operation-contract` records of the clause `post Q using v on Config::ConfigVersion::attemptUpdate { true }` over the ConfigVersion domain package and the `temporal-satisfaction` record the check stage writes into the map for the temporal clause `temporal Reaches using t over (c: Config::ConfigVersion) clock "model-steps" on origin { eventually holds(c.versionNumber = 2) }` in the unit of TC-1089 step 6 (TC-842, FR-332-AC-1) each have no owner; a state-graph claim's record, held on the checked claim and not in the map, is not read here. | Test (TC-1089) |
+| FR-062-AC-15 | `RequirementRecord::extent_roots()` returns: for RR-3's `x + y`, the parameter nodes of `x` and `y`, though its extent is `Bounded` and names no domain; for RR-7's `t * 2`, the parameter node of `x`, read through `t`'s bound value; for RR-8's `1 + 1`, the empty set; for RR-11's `integer.le`, the parameter node of `n`, which it reads in its argument and in its guard; for each of RR-14's records, the binder `v`'s node and not `s`'s; for `function u using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { 10 mod x }`'s `mod`, the parameter node of `x` alone; for `size(filter(v in s: v > 0)) + 1` over `s: Sequence<Integer>[0, 5]`, `v`'s node for the `>` and `s`'s node alone for the `+`; and for a state clause's `operation-contract` record, the empty set. | Test (TC-160) |
 
 The state scan for FR-062-AC-3 covers the non-test items of every `.rs` file
 under `qsl-semantics/src/check` and `qsl-semantics/src/family`

@@ -7,8 +7,8 @@
 use qsl_semantics::check::{NodeTag, SemanticGraph, SemanticNode};
 use quire_exact::NodeKey;
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::WireNodeId;
+use quire_semantic_value::catalog::InternalFault;
 
 use super::operator_parity::ScalarIdentityMismatch;
 use super::ReplayRefusal;

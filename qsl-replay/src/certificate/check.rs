@@ -10,8 +10,8 @@
 
 use qsl_eval::simulation::model::{check_model_bounds, ModelSimulationRequest, ModelSystem};
 use qsl_eval::simulation::{EncodingRefusal, ExpansionLimit, ExpansionStop, BOUND_POSITIONS};
-use qsl_foundation::InternalFault;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::certificate::closure::{ClosureRefusal, TemporalCertificateCheck};
 use crate::model_check::limits::ModelCheckLimit;

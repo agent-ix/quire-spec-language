@@ -11,10 +11,11 @@ relationships:
 ## Description
 
 Verify S2's hybrid form, S3's checks, refusals and classification, the
-checked hybrid claim, S4's emitted hybrid nodes and the provider request
-served in process and by a process provider.
+checked hybrid claim, S4's emitted hybrid nodes, the I2 reader's read-back
+and refusals, and the provider request served in process and by a process
+provider.
 
-Scope: FR-447-AC-1 to FR-447-AC-5.
+Scope: FR-447-AC-1 to FR-447-AC-5, FR-447-AC-13 to FR-447-AC-15 and FR-447-AC-17.
 
 ## Test Procedure
 
@@ -30,9 +31,22 @@ claim from the package bytes it receives.
 4. Write the request for `SlowEnough` and negotiate it with the in-process
    fixture registered, then with only the process fixture registered, then
    with no provider; compare the checked package identities of `Braking` and
-   of `Braking` with `Moving`'s `v' = -a` replaced by `v' = -2 * a`.
+   of `Braking` with `Moving`'s `v' = -a` replaced by `v' = -(2 * a)`.
 5. Run S4 over the package and read the emitted bytes with QSpec's v2
-   reader; run S4 over the `v' = -2 * a` package and compare `package_id`s.
+   reader; run S4 over the `v' = -(2 * a)` package and compare `package_id`s.
+6. Read the emitted package and QSpec's `positive-all-families.json` with
+   QSL's I2 reader; feed it each mutation FR-447-AC-13 lists, with
+   `dependencies`, keys and `package_id` rebuilt after each edit.
+7. Emit the claim body `always [0, 10] true`, and read `SlowEnough`'s
+   emitted law.
+8. Check and emit `SlowEnough` under a `timed/v1` profile alias and read the
+   bytes with QSpec's v2 reader; check `always [0, *] holds(h.v < 30)` under
+   `timed/v1`, and `always holds(h.v < 30)` under `timed/v1` and under the
+   event-position profile.
+
+9. Write the request for `SlowEnough` and for a temporal clause over a model
+   without hybrid dynamics in one unit, and negotiate both with EN-6 and an
+   in-process fixture hybrid provider (`dynamics` `["hybrid"]`) registered.
 
 Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 
@@ -54,3 +68,18 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 - Step 5: the package is emitted and admitted, holding FR-447-AC-5's
   `hybrid_model`, `hybrid_mode`, `hybrid_transition` and `temporal_clause`
   nodes; the two `package_id`s differ.
+- Step 6: the read-back `CheckedHybridModel` and `CheckedHybridClaim`
+  (horizon 10) equal the checked ones; `positive-all-families.json` is
+  admitted; each mutation refused with the code and locus FR-447-AC-13 states.
+- Step 7: a `quire.op.temporal.true` formula node under the `always` node
+  and no `holds` node over a Boolean literal; the law `p` selects.
+- Step 8: the interval `[0, 10]` with closed ends and horizon 10, emitted in
+    the timed form with the `timed/v1` law and admitted; `always [0, *]`
+  under `timed/v1` admitted with `upper: None`, emitted with `upper` `null`;
+  `always holds(h.v < 30)` under `timed/v1` admitted with horizon `None`, and under the event-position profile refused
+  `unsupported_construct`/`expression-form` at the operator's span, naming
+  the profile, as FR-447-AC-15 states.
+- Step 9: `SlowEnough`'s item carries `"requirements": ["hybrid-dynamics"]`
+  and routes to the fixture alone; the other item carries no `requirements`
+  and routes to EN-6 alone; neither is `ambiguous-backend`; the request
+  identities differ as FR-447-AC-17 states.

@@ -12,7 +12,7 @@ relationships:
 
 Verify the memory bounds' default, their statement in the terminal record, bound-limited states as boundary states, and the verdicts and precedence under a bound.
 
-Scope: FR-225-AC-1 to FR-225-AC-4.
+Scope: FR-225-AC-1 to FR-225-AC-5.
 
 ## Test Procedure
 
@@ -22,8 +22,10 @@ Scope: FR-225-AC-1 to FR-225-AC-4.
    loaded by the other branch, with bound 2 and bound 3.
 3. Run `SB` under `tso` with `max_store_buffer` 1 and under `ra` with
    `max_messages` 1.
-4. Inspect the bound-limited state of step 2; run the combined state
-   constraint and memory bound case.
+4. Inspect the bound-limited state of step 2; run FR-225-AC-4's
+   three-store protocol under `tso` with `max_store_buffer` 2 and the
+   constraint `Zero`, then without `Zero`.
+5. Run `SB` under `ra` with `max_messages` 1 and the constraint `One`.
 
 Tag the tests `#[trace("TC-670", "FR-225-AC-n")]`.
 
@@ -34,4 +36,9 @@ Tag the tests `#[trace("TC-670", "FR-225-AC-n")]`.
 - Step 2: V-6 `MemoryBoundReached` naming `max_store_buffer` 2; V-1, not
   reached.
 - Step 3: `refuted`; V-6 naming `max_messages` 1.
-- Step 4: no deadlock report and no stutter successor; `ConstraintReached`.
+- Step 4: no deadlock report and no stutter successor; with `Zero`, 20
+  stored states (12 expanded, 4 of them bound-limited, and 8 boundary
+  states), `ConstraintReached{boundary_states: 8}`, `max_store_buffer` 2
+  stated as reached; without `Zero`, `MemoryBoundReached`.
+- Step 5: one stored state, `ConstraintReached{boundary_states: 1}`,
+  `max_messages` 1 stated as not reached.

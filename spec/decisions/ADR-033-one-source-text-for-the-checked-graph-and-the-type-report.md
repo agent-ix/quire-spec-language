@@ -176,6 +176,13 @@ Measured on main when this was written.
   cannot be built. The inventory's own `CheckedUnit` is deleted; `qsl_inventory`
   lives in `qsl_replay` and reads `spine::CheckedUnit`, no longer in the root
   crate's `checking::source_inventory`.
+- *Several source units (amended 2026-10-22 by FR-480):* a package compiled from several source
+  units has one `spine::CheckedUnit` per source unit, each reading its own
+  `Source` once with the one grammar and comparing its own digest; the shared
+  checked graph lists every unit in `lock.sources`. "One source text" holds
+  for each unit, and a package is not limited to one unit, because QSpec
+  FR-151 and FR-322 define a package of linked source units, each with its
+  own source owner.
 
 ### Option A-only: keep the composed linker and checker over S2 forms
 
