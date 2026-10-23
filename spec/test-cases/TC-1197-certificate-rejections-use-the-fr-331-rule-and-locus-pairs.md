@@ -1,5 +1,5 @@
 ---
-id: TC-1194
+id: TC-1197
 title: "Certificate rejections use only the rule and locus pairs of FR-331"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-314
     type: verifies
 ---
-# TC-1194: Certificate rejections use only the rule and locus pairs of FR-331
+# TC-1197: Certificate rejections use only the rule and locus pairs of FR-331
 
 ## Description
 
@@ -31,7 +31,7 @@ spellings table assigns to it. Scope: FR-338-AC-12 to FR-338-AC-14.
    alternative with the checker's row of the Rejection spellings table and
    its rule with FR-331's rules at that locus form.
 
-Tag the tests `#[trace("TC-1194", "FR-338-AC-n")]`.
+Tag the tests `#[trace("TC-1197", "FR-338-AC-n")]`.
 
 ## Expected Results
 
