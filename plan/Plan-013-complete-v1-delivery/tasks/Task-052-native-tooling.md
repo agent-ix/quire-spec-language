@@ -33,7 +33,7 @@ and effect-free evaluator boundaries.
 - [ ] Expose every lifecycle operation with stable typed envelopes and exit codes.
 - [ ] Implement provider/plugin containment and exact AOT/JIT cache invalidation.
 - [ ] Repeat TC-180 before/after real backend/provider installation and prove identical syntax admission and identity.
-- [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-053.
+- [ ] Pass local Rust gates and PR-time Rust/gap review; merge before Task-054.
 
 ## Deliverables
 
