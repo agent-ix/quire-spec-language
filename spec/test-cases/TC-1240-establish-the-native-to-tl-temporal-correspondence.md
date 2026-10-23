@@ -61,13 +61,14 @@ Scope: FR-045-AC-7 to FR-045-AC-14.
    foreign cell, a TL artifact its owner reader rejects, and a noncanonical
    projection or join. Run every limit exactly at its value and one past it
    (FR-045-AC-12).
-
 7. Encode FR-045-AC-13's correspondence record with `quire-canonical`,
-   digest it, change its interval to `[[0, 2]]` and digest again, and read
+   digest it, then digest it again with its interval changed to `[[0, 2]]`,
+   with its model binding's package changed to 64 `a`s and with its bridge
+   definition changed to 64 `b`s, and read
    the record back from reordered and from whitespace-padded bytes
    (FR-045-AC-13).
-8. Join a refused TL result beside unequal premises, and an unsupported
-   native result beside an incomplete TL result. Run each `TlLimits` limit
+8. Join a refused TL result beside a failed native result, an unsupported
+   native result beside an incomplete TL result, and two equal final values. Run each `TlLimits` limit
    at its default and one past it (FR-045-AC-14).
 
 Tag the tests `#[trace("TC-1240", "FR-045-AC-n")]`.
@@ -104,12 +105,17 @@ Tag the tests `#[trace("TC-1240", "FR-045-AC-n")]`.
 - Step 6: each malformed or over-limit input gives one deterministic
   non-admitted decision with no partial artifact. Each limit reached exactly
   is admitted. No TL evaluator is invoked by the compiler.
-- Step 7: 860 bytes with SHA-256
-  `848ccf3418350f00e1252d5050c5fbbc995d29bac807905d239d0f93edf168e0`; with
-  `[[0, 2]]`,
-  `fde423e1ad82e45a46622ed8daaa81f86df504512db1a7bb2d6467b3aed29e1e`. Both
+- Step 7: 1429 bytes with SHA-256
+  `f6ea8e9084eff94b3a45fc2cd5cffa5b3732bfa9aa0b90c4cc4623f3f22eb17f`; the
+  interval change gives
+  `3e33bdb57217d0c7ec1cbe42e55c17a24944278e2634797fd5a4d51b7078ed4c`, the model
+  binding change
+  `f71f50b9ddaa23129b15dd09bf7a575d5faa279adfdc25c10e377d7b303d8b15` and the
+  bridge definition change
+  `11e242eb5c07e8d0207d97e664788415135302867540cbe4206e0b2547d795e3`. Both
   noncanonical byte sequences refuse.
-- Step 8: `refused` with causes `refused` then `mismatch`; `unsupported` with
-  causes `unsupported` then `incomplete`. Each limit admits at its default,
+- Step 8: `refused` with causes `result-refused` then `result-failed`;
+  `unsupported` with causes `result-unsupported` then `result-incomplete`;
+  `agreement` / `equal-final` with an empty cause set. Each limit admits at its default,
   and one past it stops with `limit-reached` naming the limit, its value and
   its `temporal.correspondence.*` setting.

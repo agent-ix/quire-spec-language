@@ -206,8 +206,9 @@ mirrored owner record.
 The correspondence is the one QSL stage that reads TL owner artifacts. The
 root crate's `temporal` module SHALL depend on `tl-syntax`, `tl-mltl` and
 `quire-mltl` for their public readers, for this stage only; no other QSL
-crate or module SHALL depend on them (ADR-011 §7.1). None of the three
-depends on QSL, so the edges add no cycle. QSL owns the native subject, the
+crate or module SHALL depend on them (ADR-011 §7.1). None of the three,
+nor `tl-oracle` or `quire-observation` below them, depends on QSL, so the
+edges add no cycle. QSL owns the native subject, the
 `/2` package and the native evaluator, and the TL crates own their readers,
 so the stage that joins the two sits where both are reachable without
 copying either owner's wire.
@@ -280,18 +281,19 @@ copying either owner's wire.
   and then compare normalized structures, never owner label strings.
 - The rows of this table SHALL be evaluated in order and the first row the
   pair matches SHALL be the decision; the cause set SHALL list the cause of
-  every row the pair matches, in table order:
+  every row the pair matches, in table order. A final `agreement` row has no
+  cause, and its decision carries an empty cause set:
 
-| Validated mapped state | Join decision |
-| --- | --- |
-| either result refused, or a stale or wrong subject | `refused` / `not-compared` |
-| either result failed | `failed` / `not-compared` |
-| a required result or producer unavailable | `unavailable` / `not-compared` |
-| either result unsupported | `unsupported` / `not-compared` |
-| either result incomplete | `incomplete` / `not-compared` |
-| both results values or both pending, with unequal values or premises, contradicted deciding support, or an identity collision | `conflict` / `mismatch` |
-| both values equal and every applicable premise and support equal | `agreement` / `equal-final`, that Boolean |
-| both pending under an open decision scope, equal | `agreement` / `equal-pending`, no Boolean |
+| Validated mapped state | Join decision | Cause |
+| --- | --- | --- |
+| either result refused, or a stale or wrong subject | `refused` / `not-compared` | `result-refused` |
+| either result failed | `failed` / `not-compared` | `result-failed` |
+| a required result or producer unavailable | `unavailable` / `not-compared` | `result-unavailable` |
+| either result unsupported | `unsupported` / `not-compared` | `result-unsupported` |
+| either result incomplete | `incomplete` / `not-compared` | `result-incomplete` |
+| both results values or both pending, with unequal values or premises, contradicted deciding support, or an identity collision | `conflict` / `mismatch` | `result-mismatch` |
+| both values equal and every applicable premise and support equal | `agreement` / `equal-final`, that Boolean | none |
+| both pending under an open decision scope, equal | `agreement` / `equal-pending`, no Boolean | `result-pending` |
 
 - A non-final decision SHALL carry no Boolean and a nonempty ordered cause
   set. Assessment execution, both progress and closure axes, settlement
@@ -315,9 +317,9 @@ The **correspondence record** of profile
 
 | Member | Value |
 | --- | --- |
-| `anchor` | the declaration's activation anchor kind (FR-044) |
-| `bindings` | one `{leaf, predicate, proposition}` per `holds` leaf in ascending leaf handle: the leaf handle, the leaf's checked predicate name, the TL proposition id |
-| `bridge` | `"quire.native-temporal-correspondence/v1"` |
+| `anchor` | `{binder, kind}`: `kind` `"origin"` for a whole-execution origin activation or `"trigger"` for a trigger activation (the two activation records FR-044 emits), and `binder` the trigger binder's name, `null` for `origin` |
+| `bindings` | one `{leaf, predicate, predicate_node, proposition}` per `holds` leaf in ascending leaf handle: the leaf handle, the leaf's checked predicate name, the predicate's checked node id (which fixes its parameter and result types, the type binding), and the TL proposition id |
+| `bridge` | `{definition, profile}`: the `raw-artifact-digest` of the bridge definition, the RFC 8785 bytes of `{profile, selection}` with `selection` the `TlSelection`, and `profile` `"quire.native-temporal-correspondence/v1"` |
 | `captures` | one `{index, value}` per capture in declaration order, `value` the capture's canonical value |
 | `clause` | `{declaration, identity}`: the declaration index and the clause's declared name |
 | `clock` | `{name, parameters}`: the emitted clock binding name and the authenticated parameter map |
@@ -325,19 +327,21 @@ The **correspondence record** of profile
 | `definition` | `{identity, revision}` of the selected profile definition |
 | `history` | `"execution-origin"` or `"history-cutoff"` for a past target, `null` for a future target |
 | `intervals` | every `[a, b]` in postorder |
+| `models` | one `{alias, package}` per model binding of the unit in ascending alias: the model alias and its domain package digest |
+| `observation` | `{origin, trace}`: the trace's admitted execution-origin identity (`null` when the declaration does not activate on a whole-execution origin) and the observation identity, the SHA-256 of the RFC 8785 encoding of the trace's clock binding, positions and valuation maps |
 | `package` | the `/2` package digest |
 | `source` | `{digest, span}`: the native source's `raw-artifact-digest` and the clause's `[start, end]` byte span |
-| `target` | `{formula, formula_edition, profile, request, trace}`: the generated formula's and request's digests, the formula edition, the TL target profile and the trace or history contract |
+| `target` | `{formula, formula_edition, profile, request, trace, trace_contract, valuation}`: the digests of the generated formula, request, trace or history and valuation cells (each the SHA-256 of that artifact's own canonical bytes), the formula edition, the TL target profile and the trace or history contract |
 
 The **correspondence reference** SHALL be `{domain, digest}` with `domain`
 `"quire.native-temporal-correspondence/v1"` and `digest` the SHA-256 of the
 record's canonical bytes. The **projection** (`quire.native-temporal-projection/v1`)
 holds `correspondence` (the record), `formula` and `request` (the owner bytes),
-`reference` and `version`. The **join** (`quire.native-temporal-join/v1`)
+`reference` and `version` `"quire.native-temporal-projection/v1"`. The **join** (`quire.native-temporal-join/v1`)
 holds `causes` (in table order), `decision`, `native` and `tl` (the digests of
 the two results' bytes), `outcome`, `predecessor` (the prior join's
 reference, or `null`), `reference` (the correspondence reference), `value`
-(`true`, `false` or `null`) and `version`.
+(`true`, `false` or `null`) and `version` `"quire.native-temporal-join/v1"`.
 
 ### Strict reading and limits
 
@@ -377,8 +381,8 @@ artifact:
 | FR-045-AC-10 | A fixed-sample declaration's projection retains the authenticated epoch, period and unit; a trace with a changed period refuses even with equal formula bytes; an absent required sample yields `incomplete`. | Test (TC-1240) |
 | FR-045-AC-11 | Each join-table row is reached; every non-final decision carries no Boolean and a nonempty cause set; omitting any preserved axis from either result cannot yield `agreement`; a corrected pair without the prior join, or with a predecessor mismatch, is `conflict`. | Test (TC-1240) |
 | FR-045-AC-12 | A missing, duplicate or foreign valuation cell, an owner-reader rejection, a noncanonical projection or join, and each limit reached exactly and one past it give one deterministic decision, the over-limit and malformed cases non-admitted with no partial artifact and no evaluator invoked by the compiler. | Test (TC-1240) |
-| FR-045-AC-13 | The correspondence record with `anchor` `origin`, one binding `{leaf: 0, predicate: "p", proposition: 0}`, no captures, `clause` `{declaration: 0, identity: "Always"}`, `clock` `{name: "steps", parameters: {sequence_authority: "seq"}}`, `closure` `closed`, `definition` `{identity: "quire.temporal.event-position.false-extension/v1", revision: "1"}`, `history` `null`, `intervals` `[[0, 1]]`, `package` 64 `0`s, `source` `{digest: 64 1s, span: [0, 22]}` and `target` `{formula: 64 2s, formula_edition: "tl-syntax.formula/v1", profile: "mltl.closed-trace/v1", request: 64 3s, trace: "tl-mltl.trace/v1"}` encodes to 860 canonical bytes whose SHA-256 is `848ccf3418350f00e1252d5050c5fbbc995d29bac807905d239d0f93edf168e0`; with `intervals` `[[0, 2]]` the digest is `fde423e1ad82e45a46622ed8daaa81f86df504512db1a7bb2d6467b3aed29e1e`; the same record with its members reordered, or with whitespace, refuses at `read_tl_projection`. | Test (TC-1240) |
-| FR-045-AC-14 | A pair matching more than one join row returns the first row's decision with every matched row's cause in table order: a refused TL result beside unequal premises is `refused` with causes `refused` then `mismatch`, and an unsupported native result beside an incomplete TL result is `unsupported` with causes `unsupported` then `incomplete`. Each `TlLimits` limit admits at its default value and stops one past it with `limit-reached` naming the limit, its value and its `temporal.correspondence.*` setting. | Test (TC-1240) |
+| FR-045-AC-13 | The correspondence record with `anchor` `{binder: null, kind: "origin"}`; one binding `{leaf: 0, predicate: "p", predicate_node: 64 4s, proposition: 0}`; `bridge` `{definition: 64 5s, profile: "quire.native-temporal-correspondence/v1"}`; no captures; `clause` `{declaration: 0, identity: "Always"}`; `clock` `{name: "steps", parameters: {sequence_authority: "seq"}}`; `closure` `closed`; `definition` `{identity: "quire.temporal.event-position.false-extension/v1", revision: "1"}`; `history` `null`; `intervals` `[[0, 1]]`; `models` `[{alias: "M", package: 64 6s}]`; `observation` `{origin: null, trace: 64 7s}`; `package` 64 `0`s; `source` `{digest: 64 1s, span: [0, 22]}`; and `target` `{formula: 64 2s, formula_edition: "tl-syntax.formula/v1", profile: "mltl.closed-trace/v1", request: 64 3s, trace: 64 8s, trace_contract: "tl-mltl.trace/v1", valuation: 64 9s}` encodes to 1429 canonical bytes whose SHA-256 is `f6ea8e9084eff94b3a45fc2cd5cffa5b3732bfa9aa0b90c4cc4623f3f22eb17f`. With `intervals` `[[0, 2]]` the digest is `3e33bdb57217d0c7ec1cbe42e55c17a24944278e2634797fd5a4d51b7078ed4c`; with the model binding's `package` 64 `a`s it is `f71f50b9ddaa23129b15dd09bf7a575d5faa279adfdc25c10e377d7b303d8b15`; with the bridge `definition` 64 `b`s it is `11e242eb5c07e8d0207d97e664788415135302867540cbe4206e0b2547d795e3`. The same record with its members reordered, or with whitespace, refuses at `read_tl_projection`. | Test (TC-1240) |
+| FR-045-AC-14 | A pair matching more than one join row returns the first row's decision with every matched row's cause in table order: a refused TL result beside a failed native result is `refused` with causes `result-refused` then `result-failed`, and an unsupported native result beside an incomplete TL result is `unsupported` with causes `result-unsupported` then `result-incomplete`; two equal final values give `agreement` / `equal-final` with an empty cause set. Each `TlLimits` limit admits at its default value and stops one past it with `limit-reached` naming the limit, its value and its `temporal.correspondence.*` setting. | Test (TC-1240) |
 
 ## Dependencies
 

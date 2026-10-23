@@ -52,6 +52,15 @@ Not mergeable. The FR-043 `/2` authentication is correct and complete against th
 | FND-009 | medium | [coverage] The limits are 'caller-configured', and FR-045 names eight dimensions. None has a limit name, a request setting or a published default, which QSpec FR-461 requires of every limit, and none says which limit-stop cause it reports. AC-12 cannot be written against exact values. Fix: name each limit and its setting, give its default, and give its non-admitted cause. | spec/functional/FR-045-classify-temporal-mapping-support.md:100; spec/functional/FR-045-classify-temporal-mapping-support.md:266-270 | missing-requirement |
 | FND-010 | medium | [soundness] A history-cutoff boundary yields `incomplete` with cause `history-not-origin-complete`. QSpec FR-095 (#421) says only 'incomplete', and grep finds the code in no QSpec cause catalogue (FR-272, FR-331). The cause is therefore QSL-local and uncatalogued. Fix: add it to QSpec's vocabulary through #421, or reuse an existing incomplete cause. | spec/functional/FR-045-classify-temporal-mapping-support.md:193-196 | wrong-requirement |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-011 | medium | [soundness] The conflict row now reads 'both results values or both pending, with unequal values or premises, contradicted deciding support, or an identity collision'. A refused TL result is neither a value nor pending, so the pair in AC-14's first example matches only the refused row. Its cause set is [refused], not 'refused then mismatch'. Separately, the rule says 'the cause set SHALL list the cause of every row the pair matches', but the rows carry only a decision and an outcome. The AC mixes decision names (`refused`, `unsupported`) with the outcome `mismatch` as causes. Fix: give each row a named cause, and either let the conflict row match beside a non-value result or change the example to one that matches two rows. | spec/functional/FR-045-classify-temporal-mapping-support.md:281-295; spec/functional/FR-045-classify-temporal-mapping-support.md:381 | wrong-requirement |
+| FND-012 | medium | [coverage] FR-045 says the correspondence record SHALL preserve FR-095's complete key, including 'model, type and predicate bindings' and the 'clock and observation binding'. It also says the native source and the bridge-definition digests use `raw-artifact-digest`, and that the valuation and trace or history identities each hash their own bytes. The Wire table's record has `bindings` {leaf, predicate, proposition} only: no model or type binding, no observation binding, no bridge-definition digest (`bridge` is the profile name), and no valuation or trace digest (`target.trace` is a contract id). So a model-binding or bridge-definition mutation (FR-095-AC-4, FR-045-AC-9) cannot change the reference. Fix: add the missing members, or narrow the preserved-key sentence to what the record holds, if FR-095 permits that. | spec/functional/FR-045-classify-temporal-mapping-support.md:265-275; spec/functional/FR-045-classify-temporal-mapping-support.md:317-331 | missing-requirement |
+| FND-013 | low | [other] On origin/main, tl-mltl's Cargo.toml depends on tl-oracle (which depends on tl-syntax) as well as tl-syntax. quire-mltl depends on quire-observation, tl-mltl and tl-syntax. None names quire-canonical. There is still no cycle, because none depends on QSL, but the stated manifests are wrong and tl-oracle is missing from the graph. Fix: list tl-oracle, and drop quire-canonical from the sentence. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1096-1104; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1116; spec/functional/FR-045-classify-temporal-mapping-support.md:205-212 | missing-requirement |
+| FND-014 | low | [coverage] The projection and the join each hold a `version` member whose value is not given. The record's `anchor` is 'the declaration's activation anchor kind (FR-044)', but FR-044 enumerates no anchor kinds, and AC-13 uses `origin`. A strict reader can check neither. Fix: state the `version` value, and list the `anchor` strings (for example `origin` and `trigger`). | spec/functional/FR-045-classify-temporal-mapping-support.md:334-340 | missing-requirement |
+
 ## Dispositions
 
 Round 1, against head ae1210a5. Gate `make check-spec-validation` at ae1210a5 exits 0, both with QSPEC_DIR at the shared clone and at QSpec #421's head.
@@ -61,3 +70,10 @@ Round 1, against head ae1210a5. Gate `make check-spec-validation` at ae1210a5 ex
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |
+| FND-009 | fixed | - |
+| FND-010 | fixed | - |
