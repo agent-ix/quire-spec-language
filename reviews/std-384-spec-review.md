@@ -101,8 +101,11 @@ Re-checked at 2e715ed1 (fix commit e507f3bc).
 | FND-006 | still-open | New in this pass. It needs a fix round. |
 | FND-006 | fixed | FR-027 is now main's text plus only the unit-list paragraph, the per-unit digest and edition rule, the array `dependent_bytes` sentence and AC-14. `0-draft` compilation and FR-027-AC-1, AC-4 and AC-6 are unchanged, so TC-430, TC-435 and `tests/it/compile_command.rs` resolve. FR-027-AC-14 does not collide with #1303's or #1321's AC-13. |
 | FND-007 | still-open | New in this pass. It needs a fix round. |
+| FND-007 | fixed | FR-027 states that its per-unit edition check runs before FR-480's header agreement, and FR-480 "Headers" says the agreement check runs in the spine compile, after parse. A command request that mixes `1-draft` and `0-draft` units refuses `unknown_edition` and never reaches it. FR-480-AC-4 (TC-1210 step 4) now goes through FR-278's composition with non-edition mismatches (profile order, profile set). FR-027-AC-14 goes through `command`. Each input now has one code. |
 
 Verdict after disposition pass 1: FND-001 to FND-005 are fixed. Not mergeable
 until FND-006 is fixed.
 
 Verdict after disposition pass 2: FND-001 to FND-006 are fixed, `make check-spec-validation` exits 0 at 2e715ed1, and the head merges cleanly with origin/main 28a76640. Not mergeable until FND-007 is fixed.
+
+Verdict after disposition pass 3: every finding is fixed at 03f7e1be. `make check-spec-validation` exits 0, and origin/main cee6127d is an ancestor. Mergeable.
