@@ -36,7 +36,8 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
 4. The recovery-stability formula over `Health` and over `Restless`.
 5. The TP-4 claim with no granularity with `max_depth` 2, with `max_depth`
    3, with `max_states` 2, with `max_transitions` 3, and with a `Cancel`
-   handle already cancelled; `Counter` with an evaluation meter budget of zero.
+   handle already cancelled; `DeadlockFreedom` over `Counter` with an
+   evaluation meter budget of zero.
 6. The `eventually[0,100]` formula over `Restless` with
    `max_automaton_states` 50 and with the default; a subject whose
    contract conjunction is refused, with no clause false and none
@@ -117,8 +118,11 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then
   `reproduced-with-evaluated-witness`.
-- Step 11: `Stopped{ResourceExhausted, {EvaluationMeter{work_units}, 0}}`
-  twice, the second at the letter of position 0 with no counterexample and
-  no certificate; `Stopped{ResourceExhausted, {MaxCandidates, 1}}`; each
+- Step 11: `DeadlockFreedom` over `Counter` returns
+  `Stopped{ResourceExhausted, {EvaluationMeter{work_units}, 0}}` at the
+  `inc` precondition; `always holds(c.value <= 3)` over the no-precondition
+  `Counter` variant returns the same stop at the letter of position 0 with
+  no counterexample and no certificate; `DeadlockFreedom` over the example
+  subject returns `Stopped{ResourceExhausted, {MaxCandidates, 1}}`; each
   limit's setting is `accounting.work_units` or `expansion.max_candidates`;
   under the raised limits no run stops at that limit.
