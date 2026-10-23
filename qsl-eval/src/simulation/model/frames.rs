@@ -44,7 +44,7 @@ use quire_semantic_value::catalog::CatalogCode;
 const RESULT_ORDER_LIMIT: u128 = 1 << 16;
 
 /// The identity limit every canonical text of a step is written under.
-fn text_limits() -> CanonicalLimits {
+pub(super) fn text_limits() -> CanonicalLimits {
     CanonicalLimits::new(identity_limits().input_bytes)
 }
 
