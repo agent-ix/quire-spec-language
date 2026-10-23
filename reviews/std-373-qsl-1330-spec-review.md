@@ -49,3 +49,10 @@ Examined, clean:
 Mergeable after FND-001, FND-002 (medium) are fixed or dispositioned by the lead.
 
 Conflicts with open head #1327 (FR-163 AC rows); clean against origin/main.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | The Ring vector now exists and is correct as a graph: 5 product states, 9 edges, 2 automaton states, components {(0,q0),(1,q0),(2,q0)} MissingAcceptance, {(2,q1)} Trivial, {(0,q1)} UnfairWeak naming a, in topological order (rederived by hand). The meter half is not realizable as written. FR-339 says the closure check evaluates "the successor expansion and the atoms of each state and no constraint's enabled set", so the third component charges E once. But FR-130 Enabled sets defines a state's enabled set as "the labels of the state's FR-120 transitions, at no extra contract evaluation", and FR-126 says an identity is enabled when FR-120's successor relation gives it a successor. The closure check already expands every model state, including v 0, so by those definitions the enabled set of v 0 is already evaluated and component work reuses it at no charge: E is 0 and M + E - 1 stops inside the closure check, not during the third component. Fix: either state that FR-339's checker evaluates an enabled set separately from the expansion it already reads (and amend FR-130/FR-126 for the checker), or drop the meter-stop half and keep the exact-count half. |
+| FND-002 | fixed | Round 1, head 01165a07. with canonical breadth-first indices 0, 1, 2, 3, 4 in that order, and a certificate whose five singleton components are listed `(0,q0)`, `(0,q1)`, `(2,q0)`, `(1,q0)`, `(2,q1)`: the edge `(2,q0)` to `(1,q0)` lists `(2,q0)` before `(1,q0)` although `(1,q0)` has the smaller vertex index, and `(2,q1)`,  |
