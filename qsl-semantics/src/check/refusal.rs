@@ -1515,6 +1515,9 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::IntakeInputBytes
             | Setting::ReplayInputBytes
             | Setting::FormatOutputBytes
+            | Setting::RenderOutputBytes
+            | Setting::PrepareCompileWorkUnits
+            | Setting::PrepareCodeBytes
             | Setting::I2InputBytes
             | Setting::I2Nodes
             | Setting::I2Edges

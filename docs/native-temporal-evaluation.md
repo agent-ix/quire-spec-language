@@ -65,12 +65,15 @@ are trusted as supplied and retained as premises. They are not verified here, so
 a later contradiction from agent F's contract can identify the results that
 depended on them.
 
-The emitted temporal body carries a clock binding name and the selected
-definition entry, but no declared sample period, epoch, timestamp unit or
-sequence-authority value. Those therefore participate in result identity as trace
-premises and are not independently checked against the artifact. Checking them
-would require an FR-042 wire extension, recorded as remaining work on
-[#38](https://github.com/agent-ix/quire-spec-language/issues/38).
+A `/1` temporal body carries a clock binding name and the selected definition
+entry, but no declared sample period, epoch, timestamp unit or sequence-authority
+value. Through the `/1` entry points those participate in result identity as
+trace premises and are not checked against the artifact. A strict
+`quire.compiled-protocol/2` package carries each declaration's definition digest
+and clock configuration ([FR-050](../spec/functional/FR-050-publish-authenticated-temporal-artifacts.md)),
+and `evaluate_v2` and `evaluate_with_progress_v2` refuse a trace whose profile,
+clock name or parameter map differs from it before visiting any position
+([FR-043](../spec/functional/FR-043-evaluate-bounded-native-temporal.md)-AC-14).
 
 ## Counters
 

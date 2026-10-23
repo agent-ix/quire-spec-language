@@ -71,6 +71,7 @@ pub struct CheckedRefinement {
 pub enum AbstractSide {
     Local(ModelAlias),
     Dependency { alias: ModelAlias, package_id: PackageId },
+    Protocol { alias: ModelAlias, clause: NodeKey, dependency: Option<PackageId> }, // FR-147
 }
 
 pub struct ObjectRow {

@@ -943,15 +943,36 @@ mod tests {
         let wire: serde_json::Value =
             serde_json::from_slice(&site.package).expect("the package bytes are JSON");
         assert_eq!(wire["contract_version"], "quire.checked-package/v2");
-        let document =
-            quire_canonical::read(&site.package, u64::MAX).expect("the package bytes read");
-        let identity_preimage = document
-            .root()
-            .get("identity_preimage")
-            .expect("the package carries an identity preimage");
-        let digest =
-            quire_canonical::sha256(&identity_preimage, quire_canonical::Limits::new(u64::MAX))
-                .expect("the identity preimage is canonical JSON");
+        // The wire `identity_preimage` holds the seven selections only; the
+        // hashed preimage adds the `identity_projection` derived from the
+        // admitted `semantic_graph` (QSL-1009), so rebuild it from IR's own
+        // admitted view of the bytes.
+        let mut evidence = quire_contract_model::CheckedPackageEvidence::new();
+        for feature in wire["lock"]["required_features"].as_array().unwrap() {
+            evidence.support_feature(feature.as_str().unwrap());
+        }
+        let quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) =
+            quire_contract_model::read_checked_package(
+                &site.package,
+                quire_contract_model::CheckedPackageReadLimits::bounded(),
+                &evidence,
+            )
+        else {
+            panic!("IR admits the package bytes");
+        };
+        let selections = package.identity_preimage();
+        let preimage = quire_contract_model::CheckedPackageIdentityPreimageRefV2 {
+            version: &selections.version,
+            edition: &selections.edition,
+            profile_selections: &selections.profile_selections,
+            definition_selections: &selections.definition_selections,
+            model_selections: &selections.model_selections,
+            required_features: &selections.required_features,
+            dependency_selections: &selections.dependency_selections,
+            identity_projection: &package.graph().nodes,
+        };
+        let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(u64::MAX))
+            .expect("the identity preimage is canonical JSON");
         assert_eq!(
             DigestRecord::mint(DigestDomain::PackageSemanticV2, *digest.as_bytes()),
             site.package_id
