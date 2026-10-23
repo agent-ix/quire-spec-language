@@ -1096,6 +1096,15 @@ flowchart BT
   QEV & QRP --> QEL
   RT --> QEL
   CG --> QEL
+  TLS[tl-syntax]
+  TLM[tl-mltl]
+  QML[quire-mltl]
+  QSL -->|temporal correspondence only| TLS & TLM & QML
+  TLO[tl-oracle]
+  QOB[quire-observation]
+  TLM --> TLS & TLO
+  TLO --> TLS
+  QML --> TLM & TLS & QOB
 ```
 
 Differences from today (ADR-010 §3.2), each removed in its owning change:
@@ -1107,6 +1116,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6c, with `lower` and `lowering` (owner ruling 2026-09-24) |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
+| QSL root → `tl-syntax`, `tl-mltl`, `quire-mltl` | **New**, for the root crate's `temporal` correspondence stage only (FR-045 "Correspondence"): it hands generated TL artifacts to their owners' public readers and joins the TL result with the native one. No other QSL crate or module names these crates. None of them depends on QSL (their manifests name only each other, `tl-oracle` and `quire-observation`; `tl-oracle` depends on `tl-syntax`), so the edges add no cycle. QSL holds the native subject, the `/2` package and the native evaluator, so the stage sits where both owners are reachable. | FR-045 |
 | QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted; X-3 (`qsl-cst`) is extracted; X-4 (`qsl-source`) is extracted; X-5 (`qsl-forms`) is extracted; X-6 (`qsl-semantics`) is extracted; X-7 (`qsl-package`) is extracted; X-8 (`qsl-eval`) is extracted; X-9 (`qsl-route`) is extracted; X-10 (`qsl-replay`) is extracted; `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New**; a git dependency on the repository `agent-ix/quire-exact` at `branch = "main"` | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
