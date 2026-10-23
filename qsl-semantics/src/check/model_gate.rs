@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-361: S3 refuses each model construct a unit writes unless the unit's
-//! header selects `quire.model.complete/v1`.
+//! header selects `quire.model.complete/v1` or a layer that requires it.
 //!
 //! A model construct is an `operation-body` declaration, an `abstraction`
 //! declaration, a dispatched `receiver.member(args)` call or a
@@ -19,6 +19,7 @@ use qsl_foundation::selection::ProfileSelection;
 
 use super::assemble::{AssemblyCause, AssemblyError};
 use super::layer::{expression_form, visit_located};
+use crate::value::definition::DefinitionLock;
 use crate::value::layer::{HeaderLayer, LayerForm};
 
 /// The family of a refused model construct (FR-361 item 5).
@@ -119,11 +120,12 @@ fn selected_layers(profiles: &[ProfileSelection]) -> Vec<HeaderLayer> {
     layers
 }
 
-/// Whether the unit's header names the model profile (FR-361 item 1).
+/// Whether the unit's selected layers include the model layer through their
+/// `requires` closure (FR-361 item 1).
 pub(super) fn selects_model(profiles: &[ProfileSelection]) -> bool {
-    profiles.iter().any(|profile| {
-        HeaderLayer::from_identity(&profile.identity) == Some(HeaderLayer::ModelComplete)
-    })
+    DefinitionLock::pinned()
+        .closure(&selected_layers(profiles))
+        .contains(&HeaderLayer::ModelComplete)
 }
 
 /// The declarations of a unit the gate reads.

@@ -22,6 +22,13 @@ pub use editor::{
 use qsl_cst::{CompleteDiagnostic, Limits, ParsedSource};
 use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::SourceIdentity;
+use qsl_semantics::value::HeaderLayer;
+
+/// The current build's header-selectable layer identities for CST tooling.
+pub fn header_profile_catalog() -> ProfileCatalog {
+    ProfileCatalog::new(HeaderLayer::ALL.map(HeaderLayer::identity))
+        .expect("the six distinct layer identities fit the profile catalog")
+}
 
 /// Parse while validating every selected profile against an exact definition
 /// catalog. An older catalog retains all bytes and reports the unknown profile

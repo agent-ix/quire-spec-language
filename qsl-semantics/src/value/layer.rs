@@ -11,7 +11,7 @@
 //! [`DefinitionLock::admits`](super::DefinitionLock::admits) answers whether a
 //! [`LayerForm`] is in the admitted-form set of a closure. QSpec states the
 //! admitted-form sets in prose (`state-core.md`, `state-queries.md`,
-//! `state-graph.md`, `value-complete.md`, `model-complete.md`); each
+//! `state-graph.md`, `value-complete.md`, `model-complete.md`, `temporal-complete.md`); each
 //! [`LayerRow::forms`] is this build's reading of its row's file, over the
 //! forms the unit language has today.
 
@@ -34,16 +34,19 @@ pub enum HeaderLayer {
     /// `quire.model.complete/v1`: state graph and complete values plus
     /// systems-model structure.
     ModelComplete,
+    /// `quire.temporal.complete/v1`: the complete model plus timed models.
+    TemporalComplete,
 }
 
 impl HeaderLayer {
     /// Every layer, in the lock's row order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::StateCore,
         Self::StateQueries,
         Self::StateGraph,
         Self::ValueComplete,
         Self::ModelComplete,
+        Self::TemporalComplete,
     ];
 
     /// The layer's definition identity.
@@ -54,6 +57,7 @@ impl HeaderLayer {
             Self::StateGraph => "quire.state.graph/v1",
             Self::ValueComplete => "quire.value.complete/v1",
             Self::ModelComplete => "quire.model.complete/v1",
+            Self::TemporalComplete => "quire.temporal.complete/v1",
         }
     }
 
@@ -192,8 +196,8 @@ const VALUE_VALIDITY: WitnessRequest = WitnessRequest {
     extent: "bounded",
 };
 
-/// The five rows, in the lock's order.
-pub(super) const LAYER_ROWS: [LayerRow; 5] = [
+/// The six rows, in the lock's order.
+pub(super) const LAYER_ROWS: [LayerRow; 6] = [
     LayerRow {
         layer: HeaderLayer::StateCore,
         requires: &[],
@@ -249,5 +253,15 @@ pub(super) const LAYER_ROWS: [LayerRow; 5] = [
             LayerForm::DispatchCall,
             LayerForm::Lookup,
         ],
+    },
+    // The timed models. The timed forms are clause-family forms the temporal
+    // clause checks own (FR-230), not unit-language forms of the `Layer`
+    // admission, so the row adds none to the model layer's set.
+    LayerRow {
+        layer: HeaderLayer::TemporalComplete,
+        requires: &[HeaderLayer::ModelComplete],
+        admitted_forms: "temporal-complete.md",
+        witness_request: OPERATION_CONTRACT,
+        forms: &[],
     },
 ];
