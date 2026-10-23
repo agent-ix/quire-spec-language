@@ -486,8 +486,9 @@ unresolved-name, zero-denominator or limit error:
 - **Duplicate dimension or unit name.** A name declared by more than one
   dimension form, or by more than one unit form. The error names the name
   and the span of each declaration.
-- **Unresolved unit dimension name.** A unit's `:` name that names no
-  dimension form. The error names the name and its span.
+- **Unresolved unit dimension name.** A unit's `:` name that names neither
+  a dimension form of the unit nor a dimension of an admitted domain package
+  (FR-056, QSpec FR-154). The error names the name and its span.
 - **Zero denominator.** An exact number `rational(n, 0)`. The error names
   its span.
 - **Decimal scale limit.** An exact number `decimal(c, s)` whose `s` is
@@ -501,13 +502,31 @@ units by QSpec FR-142 "Dimension and conversion algebra", with FR-142's
 rules, order and causes and none of its own:
 
 - It takes the dimension nodes in FR-142's turn-list order, built by
-  walking the declarations in source order.
+  walking the declarations in source order. A dimension of an admitted
+  domain package is an imported node of that list. A source declaration
+  that mentions it gives it its turn when it is first reached, before the
+  declaration that reached it and before the nodes reached through its
+  terms. Every package dimension not yet reached takes its turn after the
+  last source declaration's turn, in the lock order of its selection and
+  then in its authored order within the package.
+- An imported node's definition, terms and units count as admitted and are
+  not re-checked. At its turn, rows 1 to 6 apply to the local units typed by
+  it, with the package's units of that dimension as admitted members of the
+  graph: a local targetless unit beside the package's root is a second root
+  (row 4, retaining the package root and the local unit), a local cycle is
+  row 6, a local zero scale is row 1, and a local unit that targets a
+  package unit of its own node adds no cycle and no targetless unit. Row 5
+  applies only to a local root of a node with no package root. The
+  base-dimension rule applies to a package base dimension at its turn as to
+  a local one. A refusal of a package node is located at its selection row
+  `/lock/model_selections/<i>` and names the node's FCD identity.
 - At each node's turn it runs FR-142's step (-1) over a local dimension's
   own terms (a term that names no dimension; a dimension in a dimension
   cycle or with a self-term, its edges from the cycle's dimension declared
   first), then step (0)'s base-dimension rule, then rows 1 to 3 over the
   node's local units in source order, then rows 4 to 6 over the node. Row 2
-  is a unit target that names no unit form; row 6 is a unit target cycle,
+  is a unit target that names no unit of the package, neither a unit form
+  nor a unit of an admitted domain package; row 6 is a unit target cycle,
   its edges retained from the cycle's least unit by source position.
 - It reports the first defect found and no other: a node is refused by the
   earliest row that applies to its earliest local unit, and a later node is
@@ -972,6 +991,7 @@ every checker of the language.
 | FR-091-AC-45 | Base-dimension rule (QSpec FR-142-AC-16). `dimension L; dimension A = L ^ 2; unit m2 : A = rational(1, 1);` refuses with one error at `L`'s turn, `missing_declaration`/`missing-name`, naming `L` and `m2`, the first unit in source order whose dimension has a nonzero exponent of `L`; with `unit m : L = rational(1, 1);` added it assembles. `dimension L; dimension A = L ^ 2;`, with no unit, assembles: a unitless base dimension carried by no unit-bearing dimension, and a derived dimension without a unit, are not refused. `dimension L; dimension N = L / L; unit one : N = rational(1, 1);` assembles, since `N`'s empty map names no base dimension. | Test (TC-483) |
 | FR-091-AC-46 | First defect (QSpec FR-142-AC-15). `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * ghost;` refuses row 1 at `z`, not row 2; `dimension L; unit r : L = rational(1, 1); unit u : L = rational(1, 1) * ghost; unit z : L = rational(0, 1) * r;` refuses row 2 at `u`, the earlier unit; `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1); unit s : L = rational(1, 1) * s;` refuses row 4 (`r`, `q`), not row 6 (`s`'s self-cycle); `dimension L; dimension T; unit t : T = rational(0, 1) * tr; unit tr : T = rational(1, 1); unit l : L = rational(2, 1);` refuses row 5 at `L`'s root `l`, not row 1 at `t`, since `L` takes its turn before `T`; `dimension A = B; dimension B = A; dimension L; unit l : L = rational(2, 1);` refuses step (-1)'s `invalid_package`/`definition-cycle` at `A`, edges `A -> B` and `B -> A`, not row 5 at `l`. | Test (TC-483) |
 | FR-091-AC-47 | Least-unit cycle (QSpec FR-142-AC-15). `dimension L; unit r : L = rational(1, 1); unit y : L = rational(1, 1) * x; unit x : L = rational(1, 1) * y;` refuses row 6, `invalid_package`/`definition-cycle`, with edges `y -> x` then `x -> y`, from `y`, the cycle's least unit by source position, not from `x`, the least by name. | Test (TC-483) |
+| FR-091-AC-55 | Package dimensions and units (QSpec FR-142-AC-16, AC-18, AC-19). With an admitted domain package `P` selected by the unit, each of QSpec TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2, its `P` declarations supplied by `P` and its local declarations in the unit, gives TC-187's result through the assembler. U11r admits a local `cm` that targets `P`'s root `m`. U11s refuses row 6 at `P`'s `L`, retaining `a -> b` and `b -> a`, and `P`'s `m` is not re-checked. U11t refuses row 4 with `P`'s root `m` and the local `m2`. U11u refuses row 1 at `z`. U11y and U11z1 refuse the base-dimension rule at `P`'s `L`, `missing_declaration`/`missing-name`, retaining `L` and `m2`, located at `/lock/model_selections/0` and naming `L`'s FCD identity. U11z2 refuses the base-dimension rule at `P`'s `L` before the later zero scale. FR-142-AC-19's `unit tick : Rate = 1/2 * M::us`, typed by the package dimension `Rate`, is admitted. | Test (TC-483) |
 
 ## Dependencies
 
@@ -1046,7 +1066,8 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-5, integer operators | Resolved: S2 maps `div`, `rem` and `mod` to distinct forms regardless of reachability. Check uses the declaration's resolved `using` selection: absent `quire.value.complete/v1` refuses each at its operator locus; selected complete value admits well-typed forms. The checked package's exactly-one integer-division law governs `div`/`rem`; `mod` stays Euclidean. Their checker and evaluator arms are required by FR-091-AC-39 and QSpec FR-147. `/` has no integer-division meaning; QSpec FR-149 owns exact integer-to-rational promotion only under complete value. | QSpec FR-147 and its shared grammar admit these operators only under the complete-value facet, while QSpec FR-039 preserves the state-only refusal. S2 must not discard the distinction before profile admission. | QSpec changes the facet, operator law or slash rule. |
 | FR-091-OQ-5, other constructs | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed unrepresented constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. Float literals depend on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
-| FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, and terms sort by key; a derived dimension that cancels to no terms is the dimensionless dimension (QSpec FR-142). (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (c) The dimension and unit topology, dimension term resolution and dimension and unit cycles included, takes QSpec FR-142's rules, order and causes. (d) Units are named as types through `Quantity<u>` (QSpec FR-142). | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (c) gives every checker of the language one refusal for one unit graph. (d) the complete-V1 `type-ref` names a quantity type as `Quantity<u>` over a unit (QSpec FR-142-AC-11), and reading any other type name as a unit would invent syntax meaning. A quantity-typed operation parameter is therefore the `Quantity<u>` annotation (FR-185). | QSpec changes FR-142's topology rules or causes, or changes or withdraws `Quantity<u>` (FR-142). |
+| FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, and terms sort by key. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (d) Units are named as types through `Quantity<u>` (QSpec FR-142). Parts of (a) and (c) of this ruling are replaced by FR-091-OQ-13. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (d) the complete-V1 `type-ref` names a quantity type as `Quantity<u>` over a unit (QSpec FR-142-AC-11), and reading any other type name as a unit would invent syntax meaning. A quantity-typed operation parameter is therefore the `Quantity<u>` annotation (FR-185). | QSpec changes or withdraws `Quantity<u>` (FR-142). |
+| FR-091-OQ-13 | Unit-graph topology (lead default, 2026-10-22, not an owner answer). A derived dimension that cancels to no terms is the dimensionless dimension, admitted. The dimension and unit topology, including dimension term resolution, dimension and unit cycles, and package dimensions and units as imported nodes, takes QSpec FR-142's rules, order and causes. | QSpec FR-142 fixes the topology rules, their first-defect order and their causes, and admits `N = L / L` (FR-142-AC-15 to AC-19); following it gives every checker of the language one refusal for one unit graph. | QSpec changes FR-142's topology rules or causes. |
 
 ## Open Questions
 

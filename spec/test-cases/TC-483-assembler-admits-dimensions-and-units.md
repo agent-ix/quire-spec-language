@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-093-AC-33, FR-093-AC-34.
+Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-55, FR-093-AC-33, FR-093-AC-34.
 
 ## Test Procedure
 
@@ -51,6 +51,7 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `g2`, `m` and `q`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
 7. Assemble each unit of FR-091-AC-45, AC-46 and AC-47.
+8. With an admitted domain package `P` selected, assemble TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2 and FR-142-AC-19's `tick` unit (FR-091-AC-55).
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -88,3 +89,5 @@ Tag the tests with the AC ids they back and `TC-483`.
   and `16`.
 - Step 7: each refused unit refuses with exactly the one error its AC
   names, the first defect in FR-142's order; each admitted unit assembles.
+- Step 8: each vector's TC-187 result, with package-node refusals located at
+  `/lock/model_selections/0`; `tick` admitted.
