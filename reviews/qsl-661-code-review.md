@@ -71,3 +71,39 @@ What is right:
 - A thin facade.
 
 No panics were found on the reachable paths (indexing is bounded, and shifts are below 2^8).
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 reviewed head `784202027`, which includes fix commits `4e7651d6e` and
+`4225fca76`. It was judged against FR-315 as STD-338 (#1289, merged as `9fbb0c208`) states it.
+The z3 probes were re-run on that head. Probe P5 is a `Counter` that gains `id: Integer`, which
+`inc` writes, with `post Id { self.id - pre(self.id) = 1 }`. Under infinite-trace,
+`always holds(c.id <= 0)` is violated after one `inc`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | high | Unsound `proved`. `Application::writes` counts a field as written only when it has a finite domain, so a frame-granted `Integer` field is held equal across every operation disjunct. In probe P5, `id`'s post then contradicts the frame and only the stutter is left: `Unrolling{1}`, `Unrolling{2}`, `InductionBase{1}` and `InductionBase{2}` are all unsat for a claim violated at step 1. FR-315 prints frame equality only for fields the frame does not grant, and refuses `field-domain` only for queries that expand candidates. The step relation must leave a granted field free. | qsl-eval/src/smt/relation.rs:339-345 |
+| FND-012 | medium | Refusal row 10 `field-domain` is not implemented. A query that expands candidates (false-extension, deadlock-freedom, a postcondition failure) over an application that writes an infinite-domain field computes terminality over the frozen field instead of refusing. In P5, the deadlock item's `InductionBase{1}` is sat with a spurious deadlock at value 0. | qsl-eval/src/smt/relation.rs:369-423 |
+| FND-013 | low | The refusal codes differ from FR-315 Outputs. The single-subject instance check reports `instance-binding` where the spec names `instance-type`. `internal-fault` is a code the spec's "exactly these" list lacks. A finite parameter domain over 2^16 values refuses `parameter-domain`, but by the spec it is the `applications` measure (`too-large`). | qsl-eval/src/smt/refusal.rs:142-157; qsl-eval/src/simulation/model/symbolic.rs:298-300 |
+| FND-014 | low | Operations that declare a result are not encoded. No result disjunction exists (FR-315 "Results", AC-24, AC-27), and a clause that reads `result` refuses `out-of-fragment` ("binding with no value"). The refusal is sound but does not conform. | qsl-eval/src/smt/relation.rs:301-335 |
+| FND-015 | medium | Canonical printing differs from FR-315 text in ways that change bytes. (a) The false-extension step prints `(and (or (= h<i> h<i+1>) T) (or h<i+1> D))` where the spec has `(and (= h<i+1> (or h<i> T)) (or h<i+1> D))`; the two are semantically equivalent, because a terminal copy has no D-successor. (b) Field equality prints the earlier copy first, where the spec puts the later copy first (stutter, frame, distinctness; AC-15). (c) Optional-field equality is `(and (= V V') (= P P'))` where the spec has `(and (= P P') (or (not P) (= V V')))` (AC-25). This version is stronger: it is sound, but a step-case distinctness can tell apart two equal states. (d) The printer folds `(not (not x))`, `true`/`false` inside `and`/`or`, and comparisons of literals, but the spec says it "simplifies no other term". (e) Distinctness prints `(or (not Q)..)`, not `(not (and Q..))`. FR-314 rebuilds through the same function, so this is not a soundness issue, but the spec pins the bytes. | qsl-eval/src/smt/query.rs:485-495,532-549; qsl-eval/src/smt/layout.rs:320-330; qsl-eval/src/smt/script.rs:124-205 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4e7651d6e. The stutter is unconditional. P1 now gives `Unrolling{4}`, `Unrolling{5}`, `InductionBase{4}` and `InductionBase{5}` sat. `InductionStep{4}` stays unsat by pigeonhole (five distinct copies of a four-valued field), so the coder's note is right. The defect was the unsat base case, not the step case. |
+| FND-002 | fixed | 4e7651d6e (the `h<i>` flags), checked with z3. `always[0,5] holds(c.value <= 2)` is sat at depth 5. `always[0,4] holds(c.value <= 3)` is sat at depth 4. `always[0,3] holds(c.value <= 3)` is unsat at depth 3 (AC-18). `eventually[0,3] holds(c.value = 3)` is unsat at depth 3, and `eventually[0,2] holds(c.value = 3)` is sat at depth 2. |
+| FND-003 | fixed | 4225fca76. `CopyFacts` is read at every position `0..=depth`, and `InductionStep` includes the precondition and postcondition failures from copy `depth`. This was verified structurally only: S3 refuses the reviewer's partial-guard probe (`Unproved(Range)`), so it cannot be exercised. |
+| FND-004 | fixed | 4225fca76. A postcondition failure is read on copy `p` and candidate literals, independent of the transition assertion. |
+| FND-005 | still-open | 4e7651d6e added the fixed limits. `distinct()` in `negated` is still O(n^2) over up to about 4 x 2^20 disjuncts, and it runs before the `script-bytes` check, so `Unrolling{2^20-1}` over a one-field subject can hang. Use a set, or skip duplicates that are constants. |
+| FND-006 | still-open | FR-315 row 3 requires `query-kind` for `eventually[0,u]` with `Unrolling{depth < u}`, and it is not implemented. `eventually[0,3] holds(c.value = 3)` at `Unrolling{2}` encodes and is sat, which is spurious. |
+| FND-007 | fixed | 4e7651d6e. An unresolved clause is now a fault, and `ObjectLifecycle` names the offending object. |
+| FND-008 | fixed | 4e7651d6e. `StepRelation` and its types are no longer public. The `StateCopy` trace-variable prefix is QSL-1010's to add. |
+| FND-009 | fixed | 4e7651d6e. The module doc now states the printed order. |
+| FND-010 | fixed | 4e7651d6e. Dotted keys and fields refuse `constant-name`. |
+| FND-011 | still-open | Found in this pass. |
+| FND-012 | still-open | Found in this pass. |
+| FND-013 | still-open | Found in this pass. |
+| FND-014 | still-open | Found in this pass. |
+| FND-015 | still-open | Found in this pass. |

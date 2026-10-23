@@ -40,3 +40,22 @@ AC-1, AC-2, AC-3 and AC-5 are covered by tests that can fail. AC-4 is not, becau
 cannot be built under S3, which needs a spec amendment. Together with SR-12356's two high
 soundness findings, the PR is not mergeable. No orphan production code was found, since every new
 module serves FR-315. The facade adds nothing and has no compatibility shim, as QSL-661 requires.
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 reviewed head `784202027` against FR-315 as STD-338 (#1289) states it.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | STD-338 added AC-15 to AC-28 to TC-900 for `encode_smt_query` itself, and none has a tagged test. Some behaviours are tested untagged (AC-16 and AC-18 regressions, AC-20 deadlock). Others have no test and do not match the code: AC-17 (the `h<i>` step print and the `query-kind` refusal), AC-24 and AC-27 (results, `field-domain`), and AC-25 (the optional-field equality print). Either implement and tag them in this PR, or defer them with a ticket. | qsl-eval/tests/it/smt_query.rs |
+| FND-005 | low | The solver-free `satisfiable()` searches only Int values `0..8`. An `assert!(!sat(..))` therefore passes for any script whose models need values outside that range. That is sound for the `Int[0,3]` fixtures used today, but it is not a general unsat oracle. | qsl-eval/tests/it/smt_query.rs:436-490 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | still-open | STD-338 rewrote AC-4 over `Tally` (a range coercion under short-circuit), and no test is tagged FR-315-AC-4. The Slot test was untagged rather than replaced. |
+| FND-002 | fixed | 4e7651d6e. `satisfiable()`-backed regression tests for SR-12356 FND-001 and FND-002 now fail on the old encoding. |
+| FND-003 | fixed | 4e7651d6e. The misapplied AC-3 and AC-1 tags were removed from the test file. The printer unit tests keep AC-1 and AC-3 tags for canonical printing, which is acceptable. |
+| FND-004 | still-open | Found in this pass. |
+| FND-005 | still-open | Found in this pass. |
