@@ -61,3 +61,11 @@ Not mergeable until FND-001 and FND-002 are fixed. The forms, the precedence
 and the new vectors match QSpec FR-381. The scope of the check, which is
 STD-435's own scope item, has vectors for only some of its clause kinds and
 forms.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (c608d69d): the new FR-150-AC-8 refuses a key literal in an operation precondition, and a text conversion of `self.parent` in a refinement field row, each `identity-observing-form` naming `config_history`. TC-566 step 5 covers both. That completes FR-381-AC-3's seven clause kinds. |
+| FND-002 | fixed | Round 1: FR-150-AC-7 adds function bodies with a key-literal comparison, a text conversion and a `Sequence` convert, each checking with no `identity-observing-form`. TC-566 step 4 follows. |
+| FND-003 | fixed | Round 1: FR-150-AC-7's post clause adds `sum(p in self.peers: p.versionNumber)`. |
