@@ -15,7 +15,7 @@ checked hybrid claim, S4's emitted hybrid nodes, the I2 reader's read-back
 and refusals, and the provider request served in process and by a process
 provider.
 
-Scope: FR-447-AC-1 to FR-447-AC-5 and FR-447-AC-13 to FR-447-AC-15.
+Scope: FR-447-AC-1 to FR-447-AC-5, FR-447-AC-13 to FR-447-AC-15 and FR-447-AC-17.
 
 ## Test Procedure
 
@@ -43,6 +43,10 @@ claim from the package bytes it receives.
    bytes with QSpec's v2 reader; check `always [0, *] holds(h.v < 30)` under
    `timed/v1`, and `always holds(h.v < 30)` under `timed/v1` and under the
    event-position profile.
+
+9. Write the request for `SlowEnough` and for a temporal clause over a model
+   without hybrid dynamics in one unit, and negotiate both with EN-6 and an
+   in-process fixture hybrid provider (`dynamics` `["hybrid"]`) registered.
 
 Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 
@@ -75,3 +79,7 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
   `always holds(h.v < 30)` under `timed/v1` admitted with horizon `None`, and under the event-position profile refused
   `unsupported_construct`/`expression-form` at the operator's span, naming
   the profile, as FR-447-AC-15 states.
+- Step 9: `SlowEnough`'s item carries `"requirements": ["hybrid-dynamics"]`
+  and routes to the fixture alone; the other item carries no `requirements`
+  and routes to EN-6 alone; neither is `ambiguous-backend`; the request
+  identities differ as FR-447-AC-17 states.

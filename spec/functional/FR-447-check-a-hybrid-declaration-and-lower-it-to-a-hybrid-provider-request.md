@@ -488,21 +488,28 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
   claim: its kind `temporal-satisfaction` (QSpec FR-290), its claim locus,
   its extent `bounded` when the claim's horizon is `Some` and `unbounded`
   when it is `None`, its `hybrid.limits` by FR-250, and the hybrid-dynamics
-  requirement QSpec FR-193 names, for negotiation (FR-075) to route.
+  requirement QSpec FR-193 "Routing a hybrid item" names, the item member
+  `"requirements": ["hybrid-dynamics"]`, for negotiation (FR-075) to route.
 - The request writer SHALL give that requirement to every hybrid claim,
-  since every checked hybrid model has a `Hybrid` variable (The clock line).
+  since every checked hybrid model has a `Hybrid` variable (The clock line),
+  and SHALL write no `requirements` member on the item of any other claim.
+  The requirement is part of the request identity (QSpec FR-306).
 - The item's `claim` SHALL name the claim's emitted `temporal_clause` node
   and its `claim` occurrence (QSpec FR-331 "Items", FR-481 "Hybrid claims"),
   so the item has one locus for every provider.
 - Negotiation SHALL route the item to any registered provider that
-  advertises the item's kind and requirement, in process or in a process of
-  its own; no rule restricts a hybrid item to either.
+  advertises the item's kind and whose descriptor `dynamics` holds `hybrid`
+  (FR-075), in process or in a process of its own; no rule restricts a
+  hybrid item to either. EN-6, whose descriptor holds no `dynamics`, is never
+  a candidate for it, so registering a hybrid provider beside EN-6 makes no
+  item ambiguous.
 - An in-process hybrid provider (QSpec FR-331 "In-process providers";
   FR-280) receives the request's manifest, `deadline_ms` and items as typed
   values, together with the checked package, and reads the claim's
-  `CheckedHybridClaim` and its `CheckedHybridModel` from that package. QSL's
-  built-in hybrid solver is such a provider, and FR-250's descriptor bounds
-  are its bounds.
+  `CheckedHybridClaim` and its `CheckedHybridModel` from that package. QSL
+  has no built-in hybrid solver (ADR-026 HY-3): every hybrid provider, in
+  process or not, is a registered backend that publishes its own solver
+  budget defaults in its descriptor `bounds` (FR-250).
 - A process hybrid provider, such as one that runs dReal or Flow*, receives
   the request frame with the emitted package's v2 bytes (QSpec FR-331
   "Package bytes") and reads the claim's `temporal_clause` node and its
@@ -597,6 +604,7 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 | FR-447-AC-14 | A claim body `always [0, 10] true` emits a `quire.op.temporal.true` formula node under the `always` node and no `quire.op.temporal.holds` node over a Boolean literal; `SlowEnough` emits the `temporal_profile` law its `using` alias selects. | Test (TC-1187) |
 | FR-447-AC-15 | `SlowEnough` written `using` a profile alias selecting `quire.temporal.timed/v1` checks with the interval `{lower: 0, lower_open: false, upper: Some(10), upper_open: false}` and horizon `Some(Seconds(10))`, and S4 emits its `always` node with the timed interval `{lower: 0, upper: 10, lower_end: closed, upper_end: closed}` in exact rational seconds and the `timed/v1` law, which QSpec's v2 reader admits; under the infinite-trace profile the same claim emits the integer `[0, 10]`. Under `timed/v1`, `always [0, *] holds(h.v < 30)` is admitted, a hybrid claim admitting `[q, *]` there, with `upper: None`, horizon `None` and the emitted timed interval `upper` `null`, `upper_end` `open`; `always holds(h.v < 30)`, with no interval, is admitted under `timed/v1` with horizon `None`, and under `quire.temporal.event-position.false-extension/v1` it refuses `unsupported_construct`/`expression-form` at the operator's span, naming the profile. | Test (TC-1187) |
 | FR-447-AC-16 | QSL's I2 reader admits AC-12's emitted package and reads back `Braking2`'s `CheckedHybridModel`, with its two initial entries and its reset constraints `Eq` and `Ge`, and `Slows`'s and `Recent`'s `CheckedHybridClaim`s, with their clocks, the `Each` activation and its guard, the capture `v0` and its type, the fairness constraint, the `Once` operator and the intervals, each equal to the checked one; and it refuses a written default `initial` `invalid_semantic_graph` at `initial` and a fairness member naming `Halted` `missing_declaration`/`missing-name`, at QSpec FR-481's loci. | Test (TC-1220) |
+| FR-447-AC-17 | The request writer writes `SlowEnough`'s item with the member `"requirements": ["hybrid-dynamics"]` beside `"kind": "temporal-satisfaction"`, and writes no `requirements` on the item of a temporal clause over a model without hybrid dynamics in the same unit; with EN-6 and an in-process fixture hybrid provider whose descriptor `dynamics` is `["hybrid"]` both registered, `SlowEnough`'s item routes to the fixture alone and the other item to EN-6 alone, neither settling `ambiguous-backend`; two requests that differ only in `SlowEnough`'s `requirements` have different request identities. | Test (TC-1187) |
 
 ## Dependencies
 
