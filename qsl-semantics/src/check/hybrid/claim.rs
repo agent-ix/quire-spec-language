@@ -7,9 +7,9 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ActivationForm, ExpressionForm, FairnessConstraintForm, OperatorInterval, QuantityForm,
-    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
-    TimedUpper, TypeFormHead,
+    ActivationForm, ExprNode, ExpressionForm, FairnessConstraintForm, OperatorInterval,
+    QuantityForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
+    TemporalOperator, TimedUpper, TypeFormHead,
 };
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::Span;
@@ -179,7 +179,11 @@ fn check_claim(
 
     let clock = match &form.clock {
         None => Some(HybridClock::ModelTime),
-        Some(written) => clock_of(&written.text, written.span, stops),
+        Some(written) => clock_of(
+            &written.text,
+            form.clock_clause_span.unwrap_or(written.span),
+            stops,
+        ),
     };
 
     let over = identifier(&form.over.name.name, form.over.name.span, stops);
@@ -622,7 +626,19 @@ fn formula(
                 Some(HybridFormula::Holds(HybridTerm::Boolean(*value)))
             }
             TemporalNodeForm::Holds { condition, .. } => {
-                typed(condition, Kind::Boolean, env, meter, stops).map(HybridFormula::Holds)
+                if condition.expression.iter().any(|node| {
+                    matches!(
+                        node.node(),
+                        ExprNode::Indexed { .. } | ExprNode::StepLabel { .. } | ExprNode::Stutter
+                    )
+                }) {
+                    stops.push(cause(HybridCause::HyperExpression {
+                        span: root_span(condition),
+                    }));
+                    None
+                } else {
+                    typed(condition, Kind::Boolean, env, meter, stops).map(HybridFormula::Holds)
+                }
             }
             TemporalNodeForm::Operator(operator) => {
                 let mut operands = Vec::with_capacity(operator.operands.len());

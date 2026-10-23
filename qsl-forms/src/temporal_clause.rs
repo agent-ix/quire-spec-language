@@ -42,6 +42,21 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
         [clock] => Some(clock),
         _ => return Err(unexpected(node)),
     };
+    let clock_clause_span = clock
+        .map(|clock| {
+            let keyword = clause_items
+                .iter()
+                .find_map(|item| match item {
+                    Item::Token(token) if token.spelling() == b"clock" => Some(*token),
+                    _ => None,
+                })
+                .ok_or_else(|| unexpected(node))?;
+            Ok(Span {
+                start: keyword.span().start,
+                end: clock.span().end,
+            })
+        })
+        .transpose()?;
     let activation = only(&clause_items, Production::Activation, node)?;
     let activation_items = items(cst, activation);
     let activation = match nodes_of(&activation_items, Production::Parameter).first() {
@@ -79,10 +94,13 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
                 })
             })
             .transpose()?,
+        clock_clause_span,
         activation,
         fairness,
         captures,
-        formula: formula_form(cst, formula, false)?,
+        // S2 keeps indexed reads as syntax. S3 knows whether the `over`
+        // type makes this a hybrid claim and can give the right refusal.
+        formula: formula_form(cst, formula, true)?,
     })))
 }
 
