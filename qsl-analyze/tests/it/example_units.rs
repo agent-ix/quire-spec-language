@@ -324,7 +324,9 @@ fn the_horizon_and_every_limit_stop_the_example_run_naming_what_stopped_it() {
     assert_eq!(
         stopped(metered),
         reached(
-            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            },
             0
         )
     );
@@ -804,7 +806,9 @@ fn a_later_binding_that_stops_on_any_cause_answers_with_its_stop() {
             outcome,
             Ok(ModelCheckOutcome::Stopped {
                 limit: Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                    limit: ModelCheckLimit::EvaluationMeter {
+                        counter: quire_exact::LimitKind::WorkUnits
+                    },
                     ..
                 }),
                 ..

@@ -195,7 +195,7 @@ fn expansion_stop(stop: &ExpansionStop, subject: SubjectLimits<'_>) -> Statistic
     };
     match stop.limit {
         Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
-            ModelCheckLimit::EvaluationMeter(counter),
+            ModelCheckLimit::EvaluationMeter { counter: counter },
             meter_bound(subject.meter, counter),
         ),
         Some(ExpansionLimit::MaxCandidates) => reached(
@@ -439,7 +439,9 @@ mod tests {
         assert_eq!(
             metered.value,
             incomplete(
-                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::WorkUnits
+                },
                 4_096
             )
         );

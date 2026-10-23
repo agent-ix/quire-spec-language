@@ -96,7 +96,10 @@ pub enum ModelCheckLimit {
     /// `ModelCheckLimits::max_automaton_states`.
     MaxAutomatonStates,
     /// The subject's evaluation meter budget.
-    EvaluationMeter(LimitKind),
+    EvaluationMeter {
+        /// The denied accounting counter.
+        counter: LimitKind,
+    },
     /// The subject's `ExpansionLimits::max_candidates`.
     MaxCandidates,
     /// FR-250: a hybrid solver's step budget.
@@ -120,7 +123,7 @@ impl ModelCheckLimit {
             Self::MaxStates => "max-states",
             Self::MaxTransitions => "max-transitions",
             Self::MaxAutomatonStates => "max-automaton-states",
-            Self::EvaluationMeter(counter) => match counter {
+            Self::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => "integer_bits",
                 LimitKind::DecimalDigits => "decimal_digits",
                 LimitKind::ScaleExpansion => "scale_expansion",
@@ -148,7 +151,7 @@ impl ModelCheckLimit {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
-            Self::EvaluationMeter(counter) => {
+            Self::EvaluationMeter { counter } => {
                 crate::limits::AccountingLimits::setting_of(counter).name()
             }
             Self::MaxCandidates => "expansion.max_candidates",
@@ -195,11 +198,17 @@ mod tests {
     #[test]
     fn evaluation_meter_stop_names_the_accounting_setting() {
         assert_eq!(
-            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits).setting(),
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            }
+            .setting(),
             "accounting.work_units"
         );
         assert_eq!(
-            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::IntegerBits).as_str(),
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::IntegerBits
+            }
+            .as_str(),
             "integer_bits"
         );
         assert_eq!(

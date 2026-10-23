@@ -540,7 +540,9 @@ impl<'a> Run<'_, 'a> {
             TemporalOutcome::Incomplete(incomplete) => {
                 return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
                     stopped(
-                        ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
                         incomplete.limit,
                     )
                 })));
@@ -548,7 +550,9 @@ impl<'a> Run<'_, 'a> {
             TemporalOutcome::WindowLimitReached(_) => {
                 return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
                     stopped(
-                        ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: quire_exact::LimitKind::WorkUnits,
+                        },
                         self.request.meter.work_units,
                     )
                 })));
@@ -735,7 +739,7 @@ impl<'a> Run<'_, 'a> {
         let halt = match halt {
             ProductHalt::Expansion { stop, .. } => expansion_stop(&stop, self.budgets)?,
             ProductHalt::Meter(counter) => stopped(
-                ModelCheckLimit::EvaluationMeter(counter),
+                ModelCheckLimit::EvaluationMeter { counter: counter },
                 qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             ProductHalt::Cancelled(source) => Halt {

@@ -1210,7 +1210,7 @@ impl<'a> Run<'_, 'a> {
         };
         Ok(match stop.limit {
             Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
-                ModelCheckLimit::EvaluationMeter(counter),
+                ModelCheckLimit::EvaluationMeter { counter: counter },
                 qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             Some(ExpansionLimit::MaxCandidates) => {
@@ -1237,7 +1237,7 @@ impl<'a> Run<'_, 'a> {
             Halt::Meter(counter) => Ending::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter(counter),
+                    limit: ModelCheckLimit::EvaluationMeter { counter: counter },
                     value: qsl_replay::meter_bound(&self.request.meter, counter),
                 }),
                 None,
@@ -2266,12 +2266,16 @@ impl<'a> Run<'_, 'a> {
         Ok(match outcome {
             TemporalOutcome::Violated { at } => Ok(at.index()),
             TemporalOutcome::Incomplete(incomplete) => Err(exhausted(
-                ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                ModelCheckLimit::EvaluationMeter {
+                    counter: incomplete.limit_kind,
+                },
                 incomplete.limit,
                 totals,
             )),
             TemporalOutcome::WindowLimitReached(_) => Err(exhausted(
-                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::WorkUnits,
+                },
                 self.request.meter.work_units,
                 totals,
             )),

@@ -615,7 +615,9 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
         (
             IncompleteCause::ResourceExhausted,
             Some(ReachedLimit {
-                limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::WorkUnits
+                },
                 value: 0
             })
         )
@@ -679,7 +681,9 @@ fn a_terminal_when_meter_denial_stops_deadlock_check() {
     let reached = limit.expect("denied meter counter");
     assert_eq!(
         reached.limit,
-        ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits)
+        ModelCheckLimit::EvaluationMeter {
+            counter: quire_exact::LimitKind::WorkUnits
+        }
     );
     assert_eq!(reached.value, 0);
     assert_eq!(reached.limit.setting(), "accounting.work_units");

@@ -1126,7 +1126,9 @@ impl<S: SubjectSystem> Check<'_, S> {
             Ok(AtomReading::False) => Ok(Some(false)),
             Ok(AtomReading::Undefined(_)) => Ok(None),
             Err(incomplete) => Err(stopped(
-                ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                ModelCheckLimit::EvaluationMeter {
+                    counter: incomplete.limit_kind,
+                },
                 crate::meter_bound(&self.meter, incomplete.limit_kind),
             )),
         }

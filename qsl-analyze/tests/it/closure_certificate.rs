@@ -816,7 +816,9 @@ fn a_stopped_check_names_what_stopped_it() {
         )
         .expect("checked"),
         stop(
-            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            },
             0
         )
     );

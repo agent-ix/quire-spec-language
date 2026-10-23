@@ -2238,7 +2238,9 @@ impl<S: SubjectSystem> Run<'_, S> {
                 .activation(binding, &self.system.atom_state(&node.state), &mut meter)
                 .map_err(|incomplete| {
                     Self::stopped(
-                        ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
                         incomplete.limit,
                     )
                 })?;
@@ -2271,7 +2273,9 @@ impl<S: SubjectSystem> Run<'_, S> {
                 )
                 .map_err(|incomplete| {
                     Self::stopped(
-                        ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                        ModelCheckLimit::EvaluationMeter {
+                            counter: incomplete.limit_kind,
+                        },
                         incomplete.limit,
                     )
                 })?;
@@ -2412,7 +2416,7 @@ impl<S: SubjectSystem> Run<'_, S> {
     fn expansion_stop(&self, stop: ExpansionStop) -> Halt {
         match stop.limit {
             Some(ExpansionLimit::EvaluationMeter(counter)) => Self::stopped(
-                ModelCheckLimit::EvaluationMeter(counter),
+                ModelCheckLimit::EvaluationMeter { counter: counter },
                 qsl_replay::meter_bound(&self.meter, counter),
             )
             .into(),

@@ -1613,7 +1613,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
         };
         Ok(match halt {
             Halt::Meter(counter) => reached(
-                ModelCheckLimit::EvaluationMeter(counter),
+                ModelCheckLimit::EvaluationMeter { counter: counter },
                 qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             Halt::Cancelled(source) => Ending::Stopped(IncompleteCause::Cancelled { source }, None),
@@ -1621,7 +1621,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             Halt::Refusal(refusal) => return Err(refusal),
             Halt::Expansion(stop) => match stop.limit {
                 Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
-                    ModelCheckLimit::EvaluationMeter(counter),
+                    ModelCheckLimit::EvaluationMeter { counter: counter },
                     qsl_replay::meter_bound(&self.request.meter, counter),
                 ),
                 Some(ExpansionLimit::MaxCandidates) => {
@@ -2146,7 +2146,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             QuotientStop::Meter(counter) => Ok(Second::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter(counter),
+                    limit: ModelCheckLimit::EvaluationMeter { counter: counter },
                     value: qsl_replay::meter_bound(&self.request.meter, counter),
                 }),
             )),

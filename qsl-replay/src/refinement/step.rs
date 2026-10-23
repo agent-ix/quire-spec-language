@@ -242,7 +242,7 @@ pub(crate) fn stop_verdict(system: &ModelSystem<'_>, stop: ExpansionStop) -> Ste
     }
     StepVerdict::Stopped(match stop.limit {
         Some(ExpansionLimit::EvaluationMeter(counter)) => ReachedLimit {
-            limit: ModelCheckLimit::EvaluationMeter(counter),
+            limit: ModelCheckLimit::EvaluationMeter { counter: counter },
             value: crate::model_check::limits::meter_bound(&system.meter(), counter),
         },
         Some(ExpansionLimit::MaxCandidates) | None => ReachedLimit {

@@ -460,6 +460,8 @@ fn an_exhausted_abstract_meter_stops_the_step_check() {
     };
     assert_eq!(
         reached.limit,
-        qsl_replay::ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits)
+        qsl_replay::ModelCheckLimit::EvaluationMeter {
+            counter: quire_exact::LimitKind::WorkUnits
+        }
     );
 }

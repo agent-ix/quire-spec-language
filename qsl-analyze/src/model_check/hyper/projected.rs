@@ -126,12 +126,16 @@ impl Run<'_, '_> {
         match outcome {
             TemporalOutcome::Violated { .. } => Ok(Ok(())),
             TemporalOutcome::Incomplete(incomplete) => Ok(Err(exhausted(
-                ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                ModelCheckLimit::EvaluationMeter {
+                    counter: incomplete.limit_kind,
+                },
                 incomplete.limit,
                 totals,
             ))),
             TemporalOutcome::WindowLimitReached(_) => Ok(Err(exhausted(
-                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::WorkUnits,
+                },
                 self.request.meter.work_units,
                 totals,
             ))),

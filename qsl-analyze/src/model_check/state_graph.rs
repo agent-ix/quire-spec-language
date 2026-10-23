@@ -367,7 +367,7 @@ pub(super) fn expansion_stop(
 ) -> Result<Halt, ModelCheckRefusal> {
     match stop.limit {
         Some(ExpansionLimit::EvaluationMeter(counter)) => Ok(stopped(
-            ModelCheckLimit::EvaluationMeter(counter),
+            ModelCheckLimit::EvaluationMeter { counter: counter },
             qsl_replay::meter_bound(&budgets.meter, counter),
         )),
         Some(ExpansionLimit::MaxCandidates) => Ok(stopped(
