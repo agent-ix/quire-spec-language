@@ -25,8 +25,8 @@
 
 use std::cmp::Ordering;
 
-use qsl_foundation::InternalFault;
 use quire_exact::{Charge, ChargePoint, ComparisonOperator, Incomplete, Integer, Meter, Rational};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::letters::{AtomReading, LetterStop, UndefinedCause};
 use super::plan::fault;

@@ -27,13 +27,13 @@ use qsl_eval::temporal::{
     TemporalPosition, TupleLetters, UndefinedCause,
 };
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::InternalFault;
 use qsl_replay::{
     ExistentialInstanceOutcome, ExistentialOutcome, IncompleteCause, LassoWitness, ModelCheckLimit,
     ModelCheckLimits, ModelLasso, ModelPath, OpenCause, ReachedLimit, RunEnd, WitnessSource,
 };
 use qsl_semantics::check::{FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, CancelCause, Meter, Undefined};
+use quire_semantic_value::catalog::InternalFault;
 use std::cell::RefCell;
 use std::collections::HashMap;
 

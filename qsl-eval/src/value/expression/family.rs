@@ -20,8 +20,8 @@
 //! evaluation half over it -- layer 5 depending on layer 3 is the
 //! permitted direction (ADR-011 §6.1).
 
-use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::{is_identifier, NodeKey, Value};
+use quire_semantic_value::catalog::InternalFault;
 
 use qsl_semantics::check::ValueFunctionFamily;
 
@@ -114,6 +114,9 @@ pub(crate) struct EvaluationEnv<'a> {
     pub(crate) location: Option<quire_semantic_value::location::Location>,
     /// The last hook call's `Evaluation.losses`, recorded like `location`.
     pub(crate) losses: Vec<quire_semantic_value::loss::LocatedLoss>,
+    /// Whether the caller already charged this application's `function.call`
+    /// (the `quire-eval` scheduler does), so the hook charges nothing.
+    pub(crate) call_charged: bool,
 }
 
 impl<'a> EvaluationEnv<'a> {
@@ -130,6 +133,20 @@ impl<'a> EvaluationEnv<'a> {
             arguments: Some(arguments),
             location: None,
             losses: Vec::new(),
+            call_charged: false,
+        }
+    }
+
+    /// An environment for an application whose `function.call` the caller
+    /// charged already: the hook runs the body only.
+    pub(crate) fn charged(
+        package: &'a super::CheckedPackage,
+        objects: &'a qsl_semantics::model::object_environment::ObjectEnvironment,
+        arguments: Vec<Value>,
+    ) -> Self {
+        Self {
+            call_charged: true,
+            ..Self::new(package, objects, arguments)
         }
     }
 }
@@ -173,7 +190,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     ///
     /// FR-063-AC-7: `#[deny(...)]` closes the `_ => unsupported(...)` escape
     /// hatch this function's own `FamilyOutcome` match -- the seam probe's
-    /// evidence for "the one match over `crate::family::FamilyOutcome`"
+    /// evidence for "the one match over `quire_eval::FamilyOutcome`"
     /// (`checked_in_locations`'s own doc) -- would otherwise let slip past
     /// unnoticed by the probe alone.
     #[deny(clippy::wildcard_enum_match_arm)]
@@ -181,7 +198,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
         checked: &NodeKey,
         env: &mut EvaluationEnv<'a>,
         meter: &mut quire_exact::Meter,
-    ) -> Result<qsl_semantics::family::EvalOutcome<Value>, InternalFault> {
+    ) -> Result<quire_eval::EvalOutcome<Value>, InternalFault> {
         env.location = None;
         env.losses.clear();
         // FR-090-AC-3 (ADR-013 T-4): `call` always resolves `checked` from
@@ -206,12 +223,17 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
                 "evaluation-environment-arguments-already-consumed",
             ));
         };
-        if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
-            quire_exact::ChargePoint::FunctionCall,
-        )) {
+        let charge = if env.call_charged {
+            Ok(())
+        } else {
+            meter.charge(quire_exact::Charge::new(
+                quire_exact::ChargePoint::FunctionCall,
+            ))
+        };
+        if let Err(incomplete) = charge {
             // Nothing ran: the arguments stay unconsumed.
             env.arguments = Some(arguments);
-            return Ok(qsl_semantics::family::EvalOutcome::Kernel(
+            return Ok(quire_eval::EvalOutcome::Kernel(
                 quire_exact::Outcome::Incomplete(incomplete),
             ));
         }
@@ -226,11 +248,11 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
         env.location = evaluation.location;
         env.losses = evaluation.losses;
         match evaluation.outcome {
-            qsl_semantics::family::FamilyOutcome::Evaluated(outcome) => {
-                Ok(qsl_semantics::family::EvalOutcome::Kernel(outcome))
+            quire_eval::FamilyOutcome::Evaluated(outcome) => {
+                Ok(quire_eval::EvalOutcome::Kernel(outcome))
             }
-            qsl_semantics::family::FamilyOutcome::FamilyEvaluated(result) => {
-                Ok(qsl_semantics::family::EvalOutcome::Family(result))
+            quire_eval::FamilyOutcome::FamilyEvaluated(result) => {
+                Ok(quire_eval::EvalOutcome::Family(result))
             }
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence).
@@ -240,7 +262,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
             // `qsl-replay` depends on this crate, so it must compile there
             // for the root crate's own seams to be reached at all.
             #[cfg(seam_probe_eval_downstream)]
-            qsl_semantics::family::FamilyOutcome::__SeamProbe => {
+            quire_eval::FamilyOutcome::__SeamProbe => {
                 unreachable!("never constructed outside the probe build")
             }
         }
@@ -290,8 +312,9 @@ mod family_contract_tests {
         declaration, declaration_signature, declarations_for, empty_scope, fixture_source, limits,
         root_location, PackageDeclarations, Signatures, SCALAR_LIMITS_UNLIMITED,
     };
-    use qsl_semantics::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
+    use qsl_semantics::family::{DiagnosticSink, FamilyContract, ScopeStack};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_eval::EvalOutcome;
     use quire_exact::Meter;
     use quire_semantic_value::checking::CheckingLimits;
 
@@ -431,7 +454,7 @@ mod family_contract_tests {
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(
             fault.category(),
-            qsl_foundation::diagnostic::Category::InternalFailure
+            quire_semantic_value::catalog::Category::InternalFailure
         );
         assert_eq!(
             fault.invariant(),

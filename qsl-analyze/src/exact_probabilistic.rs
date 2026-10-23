@@ -37,12 +37,12 @@ use qsl_eval::simulation::model::{NotMarkov, UndecidedSuccessor};
 use qsl_eval::simulation::{ExpansionStop, NotSimulated};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::InternalFault;
 use qsl_replay::ModelCheckLimit;
 use qsl_replay::ModelCheckLimits;
 use qsl_semantics::check::{CheckedProbabilisticClaim, FormulaNodeId};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Rational, Value};
+use quire_semantic_value::catalog::InternalFault;
 use std::cmp::Ordering;
 
 /// A state handle in one product, assigned in discovery order.

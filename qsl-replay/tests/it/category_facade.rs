@@ -5,8 +5,9 @@
 
 use ix_trace_rs::trace;
 use qsl_replay::{
-    Category, EvaluatedValue, InputArmResult, InputSettlement, ScalarLimits, Verdict, WitnessCheck,
+    EvaluatedValue, InputArmResult, InputSettlement, ScalarLimits, Verdict, WitnessCheck,
 };
+use quire_semantic_value::catalog::Category;
 
 fn charges() -> ScalarLimits {
     ScalarLimits {

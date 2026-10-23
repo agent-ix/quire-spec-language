@@ -7,8 +7,8 @@
 //! Each clause below is the spec's, with `Counters::Counter` for the model
 //! alias and `noop` for the fairness operation.
 
-use qsl_foundation::diagnostic::Category;
 use qsl_semantics::model::observation::AdmissionFailure;
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use super::receiver_frames::{counter, fixture, snapshot, unit_and_packages};
@@ -330,7 +330,7 @@ fn a_temporal_refusal_takes_its_category_from_its_catalog_code() {
     );
     assert_eq!(
         category(TemporalTraceRefusal::Fault(
-            qsl_foundation::diagnostic::InternalFault::new("temporal", "broken")
+            quire_semantic_value::catalog::InternalFault::new("temporal", "broken")
         )),
         Category::InternalFailure
     );
