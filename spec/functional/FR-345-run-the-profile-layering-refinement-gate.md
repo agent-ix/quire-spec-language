@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-453
     type: depends_on
+  - target: ix://agent-ix/quire-integration/IT-015
+    type: references
 ---
 # FR-345: Run the profile-layering refinement gate: a parent profile's refusal is its child's refusal
 
@@ -193,6 +195,7 @@ hook.
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
 | FR-345-AC-9 | `make refinement-layering` runs the gate over `tests/fixtures/refinement/layering/` with no negotiation function and passes, every layer's witness unit admitting with a non-empty candidate set in QSL's registry snapshot; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |
 | FR-345-AC-10 | A test of the root package, which reaches `xtask` only through its dev dependency, calls `xtask::refinement::layering::compare` over `REAL_CORPUS` with the FR-278 composition, QSL's registry snapshot and a negotiation function defined in that test that settles every request `supported`, and gets verdict success with every layer, case and edge result as `make refinement-layering` reports them and every layer's witness item requested once per candidate; the same call with no negotiation function makes no call to a negotiation function and returns the report `make refinement-layering` writes; no byte reaches stdout or stderr from either call; and `cargo tree -p xtask -e normal,build,dev` lists no quire-contract-codegen crate. | Test (TC-868) |
+| FR-345-AC-11 | Over the real backend registry, with quire-contract-codegen's `negotiate_*` as the negotiation function, `compare` over `REAL_CORPUS` gives each of the five layers a `holds` witness result: its witness unit admits and its witness item, requested once per candidate by backend name, settles `supported` under at least one candidate; a seeded unsupported witness gives a `regression` naming the layer and each candidate's identity and disposition, and a removed `witness` entry gives a tool failure. | Integration test (quire-integration IT-015, TC-095) |
 
 ## Dependencies
 
@@ -214,7 +217,8 @@ QSL dependencies, and its test calls `xtask::refinement::layering::compare`
 over `REAL_CORPUS` with
 the FR-278 composition, the real backend registry and quire-contract-codegen's
 `negotiate_*` as the negotiation function, and fails unless every layer's
-witness item settles `supported` under at least one candidate. That run
+witness item settles `supported` under at least one candidate. That run is
+specified by quire-integration IT-015 and TC-095, and it is FR-345-AC-11; it
 backs FR-345-AC-6 over real backends and the witness half of FR-345-AC-9.
 
 ## References
