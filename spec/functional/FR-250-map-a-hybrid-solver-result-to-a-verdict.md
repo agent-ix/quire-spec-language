@@ -83,8 +83,9 @@ stays on the record for the engineer to read, with its replay outcome.
   `SolverResult` is the QSL type an in-process hybrid provider (FR-447)
   returns. Its wire form is the FR-331 result entry of QSpec FR-193
   "Solver result on the wire", with `HybridTrace` in QSpec FR-193's
-  "Hybrid trace" form, names in place of indices; a result entry a reader
-  reads takes this map through that form.
+  "Hybrid trace" form, names in place of indices. A process hybrid provider
+  (FR-447) returns that result entry, and a result entry a reader reads takes
+  this map through that form.
 - A provider overrun of its `deadline_ms` (QSpec FR-462) is not a
   `SolverOutcome`: the host ends the provider at `deadline_ms` and settles
   each item still open as `TimedOut`, and no `SolverResult` is read.
