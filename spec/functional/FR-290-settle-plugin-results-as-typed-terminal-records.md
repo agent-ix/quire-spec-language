@@ -95,6 +95,30 @@ its producer:
 QSpec FR-331 owns the wire member `certification` and its three values;
 QSpec FR-305 states the plugin row and QSpec FR-354 the SMT row.
 
+The terminal record holds the SMT backend's Z3 cross-check beside the
+certification (QSpec FR-349, FR-354). CG's SMT map hands QSL cvc5's result
+together with the cross-check's verdict, Z3's own result for the same query
+(`Proved`, `Refuted` or `Inconclusive`), or with QSpec FR-349's
+`cross-check-absent{tool}` warning when no cross-check ran. QSL settles the
+SMT row's certification from FR-314's check alone (FR-127), then:
+
+| cvc5 result, after FR-314's check | Z3's verdict | Terminal record |
+| --- | --- | --- |
+| `proved`, `certified` | `Proved`, `Refuted` or `Inconclusive` | `proved`, `certified`, `cross_check: Some(CrossCheck { tool, verdict })`: a certified proof stands whatever Z3 says, and a verdict other than `Proved`, `Inconclusive` included, records the disagreement |
+| `proved`, `uncertified` | `Proved` | `proved`, `uncertified`, with `cross_check` verdict `Proved` |
+| `proved`, `uncertified` | `Refuted` or `Inconclusive` | `inconclusive`, `InconclusiveCause::CrossCheckDisagreement { tool, primary: Proved, cross_check }`, never `proved` |
+| a counterexample replay reproduces | `Refuted` | `refuted`, with no `cross_check` (QSpec FR-331 gives it to `proved` only) |
+| a counterexample replay reproduces | `Proved` or `Inconclusive` | `inconclusive`, `CrossCheckDisagreement { tool, primary: Refuted, cross_check }` |
+| `inconclusive` | `Proved` or `Refuted` | `inconclusive`, `CrossCheckDisagreement { tool, primary: Inconclusive, cross_check }`: Z3 alone never settles a claim |
+| `inconclusive` | `Inconclusive` | cvc5's `inconclusive` with its own cause, with no `cross_check` |
+| any | none ran | cvc5's settlement, with no `cross_check` and the `cross-check-absent{tool}` warning kept |
+
+The table is QSpec FR-349's cross-check table (STD-423), row for row.
+`CrossCheck { tool, verdict }` serializes as QSpec FR-331's `cross_check`
+member and `CrossCheckDisagreement` as its `cross-check-disagreement{tool,
+primary, cross_check}` cause (STD-423). The cross-check never changes a
+certification.
+
 ### Reading a plugin result member
 
 The driver holds a plugin's FR-331 result as wire JSON. `qsl-replay` gives it
@@ -467,6 +491,11 @@ One QSL terminal record per routed item.
   certification `uncertified` and the engine's name.
 - The terminal record type shall hold a Kani `proved` that CG's C-09 map
   settles with the certification `certified`.
+- QSL shall settle an SMT-route `proved` result's certification from
+  FR-314's check alone, with no input from the cross-check.
+- When an SMT result carries a cross-check verdict, QSL shall settle the
+  result by the cross-check table, with the verdict as the `cross_check`
+  member of each `proved` record.
 - `read_plugin_basis`, `read_plugin_certification`,
   `read_plugin_inconclusive_cause` and `read_plugin_assignments` shall each
   accept exactly the wire values that "Reading a plugin result member"
@@ -519,6 +548,8 @@ One QSL terminal record per routed item.
 | FR-290-AC-13 | The `process-provider` preimage for node `11` repeated 32 times, occurrence `{"ordinal":0,"role":"declaration"}`, and one bound `integer_range` 0 to 9 at `DomainKey::Node` `22` repeated 32 times with an empty path, encodes to `{"declared_domains":{"entries":[{"bound":{"lower":"0","tag":"integer_range","upper":"9"},"key":{"node_id":"2222222222222222222222222222222222222222222222222222222222222222","path":[],"tag":"node"}}],"tag":"bounds"},"node":"1111111111111111111111111111111111111111111111111111111111111111","obligation_kind":"value-validity","occurrence_key":{"ordinal":0,"role":"declaration"},"subject_kind":"process-provider"}`, whose SHA-256 is `3df483b143782f27840dd0d42eca97ba51fdb60c01cb3ddbc48db020de6ac899`. With no bound, the digest is `95905de0c8797755b51edf13b26a4fcdb41908a1e55f43b60784e280fa8e3a1c`. AC-12's request for `p` carries the identity of its item's preimage. | Test (TC-774) |
 | FR-290-AC-14 | The context built with `CallerLimits` whose `s1.tokens` is 200000, whose `library.definitions` is 9000, and whose accounting `work_units` is 5000, gives a request whose `stage_limits` holds `s1.tokens` 200000 and `library.definitions` 9000. Every other stage setting except `replay.input_bytes` and `format.output_bytes` is at its bound, and `accounting_limits` has `work_units` 5000. `request` refuses each of these, in this order: <br>- an occurrence key that is no function declaration and no record of the package: `UnknownOccurrence` (`missing_declaration`/`missing-name`); <br>- a state clause's `operation-contract` record: `NotReplayable`, which comes before `DuplicateBoundKey` for the same call when the record's call also carries two proof bounds at one `DomainKey`; <br>- for `p` with two proof bounds at one `DomainKey`: `DuplicateBoundKey` (`invalid_runtime_input`/`duplicate-member`). <br>Each refusal other than `NotReplayable` settles the item `failed`, naming the plugin. | Test (TC-774) |
 | FR-290-AC-15 | Take FR-290-AC-12's unit with `function r using v(x: Int[0, 9]): Integer pure { 10 mod x }` added. <br>- For the application item of `r`'s `10 mod x` with assignment `x = 0`, `request` gives a request whose `selected_function` is `r`, whose `occurrence_key` is the item's `expression` occurrence and whose `obligation_identity` is the `process-provider` identity of that node and occurrence; `replay` finds the application undefined, settles the input arm reproduced with category violation, and `TerminalRecord::from_plugin_counterexample` settles `refuted`, naming the plugin. <br>- The same item with `x = 3` (`1`) settles `inconclusive` with cause `replay-parity`. <br>- For the application item of `p`'s `x > 3` with assignment `x = 0`, the item settles `inconclusive` with cause `replay-parity`, while AC-12's function-contract item of `p` with the same assignment settles `refuted`. <br>- The same item of `r` with `x = 12` settles `inconclusive` with cause `replay-refused` and the code `invalid_runtime_input` (`WrongValueKind`). <br>- Over a unit holding FR-395-AC-12's operation `body` (`body renamed using v on Config::ConfigVersion::add(n) { n + deref(self).versionNumber }`), `request` for the `value-validity` item of its `+`, whose owner is the function the checker synthesizes from the `body`, refuses `NotReplayable`, and the item settles `inconclusive` with `ReplayRefused(unknown_required_feature)`, naming the plugin. | Test (TC-774) |
+| FR-290-AC-16 | FR-314-AC-1's accepted bounded certificate, its SMT `proved` result handed with Z3 verdict `Proved`, settles `proved`, `certified`, `cross_check` `{tool: "z3", verdict: Proved}`; with Z3 verdict `Refuted`, `proved`, `certified`, `cross_check` verdict `Refuted`; with Z3 verdict `Inconclusive`, `proved`, `certified`, `cross_check` verdict `Inconclusive`. The same result with no certificate (`uncertified`) and Z3 verdict `Proved` settles `proved`, `uncertified`, `cross_check` verdict `Proved`; with Z3 verdict `Refuted`, `inconclusive`, `CrossCheckDisagreement { tool: "z3", primary: Proved, cross_check: Refuted }`. A reproduced counterexample with Z3 verdict `Proved` settles `inconclusive`, `CrossCheckDisagreement { primary: Refuted, cross_check: Proved }`, and with Z3 `Refuted` settles `refuted` with no `cross_check`. A cvc5 `inconclusive` (`SolverInconclusive`) with Z3 `Proved` or `Refuted` settles `inconclusive`, `CrossCheckDisagreement { primary: Inconclusive, cross_check }`, and with Z3 `Inconclusive` keeps `SolverInconclusive` with no `cross_check`. Each result with no cross-check and a `cross-check-absent{tool}` warning settles cvc5's value and certification, with no `cross_check` and the warning kept. Each record serializes (FR-286) with `cross_check` and `cross-check-disagreement` in QSpec FR-331's spelling, and reads back equal. | Test (TC-774) |
+| FR-290-AC-17 | The SMT row (FR-127, QSpec FR-354-AC-2 to AC-4): FR-314-AC-1's accepted bounded certificate settles `proved`, `certified`; the same proof with no certificate, and with one step's rule replaced by `hole` (`Unverifiable`), settles `proved`, `uncertified`; FR-314-AC-2's certificate with its query encoded at depth 2 settles `inconclusive`, `CertificateRejected { rule: QueryMismatch, at: Unrolling }`, never `proved`; each `proved` record carries exactly one certification and names the SMT backend's `BackendId`. | Test (TC-774) |
 
 ## Dependencies
 

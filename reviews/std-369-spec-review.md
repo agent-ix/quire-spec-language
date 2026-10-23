@@ -95,3 +95,10 @@ against these findings and against #1316's FR-279-AC-4.
 | --- | --- | --- | --- | --- |
 | FND-006 | medium | `PrepareLimits` is defined only as "the translation work and the generated code size one `prepare` may use". The spec does not say what one compile work unit counts, what `code_bytes` counts, when each charge is made, or whether `&Cancel` is polled at each charge. FR-294-AC-5's test backend charges "one compile work unit per entry", so it does not constrain a real AOT or JIT. Two backends can count differently and both pass. State the counters, the charge points and the cancel poll. The same text in #1316 is SR-16220 FND-008. | spec/functional/FR-294-run-every-execution-backend-behind-one-seam.md:49,120 | missing-requirement |
 | FND-007 | medium | On its own, this head has `CallFailure::Unsupported(UnsupportedEntry)` in the `quire-eval` leaf, whose `backend` is FR-296's `ExecutionBackendChoice`. But only #1316's FR-401 rows place `UnsupportedEntry`, `UnsupportedCause` and `ExecutionBackendChoice` in `quire_eval`. Merged alone, FR-401's "the leaf depends on no QSL crate" contradicts an arm that holds QSL types. Merge #1323 and #1316 together (#1316 contains this head), or carry #1316's FR-401 rows here. | spec/functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md; spec/functional/FR-294-run-every-execution-backend-behind-one-seam.md:51-56 | missing-requirement |
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | Resolved on merge with #1316 8c8e1173, which contains this head (5071b403) and adds FR-294 "Prepare charges" (per-node `compile_work_units`, per-block `code_bytes`, a `&Cancel` poll at each charge, FR-294-AC-6). The spec diff of 5071b403 is unchanged from efcddb17 apart from the main merge, so #1323 alone still lacks the counters. |
+| FND-007 | fixed | Resolved on merge with #1316 8c8e1173, whose FR-401 rows place `UnsupportedEntry`, `UnsupportedCause`, `UntranslatableConstruct` and `ExecutionBackendChoice` in `quire_eval`. The lead must merge the two together, or #1316 alone, since it is a superset. |
