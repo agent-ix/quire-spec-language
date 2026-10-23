@@ -1462,6 +1462,38 @@ The owner ruled this on QSL-8.
   refuses with `unknown_edition` (FR-027).
 - Native `compile`, `lower` and native-compile/1 are deleted with M-6c
   (§7.3; ADR-011-OQ-2, OQ-3), not in M-6a.
+- Amended 2026-10-22 (STD-343; lead default, not an owner answer; Peter may
+  veto): what M-6c deletes of native-compile/1 is its `0-draft` arm.
+  native-compile/1 stays as the request of a `1-draft` compile, the spine
+  compile request OQ-2 (amended 2026-09-26) names. From M-6c a `0-draft`
+  source is an edition neither compiler reads, and CLI `compile` and `run`
+  refuse it with `unknown_edition` (FR-027, FR-100). A source that does not
+  open with a `language "ix:native" edition` header goes to the spine, whose
+  S1 refuses it.
+
+## Native-lane requirements M-6c retires
+
+M-6c deletes native `compile` of a `0-draft` source, `NativePackage` and its
+reader, native `run`, and the mapped and extracted native compile joins
+(ADR-012 §15.8 step 2; QSL-498). The requirements below specified only those
+paths and are retired with them; FR-031 keeps its id and specifies the
+extracted Markdown clause run through the spine. Each behaviour a `1-draft` program has is
+held by the requirement in the last column (STD-343; lead default, not an
+owner answer; Peter may veto).
+
+| Retired | What it specified | Held for a `1-draft` program by |
+| --- | --- | --- |
+| FR-011, IT-003 | the native parser consuming an extracted clause | FR-030 (the `qsl-source` consumer yields the verified body and its source map) and FR-109, whose `run_clause` takes that body as its I3 source and parses it at S1 (FR-108-AC-5) |
+| FR-019 | native package construction | FR-278's `package` and the S4 emitters writing `quire.checked-package/v2` (FR-264) |
+| FR-020 | the verified native package reader | the I2 reader of `quire.checked-package/v2` (FR-264, FR-096) |
+| FR-021 | the native static package identity | the checked package's `package_id` (FR-278, ADR-013) |
+| NFR-007, IT-007 | native package limits and reconstruction | the checking and stage limits of NFR-011 and FR-096; FR-098's recompile and `package_id` comparison |
+| FR-022 | the mapped native compiler | FR-030 and FR-109's I3 source |
+| FR-023 | native execution of a package over runtime artifacts | FR-109's `run_clause` over FR-106 observations, and FR-100's `CheckedPackage::call` |
+| FR-028 | running a selected native package verified against its source | FR-098, which recompiles the package's source and requires the recompiled `package_id` to equal the selected one before it calls |
+| FR-031's native-run/1 `extraction` route; FR-031 itself stays | running a Markdown clause through native run | FR-031 as STD-344 rewrites it: FR-109's library `run_clause` over FR-030's extracted body, built with `qsl-replay`'s `quire-extraction` (FR-108-AC-5). Its report names the body identity, with the digest of the extracted body bytes, and the original document identity; an original byte or line limit ends a run incomplete and a fresh retry succeeds; the command refuses an `extraction` member (FR-100) |
+| FR-026-AC-1, FR-026-AC-2 | native clause execution from files | FR-312's clause run over FR-106 snapshots and invocations |
+| FR-027-AC-1, FR-027-AC-4, FR-027-AC-6 | native-linked-package/1 export and its labels | FR-027-AC-3 (labels) and FR-027-AC-5, AC-9 to AC-12 (`quire.checked-package/v2`) |
 
 ## Owner rulings (2026-09-19)
 
