@@ -414,7 +414,11 @@ defines it (QSpec FR-151-AC-17 to AC-19, TC-196 D09 to D11): `own(m)` and
 ascending clause name (UTF-8 bytes) under FR-006's short-circuit, so an
 undefined clause that sorts before a false one makes the precondition
 undefined and the reverse order makes it `false`. The order does not depend on
-source position, source unit or link order (verified for a package of one unit, FR-120-AC-15; see Remaining work). The dispatch path conjoins the own
+source position, source unit or link order: a member's own clauses are
+gathered from every source unit of the package (FR-480) and conjoined in
+name order alone (FR-120-AC-15 for one unit, FR-120-AC-19 for D10's clauses
+split across two units in both link orders, FR-120-AC-20 for D10's
+`absent-key` form). The dispatch path conjoins the own
 clauses through `view_clauses` (`dispatch_link.rs`) and disjoins the result
 with the redefined member's through `effective_terms`
 (`checked_dispatch.rs`). On the spine every operation record's `redefines` is
@@ -431,7 +435,11 @@ clause in ascending name order (UTF-8 bytes):
   `insufficient-next-charge` at once: the successor set is not known. The stop
   names the limit `EvaluationMeter` whichever counter of the evaluation ran out,
   the counter limits of the exact kernel included (FR-149 relies on this
-  label).
+  label), and carries that counter: the `quire.value.accounting/v1` counter
+  the `Incomplete` names as exhausted
+  (`ExpansionLimit::EvaluationMeter { counter }`). A settlement reads it to
+  name the counter's FR-255 accounting setting and the counter's configured
+  bound in the meter budget (FR-192, FR-203); the stop carries no bound.
 - A `CallFailure` stops the expansion with `runtime_invariant`/
   `established-invariant-broken` at once: the simulator built the
   observations itself, so a refused selection is a broken internal
@@ -511,7 +519,8 @@ one pair however large its result domain is. A result domain is put in
 canonical order before its pairs are read, which holds one position per
 value; a domain of more than 65,536 values cannot be ordered and stops the
 expansion the same way. When the count would exceed `max_candidates`, the expansion
-stops with `resource_exhausted`/`insufficient-next-charge`.
+stops with `resource_exhausted`/`insufficient-next-charge`, naming the limit
+`MaxCandidates` and no counter.
 
 ### Invariants
 
@@ -624,6 +633,9 @@ identity text of operation `op`.
 | FR-120-AC-16 | Over a model whose object type `Item` (population `items`, universe `{i1}`) declares the fields `id: UUID`, `at: Timestamp`, `price: Decimal[0, 1000; 0, 2]`, `length: Quantity<metre>`, `color: Color` (enum `red`, `blue`), `tag: Tag` (record `Tag { sku: Integer, note?: Text[0, 8] }`), `pair: Pair` (tuple `Pair(Boolean, Integer)`) and `shape: Shape` (union with nullary member `none`), an initial state whose `i1` holds `00112233-4455-6677-8899-aabbccddeeff`, Timestamp `-1`, `1.50`, `1.50` metre, `red`, `Tag { sku: 7 }`, `Pair(true, -3)` and `none` is admitted, and its state key writes each field as the QSpec FR-181-AC-19 bytes of that family: `{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}`, `{"nanoseconds":"-1","type":"timestamp"}`, `{"coefficient":"150","scale":"2","type":"decimal"}`, and for `color`, `tag`, `pair` and `shape` FR-181-AC-19's enum, record, tuple and nullary-union bytes with each `name` the declaration's checked node id in 64 lowercase hex; `length` writes `{"denominator":"2","numerator":"3","type":"rational","unit":"<u>"}`, `<u>` the 64-hex digest of `metre`'s `UnitId`. Exploration of an operation `setPrice(p: Decimal[0, 1000; 0, 2])` from that state gives the transition argument for `1.50` as `{"coefficient":"150","scale":"2","type":"decimal"}` and a step effect whose `price` post value has the same bytes. No refusal is returned. | Test (TC-1195) |
 | FR-120-AC-17 | Over AC-16's model with the universe `{i1, i2}` and the fields `prices: Set<Decimal[0, 1000; 0, 2]>` and `times: Set<Timestamp>` added, a state holding `prices = {1.50}` and `times = {2, 10}` writes `prices` as `{"elements":[{"coefficient":"15","scale":"1","type":"decimal"}],"type":"set"}` while `price` keeps coefficient `150`, scale `2`, and writes `times` as `{"elements":[{"nanoseconds":"10","type":"timestamp"},{"nanoseconds":"2","type":"timestamp"}],"type":"set"}` (QSpec FR-181-AC-20). A field `members: Set<Reference<Item>>` holding the objects `i1` and `i2`, built in the order `i1, i2` and in the order `i2, i1`, gives two states with equal state keys, the set's reference triples ordered by their JCS bytes (QSpec FR-181-AC-21). | Test (TC-1195) |
 | FR-120-AC-18 | A state key, transition identity or step effect that would hold a value of a population type refuses `EncodingRefusal` naming the population-typed field, receiver, argument or result: `explore_model` returns `NotSimulated::KeyEncoding`, and `replay` of a trace through it returns `ReplayError::KeyEncoding`, each with `invalid_runtime_input`/`invalid-value`, and neither panics nor records a state for that value. | Test (TC-1195) |
+| FR-120-AC-19 | QSpec TC-196 D10's `B/size` clauses split across two linked source units (FR-480-AC-1), in both link orders and with either clause in either unit, give D10's one-unit results, with equal outcome and charges: `view_clauses` and the expansion read the member's own clauses from both units in ascending clause name. | Test (TC-472) |
+| FR-120-AC-20 | D10's `absent-key` form: with `pre PB1 using V on M::B::size { (lookup<M::A>(M::PX, self) absent undefined) = self }` and `pre PB2 using V on M::B::size { false }` over a closed population `PX` with no runtime members, a call of `size` for `d1` is `undefined` with reason `absent-key` after `dispatch.select` and `PB1`'s charges, with no `function.call`, and `PB2` and `PA` are not evaluated. With the two bodies' names swapped it is `undefined` with reason `precondition-false` after the false clause's and then `PA`'s charges, the lookup clause neither evaluated nor charged. | Test (TC-472) |
+| FR-120-AC-21 | FR-120-AC-6's runs with `CanInc`: under a meter budget whose `work_units` is 0 and every other counter at its default, the `Stopped` outcome's `ExpansionStop` names `EvaluationMeter` with counter `work_units`, the counter whose next charge was denied; with `max_candidates` 2 and `increment` with no clause, it names `MaxCandidates` and carries no counter. | Test (TC-472) |
 
 ## Dependencies
 
@@ -652,8 +664,3 @@ identity text of operation `op`.
   semantics FR-120 uses, through `population::decide_frame`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
-
-## Remaining work
-
-- Remaining work: QSL-939. Split-unit case: QSpec TC-196 D10's variant with a member's own `pre` clauses declared in two linked source units, in both link orders, has no QSL form today. A checked package is one unit (`CheckedPackage::link`), and `view_clauses` reads that unit's clauses only. The order rule is verified for the one-unit case. Build the variant when a package can link more than one unit.
-- Remaining work: QSL-939. `absent-key` form: AC-15 uses a nested call whose own precondition is `false` (reason `precondition-false`) as the undefined clause. D10's `lookup` of an absent key (reason `absent-key`) is not built; the ordering and short-circuit it checks do not depend on the reason.

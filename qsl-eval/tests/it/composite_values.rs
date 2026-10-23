@@ -757,12 +757,13 @@ mod checked {
     // `BoundViolation` the outer module's glob import brings in -- these
     // three explicit imports shadow that glob for every real evaluation
     // result this submodule compares.
-    use qsl_eval::value::{input_refusal_code, CallFailure, CheckedPackageEvaluation};
+    use qsl_eval::value::{input_refusal_code, CheckedPackageEvaluation};
     use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
     use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
         CheckCause, CheckRefusal, CheckedExpression, Obligation, PackageDeclarations,
     };
+    use quire_eval::CallFailure;
     use quire_exact::{BoundViolation, Outcome, Refusal};
     use quire_semantic_value::call::InputRefusal;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
@@ -885,7 +886,7 @@ mod checked {
             )
             .unwrap();
         match evaluation.outcome {
-            qsl_semantics::family::FamilyOutcome::Evaluated(outcome) => (outcome, meter),
+            quire_eval::FamilyOutcome::Evaluated(outcome) => (outcome, meter),
             other => panic!("expected FamilyOutcome::Evaluated(_), got {other:?}"),
         }
     }

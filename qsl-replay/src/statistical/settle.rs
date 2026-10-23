@@ -11,9 +11,9 @@
 
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
-use qsl_foundation::diagnostic::{CatalogCode, Category};
 use qsl_foundation::{BackendId, RequestIndex};
 use quire_exact::ScalarLimits;
+use quire_semantic_value::catalog::{CatalogCode, Category};
 
 use super::{
     ClaimForm, Decision, StatisticalMethod, StatisticalOutcome, StatisticalRefusal,
@@ -260,8 +260,8 @@ pub fn settle_statistical_refusal(
 mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::selection::DefinitionRef;
-    use qsl_foundation::InternalFault;
     use quire_exact::{CancelCause, Integer, Rational};
+    use quire_semantic_value::catalog::InternalFault;
 
     use super::*;
     use crate::outcome::{Operation, OutcomeDocument, OutcomeItem};

@@ -16,10 +16,11 @@ use std::num::NonZeroU64;
 use std::rc::Rc;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{IntegerInterval, NodeKey, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::CompositeShape;
 
 use super::argument::{declaration_of, enum_declarations};

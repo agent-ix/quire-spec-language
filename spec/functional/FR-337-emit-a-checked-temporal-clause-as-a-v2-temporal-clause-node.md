@@ -144,15 +144,11 @@ reader returns.
   that consumes the triple), ADR-013 O-07 (occurrence ordinals), QSpec
   FR-322 (NodeId).
 
-## Remaining work
-
-- QSpec FR-370-AC-13 (a temporal clause always names an `over` parameter) lands
-  with quire-specification#314; the `over` statements in this requirement and
-  in TC-1079 follow it.
-
 ## References
 
 - QSpec FR-370 (checked-package temporal clause body and temporal operation
   identities), FR-322 (the artifact and its reader order): Linear STD-99 and
   STD-131.
+- QSpec FR-370-AC-13 owns the rule that a temporal clause always names an
+  `over` parameter, which FR-337-AC-5 and TC-1079 step 3 apply.
 - Owning ticket: Linear QSL-366.

@@ -14,12 +14,12 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::{
     charges, check_envelope_target, domain_packages, one_source, recompile, wire_id, wrong_target,
@@ -37,7 +37,7 @@ use crate::spine::{
 use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
 use crate::WitnessEnvelope;
-use qsl_foundation::diagnostic::Category;
+use quire_semantic_value::catalog::Category;
 
 /// FR-116's `stale_dependency`/`content-mismatch`: one payload identity
 /// that is not the recompiled package's, or one envelope identity that is
@@ -350,7 +350,8 @@ pub fn replay_frame(
 }
 
 /// The request's `frame_operation` as a `Frame` selection's `M::T::op`:
-/// its object must be exactly a model alias and an object type. `None`
+/// its object must be exactly a model alias and an operation owner
+/// (an object type, a process or a state machine). `None`
 /// otherwise, so it names no operation.
 fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
     let [model, object] = operation.object.segments() else {
@@ -369,7 +370,7 @@ fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
 /// `ambiguous-name`; and an object that only inherits the operation (its
 /// declaring type is another) is `malformed-declaration`, since the target
 /// names the declaring object.
-fn resolve_target<'g>(
+pub(crate) fn resolve_target<'g>(
     graph: &'g CheckedGraph,
     target: &FrameOperation,
     package: PackageId,
@@ -379,7 +380,7 @@ fn resolve_target<'g>(
         package,
     };
     let name = operation_name(target).ok_or_else(unknown)?;
-    if graph.names_non_object_declaration(&name.model, &name.object) {
+    if graph.names_non_owner_declaration(&name.model, &name.object) {
         return Err(ReplayRefusal::MalformedOperationTarget {
             operation: target.clone(),
             package,

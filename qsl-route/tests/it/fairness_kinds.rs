@@ -6,13 +6,13 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
-use qsl_foundation::CatalogCode;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, CandidateSet,
     FairnessKindsDefect, FairnessKindsMember, FairnessLabel, ManifestDigest, Mode, ProviderOrigin,
     RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::fairness::FairnessKind;
 use quire_semantic_value::fairness::FairnessKind::{Strong, Weak};
 
