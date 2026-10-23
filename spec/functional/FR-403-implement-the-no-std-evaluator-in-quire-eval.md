@@ -336,7 +336,7 @@ return the reference's results:
 2. **Call failure.** The same `CallFailure` arm: `Input` with an equal
    `InputRefusal`, `Cancelled` with an equal `CancelCause`, `Storage` with
    the same parameter and failure, `Supplied` and `UnsupportedHelper` with
-   equal stops. `Fault` is compared by arm and category.
+   equal stops, `Unsupported` with an equal `UnsupportedEntry`. `Fault` is compared by arm and category.
 3. **Refusal record.** `qsl-eval`'s refusal-record function (FR-400 Source
    locations) over the two evaluations and the same region resolver SHALL
    return equal FR-096 records.

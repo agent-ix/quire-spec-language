@@ -46,7 +46,10 @@ often than the protocol allows, is refuted with a prefix that replays.
 - A `CheckedRefinement` with `AbstractSide::Protocol` (FR-147).
 - The abstract protocol subject's `ProtocolSystem` (ADR-027 TS-1), passed to
   FR-141 as `AbstractSystem::Protocol`, built
-  with the derived universes (ADR-020 RM-2) and the request's bindings.
+  with the derived universes (ADR-020 RM-2) and the request's bindings, from
+  the checked package that holds the clause: the declaring package, or the
+  dependency's `CheckedPackage` that `AbstractSide::Protocol::dependency`
+  names (FR-147).
 - FR-141's positions and steps.
 
 ## Outputs

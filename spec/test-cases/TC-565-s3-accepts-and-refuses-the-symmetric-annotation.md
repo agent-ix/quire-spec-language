@@ -10,9 +10,9 @@ relationships:
 
 ## Description
 
-Verify that an annotated population that is read only by equality and dereference checks, that the annotation enters the package identity, and that a `fold` over a set of its references whose step is outside FR-145's catalog is refused at the `fold`.
+Verify that an annotated population that is read only by equality and dereference checks, that the annotation enters the package identity, that a `fold` over a set of its references whose step is outside FR-145's catalog is refused at the `fold`, and that a `convert` of that set to a `Sequence` or ordered set is refused at the `convert`.
 
-Scope: FR-150-AC-1 to FR-150-AC-2.
+Scope: FR-150-AC-1, FR-150-AC-2 and FR-150-AC-5.
 
 ## Test Procedure
 
@@ -20,6 +20,13 @@ Fixtures: ADR-021 §7.1's ConfigVersion unit, with and without `symmetric` on `c
 
 1. Check the annotated unit; read the `config_history` record and the package identity. Check the unannotated unit and compare package identities.
 2. Check the `peers` variant with and without the annotation, and the variant with `type Tally = Integer;` whose `fold` is `fold<Tally>(acc, p in self.peers: acc + 1, identity: 0)`, with and without it.
+3. In the `peers` variant, add one at a time a post clause reading
+   `convert<Sequence<Reference<ConfigVersion>>[0, 8]>(self.peers)`, one reading
+   `convert<OrderedSet<Reference<ConfigVersion>>[0, 8]>(self.peers)`, the
+   `Sequence` conversion folded with a step that chooses an element,
+   `convert<Bag<Reference<ConfigVersion>>[0, 8]>(self.peers)` unfolded, and
+   that `Bag` conversion folded with a step that chooses an element. Check each
+   with the annotation, and the `Sequence` conversion without it.
 
 Tag the tests `#[trace("TC-565", "FR-150-AC-n")]`.
 
@@ -27,3 +34,4 @@ Tag the tests `#[trace("TC-565", "FR-150-AC-n")]`.
 
 - Step 1: the unit checks, `symmetric: true`, and the two package identities differ.
 - Step 2: annotated, `ill_typed`/`identity-observing-form` at the `fold` span naming `fold` and `config_history`, and no checked package; unannotated, `ill_typed`/`operator-ineligible` at the `fold` (FR-145); the counting `fold` checks in both units (FR-150-AC-2).
+- Step 3: annotated, the `Sequence` and ordered-set conversions each refuse `ill_typed`/`identity-observing-form` at the `convert` naming `convert` and `config_history`, the folded `Sequence` conversion included; the unfolded `Bag` conversion checks; the folded `Bag` conversion refuses `ill_typed`/`identity-observing-form` at the `fold`, with no `operator-ineligible`; unannotated, the `Sequence` conversion checks (FR-150-AC-5).
