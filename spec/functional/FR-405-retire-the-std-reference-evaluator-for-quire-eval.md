@@ -93,7 +93,9 @@ are measured on the switch base, items 3 to 5 at the switch change's head.
    zero divergences (FR-402-AC-10).
 2. **FR-262 under both implementations.** On the switch base,
    FR-262-AC-1 to AC-8, AC-10 and AC-11 pass with each implementation (FR-402-AC-9
-   and FR-403-AC-7), AC-1 and AC-2 on a 512 KiB stack.
+   and FR-403-AC-7), AC-1 and AC-2 on a 512 KiB stack, and FR-401-AC-8,
+   including its run over an interpreted call site, passes on
+   `quire-eval`'s evaluator.
 3. **The `no_std` gate.** FR-401-AC-1's `thumbv7em-none-eabi` build passes in
    `agent-ix/quire-eval` at the `quire-eval` revision QSL's `Cargo.lock`
    resolves at the switch head.
@@ -252,7 +254,7 @@ QSL-owned corpus. FR-262-AC-1 to AC-8, AC-10 and AC-11 and FR-403's vectors run 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-405-AC-1 | On the switch base, `make evaluator-differential` over the QSL-owned corpus admits every checked-in case and all 256 generated cases and reports zero divergences, and `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>` over a bundle CG's `make evaluator-corpus` wrote from CG's `main` reports zero divergences; the switch change's description reports the switch base and both results. | Test (TC-1124) and Inspection |
-| FR-405-AC-2 | On the switch base, FR-262-AC-1 to AC-8, AC-10 and AC-11 pass with each implementation, AC-1 and AC-2 on a 512 KiB stack with no depth refusal and no stack overflow; the switch change's description reports the result. | Test (TC-1124) and Inspection |
+| FR-405-AC-2 | On the switch base, FR-262-AC-1 to AC-8, AC-10 and AC-11 pass with each implementation, AC-1 and AC-2 on a 512 KiB stack with no depth refusal and no stack overflow, and FR-401-AC-8, including its run over `g(3)`, passes on `quire-eval`'s evaluator; the switch change's description reports the result. | Test (TC-1124) and Inspection |
 | FR-405-AC-3 | At the `quire-eval` revision QSL's `Cargo.lock` resolves at the switch head, FR-401-AC-1's `thumbv7em-none-eabi` build and NFR-016's `make audit-unsafe` gate both pass in `agent-ix/quire-eval`. | Test (TC-1124) |
 | FR-405-AC-4 | At the switch head: `qsl-eval/src/value/expression/evaluate.rs` and its `evaluate/` submodules, the `Machine` type, the std reference adapter and FR-403's separate `quire-eval` entry do not exist; no type in `qsl-eval`'s shipped source keeps an evaluation's task or value stack; each `qsl-eval` function whose result is a `Value`, an `Outcome` or an `Evaluation` of a checked node or expression obtains it from a `quire-eval` session, and every `NodeKind` match left in `qsl-eval` is a structural walk that returns no value, such as the ADR-031 SW-2 decision-path walk; no QSL manifest and no `quire-eval` manifest declares a feature that selects an evaluator; no `[dev-dependencies]` entry, `test-support` feature, `xtask` command or fixture crate holds an evaluator of checked terms; and no deleted path is re-exported or forwards to `quire-eval`. | Inspection (TC-1124) |
 | FR-405-AC-5 | A test inventory of the switch base and the switch head (every test function of the workspace, by crate, file and name, with its expected values) shows that every test absent at the head ran only the std reference as a second implementation, paired a std with a `no_std` record, or tested FR-403's separate entry, and that each test of the deleted files, including the `evaluate/invariants.rs` probes, exists ported at the head with its expected values. Every other base test exists at the head with unchanged expected values, and at the head the `qsl-eval`, `qsl-replay` and `qsl-analyze` suites, the FR-262 tests, the FR-096 refusal-record tests, TC-780's backend-versus-interpreter tests, the clause, separation (FR-265, ADR-031) and value-invariant tests, and the QSL conformance run over the QSpec checked-package fixtures pass. | Test (TC-1124) |
