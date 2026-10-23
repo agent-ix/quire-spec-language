@@ -31,3 +31,12 @@ Manually compared FR-450 and TC-1221 with the PR's trace tags, replay code, and 
 Plan completion: not assessed
 
 The computed matrix was attempted with `quoin matrix --repo . --json` and `quire matrix --scope . --format tsv`; neither completed within the review's 2-minute and 50-second limits, respectively. The manual trace index found one `#[trace("TC-1221", "FR-450-AC-n")]` test for each AC-1 through AC-6, plus one TC-only exact-root test. This artifact makes no repository-wide matrix-completeness claim. Optional semantic review was not requested; the scope above is a focused code/test/criterion comparison for this PR.
+
+## Dispositions
+
+Disposition round 1 at PR head `6784de4aca345b573b8c03a778810f655dcf6e36`:
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The new unfair-lasso test defines a continuously enabled `Staying::Exiting` transition, takes only `Staying::Staying`, evaluates an undefined claim atom, and asserts `NotReproduced` at `Claim`. |
+| FND-002 | fixed | The new deep-recursion tests assert resource refusal at low fuel and successful 20,000-edge evaluation with ample fuel; the new large-window test asserts deterministic resource refusal at 100,000 units. |

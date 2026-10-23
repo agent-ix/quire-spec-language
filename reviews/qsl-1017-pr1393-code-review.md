@@ -30,3 +30,13 @@ Reviewed the replay implementation and tests against FR-450, TC-1221, and the ch
 ## Coverage
 
 Examined FR-450-AC-1 through AC-6 and TC-1221 against the tests in `qsl-replay/src/hybrid_replay/tests.rs`. In particular, AC-6's only fair lasso takes the named fair transition, so it does not exercise an unfair lasso. AC-5's recursive-call test evaluates a point argument after an undecided one, but the checked function's `Int` measure is only `[0, 9]`. Focused tests were not rerun because the lead reserved the shared build lane for final gates. This is a source review, not a gate result.
+
+## Dispositions
+
+Disposition round 1 at PR head `6784de4aca345b573b8c03a778810f655dcf6e36`:
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `exact::replay` calls `fair` after check 4 and returns `NotReproduced` before checking any record or claim value when the lasso is unfair; the added `an_unfair_lasso_with_an_undefined_atom_is_not_reproduced` test exercises the formerly wrong path. |
+| FND-002 | fixed | `claim_segments` now charges the caller's `HybridReplayMeter` before every segment materialization, including each lasso copy, and propagates `ResourceExhausted(WorkUnits)`; the large-window test asserts refusal at the configured 100,000 units. |
+| FND-003 | fixed | `IntervalEvaluator` now evaluates recursive bodies through `Vec<Work>` rather than Rust recursion; the 20,000-edge test asserts both exhaustion at 100 units and completion with ample fuel. The expansion path also uses an explicit task stack. |
