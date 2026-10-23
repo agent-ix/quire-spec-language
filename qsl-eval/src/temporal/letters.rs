@@ -3,9 +3,9 @@
 //! (FR-107): the evaluator owns the temporal meaning of a trace, and a
 //! [`TemporalLetters`] reads each atom of the clause at a position.
 
-use qsl_foundation::{InternalFault, UndefinedRecord};
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Incomplete, Meter};
+use quire_semantic_value::catalog::{InternalFault, UndefinedRecord};
 
 use super::position::TemporalPosition;
 use super::window::{InsufficientData, WindowLimitReached, WindowRefusal};

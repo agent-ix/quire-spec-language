@@ -978,8 +978,8 @@ fn a_changed_library_function_changes_the_calling_node_id() {
 #[test]
 fn an_imported_call_evaluates_in_the_library_and_returns_to_the_caller() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-    use qsl_semantics::family::FamilyOutcome;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_eval::FamilyOutcome;
     use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
 
     let geometry = library(
@@ -1075,8 +1075,8 @@ fn e3_resolves_an_imported_name_only_through_its_qualifier() {
 #[test]
 fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-    use qsl_semantics::family::FamilyOutcome;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_eval::FamilyOutcome;
     use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
     use quire_semantic_value::location::{Location, Origin};
 

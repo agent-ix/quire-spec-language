@@ -73,7 +73,8 @@ pub struct RetainedEdge {
   does not offer V-8 (FR-159). When a hook the system offers returns `None`
   in a run, the engine SHALL settle an internal fault,
   `TerminalValue::Failed`. `ModelSystem` SHALL offer all three and return `Some` from each, through FR-152, FR-155
-  and FR-158.
+  and FR-158. `ProtocolSystem` (FR-215) SHALL offer `holds_constraint` and
+  return `Some` from it, through FR-158.
 - **State-free footprint hook.** The `footprint` hook takes a transition
   identity and no state, and SHALL return `Some` for every transition
   identity of the system, enabled or disabled and whether or not the objects

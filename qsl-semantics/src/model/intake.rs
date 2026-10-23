@@ -9268,7 +9268,7 @@ mod tests {
         assert_eq!(refusal.code, Code::NoncanonicalWire, "{text}");
         assert_eq!(
             refusal.cause.catalog_code(),
-            qsl_foundation::diagnostic::CatalogCode::new("noncanonical_wire", inexact.as_str()),
+            quire_semantic_value::catalog::CatalogCode::new("noncanonical_wire", inexact.as_str()),
             "{text}"
         );
         assert_eq!(

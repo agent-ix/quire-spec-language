@@ -34,8 +34,8 @@ Use ADR-022 §7's ConfigVersion and game units.
    item whose request's claim triple is unresolved.
 4. Edit `ReachesTwo`'s node to `kind` `eventually-possible`, and separately
    to `target` a reference to `c`'s parameter node with `dependencies` set to
-   the body's targets; after each edit recompute the node key, rewrite the
-   `identity_projection` entry and recompute the `package_id`, and feed the
+   the body's targets; after each edit recompute the node key and
+   the `package_id`, and feed the
    package to the I2 reader.
 
 Tag the tests `#[trace("TC-1140", "FR-410-AC-n")]` with the AC each step
