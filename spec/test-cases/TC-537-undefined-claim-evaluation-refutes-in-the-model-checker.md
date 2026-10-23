@@ -32,7 +32,7 @@ Use the `Counter` subject of FR-124-AC-1 (universe `{c}`, initial value 0).
    `always eventually holds(6 / (2 - c.value) = 6)`, then on
    `always (holds(c.value <= 0) and holds(6 / (2 - c.value) >= 0))`, then
    on the bounded claim of step 2.
-4. With a `terminal when 6 / (3 - c.value) = 0` member, run `check_model`
+4. With a `terminal when 6 mod (3 - c.value) = 0` member, run `check_model`
    on the `DeadlockFreedom` item.
 
 Tag the tests `#[trace("TC-537", "FR-125-AC-6")]` and

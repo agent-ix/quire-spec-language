@@ -432,7 +432,8 @@ FR-322 specifies (QSpec FR-322-AC-66):
 - `dependencies`: exactly the target key, and nothing else;
 - occurrences: one or more, all of role `expression`, one per source
   reference to the target, each at that reference's source region, ordered by
-  source position with ordinals 0 to n-1 and each with its own source-map row
+  source position, the units of a several-unit package taken in FR-480's
+  canonical unit order, with ordinals 0 to n-1 and each with its own source-map row
   keyed (node id, `expression`, ordinal);
 - no `declaration`, `owner`, `nominal_identity_preimage` or recursion group.
 

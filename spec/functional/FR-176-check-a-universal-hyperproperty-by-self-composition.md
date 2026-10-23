@@ -91,6 +91,17 @@ public outputs differ.
   `Undefined` counterexample ending at that joint step, one path per trace
   variable (ADR-023 HV-8). If it evaluates refused or incomplete there, then the engine SHALL
   return `Undecided(MatchUndetermined)`.
+- The engine SHALL read the body's letter at a joint position when it
+  creates the product state for it (ADR-018 UE-4), and a product state
+  whose letter is undefined SHALL end the first phase there with no
+  expansion. Otherwise it SHALL expand the state, reading each component's
+  contract conjunctions through FR-120's expansion, components in
+  quantifier order, and then `μ_U` over each joint step. At one joint
+  position of one tuple of paths the undefined evaluation the engine
+  reports is therefore the first in this order: `μ_U` over the joint step
+  that enters the position, the letter there, then the contract
+  conjunctions there, component by component, each component's in the
+  order its expansion records them. FR-183 replays in the same order.
 
 ### Phases
 
@@ -129,7 +140,8 @@ public outputs differ.
 | FR-176-AC-1 | ADR-023 §8.1, no reduction: the leaky product has 10 reachable states and two accepting SCCs, and returns `Violated` with a `Lockstep` counterexample of the §8.1 table's shape, `a` from `(0, 0)`, `b` from `(1, 0)`, joint steps `(step(0), step(0))`, loop entry 1. The secure product has 8 states and returns `Holds{Exhaustive}`. | Test (TC-601) |
 | FR-176-AC-2 | `NonInterference` with its `match` block removed returns `Violated` over the secure model. `match { a.step.op = V::Vault::step and b.step.op = stutter }` over the vault, which has no terminal state, returns `Undecided(VacuousMatch)`. | Test (TC-601) |
 | FR-176-AC-3 | The secure vault with an added `reset` operation (no precondition, postcondition `self.l = 0`, frame `[l]`) and the one-variable clause `forall trace a of V { always eventually holds(v.l @ a = 0) }`: under `fair { weak V::Vault::reset }` on `a` it returns `Holds`, and with the empty fairness set `Violated` with a loop of `step(1)` steps. In a two-variable clause over a subject where `a` can reach a terminal state, `μ` `a.step.op = b.step.op` pairs `a`'s stutter step only with `b`'s stutter step. | Test (TC-601) |
-| FR-176-AC-4 | A subject that alone exceeds `max_states` stops the item `Stopped(ResourceExhausted, MaxStates)` before the product is built. `NonInterference` over the secure vault with the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1`, which has no value on a joint step whose `a` step is `step(0)`, returns `Violated` with an `Undefined` counterexample ending at the first such joint step in canonical order, with a path for `a` and for `b` and cause `division-by-zero`. Running AC-1's leaky request twice gives byte-equal counterexamples. | Test (TC-601) |
+| FR-176-AC-4 | A subject that alone exceeds `max_states` stops the item `Stopped(ResourceExhausted, MaxStates)` before the product is built. `NonInterference` over the secure vault with the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 mod value(a.step.Vault::step.i) else 0) = 0`, which has no value on a joint step whose `a` step is `step(0)`, returns `Violated` with an `Undefined` counterexample ending at the first such joint step in canonical order, with a path for `a` and for `b` and cause `division-by-zero`. Running AC-1's leaky request twice gives byte-equal counterexamples. | Test (TC-601) |
+| FR-176-AC-5 | Over ADR-023 §8's secure vault with the added `pre G using v on V::Vault::step { 1 mod (1 - self.h) = 0 }`, which has no value from a state with `h` 1, and `NonInterference` with the body `always holds(1 mod (1 - v.h @ a) = 1 mod (1 - v.h @ b))`, whose letter has no value at a joint state with either `h` 1: the item returns `Violated` with an `Undefined` counterexample at `trace_position` 0 at the initial tuple `a = (0, 0)`, `b = (1, 0)`, the first with an `h` 1 in canonical order, whose locus is the body atom, naming `a` and `b`, with cause `division-by-zero`, not `G`. FR-183 replays it to `reproduced-with-evaluated-witness`. With the body `always holds(v.l @ a = v.l @ b)`, whose letter is defined there, the counterexample at `trace_position` 0 at the same tuple names `G` with `b`'s `step` transition, and `b` only. | Test (TC-601) |
 
 ## Dependencies
 
