@@ -52,3 +52,9 @@ The exit codes match FR-285 (refusal 20, `Limit`/`Cancelled` 22). `stage_limit_e
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-006 | high | The FR-255 "stage-limit cell" edit hit the wrong line. It rewrote the settings-table row `identity.input_bytes` into "`identity.input_bytes`, `render.output_bytes` \| identity encoding \| input bytes \| `AssemblyLimits` identity ... \| 16777216 bytes". Behavior 1's "a stage's or reader's own limits type \| `stage_limit_exceeded`" cell still ends at `identity.input_bytes`. As a result `render.output_bytes` has two table rows that disagree on stage and library field (identity encoding / `AssemblyLimits` against render / `RenderLimits`), and Behavior 1 maps it to no catalog code, though FR-298 says `stage_limit_exceeded`. The PR body says the stage-limit cell was edited. Restore row 118 to main's text, and append `render.output_bytes` to the Behavior-1 stage-limit cell. | spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md:118,121,272 |
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | 0d32129f: row 118 is back to main's `| `identity.input_bytes` | identity encoding | ... |`, and the Behavior-1 stage-limit cell (line 272) now ends `identity.input_bytes`, `render.output_bytes`. `render.output_bytes` has one table row (line 121, render / `RenderLimits`), mapped to `stage_limit_exceeded`. |
