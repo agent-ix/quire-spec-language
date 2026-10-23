@@ -36,3 +36,13 @@ Examined, clean:
 ## Verdict
 
 Not mergeable until FND-001..003 are dispositioned; FND-003 needs QSpec #393 merged first. Merge-tree against main and against every open PR touching the same files is clean.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fix verified at b5681a2c |
+| FND-002 | fixed | fix verified at b5681a2c |
+| FND-003 | accepted-no-change | Merge order, not a text defect: the cited QSpec names (FR-464 "Activation relation", FR-464-AC-3/AC-13, FR-479-AC-4/AC-5) are present and unchanged in QSpec #393 at a725617d. Merge #393 first, then #1308. |
+
+Round 1 verdict at b5681a2c: Mergeable after QSpec #393 merges. Not deleting FR-054/TC-143 is a lead default (live ACs and the Correspondence section now state behaviour only; the deletion note sits in the ADR-011 lane row).
