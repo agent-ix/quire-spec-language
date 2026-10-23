@@ -1067,7 +1067,7 @@ fn catalog_category(code: &str) -> Option<&'static str> {
     Some(
         Code::from_code(code)
             .map_or(
-                qsl_foundation::diagnostic::Category::Refusal,
+                quire_semantic_value::catalog::Category::Refusal,
                 Code::category,
             )
             .as_str(),
@@ -2324,8 +2324,8 @@ pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, Nati
     }
     let verdict = matches!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
-            | qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Success
+            | quire_semantic_value::catalog::Category::Violation
     );
     if (verdict
         && !matches!(

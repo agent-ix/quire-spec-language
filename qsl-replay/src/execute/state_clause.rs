@@ -16,7 +16,6 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::CheckedStateClause;
@@ -25,6 +24,7 @@ use qsl_semantics::model::observation::{
     ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationForm, OutOfRange,
     PostStateRange, Provisions,
 };
+use quire_semantic_value::catalog::InternalFault;
 
 use super::{
     check_envelope_target, consumed, domain_packages, one_source, recompile, wire_id, wrong_target,
@@ -45,13 +45,14 @@ use crate::target::{ReplayEntry, TargetMember};
 use crate::witness::{ReplaySource, StateClauseCounterexample};
 use crate::WitnessEnvelope;
 use qsl_eval::value::{
-    CallFailure, CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
+    CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::Source;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::observation::AdmittedObservations;
+use quire_eval::CallFailure;
 use quire_exact::Meter;
+use quire_semantic_value::catalog::Category;
 
 /// FR-122's `stale_dependency`/`content-mismatch`: an envelope clause
 /// identity that is not the recompiled clause's, naming both.
@@ -573,7 +574,7 @@ pub(crate) fn separate(
 /// fails its step; `None` for an exhausted meter, which is not a witness
 /// failure.
 pub(crate) fn stopped_reason(
-    evaluation: qsl_eval::value::Evaluation,
+    evaluation: quire_eval::Evaluation,
     graph: &CheckedGraph,
     sources: &[Source],
 ) -> Result<Option<SeparationReason>, ReplayRefusal> {
