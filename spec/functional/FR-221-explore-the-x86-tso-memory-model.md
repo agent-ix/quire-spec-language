@@ -53,8 +53,10 @@ store is still in its buffer when the other thread loads, then add
   internal step (d), the empty-buffer conditions as the gate (e), and the
   empty branch buffers as split and merge (f).
 - `Tso` SHALL give each `flush(b)` a typed canonical transition identity
-  naming the thread, and SHALL serialize its component as the state key's
-  memory member (FR-229).
+  naming the thread, and SHALL serialize its component and FR-224's race
+  summary as the state key's memory member (FR-229), with each buffered
+  element's race map as its `race` member and the `race-summaries` and
+  `race-memory` entries of QSpec FR-438.
 
 ## Acceptance Criteria
 

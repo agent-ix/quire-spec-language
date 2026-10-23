@@ -12,7 +12,7 @@ relationships:
 
 Verify the race summary, the derived race-freedom item, its race counterexample, and that races leave authored claims unchanged.
 
-Scope: FR-224-AC-1 to FR-224-AC-5.
+Scope: FR-224-AC-1 to FR-224-AC-6.
 
 ## Test Procedure
 
@@ -28,6 +28,8 @@ Use ADR-025 §10's message-passing shape.
    state key's memory member after the writer's `data := 1`, after its flag
    store, and, with the `release` store, after an `acquire` flag load that
    reads the new message; read it for `SB`.
+6. Repeat step 5 under `tso`, reading the state also after `flush(writer)`,
+   and with the flag passed by a `send` and `receive`; read each verdict.
 
 Tag the tests `#[trace("TC-669", "FR-224-AC-n")]`.
 
@@ -41,3 +43,6 @@ Tag the tests `#[trace("TC-669", "FR-224-AC-n")]`.
 - Step 4: `refuted`, kind `Formula`, as with `data` atomic.
 - Step 5: the race-summary entry and view `race` members of FR-224-AC-5,
   equal to QSpec FR-438-AC-6's; `SB` has neither.
+- Step 6: the `race-summaries`, element, `race-memory` and queue-entry race
+  maps of FR-224-AC-6, equal to QSpec FR-438-AC-7's; `proved` for the
+  `release`/`acquire` and channel variants, `refuted` on `data` for `relaxed`.
