@@ -578,14 +578,30 @@ position, when the node has a source origin) and the typed member path
 cause: FR-360 admits it, and the refusal path for the other meanings is
 unchanged.
 
-A field, operation parameter or operation result `typeRef` of the form
-`ix://quire/unit/<name>` names a unit of the compiling unit (QSpec FR-322
-"Model-owned members" step 4; FR-322-AC-80). Intake SHALL admit it unresolved
-and carry it on the member. The assembler SHALL resolve `<name>`, the unit's
-qualified name, in the unit namespace of the compiling unit (FR-091). A name
-that matches no unit SHALL refuse `missing_declaration`/`missing-name`, naming
-the member and its typed member path. Admitting the form depends on the
-semantic-IR reader accepting it (QSpec FR-208 "Field types").
+A `typeRef` of the form `ix://quire/unit/<name>` on a field, an operation
+parameter, an operation result, an alias `target`, a sequence `items`, a map
+`values` or a variant case `payloadType` names a unit of the compiling unit
+(QSpec FR-322 "Model-owned members" step 4; FR-322-AC-80). Intake SHALL admit
+it unresolved and carry it on the member. The assembler SHALL resolve
+`<name>`, the unit's qualified name, in the unit namespace of the compiling
+unit (FR-091), reading the member as `Quantity<u>` and an alias, sequence or
+map over it as the alias, `Sequence<Quantity<u>>` or `Map<Text, Quantity<u>>`
+of it. A name that matches no unit SHALL refuse `missing_declaration`/
+`missing-name`, naming the member and its typed member path
+(`Operation.params[i].typeRef`, `Operation.returns.typeRef`,
+`TypeDefinition.target`, `TypeDefinition.items` or `TypeDefinition.values`).
+A unit `typeRef` as a `reference` `target` or a constraint `appliesTo` is
+refused by intake (QSpec FR-154). Admitting the form depends on the semantic-IR
+reader accepting it (QSpec FR-208 "Field types").
+
+A `typeRef` `ix://quire/native/Clock` on a field, an operation parameter, an
+operation result or an alias `target` is a clock member (QSpec FR-154, FR-415
+"Clock places"). Intake SHALL admit it and build no declaration for it, an
+alias of `Clock` and a field or parameter typed by that alias being clock
+members as well; a clock member with presence `optional`, or a result of
+multiplicity `{0, 1}`, is `Option<Clock>`. A record value type that holds a
+clock field SHALL be assembled with its data fields in the type environment
+and its clock fields as clock places. S3 checks the timed members by FR-230.
 
 The same rule holds for the other `malformed-declaration` refusals the compiler
 raises at normalization on a node it holds: a relationship end naming a record
@@ -918,6 +934,8 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-40 | Over `function s using v(x: String): Boolean pure { x = "abc" }`, `x` = `abc` gives `true`, and `ABC`, `abc ` and the empty String give `false`. `"a" = "a"` and `"\u00e9" = "é"` are `true`; `"\u00e9" = "e\u0301"` and `"A" = "a"` are `false`. Over `u: UUID`, `u = UUID("00112233-4455-6677-8899-aabbccddeeff")` is `true` for that value and `u != UUID("00112233-4455-6677-8899-aabbccddeefe")` is `true`. Over `t: Timestamp`, `t = Timestamp(5)` is `true` for `5` and `false` for `6`; `Timestamp(0) = Timestamp(-0)` is `true`, `Timestamp(0) = Timestamp(1)` is `false`, and `Timestamp(-170141183460469231731687303715884105728) = Timestamp(170141183460469231731687303715884105727)` is `false`. A literal compares in a call argument, a `let` binding and a field-read comparison (`x.label = "a"`) by the same rules. The String functions `s` and its `!=` counterpart replay through the real spine (FR-098) with the evaluated value and settlement of the Boolean in the `abc`, `ABC` and empty-text rows; the other rows check and evaluate without replay. | Test (TC-1052) |
 | FR-056-AC-41 | A literal never changes type to fit its slot. `x = "abc"` over `x: Text[0, 8; nfc]`, `u = "00112233-4455-6677-8899-aabbccddeeff"` over `u: UUID`, `x = UUID("00112233-4455-6677-8899-aabbccddeeff")` over `x: String`, `t = 5` over `t: Timestamp`, `n = Timestamp(5)` over `n: Integer`, and `r = "abc"` over `r: Reference<T>` each refuse `ill_typed`/`type-mismatch` at the comparison; the bodies `5` of a function whose result is `Timestamp`, `UUID("00112233-4455-6677-8899-aabbccddeeff")` of one whose result is `String` and `"abc"` of one whose result is `Text[0, 8; nfc]` refuse the same way at the literal. `"abc" < "abd"`, `UUID("00112233-4455-6677-8899-aabbccddeeff") <= UUID("00112233-4455-6677-8899-aabbccddeefe")` and `Timestamp(1) > Timestamp(2)` each refuse `ill_typed`/`operator-ineligible`. | Test (TC-1052) |
 | FR-056-AC-42 | A domain package whose operation parameter has `typeRef` `ix://quire/unit/ms` is admitted by intake with the `typeRef` unresolved; the assembler resolves it to the unit `ms` of a compiling unit that declares `ms`, and refuses it `missing_declaration`/`missing-name` naming `Operation.params[0].typeRef` when the unit declares no `ms`. A `typeRef` of the form `ix://quire/unit/<name>` on a field and on a result behave the same. | Test (TC-147) |
+| FR-056-AC-44 | A domain package whose operation parameter, operation result and alias `target` have `typeRef` `ix://quire/native/Clock`, whose field `Call.s` is typed by that alias, whose field `Call.w` is a clock with presence `optional` and whose record value type `Timer` holds a clock field `x`, is admitted by intake with no declaration built for any clock; `Call.w` is `Option<Clock>`, and a clock sequence `items` refuses intake with FR-154's `malformed-declaration`. | Test (TC-147) |
+| FR-056-AC-45 | A domain package whose alias `target`, sequence `items` and map `values` have `typeRef` `ix://quire/unit/ms` is admitted with each `typeRef` unresolved; the assembler resolves each to the unit `ms` of a compiling unit that declares `ms`, reading `Quantity<ms>`, `Sequence<Quantity<ms>>` and `Map<Text, Quantity<ms>>`, and refuses each `missing_declaration`/`missing-name` naming `TypeDefinition.target`, `TypeDefinition.items` and `TypeDefinition.values` when the unit declares no `ms`. | Test (TC-147) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148) |
 
 ### FR-056-AC-17

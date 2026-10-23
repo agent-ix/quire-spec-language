@@ -11,7 +11,7 @@ relationships:
 
 Verify `normalize.record` accounting under `ModelNormalizationLimitsV1` and
 byte-identical intake results from both entry points. Scope: FR-056-AC-6,
-FR-056-AC-7, FR-056-AC-42.
+FR-056-AC-7, FR-056-AC-42, FR-056-AC-44, FR-056-AC-45.
 
 ## Test Procedure
 
@@ -24,6 +24,11 @@ FR-056-AC-7, FR-056-AC-42.
 4. Admit a package whose operation parameter, field and result carry `typeRef`
    `ix://quire/unit/ms` (FR-056-AC-42), assemble it with a unit declaring `ms`,
    then with a unit declaring no `ms`.
+5. Admit a package with clock members in an operation parameter, an operation
+   result, an alias target, an aliased field, an optional field and a record
+   (FR-056-AC-44), then a package whose alias target, sequence items and map
+   values carry `ix://quire/unit/ms`, assembled with a unit declaring `ms` and
+   with one declaring none (FR-056-AC-45).
 
 ## Expected Results
 
@@ -33,3 +38,4 @@ FR-056-AC-7, FR-056-AC-42.
   result: admission checks precede the first charge.
 - Step 3: all four results are byte-identical.
 - Step 4: intake admits the package with the `typeRef`s unresolved; the first assembly resolves each to `ms`; the second refuses `missing_declaration`/`missing-name` naming the member path.
+- Step 5: intake admits the clock package with no declaration for any clock; the unit package assembles to `Quantity<ms>`, `Sequence<Quantity<ms>>` and `Map<Text, Quantity<ms>>`, and refuses `missing_declaration`/`missing-name` at `TypeDefinition.target`, `TypeDefinition.items` and `TypeDefinition.values` when `ms` is absent.
