@@ -39,3 +39,9 @@ Counts recomputed by hand by ADR-025 §10's method, with `Zero`/`One` holding wh
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | "Protocol subjects" states that under `ra` the constraint reads each shared location's mo-last message, but no vector tests it. FR-225-AC-5's `ra` constraint is false at the initial state, so it never reads a state after a store. FR-158-AC-5 has no `ra` run. An implementation that reads the reading thread's view (MA-5) under `ra` passes every AC. Add an `ra` vector where the mo-last value and a thread's view differ at a reached state, for example `SB` under `ra` with `Zero`: after `Sx`, `x`'s mo-last message is 1 while `right`'s view still reads `x0`. | spec/functional/FR-158-cut-the-search-with-a-state-constraint.md:97-106,139 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6ffdfe89: FR-158-AC-5 and TC-581 step 3 add `SB` under `ra` with `Zero` (`max_messages` 4): 3 states and `ConstraintReached{boundary_states: 2}`, no counterexample. Hand recount: the initial state (one message per location, at 0) satisfies `Zero` and is expanded; its only enabled steps are `Sx` and `Sy`, each inserting a mo-last message holding 1, so both successors are boundary states; every violating state needs both stores, so none is reached. A reading of `right`'s view (still `x0` after `Sx`) would expand past `Sx`, so the vector separates mo-last reading from a view reading. |
