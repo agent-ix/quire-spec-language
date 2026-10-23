@@ -47,3 +47,30 @@ Gate: `QSPEC_DIR=~/dev/quire-specification make check-spec-validation` exits 0 a
 ## Verdict
 
 The construction is sound. It reduces the clause to a correct liveness check and cannot produce an unsound `proved`. The index-0 byte-order claim holds, and every hand-computable vector checks out. The PR is not mergeable until FND-001 is fixed, because the duplicate id makes TC-525 and TC-1141 trace one id to two criteria. FND-002 to FND-004 are wording and coverage fixes inside FR-126, FR-128, FR-338 and TC-521/TC-525/TC-526, and none needs a QSpec change. No scope-deferral was found.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The fix defines "model position" so that it excludes stutter positions: "A model position is an activation position, and so is every infinite-trace terminal stutter position". But two older sentences in FR-338 still use "model position" for every position the monitor reads. FR-338:384 says unguarded `on each` "adds the root activation at every model position", and FR-338:283 says past memory is "updated once per model position". Under the new definition, unguarded `on each` adds no activation at stutter positions, while `on each ... when true` does. Past memory would also not advance at a stutter position, which contradicts the new bullet's "past memory advanced to that stutter position". For formulas with past operators, `on each` and `on each when true` would then give different verdicts. <br>Fix: use "activation position" (or "every position the monitor reads") in FR-338:283 and FR-338:384, so that unguarded and guarded `on each` share one position rule. | spec/functional/FR-338-check-an-en-1-closure-certificate.md:283, spec/functional/FR-338-check-an-en-1-closure-certificate.md:384, spec/functional/FR-338-check-an-en-1-closure-certificate.md:413-421 |
+| FND-007 | high | The renumbered FR-338-AC-15 collides with open PR #1343 (STD-382, `spec/std-382-cert-memory-bound`), which adds its own FR-338-AC-15 ("Memory bounds", TC-1200). Whichever PR merges second would duplicate the id on main, the same defect as FND-001. <br>Fix: coordinate with STD-382 so that one PR takes the next free FR-338 AC id (FR-338-AC-16 if #1343 keeps AC-15), and update TC-525's scope and step 10 to match. | spec/functional/FR-338-check-an-en-1-closure-certificate.md:828, spec/test-cases/TC-525-an-en-1-closure-certificate-is-checked.md:16 |
+
+## Dispositions
+
+Round 1 is at head 9d50011be. Main is an ancestor of the head. `QSPEC_DIR=~/dev/quire-specification make check-spec-validation` exits 0, with no diagnostic in a changed file.
+
+The stutter-activation rule is sound for past operators. Under infinite-trace stutter extension, every stutter position is a real position of the infinite word. So activating there, with past memory advanced through the repeated letter, is the faithful `on each` reading. Every past-memory entry is a Boolean flag or a counter saturated at `b+1`, so the stutter self-loop reaches a fixed point and the product stays finite.
+
+The `ReplayParity` claim holds. When the condition reads false at every position, no activation is selected, so FR-128 evaluates `true`, and FR-128 settles `true` as `inconclusive`/`ReplayParity`. An `on origin` replay would still find `eventually (a.v = 2)` false on the lasso, because `a` stays at 1. So the vector separates a guard-aware replay from one that ignores the guard.
+
+The `BadState` vectors also hold. With the condition undefined at version 0 for both bindings, binding `a`'s key is least, because its context differs from `b`'s only in the instance key `"a"` against `"b"`. For this formula the waiting body before position 0 is `[[],[],[],[]]`, since it has no past occurrence and no least-fixed-point set.
+
+Merge conflicts: #1330 (STD-373) conflicts textually with this PR in FR-339, TC-521 and TC-526 (the AC table and the scope lines). #1311 (STD-358) conflicts textually in FR-338's AC table. Neither conflict is semantic. #1330's component order (topological, least vertex index first) lists the waiting component before the active one, which FR-339-AC-5's certificates satisfy. #1311's locus pairs include `BadState` at `ProductState`. Whichever PR merges second resolves the conflict as main plus both sets of rows.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Renumbered to FR-338-AC-15; FR-338-AC-11 is again the single Package-identity row; TC-525's scope names FR-338-AC-15. The new collision with #1343 is FND-007. |
+| FND-002 | fixed | FR-126:185 and :211, FR-338:404, :413-421, :441 and :481 now all use "activation position", meaning a model position or an infinite-trace stutter position, never a false-extension position. The remaining older uses are FND-006. |
+| FND-003 | fixed | FR-128 states the guarded replay rule. FR-126-AC-16 and TC-521 step 11 assert `reproduced-with-evaluated-witness` for both lassos, and `inconclusive`/`ReplayParity` with the condition false everywhere. |
+| FND-004 | fixed | FR-338-AC-15 states the empty-certificate `BadState` with the exact waiting key, and the initial-state locus on FR-339-AC-5's certificate. TC-525 step 10 asserts both. |
+| FND-005 | fixed | FR-338-AC-15 and TC-525 step 10 state both bodies byte for byte. |

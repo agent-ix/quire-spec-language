@@ -13,7 +13,7 @@ relationships:
 Verify that `check_closure` accepts a safety proof's closure and rejects a
 missing initial state, a missing successor and a bad state.
 
-Scope: FR-338-AC-1 to FR-338-AC-7, FR-338-AC-10 and FR-338-AC-15. Canonical translation-state cases below
+Scope: FR-338-AC-1 to FR-338-AC-7, FR-338-AC-10 and FR-338-AC-16. Canonical translation-state cases below
 are prospective qualification procedures; this artifact claims no execution.
 
 ## Test Procedure
@@ -74,7 +74,7 @@ are prospective qualification procedures; this artifact claims no execution.
    `"each"`; then, with the condition false at values 0 and 1 and undefined
    at value 2, the certificate of exactly the value-0 and value-1
    obligation-free `"each-when"` states.
-10. Over FR-339-AC-5's fixture (FR-338-AC-15), encode binding `a`'s waiting
+10. Over FR-339-AC-5's fixture (FR-338-AC-16), encode binding `a`'s waiting
     key at `(0,0)` and active key at `(1,0)`; then supply that active key as
     `["buchi", branch]`, that waiting key carrying `[[],"negative"]`, a
     `guarded-buchi` key under the `"infinite"` activation, and the phase
