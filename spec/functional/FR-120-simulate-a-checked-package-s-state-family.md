@@ -208,10 +208,52 @@ implementation, and QSL's `semantic` member is a map in FR-181's map form:
 A field declared `Option<T>` holds an option value, `{"type":"option","value":
 <encoded>|null}`. A presence-optional (`?`) field that an object leaves absent
 is the plain `null` of its `{name, value}` entry (QSpec FR-181 "Typed canonical
-form"); a present one is its bare encoded value. A value of a type this
-requirement has no encoding for (a decimal, quantity, uuid, timestamp, enum,
-record, tuple, union or population value) refuses with the typed
-`EncodingRefusal`, never a panic.
+form"); a present one is its bare encoded value.
+
+Every other value encodes in FR-181's typed canonical form, read from its
+declared type:
+
+- a decimal as `{"type":"decimal","coefficient":…,"scale":…}` with its
+  retained coefficient and scale (QSpec FR-140);
+- a quantity as the `rational` form of its exact magnitude with an added
+  `"unit"` member, since a QSL quantity's magnitude is an exact rational
+  (`quire-exact` `Quantity`);
+- a UUID as `{"type":"uuid","value":…}` holding its K2 canonical payload,
+  and a Timestamp as `{"type":"timestamp","nanoseconds":…}` holding its
+  signed nanosecond count (FR-056, ADR-034);
+- an enum value as `{"type":"enum","name":…,"member":…}`;
+- a record value as `{"type":"record","name":…,"fields":[…]}`, one
+  `{name, value}` entry per declared field in declaration order, with an
+  absent `?` field `null`;
+- a tuple value as `{"type":"tuple","name":…,"components":[…]}` in
+  declaration order;
+- a union value as `{"type":"union","name":…,"member":…,"components":[…]}`,
+  an empty array for a nullary member.
+
+In these forms `name` is the enum, record, tuple or union declaration's
+checked node id and `unit` is the digest of the declared quantity type's
+`UnitId` (FR-088), each as 64 lowercase hex digits, and `member` and a
+field's `name` are the declared identifiers: the spellings FR-070 gives the
+same values in a counterexample witness, so a value has one FR-181 text in
+QSL wherever it appears. An object's `record` name stays the declaration
+identity text of its most-specific type, as above.
+
+Every element of a set or bag is written in FR-181's canonical element
+encoding before the elements are ordered by their JCS bytes, recursively
+through nested options, collections, records, tuples and unions: a decimal
+takes its normalized coefficient and scale (QSpec FR-140), and every other
+family, a quantity's exact rational included, keeps the form above. A value outside a set
+or bag element keeps its retained form.
+
+A state member that holds a population's objects is typed
+`Set<Reference<T>>` and encodes as FR-181's `set` of reference triples. A
+value of a population type itself, a population handle rather than its
+objects, has no FR-181 form (QSpec FR-181: a type that is a population has
+none). Encoding one, wherever it appears in a state key, a transition
+identity or a step effect, SHALL refuse with the typed `EncodingRefusal`
+naming the population-typed field, receiver, argument or result, never a
+panic; FR-101 returns it as `NotSimulated::KeyEncoding` (`replay` as
+`ReplayError::KeyEncoding`), `invalid_runtime_input`/`invalid-value`.
 
 A reference encodes as FR-181's triple: `universe` is the population's
 `UniverseId` as 64 lowercase hex digits, `object_type` the most-specific
@@ -345,7 +387,10 @@ as bytes its keys are in JCS order: `arguments`, `operation`, `receiver`,
 `type`. `ModelTransition` is the typed form of that identity: the `operation` as its
 canonical text, a `receiver: Option<String>` and the `arguments` as a vector of
 canonical text. Each text is the value's canonical JCS text, as `operation` and
-each argument are. A model application always has a receiver; `receiver` is
+each argument are. The receiver, each argument, each `StepEffect` value and
+each result encode by the same forms as a state field ("State, state key and
+anchor"), so a transition over a decimal, quantity, UUID, Timestamp, enum,
+record, tuple or union argument has an identity (ADR-016 ID-9). A model application always has a receiver; `receiver` is
 `None` only for an operation FR-181 admits with none, and `Some("null")` is
 refused.
 
@@ -576,6 +621,9 @@ identity text of operation `op`.
 | FR-120-AC-13 | With `spawn()` over a population whose universe has 30 unused keys and each created object's fields ranging over `Int[0, 2]`, `Int[0, 1]` and `Option<Reference<Counter>>`, so the candidate product exceeds 10^9, and `max_candidates` 10, exploration returns `Outcome::Stopped` with `resource_exhausted`/`insufficient-next-charge` after generating at most 11 candidates, and does not allocate the product. | Test (TC-472) |
 | FR-120-AC-14 | `ModelSystem::over_model` over a model identity that the refinement unit does not select (`example/not-selected`) refuses `invalid_runtime_input`/`wrong-role-mapping`; over each of the unit's two selected models it returns a system that reports that model. | Test (TC-1086) |
 | FR-120-AC-15 | Over the `test/orders` fixture of AC-9 with two `pre` clauses on `ready`, one `false` and one undefined (`self.ready()`), the clauses are conjoined in ascending name under short-circuit whatever their source order: with the undefined clause sorting first (`Aaa` undefined, `Zzz` false, in either source order) the application is not enabled and exactly one `ContractUndetermined` is recorded for `Aaa`, the false clause not being reached; with the false clause sorting first (`Aaa` false, `Zzz` undefined) none is recorded. On the dispatch path (`view_clauses`), over `ConfigVersion::size` with the same two clauses, a call of `size` gives the result of the clause that sorts first (undefined for `other`'s precondition when the undefined clause sorts first, undefined for `size`'s own precondition when the false clause does), with equal outcome and charges in both source orders. | Test (TC-472) |
+| FR-120-AC-16 | Over a model whose object type `Item` (population `items`, universe `{i1}`) declares the fields `id: UUID`, `at: Timestamp`, `price: Decimal[0, 1000; 0, 2]`, `length: Quantity<metre>`, `color: Color` (enum `red`, `blue`), `tag: Tag` (record `Tag { sku: Integer, note?: Text[0, 8] }`), `pair: Pair` (tuple `Pair(Boolean, Integer)`) and `shape: Shape` (union with nullary member `none`), an initial state whose `i1` holds `00112233-4455-6677-8899-aabbccddeeff`, Timestamp `-1`, `1.50`, `1.50` metre, `red`, `Tag { sku: 7 }`, `Pair(true, -3)` and `none` is admitted, and its state key writes each field as the QSpec FR-181-AC-19 bytes of that family: `{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}`, `{"nanoseconds":"-1","type":"timestamp"}`, `{"coefficient":"150","scale":"2","type":"decimal"}`, and for `color`, `tag`, `pair` and `shape` FR-181-AC-19's enum, record, tuple and nullary-union bytes with each `name` the declaration's checked node id in 64 lowercase hex; `length` writes `{"denominator":"2","numerator":"3","type":"rational","unit":"<u>"}`, `<u>` the 64-hex digest of `metre`'s `UnitId`. Exploration of an operation `setPrice(p: Decimal[0, 1000; 0, 2])` from that state gives the transition argument for `1.50` as `{"coefficient":"150","scale":"2","type":"decimal"}` and a step effect whose `price` post value has the same bytes. No refusal is returned. | Test (TC-1195) |
+| FR-120-AC-17 | Over AC-16's model with the universe `{i1, i2}` and the fields `prices: Set<Decimal[0, 1000; 0, 2]>` and `times: Set<Timestamp>` added, a state holding `prices = {1.50}` and `times = {2, 10}` writes `prices` as `{"elements":[{"coefficient":"15","scale":"1","type":"decimal"}],"type":"set"}` while `price` keeps coefficient `150`, scale `2`, and writes `times` as `{"elements":[{"nanoseconds":"10","type":"timestamp"},{"nanoseconds":"2","type":"timestamp"}],"type":"set"}` (QSpec FR-181-AC-20). A field `members: Set<Reference<Item>>` holding the objects `i1` and `i2`, built in the order `i1, i2` and in the order `i2, i1`, gives two states with equal state keys, the set's reference triples ordered by their JCS bytes (QSpec FR-181-AC-21). | Test (TC-1195) |
+| FR-120-AC-18 | A state key, transition identity or step effect that would hold a value of a population type refuses `EncodingRefusal` naming the population-typed field, receiver, argument or result: `explore_model` returns `NotSimulated::KeyEncoding`, and `replay` of a trace through it returns `ReplayError::KeyEncoding`, each with `invalid_runtime_input`/`invalid-value`, and neither panics nor records a state for that value. | Test (TC-1195) |
 
 ## Dependencies
 
