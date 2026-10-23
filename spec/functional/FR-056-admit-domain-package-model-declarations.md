@@ -828,8 +828,9 @@ and an operation parameter or result that is one, SHALL refuse
 naming the member, before its value is read and before the missing- and
 unknown-member checks. In particular an FR-106 Decimal or Text value never
 fills a member typed by bare `ix://quire/native/Decimal` or
-`ix://quire/native/Text`; the Text value type of the package and a QSL
-source `Decimal` type are the slots those values fill.
+`ix://quire/native/Text`: the slots those values fill are a Text value type
+of the package and a QSL source `Decimal` or `Decimal[lo, hi; smin, smax;
+mode]` type (FR-106 "Decimal value").
 
 If a `typeRef` names an undeclared native name, then intake SHALL refuse it with
 `invalid_model_binding`/`malformed-declaration` at the member, naming the
