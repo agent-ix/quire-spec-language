@@ -43,3 +43,13 @@ Examined, clean:
 Mergeable after FND-001 (medium) are fixed or dispositioned by the lead.
 
 Conflicts with main: none (clean merge-tree). Clean with open #1360, #1365 and #1374 (ADR-026). Depends on QSpec PR 404 for FR-482, FR-419 and the grammar; merge 404 first or together.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix 9ec98d90. FR-248 now takes `claim: &ClaimTriple`, resolves it through FR-454's lookup, returns `clause-root-unresolved` and checks no evidence, settles `Failed` (new map row), and refuses `stale_dependency`/`content-mismatch` naming both identities. New FR-248-AC-5 and TC-703 step 5 cover the own triple, three bad triples and `CtlEdf`'s triple. FR-454 and AC-3 are reworded to match (identities, not node ids). |
+| FND-002 | fixed | AC-3 now fixes the fixture: tasks `a` (valid), `a` (valid), `z` (period 0 ms) report `duplicate-declaration` at the second `a`, then `invalid-task-set` at `z`. Hand-checked: the duplicate span precedes `z` in source order. |
+| FND-003 | fixed | `TaskSet.unit` is `Option<UnitId>`; an empty task set has no unit and a `response` claim over it keeps its bound's own unit; AC-3 adds `taskset Empty { }` with `response R on Empty.c <= 12 ms ...`: `invalid-task-set` naming `Empty`, `missing-name` at `c`, bound kept as `12 ms`. |
+
+Round 1 verdict at 9ec98d90: Mergeable, with or after QSpec #404 (006819eb). All three findings fixed, no new defect; FR-248-AC-5 is unique across open heads. Gate: exit 0, 19 warnings with QSPEC_DIR at the #404 head. Merge-tree with main is clean.
