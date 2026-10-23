@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-290
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-193
+    type: depends_on
 ---
 # FR-075: Compute lowering-target candidates from a registered-backend registry
 
@@ -23,9 +25,10 @@ relationships:
 QSL SHALL provide a registry, the layer-R `route` module's `Registry`
 (ADR-011 §6.1), that backends populate by registering a `BackendDescriptor`
 under one contract. QSL SHALL compute each requested item's candidate set
-from that registry's current contents, matching on capability kind and, for
-`probabilistic-satisfaction`, the item's exact evidence kind (ADR-012 §7.1,
-§7.2; FR-290, "Evidence kinds").
+from that registry's current contents, matching on capability kind, for
+`probabilistic-satisfaction` the item's exact evidence kind (ADR-012 §7.1,
+§7.2; FR-290, "Evidence kinds"), and for `temporal-satisfaction` the item's
+dynamics (QSpec FR-193 "Routing a hybrid item").
 
 Resolving a backend by `BackendId` in `route` is this requirement's work
 (#185). The native `lowering` module and its fixed `ProjectionTarget` catalog
@@ -39,8 +42,11 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
 
 - A `BackendDescriptor` per registration, with backend identity, provider
   origin, advertised `(Capability, mode)` pairs, retained
-  `domains` (present or absent), and the admitted `evidence_kinds` set
-  supplied when it advertises `probabilistic-satisfaction`. `mode` is
+  `domains` (present or absent), the admitted `evidence_kinds` set
+  supplied when it advertises `probabilistic-satisfaction`, and, when it
+  advertises `temporal-satisfaction`, its `dynamics` set, a nonempty subset
+  of {`discrete`, `hybrid`} that reads `{discrete}` when the descriptor
+  supplies none. `mode` is
   `bounded` or `unbounded` (ADR-012 §7.1). `BackendId` is the backend
   identity alone (ADR-013 O-19); origin, pairs, domains and evidence kinds
   are descriptor members, not identity components (FR-288-AC-5/6). The
@@ -59,7 +65,9 @@ whose members are the twelve labels FR-290 fixes and FR-057 admits into QSL.
   permanently unregistered (FR-075-AC-4).
 - A requested item's capability kind (the `Capability` value FR-057's
   admission recorded for it), its evidence kind when its capability is
-  `probabilistic-satisfaction`, and, optionally, a named `BackendId`.
+  `probabilistic-satisfaction`, its requirements (`hybrid-dynamics` for the
+  item of a hybrid claim, FR-447 "The provider request"; none otherwise),
+  and, optionally, a named `BackendId`.
 - For the request builder: a checked package's requirement records
   (FR-062-AC-13), optionally one named `BackendId` for the request, and
   optionally the request's evidence selection for probabilistic records:
@@ -100,19 +108,29 @@ negotiation stage to refuse as `absent-evidence-kind` or
 `unknown-evidence-kind` (FR-290, "Evidence kinds"); it SHALL NOT convert that
 invalid request into a supported candidate.
 
-For non-probabilistic items, matching remains by capability kind alone. In
-both cases, candidate matching SHALL NOT use mode, display name or registration
-order:
+For a `temporal-satisfaction` item, a registration SHALL be a candidate only
+when its `dynamics` set holds `hybrid` for an item carrying the
+`hybrid-dynamics` requirement, and `discrete` for an item carrying none
+(QSpec FR-193 "Routing a hybrid item", QSpec FR-290 "Candidate set and
+negotiation"). So EN-6, whose descriptor supplies no `dynamics`, is never a
+candidate for a hybrid item, a hybrid provider whose `dynamics` is `{hybrid}`
+is never a candidate for a temporal item without hybrid dynamics, and a
+registration with `{discrete, hybrid}` is a candidate for both. An item of
+any other kind carries no requirement, and its candidates do not read
+`dynamics`.
+
+For other items, matching remains by capability kind alone. In every case,
+candidate matching SHALL NOT use mode, display name or registration order. A
+registration *matches* an item when it advertises the item's capability kind
+and meets the evidence-kind and dynamics rules above:
 
 - When the request names a registered `BackendId`, the set SHALL contain that
-  backend only when its `advertises` set contains the matching capability and,
-  for a probabilistic item, the exact evidence kind; otherwise the set is empty.
+  backend only when it matches the item; otherwise the set is empty.
 - When the request names a `BackendId` the registry does not hold, the
   result SHALL be the unknown-backend marker carrying that identity, and
   SHALL NOT be reported as an empty candidate set.
 - When the request names no backend, the set SHALL be every registered
-  backend whose `advertises` set contains the matching capability and, for a
-  probabilistic item, the exact evidence kind.
+  backend that matches the item.
 
 Mode (`bounded`/`unbounded`) SHALL NOT affect which backends are candidates;
 comparing a candidate's advertised mode against the item's extent is
@@ -149,8 +167,11 @@ of a probabilistic item" when the request names both evidence kinds. Each `Requi
   `PathGuard` values returned by `RequirementRecord::path_condition()`;
 - for a `probabilistic-satisfaction` record, its evidence kind, by the
   rule of "Evidence kind of a probabilistic item" below;
+- its requirements: `hybrid-dynamics` for a `temporal-satisfaction` record
+  whose claim is a hybrid claim (FR-447), none for every other record;
 - its candidate outcome, `Registry::candidates(kind, evidence kind when
-  probabilistic, named backend)` by this requirement's candidate rules.
+  probabilistic, requirements, named backend)` by this requirement's
+  candidate rules.
 
 #### Evidence kind of a probabilistic item
 
@@ -275,6 +296,27 @@ require evidence-kind labels for admission. QSL SHALL preserve the accepted
 labels on the admitted descriptor for the registered backend contract; this
 requirement assigns no new evidence-kind vocabulary or alias.
 
+### Dynamics are checked at descriptor admission
+
+When a `BackendDescriptor` advertises `temporal-satisfaction` and supplies
+`dynamics`, `descriptor_from_manifest` (and `BackendDescriptor::new`) SHALL
+refuse the registration with `invalid_capability`/`invalid-dynamics`, keyed
+by the descriptor's `BackendId`, when the member is not a list
+(`not-a-list`), is empty (`empty`), holds a label other than `discrete` and
+`hybrid` (`unknown-label`), repeats a label (`duplicate-label`), or holds
+`hybrid` while the descriptor's `bounds` lack `max_solver_steps` or
+`max_solver_time` (`missing-bounds`, naming the first absent limit in that
+order), reporting the first defect in that order (QSpec FR-193 "Routing a
+hybrid item"). It SHALL judge `dynamics` after every advertised pair,
+`domains`, `fairness_kinds` and the evidence kinds, so a registration with an
+earlier defect refuses with the earlier cause, and SHALL ignore a `dynamics`
+supplied for a backend that advertises no `temporal-satisfaction`, so the
+descriptor holds none. The check SHALL finish before the descriptor is
+inserted into the registry; the refused descriptor contributes no
+registration, and any registration already held under that identity stands.
+An admitted descriptor SHALL keep its `dynamics` set, `{discrete}` when it
+supplied none.
+
 ### Reading a `backend` member
 
 A candidate's wire form is ADR-013 O-19's `backend` member, the backend
@@ -289,7 +331,7 @@ candidate.
 
 If a registration names a `BackendId` the registry already holds, the
 registry SHALL compare identity, provider origin, manifest digest, advertised
-pairs, retained `domains`, and the evidence-kind set. Two registrations that
+pairs, retained `domains`, the evidence-kind set and the `dynamics` set. Two registrations that
 differ only in their manifest digest are unequal and conflict (QSpec
 FR-290-AC-10, TC-282). A different identity is a different registry key and is
 not a duplicate-registration conflict:
@@ -359,6 +401,8 @@ were added.
 | FR-075-AC-16 | For `function f using v(a: Int[0, 9]): Int[0, 10] pure { a + 1 }`, the driver's IR call includes roots `[item.node(), conversion_context.node()]` (or the equivalent contextual entry point), with context paired to the item by request index and occurrence key. For RR-16, the driver makes this mapping independently for both items, which share the `+` node but have different request indices and conversion contexts: each item passes its own narrow context root, and neither context is swapped or selected by node key. In both vectors, the narrow is context only; it creates no additional requirement item, routed item or claim, and the routed claim remains the scalar application occurrence. A bare `lower([add])` call still returns the behavior specified by Contract IR and is not changed by this criterion. | Test (TC-449) |
 | FR-075-AC-17 | For every `CallRequirement` of FR-395 over fixture K, `items_from_requirements` over the package's records yields at the member's request index an item whose `occurrence()` equals the member's key. | Test (TC-1089) |
 | FR-075-AC-18 | Over a registry holding one registration advertising `probabilistic-satisfaction` with `{statistical}` (EN-4's manifest) and one with `{exact}` (EN-5's), and a package whose records in key order are FR-186's `P95` claim (index 0, record evidence kind `statistical`), FR-195's `FairTerminates` (index 1, record evidence kind `exact`) and a `value-validity` record (index 2): with no evidence selection the builder writes three items, `P95`'s naming `statistical` with candidates the EN-4 registration only and `FairTerminates`'s naming `exact` with candidates the EN-5 registration only; with the selection `exact` it writes three items, `P95`'s and `FairTerminates`'s each naming `exact` with candidates the EN-5 registration only, `statistical` never substituting; with both kinds it writes five items, indices 0 to 2 equal to the no-selection items, index 3 `P95`'s `exact` item (EN-5 only) and index 4 `FairTerminates`'s `statistical` item (EN-4 only), each with its record's occurrence key. The `value-validity` item is at index 2 and carries no evidence kind under every selection, and no written item settles `absent-evidence-kind` or `unknown-evidence-kind`. Each probabilistic item's unbounded domains are its record's, naming its claim, under every selection. | Test (TC-1163) |
+| FR-075-AC-19 | Over a registry holding EN-6's `qsl-model-check` registration, advertising `temporal-satisfaction` with no `dynamics`, and a fixture hybrid registration `hybrid-fixture` advertising it with `dynamics` `{hybrid}` and `bounds` `{max_solver_steps: 1000000, max_solver_time: 60}`, the item of FR-447's `SlowEnough`, carrying `hybrid-dynamics`, has the candidate set `[hybrid-fixture]`, and the item of a temporal clause over a model without hybrid dynamics `[qsl-model-check]`; with `hybrid-fixture`'s `dynamics` `{discrete, hybrid}` the second item's set is `[hybrid-fixture, qsl-model-check]`; with only `qsl-model-check` registered the hybrid item's set is empty; naming `qsl-model-check`, the hybrid item's set is empty; a `value-validity` item's set is unchanged by every `dynamics`. Two registries built from these registrations in either order compute equal sets. | Test (TC-193) |
+| FR-075-AC-20 | `descriptor_from_manifest` refuses a `temporal-satisfaction` descriptor whose `dynamics` is `[]`, `["hybrid", "hybrid"]`, `["continuous"]`, `"hybrid"`, or `["hybrid"]` with `bounds` lacking `max_solver_time`, with `invalid_capability`/`invalid-dynamics` keyed by `BackendId`, retaining `empty`, `duplicate-label`, `unknown-label`, `not-a-list` and `missing-bounds` naming `max_solver_time`, before insertion and leaving an earlier registration of that identity standing; one with a `fairness_kinds` defect as well refuses `invalid-fairness-kinds`; a `dynamics` on a descriptor advertising only `value-validity` is ignored and the descriptor is admitted holding none; a descriptor with no `dynamics` is admitted holding `{discrete}`. Two registrations of one identity differing only in `dynamics` conflict as FR-075-AC-4 states. | Test (TC-193) |
 
 ## Dependencies
 

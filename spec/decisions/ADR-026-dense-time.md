@@ -93,7 +93,7 @@ sibling drafts ADR-022 and ADR-024 likewise.
 | RU-4 | **A non-local time-lock reuses ADR-022's trap evidence.** `TimeLock` stays its own counterexample kind | TD-3, TV-1 |
 | RU-5 | **Stochastic delays are specified now, with statistical checking.** ADR-024's engine samples the delays. Exact probabilistic checking is the native engine EN-5, specified in ADR-028; over a timed model it covers probabilistic timed automata through digital clocks | §10, SS-7 |
 | RU-6 | **The engine is native.** A zone engine in Rust, EN-6, with zone certificates so a proof is checked without trusting the search. TChecker is a test oracle only; UPPAAL and nuXmv are excluded by their licences | §8, §8.1 |
-| RU-7 | **Hybrid dynamics go to QSpec FR-193's external solvers only.** The native engine stops at rate-1 clocks. A solver result is `proved` only where its method is sound, otherwise `inconclusive`, never `refuted`. A native hybrid engine is a research question | §13 |
+| RU-7 | **Hybrid dynamics go to QSpec FR-193's external solvers only.** The native engine stops at rate-1 clocks. A solver result is `proved` only where its method is sound for its outcome and its proof covers the claim, otherwise `inconclusive`; it is `refuted` only when QSL replays the solver's trace exactly (HY-2), never on the solver's word. QSL ships no built-in hybrid solver, and a native hybrid engine is a research question | §13 |
 | RU-8 | **Schedulability is a native closed-form analysis.** Fixed-priority response-time analysis, the EDF demand test and AMC mixed criticality. WCET is a stated premise of the claim with no provenance record. Undecidable preemptive task-automaton cases settle `unsupported` | §12 |
 | RU-9 | **Monitors run on integer ticks,** with sound rounding and memory bounded by a caller-set event rate. Kani proves monitor and evaluator agreement and tick arithmetic; elapsed-time and WCET obligations settle `unsupported` | §14 |
 
@@ -384,9 +384,9 @@ its RT-4 iterates are 6, 10 and 13, and 13 exceeds its deadline 12, so the claim
 
 | ID | Rule |
 | --- | --- |
-| HY-1 | **The line.** EN-6 checks clocks, the continuous variables whose rate is 1 everywhere, with clock drift stated by DC-4. Every variable with another rate, and every flow, belongs to QSpec FR-193's external solver contract. A model's continuous variables, flows, guards and resets are declared in the form QSpec FR-193 admits (OV-11), and CG negotiation routes the claim to a registered solver: Flow*, CORA, JuliaReach, SpaceEx, dReach and dReal, or KeYmaera X, each a back-end lowering item. With no candidate the claim settles `unsupported` (V-8). |
-| HY-2 | **Verdicts.** A solver result settles `proved` only where its method is sound for the claim: for example a dReal `unsat` for bounded unreachability, or a flowpipe enclosure computed with outward rounding. The verdict is V-1, basis `closed-scope`, `TerminalValue::Proved{basis: BoundedSolver{method, horizon, jumps}, certification: Uncertified}`, and holds for the claim within that time horizon and jump bound. Every other result, `δ-sat`, a flowpipe meeting the unsafe set, `unknown`, or a method without sound rounding, settles `inconclusive`, `SolverInconclusive` (V-6). A solver result settles `refuted` only when QSL replays its trace exactly, a point trace through modes with polynomial flows reproducing the violation (FR-450, QSpec FR-193 "Trace replay"); every other trace QSL replays statically and keeps on the `inconclusive` record. A stopped solver settles V-7. A solver QSL runs has no core certificate checker, so its `proved` carries `Uncertified` (ADR-018 PC-1). QSL decides whether a method is sound for its outcome from the method kind, by QSpec FR-193's classification, and reads no soundness claim the provider makes about itself. |
-| HY-3 | **Seam.** A native hybrid engine is a research question (References). It would be one more negotiated backend whose verdicts take HY-2's map, its refutations replayed as HY-2 states. |
+| HY-1 | **The line.** EN-6 checks clocks, the continuous variables whose rate is 1 everywhere, with clock drift stated by DC-4. Every variable with another rate, and every flow, belongs to QSpec FR-193's external solver contract. A model's continuous variables, flows, guards and resets are declared in the form QSpec FR-193 admits (OV-11), and CG negotiation routes the claim to a registered solver: Flow*, CORA, JuliaReach, SpaceEx, dReach and dReal, or KeYmaera X, each a back-end lowering item. The claim's item carries the hybrid-dynamics requirement, and only a backend whose descriptor `dynamics` holds `hybrid` is its candidate (QSpec FR-193 "Routing a hybrid item", FR-075), so EN-6 is never one. With no candidate the claim settles `unsupported` (V-8). |
+| HY-2 | **Verdicts.** A solver result settles `proved` only where its method kind is sound for its outcome by QSpec FR-193's closed method table and its proof covers the claim (QSpec FR-193 "Proof coverage"): for example a dReal `unsat` for bounded unreachability, or a flowpipe enclosure computed with outward rounding, whose horizon reaches the claim's horizon in seconds, or whose jump bound reaches it in positions under `model-steps`. The verdict is V-1, basis `closed-scope`, `TerminalValue::Proved{basis: BoundedSolver{method, horizon, jumps}, certification: Uncertified}`, and holds for the claim within that time horizon and jump bound; an inductive enclosure settles `Proved{basis: InductiveSolver{method}, certification: Uncertified}` and holds at every time and jump count, the one proof of a claim with no horizon. A sound bounded proof that does not cover the claim settles `inconclusive`, `InsufficientHorizon{horizon, jumps}`. Every other result, `δ-sat`, a flowpipe meeting the unsafe set, `unknown`, or a method without sound rounding, settles `inconclusive`, `SolverInconclusive` (V-6). A solver result settles `refuted` only when QSL replays its trace exactly, a point trace through modes with polynomial flows reproducing the violation (FR-450, QSpec FR-193 "Trace replay"); every other trace QSL replays statically and keeps on the `inconclusive` record. A stopped solver settles V-7. A solver QSL runs has no core certificate checker, so its `proved` carries `Uncertified` (ADR-018 PC-1). QSL decides whether a method is sound for its outcome from the method kind, by QSpec FR-193's classification, and reads no soundness claim the provider makes about itself. |
+| HY-3 | **Seam.** QSL has no built-in hybrid solver: every hybrid solver is a registered backend that publishes its own solver budget defaults in its descriptor `bounds` (FR-250). A native hybrid engine is a research question (References). It would be one more negotiated backend whose verdicts take HY-2's map, its refutations replayed as HY-2 states. |
 
 ### 14. Embedded monitors and Kani obligations
 
@@ -475,8 +475,9 @@ interpreter in RT. The driver and IR admit the complete plan before RT's
   by a certificate checker that does not trust the search.
 - Schedulability claims over task sets get exact closed-form verdicts whose
   evidence is recomputed before they settle, conditional on stated WCETs.
-- Continuous robot dynamics are proved only by sound external solvers and
-  are never refuted by them.
+- Continuous robot dynamics are proved only by sound external solvers whose
+  proofs cover the claim, and are refuted only when QSL replays a solver's
+  trace exactly.
 - Embedded monitors run on integer ticks with sound rounding and statically
   sized buffers, and Kani checks their agreement with the evaluator.
 - Exact probabilistic checking over timed models goes to EN-5 (ADR-028), and
@@ -525,8 +526,10 @@ Each amended text carries an "Amended by ADR-026" note.
   carries a certificate the checker verifies (CF-4).
 - **WCET with a provenance record.** Not taken (RU-8). WCET is a premise of
   the claim, and the verdict holds for the stated values.
-- **Refutation by a hybrid solver.** Not taken (RU-7). No solver witness
-  replays exactly.
+- **Refutation on a hybrid solver's word.** Not taken (RU-7). A solver's
+  `δ-sat` or a flowpipe meeting the unsafe set is an enclosure, not a
+  witness, so it refutes nothing until QSL replays its trace exactly
+  (HY-2, FR-450).
 - **Floating-point delay sampling.** Not taken. Every sampled delay is an
   exact rational from a recorded grid (SS-2), so a sample replays exactly.
 - **Resource-only monitor plan plus a separately supplied checked clause.**

@@ -59,9 +59,11 @@ refuted, with its trap evidence.
 //   ZoneCertified,
 //   ClosedForm { analysis: ClosedFormAnalysis },          // FR-248
 //   BoundedSolver { method: SolverMethod, horizon: ExactRational, jumps: u64 }, // FR-250
+//   InductiveSolver { method: SolverMethod },                                // FR-250
 // InconclusiveCause gains:
 //   NoAdmittedBehaviour, LassoNotConcretized, CertificateRejected,
 //   SufficientTestFailed, SolverInconclusive { trace: Option<HybridTrace> }, // FR-250
+//   InsufficientHorizon { horizon: ExactRational, jumps: u64 },             // FR-250
 // UnsupportedCause gains: PunctualInterval, StopwatchRequired
 // CounterexampleKind gains: TimeLock
 ```
@@ -88,8 +90,9 @@ refuted, with its trap evidence.
   travel with the outcome from S6c over ADR-018's E11, as a counterexample
   does.
 - A `Violated` outcome SHALL settle `refuted` only through its replay.
-- `TerminalValue::category` SHALL map `ZoneCertified`, `ClosedForm` and
-  `BoundedSolver` to success.
+- `TerminalValue::category` SHALL map `ZoneCertified`, `ClosedForm`,
+  `BoundedSolver` and `InductiveSolver` to success, and `InsufficientHorizon`
+  to inconclusive.
 - A counterexample's length SHALL be its number of discrete steps, so V-5's
   definition is unchanged.
 - The record SHALL carry the method: `zone-certified`,
