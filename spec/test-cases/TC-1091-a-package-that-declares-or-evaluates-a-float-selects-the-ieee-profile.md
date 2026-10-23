@@ -88,8 +88,9 @@ FR-397-AC-8 and FR-397-AC-10 to FR-397-AC-22, FR-091-AC-48 and FR-091-AC-49
 12. The three exact-source conversions lower to `from_exact`, the two width
     conversions to `to_float32` and `to_float64`; every vector gives the listed
     bits or the listed refusal.
-13. The float-to-exact conversions and the same-width mode change refuse
-    `ill_typed`/`type-mismatch`; the identity conversion builds no node; the
+13. The float-to-exact conversions and the refused operands refuse
+    `ill_typed`/`type-mismatch`; the identity conversion and the same-width
+    mode change build no node, and the latter gives the operand's exact bits; the
     `to_rational` vectors give `Undefined`, the rational 0 and the
     `ieee_rational_out_of_domain` refusal.
 14. Each package selects the `ieee_profile` row once and its IEEE node carries

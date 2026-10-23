@@ -30,8 +30,10 @@ FR-091-AC-58 and FR-093-AC-39 to FR-093-AC-42.
    `compile_admitted`; read the literal nodes and the `quire.op.decimal.add`
    node; run `k` with no arguments and `add` with a parameter holding
    coefficient 100 and scale 2.
-4. Check each ambiguous, mismatched and out-of-range constructor of
-   FR-093-AC-40, and the oversize coefficient.
+4. Check each ambiguous, mismatched and non-member constructor of
+   FR-093-AC-40, the constructors that are members by value although their
+   written coefficient or scale lies outside the type's bounds, and the
+   oversize coefficient.
 5. Compile and run the divisions of FR-093-AC-41.
 6. Compile and run the conversions of FR-093-AC-42.
 
@@ -46,7 +48,9 @@ FR-091-AC-58 and FR-093-AC-39 to FR-093-AC-42.
    and the two spellings of one magnitude are two; `add` evaluates the
    parameter 1.00 plus 1.25 to coefficient 225 and scale 2; `k` evaluates to
    coefficient 125 and scale 2; the `convert` of a constructor builds no node.
-4. Each constructor refuses as FR-093-AC-40 lists.
+4. Each ambiguous, mismatched, non-member and oversize constructor refuses as
+   FR-093-AC-40 lists; each member by value checks and its literal node keeps
+   the value as written.
 5. `x / decimal(4, 0)` is one `quire.op.decimal.div` node and evaluates to
    coefficient 150 and scale 2; the zero constructors and the parameter
    divisor refuse `undefined_expression`/`unproved-nonzero`.
