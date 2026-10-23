@@ -83,9 +83,4 @@ Round 1, at head 7dc7e45d (fix diff checked against the original review head).
 | FND-002 | fixed | fixed; after: - `Ra` SHALL serialize its component, FR-223's graph and FR-224's race summary as the state key's memory member (FR-229), with each view's race Booleans as the view's `race` member (QSpec FR-438), and SHALL serialize the view each in-flight `send` carries as its queue entry's `view` member (QSpec FR… |
 | FND-003 | fixed | fixed; after: an RMW reads as such a load and writes as such a store, its written value's map also joining the one it read, and decides its write part as `Ra` does; |
 | FND-004 | fixed | fixed; after: \| MS-5 \| **State-space cost.** Under `tso`, a thread `b` that may store to `s_b` shared locations over value domains of size at most `d` has at most `Σ_{k=0}^{B} (s_b · d)^k` buffer contents with bound `B` (MB-2). Under `ra`, a location has at most `M` live messages (MB-2), each with a value and a… |
-
-Round 2 (author).
-
-| FND | outcome | reason |
-| --- | --- | --- |
-| FND-005 | fixed | The RMW now has the precondition `x.v = 1`, so it is enabled only when it reads `a`'s store (QSpec FR-435-AC-5) and no path reads the initial value. With `acquire` the item is `proved` under both models. With `relaxed`, the RMW against `a`'s load is the only race, with `earlier` set to `a`'s load and `later` set to the RMW. QSpec FR-438-AC-8 and DR-13 and QSL FR-224-AC-7 and TC-669 step 7 all say the same. |
+| FND-005 | fixed | round 2 at 21aa5525; fixed; after: A protocol whose thread `a` loads `x` non-atomically and then stores `x := 1` with `release`, and whose thread `b` runs `fetch_add(1)` on `x` with `ordering acquire` and the precondition `x.v = 1`, so that it is enabled only when it reads `a`'s store, settles its `RaceFreedom` item `proved` under `r… |
