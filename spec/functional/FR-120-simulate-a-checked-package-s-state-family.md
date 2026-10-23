@@ -369,13 +369,11 @@ defines it (QSpec FR-151-AC-17 to AC-19, TC-196 D09 to D11): `own(m)` and
 ascending clause name (UTF-8 bytes) under FR-006's short-circuit, so an
 undefined clause that sorts before a false one makes the precondition
 undefined and the reverse order makes it `false`. The order does not depend on
-source position (FR-120-AC-15). A QSL package is compiled from one source
-unit: FR-278's composition runs over one source, and FR-098 refuses a package
-reference whose `sources` names other than one. A member's own clauses are
-therefore one unit's clauses, and no link order among source units exists.
-QSL does not link several source units into one package, so the one-unit case
-is QSL's whole conformance to QSpec FR-151-AC-19 and TC-196 D10, and their
-split-unit variant has no QSL input (FR-120-AC-19). The dispatch path conjoins the own
+source position, source unit or link order: a member's own clauses are
+gathered from every source unit of the package (FR-480) and conjoined in
+name order alone (FR-120-AC-15 for one unit, FR-120-AC-19 for D10's clauses
+split across two units in both link orders, FR-120-AC-20 for D10's
+`absent-key` form). The dispatch path conjoins the own
 clauses through `view_clauses` (`dispatch_link.rs`) and disjoins the result
 with the redefined member's through `effective_terms`
 (`checked_dispatch.rs`). On the spine every operation record's `redefines` is
@@ -582,7 +580,8 @@ identity text of operation `op`.
 | FR-120-AC-13 | With `spawn()` over a population whose universe has 30 unused keys and each created object's fields ranging over `Int[0, 2]`, `Int[0, 1]` and `Option<Reference<Counter>>`, so the candidate product exceeds 10^9, and `max_candidates` 10, exploration returns `Outcome::Stopped` with `resource_exhausted`/`insufficient-next-charge` after generating at most 11 candidates, and does not allocate the product. | Test (TC-472) |
 | FR-120-AC-14 | `ModelSystem::over_model` over a model identity that the refinement unit does not select (`example/not-selected`) refuses `invalid_runtime_input`/`wrong-role-mapping`; over each of the unit's two selected models it returns a system that reports that model. | Test (TC-1086) |
 | FR-120-AC-15 | Over the `test/orders` fixture of AC-9 with two `pre` clauses on `ready`, one `false` and one undefined (`self.ready()`), the clauses are conjoined in ascending name under short-circuit whatever their source order: with the undefined clause sorting first (`Aaa` undefined, `Zzz` false, in either source order) the application is not enabled and exactly one `ContractUndetermined` is recorded for `Aaa`, the false clause not being reached; with the false clause sorting first (`Aaa` false, `Zzz` undefined) none is recorded. On the dispatch path (`view_clauses`), over `ConfigVersion::size` with the same two clauses, a call of `size` gives the result of the clause that sorts first (undefined for `other`'s precondition when the undefined clause sorts first, undefined for `size`'s own precondition when the false clause does), with equal outcome and charges in both source orders. | Test (TC-472) |
-| FR-120-AC-19 | QSpec TC-196 D10's two `B/size` clause orders, declared in one unit, give D10's one-unit results (AC-15). A replay request whose package reference's `sources` names two source units, D10's two `B/size` clauses split between them, refuses before any recompile as FR-098 refuses a package reference that names other than one source (FR-098-AC-1), in both orders of the two sources, and settles no result. | Test (TC-472) |
+| FR-120-AC-19 | QSpec TC-196 D10's `B/size` clauses split across two linked source units (FR-480-AC-1), in both link orders and with either clause in either unit, give D10's one-unit results, with equal outcome and charges: `view_clauses` and the expansion read the member's own clauses from both units in ascending clause name. | Test (TC-472) |
+| FR-120-AC-20 | D10's `absent-key` form: with `pre PB1 using V on M::B::size { (lookup<M::A>(M::PX, self) absent undefined) = self }` and `pre PB2 using V on M::B::size { false }` over a closed population `PX` with no runtime members, a call of `size` for `d1` is `undefined` with reason `absent-key` after `dispatch.select` and `PB1`'s charges, with no `function.call`, and `PB2` and `PA` are not evaluated. With the two bodies' names swapped it is `undefined` with reason `precondition-false` after the false clause's and then `PA`'s charges, the lookup clause neither evaluated nor charged. | Test (TC-472) |
 
 ## Dependencies
 
@@ -611,7 +610,3 @@ identity text of operation `op`.
   semantics FR-120 uses, through `population::decide_frame`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
-
-## Remaining work
-
-- Remaining work: QSL-939. `absent-key` form: AC-15 uses a nested call whose own precondition is `false` (reason `precondition-false`) as the undefined clause. D10's `lookup` of an absent key (reason `absent-key`) is not built; the ordering and short-circuit it checks do not depend on the reason.

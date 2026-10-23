@@ -35,7 +35,7 @@ relationships:
 QSL SHALL provide the replay executor entry, `qsl_replay::replay`, as the
 layer-6 `replay` facade's public API (ADR-013 O-26, C-13, TK-01; ADR-011
 §2.1 E9, §6.1). It takes an FR-071 replay request. It recompiles the proved
-package's one source unit through the spine (S1 to S4, the same
+package's source units, one or more (FR-480), through the spine (S1 to S4, the same
 the FR-278 composition the CLI `compile` uses, FR-027) from the
 request's digest-addressed byte provision, against the dependency input the
 package reference's `dependencies` entries name (ADR-015 D-4). It requires
@@ -102,13 +102,15 @@ list.
   `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value`
   at `/package/dependencies`), before it checks any source count or builds
   any dependency input.
-- The package reference's `sources` SHALL name exactly one
-  `quire.source.bytes/v1` source, the proved package's, and each of its
-  `dependencies` entries (QSpec FR-323) SHALL name exactly one such source,
-  that dependency's. The executor recompiles each source under its four
-  FR-001 labels. A `sources` list or an entry naming a definition document,
-  or other than one source, refuses: the recompile reads no definition
-  document, and each package compiles from one unit.
+- The package reference's `sources` SHALL name the proved package's source
+  units, one or more `quire.source.bytes/v1` sources in FR-480's canonical
+  unit order, and each of its `dependencies` entries (QSpec FR-323) SHALL
+  name that dependency's source units the same way. The executor recompiles
+  each list as one unit list (FR-480), each source under its four FR-001
+  labels. A `sources` list or an entry that is empty, names a definition
+  document, repeats one (authority, identity) or is not in canonical unit
+  order refuses before any recompile, `invalid_package`/`invalid-value` at
+  that list's pointer: the recompile reads no definition document.
 - The executor SHALL read the optional `refinement_internals` value of the
   package reference, at `/package/refinement_internals`, and of each
   `dependencies` entry, at `/package/dependencies/<n>/refinement_internals`,
@@ -547,7 +549,7 @@ predicate claim (ADR-031 SW-7).
 
 - Each ADR-013 O-26 refusal SHALL be a typed `ReplayRefusal` variant with no
   partial result: request decode refusals (FR-071), a limit above the
-  reader limit, a source reference that is not one source unit, a
+  reader limit, a `sources` list that is not a unit list in canonical order (FR-480), a
   `dependencies` entry whose `package_id` differs from the recompiled
   closure's selection of its identity (`DependencyIdentityMismatch`), a
   `dependencies` list that is not strictly ascending or holds an entry the
@@ -574,7 +576,7 @@ predicate claim (ADR-031 SW-7).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-098-AC-1 | A request whose byte provision carries its one source and, under their `sha256-jcs` digests, the domain packages the source selects recompiles from those bytes alone, keeps its `package_id`, and replays. A package reference naming a definition document or two sources refuses before any recompile. | Test (TC-444) |
+| FR-098-AC-1 | A request whose byte provision carries its one source and, under their `sha256-jcs` digests, the domain packages the source selects recompiles from those bytes alone, keeps its `package_id`, and replays. A package reference naming a definition document refuses before any recompile; one naming a package's two source units in canonical unit order recompiles them as one unit list and replays (FR-480-AC-7). | Test (TC-444) |
 | FR-098-AC-2 | The selection resolves by `QualifiedName` in the recompiled package; `Input` assignments and `Witness` entries join the function's parameters by parameter node id, in declared parameter order (`Input` assignments in any order; transcript entries in FR-070's ascending node-id order), and a Boolean parameter takes a witness entry `0` or `1` and an `Input` assignment's `WitnessValue::Boolean` (an `Input` `WitnessValue::Integer` for it refuses `WrongValueKind`); the call runs through S6a, and an agreeing replay settles `reproduced-without-witness` (`Input`) or `reproduced-with-evaluated-witness` (`Witness`) with no QSpec FR-351 record, since a function call's result has no decisive occurrence (ADR-031 SW-7), carrying the call's charges. | Test (TC-444) |
 | FR-098-AC-3 | A meaning-affecting source edit refuses `stale_dependency`/`content-mismatch` by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
 | FR-098-AC-4 | Each refusal in Behavior -- a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
