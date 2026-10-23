@@ -17,10 +17,6 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-023
-    type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-028
-    type: traces_to
   - target: ix://agent-ix/quire-specification/FR-301
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-267
@@ -36,9 +32,8 @@ spine (S1 to S4, the same `spine::compile` CLI `compile` and FR-100 use),
 selects one state clause, or one Boolean function run as a claim, by name,
 admits the supplied observations (FR-106), evaluates through S6a (FR-107 or
 `CheckedPackage::call`) and returns one `ClauseRunReport`: a typed
-disposition, the compiled `package_id` and the usage. It is the spine replacement
-for native-run/1 clause execution (ADR-011 §5, the paragraph that says it has
-no spine equivalent before M-6c) and for FR-023's in-process `execute`.
+disposition, the compiled `package_id` and the usage. It is the one
+clause execution path (ADR-011 §5).
 
 FR-100 owns the spine run's typed public argument binding and S6a outcome
 mapping. This requirement reuses their applicable rules and adds observations
@@ -108,8 +103,7 @@ binding receipt when CG consumes the serialized result.
   not supplied) and SHALL admit and evaluate nothing.
 - If the unit is an I3 extracted source whose declared language is not
   `ix:native`, then the entry SHALL report stage `compile`, category
-  `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing. This is the
-  refusal the CLI's extracted-clause join gives the same fence.
+  `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing.
 - If an expected `package_id` is given and the recompiled one differs, then
   the entry SHALL report stage `compile`, category `refusal`,
   `stale_dependency`, naming both identities, with no admission or
@@ -221,4 +215,4 @@ binding receipt when CG consumes the serialized result.
   [FR-312](FR-312-read-a-clause-run-request-and-run-it.md)'s: `run` and the
   driver read it with `read_clause_run_request` and call `run_clause`. It
   lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
-  ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
+  (ADR-031 R-1).

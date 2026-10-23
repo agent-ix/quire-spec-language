@@ -44,7 +44,6 @@ These are new repositories. Missing formal plans, TC records, suites, and matric
 | [FR-007](../functional/FR-007-validate-runtime-inputs.md) | enablement | Provides a shared checked representation/boundary consumed by downstream behavior. |
 | [FR-008](../functional/FR-008-evaluate-state-reference.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [FR-010](../functional/FR-010-report-native-outcomes.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
-| [FR-011](../functional/FR-011-integrate-opaque-extraction.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [NFR-001](../non-functional/NFR-001-bound-syntax-work.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [NFR-002](../non-functional/NFR-002-reproduce-native-builds.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [NFR-003](../non-functional/NFR-003-preserve-uncertain-outcomes.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
@@ -68,8 +67,6 @@ The following is the reviewer's proposed logical ordering, derived from the requ
 | FR-007 | FR-008 | Reference evaluation consumes validated runtime inputs. |
 | FR-006 | FR-009 | Qualified lowering requires a typed admitted clause. |
 | FR-008 | FR-009 | The lowering parity acceptance requires reference results; implementation of an internal lowerer can be sliced earlier. |
-| FR-002 | FR-011 | The extraction adapter sends opaque bodies to the native parser. |
-| FR-004 | FR-011 | The adapter acceptance requires verified original-source correspondence. |
 
 ## Dependency graph
 
@@ -85,7 +82,6 @@ graph TD
   FR-008["FR-008"]
   FR-009["FR-009"]
   FR-010["FR-010"]
-  FR-011["FR-011"]
   NFR-001["NFR-001"]
   NFR-002["NFR-002"]
   NFR-003["NFR-003"]
@@ -102,15 +98,13 @@ graph TD
   FR-007 --> FR-008
   FR-006 --> FR-009
   FR-008 --> FR-009
-  FR-002 --> FR-011
-  FR-004 --> FR-011
 ```
 
 ## Topological order
 
 1. FR-001, NFR-001, NFR-002, NFR-003, NFR-004, StR-001.
 2. FR-002, FR-004.
-3. FR-003, FR-005, FR-010, FR-011.
+3. FR-003, FR-005, FR-010.
 4. FR-006, FR-007.
 5. FR-008.
 6. FR-009.
