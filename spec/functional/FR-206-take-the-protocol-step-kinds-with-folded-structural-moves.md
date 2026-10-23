@@ -83,6 +83,20 @@ add states that no behaviour distinguishes.
   thread at or below it, and SHALL settle and remove every parallel
   instance those threads forked; none of them takes a further step
   (ADR-027 ST-7).
+- At a state where the owning thread rests at the join of a
+  `join predicate(f)`, the protocol system SHALL evaluate `f` through the one
+  value evaluator that runs a checked function (FR-262), with one argument per
+  distinct joined label in ascending UTF-8 byte order, `true` for a
+  `completed` branch thread and `false` for a `running` one (FR-218,
+  Predicate joins). The join is enabled when the result is `true` and the
+  gate holds, and waits when it is `false`. A result that is the undefined
+  value SHALL end the model check with a violation with cause
+  `UndefinedEvaluation{where, cause}` (QSpec FR-426), `where` the join's
+  position, which FR-127 settles as refuted; it is never read as `false` or
+  as a disabled step. An evaluation that a resource limit stops SHALL stop
+  the exploration with that limit's refusal, as any other evaluation the
+  protocol system runs. The predicate's value is not stored in the state, so
+  it is recomputed at every state where the join is reached.
 - A thread whose rest point has no enabled step SHALL wait, and a
   `cancelled` thread SHALL take no step. The protocol system SHALL leave no
   thread between two positions inside an attempt.
@@ -101,6 +115,7 @@ add states that no behaviour distinguishes.
 | FR-206-AC-8 | A thread resting at `fence F ordering seq_cst;` has one `fence` step, which changes no model state and moves the thread to its next sibling; under `sc` it is enabled in every state. Under `tso` the `seq_cst` fence is enabled exactly when its thread's buffer is empty, and an `acquire` fence is enabled in every state. Two branches that each hold a fence reach no deadlock under `sc` that the same protocol without the fences does not reach. | Test (TC-651) |
 | FR-206-AC-9 | `parallel Outer { branch a attempt Fast; branch b sequence { parallel Inner { branch x attempt X1; branch y attempt Y1 } join any [x, y] outstanding continue; attempt After } } join any [a] outstanding cancel`, with every attempt always enabled: in a state where `a` has completed, `b` rests at `Inner`'s join and `x` and `y` are both `running`, the `join(Outer)` step makes `b`, `x` and `y` `cancelled`, settles and removes `Inner`'s instance, and in no later state does any of them take a step; `Y1` and `After` are enabled in no state after that join. | Test (TC-651) |
 | FR-206-AC-10 | `run sequence Main { parallel P { branch left attempt A as (a); branch right attempt B } join all; effect E of Main::P::left::A as (e) { true } }`, with `A` and `B` always enabled: at the state after `join(P)`, `event(E)` is enabled and the root thread's environment holds `A`'s binder, added by the join. | Test (TC-651) |
+| FR-206-AC-11 | Three branches `a`, `b` and `c`, each one always-enabled attempt, joined `join predicate(f) [c, a] outstanding cancel` with `function f using v(x: Boolean, y: Boolean): Boolean pure { x and not y }`: `f` receives `a`'s disposition first and `c`'s second, so `join(P)` is enabled in a state where `a` has completed and `c` is `running`, whatever `b` is, is not enabled where only `c` has completed, and is not enabled where both have; its step makes every branch thread still `running` `cancelled`. The same protocol written `[a, c]` reaches the same states and the same transitions. | Test (TC-651) |
 
 ## Dependencies
 
@@ -109,7 +124,9 @@ add states that no behaviour distinguishes.
 - [FR-120](FR-120-simulate-a-checked-package-s-state-family.md) (the one
   application rule), [FR-114](FR-114-bind-a-protocol-attempt-to-its-operation-frame.md)
   (an attempt's operation and contracts), FR-205 (state), FR-215 (memory
-  model seam), FR-218 (checked constructs).
+  model seam), FR-218 (checked constructs), FR-262 (the evaluator a predicate
+  join's function runs on), FR-127 (the refuted settlement of an undefined
+  evaluation).
 - QSpec owns the step kinds, their enabledness and effects, folding and
   atomicity, and the untimed reading of `await` (ADR-027 QS-2): QSpec
   FR-426, over FR-052, FR-053, FR-170 and FR-171.

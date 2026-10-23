@@ -13,7 +13,7 @@ relationships:
 Verify `replay_model_graph` on each `GraphEvidence` arm: reproduction,
 disagreement, refusal, a stopped trap replay, and determinism.
 
-Scope: FR-170-AC-1 to FR-170-AC-4 and FR-170-AC-6.
+Scope: FR-170-AC-1 to FR-170-AC-4, FR-170-AC-6 and FR-170-AC-8.
 
 ## Test Procedure
 
@@ -33,6 +33,8 @@ units, and the edited envelopes FR-170-AC-3 and AC-4 name.
    trap with `max_states` 2; replay one envelope twice.
 5. Replay FR-170-AC-6's lasso witness, its broken variant and a product
    trap.
+6. Replay `CanStillWin`'s trap at `Lost` and settle it; replay the same
+   trap with its stem ending at `Mid`.
 
 Tag the tests `#[trace("TC-595", "FR-170-AC-n")]`.
 
@@ -46,3 +48,7 @@ Tag the tests `#[trace("TC-595", "FR-170-AC-n")]`.
   `max_states` and 2; equal results.
 - Step 5: the lasso replays its loop; the moved loop entry refuses; the
   product trap goes to FR-181's replay.
+- Step 6: the first explores `{Lost}`, reports node count 1, reproduces and
+  settles `refuted`, `closed-scope` with no certificate checked; the second
+  settles `inconclusive`, `Verdicts` naming `Won`'s state-key digest as the
+  first target node.
