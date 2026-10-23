@@ -1181,6 +1181,18 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Failed)
     }
 
+    /// FR-281: a `declined` record carrying the refusal's full FR-272
+    /// diagnostic (code and cause) beside its `DeclineCode`.
+    pub fn declined_with(
+        request_index: RequestIndex,
+        backend: BackendId,
+        cause: ProofRefusalCause,
+        code: DeclineCode,
+        diagnostic: CatalogCode,
+    ) -> Self {
+        Self::declined(request_index, backend, cause, code).with_diagnostic(Some(diagnostic))
+    }
+
     /// FR-281: a `failed` record carrying the refusal's FR-272 diagnostic.
     pub fn failed_with(
         request_index: RequestIndex,

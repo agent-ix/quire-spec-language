@@ -246,8 +246,9 @@ pub(crate) enum EngineReport {
 
 /// The FR-281 "Engine refusals" table's rows.
 pub(crate) enum Refusal {
-    /// `declined`, with the refusal's cause and code.
-    Declined(ProofRefusalCause, DeclineCode),
+    /// `declined`, with the refusal's cause, `DeclineCode` and full
+    /// diagnostic.
+    Declined(ProofRefusalCause, DeclineCode, CatalogCode),
     /// An unbounded extent: `unsupported` with `unbounded-extent`.
     RequiresBound,
     /// EN-4 `NotStatistical`: `invalid-request` with `not-statistical`.
@@ -476,6 +477,11 @@ fn terminal(record: TerminalRecord) -> Settlement {
     Settlement::Terminal(Box::new(record))
 }
 
+/// The record names `engine`, the one `Engines` holds for the item's
+/// candidate. An item's adapter and that candidate agree by construction
+/// (`AnalyzeItem::new` takes the adapter's own `BackendId`); a future
+/// `Engine` trait must report the backend from the engine that ran, not from
+/// the item.
 fn settle(
     index: RequestIndex,
     kind: Capability,
@@ -512,8 +518,10 @@ fn settle(
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
-        EngineReport::Refused(Refusal::Declined(cause, code)) => record(
-            terminal(TerminalRecord::declined(index, backend, cause, code)),
+        EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
+            terminal(TerminalRecord::declined_with(
+                index, backend, cause, code, diagnostic,
+            )),
             None,
         ),
         EngineReport::Refused(Refusal::Failed(code)) => record(
@@ -544,6 +552,7 @@ fn settle(
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
     use qsl_foundation::bound::DomainKind;
     use qsl_route::{descriptor_from_manifest, ManifestDigest};
 
@@ -593,6 +602,7 @@ mod tests {
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as
     /// `duplicate-backend` and the set still runs the first.
+    #[trace("TC-762", "FR-281-AC-10")]
     #[test]
     fn a_duplicate_backend_is_refused_and_the_set_is_unchanged() {
         let mut engines = Engines::default();
@@ -617,6 +627,7 @@ mod tests {
     /// FR-281-AC-10: a `Supported` candidate that does not advertise the
     /// item's kind and mode settles `inconsistent-candidates` and does not
     /// run; one the set does not hold settles `unknown-backend`.
+    #[trace("TC-762", "FR-281-AC-10")]
     #[test]
     fn an_inconsistent_or_unknown_candidate_settles_invalid_request_and_runs_nothing() {
         let mut engines = Engines::default();
@@ -658,6 +669,7 @@ mod tests {
     /// FR-281-AC-8: an item settled `InvalidRequest` (an ambiguous route, for
     /// one) keeps its caller-given diagnostic and runs no engine; its
     /// neighbours still settle.
+    #[trace("TC-762", "FR-281-AC-8")]
     #[test]
     fn a_disposition_settles_its_item_alone_and_runs_nothing() {
         let mut engines = Engines::default();
@@ -695,6 +707,7 @@ mod tests {
     /// FR-281-AC-11: each engine refusal row settles its record naming the
     /// engine; an unbounded extent carries QSpec FR-272's payload (kind,
     /// candidate, advertised modes).
+    #[trace("TC-762", "FR-281-AC-11")]
     #[test]
     fn engine_refusals_settle_by_the_refusal_table() {
         let mut engines = Engines::default();
@@ -744,6 +757,7 @@ mod tests {
             Refusal::Declined(
                 ProofRefusalCause::IncompleteInput,
                 DeclineCode::Qsl(qsl_foundation::Code::UnavailableObservation),
+                CatalogCode::new("unavailable_observation", "missing-required-artifact"),
             )
         });
         assert!(matches!(
