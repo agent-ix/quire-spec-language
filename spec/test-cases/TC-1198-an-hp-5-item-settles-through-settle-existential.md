@@ -45,7 +45,8 @@ Tag the tests `#[trace("TC-1198", "FR-169-AC-13")]`,
 ## Expected Results
 
 - Step 1: `proved`, `decisive-witness`, `Proved{basis: Witness{[Explored,
-  …]}, certification: Certified}`, success, one source per initial state.
+  Explored]}, certification: Certified}`, success, one `Explored` for each of
+  the vault's two initial snapshots.
 - Step 2: `inconclusive`, `CertificateRejected{SuccessorMissing, at}` at the
   member whose successor is missing; `inconclusive`,
   `StaleDependency{requested, recompiled}` with `requested` the
