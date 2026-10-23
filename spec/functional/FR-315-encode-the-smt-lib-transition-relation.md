@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-128
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-096
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-023
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-172
@@ -126,6 +128,31 @@ table; `refinement-any-row`, `refinement-open-argument` and
 `instance-binding` means a malformed `instance` of a hyper request only;
 the single-subject check of an instance's object is `instance-type`.
 
+**Internal faults.** No refusal code names a broken internal invariant,
+because a well-formed request cannot break one. A well-formed request is a
+model subject admitted by FR-120 and an item S3 checked in the subject's
+checked package. Such a request guarantees these invariants:
+
+- a temporal clause's `over` parameter is an object reference (QSpec
+  FR-370, FR-125);
+- a TP-1 or TP-3 item has at least one atom, and a TP-1 item's one state
+  predicate is that atom;
+- a `terminal when P` predicate is a state predicate over an object type of
+  the subject (FR-124);
+- every monitor state number is below the tabulation limit of 64
+  (Size limits).
+
+So do the encoding's own build order and checks: a term (copy `i` terminal,
+an enabledness, an application count) is read only after it is built.
+When one of these does not hold, the call SHALL return QSL's internal fault,
+FR-096's `InternalFault` (`runtime_invariant`, cause
+`established-invariant-broken`), naming the invariant, and no script. It
+SHALL NOT return an encoding refusal such as `item-form`. FR-127 settles a
+call that returns an `InternalFault` `failed`, in the O-16 internal-failure
+category, never `inconclusive`. `SmtEncodingRefusal` therefore carries
+either one refusal code of the set above or that `InternalFault`. The
+internal fault is not a refusal code.
+
 ## Behavior
 
 ### State copies
@@ -138,9 +165,9 @@ the single-subject check of an instance's object is `instance-type`.
   `s<i>.<object>.<field>.present`. Every term the encoding prints is linear,
   so each query is a `QF_LIA` script.
 - For a TP-3 item the encoding SHALL also declare one monitor-state constant
-  `m<i>` per position. For a TP-2 `on origin` item it SHALL declare one
-  `Bool` constant `h<i>` per position, true when position `i` lies past the
-  end of a finite behaviour (Finite behaviours).
+  `m<i>` per position. Under event-position false-extension, for every item
+  kind it SHALL declare one `Bool` constant `h<i>` per position, true when
+  position `i` lies past the end of a finite behaviour (Finite behaviours).
 - **Field equality.** Two copies `k` and `j` agree on a field when the
   field's value is the same in both. For a required field the encoding SHALL
   print this as `(= s<k>.<object>.<field> s<j>.<object>.<field>)`, the later
@@ -212,7 +239,7 @@ the single-subject check of an instance's object is `instance-type`.
   read a satisfiable `Unrolling` or `InductionBase` model as follows; a
   satisfiable `InductionStep` model is a counterexample-to-induction and is
   never replayed.
-  1. Except for a TP-2 model (rule 4b), CG cuts the model at its **failing position** `p`, the least position
+  1. Except for a false-extension model (rule 4b), CG cuts the model at its **failing position** `p`, the least position
      at which a disjunct of the negated property holds in the model. Steps
      after `p` are never read, so a stutter the solver takes after the
      failure cannot discard the model.
@@ -246,11 +273,12 @@ the single-subject check of an instance's object is `instance-type`.
      monitor violation, so CG builds rule 3's prefix and needs no
      terminality check. Among state-only failures CG reads them in the
      negated property's disjunct order.
-  4b. A TP-2 `on origin` model under false-extension has no stutter: every
-     step it takes before the end is an operation step, and its copies past
-     the end (`h<i>` true) are not states. Rules 2 to 4 do not apply. Its
-     path is the live copies, `0` to `e`, `e` the last live position within
-     `0..=u`. A definedness failure at a least live position `p`, read
+  4b. A model under false-extension, of any item kind, has no stutter:
+     every step it takes before the end is an operation step, and its copies
+     past the end (`h<i>` true) are not states. Rules 2 to 4 do not apply.
+     Its path is the live copies, `0` to `e`, `e` the last live position
+     within `0..=u` for a TP-2 item and within `0..=depth` for a TP-1 or
+     TP-3 item. A definedness failure at a least live position `p`, read
      first as in rule 4a, gives the prefix to `p` (UE-3). Otherwise the
      violation gives the prefix to `e`, uncut, for `always[0,u]` and
      `eventually[0,u]` alike. ADR-018 CX-1 requires a bounded-profile
@@ -258,7 +286,10 @@ the single-subject check of an instance's object is `instance-type`.
      evaluator decides it exactly: the prefix to `e` does when `e = u` or
      copy `e` is terminal. When neither holds, which can happen only for
      `always[0,u]` at `depth < u`, the model is a bad prefix that is no CX-1
-     counterexample, and the query gives no outcome at that depth.
+     counterexample, and the query gives no outcome at that depth. A TP-1 or
+     TP-3 formula has no finite horizon, so its violation's prefix to `e` is
+     a CX-1 counterexample only when copy `e` is terminal; otherwise the
+     query gives no outcome at that depth.
   5. After a model that is no candidate, CG SHALL settle from that query
      with no further model: a base query gives `InductionNotClosed{depth}`
      (V-6), and an `Unrolling` query gives no outcome at that depth. It
@@ -271,10 +302,12 @@ the single-subject check of an instance's object is `instance-type`.
 
 ### Finite behaviours
 
-Under event-position false-extension (TP-2 `on origin`) a behaviour that
-reaches a terminal state is closed there (ADR-018 SM-4), and the positions
-after it are read by the closed-boundary rule, every atomic predicate false
-(QSpec FR-091).
+Under event-position false-extension a behaviour that reaches a terminal
+state is closed there (ADR-018 SM-4), and the positions after it are read by
+the closed-boundary rule, every atomic predicate false (QSpec FR-091). This
+section applies to every item kind whose clause binds that profile: TP-2
+`on origin`, and a TP-1 or TP-3 clause under it, which the profile row of
+Outputs admits.
 
 - **Candidates.** The candidates of an application are the post-states
   FR-120 enumerates for it: every field the frame does not let it write
@@ -314,7 +347,31 @@ after it are read by the closed-boundary rule, every atomic predicate false
   every instance, and is false at a position past the end. Its violation is
   `h<p>` or the negation of `I` for some instance, at some position `p` in
   `0..=min(depth, u)`. Below its horizon this query is a bounded search: a
-  violation at `p <= depth` is a bad prefix whatever follows.
+  violation at `p <= depth` is a bad prefix whatever follows. The encoding
+  SHALL print the violation at `p` as separate disjuncts of the negated
+  property: `h<p>` first, then `(not I)` for each instance in instance
+  order. It SHALL NOT print it as one disjunct `(or h<p> ...)`. A position
+  `p > min(depth, u)` contributes no violation disjunct.
+- **TP-1 under false-extension.** The violation of `always holds(I)` at each
+  position `p` in `0..=depth` SHALL be printed as for `always[0,u]` with
+  `u = depth`: `h<p>` first, then `(not I)` for each instance. A position
+  past the end reads every atom false, so it violates `I`.
+- **TP-3 under false-extension.** Each atom of the monitor's letter at
+  position `p` SHALL be printed as `(and (not h<p>) a)`, `a` the atom's value
+  term, so the letter past the end has every atom false. The monitor steps
+  over those letters by its tabulated moves, and its violation at `p` is
+  `m<p>` at the rejecting state, as under infinite-trace.
+- **Induction under false-extension.** For a TP-1 or TP-3 item,
+  `InductionBase` asserts `(not h0)` and `InductionStep` asserts no
+  constraint on `h0`, so the step case starts from any live or ended copy.
+  The step relation over `(s, h, m)` is a transition system: an ended copy
+  stays ended, and its fields are free within their ranges. Distinctness
+  compares fields and `m<i>`, not `h<i>`, and stays sound. On a shortest
+  path from an initial state to its first failing copy, the live copies are
+  distinct states. An ended failing copy has free fields, so it can be
+  chosen distinct from a step window's live copies unless they already take
+  every state value. That needs a window at least as long as the path, and
+  then the base query at that depth covers the failure.
 - The violation of `eventually[0,u] holds(I)` is, for some instance, `h<p>`
   or the negation of `I` at every position `p` in `0..=u`. `Unrolling{depth}`
   with `depth < u` SHALL refuse `query-kind`: it would read "`I` has not
@@ -433,7 +490,12 @@ after it are read by the closed-boundary rule, every atomic predicate false
   per instance in instance order and atom in clause-node order; then the
   precondition failures, then the postcondition failures, of the
   applications in step-disjunct order; then, for the deadlock-freedom item,
-  `P`'s failure. A disjunct equal to an earlier one is
+  `P`'s failure. A position with no violation and no failure contributes no
+  disjunct. A failure kind that has no term at a position, such as an
+  application with no partial construct in its postcondition, contributes
+  none. The negated property with no disjunct at all prints `false` (the
+  no-term rule of Canonical printing). With one disjunct it prints as that
+  disjunct. A disjunct equal to an earlier one is
   printed once, at its first place.
 - The encoding owns only these proof queries. EN-2's counterexample
   searches, including its lasso queries with a loop back-edge and fairness
@@ -453,8 +515,8 @@ after it are read by the closed-boundary rule, every atomic predicate false
   4. for `Unrolling` and `InductionBase`, the initial-state predicate on
      copy 0, the disjunction over the subject's initial states in their
      list order, each the conjunction of its field values in declaration
-     order (an absent optional field as `(not P)` alone); then, for a TP-2
-     item, `(not h0)`;
+     order (an absent optional field as `(not P)` alone); then, under
+     event-position false-extension, `(not h0)`;
   5. one step assertion per step, in ascending order;
   6. the monitor implications, position by position, each position's in
      tabulation order (source state, then letter);
@@ -816,6 +878,10 @@ impl HyperProductIdentity {
 | FR-315-AC-26 | Over FR-315-AC-1's `Counter` under infinite-trace, a model of `InductionBase{depth: 3}` for `always holds(c.value <= 1)` that takes `inc` twice and then the stutter at value 2, where `inc` is still enabled, has failing position 2. CG reads it as the prefix `0, 1, 2`, a counterexample that FR-128 replays to `refuted`, and the stutter after position 2 is not read. For `always (holds(c.value = 0) implies eventually[0,1] holds(c.value = 1))`, a base model that stutters at value 0 and then fails is no candidate: rebuilt as the lasso with the `terminal-stutter` loop at value 0, it is refused by `replay_model_trace` with `invalid-value` naming the `terminal-stutter` loop step, and the base query settles `InductionNotClosed{depth}`, not `ReplayParity` or `ReplayRefused`. | Analysis (TC-900) |
 | FR-315-AC-27 | Over FR-315-AC-4's `Tally` with an added operation `peek(): Boolean` (empty frame, postcondition `post P { result = (self.tally < 3 and self.next = self.tally + 1) }`), `bump` unchanged, the postcondition failure of `peek` at copy `i` is printed over its one candidate as `(or U1 (and (not A1) U2))`: `U1` and `A1` read with `result` `false` (first in FR-120's result order), `U2` with `true`. `peek`'s disjunct has the postcondition part `(or A1 A2)`. | Test (TC-900) |
 | FR-315-AC-28 | Over FR-315-AC-1's `Counter` under event-position false-extension, a model of `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` has live copies `0` to `3` and `h4`, `h5` true; CG reads it as the prefix `0, 1, 2, 3` ending at the terminal state 3, which FR-128 replays to `refuted`. A model of `Unrolling{depth: 2}` for `eventually[0,2] holds(c.value = 3)` gives the prefix `0, 1, 2`. Over the AC-26 base model for `always holds(c.value <= 1)` with a prefix step altered so that it is not enabled at its pre-state, replay refuses naming that step, and CG settles it as FR-127's table settles that refusal, V-6 `ReplayRefused` (FR-127-AC-3), not `InductionNotClosed`. A model of `Unrolling{depth: 2}` for `always[0,5] holds(c.value <= 1)` fails at the live, non-terminal position 2, below the horizon 5, so it is no CX-1 counterexample and the query gives no outcome at depth 2. | Analysis (TC-900) |
+| FR-315-AC-29 | Over FR-315-AC-1's `Counter` with `always holds(c.value <= 3)` bound to event-position false-extension (a TP-1 clause under that profile), `Unrolling{depth: 4}` declares `h0` to `h4`, asserts `(not h0)` and each step in the halting form of FR-315-AC-17, and its negated property has, at each position `p` in `0..=4` and in this order, the separate disjuncts `h<p>` and `(not (<= s<p>.c.value 3))`, then `inc`'s postcondition failure printed `(and (not h<p>) F)`. No disjunct `(or h<p> ...)` is printed. `InductionStep{depth: 2}` for the same clause asserts nothing about `h0`, and its distinctness assertions compare `s<k>.c.value` with `s<j>.c.value` and no `h<i>`. | Test (TC-900) |
+| FR-315-AC-30 | FR-315-AC-23's TP-3 item bound to event-position false-extension, encoded `Unrolling{depth: 2}`, declares `m<i>` and then `h<i>` at each position, and prints each atom of the letter at position `p` as `(and (not h<p>) a)` in every monitor implication. Its violation at `p` is `m<p>` at the rejecting state's number. | Test (TC-900) |
+| FR-315-AC-31 | FR-315-AC-1's `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` has, at each position `p` in `0..=3`, the violation disjuncts `h<p>` and then `(not (<= s<p>.c.value 3))`, followed by `inc`'s postcondition failure `(and (not h<p>) F)`, and no disjunct for a position past 3. It has no atom-failure disjunct, because `c.value <= 3` holds no partial construct, and no precondition-failure disjunct, because `CanInc` (`self.value < 3`) holds none. | Test (TC-900) |
+| FR-315-AC-32 | `SmtEncodingRefusal` carries either one code of the closed refusal set or FR-096's `InternalFault` (`runtime_invariant`, `established-invariant-broken`), and no refusal code names a broken invariant. None of FR-315-AC-21's requests returns the internal fault. Inside `qsl-eval`, an encoding called with a TP-1 item whose checked clause has had its one atom removed after S3, which no well-formed request carries, returns `InternalFault` naming the atom invariant, not `item-form`. | Test (TC-900) |
 
 ## Dependencies
 
@@ -830,7 +896,8 @@ impl HyperProductIdentity {
   checker that rebuilds the queries), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md)
   (the deadlock-freedom item), [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (`ModelCheckItem`), [FR-128](FR-128-replay-a-model-counterexample.md) (the
-  replay a satisfiable query's model goes through).
+  replay a satisfiable query's model goes through), [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
+  (the internal fault).
 - [FR-172](FR-172-check-hyper-and-relation-clauses-over-model-subjects.md)
   (the checked hyper clause), [FR-173](FR-173-classify-hyper-clauses-into-forms.md)
   (its form), [FR-176](FR-176-check-a-universal-hyperproperty-by-self-composition.md)
@@ -848,4 +915,5 @@ impl HyperProductIdentity {
 - Owning ticket: Linear QSL-366; hyper self-composition queries: Linear
   STD-311; hyper product identity: Linear STD-336; proof-query stutter,
   finite behaviours, deadlock-freedom, refusals and size limits: Linear
-  STD-338.
+  STD-338; false-extension items, internal faults and violation order:
+  Linear STD-340.
