@@ -18,6 +18,8 @@ Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-28. Every unit of
 
 Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c}`, whose object type `Call` comes from the admitted domain package `acme/rpc` with the field `x` typed `ix://quire/native/Clock` (filament-core-data FR-146); its `s`-unit variant; a tick variant; the refusal fixtures of FR-230-AC-2, each clock a package-admitted clock field; a 64-clock model; the domain package `acme/rpc` with `dimensions` `[Time]` and `units` `[s, ms]` (`ms` targeting `s` at scale `1/1000`); its variant `acme/rpc` with `dimensions` `[Time, Rate]` (`Rate` a base dimension with no unit); and a second domain package `acme/flow` with `dimensions` `[Time]` and `units` `[sec]`, selected beside `acme/rpc` after it in lock order.
 
+For each input in steps 1 to 5, read its S2 forms before the S3 check. Assert the forms, spans and absence of timed semantic refusals stated in FR-230-AC-1 to AC-5; then assert the S3 result below.
+
 1. Check `Rpc` and its `time dense unit s` variant.
 2. Check each refusal fixture of FR-230-AC-2.
 3. Check the tick model with period `1/2 ms`, with period `0 ms`, and with an unresolved tick operation.
@@ -48,11 +50,11 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `TimeSource::Dense{ms}`, clock `Call.x`, two time invariants, `send`'s reset, `reply`'s one convex part `x >= 1`; the `s` variant has bound `1/1000` and a different package identity.
-- Step 2: each refuses with the code and span FR-230-AC-2 names.
-- Step 3: `TimeSource::Tick` with period `1/2`; `invalid_model_binding`/`malformed-declaration`; `missing_declaration`/`missing-name`.
-- Step 4: two convex parts each with `self.ready`; the large model checks with no refusal.
-- Step 5: both models check and `3 ms` converts to `3/1000`; `missing_declaration`/`missing-name` naming `hour`; `missing_declaration`/`missing-name` naming `Time`; `ambiguous_declaration`/`ambiguous-name` at assembly; `ill_typed`/`type-mismatch` for the `Duration` unit; `ill_typed`/`type-mismatch`; different package identities.
+- Step 1: S2 returns the dense source, two invariants, reset and guard with spans and no timed semantic refusal. S3 gives `TimeSource::Dense{ms}`, clock `Call.x`, the two time invariants, `send`'s reset and `reply`'s one convex part `x >= 1`; the `s` variant has bound `1/1000` and a different package identity.
+- Step 2: S2 builds each grammar-valid offending form and returns no timed semantic refusal; S3 refuses each with the code and span FR-230-AC-2 names.
+- Step 3: S2 returns a tick source form with period `1/2 ms`, a zero-period form and the unresolved operation name, all with spans and no timed semantic refusal. S3 checks `TimeSource::Tick` with period `1/2`; `invalid_model_binding`/`malformed-declaration` at zero; `missing_declaration`/`missing-name` at the unresolved operation.
+- Step 4: S2 preserves the guard tree `(x < 1 or x > 2) and self.ready` and exact `10^40 ms` bound with no timed semantic refusal. S3 gives two convex parts each with `self.ready`; the large model has 6,400 clock places and checks with no refusal.
+- Step 5: S2 preserves all dense-unit and quantity forms and names/spans without unit or dimension resolution. S3 checks both source-unit models and `3 ms` converts to `3/1000`; `missing_declaration`/`missing-name` names `hour`; `missing_declaration`/`missing-name` names `Time`; source duplicate `Time` gives `ambiguous_declaration`/`ambiguous-name` at assembly; the `Duration` unit and offset unit give `ill_typed`/`type-mismatch`; the two `ms` scale graphs have different package identities.
 - Step 6: both package-unit models check and `3 M::ms` converts to `3/1000`; the source `ms` model checks over the source unit with no ambiguity; the source `Time`, the source `Rate` and the two-package selection each check with no refusal, the declarations being distinct dimensions (FR-230-AC-5).
 - Step 7: the three `time` members check with three different package identities; `x <= 3 F::sec` and `x <= 3 s` under `R::ms` and the `1 F::sec` period refuse `ill_typed`/`type-mismatch` at the constant and the period; `3 R::ms` and `1/2 R::s` check; `len` and the `Duration` unit refuse `ill_typed`/`type-mismatch` (FR-230-AC-18).
 - Step 8: each construct refused `unsupported_construct`/`declaration-form` at its span in source order, retaining family, owning declaration, selected layers and the required facet, with no other refusal.

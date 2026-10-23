@@ -59,16 +59,19 @@ identity of a row whose `requires` closure names it, which is
 
 ### Selection
 
-1. **A header selection and nothing else.** A unit selects the model
-   profile only by naming `quire.model.complete/v1`, or
-   `quire.temporal.complete/v1` whose `requires` closure names it, in a header
-   `profile <alias> = "<identity>";` declaration. QSL SHALL NOT infer the
-   selection from a construct, from a `model` declaration, from a
-   supplied domain package, from an alias or from the fixture a unit
-   belongs to, and SHALL NOT fall back to `quire.value.complete/v1` when the
-   selection is absent.
+1. **A header selection and nothing else.** For the model gate, a unit's
+   selected layers are the union of every layer named by its header `profile`
+   declarations and every layer in each named layer's transitive `requires`
+   closure (FR-110). The unit selects the model profile exactly when that union
+   contains `quire.model.complete/v1`. Thus a header naming
+   `quire.temporal.complete/v1` selects the model profile because that layer's
+   `requires` closure names it; the header need not name both layers. QSL SHALL
+   NOT infer the selection from a construct, from a `model` declaration, from
+   a supplied domain package, from an alias or from the fixture a unit belongs
+   to, and SHALL NOT fall back to `quire.value.complete/v1` when the selection
+   is absent.
 2. **One resolution path.** E3 resolves the identity against the same
-   `header_selectable_layers` rows FR-110 uses for the other four layers. The
+   `header_selectable_layers` rows FR-110 uses for all six layers. The
    model profile adds no second header-profile mechanism and no new refusal
    code. The six rows (`quire.state.core/v1`, `quire.state.queries/v1`,
    `quire.state.graph/v1`, `quire.value.complete/v1`,
@@ -245,10 +248,12 @@ identity of a row whose `requires` closure names it, which is
     requires the temporal layer. A unit that selects the model profile and not
     the temporal layer emits no complete-temporal lock row.
     The selection of the temporal layer is the unit's header and nothing
-    else, as for the model profile (item 1); FR-230's "Timed facet gate" reads
-    it, so a unit that selects only `quire.model.complete/v1` is refused each
-    timed construct it writes, and a unit that selects the temporal layer is
-    not.
+    else, as for the model profile (item 1). The model gate evaluates the
+    selected-layer union including `requires` closure, so a unit selecting
+    only the temporal layer passes the model gate; FR-230's "Timed facet
+    gate" separately tests whether that union contains the temporal layer.
+    A unit selecting only `quire.model.complete/v1` passes the model gate but
+    is refused each timed construct it writes by FR-230.
 
 ## Acceptance Criteria
 
@@ -267,7 +272,7 @@ identity of a row whose `requires` closure names it, which is
 | FR-361-AC-11 | In a value-profile unit, S2 builds the forms of all four families and reports no refusal; the refusals of AC-1 to AC-3 are S3's. | Test (TC-1017) |
 | FR-361-AC-12 | A `body ... using V` where `V` resolves to `quire.value.complete/v1` in a unit that selects only that profile receives one refusal (the family refusal of item 11), not two; the same declaration in a unit that also selects the model profile through another alias receives FR-110's layer refusal alone. | Test (TC-1017) |
 | FR-361-AC-13 | A declaration that writes a `deref` and a declaration that writes a `reaches`, each with a `using` alias that resolves to `quire.value.complete/v1`, are each refused once by FR-110's layer rule naming that layer and retain no family of item 5; the same declarations with an alias that resolves to `quire.state.graph/v1` and with one that resolves to `quire.model.complete/v1` compile, and a declaration whose alias resolves to `quire.value.complete/v1` is still refused in a unit whose header also selects `quire.state.graph/v1` through a second alias. | Test (TC-1015) |
-| FR-361-AC-14 | A unit whose only header profile names `quire.temporal.complete/v1`, with a `model` declaration and a `body` declaration, a dispatched call, a `lookup` and an `abstraction-decl`, compiles with no model-gate refusal; the same unit whose header profile names `quire.value.complete/v1` refuses each construct as AC-1 to AC-3 state. A unit that selects `quire.model.complete/v1` and holds a `time` member is refused it by FR-230's gate and is not refused its model constructs. Its emitted lock's `definition_selections` hold the layer, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1` and `quire.state.core/v1`, the complete-value lock's `package_selection` rows FR-110 selects for the union, the complete-model lock's `package_selection.always` rows and the complete-temporal lock's `package_selection.always` rows, and a unit that selects only `quire.model.complete/v1` emits no complete-temporal lock row. | Test (TC-1017) |
+| FR-361-AC-14 | A unit whose only header profile names `quire.temporal.complete/v1`, with a `model` declaration and a `body` declaration, a dispatched call, a `lookup` and an `abstraction-decl`, compiles with no model-gate refusal because its selected-layer union contains `quire.model.complete/v1` through the temporal layer's `requires` closure; the same unit whose header profile names only `quire.value.complete/v1` refuses each construct as AC-1 to AC-3 state. A unit that selects `quire.model.complete/v1` and holds a `time` member is refused it by FR-230's gate and is not refused its model constructs. Its emitted lock's `definition_selections` hold the layer, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1` and `quire.state.core/v1`, the complete-value lock's `package_selection` rows FR-110 selects for the union, the complete-model lock's `package_selection.always` rows and the complete-temporal lock's `package_selection.always` rows, and a unit that selects only `quire.model.complete/v1` emits no complete-temporal lock row. | Test (TC-1017) |
 | FR-361-AC-15 | Under `make conformance`, the rows of `DefinitionLock::pinned()` that come from the complete-temporal lock (role, authority and identity, in order, and its package-selection rules) equal QSpec's complete-temporal lock, and the `quire.temporal.complete/v1` row of its layer table (identity, `requires`, admitted-form file and witness request) equals QSpec's `header_selectable_layers` row, read at run time. | Test (TC-1017) |
 
 ## Dependencies

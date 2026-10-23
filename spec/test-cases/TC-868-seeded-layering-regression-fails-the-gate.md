@@ -16,13 +16,14 @@ Each `case` and `distinguishing` entry is two units, byte-equal except for
 the identity string of one header `profile` declaration, and both are
 compiled by the running build.
 
-Scope: FR-345-AC-4 to FR-345-AC-9 and FR-345-AC-11.
+Scope: FR-345-AC-4 to FR-345-AC-11.
 
 ## Test Procedure
 
-Faults are injected only through FR-345's compile seam: the test passes the
-gate's comparison core a wrapper around the FR-278 composition,
-defined in the test module, that returns a chosen result for a named unit.
+Compile outcomes are injected only through FR-345's compile seam, and witness
+dispositions only through its test negotiation function; both live in the
+test module. The test passes the gate's comparison core a wrapper around the
+FR-278 composition that returns a chosen result for a named unit.
 Steps 1 to 6 pass a test registry holding one backend that advertises
 `operation-contract` and `value-validity` in `bounded` mode, unless a step
 names another.
@@ -37,8 +38,11 @@ names another.
    and for each of the six layers a `witness` entry: a bounded-scalar
    monitor invariant (state core), a named-predicate query over a bounded
    log (state queries), a reachability invariant over a finite universe
-   (state graph), a record validation function (complete value) and a
-   dispatched operation contract (complete model) and a timed state model with a clock field, a reset, a guard, a time invariant and one `invariant` clause (complete temporal).
+   (state graph), a record validation function (complete value), a
+   dispatched operation contract (complete model), and a timed state model
+   whose only profile is `quire.temporal.complete/v1`, with a clock field, a
+   reset, a guard, a time invariant and one `invariant` clause (complete
+   temporal; model selection follows through `requires`).
 2. Run `xtask refinement layering` over it twice.
 3. Run the gate core over step 1's corpus with a wrapper that, for each
    edge's both-refuse case, returns for the child unit the `Ok` compile of
@@ -59,6 +63,11 @@ names another.
 7. Run step 1's corpus without the E6 `distinguishing` entry and without the temporal `witness` entry.
 8. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`,
    then over a copy with one `witness` entry removed.
+9. From a root-package test, call `compare` over `REAL_CORPUS` with the
+   FR-278 composition, QSL's registry snapshot and a test negotiation
+   function that settles every request `supported`; then call it without a
+   negotiation function. Capture both reports and process streams, and read
+   `cargo tree -p xtask -e normal,build,dev`.
 
 Each expected result is a literal in the test. Tag the test
 `#[trace("TC-868", "FR-345-AC-n")]` over the criteria each step backs.
@@ -78,7 +87,8 @@ Each expected result is a literal in the test. Tag the test
 - Step 5: the first run gives a `regression` naming `quire.state.core/v1`;
   the second gives a `regression` naming E1; the third gives a
   `regression` for each of the five layers whose `witness_request` kind is
-  `operation-contract`, naming disposition `unsupported` and the empty
+  `operation-contract` (state core, state queries, state graph, model and
+  temporal), naming disposition `unsupported` and the empty
   candidate set, while complete value holds; the fourth gives verdict
   success, every layer holding, with each candidate requested by name and
   no request settling `ambiguous-backend`; the fifth gives a `regression`
@@ -92,3 +102,9 @@ Each expected result is a literal in the test. Tag the test
 - Step 7: exactly two tool-failure results, one naming E6 / `distinguishing` and one naming `quire.temporal.complete/v1` / `witness`; verdict tool failure, exit 30 (FR-345-AC-11).
 - Step 8: the make target passes over the real corpus, and the gate run
   over the copy exits non-zero.
+- Step 9: the negotiated call gives verdict success, matches the case, layer
+  and edge results of `make refinement-layering`, and requests each layer's
+  witness once per candidate. The call without a negotiation function makes
+  no request and returns the report written by the make target. Neither call
+  writes to stdout or stderr, and the dependency tree contains no
+  quire-contract-codegen crate.

@@ -35,5 +35,5 @@ Verify the unit-level behaviour of the gate: every refusal is reported, per unit
 6. The rows (role, authority, identity, in order) and package-selection rules are equal.
 7. S2 holds a form for every construct and reports no refusal.
 8. The first compile has one refusal (the family refusal); the second has FR-110's layer refusal alone.
-9. The first unit compiles with no model-gate refusal; the second refuses each construct once; the third refuses the `time` member alone (`unsupported_construct`/`declaration-form`, FR-230) and no model construct. The first lock's `definition_selections` and lock rows are the literal of FR-361-AC-14; the model-only unit's lock holds no complete-temporal row.
+9. The first unit compiles with no model-gate refusal because the temporal layer's `requires` closure includes `quire.model.complete/v1`; the second refuses each model construct once; the third refuses the `time` member alone (`unsupported_construct`/`declaration-form`, FR-230) and no model construct. The first lock's `definition_selections` and lock rows are the literal of FR-361-AC-14; the model-only unit's lock holds no complete-temporal row.
 10. The rows and package-selection rules are equal, and the layer-table row equals QSpec's.

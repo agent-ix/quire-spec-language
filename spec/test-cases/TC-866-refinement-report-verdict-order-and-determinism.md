@@ -46,9 +46,10 @@ Each expected verdict and exit is a literal in the test. Tag the tests
   reports are byte-equal.
 - Step 4: the case, then `quire.model.complete/v1`,
   `quire.state.core/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`,
-  `quire.value.complete/v1`, then the edges (core→queries, core→value,
-  graph→model, queries→graph, value→model), each list written out as a
-  literal. The four tool failures come first: `a/entry.json`,
+  `quire.temporal.complete/v1`, `quire.value.complete/v1`, then the edges
+  (core→queries, core→value, graph→model, model→temporal, queries→graph,
+  value→model), each list written out as a literal. The four tool failures
+  come first: `a/entry.json`,
   `b/entry.json`, then state graph / `witness`, then E5 / `distinguishing`.
 - Step 5: the violation run exits 10 and its make target fails; the success run exits
   0 and its make target passes.

@@ -29,12 +29,13 @@ RF-3; QSpec capability row V1-TOOL-012). QSpec FR-453 owns the six AD-003
 user-subset check. This requirement fixes what QSL builds: the corpus
 reader, the compile of each unit through spine `compile` under FR-110's
 layer selection, the mapping of FR-341's classes onto FR-453's results, and
-the request of each layer's witness item through capability negotiation,
-and the report through FR-344.
+the report through FR-344. Its comparison core optionally negotiates each
+layer's witness item when its caller supplies a negotiation function.
 
 Like FR-340's gate, it is a behavioural comparison. It records no
-requirement record and settles no claim; the only backend request it makes
-is the negotiation of each layer's witness item.
+requirement record and settles no claim. When its caller supplies a
+negotiation function, its only backend request is negotiation of each
+layer's witness item; without one, it makes no backend request.
 
 ## Inputs
 
@@ -110,29 +111,53 @@ entry or empty corpus, all passed to FR-344's report.
 
 - For each `witness` entry the unit admits, the gate SHALL take the
   registry's QSpec FR-290 candidate set for the layer's `witness_request`
-  kind (QSpec `header_selectable_layers` row), and submit the entry's one
-  clause in one QSpec FR-331 request per candidate, each naming that
-  candidate's backend, with the `witness_request` kind and extent, reading
-  each disposition from `negotiate_*` (QSpec FR-331-AC-4).
-- The gate SHALL give each layer FR-453's witness result: `holds` when every
-  `witness` entry for the layer classifies `admitted` and its item settles
-  `supported` under at least one candidate, and `regression` otherwise,
-  naming the layer and either the compile codes or every candidate's
-  backend identity and disposition (or the empty candidate set).
+  kind (QSpec `header_selectable_layers` row).
+- When its caller supplies a negotiation function, the gate SHALL submit the
+  entry's one clause in one QSpec FR-331 request per candidate, each naming
+  that candidate's backend, with the `witness_request` kind and extent, and
+  read each disposition from the function's result (QSpec FR-331-AC-4).
+- With a negotiation function, the gate SHALL give each layer FR-453's
+  witness result: `holds` when every `witness` entry for the layer
+  classifies `admitted` and its item settles `supported` under at least one
+  candidate, and `regression` otherwise, naming the layer and either the
+  compile codes or every candidate's backend identity and disposition (or
+  the empty candidate set).
+- Without a negotiation function, the gate SHALL submit no request and give
+  each layer the witness result `holds` when every `witness` entry for the
+  layer classifies `admitted` and its candidate set is non-empty, and
+  `regression` otherwise, naming the layer and either the compile codes or
+  the empty candidate set.
 - The gate SHALL give each edge FR-453's proper-subset result: `holds` when
   every `distinguishing` entry for the edge classifies `prohibited` on the
   parent side, naming the parent layer, and `admitted` on the child side,
   and `regression` naming the edge otherwise.
 
-### Compile seam
+### Comparison core and compile seam
 
-The gate's comparison core SHALL take the compile function and the backend
-registry snapshot as parameters. `xtask refinement layering` passes
-the FR-278 composition and QSL's registry snapshot and nothing else.
-A test substitutes a wrapper that returns a chosen result for a named unit,
-and a test registry; the wrapper lives only in the test module of the gate's crate
-(`#[cfg(test)]`), so no build of `xtask` or of the compiler carries a fault
-hook.
+- The gate's comparison core SHALL be the public function
+  `xtask::refinement::layering::compare` of the `xtask` package's library
+  target. It takes the corpus directory, the compile function, QSL's backend
+  registry snapshot and an optional negotiation function, and returns
+  FR-344's report value: every case, layer, edge and tool-failure result and
+  the verdict. It SHALL write nothing to process streams.
+- The negotiation function SHALL take one `WitnessRequest`, the candidate
+  (`qsl_route::Candidate`) whose backend it names, the layer's
+  `witness_request` kind and extent, and the witness entry's compiled clause,
+  and return that request's `qsl_route::Disposition`.
+- The module SHALL expose `REAL_CORPUS`, the path of
+  `tests/fixtures/refinement/layering/` in the source tree the `xtask`
+  package is built from.
+- The `xtask` package SHALL take no dependency, in any table, on a
+  quire-contract-codegen crate (FR-280-AC-3).
+- `xtask refinement layering` SHALL pass `compare` the FR-278 composition
+  and QSL's registry snapshot, and no negotiation function, then render the
+  report and exit by FR-344.
+- A test substitutes a wrapper that returns a chosen result for a named
+  unit, a test registry and a test negotiation function that settles each
+  request by a chosen disposition per backend; the wrapper and test
+  negotiation function live only in the test module of the gate's crate
+  (`#[cfg(test)]`), so no build of `xtask` or of the compiler carries a
+  fault hook.
 
 ### Report and where it runs
 
@@ -142,8 +167,9 @@ hook.
   two layer identities, never by a display string or a directory name.
 - The make target `refinement-layering`, which `make ci` runs, SHALL run
   `cargo run --package xtask -- refinement layering
-  tests/fixtures/refinement/layering/` over the real corpus and SHALL fail
-  when the gate's exit code is not 0 (FR-344 "Invocation and exit").
+  tests/fixtures/refinement/layering/` over the real corpus, with no
+  negotiation function, and SHALL fail when the gate's exit code is not 0
+  (FR-344 "Invocation and exit").
 
 ## Acceptance Criteria
 
@@ -154,11 +180,13 @@ hook.
 | FR-345-AC-3 | A case whose parent class is `prohibited` and whose child admits is `not applicable`. | Test (TC-867) |
 | FR-345-AC-4 | Over a layering corpus with cases on each of QSpec FR-453's edges E1 to E6, one seeded case per edge that its parent refuses and its child admits fails the gate naming that case and its edge, and every other case holds or is not applicable. | Test (TC-868) |
 | FR-345-AC-5 | A case whose two units differ outside the header identity string, and a case naming state core and complete model, are each `tool failure` naming the case; verdict tool failure, exit 30. | Test (TC-868) |
-| FR-345-AC-6 | Each of the six layers admits its witness unit and the witness item, requested with the layer's `witness_request` kind and extent once from each candidate backend by name, settles `supported` under at least one candidate; with two candidates of which one supports and one does not, the layer holds. A layer that refuses its witness, or whose item settles `supported` under no candidate, gives a `regression` naming the layer and the codes or each candidate's identity and disposition; verdict violation, exit 10. | Test (TC-868) |
+| FR-345-AC-6 | With a test negotiation function, each of the six layers admits its witness unit and witness item; the item is requested once by backend name from each candidate, using that layer's `witness_request` kind and extent, and settles `supported` under at least one candidate. The temporal witness is a unit selecting only `quire.temporal.complete/v1` with a timed state model, a `Clock` field, a reset, a guard, a time invariant and an `invariant` clause, and its request is `operation-contract`/`bounded`. With two candidates, one supporting and one not supporting the item, the layer holds. A layer that refuses its witness, or whose item settles `supported` under no candidate, gives a `regression` naming the layer and the codes or each candidate's identity and disposition; verdict violation, exit 10. With no negotiation function, no request is made; each layer holds when its witness unit admits and its candidate set is non-empty, and a layer with an empty candidate set gives a `regression` naming that layer and the empty candidate set; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-7 | On each of E1 to E6, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
-| FR-345-AC-9 | `make refinement-layering` runs the gate over `tests/fixtures/refinement/layering/` and passes; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |
+| FR-345-AC-9 | `make refinement-layering` runs the gate over `tests/fixtures/refinement/layering/` with no negotiation function and passes when every layer's witness unit admits and its candidate set is non-empty; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |
+| FR-345-AC-10 | A root-package test calls `xtask::refinement::layering::compare` over `REAL_CORPUS` with the FR-278 composition, QSL's registry snapshot and a test negotiation function that settles every request `supported`, and receives verdict success with the same case, layer and edge results as `make refinement-layering`, with each layer's witness item requested once per candidate. The same call with no negotiation function makes no request and returns the report `make refinement-layering` writes. Neither call writes to stdout or stderr, and `cargo tree -p xtask -e normal,build,dev` lists no quire-contract-codegen crate. | Test (TC-868) |
 | FR-345-AC-11 | Over a layering corpus that holds E6's `case`, `distinguishing` and `witness` entries (the temporal layer's witness is a timed state model with a clock field, a reset, a guard, a time invariant and one `invariant` clause), E6's both-refuse case holds, its `distinguishing` entry classifies `prohibited` on the parent side naming `quire.model.complete/v1` and `admitted` on the child side, and the temporal witness settles `supported` under a candidate that advertises `operation-contract` in `bounded` mode; a corpus without E6's `distinguishing` entry or without the temporal `witness` entry gives one tool-failure result for each missing item, naming E6 / `distinguishing` or `quire.temporal.complete/v1` / `witness`. | Test (TC-868) |
+| FR-345-AC-12 | Over the real backend registry, with quire-contract-codegen's `negotiate_*` as the negotiation function, `compare` over `REAL_CORPUS` gives each of the six layers a `holds` witness result: its witness unit admits and its witness item, requested once per candidate by backend name, settles `supported` under at least one candidate. The temporal witness is the timed model of AC-6 and its request is `operation-contract`/`bounded`. A seeded unsupported witness gives a `regression` naming the layer and each candidate's identity and disposition, and a removed witness entry gives a tool-failure result. | Integration test (quire-integration IT-015, TC-095) |
 
 ## Dependencies
 
