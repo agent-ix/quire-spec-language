@@ -14,7 +14,7 @@ Verify that S4 emits a checked protocol as the clause, role, channel, queue,
 obligation, control and compensation nodes of QSpec FR-464, FR-465 and
 FR-466, with each construct's arguments written from the checked fact, the
 absent optionals absent and every node admitted by the IR v2 reader. Scope:
-FR-383-AC-1 to FR-383-AC-8.
+FR-383-AC-1 to FR-383-AC-8 and FR-383-AC-22.
 
 Catches a protocol that still emits only its clause stub, a construct with no
 node, an argument written from the wrong checked fact, a default written for
@@ -52,12 +52,14 @@ package with the IR v2 reader and asserts typed fields, never message text.
 | 6 | **W**; **W** with an empty `sequence`; **W** with each join policy (`quorum(2)`, `any`, `predicate`), a `parallel` memory model and `outstanding`; **W** with a `repeat` that has a maximum, a loop proof, both, neither and `max 0` | the `sequence` emits its children in order and an empty `sequence` an empty list; the `choice` its owner, `visible` set and two cases sorted by label; the `parallel` the join Group (with `count` for `quorum`, the function node for `predicate`), the memory model and `outstanding` exactly when written and the joined labels ascending; the `repeat` an `exhausted` control exactly with a maximum, the proof Group empty or with `invariant` and `variant`, and `maximum` 0 as 0 |
 | 7 | **W** with an `await` after an event node and one after a compensation, an `event` with and without a compensation, a `fence` of each ordering, an `attempt` of each memory ordering and none, `related by` clauses on a `send`, `receive`, `attempt`, `effect` and `event` | each control emits its layout: the `await` anchor Group, clock text, closed interval, awaited event, `then` and `timeout`; the `send` and `receive` channel, payload binder and received `send`; the `attempt` role, operation anchor (the FR-105 node), ordering, `contracts` and binder; the `effect` its `attempt`; `related` records of relationship node and both end terms |
 | 8 | **W**; **W** with `commit never`; **W** with a second template `Partial` for `Applied` with `commit never` | the template emits its thirteen arguments in order; `commit never` has no `commit` argument; `Refund` and `Partial` are two nodes with different keys, each naming its own forward effect, captures, maximum, commit and recovery |
+| 9 | **W** with `Shipments` joined `predicate(both) [west, east]` over a Boolean function `both` of two Boolean parameters; the same with `[east, west]`; a second `parallel` joined on `both`; `both` renamed `either` | the join Group holds `policy` `predicate` and a reference to `both`'s `function` node, which the package holds, and `joined` ascending; the two list orders give the same bytes and `package_id`; both `parallel` nodes reference one function node; the read-back gives `Predicate{function}` with that key; after the rename the reference follows the renamed function's key |
+| 10 | ADR-027 §7's `Fill` (`role w on M`); `Fill` with a second alias `N` and `role u on N`; `Fill` with `role v on M::Cell` in place of `w` | `w`'s `role` node carries the text `identity` of `M`'s `model_selections` row as `model`, an empty `replication` Group and no `model` dependency, and the I2 reader admits the package; `u` carries `N`'s identity and a different key; `v` carries the `M::Cell` model node and a key different from `w`'s (FR-383-AC-23) |
 
 ## Expected Results
 
 - Row 1 admits the package and the counts are exact: no node for a construct is
   missing and none is emitted twice.
-- Rows 2 to 8 match the stated arguments by typed field; an optional the
+- Rows 2 to 9 match the stated arguments by typed field; an optional the
   source omits is the absent optional in every row.
 - No row emits a node for a relationship alias, and none emits a node of a
   tag other than `protocol` for a protocol construct, apart from the model,

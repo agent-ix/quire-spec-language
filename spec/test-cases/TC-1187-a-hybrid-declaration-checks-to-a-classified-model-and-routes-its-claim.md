@@ -20,9 +20,11 @@ Scope: FR-447-AC-1 to FR-447-AC-5, FR-447-AC-13 to FR-447-AC-15 and FR-447-AC-17
 ## Test Procedure
 
 Fixtures: the `Braking` declaration and the `SlowEnough` claim of FR-447's
-use case; an in-process fixture hybrid provider; a process fixture hybrid
-provider advertising the same kind and requirement, which reads the model and
-claim from the package bytes it receives.
+use case; `MovingFair`, defined as `temporal MovingFair using p over (h:
+Braking) clock "model-time" on origin { fair Moving; always [0, 10] true }`;
+an in-process fixture hybrid provider; a process fixture hybrid provider
+advertising the same kind and requirement, which reads the model and claims
+from the package bytes it receives.
 
 1. Build and check `Braking`; read its `HybridForm` and `CheckedHybridModel`.
 2. Check each mutation FR-447-AC-2 lists, one at a time.
@@ -33,7 +35,9 @@ claim from the package bytes it receives.
    with no provider; compare the checked package identities of `Braking` and
    of `Braking` with `Moving`'s `v' = -a` replaced by `v' = -(2 * a)`.
 5. Run S4 over the package and read the emitted bytes with QSpec's v2
-   reader; run S4 over the `v' = -(2 * a)` package and compare `package_id`s.
+   reader; check that `MovingFair`'s fairness member references the
+   `[Braking]` model node and names `Moving`; run S4 over the
+   `v' = -(2 * a)` package and compare `package_id`s.
 6. Read the emitted package and QSpec's `positive-all-families.json` with
    QSL's I2 reader; feed it each mutation FR-447-AC-13 lists, with
    `dependencies`, keys and `package_id` rebuilt after each edit.
@@ -67,7 +71,8 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
   identities.
 - Step 5: the package is emitted and admitted, holding FR-447-AC-5's
   `hybrid_model`, `hybrid_mode`, `hybrid_transition` and `temporal_clause`
-  nodes; the two `package_id`s differ.
+  nodes; `MovingFair`'s fairness node names `Moving` by referencing the
+  `[Braking]` `hybrid_model` node; the two `package_id`s differ.
 - Step 6: the read-back `CheckedHybridModel` and `CheckedHybridClaim`
   (horizon 10) equal the checked ones; `positive-all-families.json` is
   admitted; each mutation refused with the code and locus FR-447-AC-13 states.
