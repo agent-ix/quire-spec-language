@@ -55,7 +55,7 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    `g::f(3)`.
 6. Supply `test/geometry` from the `x < 6` source and compile step 5's unit
    again.
-7. Run CLI `compile` over a native-compile/1 request whose `1-draft`
+7. Call `command`'s `compile` over a native-compile/1 request whose `1-draft`
    program is step 5's unit and whose `libraries` names `test/geometry`
    by file, source digest and the labels above; then the same request with
    a `0-draft` program, with a library of an empty identity, and with a
@@ -110,11 +110,11 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   `f`'s parameter, as a local call's does.
 - Step 6: `p`'s call node id and the package's `package_id` both differ
   from step 5's.
-- Step 7: stdout is exactly the bytes spine `compile` returns for step 5's
+- Step 7: the outcome's package bytes are exactly the bytes spine `compile` returns for step 5's
   unit and library, exit 0; the `0-draft` request refuses with
   `unknown_edition` at stage `profile`, and a `libraries` entry with an
   empty identity and a `libraries` entry with a `version` member refuse
-  with `invalid-request`; each exits 20 with empty stdout.
+  with `invalid-request`; each exits 20 with no package bytes.
 
 - Step 8: `stage_limit_exceeded` at stage `intake` at `test/b`'s import of
   `test/c`, node count, bound 2, actual 3, setting `dependency.libraries`,

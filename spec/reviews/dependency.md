@@ -67,8 +67,6 @@ The following is the reviewer's proposed logical ordering, derived from the requ
 | FR-007 | FR-008 | Reference evaluation consumes validated runtime inputs. |
 | FR-006 | FR-009 | Qualified lowering requires a typed admitted clause. |
 | FR-008 | FR-009 | The lowering parity acceptance requires reference results; implementation of an internal lowerer can be sliced earlier. |
-| FR-002 | FR-011 | The extraction adapter sends opaque bodies to the native parser. |
-| FR-004 | FR-011 | The adapter acceptance requires verified original-source correspondence. |
 
 ## Dependency graph
 
@@ -84,7 +82,6 @@ graph TD
   FR-008["FR-008"]
   FR-009["FR-009"]
   FR-010["FR-010"]
-  FR-011["FR-011"]
   NFR-001["NFR-001"]
   NFR-002["NFR-002"]
   NFR-003["NFR-003"]
@@ -101,15 +98,13 @@ graph TD
   FR-007 --> FR-008
   FR-006 --> FR-009
   FR-008 --> FR-009
-  FR-002 --> FR-011
-  FR-004 --> FR-011
 ```
 
 ## Topological order
 
 1. FR-001, NFR-001, NFR-002, NFR-003, NFR-004, StR-001.
 2. FR-002, FR-004.
-3. FR-003, FR-005, FR-010, FR-011.
+3. FR-003, FR-005, FR-010.
 4. FR-006, FR-007.
 5. FR-008.
 6. FR-009.

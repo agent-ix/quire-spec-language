@@ -103,8 +103,7 @@ binding receipt when CG consumes the serialized result.
   not supplied) and SHALL admit and evaluate nothing.
 - If the unit is an I3 extracted source whose declared language is not
   `ix:native`, then the entry SHALL report stage `compile`, category
-  `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing. This is the
-  refusal the CLI's extracted-clause join gives the same fence.
+  `refusal`, `unknown_language`, and SHALL compile, admit and evaluate nothing.
 - If an expected `package_id` is given and the recompiled one differs, then
   the entry SHALL report stage `compile`, category `refusal`,
   `stale_dependency`, naming both identities, with no admission or

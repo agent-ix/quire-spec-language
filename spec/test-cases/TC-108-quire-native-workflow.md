@@ -1,6 +1,6 @@
 ---
 id: TC-108
-title: "Extract a selected clause body through the Quire consumer"
+title: "Execute an actually extracted native clause"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-030
@@ -8,32 +8,33 @@ relationships:
 ---
 ## Description
 
-Integration, P1: run the real Quire Rust extractor (`quire-rs`) through the
-`qsl-source` consumer over immutable Markdown, and compare the exact
-original and body source.
-
-Scope: FR-030-AC-3 to FR-030-AC-5.
+Integration, P1, in `qsl-source`'s and `qsl-replay`'s tests built with their
+`quire-extraction` feature: use the real Quire Rust extractor (`quire-rs`)
+with immutable licensed Markdown, spine compile and the spine clause runner
+(FR-109); compare exact original/body source.
 
 ## Test Procedure
 
-1. Run with a stale original digest; with a foreign context, once for each of
-   source identity, path and authored package; with a missing and with a
-   duplicate selected clause; and with unavailable extraction.
-2. Extract an indented CRLF clause and an LF clause with Unicode
-   surroundings, and map body EOF and trailing layout to original
-   coordinates. Request an invalid body identity and an out-of-range mapping.
-3. Run with the original byte limit and then the line limit one below the
-   document's size; retry each with its default. Run the suite in a build
-   with the `quire-extraction` feature and in one without it.
-
-Tag the tests `#[trace("TC-108", "FR-030-AC-n")]` with the AC each backs.
+Compile selected indented CRLF and LF bodies with Unicode surroundings. Execute
+healthy/violating/refused input cases. Compare retained extraction metadata with
+the actual producer output: extract a document whose population holds the
+selected clause, a second clause and a clause tagged with an unchecked
+language, and compare the ExtractedSource's ClausesOutcome with the
+ClausesOutcome `quire-rs` returns for the same bytes and context, before and
+after a successful and a failed spine compile of the body (FR-030-AC-2). Exercise malformed/unsupported native bodies,
+foreign/stale selections, unavailable extraction, EOF mapping and exhausted limits.
 
 ## Expected Results
 
-- Step 1: each refuses without a body; each foreign context field returns its
-  own typed preflight cause with actual and expected values, before
-  extraction.
-- Step 2: the body bytes and their original coordinates are exact; the
-  invalid identity and the out-of-range request refuse.
-- Step 3: each limit returns incomplete naming that limit; each retry
-  succeeds; the build without the feature makes no extraction call.
+Each foreign source identity, path and package must return its own typed preflight cause and actual/expected values,
+without an extraction outcome. Both the default build and the build with
+`qsl-replay`'s `quire-extraction` run locally; the default build calls no
+Quire extraction.
+
+The ExtractedSource's ClausesOutcome equals Quire's: the same availability,
+every clause of the population, the same diagnostics and the
+unchecked-language advisory, and it is unchanged after either compile.
+
+The original clause remains identifiable through actual extraction, compilation
+and execution. All failed prerequisites retain their stage's data without a
+successful package or fabricated truth. Fresh retries use independent budgets.

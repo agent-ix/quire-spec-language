@@ -137,7 +137,7 @@ snapshot data (ADR-012 §15.1).
 ## Dependencies
 
 - FR-102 to FR-107 and FR-109.
-- FR-032 (the corpus and its catalog).
+- FR-032 (the native corpus and its catalog), FR-031 (the extracted Markdown clause run).
 - QSpec FR-180 and TC-209. QSL's share is the reference dispositions; the
   generated-oracle, property and proof consumers of FR-180-AC-1 are CG's and
   IR's (ADR-012 §15.7).

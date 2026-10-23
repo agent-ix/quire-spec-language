@@ -1470,7 +1470,8 @@ The owner ruled this on QSL-8.
 M-6c deletes native `compile` of a `0-draft` source, `NativePackage` and its
 reader, native `run`, and the mapped and extracted native compile joins
 (ADR-012 §15.8 step 2; QSL-498). The requirements below specified only those
-paths and are retired with them. Each behaviour a `1-draft` program has is
+paths and are retired with them; FR-031 keeps its id and specifies the
+extracted Markdown clause run through the spine. Each behaviour a `1-draft` program has is
 held by the requirement in the last column (STD-343; lead default, not an
 owner answer; Peter may veto).
 
@@ -1484,7 +1485,7 @@ owner answer; Peter may veto).
 | FR-022 | the mapped native compiler | FR-030 and FR-109's I3 source |
 | FR-023 | native execution of a package over runtime artifacts | FR-109's `run_clause` over FR-106 observations, and FR-100's `CheckedPackage::call` |
 | FR-028 | running a selected native package verified against its source | FR-098, which recompiles the package's source and requires the recompiled `package_id` to equal the selected one before it calls |
-| FR-031 | running a Markdown clause through native run | FR-312's clause run of an I3 source (FR-109, FR-108-AC-5) |
+| FR-031's native-run/1 `extraction` route; FR-031 itself stays | running a Markdown clause through native run | FR-031 as STD-344 rewrites it: FR-109's library `run_clause` over FR-030's extracted body, built with `qsl-replay`'s `quire-extraction` (FR-108-AC-5). Its report names the body identity, with the digest of the extracted body bytes, and the original document identity; an original byte or line limit ends a run incomplete and a fresh retry succeeds; the command refuses an `extraction` member (FR-100) |
 | FR-026-AC-1, FR-026-AC-2 | native clause execution from files | FR-312's clause run over FR-106 snapshots and invocations |
 | FR-027-AC-1, FR-027-AC-4, FR-027-AC-6 | native-linked-package/1 export and its labels | FR-027-AC-3 (labels) and FR-027-AC-5, AC-9 to AC-12 (`quire.checked-package/v2`) |
 
