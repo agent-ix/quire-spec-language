@@ -18,6 +18,8 @@ use quire_exact::{
 use quire_semantic_value::catalog::InternalFault;
 
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::value::supplied::SuppliedLimits;
 
 use crate::composite::{CompositeIdentity, EqualityOutcome};
 use crate::execute::ReplayRefusal;
@@ -355,12 +357,24 @@ pub struct OperatorIdentity {
     pub generated: NativeOutcome,
 }
 
-/// The identity of a function-level value-parity claim: everything the
-/// request and the generated observation fixed, so two claims are equal
-/// exactly when they replay the same obligation against the same package,
-/// function, bindings, limits and generated outcome. It is built from the
-/// request before anything is decoded, so every outcome of the replay
-/// carries it, a refusal included.
+/// FR-484: what the generated-code driver observed for a function-value
+/// parity claim, handed to [`crate::replay_value_parity`] beside the request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueClaim {
+    /// The generated outcome at the request's bindings.
+    pub generated: ScalarOutcome,
+    /// The generated-content identity the driver authenticated against the
+    /// artifact it ran. QSL binds it into the claim and carries it unchanged;
+    /// it never recomputes, authenticates or refuses it.
+    pub content_identity: DigestRecord,
+}
+
+/// The identity of a function-level value-parity claim (FR-484): every
+/// retained input the request and the generated observation fixed, so two
+/// claims are equal exactly when they replay the same obligation against the
+/// same package, function, occurrence, bindings, limits and generated
+/// observation. It is built from the request before anything is decoded, so
+/// every outcome of the replay carries it, a refusal included.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueIdentity {
     /// The obligation the claim replays, as the request carried it.
@@ -372,39 +386,56 @@ pub struct ValueIdentity {
     /// request carried another target (such a claim refuses before any
     /// evaluation).
     pub function: Option<QualifiedName>,
+    /// The request's `occurrence_key` as sent; `None` when the request
+    /// carried none.
+    pub occurrence_key: Option<OccurrenceKey>,
     /// The request's `source`: the bindings of the function's declared
     /// parameters, as supplied.
     pub source: ReplaySource,
     /// The accounting limits the exact evaluation runs under.
     pub limits: ScalarLimits,
+    /// The effective supplied-value ceilings A, H and B, each omitted
+    /// ceiling resolved to its published default.
+    pub supplied: SuppliedLimits,
     /// The generated outcome the claim says QSL's exact one equals.
     pub generated: ScalarOutcome,
+    /// The generated-content identity, as the driver supplied it.
+    pub content_identity: DigestRecord,
 }
 
 impl ValueIdentity {
     /// Bytes this identity adds to an encoded record beyond its fixed size.
     fn measured_bytes(&self) -> usize {
-        32 + self.package_id.1.len()
+        2 * 32
+            + self.package_id.1.len()
             + self
                 .function
                 .iter()
                 .flat_map(|name| name.segments())
                 .map(|segment| segment.as_str().len())
                 .sum::<usize>()
+            + self
+                .occurrence_key
+                .iter()
+                .map(|key| 32 + key.origin().role().as_str().len())
+                .sum::<usize>()
             + self.source.measured_bytes()
             + self.generated.measured_bytes()
     }
 
-    /// The identity of the claim a consumer sent: `wire` and the generated
-    /// outcome, exactly as [`crate::replay_value_parity`] reads them.
-    pub fn sent(wire: &ReplayRequestWire, generated: &ScalarOutcome) -> Self {
+    /// The identity of the claim a consumer sent: `wire` and the driver's
+    /// `claim`, exactly as [`crate::replay_value_parity`] reads them.
+    pub fn sent(wire: &ReplayRequestWire, claim: &ValueClaim) -> Self {
         Self {
             obligation: ObligationIdentity::from_digest(wire.obligation_identity),
             package_id: wire.package_id.clone(),
             function: wire.replay_target.members.function.clone(),
+            occurrence_key: wire.replay_target.occurrence_key.clone(),
             source: wire.source.clone(),
             limits: wire.effective_accounting_limits(),
-            generated: generated.clone(),
+            supplied: wire.supplied_limits.unwrap_or_default(),
+            generated: claim.generated.clone(),
+            content_identity: claim.content_identity,
         }
     }
 }

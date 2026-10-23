@@ -1997,6 +1997,12 @@ mod tests {
                                 work_units: 1,
                                 result_units: 1,
                             },
+                            occurrence_key: None,
+                            supplied: qsl_semantics::value::supplied::SuppliedLimits::default(),
+                            content_identity: qsl_foundation::digest::DigestRecord::mint(
+                                qsl_foundation::digest::DigestDomain::SourceBytesV1,
+                                [0; 32],
+                            ),
                             generated: crate::scalar::ScalarOutcome::OutOfRange,
                         })),
                         crate::scalar::ScalarOutcome::OutOfRange,

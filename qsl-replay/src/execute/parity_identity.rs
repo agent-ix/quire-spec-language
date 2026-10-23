@@ -35,6 +35,16 @@ pub enum IdentityEncodeError {
         /// The repeated key, in its display form.
         key: String,
     },
+    /// A value-parity argument's `position` is not its index in the declared
+    /// parameter list (FR-484): the encoder never sorts the arguments, so the
+    /// list and the positions must already agree.
+    #[error("the value-parity argument at index {index} claims position {position}")]
+    PositionOrder {
+        /// The argument's index in the list.
+        index: usize,
+        /// The position the argument claims.
+        position: usize,
+    },
     /// The encoder refused for another reason (its error type is
     /// non-exhaustive); the reason is its message.
     #[error("the encoder refused the preimage: {0}")]
@@ -121,6 +131,92 @@ pub fn parity_obligation(
 ) -> Result<ObligationIdentity, IdentityEncodeError> {
     let digest = quire_canonical::sha256(preimage, Limits::new(u64::MAX))?;
     Ok(ObligationIdentity::from_digest(*digest.as_bytes()))
+}
+
+/// FR-484: one declared parameter of a function-value parity claim.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ValueParityArgument {
+    /// The parameter's `value`/`parameter` node id, the id
+    /// `FunctionSite.parameters` pairs with the parameter.
+    pub parameter: WireNodeId,
+    /// The parameter's zero-based position in the declared parameter list.
+    pub position: usize,
+    /// The node id of the parameter node's `semantic_type`, its declared
+    /// type.
+    pub semantic_type: WireNodeId,
+}
+
+/// FR-484's preimage of a function-value parity claim. The occurrence key
+/// (the function's one `declaration` occurrence) and the `subject_kind` are
+/// fixed by the form and are not fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueParityPreimage {
+    /// The function's checked `function` node id.
+    pub node: WireNodeId,
+    /// One entry per declared parameter, in declared parameter order.
+    pub arguments: Vec<ValueParityArgument>,
+}
+
+/// FR-484: the identity of a function-value parity claim, the SHA-256 of
+/// `preimage`'s canonical bytes through the one encoder (ADR-013 section 2).
+/// The arguments are not sorted; an argument whose `position` is not its
+/// index refuses [`IdentityEncodeError::PositionOrder`].
+pub fn value_parity_obligation(
+    preimage: &ValueParityPreimage,
+) -> Result<ObligationIdentity, IdentityEncodeError> {
+    if let Some((index, argument)) = preimage
+        .arguments
+        .iter()
+        .enumerate()
+        .find(|(index, argument)| argument.position != *index)
+    {
+        return Err(IdentityEncodeError::PositionOrder {
+            index,
+            position: argument.position,
+        });
+    }
+    let digest = quire_canonical::sha256(preimage, Limits::new(u64::MAX))?;
+    Ok(ObligationIdentity::from_digest(*digest.as_bytes()))
+}
+
+impl Encode for ValueParityArgument {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        let position = i128::try_from(self.position).map_err(|_| Error::Internal {
+            invariant: "a parameter position fits i128",
+        })?;
+        writer.begin_object()?;
+        writer.name("parameter")?;
+        writer.string(&self.parameter.to_string())?;
+        writer.name("position")?;
+        writer.integer(position)?;
+        writer.name("type")?;
+        writer.string(&self.semantic_type.to_string())?;
+        writer.end_object()
+    }
+}
+
+impl Encode for ValueParityPreimage {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        writer.begin_object()?;
+        writer.name("arguments")?;
+        writer.begin_array()?;
+        for argument in &self.arguments {
+            argument.encode_into(writer)?;
+        }
+        writer.end_array()?;
+        writer.name("node")?;
+        writer.string(&self.node.to_string())?;
+        writer.name("occurrence_key")?;
+        writer.begin_object()?;
+        writer.name("ordinal")?;
+        writer.integer(0)?;
+        writer.name("role")?;
+        writer.string("declaration")?;
+        writer.end_object()?;
+        writer.name("subject_kind")?;
+        writer.string("function-value-parity")?;
+        writer.end_object()
+    }
 }
 
 /// The digest of one argument entry's canonical text alone.

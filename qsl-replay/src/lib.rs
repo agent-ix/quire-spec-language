@@ -88,7 +88,7 @@ pub use call_requirements::{
 };
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
-    FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
+    FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite, ValueParitySite,
 };
 pub use certificate::closed_form::outcome::{
     AmcEvidence, ClosedFormAnalysis, ClosedFormEvidence, ClosedFormOutcome, DemandWitness,
@@ -124,11 +124,11 @@ pub use composite::{
 };
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
-    replay_value_parity, replay_with_cancel, settle_verified_shadow, BoundEntries,
-    DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
+    replay_value_parity, replay_with_cancel, settle_verified_shadow, value_parity_obligation,
+    BoundEntries, DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
     IdentityEncodeError, LimitAboveReader, MalformedOperationReason, ParityArgument,
-    ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityReport,
-    ValueParityResult,
+    ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityArgument,
+    ValueParityPreimage, ValueParityReport, ValueParityResult,
 };
 pub use hybrid::{
     NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
@@ -313,7 +313,7 @@ pub use qsl_foundation::witness::{
 pub use scalar::{
     GeneratedFault, NativeOutcome, OperandIdentity, OperandRefusal, OperatorClaim,
     OperatorIdentity, OperatorParityReport, OperatorParityResult, ScalarAgreement, ScalarClaim,
-    ScalarOperand, ScalarOperation, ScalarOperator, ScalarOutcome, ValueIdentity,
+    ScalarOperand, ScalarOperation, ScalarOperator, ScalarOutcome, ValueClaim, ValueIdentity,
 };
 pub use witness::{
     CanonicalAssignment, ClaimedChange, DecodeRefusal, EntryFault, FamilyPayload,
