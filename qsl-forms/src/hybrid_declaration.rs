@@ -91,13 +91,23 @@ fn mode_form(cst: &LosslessCst, node: &CstNode) -> Result<HybridModeForm, FormsR
         .iter()
         .zip(pairs)
         .map(|(target, [guard, reset])| {
+            let guard = block_expression(cst, guard)?;
+            let reset = block_expression(cst, reset)?;
+            let end = reset
+                .spans
+                .span(reset.spans.root())
+                .map_or(target.span().end, |span| span.end);
             Ok(TransitionForm {
                 target: DeclaredName {
                     name: text(target, node)?,
                     span: target.span(),
                 },
-                guard: block_expression(cst, guard)?,
-                reset: block_expression(cst, reset)?,
+                guard,
+                reset,
+                span: qsl_foundation::Span {
+                    start: target.span().start,
+                    end,
+                },
             })
         })
         .collect::<Result<_, FormsRefusal>>()?;

@@ -39,6 +39,7 @@ mod converted_equality;
 mod deep_bodies;
 mod envelope_adoption;
 mod golden;
+mod hybrid;
 mod identity_depth;
 mod navigation;
 mod owners;

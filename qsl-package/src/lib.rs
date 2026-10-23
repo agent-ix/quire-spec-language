@@ -31,8 +31,9 @@ pub use checked::{CheckedPackage, ResolvedDependency};
 pub use checked::{EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, read_import_view, resolve_clause_root, supply_closure, AdmittedPackages,
-    ClauseRoot, ClauseRootUnresolved, ImportViewRefusal, SourceMapDefect, UnsupportedWire,
+    clause_roots, read_hybrids, read_import_view, resolve_clause_root, supply_closure,
+    AdmittedPackages, ClauseRoot, ClauseRootUnresolved, HybridRead, HybridReadError,
+    ImportViewRefusal, ReadHybridClaim, ReadHybridModel, SourceMapDefect, UnsupportedWire,
     V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]

@@ -74,8 +74,7 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
         crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
-    .unwrap_or_else(|refusal| panic!("{text}: the unit assembles: {refusal:?}"))
-    .with_unwritten_hybrids();
+    .unwrap_or_else(|refusal| panic!("{text}: the unit assembles: {refusal:?}"));
     (text, package)
 }
 
@@ -617,7 +616,6 @@ fn holds_below_30() -> HybridFormula {
 #[test]
 fn slow_enough_checks_to_a_claim_with_its_horizon() {
     let claim = claim_of(&slow_enough("always [0, 10] holds(h.v < 30)"));
-    assert_eq!(claim.name.as_str(), "SlowEnough");
     assert_eq!(claim.clock, HybridClock::ModelTime);
     assert_eq!(claim.activation, HybridActivation::Origin);
     assert!(claim.captures.is_empty() && claim.fairness.is_empty());

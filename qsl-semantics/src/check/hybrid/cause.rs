@@ -196,15 +196,6 @@ pub enum HybridCause {
         /// The formula's span.
         span: Span,
     },
-    /// A hybrid declaration that checks but that no S4 emission writes yet:
-    /// `unsupported_construct` / `not-yet-implemented`, refused rather than
-    /// compiled and silently missing from the package.
-    NotEmitted {
-        /// The declared name.
-        name: String,
-        /// The declaration name's span.
-        span: Span,
-    },
     /// Every continuous variable is a clock: `invalid_timed_model` /
     /// `rate-one-hybrid`, naming the timed model form that declares it.
     RateOneHybrid {
@@ -240,7 +231,6 @@ impl HybridCause {
             | Self::TimeQuantity { span, .. }
             | Self::CaptureType { span, .. }
             | Self::HorizonOutOfRange { span }
-            | Self::NotEmitted { span, .. }
             | Self::RateOneHybrid { span, .. } => *span,
         }
     }
@@ -274,7 +264,6 @@ impl HybridCause {
             },
             Self::CaptureType { fault, .. } => type_fault_class(fault).0,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
-            Self::NotEmitted { .. } => Code::UnsupportedConstruct,
             Self::RateOneHybrid { .. } => Code::InvalidTimedModel,
         }
     }
@@ -307,7 +296,6 @@ impl HybridCause {
             },
             Self::CaptureType { fault, .. } => type_fault_class(fault).1,
             Self::ZeroDenominator { .. } => "unproved-nonzero",
-            Self::NotEmitted { .. } => "not-yet-implemented",
             Self::RateOneHybrid { .. } => "rate-one-hybrid",
         }
     }
