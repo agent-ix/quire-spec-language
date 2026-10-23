@@ -29,3 +29,10 @@ Fidelity: QSpec's backend-provider schema types `TemporalCounterexample.trace_po
 | --- | --- | --- | --- |
 | FND-001 | low | The Outputs text cites QSpec's `Count` form but only says "an unsigned JSON integer". `Count` also caps the value at 9007199254740991 (2^53 - 1), the largest integer RFC 8785 serializes exactly. The reader's refusal list says only "not an unsigned JSON integer", so it does not say whether a position above that bound is refused. State the bound in the writer and reader text, or say "a `Count`" in the refusal list too. | spec/functional/FR-267-write-run-results-as-native-run-result-2.md:211-212,237-239 |
 | FND-002 | low | AC-14's new adverse cases are the string `"0"` and the different integer `1`. A negative integer (`-1`) and a non-integer number (`0.5`) also fail "unsigned JSON integer", but no AC exercises them. A reader that only rejects strings would pass AC-14. Add `-1` and `0.5` to AC-14's list of independent edits. | spec/functional/FR-267-write-run-results-as-native-run-result-2.md:407 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7d861e5d6: Outputs states "an unsigned JSON integer from 0 to 9007199254740991 (2^53 - 1, the largest integer RFC 8785 serializes exactly)"; the reader refuses a `trace_position` that "is not a `Count`", listing a string, a negative integer, a fraction and an integer above the bound. |
+| FND-002 | fixed | 7d861e5d6: AC-14's independent edits now set `trace_position` to `1`, the string `"0"`, `-1`, `0.5` and `9007199254740992`, each refusing with a located diagnostic. |
