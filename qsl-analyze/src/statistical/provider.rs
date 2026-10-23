@@ -44,7 +44,7 @@ pub fn serve_request(
 ) -> Result<StatisticalRecord, UnsettledRefusal> {
     let simulation = &request.subject.simulation;
     let expansion = simulation.expansion;
-    let meter = simulation.meter.clone();
+    let meter = simulation.meter;
     match check_statistical(request, cancel) {
         Ok(outcome) => Ok(settle_statistical(
             &outcome,
