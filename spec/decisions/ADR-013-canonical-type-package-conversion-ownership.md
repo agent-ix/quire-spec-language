@@ -522,6 +522,31 @@ unsupported.
 Amended by ADR-027 ST-12 (protocol transition system). The `Unsupported`
 causes gain `RecoveryView{predicate}`, category unsupported.
 
+Agreement across backends ([FR-448](../functional/FR-448-cross-check-verification-backends-over-the-conformance-corpus.md)).
+When two or more backends answer the same requirement item, their terminal
+records are compared after the proof column above has mapped each one,
+including the E9 replay of every counterexample:
+
+- Definite records are `proved` (any `ProofBasis` that maps to success) and
+  `refuted` (a counterexample whose replay settles
+  `ReproducedWithEvaluatedWitness`). Every other record is not definite:
+  `tested`, `measured`, and the inconclusive, incomplete, unsupported,
+  refusal and internal-failure categories, including a vacuous `Proved`
+  and a counterexample settled `replay_parity` or `replay_refused`. A
+  record that is not definite agrees and conflicts with nothing.
+- A record is bounded when its basis is `BoundedComplete{depth}`, or when
+  the backend ran the item in `bounded` mode (ADR-012 §7.1); its bound is
+  that depth or the item's result bound. Every other definite record is
+  unbounded.
+- A bounded `proved` record is comparable only with a record bounded at
+  the same bound, because it says nothing beyond its bound. Every other
+  pair of definite records is comparable: a reproduced counterexample
+  refutes the item whatever bound produced it.
+- Two comparable definite records conflict when one is `proved` and the
+  other `refuted`, and agree otherwise. A conflict means at least one
+  backend gave a wrong verdict; it is never settled by preferring one
+  backend, by `certification`, or by majority.
+
 Invariants: no category collapses into a boolean, string or another category
 through any conversion; missing anchors, exhausted limits and false predicates
 stay distinct (FR-323-AC-3); a timeout and a cancellation keep their cause. The
