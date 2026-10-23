@@ -25,3 +25,11 @@ Ticket: QSL-270. FR-049-AC-10 and FR-049-AC-11 are both tagged on `static_author
 ## Coverage
 
 Plan completion: not assessed. The computed `quoin matrix --repo . --json` and `quire matrix --scope . --format json` were attempted but did not return in this review window and were stopped; no full repository matrix status is claimed. Scoped criterion and test bindings above were checked directly from the spec, trace tags, and executable assertions. `cargo test -p xtask real_adr010_sites_are_refused_as_allow_list_entries -- --nocapture` returned exit 101 with one failed test. Optional semantic review was not invoked as a separate method; the specified FR-049 contract was inspected in the code-review lane.
+
+## Dispositions
+
+Round 1 at `eb84575e25a0b8ce371c1354bfb0b3ebca970b18`. The affected FR-064-AC-5 trace binding now runs and passes; no new gap was found in the fix diff.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The tagged real-site test now targets `static_authority_digest_refusal` and passes (1 test), restoring executable evidence for the branch-gating assertion. |

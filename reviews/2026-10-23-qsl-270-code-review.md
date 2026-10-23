@@ -26,3 +26,12 @@ Focused checks at this head: `cargo test -p xtask real_adr010_sites_are_refused_
 | --- | --- | --- | --- |
 | FND-001 | high | The `sha256-jcs:` prefix decision is a new branch-gating string edge with no `#[ix_trace_rs::string_edge]` mark. `xtask string-edge` exits 1 and reports `static_authority_digest_refusal` at line 2483 as unmarked, so the required CI target cannot pass. Mark the typed boundary and verify the scanner accepts it. | src/state/evaluation.rs:2472-2486 |
 | FND-002 | high | The FR-064 real-site regression still scans `CanonicalizationDomain::from_str` in `src/state/input.rs`, but this PR deletes that item. Its focused test fails at line 405 when the expected site is absent. Update the test's real-site entry to the new digest dispatch and preserve its allow-list rejection oracle. | xtask/src/string_edge.rs:361-405; src/state/input.rs:46-53 |
+
+## Dispositions
+
+Round 1 at `eb84575e25a0b8ce371c1354bfb0b3ebca970b18`. Both original high findings are fixed. The scoped review is mergeable; the aggregate gate remains with the code lead after main integration.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `static_authority_digest_refusal` now carries `#[ix_trace_rs::string_edge]`; the actual `xtask string-edge` command exits 0 and reports no unmarked or unlisted sites. |
+| FND-002 | fixed | The real-site vector names `src/state/evaluation.rs::static_authority_digest_refusal` and the new prefix; its focused xtask test passes (1 test). |
