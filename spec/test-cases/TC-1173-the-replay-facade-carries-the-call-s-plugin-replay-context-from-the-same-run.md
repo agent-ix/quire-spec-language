@@ -74,7 +74,8 @@ Tag the tests `#[trace("TC-1173", "<AC id>")]`.
    the `package_id` equals `compile_package`'s.
 2. The two requests are equal member by member; `package_id` is the run's,
    `selected_function` is `q`, `occurrence_key` is the member's; `replay`
-   completes `10`; the item settles `inconclusive` with cause `replay-parity`,
+   settles `inconclusive` with cause `Verdicts` (`violation`/`success`) and
+   evaluated value `true`; the item settles `inconclusive` with cause `replay-parity`,
    naming `acme`.
 3. `r` returns `undefined`, one member and a context; its request names `r`
    and the `process-provider` identity of the member's node and occurrence;

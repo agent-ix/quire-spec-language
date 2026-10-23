@@ -74,7 +74,7 @@ use std::collections::BTreeSet;
 mod argument;
 mod object_environment;
 pub use object_environment::{ObjectEnvironmentFailure, Unresolved};
-mod frame;
+pub(crate) mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 mod composite_domain;
@@ -119,8 +119,10 @@ fn hex(digest: &[u8; 32]) -> WireNodeId {
 /// (FR-116, QSpec FR-323).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum MalformedOperationReason {
-    /// The object names a declaration that cannot declare operations (a
-    /// value type, an enum, a record).
+    /// The object names a declaration that is no operation owner (not an
+    /// object type, a process or a state machine: a value type, an enum, a
+    /// record). The variant keeps its name from before processes and state
+    /// machines were owners.
     #[error("the object names a declaration that cannot declare operations")]
     NotAnObjectType,
     /// The object only inherits the operation; the target names the
