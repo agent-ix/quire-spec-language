@@ -190,6 +190,14 @@ the protocol's qualified name.
   labels in ascending label order. It SHALL write `related` records sorted by
   the relationship node's digest, then the canonical bytes of the first end,
   then those of the second.
+- The emitter SHALL write a predicate join's `predicate` member as a
+  reference to the `function` node whose key the checked policy
+  `Predicate{function}` holds (FR-218, Predicate joins), and the package
+  SHALL hold that `function` node as FR-092 emits every function. Two joins
+  that name one function reference one node. The function's parameters bind
+  the joined labels in the ascending order the `joined` Group is written in,
+  so reordering the source list changes neither the bytes nor the meaning.
+  The read-back of the `parallel` node gives the same checked policy.
 - The emitter SHALL write the lists whose order is meaning in the order the
   checked clause holds them: a `sequence`'s children and every capture list.
   Reordering two children, or two captures, changes the node key and the
@@ -291,6 +299,7 @@ FR-105).
 | FR-383-AC-19 | Reading **W**'s package through QSL's I2 reader admits it and returns every protocol node with the key, tag, form, type, declaration, body, dependencies and occurrences emitted; the protocol rebuilt from the read-back nodes equals the protocol rebuilt from the in-process checked clause in keys, set order, ordered lists, binder levels, channel premises, queue bounds and derived causal relation. | Test (TC-1063) |
 | FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending digest order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of the QSpec protocol vectors file `protocol-node-vectors.json`. | Test (TC-1063) |
 | FR-383-AC-21 | A protocol whose controls outnumber `i2.nodes`, emitted with the limit raised, reads back under the default limit as `StageFailure::Limit` of kind node count with setting `i2.nodes`, and verifies when the setting is raised; a protocol with a `parallel` inside a `repeat` inside a branch of another `parallel`, three levels, and a `sequence` of 5,000 children each emit with no limit or depth refusal at S4. | Test (TC-1063) |
+| FR-383-AC-22 | **W** with `Shipments` joined `predicate(both) [west, east]` over `function both using v(x: Boolean, y: Boolean): Boolean pure { x and y }` emits a `parallel` node whose join Group holds `policy` `predicate` and a `predicate` reference to `both`'s `function` node, which the package holds, and `joined` `east`, `west`; the same unit written `[east, west]` emits the same bytes and the same `package_id`; a second `parallel` joined on `both` references the same node; the read-back of each `parallel` node gives `Predicate{function}` with `both`'s key. Renaming `both` to `either` keeps the `parallel` node's reference equal to the renamed function's node key. | Test (TC-1061) |
 | FR-383-AC-23 | ADR-027 §7's `Fill` with `role w on M` emits a `role` node whose `model` argument is the text `identity` of `M`'s `model_selections` row, with an empty `replication` Group and no `model` dependency, and QSL's I2 reader admits it (QSpec FR-465-AC-9); a clause with `role w on M` and `role u on N` emits two role nodes whose texts are the two selections' identities, with different keys, and a role on the whole model and `role v on M::Cell` have different keys. | Test (TC-1061) |
 
 ## Dependencies
