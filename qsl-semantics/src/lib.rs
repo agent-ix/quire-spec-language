@@ -27,7 +27,6 @@ pub mod model;
 pub mod value;
 
 #[cfg(test)]
-mod qspec_diagnostics;
 
 /// The longest each explicit heap stack grew in this thread, by name, so a
 /// test can show each stack grows by a constant per node already charged.
