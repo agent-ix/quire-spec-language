@@ -60,8 +60,8 @@ raises the limit from the library, from a replay request (every setting but
 exposes the caller limits through QSL's settings operation, wherever that
 entry point takes the setting. Every `stage_limit_exceeded` outcome names the
 limit, its value and its setting. Each execution budget under
-`quire.value.accounting/v1` also has a setting name, its bare counter name
-(see Accounting setting names), and a reached budget names it.
+`quire.value.accounting/v1` also has a setting name, `accounting.` and its
+counter name (see Accounting setting names), and a reached budget names it.
 
 The ecosystem rule that depth is never a limit kind, and that a reached
 limit names how to raise it, is QSpec's (ADR-030 D-1; QSpec FR-460 and
@@ -242,28 +242,33 @@ call's accounting limits, whose setting names are the accounting table's.
 The S6a evaluation of a call charges the ten counters of
 `quire.value.accounting/v1` (QSpec FR-323 `limits`), which the call's
 accounting limits (`quire_exact::ScalarLimits`) bound. Each counter's
-setting name is its bare `quire.value.accounting/v1` member name, which is
-also the `ScalarLimits` field of the same name: the counter name is its
-setting at every entry point (QSpec FR-461 Behavior 6), and that one name
-raises it in the library, in a replay request's `stage_limits` and on the
-CLI (QSpec FR-461 Behavior 3). An accounting name holds no `.` and every
-name of the setting table holds one, so no accounting name can equal a
-setting-table name. The table lists all ten. Each row's default is the
+setting name is `accounting`, a dot and its `quire.value.accounting/v1`
+member name, which is also the `ScalarLimits` field of the same name, for
+example `accounting.work_units` (QSpec FR-461 Behavior 6, FR-461-AC-5). That
+one name raises it in the library, in a replay request's `stage_limits` and on
+the CLI (QSpec FR-461 Behavior 3). The counters of the other accounting limit
+objects are setting-table rows named by their stage, as QSpec FR-461
+Behavior 6 names them: `PopulationAdmissionLimitsV1`'s as `admission.*` and
+`ModelNormalizationLimitsV1`'s as `model.*`, so `accounting.work_units`,
+`admission.work_units` and `model.work_units` are three settings of three
+independent counters. No setting-table or engine-table name starts with
+`accounting.`, so no accounting name equals another table's name. A bare
+counter name is no setting. The table lists all ten. Each row's default is the
 bound a call gets when the caller does not configure that counter, the
 defaults FR-100 gives a `1-draft` run.
 
 | Setting | Counter | Default |
 | --- | --- | --- |
-| `integer_bits` | `integer_bits` | 18446744073709551615 (`u64::MAX`) |
-| `decimal_digits` | `decimal_digits` | 18446744073709551615 (`u64::MAX`) |
-| `scale_expansion` | `scale_expansion` | 18446744073709551615 (`u64::MAX`) |
-| `text_input_bytes` | `text_input_bytes` | 18446744073709551615 (`u64::MAX`) |
-| `text_scalars` | `text_scalars` | 18446744073709551615 (`u64::MAX`) |
-| `normalized_scalars` | `normalized_scalars` | 18446744073709551615 (`u64::MAX`) |
-| `unit_edges` | `unit_edges` | 18446744073709551615 (`u64::MAX`) |
-| `value_occurrences` | `value_occurrences` | 18446744073709551615 (`u64::MAX`) |
-| `work_units` | `work_units` | 1000000 units |
-| `result_units` | `result_units` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.integer_bits` | `integer_bits` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.decimal_digits` | `decimal_digits` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.scale_expansion` | `scale_expansion` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.text_input_bytes` | `text_input_bytes` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.text_scalars` | `text_scalars` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.normalized_scalars` | `normalized_scalars` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.unit_edges` | `unit_edges` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.value_occurrences` | `value_occurrences` | 18446744073709551615 (`u64::MAX`) |
+| `accounting.work_units` | `work_units` | 1000000 units |
+| `accounting.result_units` | `result_units` | 18446744073709551615 (`u64::MAX`) |
 
 An accounting setting is not a stage limit. A reached budget settles the
 call `Incomplete`, never `LimitExceeded` (QSpec FR-461 Behavior 6), so
@@ -349,20 +354,24 @@ these names through the same operand grammar as the stage settings
    limit at its default from the table, and a call with each accounting
    counter at its default from the accounting table.
 8. **The settings operation sets every accounting budget by name.** Given
-   an operand `<counter>=<value>` whose name is in the accounting table,
+   an operand `accounting.<counter>=<value>` whose setting name is in the
+   accounting table,
    the settings operation SHALL return the call's accounting limits with
    that counter at `<value>` and every counter no operand names at its
    default. The grammar, value, duplicate and unknown-name rules are
    Behavior 6's, with the same usage refusal naming the operand and its
-   cause: a name in neither table (`depth`, `accounting.work_units`) is an
-   unknown setting; a value above `u64::MAX` is not an integer that fits a
+   cause: a name in neither table (`depth`, the bare counter `work_units`)
+   is an unknown setting; a value above `u64::MAX` is not an integer that fits a
    bound; the same name given twice is refused at the second operand.
 9. **A reached budget names its setting.** When an evaluation charge would
    exceed an accounting counter's bound, the call SHALL settle `Incomplete`
    (QSpec FR-461 Behavior 6), and the outcome SHALL name the counter, the
    configured bound, the count the denied charge would have reached, and
-   the setting, the counter's own name, so the caller can raise it with
-   `--limit <counter>=<n>`. FR-286 serializes the setting as the
+   the setting `accounting.<counter>`, so the caller can raise it with
+   `--limit accounting.<counter>=<n>`. An engine item stopped by the
+   evaluation meter names the same setting in its `LimitReached` (FR-203-AC-7:
+   `LimitReached{work_units, B, accounting.work_units}` for a `work_units`
+   stop). FR-286 serializes the setting as the
    incomplete limit's `setting` member.
 10. **A request's `stage_limits` sets an accounting budget.** When a replay
    request's `stage_limits` holds an entry whose name is in the accounting
@@ -387,11 +396,11 @@ these names through the same operand grammar as the stage settings
 | FR-255-AC-4 | For each row of the setting table, an input or operation that reaches that limit at its default succeeds once the row's setting is raised to fit it, through each applicable entry point: the library limits type's builder method, the replay request's `stage_limits` entry of that name, and the settings operation given the operand `<name>=<value>`. `replay.input_bytes`, `format.output_bytes`, and a row whose stage a replay does not run are exercised through the builder and the settings operation; the formatter receives the resulting `FormatLimits`. The supplied-value ceilings of FR-277 are not setting-table rows and travel in the typed `limits.supplied` member, not in `stage_limits`. | Test (TC-721, TC-931) |
 | FR-255-AC-5 | The settings operation given `s9.nodes=1`, given `s3.nodes=ten`, given `s3.nodes=-1`, and given `s3.nodes=5` and `s3.nodes=6` together, each returns a usage refusal naming the offending operand, and no stage runs. | Test (TC-721) |
 | FR-255-AC-6 | A compile with no limit configured at any entry point runs each stage at the defaults the table lists, and the effective limits a checked package records equal those defaults; an unconfigured format operation uses 1048576 output bytes. | Test (TC-721, TC-931) |
-| FR-255-AC-7 | FR-100's `seven` (`tests/fixtures/spine-compile.native`), called under the accounting limits the settings operation returns for the operand `work_units=0`, settles `Incomplete` naming counter `work_units`, bound 0, count 1 and setting `work_units`; its outcome names setting `work_units`. Under the operand `work_units=1000000` the same call completes with 7. | Test (TC-921) |
-| FR-255-AC-8 | For each of the ten rows of the accounting table, the settings operation given `<counter>=123456789` returns accounting limits with that counter at 123456789 and the other nine at their accounting-table defaults; given no operand, it returns accounting limits equal to the accounting-table defaults; given `work_units=18446744073709551615`, it returns `work_units` at `u64::MAX`. | Test (TC-921) |
-| FR-255-AC-9 | The settings operation given `depth=1` and `accounting=1` each returns a usage refusal with cause unknown setting; given `work_units=ten`, `work_units=-1` and `work_units=18446744073709551616` each returns cause not an integer; given `work_units=5` and `work_units=6` together returns cause repeated naming `work_units=6`. Each refusal names its operand, and no stage runs. | Test (TC-921) |
-| FR-255-AC-10 | A replay request whose `stage_limits` holds the entry `work_units` at `B` decodes, and its call runs with `work_units` at `B` whatever the request's accounting limits give `work_units`, and with every other counter at the request's accounting-limits value. For FR-098-AC-9's counterexample, the entry `work_units` one below the argument's node count settles `inconclusive` with cause `NoValue`, naming `work_units`, and the entry raised to fit replays. | Test (TC-921) |
-| FR-255-AC-11 | Two replay requests that differ only in how they reach the same effective accounting limits, one carrying every counter in its accounting limits and no accounting entry in `stage_limits`, the other carrying `work_units` and `value_occurrences` only as `stage_limits` entries over accounting limits holding other values for them, give the same function-level value-parity claim identity (`claim()`, FR-357) on every outcome, settle the same, and charge the same. | Test (TC-921) |
+| FR-255-AC-7 | FR-100's `seven` (`tests/fixtures/spine-compile.native`), called under the accounting limits the settings operation returns for the operand `accounting.work_units=0`, settles `Incomplete` naming counter `work_units`, bound 0, count 1 and setting `accounting.work_units`; its outcome names setting `accounting.work_units`. Under the operand `accounting.work_units=1000000` the same call completes with 7. | Test (TC-921) |
+| FR-255-AC-8 | For each of the ten rows of the accounting table, the settings operation given `accounting.<counter>=123456789` returns accounting limits with that counter at 123456789 and the other nine at their accounting-table defaults; given no operand, it returns accounting limits equal to the accounting-table defaults; given `accounting.work_units=18446744073709551615`, it returns `work_units` at `u64::MAX`. | Test (TC-921) |
+| FR-255-AC-9 | The settings operation given `depth=1`, the bare counter `work_units=1` and `accounting=1` each returns a usage refusal with cause unknown setting; given `accounting.work_units=ten`, `accounting.work_units=-1` and `accounting.work_units=18446744073709551616` each returns cause not an integer; given `accounting.work_units=5` and `accounting.work_units=6` together returns cause repeated naming `accounting.work_units=6`. Each refusal names its operand, and no stage runs. | Test (TC-921) |
+| FR-255-AC-10 | A replay request whose `stage_limits` holds the entry `accounting.work_units` at `B` decodes, and its call runs with `work_units` at `B` whatever the request's accounting limits give `work_units`, and with every other counter at the request's accounting-limits value. For FR-098-AC-9's counterexample, the entry `accounting.work_units` one below the argument's node count settles `inconclusive` with cause `NoValue`, naming `work_units`, and the entry raised to fit replays. | Test (TC-921) |
+| FR-255-AC-11 | Two replay requests that differ only in how they reach the same effective accounting limits, one carrying every counter in its accounting limits and no accounting entry in `stage_limits`, the other carrying `accounting.work_units` and `accounting.value_occurrences` only as `stage_limits` entries over accounting limits holding other values for them, give the same function-level value-parity claim identity (`claim()`, FR-357) on every outcome, settle the same, and charge the same. | Test (TC-921) |
 | FR-255-AC-12 | Every limit name of the engine table matches `^[a-z][a-z0-9_]*$`, every setting name of the setting and engine tables matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, and the setting names of the three tables are pairwise distinct. For each engine limits type, its mapping from each limit member to (limit name, setting name) equals its engine-table rows (`ExactProbLimits.model`'s members to the `exact_prob.*` product rows, `TimedSampling`'s `q` to none); the union of those names is exactly the engine table's, which AC-3's union does not include. Every `LimitReached` an engine makes at a member of its limits types names that member's pair; a method-bound stop (`max_live_instances`, `max_store_buffer`, `max_messages`) is checked against its owner's member naming (the member and its value), not against the setting pair, and its row's setting raises it through the settings operation. A stop at a limit outside those types (an evaluation meter, `MaxCandidates` of an engine that does not own `ExpansionLimits`, `Time`, `ClauseMeter`, cancellation) is not covered here. The settings operation given `model_check.max_states=0` returns a usage refusal naming the operand, and given `model_check.witness_samples=0` returns `ModelCheckLimits` with `witness_samples` 0. | Test (TC-1161) |
 | FR-255-AC-13 | FR-126-AC-8's run stopped by `max_states` 2 settles `incomplete`, `LimitReached{limit: max_states, value: 2, setting: model_check.max_states}`, and the settings operation given `model_check.max_states=3` raises it; FR-101-AC-15's exploration with `max_states` 2 returns `Outcome::Bounded` at `Limit::States` with value 2 under setting `explore.states`, and `explore.states=3` leaves a model check's `max_states` at its default. FR-126-AC-6's `max_automaton_states` 50 stop names `max_automaton_states` and `model_check.max_automaton_states`; FR-254-AC-3's `max_sample_steps` 1 stop names `statistical.max_sample_steps`. | Test (TC-1161) |
 | FR-255-AC-14 | The settings operation given `smt_encoding.max_constants=8` returns `SmtEncodingLimits` with `max_constants` 8 and its other five members at their defaults, and given `smt.max_solver_steps=1000` and `smt.max_solver_time=5` returns `SmtRunLimits` with those values; given no operand it returns both at the engine table's defaults; given `smt.max_solver_time=0` or `smt_encoding.max_monitor_states=0` it returns a usage refusal naming the operand. A replay request's `stage_limits` entry `smt_encoding.max_constants` at 8 runs the item's encoding under 8. FR-315-AC-40's `max_constants` 7 refusal names the row's limit name and setting, and FR-182-AC-14's solver stops name `max_solver_steps` with `smt.max_solver_steps` and `max_solver_time` with `smt.max_solver_time`. | Test (TC-1250) |
