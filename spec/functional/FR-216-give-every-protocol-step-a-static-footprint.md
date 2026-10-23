@@ -92,6 +92,10 @@ order gives the same answer.
   `ctl(t)`, `inst(i)` and, under `outstanding cancel`, the `ctl` of every
   branch thread of `i`, and for a branch that forked, the `ctl` of every
   thread at or below it and the inner parallel instances. `timeout(a)`: `ctl(t)` in both.
+  Under `join predicate(f)`, the dispositions `f` reads are held in
+  `inst(i)` and `f` reads only its arguments (FR-218, Predicate joins), so
+  `join(p)`'s read and enabling footprints are `inst(i)` and `ctl(t)`, with
+  no model location, binder or branch `ctl`, as under `any` and `quorum(n)`.
 - A forward-effect step SHALL also write `reg(c, ·)`; a step that binds a
   trigger-type record SHALL read and write `reg(c, ·)`, write the new
   compensation thread's `ctl`, and read the `ctl` of each compensation
@@ -154,6 +158,7 @@ order gives the same answer.
 | FR-216-AC-5 | An attempt of `bump(by)` on receiver `c` with reference argument `d`, whose precondition reads `c.v`, whose postcondition reads `pre(d.w)` and whose binder constraint reads binder `a`, has an enabling footprint holding (`c`, `v`), (`d`, `w`), the membership of `c` and of `d`, `bind` of `a`, its own `ctl(t)`, and nothing else; a `duplicate(ch, Tx)` step's enabling footprint holds `queue(ch)` of its instance. An `event` whose record type holds a `Reference<Peer>` reads the membership of the `Peer` population. An `event` whose constraint reads `c.v` of a model object, and a `finish` whose constraint reads it, have (`c`, `v`) in their read and enabling footprints. In `Chatter`, `send` on `ch` is visible to an atom that reads its position's anchor and names `ch` and invisible to one naming another channel; the same holds for a template (`cattempt` of a compensation template) and for a role (a step `by` it). Each footprint is a `Footprint{reads, writes, enabling}` with protocol locations as `Location::Protocol`. | Test (TC-661) |
 | FR-216-AC-6 | A `retire` predicate `w.done` over replicated role `w` of type `Worker`, with `Worker` declaring `done` and universe `{w1, w2}`, has a read footprint holding (`w1`, `done`) and (`w2`, `done`) and `role(w)`; a predicate that also reads `lookup<M::Job>(M::jobs, j)`, with `j` a protocol capture of type `Reference<M::Job>`, holds the membership of the `jobs` population; an `activate(T)` step under the guard `x.n > 0` over a record binder `x` has an enabling footprint holding no model location. A step that writes (`w2`, `done`) is dependent with `retire(w, w1)`, and a `send` from `w` reads `role(w)` and is dependent with `spawn(w, w2)`. | Test (TC-661) |
 | FR-216-AC-7 | In FR-205-AC-8's `attempts 2` variant with the retry relation `not e.ok`, `cattempt(Refund, r)` reads and writes the `ctl` of its thread, which holds the attempt record, and reads `reg(Refund, ·)`. The write footprint of the step of `Committed` holds `reg(Refund, ·)` and the `ctl` of thread `(0, Refund, 0)`, and in the variant with `attempts 1`, where no thread ever holds an attempt record, it holds the same `ctl`. In a model with a model type `Peer` and its population, and a template `Refund` whose attempt type `PeerAttempt` has one field `p: Reference<Peer>`, `cattempt(Refund, r)` reads the membership of the `Peer` population. | Test (TC-661) |
+| FR-216-AC-8 | Under FR-206-AC-11's `join predicate(f) [c, a]`, `join(P)`'s read and enabling footprints are exactly `inst(P)` and the owning thread's `ctl`, and hold no model location, no binder and no branch thread's `ctl`; `join(P)` is dependent with `attempt` of `a`, which ends branch `a` and writes `inst(P)`, and its write footprint under `outstanding cancel` is the one FR-216-AC-3 gives `join any`. | Test (TC-661) |
 
 ## Dependencies
 
