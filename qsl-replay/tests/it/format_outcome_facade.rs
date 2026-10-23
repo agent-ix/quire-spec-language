@@ -7,7 +7,8 @@ use qsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use qsl_cst::{CompleteCause, CompleteDiagnostic, ParsedSource};
 use qsl_foundation::diagnostic::{LimitKind, Staged};
 use qsl_foundation::{Code, Phase, SourceIdentity, SyntaxLimit};
-use qsl_replay::{Category, OutcomeDocument};
+use qsl_replay::OutcomeDocument;
+use quire_semantic_value::catalog::Category;
 use serde_json::{json, Value};
 
 const HEADER: &str =

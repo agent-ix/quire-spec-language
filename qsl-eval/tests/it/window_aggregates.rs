@@ -10,7 +10,6 @@ use qsl_eval::temporal::{
     TermRefusal, UndefinedCause, UndefinedEvaluation, WindowLimitReached, WindowRefusal,
     WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
     check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
@@ -20,6 +19,7 @@ use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::{
     ComparisonOperator, Incomplete, Integer, LimitKind, Meter, Rational, ScalarLimits,
 };
+use quire_semantic_value::catalog::Category;
 
 const UNLIMITED: u64 = u64::MAX;
 

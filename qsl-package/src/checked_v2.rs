@@ -13,9 +13,9 @@
 //! wire's raw hex) from the same already-admitted preimage and asserts that
 //! mint agrees with IR's own already-verified `package_id.digest`, refusing
 //! if it does not (M-4 L2: defense against this reader's own
-//! canonicalization ever diverging from IR's -- e.g. if IR's `digest_json`
-//! were to switch to a real JCS encoder -- not a second, independent
-//! admission decision). What remains this layer's own job:
+//! encoding of the preimage and graph projection ever diverging from IR's
+//! (a different projection or byte ceiling, say) -- not a second,
+//! independent admission decision). What remains this layer's own job:
 //!
 //! - minting the package's own typed `PackageId` from the admitted identity
 //!   preimage via [`qsl_semantics::library::PackageId::of_preimage`] -- the only
@@ -71,14 +71,14 @@ use std::sync::Arc;
 
 use quire_contract_model::{
     read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
-    CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CHECKED_PACKAGE_V2,
+    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageIncomplete,
+    CheckedPackageLimit, CheckedPackageReadLimits, CheckedPackageRefusal,
+    CheckedPackageRefusalCode, CheckedPackageV2, CheckedSourceMapEntry, CheckedSourceRef,
+    CheckedSourceRegion, CHECKED_PACKAGE_V2,
 };
 
 use qsl_foundation::diagnostic::{
-    CatalogCode, CatalogCoded, Code, InternalFault, JsonPointer, LimitExceeded, Locus,
-    RefusalRecord, StageFailure, Staged,
+    Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::{
@@ -90,6 +90,7 @@ use qsl_semantics::library::{
     PackageId, PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_semantics::model::key::hex;
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
 use crate::emit::{emit_checked, Emission, EmitRefusal};
@@ -122,7 +123,7 @@ pub(crate) enum Read {
     /// `StageFailure::Cancelled`.
     Cancelled(quire_exact::CancelCause),
     /// `StageFailure::Fault`.
-    Fault(qsl_foundation::diagnostic::InternalFault),
+    Fault(quire_semantic_value::catalog::InternalFault),
 }
 
 /// [`read_checked_package_v2`], viewed as a [`Read`].
@@ -462,7 +463,7 @@ impl V2ReadRefusal {
     pub(crate) fn unsupported_wire_record(&self) -> Option<RefusalRecord> {
         match self {
             Self::UnsupportedVersion { wire, locus } => {
-                wire.refusal_record(Some((**locus).clone()))
+                qsl_foundation::diagnostic::refusal_record(wire, Some((**locus).clone()))
             }
             _ => None,
         }
@@ -625,15 +626,29 @@ fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
     Err(StageFailure::Refused(refusal))
 }
 
-/// `preimage`'s RFC 8785 bytes, encoded by `quire-canonical` (ADR-013 §2,
-/// ADR-013:113) under a byte ceiling of the reader's own `artifact_bytes`.
-/// Refuses with the encoder's reason.
+/// The package-identity preimage's RFC 8785 bytes, encoded by
+/// `quire-canonical` (ADR-013 §2, ADR-013:113) under a byte ceiling of the
+/// reader's own `artifact_bytes`. The wire carries only the seven selections
+/// (FR-322 `identity_preimage`); the hashed preimage adds the
+/// `identity_projection` derived from the admitted `semantic_graph`, through
+/// IR's borrowed producer view. Refuses with the encoder's reason.
 fn canonical_preimage(
-    preimage: &quire_contract_model::CheckedPackageIdentityPreimageV2,
+    package: &CheckedPackageV2,
     artifact_bytes: usize,
 ) -> Result<Vec<u8>, String> {
+    let selections = package.identity_preimage();
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: &selections.version,
+        edition: &selections.edition,
+        profile_selections: &selections.profile_selections,
+        definition_selections: &selections.definition_selections,
+        model_selections: &selections.model_selections,
+        required_features: &selections.required_features,
+        dependency_selections: &selections.dependency_selections,
+        identity_projection: &package.graph().nodes,
+    };
     let limits = quire_canonical::Limits::new(u64::try_from(artifact_bytes).unwrap_or(u64::MAX));
-    quire_canonical::to_vec(preimage, limits).map_err(|error| error.to_string())
+    quire_canonical::to_vec(&preimage, limits).map_err(|error| error.to_string())
 }
 
 /// Read and verify `bytes` as a `quire.checked-package/v2` artifact claiming
@@ -667,22 +682,21 @@ pub(crate) fn read_checked_package_v2(
         CheckedPackageDispatchResult::AdmittedV2(package) => {
             // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
             // §2, ADR-013:113: the one RFC 8785 implementation), encoded
-            // straight from IR's typed preimage: the encoder orders members
-            // itself. They are a canonical substring of the wire IR just
-            // admitted, so they fit its byte ceiling.
-            let preimage_bytes =
-                match canonical_preimage(package.identity_preimage(), limits.artifact_bytes) {
-                    Ok(bytes) => bytes,
-                    Err(reason) => return refused(V2ReadRefusal::Preimage(reason)),
-                };
+            // straight from IR's typed preimage and the admitted graph: the
+            // encoder orders members itself. IR hashed the same projection
+            // under the same byte ceiling when it admitted the wire.
+            let preimage_bytes = match canonical_preimage(&package, limits.artifact_bytes) {
+                Ok(bytes) => bytes,
+                Err(reason) => return refused(V2ReadRefusal::Preimage(reason)),
+            };
             let package_id = PackageId::of_preimage(&preimage_bytes);
             // L2: cross-check this reader's own recompute against IR's
             // already-verified `package_id.digest` (see the module doc).
             // `verify_package` below re-recomputes from the same
             // `preimage_bytes` this `package_id` was itself minted from, so
-            // it cannot by itself catch this reader's canonicalization ever
-            // diverging from IR's own -- only this comparison, against a
-            // value IR derived independently, can.
+            // it cannot by itself catch this reader's encoding of the
+            // preimage and graph projection diverging from IR's own -- only
+            // this comparison, against the digest IR verified, can.
             let ir_digest = package.package_id().digest.as_ref();
             if package_id.hex() != ir_digest {
                 return refused(V2ReadRefusal::Structural(Box::new(

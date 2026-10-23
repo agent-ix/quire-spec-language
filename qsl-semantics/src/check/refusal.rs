@@ -1515,6 +1515,9 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::IntakeInputBytes
             | Setting::ReplayInputBytes
             | Setting::FormatOutputBytes
+            | Setting::RenderOutputBytes
+            | Setting::PrepareCompileWorkUnits
+            | Setting::PrepareCodeBytes
             | Setting::I2InputBytes
             | Setting::I2Nodes
             | Setting::I2Edges
@@ -1884,7 +1887,7 @@ pub struct DispatchLinkCause {
     /// The refusal's catalog pair: `resource_exhausted`/
     /// `insufficient-next-charge` for a ceiling, `ambiguous_dispatch`/
     /// `no-applicable` or `multiple-undominated` for an ambiguous family.
-    pub catalog: qsl_foundation::diagnostic::CatalogCode,
+    pub catalog: quire_semantic_value::catalog::CatalogCode,
     /// The caller-budget ceiling the family stopped on, when it did: the
     /// setting that raises it, the limit, the count the refused step would
     /// have reached and the retained charge (FR-255 Behavior 1).
@@ -1978,10 +1981,10 @@ pub enum KeyFault {
     /// A claim's extent could not be classified: a checked type names a
     /// composite the type environment does not hold, or the body reads a
     /// slot no binder bound (FR-097-AC-2).
-    UnclassifiedExtent(qsl_foundation::InternalFault),
+    UnclassifiedExtent(quire_semantic_value::catalog::InternalFault),
     /// A family `check` stopped on an internal fault of its own, which names
     /// the stage and invariant.
-    StageFault(qsl_foundation::InternalFault),
+    StageFault(quire_semantic_value::catalog::InternalFault),
     /// A model correspondence entry would give a node a second declaration
     /// or a declaration a second node (FR-303): names the recorded pair and
     /// the offered one.
@@ -2135,20 +2138,20 @@ impl CheckCause {
     }
 
     /// The attributed catalog pair for model causes, preserving raw code().
-    pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
+    pub fn catalog_code(&self) -> Option<quire_semantic_value::catalog::CatalogCode> {
         match self {
             Self::StateModel(cause) => cause.catalog_code(),
             Self::TypeInvariant(cause) => cause.cause.catalog_code(),
             Self::Terminal(cause) => cause.cause.catalog_code(),
             Self::Refinement(cause) => match &cause.cause {
                 super::refinement::RefinementCause::Check(inner) => inner.catalog_code(),
-                other => Some(qsl_foundation::diagnostic::CatalogCode::new(
+                other => Some(quire_semantic_value::catalog::CatalogCode::new(
                     other.code().as_str(),
                     other.cause()?,
                 )),
             },
             Self::DispatchLink(cause) => Some(cause.catalog),
-            _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
+            _ => Some(quire_semantic_value::catalog::CatalogCode::new(
                 self.code().as_str(),
                 self.cause()?,
             )),

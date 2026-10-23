@@ -166,8 +166,9 @@ reaches S4 (FR-383).
   `join any` or `join predicate` that lists no label, with
   `invalid_package`/`invalid-value` at the list (the count for `quorum`). A
   label listed twice is one joined label.
-- S3 SHALL refuse a role whose model is not an object type, a process, a
-  state machine, a systems interface or a persistence interface with
+- S3 SHALL refuse a role whose model is neither a model alias (Role on a
+  model alias) nor an object type, a process, a state machine, a systems
+  interface or a persistence interface with
   `invalid_model_binding`/`malformed-declaration` at the model name, and a
   channel whose `carries` type is none of a scalar type, a composite type, a
   record, an event type or a variant type with the same refusal at the type
@@ -222,12 +223,25 @@ not list is not an argument.
 
 ### Role on a model alias
 
-S3 SHALL refuse `role w on M`, `M` a model alias, by the role rule above,
-with `invalid_model_binding`/`malformed-declaration` at `M`. S4 cannot emit
-such a role: QSpec FR-322 has no `model` node form for a whole model alias,
-and QSpec FR-465 reader step 1 admits a role only on an `object_type`,
-`process`, `state_machine`, `systems_interface` or `persistence_interface`
-node (Admission for emission).
+S3 SHALL admit `role w on M`, `M` a model alias of the unit, as a static
+role on the whole model `M` selects, recording the identity of `M`'s
+`model_selections` row. It admits the role whatever the clause's `over` type
+is (a model type, a reference, a scalar, a record or a collection), and
+beside roles of the same clause on other aliases: `role w on M` and
+`role u on N` in one clause both check. S4 emits it as QSpec FR-465's role on
+a whole model, whose `model` argument is that identity text (QSpec
+FR-465-AC-9), and the subject builder binds it by construction (FR-205). A
+role on a whole model attempts, owns choices and repeats, and sends and
+receives as any static role does.
+
+A role on a whole model is static only (QSpec FR-465: a replicated role draws
+its instances from a population of a model type, so its `model` is a
+reference). S3 SHALL refuse a replicated role over a model alias,
+`role r each M from pop` with `M` a model alias, with
+`invalid_model_binding`/`malformed-declaration` at `M`, before it resolves
+`pop`: a replicated role needs an object type, and QSL's I2 reader refuses
+the same form under QSpec FR-465 step 1, so S3 admits nothing S4 cannot
+emit (Admission for emission).
 
 ### Channels
 
@@ -509,7 +523,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
 | FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each fail at the parser with a syntax diagnostic and build no form; two cases and two branches check. | Test (TC-1065) |
 | FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
-| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`), `role w on M` refuses `invalid_model_binding`/`malformed-declaration` at `M` and the unit produces no package (Role on a model alias); a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
+| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; in ADR-027 §7's `Fill` unit (alias `M`, `over (k: M::Cell)`), `role w on M` checks as a role on the whole model recording `M`'s `model_selections` identity, and so do `role w on M` beside `role u on N` in one clause over two aliases and `role w on M` in a clause whose `over` type is a scalar, a record and a `Set<M::Cell>` (Role on a model alias), while the replicated `role r each M from cells` refuses `invalid_model_binding`/`malformed-declaration` at `M` with no `pop` refusal and no package; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 | FR-218-AC-27 | The unit of TC-1056 with a second protocol `Billing` that also declares `channel Pay` with the same premises checks, and the checked clauses hold two channels: `Pipeline`'s `Pay` and `Billing`'s `Pay`. Each is recorded under its protocol's qualified identity and the handle `Pay`; the two have different qualified names and equal handles. | Test (TC-1056) |
@@ -535,10 +549,10 @@ one protocol declared in the same unit. It carries no package selector.
   The protocol reference's resolution rules follow QSpec FR-322-AC-66, and
   its production and meaning are QSpec FR-463's.
 
-## Remaining work
+## AC-16 coverage
 
 - AC-16's binding of a clause with an `on each` activation or a capture (TC-1056
-  row 23a) is exercised once S4 emits those clauses: Linear QSL-926.
+  row 23a) is exercised over the clauses S4 emits.
 
 ## References
 
