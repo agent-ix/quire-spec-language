@@ -120,6 +120,19 @@ Hand derivations of the corrected vectors:
 | FND-006 | fixed | The use case writes `Braking2` in full, with the reset `{ v = 0 and a >= 1 }`. AC-12 requires node equality with QSpec's `restored_nodes` up to the source map. |
 | FND-007 | still-open | New in this pass. |
 | FND-008 | still-open | New in this pass. |
+| FND-007 | fixed | Round 2 at 448668c8. The `timed/v1` entry now lists "an operator with no interval". FR-447-AC-15 admits `always holds(h.v < 30)` under `timed/v1` with horizon `None` and refuses it under `event-position.false-extension/v1`, which matches QSpec FR-370's `null` under `timed/v1`. |
+| FND-008 | fixed | Round 2 at 448668c8. FR-450-AC-6 writes `Bounce` in full, both modes with `invariant { x >= 0 and x <= 1 }` and reset `true`, with initial states `Up` and `x` in `[0, 1]`. The trace's dwells keep `x` in `[0, 1]`, so the outcomes re-derive unchanged: `loop_to` 0 reproduces, `loop_to` 1 fails `Loop`, `x = 1/2` fails `Jump`, and `loop_to` 2 is refused. |
 
 Verdict after disposition pass 1: FND-001 to FND-006 are fixed. Not
 mergeable until FND-007 is fixed (FND-008 is low).
+
+Verdict after disposition pass 2 (448668c8, which merges #1364 021bdefd and
+origin/main; origin/main is an ancestor): every finding is fixed and the pass
+adds none. `make check-spec-validation` with QSPEC_DIR at QSpec 2a670920
+exits 0, with no finding on a touched file. Conformance `cargo test -p
+qsl-package --lib checked_v2` with the same QSPEC_DIR has 41 passed and 6
+failed; all 6 are the expected `UnsupportedNodeTag` at node 39 and wait for
+the reader code. FR-447-AC-1..16 are each unique, and no other open QSL PR
+adds an FR-447, FR-450, FR-250, TC-1220 or TC-1221 id. Mergeable on the spec
+content.
+
