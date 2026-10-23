@@ -27,6 +27,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-364
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-031
+    type: references
 ---
 # FR-267: Write and read run results as native-run-result/2
 
@@ -46,7 +48,7 @@ CG campaign. CG owns that authentication through a separate producer/artifact
 binding receipt, as specified under **CG source-identity boundary** below.
 
 This lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), which also
-deletes native `run` (FR-026 to FR-032) and `native-run-result/1`; from that
+deletes native `run` and `native-run-result/1`; from that
 change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 (ADR-031 R-1).
 
@@ -95,6 +97,23 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
   or extra member in it, and refuse a `frame_witness` on any other
   disposition. Its nested `code` and `cause` SHALL equal those of the
   enclosing `refusal`.
+- A clause-run document of an extracted Markdown clause body (FR-031) SHALL
+  carry the report's extraction record as the top-level `extraction` member,
+  with exactly the members and JSON types QSpec FR-352 lists: `original`
+  (`authority`, `identity`, `path`, `digest`), `body` (`authority`,
+  `identity`, `document`, `digest`), `binding` (`clause`, `package`),
+  `outcome` (Quire's `availability`, `clauses` when Quire reports a clause
+  population, `clause_text` and `diagnostics`, in Quire's encoding,
+  unchanged), `map` (`region` as `{start, end}` byte offsets and a non-empty
+  `segments` array of `{body_start, body_end, original_start, original_end}`
+  in ascending `body_start` order) and, for a refusal whose locus names a
+  body span, a non-empty `original_regions` array of `{start, end}` regions
+  whose endpoints are `{byte, line, column}`, in original-document order. A
+  clause-run document of a unit given as bytes carries no `extraction`. The
+  reader SHALL restore the record without loss and refuse, naming
+  `extraction` and the member, an unknown, missing, duplicate or `null`
+  member at any level, a value of another JSON type, and an empty
+  `segments` or `original_regions` array.
 - A command-error envelope SHALL be one closed JSON object with exactly
   these members:
   - `format`: `native-run-result/2`;
@@ -326,6 +345,7 @@ condition is false; the reader refuses `null` or a default in its place.
 | Change | `deletes` | FR-115 | Ordered declaration-key array on deletion | Restore checked grant |
 | Declaration key | `package` | FR-056, FR-115 | Package identity | Restore key package |
 | Declaration key | `node` | FR-056, FR-115 | IR node identity | Restore key node |
+| Clause run | `extraction` | FR-031, FR-267, QSpec FR-352 | Extraction record of an extracted clause body, absent otherwise | Restore record or absence |
 | Disposition | `temporal` | FR-330, FR-267 | Closed temporal disposition, evaluate stage of a Temporal selection only | Restore typed temporal verdict or trace refusal |
 | Temporal | `kind` | FR-267 | One of the ten tags of the temporal table | Select verdict variant |
 | Temporal | `position` | FR-327 | Unsigned trace position | Restore position |
@@ -410,6 +430,7 @@ condition is false; the reader refuses `null` or a default in its place.
 | FR-267-AC-14 | Each of these FR-330 reports writes its temporal table row and reads back to an equal disposition: FR-330-AC-2's `pending` (`inconclusive`, `basis` `unsettled`, no `truth`, no `outcome`) and `holds`; FR-330-AC-4's `incomplete` (`outcome` limit `work_units`); FR-330-AC-5's `undefined` (`position` 2, `outcome` `{"kind": "undefined", "reason": "division-by-zero"}`, `basis` `closed-scope`, the envelope `cause` `division-by-zero`, `prefix` the three snapshots); FR-330-AC-6's `missing-fairness-premise` (`outcome` refused `unsupported_projection`/`missing-fairness-premise`, `constraint` `{"kind": "weak", "operation": ..., "granularity": "whole"}`); FR-330-AC-3's empty-loop report (`trace-refused`, `variant` `empty-loop`, `outcome` refused `invalid_runtime_input`/`invalid-value`) and the empty `Finite` report (`variant` `empty-trace`, same `outcome`), which read back to `EmptyLoop` and `EmptyTrace` respectively; and FR-330-AC-7's `condition-refused`. None writes a `refusal` member. Independently adding `temporal {"kind": "holds"}` to FR-109-AC-3's dangling-parent stage `admit` document, setting `kind` to `held`, setting `variant` to `empty-hoop`, dropping `counterexample` from AC-13's document, setting its `trace_position` to `1`, setting it to the string `"0"`, to `-1`, to `0.5` or to `9007199254740992`, adding a top-level `witness` to AC-13's document, adding a `refusal` member to the empty-loop document, and setting the `pending` document's `basis` to `unavailable` each refuse with a located wire diagnostic naming the member. | Test (TC-1160) |
 | FR-267-AC-15 | Through FR-330, the `Counter` clause `Windowed` under event-position false-extension, `on origin`, `always[0,2] (count where holds(c.value >= 0) over past[0, 9] >= 1)` with `min_count 5` (TC-629's count form), over `Finite` snapshots with `c.value` 0, 1, 2, writes `insufficient-data` at `position` 0 with `count` 1, `min_count` 5 and `outcome` `{"kind": "undefined", "reason": "insufficient-data"}`, category `undefined`; as a wire vector (no run: a clause run has no window-limit input, and the default `max_window_values` is 2^20), a `Windowed` report built to hold `TemporalVerdict::WindowLimitReached{limit: max_window_values, value: 2, setting: monitor.max_window_values}` writes `window-limit-reached`, category `incomplete`, with `limit` `max_window_values`, `value` 2 and `setting` `monitor.max_window_values` and `outcome` `{"kind": "incomplete", "limit": "max_window_values"}`, and reads back to that verdict; the clause `always[0,2] holds(lookup<Counters::Counter>(cs, c) absent undefined = c)` (FR-090-AC-12's `lookup` form) over snapshots whose population bound to `cs` holds no member for `c` writes `undefined` at `position` 0 with `outcome` reason `absent-key` and envelope `cause` `absent-key`; FR-328-AC-1's `always holds(c.value <= 1)` over the infinite-trace `Finite` prefix 0, 1, 2 writes `violated` at `position` 0 with a counterexample whose `prefix` holds the three snapshots, `loop` is empty and `interval` is `null`. Each reads back to an equal disposition, and independently dropping `count`, `min_count`, `limit`, `value` or `setting` refuses naming it. | Test (TC-1160) |
 | FR-267-AC-16 | Independently: adding `temporal` `{"kind": "holds"}` to FR-109-AC-3's exhausted-work report (stage `evaluate`); adding a `refusal` member to AC-13's `violated` document; setting the `outcome` reason of AC-14's `undefined` document to `insufficient-data`; setting the `outcome` limit of AC-14's `incomplete` document to `max_window_values`; setting the `outcome` reason of FR-109-AC-7's `precondition-false` report to `insufficient-data`; and setting the `outcome` limit of FR-109-AC-3's exhausted-work report to `max_window_values`, each refuse with a located wire diagnostic naming the member (QSpec FR-352-AC-11, FR-352-AC-12). | Test (TC-1160) |
+| FR-267-AC-17 | A clause-run report over an extracted Markdown clause body is written with a top-level `extraction` member holding exactly QSpec FR-352's `original`, `body`, `binding`, `outcome` and `map` members, plus `original_regions` for a refusal whose locus names a body span, and reads back to an equal record; a report over a unit given as bytes writes no `extraction`; an `extraction` with an unknown top-level member `source`, with `map` missing, with `binding` `null`, with a numeric `body.digest`, and with `map.segments` `[]` each refuse naming `extraction` and the member (QSpec FR-352-AC-13). | Test (TC-109) |
 
 ## Dependencies
 

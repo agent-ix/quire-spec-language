@@ -176,9 +176,8 @@ a new wire format as an incidental implementation choice.
 ## Dependencies
 
 [FR-035](FR-035-parse-composed-native-units.md) supplies located syntax.
-[FR-013](FR-013-link-formal-environments.md),
-[FR-015](FR-015-project-native-model-semantics.md) and
-[FR-019](FR-019-package-checked-native-clauses.md) supply existing compiler seams.
+[FR-013](FR-013-link-formal-environments.md) and
+[FR-015](FR-015-project-native-model-semantics.md) supply existing compiler seams.
 [FR-056](FR-056-admit-domain-package-model-declarations.md) supplies the admitted
 domain-package model declarations, and
 [IT-012](../integration/IT-012-domain-package-model-intake.md) owns the real

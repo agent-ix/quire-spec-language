@@ -114,8 +114,10 @@ snapshot data (ADR-012 §15.1).
 - The independent expected table SHALL include the four boundary cases:
   boundary-zero and boundary-max success/true, below-range and above-range
   admission refusal with `invalid_runtime_input`.
-- With feature `quire-extraction`, each case's unit SHALL also be embedded in
-  a Markdown fence and run through the I3 adapter. Its disposition (stage,
+- With `qsl-replay`'s feature `quire-extraction`, each case's unit SHALL also
+  be embedded in a Markdown fence and run through the I3 adapter. This check
+  runs in `qsl-replay`'s tests built with that feature; the root crate has no
+  `quire-extraction` feature (ADR-011 §7.3 X-4). Its disposition (stage,
   category, truth and exit code) SHALL equal the direct run's, and its
   `package_id` SHALL be the extracted body's own: the one the body compiles
   to under its body identity (FR-109-AC-6), since a source's identity gives
@@ -131,13 +133,13 @@ snapshot data (ADR-012 §15.1).
 | FR-108-AC-2 | For each of the 17 cases, the FR-267 native-run-result/2 writer and strict reader retain the report's stage, category, truth and code. | Test (TC-469) |
 | FR-108-AC-3 | Below-range and above-range refuse at admission with `invalid_runtime_input`; their native-run-result/2 records name the object (`root`, `child`) and field `versionNumber`. Boundary-zero and boundary-max complete with `true` (QSpec FR-180-AC-4, QSL's share). | Test (TC-469) |
 | FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports, each holding the disposition, the `package_id` and the usage FR-109 states, so the case is fixed by its inputs (QSpec FR-180-AC-5). A run whose request carries the `package_id` that spine `compile` emits for the unit gives the same report (FR-032-AC-4's package half). | Test (TC-469) |
-| FR-108-AC-5 | With `quire-extraction`, the Markdown run of each case, its unit extracted through I3 under its own body identity, gives the direct run's stage, category, truth and exit code, and the `package_id` that a direct `spine::compile` of the extracted body's bytes under that body identity emits. | Test (TC-469) |
+| FR-108-AC-5 | In `qsl-replay`'s tests built with `qsl-replay`'s `quire-extraction` feature, the Markdown run of each case, its unit extracted through I3 under its own body identity, gives the direct run's stage, category, truth and exit code, and the `package_id` that a direct `spine::compile` of the extracted body's bytes under that body identity emits. | Test (TC-469) |
 | FR-108-AC-6 | Every case's direct-run report agrees on the unit's `package_id` (the one spine `compile` emits for the FR-108 unit and package, independently re-derived and compared against every case's report); the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469) |
 
 ## Dependencies
 
 - FR-102 to FR-107 and FR-109.
-- FR-032 (the native corpus and its catalog), FR-031 (native extracted run).
+- FR-032 (the native corpus and its catalog), FR-031 (the extracted Markdown clause run).
 - QSpec FR-180 and TC-209. QSL's share is the reference dispositions; the
   generated-oracle, property and proof consumers of FR-180-AC-1 are CG's and
   IR's (ADR-012 §15.7).
