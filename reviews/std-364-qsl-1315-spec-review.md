@@ -59,9 +59,9 @@ from the FR text and not only from the vector.
 
 ## Dispositions
 
-Round 1. `QSPEC_DIR=~/dev/quire-specification make check-spec-validation` exits 0, and origin/main is an ancestor of the head.
+Round 1, at head 1bc8121a (fix diff checked against the original review head).
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | A new bullet names what stops the unit before its protocol clauses: a refused declaration that is not a refinement (function body, state clause, repeated protocol reference), or a whole-unit S3 stage such as model conformance. A refinement's own refusals never stop it. The refinements' refusals, of every subject kind, follow in source order, so AC-11's order invariant, `CasTwice`, `Run` follows from the text. This changes main, where `Run`'s refusals currently feed the gate; QSL-954's code change carries that. |
-| FND-002 | fixed | AC-11 and TC-541 step 11 now write `CasTwice`'s `population` row twice, which is FR-135-AC-2's single `conflicting-binding`, instead of removing it. The source population therefore exists and the object row checks. |
+| FND-001 | fixed | fixed; after: - The unit's check stops before its protocol clauses are checked when a declaration of the unit that is not a refinement is refused first (a function body, a state clause, a repeated protocol reference), or when an S3 stage that refuses the whole unit, such as model conformance, runs first. A refine… |
+| FND-002 | fixed | fixed; after: In a build whose support set holds `protocol-abstract-side`, a unit declaring, in this source order, an invariant over a concrete object type whose body is a non-Boolean field read, `CasTwice` (FR-147) with its `population` row written twice, and FR-136-AC-6's refinement over `Run` with a further ro… |
