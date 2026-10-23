@@ -64,9 +64,11 @@ protocol `OnImpl` over `Impl` only (FR-147-AC-16).
 
 15. With `Twice` supplied by the dependency package, check `CasTwice`, the
     row `commitA -> node Spec::Twice::a1(self)`, the row
-    `-> node Spec::Twice::a1(true)`, and the headers `abstract Spec::Thrice`
-    and `abstract Spec::Counter`; compare its `refinement` record's
-    obligation identity with step 1's.
+    `-> node Spec::Twice::a1(true)`, and the headers `abstract Spec::Thrice`,
+    `abstract Spec::Counter` and `abstract Spec::LocalTwice` (a protocol the
+    unit declares over the dependency's `Spec`); compare its `refinement`
+    record's obligation identity with step 1's; emit the package and read the
+    refinement node's `protocol`, `dependencies` and node id against step 1's.
 16. Check `abstract Spec::OnOther` over the dependency, `abstract
     Spec::OnImpl` over the local protocol, and `CasTwice` over a dependency
     whose `Twice` fails its own checks.
@@ -127,8 +129,11 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   `package_id` and `clause` the key its checked graph holds for `Twice`,
   `abstract_internal = [Twice::Done]`; the node row checks naming `a1`;
   `ill_typed`/`type-mismatch` at `true`; `missing_declaration`/`missing-name`
-  at `Thrice` and at `Counter`; one `refinement` record whose obligation
-  identity names the dependency's `package_id` and differs from step 1's.
+  at `Thrice`, at `Counter` and at `LocalTwice`; one `refinement` record whose
+  obligation identity names the dependency's `package_id` and differs from
+  step 1's; the node's `protocol` is the dependency's `package_id` with
+  `Twice`'s node id, its `dependencies` hold no entry for `Twice`, and its node
+  id differs from step 1's.
 - Step 16: `invalid_model_binding`/`malformed-declaration` at `OnOther` and
   at `OnImpl`, each with no `CheckedRefinement`; `CompileRefusal::Dependency`
   and no S3 result for the unit.

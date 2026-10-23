@@ -93,13 +93,25 @@ rows at compile time and requests one protocol refinement claim.
   dependency's model. The name is looked up among protocol clauses only, so
   a type or population of the same spelling never matches. A name that is
   no protocol clause of that package SHALL refuse
-  `missing_declaration`/`missing-name` at `<protocol>`.
+  `missing_declaration`/`missing-name` at `<protocol>`. A protocol clause
+  that the declaring unit declares over a dependency's model is a clause of
+  the declaring package, not of the dependency's, so `<A>::<name>` naming it
+  refuses `missing_declaration`/`missing-name` at `<name>`.
 - For a dependency's clause, S3 SHALL find the clause's `NodeKey` among the
   keys of the dependency's `CheckedGraph` by lookup, never by minting one
   (ADR-015 D-5; ADR-013 O-04), and SHALL read the clause's step classes,
   nodes, binder records, channels, templates, roles and memory model from
   that graph. `CheckedRefinement::abstract_side` then carries the
   dependency's `package_id` as `dependency`.
+- S4 SHALL write the refinement node's body member `protocol` (QSpec FR-375
+  "Checked-package node") as the selected clause's `PackageNodeKey`: the
+  declaring package's clause node for a local clause, and, for a
+  dependency's clause, the dependency's `package_id` with the clause's node
+  id. A node of another package adds no entry to the refinement node's
+  `dependencies` (QSpec FR-322), so a dependency's clause is named by
+  `protocol` alone. The dependency's `package_id` thus enters the
+  refinement node's id, and the same refinement over a local and over a
+  dependency's clause gives different node ids.
 - A clause is selectable only when it acts on the aliased abstract model:
   a clause whose roles act only on another model, whether a dependency's
   clause in a package that imports several models or a clause of the
@@ -318,7 +330,7 @@ declares an `await` node (the `timeout` class) and a compensation template
 | FR-147-AC-12 | In a build that holds `refinement-internal-list`, a non-empty list for `CasRefinesCounter` (model side) refuses `invalid_model_binding`/`malformed-declaration` at (the unit's value, `/0`), with no `CheckedRefinement` and no `not-yet-implemented`; an empty list does not refuse. | Test (TC-552) |
 | FR-147-AC-13 | In a build that holds `protocol-abstract-side`, `CasTwice` checks to the same `CheckedRefinement` whether `protocol Twice` is declared before or after the refinement in the unit's source. With `Twice` refused by its own checks, the unit reports `Twice`'s refusals and no `missing-name` for the clause name and no `CheckedRefinement` for `CasTwice`. | Test (TC-552) |
 | FR-147-AC-14 | In a build that holds `protocol-abstract-side`, over `Twice`, whose attempt `a1` applies `Spec::Counter::inc` (no parameter and no result, so its binder record is the receiver alone), the rows `-> node Spec::Twice::a1(self)`, `-> node Spec::Twice::a1(_)` and `-> node Spec::Twice::a1` are admitted; `-> node Spec::Twice::a1(self, 1, 2)` and `-> node Spec::Twice::a1(self, _)` each refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1 and `actual` 3 and 2; `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument retaining `expected` the reference type of `Spec::Counter` and `actual` `Boolean`. | Test (TC-552) |
-| FR-147-AC-15 | In a build that holds `protocol-abstract-side` and `refinement-internal-list`, with `Spec` and `Twice` supplied as a dependency package (FR-135-AC-1's dependency form) and declared nowhere in the unit, `CasTwice` checks with `AbstractSide::Protocol` whose `dependency` is that package's `package_id` and whose `clause` is the key of `Twice` the dependency's `CheckedGraph` holds, with `abstract_internal = [Twice::Done]`; the row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`, and `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument as in AC-14. It writes one `refinement` record whose obligation identity names the dependency's `package_id`, and differs from the record of the same refinement over the local `Twice` of AC-1. `abstract Spec::Thrice` and `abstract Spec::Counter` (a type of the dependency) each refuse `missing_declaration`/`missing-name` at the name after `::`. | Test (TC-552) |
+| FR-147-AC-15 | In a build that holds `protocol-abstract-side` and `refinement-internal-list`, with `Spec` and `Twice` supplied as a dependency package (FR-135-AC-1's dependency form) and declared nowhere in the unit, `CasTwice` checks with `AbstractSide::Protocol` whose `dependency` is that package's `package_id` and whose `clause` is the key of `Twice` the dependency's `CheckedGraph` holds, with `abstract_internal = [Twice::Done]`; the row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`, and `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument as in AC-14. It writes one `refinement` record whose obligation identity names the dependency's `package_id`, and differs from the record of the same refinement over the local `Twice` of AC-1. The emitted refinement node's `protocol` is the `PackageNodeKey` of the dependency's `package_id` and `Twice`'s node id, its `dependencies` hold no entry for `Twice`, and its node id differs from the node id of the same refinement over the local `Twice`. `abstract Spec::Thrice` and `abstract Spec::Counter` (a type of the dependency) each refuse `missing_declaration`/`missing-name` at the name after `::`, and so does `abstract Spec::LocalTwice`, where `LocalTwice` is a protocol the unit itself declares over the dependency's `Spec`, at `LocalTwice`. | Test (TC-552) |
 | FR-147-AC-16 | In a build that holds `protocol-abstract-side`, a dependency package that imports the models `Spec` and `Other` and declares a protocol `OnOther` whose roles act only on `Other` refuses `abstract Spec::OnOther` `invalid_model_binding`/`malformed-declaration` at `OnOther`, with no `CheckedRefinement`; with `Spec` local, a protocol `OnImpl` of the declaring package whose roles act only on the concrete model `Impl` refuses `abstract Spec::OnImpl` the same way, at `OnImpl`. A dependency whose `Twice` fails its own checks gives `CompileRefusal::Dependency` and no S3 result for the unit. | Test (TC-552) |
 
 ## Dependencies
