@@ -7,8 +7,9 @@
 
 use alloc::{borrow::ToOwned, collections::BTreeMap, string::String, string::ToString};
 
-use super::{CatalogCoded, LimitExceeded};
+use super::LimitExceeded;
 use crate::Setting;
+use quire_semantic_value::catalog::CatalogCoded;
 
 /// The stage and accounting contract that own a budget.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

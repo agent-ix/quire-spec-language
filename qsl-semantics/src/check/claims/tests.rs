@@ -593,6 +593,35 @@ fn tc_1089_every_value_validity_record_has_the_declaring_function_as_owner() {
     assert_eq!(owners, [Some("sq"); 3]);
 }
 
+/// FR-062 "Extent": a record names every extent root, including a bounded
+/// parameter that adds no unbounded domain, and no parameter its application
+/// and path condition read nowhere.
+#[test]
+fn a_record_names_the_parameters_its_extent_reads() {
+    let checked = check(
+        "function u using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { 10 mod x }\n\
+         function g using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { if y > 0 then 10 mod x else 0 }",
+    );
+    let roots = |function: &str, guarded: bool| {
+        let mut found = checked.graph.requirements().values().filter(|record| {
+            record.owner() == Some(function) && record.path_condition().is_empty() != guarded
+        });
+        let record = found.next().expect("a record");
+        assert!(
+            found.next().is_none(),
+            "one {function} record, guarded {guarded}"
+        );
+        record.extent_roots().iter().copied().collect::<Vec<_>>()
+    };
+    let wire = |function: &str, index: usize| wire(checked.parameter(function, index));
+    // `y` is read by neither the application nor its (empty) path condition.
+    assert_eq!(roots("u", false), [wire("u", 0)]);
+    // `g`'s application is guarded by `y > 0`: `y` is a root of it too.
+    let mut expected = vec![wire("g", 0), wire("g", 1)];
+    expected.sort();
+    assert_eq!(roots("g", true), expected);
+}
+
 /// FR-062 RR-16: the two requirements share the canonical `+` node but each
 /// occurrence retains the directly enclosing narrow that supplies its own
 /// result bound. An application with its own result type has no such context.
@@ -645,6 +674,7 @@ fn narrowed_claim(location: Location, bound: IntegerInterval) -> ValueClaim {
             path_condition: Vec::new(),
         },
         domains: BTreeMap::new(),
+        roots: Vec::new(),
         objects: std::collections::BTreeSet::new(),
         owner: Some("f".to_owned()),
     }
@@ -797,6 +827,7 @@ fn claim_at(location: Location) -> ValueClaim {
             path_condition: Vec::new(),
         },
         domains: BTreeMap::new(),
+        roots: Vec::new(),
         objects: std::collections::BTreeSet::new(),
         owner: Some("f".to_owned()),
     }

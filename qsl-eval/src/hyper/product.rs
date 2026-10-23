@@ -35,10 +35,10 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{

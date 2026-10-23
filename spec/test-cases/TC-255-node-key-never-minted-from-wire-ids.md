@@ -30,8 +30,7 @@ R-10 violation this criterion exists to catch.
 This test is scoped to what FR-087 (S-3) owns, not to "only `check` calls
 the constructor" crate-wide: that crate-wide claim is FR-060 T12-B's own
 allow-list, whose named debt list (FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists")
-holds the real minting sites outside `check` this requirement does not touch
-(pre-existing debt, Remaining work: agent-ix/quire-spec-language#211). This
+holds the real minting sites outside `check` this requirement does not touch. This
 criterion does not require the debt list to be empty; it requires `library`,
 `package`'s E4 path, and `replay`'s E9 path each to add none, and no call
 anywhere to be fed by a `PackageNodeKey`'s `WireNodeId`. Scope: FR-087-AC-6.
@@ -61,8 +60,7 @@ anywhere to be fed by a `PackageNodeKey`'s `WireNodeId`. Scope: FR-087-AC-6.
    dependency resolution, or E9's `replay` lookup makes that scan fail
    (none of those is on T12-B's debt list).
 5. Confirm every mint the scan reports outside `check` is in a function on
-   FR-060's T12-B debt list, the pre-existing debt tracked under
-   agent-ix/quire-spec-language#211 and out of this requirement's scope:
+   FR-060's T12-B debt list, which is outside this requirement's scope:
    this step records that fact, it does not require remediating those
    sites.
 6. Adverse test: trace the call graph transitively (not only direct call
