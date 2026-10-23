@@ -1,5 +1,5 @@
 ---
-id: SR-16217
+id: SR-16248
 title: "spec-review of the monitor trace document and MonitorOutcome record (quire-spec-language PR 1336)"
 type: SpecReview
 analysis: base
@@ -76,3 +76,12 @@ violation without replacing them. FND-002 to FND-004 are a label and
 category contradiction (and a mismatch with #1340), five untested rows, and
 an ambiguous defect order. Dropping the per-position invocation is correct
 and loses nothing, and the document format and refusals are sound.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3d508288: `Violated` carries `position`, `counterexample` and `witness`, the QSpec FR-351 separating witness with the deciding quantifier, deciding element, index and FR-207 value path that FR-107's evaluator retains for the first false `holds` atom. FR-283-AC-10 and TC-765 step 8 test the root-path case and a `forall` over `items` 3, 0, 5 (deciding element 0, index 1). |
+| FND-002 | fixed | 3d508288: the `InsufficientData` row maps FR-327's own `InsufficientData{where, atom, count, min_count}`, "not an `Undefined`", with category undefined and the label `undefined` with reason `insufficient-data`, as #1340 does. The never-`undefined` label sentence is now limited to undefined evaluations. |
+| FND-003 | fixed | 3d508288: FR-283-AC-11 covers `InsufficientData`, and FR-283-AC-12 covers `Incomplete`, `WindowLimitReached` (setting `monitor.max_window_values`, which FR-255 lists) and `ConditionRefused`. FR-283-AC-13 covers `TraceRefused` and the `TemporalRefusal::Fault` path to `StageFailure::Fault`, exit 30. TC-765 step 9 and TC-766 steps 6-7 cover the same. |
+| FND-004 | fixed | 3d508288: step 3 is now "A missing `format` or `prefix`: `missing-member`" and step 4 "A present `format` other than ...". FR-283-AC-8 adds `[` (`invalid-value` at `""`), `[]` (`wrong-value-kind` at `""`) and `{"prefix":[]}` (`missing-member` naming `format`, not `unknown_wire`). |
