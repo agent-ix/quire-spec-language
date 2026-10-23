@@ -61,6 +61,7 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
 }
 
 /// Trace: FR-075-AC-19, FR-250-AC-1, TC-193.
+#[trace("TC-193", "FR-075-AC-19")]
 #[test]
 fn hybrid_and_discrete_items_route_to_their_advertised_dynamics() {
     let discrete = backend(
@@ -113,6 +114,7 @@ fn hybrid_and_discrete_items_route_to_their_advertised_dynamics() {
 }
 
 /// Trace: FR-075-AC-20, FR-250-AC-3, TC-193, TC-705.
+#[trace("TC-193", "FR-075-AC-20")]
 #[test]
 fn hybrid_manifest_admission_checks_dynamics_after_fairness_and_evidence() {
     let admit = |dynamics, fairness, bounds| {
