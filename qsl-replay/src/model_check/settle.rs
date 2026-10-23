@@ -14,6 +14,7 @@
 
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 
 use quire_exact::Cancel;
@@ -33,7 +34,7 @@ use crate::model_check::replay::{
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
-    TerminalValue, UnavailabilityCause,
+    TerminalRecord, TerminalValue, UnavailabilityCause,
 };
 use qsl_eval::simulation::protocol::{
     activates_on_each, live_instance_bound, ProtocolTransition, SubjectMemory, WeakAccessShape,
@@ -137,6 +138,16 @@ pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
     /// AE-4, FR-209); `None` for a protocol that does not activate `on each`
     /// and for a model subject.
     pub instance_bound: Option<StatedInstanceBound>,
+}
+
+impl<T: SubjectTransition> ModelCheckRecord<T> {
+    /// This record as the FR-331 terminal record of the item at
+    /// `request_index`, produced by `backend` (FR-280, FR-281). Its
+    /// counterexample stays on this record: the terminal record carries the
+    /// value alone.
+    pub fn into_terminal(self, request_index: RequestIndex, backend: BackendId) -> TerminalRecord {
+        TerminalRecord::settled(request_index, Some(backend), self.value, None)
+    }
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package

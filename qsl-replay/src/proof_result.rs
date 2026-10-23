@@ -446,6 +446,13 @@ pub enum UnavailabilityCause {
         /// The punctual interval's span.
         span: qsl_foundation::Span,
     },
+    /// FR-281: no layer-A engine advertises the item's claim kind, so
+    /// `analyze` routes it to none. Wire cause `unsupported-claim-kind`,
+    /// naming the claim kind.
+    ClaimKind {
+        /// The claim kind no engine advertises.
+        kind: qsl_semantics::check::Capability,
+    },
 }
 
 /// FR-235 V-8: an item the request writer disposed `Unsupported` settles
@@ -510,6 +517,7 @@ impl UnavailabilityCause {
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
             Self::PunctualInterval { .. } => "punctual-interval",
+            Self::ClaimKind { .. } => "unsupported-claim-kind",
         }
     }
 
@@ -523,7 +531,8 @@ impl UnavailabilityCause {
             | Self::TotalAboveDrawRange { .. }
             | Self::ConfidenceBeyondPrecision
             | Self::WeakAccessShape { .. }
-            | Self::PunctualInterval { .. } => None,
+            | Self::PunctualInterval { .. }
+            | Self::ClaimKind { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
@@ -1178,6 +1187,27 @@ impl TerminalRecord {
     /// Build a failed record with the producing backend identity.
     pub fn failed(request_index: RequestIndex, backend: BackendId) -> Self {
         Self::with_backend(request_index, backend, TerminalValue::Failed)
+    }
+
+    /// FR-281: a record for an item `analyze` settled itself, after it ran
+    /// the item's certificate checker or replayed its counterexample, with
+    /// the settled `value` and the one diagnostic the settlement names, if
+    /// any. The settlement owns the evidence check: this constructor does
+    /// not re-derive it, so a caller outside `analyze`'s settlement map has
+    /// no reason to use it.
+    pub fn settled(
+        request_index: RequestIndex,
+        backend: Option<BackendId>,
+        value: TerminalValue,
+        diagnostic: Option<CatalogCode>,
+    ) -> Self {
+        Self {
+            request_index,
+            backend,
+            value,
+            replay: None,
+            diagnostic,
+        }
     }
 
     pub(crate) fn with_backend(

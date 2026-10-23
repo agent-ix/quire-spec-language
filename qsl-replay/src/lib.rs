@@ -186,6 +186,7 @@ pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
 // `TerminalValue` are built from, so the code generator, which depends on
 // this crate alone, names them without naming `qsl_foundation`.
+pub use outcome::undefined_reason;
 pub use outcome::{
     ArtifactKind, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeArtifact,
     OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError,
