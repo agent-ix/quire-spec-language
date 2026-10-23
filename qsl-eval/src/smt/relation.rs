@@ -22,11 +22,11 @@ use std::rc::Rc;
 use qsl_semantics::check::CheckedStateClause;
 use quire_exact::Value;
 
-use crate::simulation::model::{SymbolicOperation, SymbolicSubject};
+use crate::simulation::model::{ParameterValues, ResultValues, SymbolicOperation, SymbolicSubject};
 use crate::smt::expression::{Reader, Sym, Views};
 use crate::smt::layout::{value_term, FieldSort, FieldTerms, StateCopy, StateLayout, StateRef};
 use crate::smt::script::Term;
-use crate::smt::SmtEncodingRefusal;
+use crate::smt::{Measure, SmtEncodingRefusal};
 
 /// The most applications of one step (FR-315 "Size limits").
 pub const MAX_APPLICATIONS: u64 = 1 << 16;
@@ -40,37 +40,74 @@ pub struct Application<'s, 'a> {
     arguments: Vec<Value>,
 }
 
+/// Refuse `parameter-domain` for the first parameter, in object, operation
+/// and parameter order, or declared result, that has no finite domain.
+///
+/// # Errors
+///
+/// [`SmtEncodingRefusal::ParameterDomain`] naming the operation and the
+/// parameter, or `result`.
+pub fn check_domains(subject: &SymbolicSubject<'_>) -> Result<(), SmtEncodingRefusal> {
+    for object in &subject.objects {
+        for operation in &object.operations {
+            for ((name, _), domain) in operation.parameters.iter().zip(&operation.domains) {
+                if matches!(domain, ParameterValues::Unbounded) {
+                    return Err(SmtEncodingRefusal::ParameterDomain {
+                        operation: operation.name.clone(),
+                        parameter: name.clone(),
+                    });
+                }
+            }
+            if let ResultValues::Declared(
+                ParameterValues::Unbounded | ParameterValues::TooMany(_),
+            ) = &operation.result
+            {
+                return Err(SmtEncodingRefusal::ParameterDomain {
+                    operation: operation.name.clone(),
+                    parameter: "result".to_owned(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The applications of one step: receivers times operations times argument
+/// vectors, summed over the operations. Saturates.
+pub fn count_applications(subject: &SymbolicSubject<'_>) -> u64 {
+    let mut total: u64 = 0;
+    for object in &subject.objects {
+        for operation in &object.operations {
+            let mut count: u64 = 1;
+            for domain in &operation.domains {
+                let size = match domain {
+                    ParameterValues::Values(values) => {
+                        u64::try_from(values.len()).unwrap_or(u64::MAX)
+                    }
+                    ParameterValues::TooMany(size) => u64::try_from(*size).unwrap_or(u64::MAX),
+                    ParameterValues::Unbounded => 0,
+                };
+                count = count.saturating_mul(size);
+            }
+            total = total.saturating_add(count);
+        }
+    }
+    total
+}
+
 /// Every application of the subject, in step-disjunct order.
 ///
 /// # Errors
 ///
-/// [`SmtEncodingRefusal::ParameterDomain`] naming the first parameter, in
-/// object, operation and parameter order, with no finite domain, then
 /// [`SmtEncodingRefusal::TooLarge`] for `applications`, before any vector is
 /// built.
 pub fn applications<'s, 'a>(
     subject: &'s SymbolicSubject<'a>,
 ) -> Result<Vec<Application<'s, 'a>>, SmtEncodingRefusal> {
-    let mut total: u64 = 0;
-    for object in &subject.objects {
-        for operation in &object.operations {
-            let mut count: u64 = 1;
-            for ((name, _), domain) in operation.parameters.iter().zip(&operation.domains) {
-                let values =
-                    domain
-                        .as_ref()
-                        .ok_or_else(|| SmtEncodingRefusal::ParameterDomain {
-                            operation: operation.name.clone(),
-                            parameter: name.clone(),
-                        })?;
-                count = count.saturating_mul(u64::try_from(values.len()).unwrap_or(u64::MAX));
-            }
-            total = total.saturating_add(count);
-        }
-    }
+    let total = count_applications(subject);
     if total > MAX_APPLICATIONS {
         return Err(SmtEncodingRefusal::TooLarge {
-            measure: "applications",
+            measure: Measure::Applications,
             value: total,
             limit: MAX_APPLICATIONS,
         });
@@ -95,7 +132,9 @@ pub fn applications<'s, 'a>(
 fn argument_vectors(operation: &SymbolicOperation<'_>) -> Vec<Vec<Value>> {
     let mut vectors: Vec<Vec<Value>> = vec![Vec::new()];
     for domain in &operation.domains {
-        let values = domain.as_deref().unwrap_or_default();
+        let ParameterValues::Values(values) = domain else {
+            return Vec::new();
+        };
         vectors = vectors
             .into_iter()
             .flat_map(|prefix| {
@@ -125,7 +164,7 @@ impl StepRelation {
     ///
     /// [`SmtEncodingRefusal::OutOfFragment`] naming the first construct of an
     /// applicable clause outside the fragment.
-    pub fn build(
+    pub(crate) fn build(
         subject: &SymbolicSubject<'_>,
         layout: &StateLayout,
         applications: &[Application<'_, '_>],
@@ -143,25 +182,33 @@ impl StepRelation {
         for application in applications {
             let mut conjuncts = Vec::new();
             for clause in &application.operation.preconditions {
-                let (value, defined) = application.read(subject, layout, clause, &before)?;
+                let (value, defined) = application.read(subject, layout, clause, &before, None)?;
                 conjuncts.push(Term::all([defined, value]));
             }
-            for clause in &application.operation.postconditions {
-                let (value, defined) = application.read(subject, layout, clause, &across)?;
-                conjuncts.push(Term::all([defined, value]));
+            let results = application.results();
+            if matches!(application.operation.result, ResultValues::None) {
+                for clause in &application.operation.postconditions {
+                    let (value, defined) =
+                        application.read(subject, layout, clause, &across, None)?;
+                    conjuncts.push(Term::all([defined, value]));
+                }
+            } else {
+                let mut alternatives = Vec::new();
+                for result in &results {
+                    let mut clauses = Vec::new();
+                    for clause in &application.operation.postconditions {
+                        let (value, defined) =
+                            application.read(subject, layout, clause, &across, result.as_ref())?;
+                        clauses.push(Term::all([defined, value]));
+                    }
+                    alternatives.push(Term::all(clauses));
+                }
+                conjuncts.push(Term::any(alternatives));
             }
             conjuncts.extend(application.frame(subject, layout, from, to));
             operations.push(Term::all(conjuncts));
         }
-        let stutter = stutter.then(|| {
-            let mut conjuncts = Vec::new();
-            for (object, layout_object) in layout.objects().iter().enumerate() {
-                for field in 0..layout_object.fields().len() {
-                    conjuncts.extend(layout.unchanged(from, to, object, field));
-                }
-            }
-            Term::all(conjuncts)
-        });
+        let stutter = stutter.then(|| Term::all(layout.agreements(to, from)));
         Ok(Self {
             operations,
             stutter,
@@ -193,88 +240,152 @@ pub struct CopyFacts {
     terminal: Option<Term>,
 }
 
+/// Keep the refusal of the earliest row of FR-315's table.
+fn keep(best: &mut Option<SmtEncodingRefusal>, refusal: SmtEncodingRefusal) {
+    if best.as_ref().is_none_or(|held| refusal.row() < held.row()) {
+        *best = Some(refusal);
+    }
+}
+
 impl CopyFacts {
     /// Read `copy`. The terminal condition is built when `terminal`.
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::OutOfFragment`] as for the relation, and
-    /// [`SmtEncodingRefusal::TooLarge`] for `candidates`.
-    pub fn read(
+    /// The refusal of the earliest row of FR-315's table that any
+    /// application's reading meets: [`SmtEncodingRefusal::FieldDomain`],
+    /// [`SmtEncodingRefusal::TooLarge`] for `candidates`, or
+    /// [`SmtEncodingRefusal::OutOfFragment`].
+    pub(crate) fn read(
         subject: &SymbolicSubject<'_>,
         layout: &StateLayout,
         applications: &[Application<'_, '_>],
         copy: &StateCopy,
         terminal: bool,
     ) -> Result<Self, SmtEncodingRefusal> {
+        let mut best = None;
+        let facts = Self::read_each(subject, layout, applications, copy, terminal, &mut best);
+        match best {
+            Some(refusal) => Err(refusal),
+            None => Ok(facts),
+        }
+    }
+
+    fn read_each(
+        subject: &SymbolicSubject<'_>,
+        layout: &StateLayout,
+        applications: &[Application<'_, '_>],
+        copy: &StateCopy,
+        terminal: bool,
+        best: &mut Option<SmtEncodingRefusal>,
+    ) -> Self {
         let before = Views::of(StateRef::Copy(copy.clone()));
         let mut precondition_failures = Vec::new();
         let mut postcondition_failures = Vec::new();
         let mut enabled = Vec::new();
         for application in applications {
-            let mut earlier: Vec<Term> = Vec::new();
-            let mut failures = Vec::new();
-            for clause in &application.operation.preconditions {
-                let (value, defined) = application.read(subject, layout, clause, &before)?;
-                failures.push(Term::all(
-                    earlier.iter().cloned().chain([defined.clone().not()]),
-                ));
-                earlier.push(Term::all([defined, value]));
+            match Self::read_application(subject, layout, application, copy, &before, terminal) {
+                Ok((pre, post, enable)) => {
+                    precondition_failures.push(pre);
+                    postcondition_failures.push(post);
+                    enabled.extend(enable);
+                }
+                Err(refusal) => keep(best, refusal),
             }
-            precondition_failures.push(Term::any(failures));
-            let holds = Term::all(earlier);
+        }
+        let terminal = terminal.then(|| Term::any(enabled).not());
+        Self {
+            precondition_failures,
+            postcondition_failures,
+            terminal,
+        }
+    }
 
-            // A postcondition read on the copy itself shows whether any of
-            // its clauses holds a construct with a definedness condition.
-            let probe = Views {
-                pre: StateRef::Copy(copy.clone()),
-                post: StateRef::Copy(copy.clone()),
-                current: StateRef::Copy(copy.clone()),
-            };
-            let mut partial = false;
+    /// The precondition failure, the postcondition failure and, when
+    /// `terminal`, the enabledness of one application at `copy`.
+    fn read_application(
+        subject: &SymbolicSubject<'_>,
+        layout: &StateLayout,
+        application: &Application<'_, '_>,
+        copy: &StateCopy,
+        before: &Views,
+        terminal: bool,
+    ) -> Result<(Term, Term, Option<Term>), SmtEncodingRefusal> {
+        let mut earlier: Vec<Term> = Vec::new();
+        let mut failures = Vec::new();
+        for clause in &application.operation.preconditions {
+            let (value, defined) = application.read(subject, layout, clause, before, None)?;
+            failures.push(Term::all(
+                earlier.iter().cloned().chain([defined.clone().not()]),
+            ));
+            earlier.push(Term::all([defined, value]));
+        }
+        let precondition_failure = Term::any(failures);
+        let results = application.results();
+
+        // A postcondition read on the copy itself shows whether any of its
+        // clauses holds a construct with a definedness condition.
+        let probe = Views {
+            pre: StateRef::Copy(copy.clone()),
+            post: StateRef::Copy(copy.clone()),
+            current: StateRef::Copy(copy.clone()),
+        };
+        let mut partial = false;
+        for result in &results {
             for clause in &application.operation.postconditions {
                 partial |= !application
-                    .read(subject, layout, clause, &probe)?
+                    .read(subject, layout, clause, &probe, result.as_ref())?
                     .1
                     .is_truth(true);
             }
-            if !partial && !terminal {
-                postcondition_failures.push(Term::truth(false));
-                continue;
-            }
-            let mut ready = Vec::new();
-            let mut broken = Vec::new();
-            for candidate in application.candidates(subject, layout, copy)? {
-                let views = Views {
-                    pre: StateRef::Copy(copy.clone()),
-                    post: candidate.clone(),
-                    current: candidate,
-                };
+        }
+        if !partial && !terminal {
+            return Ok((precondition_failure, Term::truth(false), None));
+        }
+        let mut ready = Vec::new();
+        let mut broken = Vec::new();
+        for candidate in application.candidates(subject, layout, copy)? {
+            let views = Views {
+                pre: StateRef::Copy(copy.clone()),
+                post: candidate.clone(),
+                current: candidate,
+            };
+            let mut accepted: Vec<Term> = Vec::new();
+            for result in &results {
                 let mut holds_all = Vec::new();
                 let mut kept = Vec::new();
                 let mut undefined = Vec::new();
                 for clause in &application.operation.postconditions {
-                    let (value, defined) = application.read(subject, layout, clause, &views)?;
+                    let (value, defined) =
+                        application.read(subject, layout, clause, &views, result.as_ref())?;
                     holds_all.push(Term::all([defined.clone(), value.clone()]));
                     kept.push(defined.clone().implies(value));
                     undefined.push(defined.not());
                 }
-                ready.push(Term::all(holds_all));
-                broken.push(Term::all([Term::all(kept), Term::any(undefined)]));
+                let holds_here = Term::all(holds_all);
+                // FR-120 stops at the first result the postcondition
+                // accepts, so a later result's failure needs every earlier
+                // one rejected.
+                let failure = Term::all(
+                    accepted
+                        .iter()
+                        .cloned()
+                        .map(Not::not)
+                        .chain([Term::all([Term::all(kept), Term::any(undefined)])]),
+                );
+                broken.push(failure);
+                ready.push(holds_here.clone());
+                accepted.push(holds_here);
             }
-            if partial {
-                postcondition_failures.push(Term::all([holds.clone(), Term::any(broken)]));
-            } else {
-                postcondition_failures.push(Term::truth(false));
-            }
-            enabled.push(Term::all([holds, Term::any(ready)]));
         }
-        let terminal = terminal.then(|| Term::all(enabled.into_iter().map(Not::not)));
-        Ok(Self {
-            precondition_failures,
-            postcondition_failures,
-            terminal,
-        })
+        let enabled =
+            terminal.then(|| Term::all(earlier.iter().cloned().chain([Term::any(ready)])));
+        let postcondition_failure = if partial {
+            Term::all(earlier.into_iter().chain([Term::any(broken)]))
+        } else {
+            Term::truth(false)
+        };
+        Ok((precondition_failure, postcondition_failure, enabled))
     }
 
     /// Some application's precondition is undefined on the copy, after the
@@ -296,20 +407,32 @@ impl CopyFacts {
 }
 
 impl<'a> Application<'_, 'a> {
+    /// The values the operation's result takes, in FR-120's result order;
+    /// one absent value for an operation with no result.
+    fn results(&self) -> Vec<Option<Value>> {
+        match &self.operation.result {
+            ResultValues::Declared(ParameterValues::Values(values)) => {
+                values.iter().cloned().map(Some).collect()
+            }
+            _ => vec![None],
+        }
+    }
+
     /// The clause's body as a Boolean and its definedness, with `self`, the
-    /// parameters and the arguments bound.
+    /// parameters, the arguments and `result` bound.
     fn read(
         &self,
         subject: &SymbolicSubject<'_>,
         layout: &StateLayout,
         clause: &CheckedStateClause,
         views: &Views,
+        result: Option<&Value>,
     ) -> Result<(Term, Term), SmtEncodingRefusal> {
         let mut slots = vec![Some(Sym::Object(self.receiver))];
         let mut declared = clause.parameters().iter().skip(1);
         if clause.binds_result() {
             declared.next();
-            slots.push(None);
+            slots.push(result.and_then(|value| symbol_of(subject, value)));
         }
         for (name, _) in declared {
             let value = self
@@ -334,17 +457,15 @@ impl<'a> Application<'_, 'a> {
         .boolean(clause.body())
     }
 
-    /// Whether the frame lets the operation write `field` of `object`: the
-    /// field is granted and has a finite domain (FR-120 "Post-states").
+    /// Whether the frame lets the operation write `field` of `object`.
     fn writes(&self, subject: &SymbolicSubject<'_>, object: usize, field: usize) -> bool {
         let field = &subject.objects[object].fields[field];
-        field.domain_len.is_some()
-            && (self.operation.modifies.contains(&field.key)
-                || (object == self.receiver
-                    && self.operation.receiver_modifies.contains(&field.key)))
+        self.operation.modifies.contains(&field.key)
+            || (object == self.receiver && self.operation.receiver_modifies.contains(&field.key))
     }
 
-    /// Every field the frame does not let the operation write is unchanged.
+    /// Every field the frame does not let the operation write is unchanged,
+    /// copy `to` with copy `from`.
     fn frame(
         &self,
         subject: &SymbolicSubject<'_>,
@@ -356,7 +477,7 @@ impl<'a> Application<'_, 'a> {
         for (index, object) in subject.objects.iter().enumerate() {
             for field in 0..object.fields.len() {
                 if !self.writes(subject, index, field) {
-                    frame.extend(layout.unchanged(from, to, index, field));
+                    frame.extend(layout.unchanged(to, from, index, field));
                 }
             }
         }
@@ -366,12 +487,28 @@ impl<'a> Application<'_, 'a> {
     /// The candidate post-states over `base`, in FR-120's order: objects in
     /// order, the fields they may be written in declaration order, the last
     /// varying fastest, an optional field's absence before its values.
+    ///
+    /// # Errors
+    ///
+    /// [`SmtEncodingRefusal::FieldDomain`] for the first written field, in
+    /// object and field order, with no finite domain, then
+    /// [`SmtEncodingRefusal::TooLarge`] for `candidates`.
     fn candidates(
         &self,
         subject: &SymbolicSubject<'_>,
         layout: &StateLayout,
         base: &StateCopy,
     ) -> Result<Vec<StateRef>, SmtEncodingRefusal> {
+        for (index, object) in subject.objects.iter().enumerate() {
+            for (field, symbolic) in object.fields.iter().enumerate() {
+                if self.writes(subject, index, field) && symbolic.domain_len.is_none() {
+                    return Err(SmtEncodingRefusal::FieldDomain {
+                        object: object.key.clone(),
+                        field: symbolic.name.clone(),
+                    });
+                }
+            }
+        }
         // (object, field in layout order, values with absence first)
         let mut dimensions: Vec<((usize, usize), Vec<FieldTerms>)> = Vec::new();
         let mut count: u64 = 1;
@@ -390,32 +527,29 @@ impl<'a> Application<'_, 'a> {
                 count = count.saturating_mul(u64::try_from(radix).unwrap_or(u64::MAX));
                 if count > MAX_CANDIDATES {
                     return Err(SmtEncodingRefusal::TooLarge {
-                        measure: "candidates",
+                        measure: Measure::Candidates,
                         value: count,
                         limit: MAX_CANDIDATES,
                     });
                 }
                 let sort = layout.objects()[index].fields()[field].sort();
                 let zero = match sort {
-                    FieldSort::Bool => Term::truth(false),
+                    FieldSort::Bool => Term::literal(false),
                     FieldSort::Int(_) => Term::int(0),
                 };
                 let mut options = Vec::new();
                 if symbolic.optional {
                     options.push(FieldTerms {
                         value: zero,
-                        present: Some(Term::truth(false)),
+                        present: Some(Term::literal(false)),
                     });
                 }
                 for value in &symbolic.values {
                     options.push(FieldTerms {
                         value: value_term(value).ok_or_else(|| {
-                            SmtEncodingRefusal::Fault(qsl_foundation::InternalFault::new(
-                                "smt-encoding",
-                                "candidate-value-sort",
-                            ))
+                            SmtEncodingRefusal::unreadable("candidate-value-sort")
                         })?,
-                        present: symbolic.optional.then(|| Term::truth(true)),
+                        present: symbolic.optional.then(|| Term::literal(true)),
                     });
                 }
                 dimensions.push(((index, field), options));
@@ -454,7 +588,7 @@ impl<'a> Application<'_, 'a> {
 
 fn symbol_of(subject: &SymbolicSubject<'_>, value: &Value) -> Option<Sym> {
     match value {
-        Value::Boolean(value) => Some(Sym::Bool(Term::truth(*value))),
+        Value::Boolean(value) => Some(Sym::Bool(Term::literal(*value))),
         Value::Integer(value) => Some(Sym::Int(Term::Int(value.clone()))),
         Value::Enum(member) => Some(Sym::Int(Term::int(i64::from(member.rank())))),
         Value::Reference(reference) => subject

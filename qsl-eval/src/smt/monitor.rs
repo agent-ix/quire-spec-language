@@ -11,7 +11,7 @@
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 
 use crate::automaton::{translate, AutomatonError, Letter, Monitor, StateId};
-use crate::smt::SmtEncodingRefusal;
+use crate::smt::{Measure, SmtEncodingRefusal};
 
 /// The most `holds` atoms of a letter the encoding tabulates.
 pub const MAX_ATOMS: usize = 8;
@@ -44,7 +44,7 @@ impl MonitorTable {
     fn translation(error: AutomatonError) -> SmtEncodingRefusal {
         match error {
             AutomatonError::StateLimit { limit } => SmtEncodingRefusal::TooLarge {
-                measure: "monitor-states",
+                measure: Measure::MonitorStates,
                 value: limit.saturating_add(1),
                 limit,
             },
@@ -64,7 +64,7 @@ impl MonitorTable {
         let atoms = automaton.atoms().to_vec();
         if atoms.len() > MAX_ATOMS {
             return Err(SmtEncodingRefusal::TooLarge {
-                measure: "monitor-atoms",
+                measure: Measure::MonitorAtoms,
                 value: atoms.len() as u64,
                 limit: MAX_ATOMS as u64,
             });

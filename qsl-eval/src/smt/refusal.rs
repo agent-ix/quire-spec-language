@@ -3,7 +3,6 @@
 //! the encoding has no form for, with its locus. Each variant is one code of
 //! FR-315's refusal table, and [`SmtEncodingRefusal::code`] spells it.
 
-use qsl_foundation::InternalFault;
 use qsl_semantics::model::observation::AdmissionFailure;
 
 use crate::automaton::AutomatonError;
@@ -32,6 +31,37 @@ pub enum LifecycleLocus {
     Operation(String),
     /// A universe object that is not held at one type by every initial state.
     Object(String),
+}
+
+/// A size measure of FR-315 "Size limits", in the order they are checked.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Measure {
+    /// `declare-const` commands.
+    Constants,
+    /// Applications of one step.
+    Applications,
+    /// Atoms of a TP-3 item's monitor letter.
+    MonitorAtoms,
+    /// Monitor states the tabulation reaches.
+    MonitorStates,
+    /// Candidates of one application the query expands.
+    Candidates,
+    /// Bytes of the canonical script.
+    ScriptBytes,
+}
+
+impl Measure {
+    /// The measure's name in FR-315.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Constants => "constants",
+            Self::Applications => "applications",
+            Self::MonitorAtoms => "monitor-atoms",
+            Self::MonitorStates => "monitor-states",
+            Self::Candidates => "candidates",
+            Self::ScriptBytes => "script-bytes",
+        }
+    }
 }
 
 /// Why no script was written (FR-315 Outputs).
@@ -91,6 +121,15 @@ pub enum SmtEncodingRefusal {
         /// The parameter's name.
         parameter: String,
     },
+    /// `field-domain`: the query expands the candidates of an application
+    /// and a field the application may write has no finite domain.
+    #[error("field `{object}.{field}` has no finite domain, and an application may write it")]
+    FieldDomain {
+        /// The object's key.
+        object: String,
+        /// The field's name.
+        field: String,
+    },
     /// `requires-bound`: a population that admits the `over` type has no
     /// universe.
     #[error("the clause's instances are not finite: {0:?}")]
@@ -98,10 +137,10 @@ pub enum SmtEncodingRefusal {
     /// `no-instance`: the clause has zero instances.
     #[error("the item has no instance")]
     NoInstance,
-    /// `instance-binding`: an instance's object does not conform to the
-    /// `over` type.
-    #[error("the instance `{key}` binds no object of the `over` type")]
-    InstanceBinding {
+    /// `instance-type`: an instance's object does not conform to the `over`
+    /// type in an initial state.
+    #[error("the instance `{key}` is no object of the `over` type")]
+    InstanceType {
         /// The instance's key.
         key: String,
     },
@@ -112,10 +151,10 @@ pub enum SmtEncodingRefusal {
         count: usize,
     },
     /// `too-large`: a size measure passes its limit.
-    #[error("{measure} is {value}, over the limit {limit}")]
+    #[error("{} is {value}, over the limit {limit}", measure.name())]
     TooLarge {
         /// The measure.
-        measure: &'static str,
+        measure: Measure,
         /// Its value.
         value: u64,
         /// Its limit.
@@ -129,14 +168,10 @@ pub enum SmtEncodingRefusal {
         /// Where it is.
         locus: ExpressionLocus,
     },
-    /// An invariant of the subject broke; not a code of the table.
-    #[error("encoding broke invariant {0:?}")]
-    Fault(InternalFault),
 }
 
 impl SmtEncodingRefusal {
-    /// The refusal's code in FR-315's table; `internal-fault` for a broken
-    /// invariant.
+    /// The refusal's code in FR-315's table.
     pub const fn code(&self) -> &'static str {
         match self {
             Self::ItemForm { .. } | Self::ItemTranslation(_) => "item-form",
@@ -150,11 +185,44 @@ impl SmtEncodingRefusal {
             Self::ParameterDomain { .. } => "parameter-domain",
             Self::RequiresBound(_) => "requires-bound",
             Self::NoInstance => "no-instance",
-            Self::InstanceBinding { .. } => "instance-binding",
+            Self::InstanceType { .. } => "instance-type",
+            Self::FieldDomain { .. } => "field-domain",
             Self::SeveralInstances { .. } => "several-instances",
             Self::TooLarge { .. } => "too-large",
             Self::OutOfFragment { .. } => "out-of-fragment",
-            Self::Fault(_) => "internal-fault",
         }
+    }
+
+    /// The row of FR-315's refusal table this refusal is on, 1 to 17: the
+    /// order the encoding applies the checks in.
+    pub const fn row(&self) -> u8 {
+        match self {
+            Self::ItemForm { .. } | Self::ItemTranslation(_) => 1,
+            Self::Profile => 2,
+            Self::QueryKind { .. } => 3,
+            Self::SubjectAdmission(_) => 4,
+            Self::NoInitialState => 5,
+            Self::ObjectLifecycle(_) => 6,
+            Self::ConstantName { .. } => 7,
+            Self::FieldSort { .. } => 8,
+            Self::ParameterDomain { .. } => 9,
+            Self::FieldDomain { .. } => 10,
+            Self::RequiresBound(_) => 11,
+            Self::NoInstance => 12,
+            Self::InstanceType { .. } => 13,
+            Self::SeveralInstances { .. } => 14,
+            Self::TooLarge {
+                measure: Measure::ScriptBytes,
+                ..
+            } => 17,
+            Self::TooLarge { .. } => 15,
+            Self::OutOfFragment { .. } => 16,
+        }
+    }
+
+    /// An invariant the encoding relies on did not hold for this item: the
+    /// item is refused as one the encoding cannot read.
+    pub const fn unreadable(invariant: &'static str) -> Self {
+        Self::ItemForm { form: invariant }
     }
 }

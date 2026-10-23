@@ -2,9 +2,12 @@
 //! FR-315 "Canonical printing": the `QF_LIA` terms the encoding builds and
 //! the one printer that writes them.
 //!
-//! A [`Term`] is built through the constructors below, which fold constants
-//! and flatten nested conjunctions and disjunctions, so a total expression
-//! contributes no definedness conjunct and equal inputs build equal terms.
+//! A [`Term`] is built through the constructors below. The Boolean constants
+//! stand for "no condition": a total expression's definedness is `true` and
+//! a construct that cannot fail has the failure `false`, so the constructors
+//! drop them. They fold no
+//! other term: a literal read in place of a constant stays in the term it
+//! stands in (FR-315 "Canonical printing").
 //! [`Script::render`] prints with single spaces, no comments, integer
 //! literals in decimal with negatives as `(- n)`, and each command on its own
 //! line ending in a line feed.
@@ -60,8 +63,13 @@ impl Comparison {
 /// A linear term of `QF_LIA`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Term {
-    /// `true` or `false`.
+    /// A Boolean literal, printed as written and never folded.
     Bool(bool),
+    /// "No condition" (`true`) or "no failure" (`false`): the definedness of
+    /// a total expression and the failure of a construct that cannot fail.
+    /// The constructors fold it away; an empty conjunction or disjunction
+    /// prints as it does.
+    Cond(bool),
     /// An integer literal.
     Int(Integer),
     /// A declared constant, by its printed symbol.
@@ -93,8 +101,13 @@ pub enum Term {
 }
 
 impl Term {
-    /// The Boolean constant `value`.
+    /// The condition constant `value`: "no condition" or "no failure".
     pub const fn truth(value: bool) -> Self {
+        Self::Cond(value)
+    }
+
+    /// The Boolean literal `value`, which the printer keeps.
+    pub const fn literal(value: bool) -> Self {
         Self::Bool(value)
     }
 
@@ -110,7 +123,7 @@ impl Term {
 
     /// Whether this term is the Boolean constant `value`.
     pub fn is_truth(&self, value: bool) -> bool {
-        *self == Self::Bool(value)
+        *self == Self::Cond(value)
     }
 
     /// The integer literal this term is, if it is one.
@@ -122,38 +135,36 @@ impl Term {
     }
 
     /// The conjunction of `terms`: `false` when one is `false`, `true` when
-    /// none remains, nested conjunctions flattened and `true` dropped.
+    /// none remains and `true` dropped.
     pub fn all(terms: impl IntoIterator<Item = Self>) -> Self {
         let mut kept = Vec::new();
         for term in terms {
             match term {
-                Self::Bool(true) => {}
-                Self::Bool(false) => return Self::Bool(false),
-                Self::And(inner) => kept.extend(inner),
+                Self::Cond(true) => {}
+                Self::Cond(false) => return Self::Cond(false),
                 other => kept.push(other),
             }
         }
         match kept.len() {
-            0 => Self::Bool(true),
+            0 => Self::Cond(true),
             1 => kept.remove(0),
             _ => Self::And(kept),
         }
     }
 
     /// The disjunction of `terms`: `true` when one is `true`, `false` when
-    /// none remains, nested disjunctions flattened and `false` dropped.
+    /// none remains and `false` dropped.
     pub fn any(terms: impl IntoIterator<Item = Self>) -> Self {
         let mut kept = Vec::new();
         for term in terms {
             match term {
-                Self::Bool(false) => {}
-                Self::Bool(true) => return Self::Bool(true),
-                Self::Or(inner) => kept.extend(inner),
+                Self::Cond(false) => {}
+                Self::Cond(true) => return Self::Cond(true),
                 other => kept.push(other),
             }
         }
         match kept.len() {
-            0 => Self::Bool(false),
+            0 => Self::Cond(false),
             1 => kept.remove(0),
             _ => Self::Or(kept),
         }
@@ -163,76 +174,47 @@ impl Term {
     #[must_use]
     pub fn implies(self, other: Self) -> Self {
         match (&self, &other) {
-            _ if self == other => Self::Bool(true),
-            (Self::Bool(false), _) | (_, Self::Bool(true)) => Self::Bool(true),
-            (Self::Bool(true), _) => other,
-            (_, Self::Bool(false)) => self.not(),
+            (Self::Cond(false), _) | (_, Self::Cond(true)) => Self::Cond(true),
+            (Self::Cond(true), _) => other,
+            (_, Self::Cond(false)) => self.not(),
             _ => Self::Implies(Box::new(self), Box::new(other)),
         }
     }
 
-    /// `self = other`, folding two literals and a Boolean constant.
+    /// `self = other`.
     #[must_use]
     pub fn equal(self, other: Self) -> Self {
-        match (&self, &other) {
-            _ if self == other => Self::Bool(true),
-            (Self::Int(left), Self::Int(right)) => Self::Bool(left == right),
-            (Self::Bool(left), Self::Bool(right)) => Self::Bool(left == right),
-            (Self::Bool(true), _) => other,
-            (_, Self::Bool(true)) => self,
-            (Self::Bool(false), _) => other.not(),
-            (_, Self::Bool(false)) => self.not(),
-            _ => Self::Equal(Box::new(self), Box::new(other)),
-        }
+        Self::Equal(Box::new(self), Box::new(other))
     }
 
-    /// `self op other`, folding two literals.
+    /// `self op other`.
     #[must_use]
     pub fn compare(self, op: Comparison, other: Self) -> Self {
-        if let (Self::Int(left), Self::Int(right)) = (&self, &other) {
-            let ordering = left.cmp(right);
-            return Self::Bool(match op {
-                Comparison::Less => ordering.is_lt(),
-                Comparison::LessOrEqual => ordering.is_le(),
-                Comparison::Greater => ordering.is_gt(),
-                Comparison::GreaterOrEqual => ordering.is_ge(),
-            });
-        }
         Self::Compare(op, Box::new(self), Box::new(other))
     }
 
-    /// `self + other`, folding two literals.
+    /// `self + other`.
     #[must_use]
     pub fn plus(self, other: Self) -> Self {
-        match (&self, &other) {
-            (Self::Int(left), Self::Int(right)) => Self::Int(left.add(right)),
-            _ => Self::Add(vec![self, other]),
-        }
+        Self::Add(vec![self, other])
     }
 
-    /// `self - other`, folding two literals.
+    /// `self - other`.
     #[must_use]
     pub fn minus(self, other: Self) -> Self {
-        match (&self, &other) {
-            (Self::Int(left), Self::Int(right)) => Self::Int(left.sub(right)),
-            _ => Self::Subtract(Box::new(self), Box::new(other)),
-        }
+        Self::Subtract(Box::new(self), Box::new(other))
     }
 
-    /// `-self`, folding a literal.
+    /// `-self`.
     #[must_use]
     pub fn negated(self) -> Self {
-        match self {
-            Self::Int(value) => Self::Int(value.neg()),
-            other => Self::Negate(Box::new(other)),
-        }
+        Self::Negate(Box::new(self))
     }
 
     /// `self * other` when one operand is a literal; `None` otherwise, since
     /// the product of two non-literals is not linear.
     pub fn times(self, other: Self) -> Option<Self> {
         match (self, other) {
-            (Self::Int(left), Self::Int(right)) => Some(Self::Int(left.mul(&right))),
             (Self::Int(factor), term) | (term, Self::Int(factor)) => {
                 Some(Self::Scale(factor, Box::new(term)))
             }
@@ -250,8 +232,8 @@ impl Term {
     #[must_use]
     pub fn select(self, then: Self, otherwise: Self) -> Self {
         match self {
-            Self::Bool(true) => then,
-            Self::Bool(false) => otherwise,
+            Self::Cond(true) => then,
+            Self::Cond(false) => otherwise,
             condition => Self::If(Box::new(condition), Box::new(then), Box::new(otherwise)),
         }
     }
@@ -265,9 +247,18 @@ impl Term {
         ])
     }
 
+    /// The term's canonical printing.
+    pub fn text(&self) -> String {
+        let mut out = String::new();
+        self.print(&mut out);
+        out
+    }
+
     fn print(&self, out: &mut String) {
         match self {
-            Self::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
+            Self::Bool(value) | Self::Cond(value) => {
+                out.push_str(if *value { "true" } else { "false" });
+            }
             Self::Int(value) => print_integer(value, out),
             Self::Const(symbol) => out.push_str(symbol),
             Self::Not(inner) => apply("not", [inner.as_ref()], out),
@@ -304,14 +295,13 @@ impl Term {
     }
 }
 
-/// `not self`, folding a constant and a double negation.
+/// `not self`, folding a condition constant.
 impl std::ops::Not for Term {
     type Output = Self;
 
     fn not(self) -> Self {
         match self {
-            Self::Bool(value) => Self::Bool(!value),
-            Self::Not(inner) => *inner,
+            Self::Cond(value) => Self::Cond(!value),
             other => Self::Not(Box::new(other)),
         }
     }
@@ -411,16 +401,17 @@ impl Script {
         self.push(&format!("(declare-const {symbol} {})\n", sort.spelling()));
     }
 
-    /// Assert `term` after the assertions so far. An assertion that is the
-    /// constant `true` says nothing and is dropped.
+    /// Assert `term` after the assertions so far.
     pub fn assert(&mut self, term: &Term) {
-        if term.is_truth(true) || self.exceeded {
+        self.assert_text(&term.text());
+    }
+
+    /// Assert the already printed term `printed`.
+    pub fn assert_text(&mut self, printed: &str) {
+        if self.exceeded {
             return;
         }
-        let mut out = String::from("(assert ");
-        term.print(&mut out);
-        out.push_str(")\n");
-        self.push(&out);
+        self.push(&format!("(assert {printed})\n"));
     }
 
     /// The number of constants declared so far.
@@ -460,16 +451,17 @@ mod tests {
         assert_eq!(text(&Term::int(3)), "3");
     }
 
-    /// Conjunction folds `true`, short-circuits on `false` and flattens.
+    /// Conjunction drops `true` and short-circuits on `false`, and nested
+    /// conjunctions stay nested.
     #[trace("TC-900", "FR-315-AC-1")]
     #[test]
-    fn conjunctions_fold_constants_and_flatten() {
+    fn conjunctions_fold_constants_and_stay_nested() {
         let a = Term::constant("a");
         let b = Term::constant("b");
         assert_eq!(Term::all([Term::truth(true), a.clone()]), a);
         assert!(Term::all([a.clone(), Term::truth(false)]).is_truth(false));
         let nested = Term::all([Term::all([a.clone(), b.clone()]), a.clone()]);
-        assert_eq!(text(&nested), "(and a b a)");
+        assert_eq!(text(&nested), "(and (and a b) a)");
         assert_eq!(text(&Term::any([a, b])), "(or a b)");
     }
 
@@ -491,7 +483,6 @@ mod tests {
         let mut script = Script::new();
         script.declare("x", Sort::Int);
         script.assert(&Term::constant("x").equal(Term::int(0)));
-        script.assert(&Term::truth(true));
         assert_eq!(
             String::from_utf8(script.render()).expect("UTF-8"),
             "(set-logic QF_LIA)\n(declare-const x Int)\n(assert (= x 0))\n(check-sat)\n"

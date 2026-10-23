@@ -16,6 +16,7 @@
 //! positions past the end of a finite behaviour, which closes only at a
 //! terminal copy, and every atom reads false there.
 
+use std::collections::HashSet;
 use std::ops::Not;
 
 use qsl_semantics::check::{
@@ -26,15 +27,18 @@ use qsl_semantics::model::clause_observation::Observation;
 use quire_exact::Integer;
 use quire_semantic_value::fairness::PropertyForm;
 
-use crate::automaton::{bounded_shape, invariant_atom, AutomatonError, BoundedKind};
+use crate::automaton::{bounded_shape, invariant_atom, BoundedKind};
 use crate::model_subject::ModelSubject;
 use crate::simulation::model::{ModelSystem, SymbolicSubject};
 use crate::smt::expression::{Reader, Sym, Views};
 use crate::smt::layout::{StateCopy, StateLayout, StateRef};
-use crate::smt::monitor::{MonitorTable, MAX_ATOMS, MAX_STATES};
-use crate::smt::relation::{applications, Application, CopyFacts, StepRelation};
+use crate::smt::monitor::MonitorTable;
+use crate::smt::relation::{
+    applications, check_domains, count_applications, Application, CopyFacts, StepRelation,
+    MAX_APPLICATIONS,
+};
 use crate::smt::script::{Script, Sort, Term, MAX_SCRIPT_BYTES};
-use crate::smt::{SmtEncodingRefusal, SmtQueryKind};
+use crate::smt::{Measure, SmtEncodingRefusal, SmtQueryKind};
 
 /// The most constants a script declares.
 pub const MAX_CONSTANTS: u64 = 1 << 20;
@@ -78,10 +82,10 @@ impl Atoms<'_, '_> {
         instance: usize,
         copy: &StateCopy,
     ) -> Result<(Term, Term), SmtEncodingRefusal> {
-        let (condition, _): (CheckedNode<'_>, usize) =
-            self.node.condition(atom).ok_or(SmtEncodingRefusal::Fault(
-                qsl_foundation::InternalFault::new("smt-encoding", "atom-has-a-condition"),
-            ))?;
+        let (condition, _): (CheckedNode<'_>, usize) = self
+            .node
+            .condition(atom)
+            .ok_or(SmtEncodingRefusal::unreadable("an atom with no condition"))?;
         let views = Views::of(StateRef::Copy(copy.clone()));
         Reader::new(
             self.layout,
@@ -97,18 +101,23 @@ impl Atoms<'_, '_> {
 }
 
 fn fault(invariant: &'static str) -> SmtEncodingRefusal {
-    SmtEncodingRefusal::Fault(qsl_foundation::InternalFault::new(
-        "smt-encoding",
-        invariant,
-    ))
+    SmtEncodingRefusal::unreadable(invariant)
 }
 
-fn too_large(measure: &'static str, value: u64, limit: u64) -> SmtEncodingRefusal {
+fn too_large(measure: Measure, value: u64, limit: u64) -> SmtEncodingRefusal {
     SmtEncodingRefusal::TooLarge {
         measure,
         value,
         limit,
     }
+}
+
+fn script_bytes() -> SmtEncodingRefusal {
+    too_large(
+        Measure::ScriptBytes,
+        MAX_SCRIPT_BYTES as u64 + 1,
+        MAX_SCRIPT_BYTES as u64,
+    )
 }
 
 fn monitor_constant(position: u64) -> Term {
@@ -131,15 +140,50 @@ fn letter_term(letter: u64, terms: &[Term]) -> Term {
     }))
 }
 
-/// `terms` without a repeated term, first occurrence kept.
-fn distinct(terms: Vec<Term>) -> Vec<Term> {
-    let mut kept: Vec<Term> = Vec::with_capacity(terms.len());
-    for term in terms {
-        if !kept.contains(&term) {
-            kept.push(term);
+/// The printed disjunctions and conjunctions of FR-315 "Canonical printing":
+/// one operand prints as itself and none as the constant.
+fn joined(head: &str, parts: &[String], empty: &str) -> String {
+    match parts {
+        [] => empty.to_owned(),
+        [only] => only.clone(),
+        _ => format!("({head} {})", parts.join(" ")),
+    }
+}
+
+/// The printed disjuncts of one disjunction, each equal to an earlier one
+/// printed once, stopping at the first byte past the script limit.
+struct Disjuncts {
+    parts: Vec<String>,
+    seen: HashSet<String>,
+    bytes: usize,
+}
+
+impl Disjuncts {
+    fn new() -> Self {
+        Self {
+            parts: Vec::new(),
+            seen: HashSet::new(),
+            bytes: 0,
         }
     }
-    kept
+
+    fn push(&mut self, term: &Term) -> Result<(), SmtEncodingRefusal> {
+        // A construct that cannot fail contributes no term.
+        if term.is_truth(false) {
+            return Ok(());
+        }
+        let text = term.text();
+        if self.seen.contains(&text) {
+            return Ok(());
+        }
+        self.bytes = self.bytes.saturating_add(text.len() + 1);
+        if self.bytes > MAX_SCRIPT_BYTES {
+            return Err(script_bytes());
+        }
+        self.seen.insert(text.clone());
+        self.parts.push(text);
+        Ok(())
+    }
 }
 
 /// Encode the proof query `kind` of `item` over `subject` as an SMT-LIB 2
@@ -159,13 +203,15 @@ pub fn encode_smt_query(
         SmtItem::DeadlockFreedom => None,
     };
     let mut bounded = None;
+    let mut monitor = None;
     if let Some(clause) = clause {
+        // Row 1: item-form.
         let form = clause.property_form().ok_or(SmtEncodingRefusal::ItemForm {
-            form: "a clause with no property form",
+            form: "a clause with no recorded property form",
         })?;
         if form == PropertyForm::Liveness {
             return Err(SmtEncodingRefusal::ItemForm {
-                form: "a liveness (TP-4) clause, whose refutations are lassos",
+                form: "a TP-4 liveness clause, whose refutations are lassos",
             });
         }
         if form == PropertyForm::BoundedMltl {
@@ -175,7 +221,7 @@ pub fn encode_smt_query(
                 });
             }
             bounded = Some(bounded_shape(clause).ok_or(SmtEncodingRefusal::ItemForm {
-                form: "a TP-2 `on origin` clause other than a bounded `always` or `eventually` of one atom",
+                form: "a TP-2 `on origin` clause other than a bounded `always` or `eventually` of one state predicate",
             })?);
         }
         if matches!(clause.activation(), Activation::Each { guarded: true }) {
@@ -183,44 +229,68 @@ pub fn encode_smt_query(
                 form: "a clause guarded by a `when` condition",
             });
         }
+        if bounded.is_none() && invariant_atom(clause).is_none() {
+            let table = MonitorTable::of(clause);
+            if let Err(refusal @ SmtEncodingRefusal::ItemTranslation(_)) = &table {
+                return Err(refusal.clone());
+            }
+            monitor = Some(table);
+        }
+        // Row 2: profile.
         if !matches!(
             clause.profile(),
             TemporalProfile::InfiniteTrace | TemporalProfile::EventPositionFalseExtension
         ) {
             return Err(SmtEncodingRefusal::Profile);
         }
+        // Row 3: query-kind.
         if bounded.is_some() && !matches!(kind, SmtQueryKind::Unrolling { .. }) {
             return Err(SmtEncodingRefusal::QueryKind {
                 kind: kind.name(),
-                form: "TP-2 `on origin`",
+                form: "a TP-2 `on origin` item",
             });
         }
+        if let (Some((BoundedKind::Eventually, upper, _)), SmtQueryKind::Unrolling { depth }) =
+            (bounded, kind)
+        {
+            if depth < upper {
+                return Err(SmtEncodingRefusal::QueryKind {
+                    kind: kind.name(),
+                    form: "an `eventually[0,u]` item below its horizon",
+                });
+            }
+        }
     }
+    let infinite = clause.is_none_or(|clause| clause.profile() == TemporalProfile::InfiniteTrace);
+    // Rows 4 to 8: the subject.
     let system = ModelSystem::new(subject.simulation.clone())
         .map_err(SmtEncodingRefusal::SubjectAdmission)?;
     let symbolic = system.symbolic()?;
     let layout = StateLayout::of(&symbolic)?;
-    // Parameter domains, in object, operation and parameter order.
-    for object in &symbolic.objects {
-        for operation in &object.operations {
-            for ((name, _), domain) in operation.parameters.iter().zip(&operation.domains) {
-                if domain.is_none() {
-                    return Err(SmtEncodingRefusal::ParameterDomain {
-                        operation: operation.name.clone(),
-                        parameter: name.clone(),
-                    });
-                }
-            }
+    // Row 9: parameter-domain.
+    check_domains(&symbolic)?;
+    // Row 10: field-domain. The copy-0 reading expands what the query
+    // expands, so it finds the refusal before the rows after it.
+    let expands = !infinite || clause.is_none();
+    let mut apps = None;
+    let mut first = None;
+    if count_applications(&symbolic) <= MAX_APPLICATIONS {
+        let built = applications(&symbolic)?;
+        let read = CopyFacts::read(&symbolic, &layout, &built, &StateCopy::at(0), expands);
+        if let Err(refusal @ SmtEncodingRefusal::FieldDomain { .. }) = &read {
+            return Err(refusal.clone());
         }
+        first = Some(read);
+        apps = Some(built);
     }
 
+    // Rows 11 to 14: the instances.
     let mut instances = Vec::new();
     let mut node = None;
-    let mut atom_property = None;
     if let Some(clause) = clause {
         let over = match &clause.over().1 {
             quire_exact::ValueType::Reference(over) => *over,
-            _ => return Err(fault("over-is-a-reference")),
+            _ => return Err(fault("an `over` that is no reference")),
         };
         let found = system
             .instances(&clause.over().1)
@@ -240,7 +310,7 @@ pub fn encode_smt_query(
                         .types
                         .conforms(symbolic.objects[*position].type_id, over)
                 })
-                .ok_or_else(|| SmtEncodingRefusal::InstanceBinding {
+                .ok_or_else(|| SmtEncodingRefusal::InstanceType {
                     key: instance.key.clone(),
                 })?;
             instances.push(position);
@@ -256,57 +326,49 @@ pub fn encode_smt_query(
                     form: "a clause the package does not emit",
                 })?,
         );
-        atom_property = Some(match (invariant_atom(clause), bounded) {
-            (Some(atom), _) if bounded.is_none() => Some(Property::Invariant(atom)),
-            (_, Some((shape, upper, atom))) => Some(Property::Bounded(shape, upper, atom)),
-            _ => None,
-        });
     }
-    let monitored = clause.is_some() && matches!(atom_property, Some(None));
-    if monitored && instances.len() != 1 {
+    if monitor.is_some() && instances.len() != 1 {
         return Err(SmtEncodingRefusal::SeveralInstances {
             count: instances.len(),
         });
     }
 
-    // Size limits, in the order of FR-315 "Size limits".
+    // Row 15: the size measures, in order.
     let depth = kind.depth();
-    let property_hint_monitor = monitored;
-    let infinite = clause.is_none_or(|clause| clause.profile() == TemporalProfile::InfiniteTrace);
     let per_position = layout
         .objects()
         .iter()
         .flat_map(|object| object.fields())
         .map(|field| 1 + u64::from(field.is_optional()))
         .sum::<u64>()
-        + u64::from(property_hint_monitor)
+        + u64::from(monitor.is_some())
         + u64::from(!infinite);
     let constants = depth.saturating_add(1).saturating_mul(per_position);
     if constants > MAX_CONSTANTS {
-        return Err(too_large("constants", constants, MAX_CONSTANTS));
+        return Err(too_large(Measure::Constants, constants, MAX_CONSTANTS));
     }
-    let apps = applications(&symbolic)?;
-    let property = match (clause, atom_property) {
+    let applications_count = count_applications(&symbolic);
+    if applications_count > MAX_APPLICATIONS {
+        return Err(too_large(
+            Measure::Applications,
+            applications_count,
+            MAX_APPLICATIONS,
+        ));
+    }
+    let property = match (clause, monitor) {
         (None, _) => Property::Deadlock,
-        (Some(_), Some(Some(property))) => property,
-        (Some(clause), _) => {
-            Property::Monitor(MonitorTable::of(clause).map_err(|refusal| match refusal {
-                SmtEncodingRefusal::ItemTranslation(AutomatonError::StateLimit { limit }) => {
-                    too_large("monitor-states", limit.saturating_add(1), MAX_STATES as u64)
-                }
-                other => other,
-            })?)
-        }
+        (Some(_), Some(table)) => Property::Monitor(table?),
+        (Some(clause), None) => match (bounded, invariant_atom(clause)) {
+            (Some((shape, upper, atom)), _) => Property::Bounded(shape, upper, atom),
+            (None, Some(atom)) => Property::Invariant(atom),
+            (None, None) => return Err(fault("an item with no property")),
+        },
     };
-    if let Property::Monitor(table) = &property {
-        if table.atoms().len() > MAX_ATOMS {
-            return Err(too_large(
-                "monitor-atoms",
-                table.atoms().len() as u64,
-                MAX_ATOMS as u64,
-            ));
-        }
-    }
+    let (Some(apps), Some(first)) = (apps, first) else {
+        return Err(fault("applications read before their count"));
+    };
+    // Row 15 `candidates`, then row 16 `out-of-fragment` of the reading.
+    let first = first?;
     Query {
         kind,
         layout: &layout,
@@ -321,6 +383,7 @@ pub fn encode_smt_query(
         }),
         property,
         infinite,
+        first,
     }
     .script()
     .map(Script::render)
@@ -337,6 +400,8 @@ struct Query<'q, 'a> {
     /// Whether the profile is infinite-trace. Under event-position
     /// false-extension a behaviour may end before `depth`.
     infinite: bool,
+    /// The facts of copy 0, read before the instances were checked.
+    first: CopyFacts,
 }
 
 impl Query<'_, '_> {
@@ -361,44 +426,67 @@ impl Query<'_, '_> {
         (!self.infinite).then(|| ended_constant(position))
     }
 
-    /// `term` read where the behaviour is live at `position`.
-    fn live(&self, position: u64, term: Term) -> Term {
+    /// A failure `failure` at `position`, which needs the copy to be live:
+    /// `(and (not h<p>) F)` under false-extension.
+    fn live(&self, position: u64, failure: Term) -> Term {
         match self.ended(position) {
-            Some(ended) => Term::all([ended.not(), term]),
-            None => term,
+            Some(ended) => Term::all([ended.not(), failure]),
+            None => failure,
         }
     }
 
-    /// The value and definedness of `atom` of `instance` at `position`; past
-    /// the end of a finite behaviour the atom is false and defined.
+    /// The facts of copy `position`.
+    fn facts(&self, position: u64) -> Result<CopyFacts, SmtEncodingRefusal> {
+        if position == 0 {
+            return Ok(self.first.clone());
+        }
+        CopyFacts::read(
+            self.subject,
+            self.layout,
+            &self.apps,
+            &StateCopy::at(position),
+            !self.infinite || matches!(self.property, Property::Deadlock),
+        )
+    }
+
+    /// The value and definedness of `atom` of `instance` at `position`.
     fn atom(
         &self,
         atom: FormulaNodeId,
         instance: usize,
         position: u64,
     ) -> Result<(Term, Term), SmtEncodingRefusal> {
-        let atoms = self.atoms.as_ref().ok_or_else(|| fault("item-has-atoms"))?;
-        let (value, defined) = atoms.read(atom, instance, &StateCopy::at(position))?;
-        Ok(match self.ended(position) {
-            Some(ended) => (
-                Term::all([ended.clone().not(), value]),
-                Term::any([ended, defined]),
-            ),
-            None => (value, defined),
-        })
+        let atoms = self
+            .atoms
+            .as_ref()
+            .ok_or_else(|| fault("an item with no atoms"))?;
+        atoms.read(atom, instance, &StateCopy::at(position))
+    }
+
+    /// An atom of the monitor's letter: false past the end of a finite
+    /// behaviour.
+    fn letter_atom(&self, atom: FormulaNodeId, position: u64) -> Result<Term, SmtEncodingRefusal> {
+        let (value, _) = self.atom(atom, 0, position)?;
+        Ok(self.live(position, value))
     }
 
     fn instances(&self) -> usize {
         self.atoms.as_ref().map_or(0, |atoms| atoms.instances.len())
     }
 
+    /// Every distinctness assertion is at least `(assert (not x))\n`, so the
+    /// pairs alone can pass the limit long before any is built.
+    fn check_pairs(depth: u64) -> Result<(), SmtEncodingRefusal> {
+        let pairs = u128::from(depth) * u128::from(depth.saturating_add(1)) / 2;
+        if pairs.saturating_mul(16) > MAX_SCRIPT_BYTES as u128 {
+            return Err(script_bytes());
+        }
+        Ok(())
+    }
+
     fn check_size(script: &Script) -> Result<(), SmtEncodingRefusal> {
         if script.exceeded() {
-            Err(too_large(
-                "script-bytes",
-                MAX_SCRIPT_BYTES as u64 + 1,
-                MAX_SCRIPT_BYTES as u64,
-            ))
+            Err(script_bytes())
         } else {
             Ok(())
         }
@@ -436,18 +524,21 @@ impl Query<'_, '_> {
                 script.assert(&ended.not());
             }
         }
-
-        let need_terminal = !self.infinite || matches!(self.property, Property::Deadlock);
-        let mut facts = Vec::new();
-        for position in 0..=depth {
-            facts.push(CopyFacts::read(
+        if depth > 0 && matches!(self.kind, SmtQueryKind::InductionStep { .. }) {
+            // Read the first step and position once, so that a construct
+            // outside the fragment is refused before the size is, then see
+            // whether the pairwise distinctness alone passes the limit.
+            StepRelation::build(
                 self.subject,
                 self.layout,
                 &self.apps,
-                &StateCopy::at(position),
-                need_terminal,
-            )?);
-            Self::check_size(&script)?;
+                &StateCopy::at(0),
+                &StateCopy::at(1),
+                self.infinite,
+            )?;
+            let facts = self.facts(0)?;
+            self.disjuncts_at(0, &facts)?;
+            Self::check_pairs(depth)?;
         }
         for step in 0..depth {
             let relation = StepRelation::build(
@@ -458,8 +549,7 @@ impl Query<'_, '_> {
                 &StateCopy::at(step + 1),
                 self.infinite,
             )?;
-            let index = usize::try_from(step).map_err(|_| fault("position"))?;
-            script.assert(&self.step(step, &relation, &facts[index]));
+            script.assert(&self.step(step, &relation)?);
             Self::check_size(&script)?;
         }
         if let Some(table) = self.monitor() {
@@ -468,33 +558,39 @@ impl Query<'_, '_> {
         if matches!(self.kind, SmtQueryKind::InductionStep { .. }) {
             self.assert_distinct(&mut script)?;
             for position in 0..depth {
-                let index = usize::try_from(position).map_err(|_| fault("position"))?;
-                let violated = Term::any(self.violations(position, &facts[index])?);
-                let failed = Term::any(self.failures(position, &facts[index])?);
-                script.assert(&Term::all([violated.not(), failed.not()]));
+                let facts = self.facts(position)?;
+                let mut parts = Disjuncts::new();
+                for disjunct in self.disjuncts_at(position, &facts)? {
+                    if !disjunct.is_truth(false) {
+                        parts.push(&disjunct.not())?;
+                    }
+                }
+                script.assert_text(&joined("and", &parts.parts, "true"));
                 Self::check_size(&script)?;
             }
         }
-        let negated = self.negated(&facts)?;
-        script.assert(&Term::any(negated));
+        self.assert_negated(&mut script)?;
         Self::check_size(&script)?;
         Ok(script)
     }
 
     /// The step assertion from `step` to `step + 1`.
-    fn step(&self, step: u64, relation: &StepRelation, facts: &CopyFacts) -> Term {
+    fn step(&self, step: u64, relation: &StepRelation) -> Result<Term, SmtEncodingRefusal> {
         if self.infinite {
-            return relation.transition();
+            return Ok(relation.transition());
         }
         let (was, is) = (ended_constant(step), ended_constant(step + 1));
-        let terminal = facts.terminal().unwrap_or(Term::truth(false));
-        Term::all([
-            Term::any([was.equal(is.clone()), terminal]),
+        let terminal = self
+            .facts(step)?
+            .terminal()
+            .ok_or_else(|| fault("a terminal read that was not asked for"))?;
+        Ok(Term::all([
+            is.clone().equal(Term::any([was, terminal])),
             Term::any([is, relation.operation_step()]),
-        ])
+        ]))
     }
 
-    /// The monitor's initial step and its steps along the path.
+    /// The monitor's implications, position by position.
     fn assert_monitor(
         &self,
         table: &MonitorTable,
@@ -504,12 +600,12 @@ impl Query<'_, '_> {
         for position in 0..=depth {
             let mut letter = Vec::new();
             for atom in table.atoms() {
-                letter.push(self.atom(*atom, 0, position)?.0);
+                letter.push(self.letter_atom(*atom, position)?);
             }
             for step in table.moves() {
                 let reads = letter_term(step.letter, &letter);
                 let reached = monitor_constant(position).equal(Term::int(
-                    i64::try_from(step.to).map_err(|_| fault("monitor-state-index"))?,
+                    i64::try_from(step.to).map_err(|_| fault("a monitor state index"))?,
                 ));
                 let condition = if position == 0 {
                     if !self.kind.starts_initial() || step.from != table.initial() {
@@ -518,7 +614,7 @@ impl Query<'_, '_> {
                     reads
                 } else {
                     let before = monitor_constant(position - 1).equal(Term::int(
-                        i64::try_from(step.from).map_err(|_| fault("monitor-state-index"))?,
+                        i64::try_from(step.from).map_err(|_| fault("a monitor state index"))?,
                     ));
                     Term::all([before, reads])
                 };
@@ -529,57 +625,59 @@ impl Query<'_, '_> {
         Ok(())
     }
 
-    /// The copies at positions `0..=depth` are pairwise distinct (some value
-    /// or presence constant, or the monitor state, differs between every two).
+    /// The copies at positions `0..=depth` are pairwise distinct: one
+    /// assertion per pair `(j, k)`, `j < k`, `(not (and Q1 ... Qn))` with the
+    /// field equalities of copy `k` with copy `j`, then the monitor states'.
     fn assert_distinct(&self, script: &mut Script) -> Result<(), SmtEncodingRefusal> {
         let depth = self.kind.depth();
+        Self::check_pairs(depth)?;
         for left in 0..=depth {
             for right in left + 1..=depth {
-                let mut differences = vec![self
+                let mut agreements = self
                     .layout
-                    .differs(&StateCopy::at(left), &StateCopy::at(right))];
+                    .agreements(&StateCopy::at(right), &StateCopy::at(left));
                 if self.monitor().is_some() {
-                    differences.push(monitor_constant(left).equal(monitor_constant(right)).not());
+                    agreements.push(monitor_constant(right).equal(monitor_constant(left)));
                 }
-                script.assert(&Term::any(differences));
+                script.assert(&Term::all(agreements).not());
                 Self::check_size(script)?;
             }
         }
         Ok(())
     }
 
-    /// The violations of the property at `position`, one per instance in
-    /// instance order (the monitor and deadlock items have one).
+    /// The violations of the property at `position`, as disjuncts: for an
+    /// `always` item `h<p>` and then the negation of each instance's atom;
+    /// for the monitor the rejecting state; for deadlock-freedom a terminal
+    /// copy no declaration intends.
     fn violations(
         &self,
         position: u64,
         facts: &CopyFacts,
     ) -> Result<Vec<Term>, SmtEncodingRefusal> {
-        let ended = self.ended(position);
         let mut violations = Vec::new();
         match &self.property {
             Property::Invariant(atom) | Property::Bounded(BoundedKind::Always, _, atom) => {
                 if matches!(&self.property, Property::Bounded(_, upper, _) if position > *upper) {
                     return Ok(violations);
                 }
+                violations.extend(self.ended(position));
                 for instance in 0..self.instances() {
-                    let (value, _) = self.atom(*atom, instance, position)?;
-                    let broken = value.not();
-                    violations.push(match &ended {
-                        Some(ended) => Term::any([ended.clone(), broken]),
-                        None => broken,
-                    });
+                    violations.push(self.atom(*atom, instance, position)?.0.not());
                 }
             }
             Property::Bounded(BoundedKind::Eventually, ..) => {}
-            Property::Monitor(table) => violations.push(match table.rejecting() {
-                Some(rejecting) => monitor_constant(position).equal(Term::int(
-                    i64::try_from(rejecting).map_err(|_| fault("monitor-state-index"))?,
-                )),
-                None => Term::truth(false),
-            }),
+            Property::Monitor(table) => {
+                if let Some(rejecting) = table.rejecting() {
+                    violations.push(monitor_constant(position).equal(Term::int(
+                        i64::try_from(rejecting).map_err(|_| fault("a monitor state index"))?,
+                    )));
+                }
+            }
             Property::Deadlock => {
-                let terminal = facts.terminal().ok_or_else(|| fault("terminal-read"))?;
+                let terminal = facts
+                    .terminal()
+                    .ok_or_else(|| fault("a terminal read that was not asked for"))?;
                 let (intended, _) = self.intended(position)?;
                 violations.push(Term::all([terminal, intended.not()]));
             }
@@ -602,7 +700,7 @@ impl Query<'_, '_> {
                     let Some((_, quire_exact::ValueType::Reference(context))) =
                         predicate.parameters().first()
                     else {
-                        return Err(fault("terminal-parameter"));
+                        return Err(fault("a terminal predicate with no state object"));
                     };
                     let context = *context;
                     let mut holds = Vec::new();
@@ -638,71 +736,77 @@ impl Query<'_, '_> {
         Ok((Term::any(value), Term::any(failure)))
     }
 
-    /// The definedness failures at `position`: the atoms the claim reads,
-    /// then each application's precondition failures and postcondition
-    /// failures (FR-315 "Undefined evaluation").
-    fn failures(&self, position: u64, facts: &CopyFacts) -> Result<Vec<Term>, SmtEncodingRefusal> {
-        let mut failures = Vec::new();
+    /// The disjuncts of the negated property at `position`, in FR-315's
+    /// order: the violations, the atoms' definedness failures, the
+    /// preconditions' failures, the postconditions' failures, and `P`'s.
+    fn disjuncts_at(
+        &self,
+        position: u64,
+        facts: &CopyFacts,
+    ) -> Result<Vec<Term>, SmtEncodingRefusal> {
+        let mut disjuncts = Vec::new();
         if position <= self.horizon() {
+            disjuncts.extend(self.violations(position, facts)?);
             match &self.property {
                 Property::Invariant(atom) | Property::Bounded(_, _, atom) => {
                     for instance in 0..self.instances() {
-                        failures.push(self.atom(*atom, instance, position)?.1.not());
+                        let failure = self.atom(*atom, instance, position)?.1.not();
+                        disjuncts.push(self.live(position, failure));
                     }
                 }
                 Property::Monitor(table) => {
                     for atom in table.atoms() {
-                        failures.push(self.atom(*atom, 0, position)?.1.not());
+                        let failure = self.atom(*atom, 0, position)?.1.not();
+                        disjuncts.push(self.live(position, failure));
                     }
                 }
-                Property::Deadlock => {
-                    let terminal = facts.terminal().ok_or_else(|| fault("terminal-read"))?;
-                    failures.push(Term::all([terminal, self.intended(position)?.1]));
-                }
+                Property::Deadlock => {}
             }
         }
-        for failure in facts
-            .precondition_failures()
-            .iter()
-            .chain(facts.postcondition_failures())
-        {
-            failures.push(self.live(position, failure.clone()));
+        for failure in facts.precondition_failures() {
+            disjuncts.push(self.live(position, failure.clone()));
         }
-        Ok(failures)
+        for failure in facts.postcondition_failures() {
+            disjuncts.push(self.live(position, failure.clone()));
+        }
+        if matches!(self.property, Property::Deadlock) {
+            let terminal = facts
+                .terminal()
+                .ok_or_else(|| fault("a terminal read that was not asked for"))?;
+            disjuncts.push(Term::all([terminal, self.intended(position)?.1]));
+        }
+        Ok(disjuncts)
     }
 
-    /// The negated property: a violation or a definedness failure at some
-    /// position, or for `InductionStep` at the last.
-    fn negated(&self, facts: &[CopyFacts]) -> Result<Vec<Term>, SmtEncodingRefusal> {
+    /// The negated property: one disjunction, a disjunct equal to an earlier
+    /// one printed once.
+    fn assert_negated(&self, script: &mut Script) -> Result<(), SmtEncodingRefusal> {
         let depth = self.kind.depth();
-        let last = matches!(self.kind, SmtQueryKind::InductionStep { .. });
-        let positions = if last { depth..=depth } else { 0..=depth };
-        let mut disjuncts = Vec::new();
-        if let Property::Bounded(BoundedKind::Eventually, ..) = &self.property {
+        let positions = if matches!(self.kind, SmtQueryKind::InductionStep { .. }) {
+            depth..=depth
+        } else {
+            0..=depth
+        };
+        let mut parts = Disjuncts::new();
+        if let Property::Bounded(BoundedKind::Eventually, _, atom) = &self.property {
             // Per instance, the atom is false or past the end at every
             // position of the horizon.
-            let Property::Bounded(_, _, atom) = &self.property else {
-                return Err(fault("eventually-has-an-atom"));
-            };
             for instance in 0..self.instances() {
                 let mut every = Vec::new();
                 for position in 0..=self.horizon() {
-                    let (value, _) = self.atom(*atom, instance, position)?;
-                    every.push(value.not());
+                    let missed = self.atom(*atom, instance, position)?.0.not();
+                    every.push(Term::any(self.ended(position).into_iter().chain([missed])));
                 }
-                disjuncts.push(Term::all(every));
+                parts.push(&Term::all(every))?;
             }
         }
         for position in positions {
-            let index = usize::try_from(position).map_err(|_| fault("position"))?;
-            let at = facts
-                .get(index)
-                .ok_or_else(|| fault("facts-per-position"))?;
-            if position <= self.horizon() {
-                disjuncts.extend(self.violations(position, at)?);
+            let facts = self.facts(position)?;
+            for disjunct in self.disjuncts_at(position, &facts)? {
+                parts.push(&disjunct)?;
             }
-            disjuncts.extend(self.failures(position, at)?);
         }
-        Ok(distinct(disjuncts))
+        script.assert_text(&joined("or", &parts.parts, "false"));
+        Ok(())
     }
 }

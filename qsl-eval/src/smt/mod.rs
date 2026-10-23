@@ -26,4 +26,4 @@ pub mod script;
 
 pub use kind::SmtQueryKind;
 pub use query::{encode_smt_query, SmtItem};
-pub use refusal::{ExpressionLocus, LifecycleLocus, SmtEncodingRefusal};
+pub use refusal::{ExpressionLocus, LifecycleLocus, Measure, SmtEncodingRefusal};

@@ -14,6 +14,8 @@ use quire_exact::{EffectiveId, ObjectReference, Value, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
 
 use super::domain::Domain;
+use super::encode::value_enc;
+use super::frames::text_limits;
 use super::{ClauseInfo, ModelSystem};
 use crate::smt::{LifecycleLocus, SmtEncodingRefusal};
 
@@ -31,12 +33,31 @@ pub(crate) struct SymbolicField {
     /// The position of the field among the type's declared fields.
     pub(crate) declared: usize,
     /// The number of values of the field's finite domain (absent excluded);
-    /// `None` for a field with no finite domain, which no frame lets an
-    /// operation write (FR-120 "Post-states").
+    /// `None` for a field with no finite domain.
     pub(crate) domain_len: Option<u128>,
     /// The domain's values in FR-120's order, left empty when the domain
     /// holds more than [`MAX_FIELD_VALUES`].
     pub(crate) values: Vec<Value>,
+}
+
+/// The values of one parameter or result, in FR-120's order.
+#[derive(Clone, Debug)]
+pub(crate) enum ParameterValues {
+    /// A finite domain within the encoding's limit.
+    Values(Vec<Value>),
+    /// A type with no finite domain.
+    Unbounded,
+    /// A finite domain with this many values, over the encoding's limit.
+    TooMany(u128),
+}
+
+/// An operation's declared result.
+#[derive(Clone, Debug)]
+pub(crate) enum ResultValues {
+    /// The operation declares no result.
+    None,
+    /// The result's domain.
+    Declared(ParameterValues),
 }
 
 /// One operation that applies to an object, with the clauses that apply to
@@ -46,9 +67,11 @@ pub(crate) struct SymbolicOperation<'a> {
     pub(crate) name: String,
     /// The declared parameters, in order.
     pub(crate) parameters: Vec<(String, ValueType)>,
-    /// Each parameter's values in FR-120's domain order, or `None` for a
-    /// parameter with no finite domain.
-    pub(crate) domains: Vec<Option<Vec<Value>>>,
+    /// Each parameter's values in FR-120's domain order.
+    pub(crate) domains: Vec<ParameterValues>,
+    /// The operation's declared result and its values in FR-120's result
+    /// order (ascending typed canonical bytes).
+    pub(crate) result: ResultValues,
     /// The fields the frame lets the operation write on every object.
     pub(crate) modifies: BTreeSet<DeclarationKey>,
     /// The fields the frame lets the operation write on its receiver alone.
@@ -95,10 +118,7 @@ const MAX_DOMAIN: u128 = 1 << 16;
 const MAX_FIELD_VALUES: u128 = 1 << 16;
 
 fn fault(invariant: &'static str) -> SmtEncodingRefusal {
-    SmtEncodingRefusal::Fault(qsl_foundation::InternalFault::new(
-        "smt-encoding",
-        invariant,
-    ))
+    SmtEncodingRefusal::unreadable(invariant)
 }
 
 impl<'a> ModelSystem<'a> {
@@ -285,26 +305,51 @@ impl<'a> ModelSystem<'a> {
                 ));
             }
             let parameters = application.declaration.parameters().to_vec();
-            let domains = parameters
-                .iter()
-                .enumerate()
-                .map(|(position, (_, value_type))| {
+            let ordered =
+                |domain: Domain, order: bool| -> Result<ParameterValues, SmtEncodingRefusal> {
+                    if domain.len() > MAX_DOMAIN {
+                        return Ok(ParameterValues::TooMany(domain.len()));
+                    }
+                    let mut values: Vec<Value> = (0..domain.len())
+                        .map_while(|index| domain.nth(index))
+                        .collect();
+                    if order {
+                        let mut keyed = Vec::with_capacity(values.len());
+                        for value in values {
+                            let bytes = quire_canonical::to_vec(&value_enc(&value), text_limits())
+                                .map_err(|_| fault("result-canonical-bytes"))?;
+                            keyed.push((bytes, value));
+                        }
+                        keyed.sort_by(|left, right| left.0.cmp(&right.0));
+                        values = keyed.into_iter().map(|(_, value)| value).collect();
+                    }
+                    Ok(ParameterValues::Values(values))
+                };
+            let mut domains = Vec::new();
+            for (position, (_, value_type)) in parameters.iter().enumerate() {
+                domains.push(
                     match self.probabilistic.support(
                         application.declaring,
                         &application.name,
                         position,
                     ) {
-                        Some(support) => Some(support.values()),
-                        None => Domain::of(value_type, references, self.types)
-                            .filter(|domain| domain.len() <= MAX_DOMAIN)
-                            .map(|domain| {
-                                (0..domain.len())
-                                    .map_while(|index| domain.nth(index))
-                                    .collect()
-                            }),
-                    }
-                })
-                .collect();
+                        Some(support) => ParameterValues::Values(support.values()),
+                        None => match Domain::of(value_type, references, self.types) {
+                            Some(domain) => ordered(domain, false)?,
+                            None => ParameterValues::Unbounded,
+                        },
+                    },
+                );
+            }
+            let result = match application.declaration.result() {
+                None => ResultValues::None,
+                Some(result_type) => {
+                    ResultValues::Declared(match Domain::of(result_type, references, self.types) {
+                        Some(domain) => ordered(domain, true)?,
+                        None => ParameterValues::Unbounded,
+                    })
+                }
+            };
             let applicable =
                 |group: &[ClauseInfo]| -> Result<Vec<&'a CheckedStateClause>, SmtEncodingRefusal> {
                     group
@@ -326,6 +371,7 @@ impl<'a> ModelSystem<'a> {
                 name: application.name.clone(),
                 parameters,
                 domains,
+                result,
                 modifies: effect.modifies.iter().cloned().collect(),
                 receiver_modifies: effect.receiver_modifies.iter().cloned().collect(),
                 preconditions: applicable(&self.clauses.preconditions)?,

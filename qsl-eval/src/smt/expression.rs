@@ -255,7 +255,10 @@ impl<'r, 'a> Reader<'r, 'a> {
                     }
                     _ => false,
                 };
-                let range = if inside {
+                let literal_inside = term
+                    .as_literal()
+                    .is_some_and(|literal| interval.contains(literal));
+                let range = if inside || literal_inside {
                     Term::truth(true)
                 } else {
                     term.clone().within(interval.lower(), interval.upper())
@@ -333,7 +336,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                     (Sym::Bool(left), Sym::Bool(right)) | (Sym::Int(left), Sym::Int(right)) => {
                         left.equal(right)
                     }
-                    (Sym::Object(left), Sym::Object(right)) => Term::truth(left == right),
+                    (Sym::Object(left), Sym::Object(right)) => Term::literal(left == right),
                     _ => return Err(self.refuse(node, "equality of options or mixed sorts")),
                 };
                 let value = match operator {
@@ -400,7 +403,7 @@ impl<'r, 'a> Reader<'r, 'a> {
 
     fn literal(&self, node: CheckedNode<'_>, value: &Value) -> Result<Encoded, SmtEncodingRefusal> {
         let sym = match value {
-            Value::Boolean(value) => Sym::Bool(Term::truth(*value)),
+            Value::Boolean(value) => Sym::Bool(Term::literal(*value)),
             Value::Integer(value) => Sym::Int(Term::Int(value.clone())),
             Value::Enum(member) => Sym::Int(Term::Int(Integer::from(u64::from(member.rank())))),
             Value::Reference(reference) => Sym::Object(

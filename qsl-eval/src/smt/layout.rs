@@ -151,7 +151,7 @@ pub struct StateLayout {
 /// The term a `Value` of a supported sort denotes.
 pub(crate) fn value_term(value: &Value) -> Option<Term> {
     match value {
-        Value::Boolean(value) => Some(Term::truth(*value)),
+        Value::Boolean(value) => Some(Term::literal(*value)),
         Value::Integer(value) => Some(Term::Int(value.clone())),
         Value::Enum(member) => Some(Term::int(i64::from(member.rank()))),
         _ => None,
@@ -273,7 +273,7 @@ impl StateLayout {
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::Fault`] when an initial value is of no
+    /// [`SmtEncodingRefusal::ItemForm`] when an initial value is of no
     /// supported sort.
     pub(crate) fn initial(
         &self,
@@ -291,10 +291,7 @@ impl StateLayout {
                         None => conjuncts.push(present.not()),
                         Some(value) => {
                             let term = value_term(value).ok_or_else(|| {
-                                SmtEncodingRefusal::Fault(qsl_foundation::InternalFault::new(
-                                    "smt-encoding",
-                                    "initial-value-sort",
-                                ))
+                                SmtEncodingRefusal::unreadable("an initial value of no SMT sort")
                             })?;
                             if field.optional {
                                 conjuncts.push(present);
@@ -309,36 +306,39 @@ impl StateLayout {
         Ok(Term::any(states))
     }
 
-    /// `field` of `object` is the same at `left` and `right`: equal values,
-    /// and for an optional field equal presence and, where present, equal
-    /// values.
+    /// `field` of `object` agrees at `later` and `earlier` (FR-315 "Field
+    /// equality"): for a required field `(= V<later> V<earlier>)`, for an
+    /// optional field `(and (= P<later> P<earlier>) (or (not P<later>)
+    /// (= V<later> V<earlier>)))`, so an absent field's value constant is not
+    /// part of the state.
     pub fn unchanged(
         &self,
-        left: &StateCopy,
-        right: &StateCopy,
+        later: &StateCopy,
+        earlier: &StateCopy,
         object: usize,
         field: usize,
     ) -> Option<Term> {
-        let (before, after) = (
-            self.terms(left, object, field)?,
-            self.terms(right, object, field)?,
+        let (is, was) = (
+            self.terms(later, object, field)?,
+            self.terms(earlier, object, field)?,
         );
-        Some(match (before.present, after.present) {
-            (Some(was), Some(is)) => Term::all([before.value.equal(after.value), was.equal(is)]),
-            _ => before.value.equal(after.value),
+        Some(match (is.present, was.present) {
+            (Some(is_present), Some(was_present)) => Term::all([
+                is_present.clone().equal(was_present),
+                Term::any([is_present.not(), is.value.equal(was.value)]),
+            ]),
+            _ => is.value.equal(was.value),
         })
     }
 
-    /// Some field differs between `left` and `right`.
-    pub fn differs(&self, left: &StateCopy, right: &StateCopy) -> Term {
-        let mut differences = Vec::new();
+    /// The field equalities of `later` with `earlier`, in declaration order.
+    pub fn agreements(&self, later: &StateCopy, earlier: &StateCopy) -> Vec<Term> {
+        let mut agreements = Vec::new();
         for (object, layout) in self.objects.iter().enumerate() {
             for field in 0..layout.fields.len() {
-                if let Some(same) = self.unchanged(left, right, object, field) {
-                    differences.push(same.not());
-                }
+                agreements.extend(self.unchanged(later, earlier, object, field));
             }
         }
-        Term::any(differences)
+        agreements
     }
 }
