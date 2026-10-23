@@ -86,7 +86,9 @@ model imports retain their existing authority.
   map's region and segments; and, for a refusal whose locus names a body
   span, the original-document regions that map gives for that span.
 - Through the command, one FR-267 `native-run-result/2` clause-run document
-  whose top-level `extraction` member is that record (QSpec FR-352).
+  whose top-level `extraction` member is that record, with the member set
+  and types QSpec FR-352 lists (`original`, `body`, `binding`, `outcome`,
+  `map` and, for a refusal with a body span, `original_regions`).
 - Or FR-030's extraction `Error`, which retains the original source, the
   binding, any completed Quire extraction outcome and the actual preflight,
   availability or correspondence cause. No compile or clause run follows,

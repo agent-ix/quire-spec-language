@@ -37,3 +37,18 @@ Examined, clean:
 ## Verdict
 
 Not mergeable: FND-001 and FND-002 (high, standing rule). Merge-tree against main is clean; open #1303 conflicts in 8 files and #1326 in FR-100/TC-450.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-003 | medium | FR-031-AC-5/AC-10, FR-267 and FR-312 cite QSpec FR-352's `extraction` member and FR-352-AC-13, which exist only in open QSpec #424 (STD-344). The QSL gate passes against QSpec main without them. #1313 cannot land before #424. | spec/functional/FR-031-run-extracted-native-source.md | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | fix verified at 15a7ff35 |
+| FND-002 | fixed | fix verified at 15a7ff35 |
+
+Round 1 verdict at 15a7ff35: Mergeable after QSpec #424 merges (FND-003, medium, is a merge-order item). FND-001 and FND-002 are fixed: the extraction mode is specified end to end and the original-region correspondence is stated in FR-031, with no deferral language.

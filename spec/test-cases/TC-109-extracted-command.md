@@ -48,8 +48,9 @@ FR-031-AC-4, FR-031-AC-6 to FR-031-AC-10 and FR-267-AC-17.
    selection naming a clause the body does not declare.
 9. Through the binary, run step 1's healthy request and read the `/2`
    document back with the FR-267 strict reader; run the same unit given as
-   bytes; read back documents whose `extraction` has an unknown member,
-   no `map`, and `binding` `null`.
+   bytes; read back documents whose `extraction` has an unknown top-level
+   member `source`, no `map`, `binding` `null`, a numeric `body.digest`, and
+   `map.segments` `[]`.
 
 Tag the tests `#[trace("TC-109", "FR-031-AC-n")]`: steps 1 to 4 for AC-1 to
 AC-4 and steps 5 to 9 for AC-6 to AC-10 (AC-5 is TC-430 step 5); step 9 also
