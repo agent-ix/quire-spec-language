@@ -237,7 +237,7 @@ fn a_change_outside_the_frame_is_a_violation_with_its_witness() {
 
 /// FR-267-AC-11 and FR-115-AC-7: every frame change and its checked grant
 /// survive the `/2` wire, and each assigned closed member is enforced.
-#[trace("TC-514", "FR-267-AC-11", "FR-115-AC-7", "FR-109-AC-9")]
+#[trace("TC-514", "FR-267-AC-11", "FR-115-AC-7", "FR-109-AC-10")]
 #[test]
 fn native_result_two_round_trips_complete_frame_witness() {
     use qsl_semantics::model::key::DeclarationKey;
