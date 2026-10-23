@@ -34,13 +34,13 @@ Scope: FR-027-AC-9, FR-056-AC-9.
    with another digest, first without `code` and `same`; then the fixture
    with `code` only, and with `same` only.
 2. Compile a native-compile/1 request selecting that program and the document
-   as a `semantic-ir/2.0.0` model, and compare stdout with
+   as a `semantic-ir/2.0.0` model, and compare the outcome's package bytes with
    the FR-278 composition over the same source and package input.
 3. Assemble the fixture with `Reference<M::Nope>`, and with no admitted
    model; admit its selections with no package input, under a
    `declaration_records` ceiling of one, and against a document whose
    `Widget` and `Gadget` generalize each other.
-4. Compile the fixture through the CLI with `deref(g).nope`; with `g = w`
+4. Compile the fixture through `command` with `deref(g).nope`; with `g = w`
    over `w: M::Rock`; with `Reference<M::Nope>`; with no
    model; with a document of the same package whose digest differs; and with
    the declaration's digest spelled `sha256:`.
@@ -65,7 +65,7 @@ including its two field-access and conforming-equality cases),
   read is Verified and exports `same`: IR-285's QVC checked-operation
   catalog (STD-101/102) admits conforming operands for
   `quire.op.reference.eq`.
-- Step 2: exit 0; stdout equals the library bytes, and its `model_selections`
+- Step 2: exit 0; the package bytes equal the library bytes, and its `model_selections`
   digest is the one the program's `model` declaration spells.
 - Step 3: one assembler error, `UnresolvedTypeName("M::Nope")`, code
   `missing_declaration`, at `M::Nope`; with no admitted model,
@@ -73,7 +73,7 @@ including its two field-access and conforming-equality cases),
   refuses `missing_import`, then `stage_limit_exceeded`, then
   `invalid_model_binding`/`malformed-declaration`, each at the `model`
   declaration.
-- Step 4: exit 20 and empty stdout each time; stage `check` with
+- Step 4: exit 20 and no package bytes each time; stage `check` with
   `ill_typed` at `deref(g).nope` and at `g = w`; stage `assembly` with
   `missing_declaration` at `M::Nope`; stage `intake` with `missing_import`
   (twice) and `invalid_model_binding`, each at the `model` declaration; every
