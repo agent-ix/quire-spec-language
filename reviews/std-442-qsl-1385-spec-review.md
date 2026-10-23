@@ -47,3 +47,18 @@ Gates at 7bb6fc37: `make check-spec-validation` exits 0 both with QSPEC_DIR at t
 ## Verdict
 
 Not mergeable. FND-001 (high) blocks the PR, together with its QSpec counterpart. FND-002 should be fixed in the same round, and FND-003 is a tracker action for the code lead. Routing, the method table, the ADR amendments and the hand-derived vectors are otherwise correct.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-004 | medium | FR-250-AC-7 opens "over FR-447's `Braking`, whose one jump occurs between times 10 and 20", and gives `Bounded{10, 0, {}}` the reason "a behaviour possibly jumping at time 10". `Braking` has no `initial` clause, so `v` starts anywhere in [0, 20] and the jump occurs at any time in [0, 20] (at time 0 when `v0 = 0`). The verdicts follow from the rule, but the premise is false (QSpec SR-16305 FND-006). Fix: correct the premise to "between 0 and 20". | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:261 | wrong-requirement |
+| FND-005 | low | FR-250-AC-7's `Bounded{10, 3, {Jumps}}` and `Bounded{100, 0, {Jumps, Time}}` claim dimensions that are false for `Braking`. `Jumps` is false because the first jump can come at time 20, and `Time` is false because every behaviour jumps by time 20. The provider rule allows neither (QSpec SR-16305 FND-007). Fix: use `Bounded{20, 3, {Jumps}}` and `Bounded{100, 0, {Jumps}}`, which keep the same verdicts. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:261 | correct-requirement-no-evidence |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
