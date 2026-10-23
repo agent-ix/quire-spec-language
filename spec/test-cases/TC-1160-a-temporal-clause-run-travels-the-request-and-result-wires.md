@@ -60,7 +60,8 @@ step asserts.
   report's document; each malformed request refuses `invalid-request` at
   stage `request`, exit 20, empty stdout, naming `trace` or the member; the
   empty `finite` array reports stage `evaluate`, `refusal`.
-- Step 2: the document of FR-267-AC-13; the replay settles
+- Step 2: the document of FR-267-AC-13, whose counterexample
+  `trace_position` is the JSON integer `0`; the replay settles
   `reproduced-with-evaluated-witness`; `interval` is
   `{"lower": "0", "upper": "1"}`.
 - Step 3: each report reads back to an equal disposition with its table
