@@ -1097,7 +1097,7 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
     let limits = CallerLimits::from_operands([
         "s1.tokens=200000",
         "library.definitions=9000",
-        "work_units=5000",
+        "accounting.work_units=5000",
     ])
     .unwrap();
     let defaults = CallerLimits::default();

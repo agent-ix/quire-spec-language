@@ -244,7 +244,7 @@ item.
   settles only `WellDefinednessUnchecked` (ADR-022 GE-3).
 - A V-5 record SHALL have execution `completed` and truth `pending`, as
   FR-127 states.
-- A V-7 record SHALL name its limit, its value and the request member that
+- A V-7 record SHALL name its limit, its value and the request setting that
   raises it.
 - A verdict SHALL hold for exactly its subject; the obligation identity
   binds the subject, the claim and the instance (ADR-013 O-09).

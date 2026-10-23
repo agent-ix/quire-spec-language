@@ -319,7 +319,7 @@ mod tests {
         let limits = CallerLimits::from_operands([
             "s1.tokens=200000",
             "library.definitions=9000",
-            "work_units=5000",
+            "accounting.work_units=5000",
         ])
         .unwrap();
         let result = run(SOURCE, limits);
