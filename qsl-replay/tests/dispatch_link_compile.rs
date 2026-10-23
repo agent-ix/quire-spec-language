@@ -12,11 +12,11 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
 };
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     EffectiveId, FieldValue, Integer, LimitKind, Meter, ObjectId, ObjectReference, Outcome,
     UniverseId, Value as Quire,
@@ -1210,6 +1210,92 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
     )
     .expect("a clause function's record is no fault");
     assert_eq!(result.requirements().members().len(), 1);
+}
+
+/// FR-290-AC-15 (TC-774), the synthesized-owner case: a `value-validity`
+/// item whose owner is a function the checker synthesizes from an operation
+/// `body` is no application item `replay` can select by name, so
+/// `PluginReplayContext::request` refuses it `NotReplayable`.
+#[trace("TC-774", "FR-290-AC-15")]
+#[test]
+fn a_synthesized_owners_application_item_is_not_replayable() {
+    let declarations = format!(
+        "{}\nfunction inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}",
+        add_unit(
+            "body renamed using v on Config::ConfigVersion::add(n) { n + deref(self).versionNumber }"
+        )
+    );
+    let document = add_package();
+    let (text, packages) = unit(&document, &declarations);
+    let source = SourceIdentity::new("a", "u", "git", "1");
+    let cancel = Cancel::new();
+    let limits = SpineLimits::default();
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &source,
+            path: "unit.native",
+            bytes: text.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("parses")
+    .into_value();
+    let models = spine::select(&parsed, &packages, limits.model, &cancel)
+        .expect("selects")
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .expect("checks")
+    .into_value();
+    let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
+        .expect("packages")
+        .into_value();
+    let context = qsl_replay::PluginReplayContext::new(
+        &checked,
+        &emitted,
+        &models,
+        qsl_replay::CallerLimits::default(),
+    );
+    let graph = checked.package().graph();
+    let (synthesized, inc): (Vec<_>, Vec<_>) = graph
+        .requirements()
+        .iter()
+        .filter(|(_, record)| record.owner().is_some())
+        .partition(|(_, record)| record.owner() != Some("inc"));
+    assert!(!synthesized.is_empty() && !inc.is_empty());
+    let plugin = qsl_replay::BackendId::new("acme");
+    for (key, record) in synthesized {
+        let owner = record.owner().expect("an owner");
+        assert!(graph.callable(owner).is_none());
+        let refusal = context
+            .request(key, &[], &plugin, Vec::new())
+            .err()
+            .expect("a synthesized owner is no function replay selects");
+        assert_eq!(
+            refusal,
+            qsl_replay::PluginReplayRefusal::NotReplayable { key: key.clone() }
+        );
+        let settled = refusal.record(qsl_replay::RequestIndex::new(0), plugin.clone());
+        assert_eq!(
+            settled.value(),
+            &qsl_replay::TerminalValue::Inconclusive(qsl_replay::InconclusiveCause::ReplayRefused(
+                Code::UnknownRequiredFeature
+            ))
+        );
+    }
+    // The unit's own function is replayable.
+    for (key, _) in inc {
+        context
+            .request(key, &[], &plugin, Vec::new())
+            .expect("an application item of `inc`");
+    }
 }
 
 /// FR-151-AC-19, QSpec TC-196 D10 on the dispatch path (QSL-935): a member's

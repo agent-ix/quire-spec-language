@@ -2,12 +2,14 @@
 use super::*;
 use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
-use qsl_foundation::diagnostic::{CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord};
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_exact::{
     BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, UniverseId, Value,
+};
+use quire_semantic_value::catalog::{
+    CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
 use quire_semantic_value::location::Origin;
 use std::collections::BTreeMap;
@@ -1324,8 +1326,9 @@ fn an_execute_accounting_limit_carries_its_kind_bound_counter_and_field() {
 #[test]
 fn a_stage_limit_refusal_of_run_is_incomplete_and_exits_22() {
     use crate::spine::CheckingLimits;
-    use qsl_foundation::diagnostic::{Category, LimitKind};
+    use qsl_foundation::diagnostic::LimitKind;
     use qsl_foundation::Setting;
+    use quire_semantic_value::catalog::Category;
     let mut source_limit = SpineLimits::default();
     source_limit.source.source_bytes = 1;
     let checking_limit = SpineLimits {
@@ -1397,8 +1400,8 @@ fn fixture_f_location() -> Location {
     )
 }
 
-fn evaluation(outcome: FamilyOutcome<Value>) -> qsl_eval::value::Evaluation {
-    qsl_eval::value::Evaluation {
+fn evaluation(outcome: FamilyOutcome<Value>) -> quire_eval::Evaluation {
+    quire_eval::Evaluation {
         outcome,
         location: Some(fixture_f_location()),
         losses: Vec::new(),
@@ -2069,7 +2072,7 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
 /// `CallFailure::Fault` straight through, unchanged.
 #[test]
 fn convert_call_failure_maps_wrong_value_kind_and_forwards_faults() {
-    use qsl_eval::value::CallFailure;
+    use quire_eval::CallFailure;
     use quire_semantic_value::call::InputRefusal;
 
     match *convert_call_failure(CallFailure::Input(InputRefusal::WrongValueKind {
@@ -2179,7 +2182,7 @@ fn counter_is_the_denied_size_for_a_high_water_limit_and_the_sum_for_a_cumulativ
 fn storage_failure_converts_to_the_resource_exhausted_run_refusal() {
     use quire_semantic_value::declaration::{EnvironmentFailure, StorageRequest, StorageUnit};
     let request = StorageRequest::new(6, StorageUnit::AdditionalElements);
-    let refusal = convert_call_failure(qsl_eval::value::CallFailure::Storage {
+    let refusal = convert_call_failure(quire_eval::CallFailure::Storage {
         parameter: 2,
         failure: EnvironmentFailure::Allocation(request),
     });
@@ -2205,8 +2208,9 @@ const SUPPLIED_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 #[trace("TC-830", "FR-277-AC-4", "FR-277-AC-5")]
 #[test]
 fn run_admission_spends_one_cumulative_budget_and_denies_before_the_call() {
-    use qsl_semantics::value::supplied::{
-        AttemptedCount, SuppliedEvent, SuppliedLimitKind, SuppliedLimits, SuppliedPhase,
+    use qsl_semantics::value::supplied::SuppliedLimits;
+    use quire_semantic_value::supplied_stop::{
+        AttemptedCount, SuppliedEvent, SuppliedLimitKind, SuppliedPhase,
     };
     let with = |admission: u64| Call {
         supplied: SuppliedLimits::default().with_admission_work_units(admission),

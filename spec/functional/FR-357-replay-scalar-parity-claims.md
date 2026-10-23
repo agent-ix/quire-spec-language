@@ -51,11 +51,16 @@ request the default refuses (TC-904).
   `NOT_LOWERED` in the emit golden tests and FR-091-OQ-5), so there is no
   node to check such a claim against. An operator claim for them is added
   when QSL lowers integer division.
-- Function level: an FR-071 replay request selecting a function whose
-  declared result is not `Boolean`, whose `source` binds that function's
-  declared parameters and nothing else, and the generated outcome (a value,
-  an out-of-range outcome, `Undefined` or `OtherRefusal`, a refusal other
-  than for range).
+- Function level: an FR-071 replay request built from FR-484's retained
+  claim inputs, selecting a function whose declared result is not
+  `Boolean`, whose `source` binds that function's declared parameters and
+  nothing else, whose occurrence key is the function's `declaration`
+  occurrence and whose `obligation_identity` is the one `call_site` minted
+  from FR-484's preimage, which QSL recomputes and checks; and a
+  `ValueClaim` holding the generated outcome (a value, an out-of-range
+  outcome, `Undefined` or `OtherRefusal`, a refusal other than for range)
+  and the canonical generated-content identity of that observation, carried
+  into the claim identity and never recomputed.
 
 ## Outputs
 
@@ -91,10 +96,12 @@ request the default refuses (TC-904).
   is the obligation identity, the `package_id` as supplied, the `function`
   replay target as the request's `function` member sent it (absent when the
   request carries no `function` member), the
+  occurrence key as the request sent it (absent when it carries none), the
   `source` bindings as supplied, the request's effective accounting limits
   (its accounting limits overlaid by its `stage_limits` counter entries,
-  FR-255 Behavior 10), never either member alone, and the generated
-  outcome. A
+  FR-255 Behavior 10), never either member alone, the effective
+  `limits.supplied` ceilings (FR-484), the generated outcome and the
+  generated-content identity. A
   `ScalarAgrees` claim identity is the report's `claim()`.
 - When the operator entry settles a claim, it SHALL check the claim's preimage
   against the recompiled package, after the node, operator and function-body
@@ -125,6 +132,7 @@ request the default refuses (TC-904).
   other operands, ranges, limits, bindings, outcome or observation digest is a
   report for another claim, however its result reads.
 - The observation digest is carry-and-bind. QSL binds it into the operator
+  claim identity and, as the generated-content identity, into the function
   claim identity, carries it unchanged and never recomputes or authenticates
   it: QSL never sees the generated artifact. The driver, which runs the
   artifact, authenticates the digest against it before it sends the claim.
@@ -147,8 +155,19 @@ request the default refuses (TC-904).
   is no parameter, a parameter bound twice and a parameter left unbound each
   refuse; no operand drawn per operation, literal or intermediate subterm, is a
   function-level witness.
+- The function entry SHALL refuse a request carrying semantic profile
+  selections with `ReplayRefusal::UnusedProfileSelections`
+  (`invalid_runtime_input`/`unknown-member`), after the replay-target check
+  and before the recompile, as FR-484 states: a value-parity claim has no
+  proving run, and the lock's clause-profile rows are bound through
+  `package_id`.
 - The function entry SHALL refuse a function declared `Boolean` with
   `ReplayRefusal::NotAValueFunction`, before any call.
+- The function entry SHALL then check the request's occurrence key against
+  the function's `declaration` occurrence and recompute the request's
+  obligation identity from the recompiled package, both before the argument
+  join, and refuse a mismatch as FR-484 states (`ClaimOccurrence`, and
+  `ScalarIdentity` with the cause `Obligation` or `Encoding`).
 - A divergence (the exact outcome differs from the generated one) is a
   lowering defect attributed to the generator and settles `Failed`. An
   agreement means the counterexample does not reproduce and settles
@@ -168,10 +187,10 @@ request the default refuses (TC-904).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-357-AC-1 | Function level: a generated outcome that differs from QSL's exact `f(b)`, a different value or a generated out-of-range outcome where QSL has a value, settles `Diverged` with both outcomes and the evaluation's charges, for an integer function and a `Rational`-valued one. | Test (TC-904) |
-| FR-357-AC-2 | Function level: a generated outcome equal to QSL's, a value, settles `Agrees`, which is `Inconclusive(ScalarAgrees)`, for an integer function and a `Rational`-valued one. | Test (TC-904) |
-| FR-357-AC-3 | Function level: bindings that fail S6a admission (a value outside a parameter's declared domain, or a Boolean for an integer parameter) settle `RefusedInput`, which is `Inconclusive(ReplayRefused)` with the admission code, and no outcome is compared, for an integer function and a `Rational`-valued one. | Test (TC-904) |
-| FR-357-AC-4 | Function level: only the declared parameters are bound: a binding naming a non-parameter node refuses `UnknownParameter`, and a parameter left unbound refuses `UnboundParameter`. | Test (TC-904) |
+| FR-357-AC-1 | Function level, with each request built from `call_site`'s `FunctionSite` (its `declaration` occurrence and `value_parity` obligation identity, FR-484): a generated outcome that differs from QSL's exact `f(b)`, a different value or a generated out-of-range outcome where QSL has a value, settles `Diverged` with both outcomes and the evaluation's charges, for an integer function and a `Rational`-valued one. | Test (TC-904) |
+| FR-357-AC-2 | Function level, with each request built from `call_site`'s `FunctionSite` (its `declaration` occurrence and `value_parity` obligation identity, FR-484): a generated outcome equal to QSL's, a value, settles `Agrees`, which is `Inconclusive(ScalarAgrees)`, for an integer function and a `Rational`-valued one. | Test (TC-904) |
+| FR-357-AC-3 | Function level, with each request built from `call_site`'s `FunctionSite` (its `declaration` occurrence and `value_parity` obligation identity, FR-484): bindings that fail S6a admission (a value outside a parameter's declared domain, or a Boolean for an integer parameter) settle `RefusedInput`, which is `Inconclusive(ReplayRefused)` with the admission code, and no outcome is compared, for an integer function and a `Rational`-valued one. | Test (TC-904) |
+| FR-357-AC-4 | Function level, with each request built from `call_site`'s `FunctionSite` (its `declaration` occurrence and `value_parity` obligation identity, FR-484): only the declared parameters are bound: a binding naming a non-parameter node refuses `UnknownParameter`, and a parameter left unbound refuses `UnboundParameter`. | Test (TC-904) |
 | FR-357-AC-5 | Function level: a function declared `Boolean` refuses `NotAValueFunction` before any call. | Test (TC-904) |
 | FR-357-AC-6 | Predicate replay of a non-`Boolean` function still refuses `NotAPredicate`, and a `Boolean` predicate replays as before. | Test (TC-904) |
 | FR-357-AC-7 | Operator level, through `replay_operator_parity`, for add, subtract, multiply and negate: `Completed(v)` and `RefusedOutOfRange` each agree exactly when the exact outcome matches on the proof projection and diverge otherwise, and a native `Undefined` diverges from these operators, none of which is undefined. | Test (TC-904) |
@@ -195,3 +214,5 @@ request the default refuses (TC-904).
   selection and admission the function entry reuses.
 - [FR-069](FR-069-implement-typed-proof-result-envelope.md): the terminal
   values and inconclusive causes.
+- [FR-484](FR-484-identify-a-function-value-parity-claim-and-retain-its-replay-inputs.md):
+  the function-level claim's obligation identity and retained inputs.

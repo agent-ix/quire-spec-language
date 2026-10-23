@@ -3,9 +3,9 @@
 //! one test's `α'`, `β'` and the claim's `ι` (ADR-024 ST-4, ST-5, ST-9), in
 //! exact rationals with every rounding outward, toward undecided.
 
-use qsl_foundation::InternalFault;
 use qsl_replay::statistical::{Decision, UndecidedCause};
 use quire_exact::{Integer, Rational};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::bounds::{ceil, int, ln, quotient, Bounds};
 use super::claim::{Bound, Comparison};

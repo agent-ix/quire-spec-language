@@ -29,7 +29,7 @@ Scope: FR-096-AC-9, FR-096-AC-10, FR-096-AC-18.
 
 Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
 
-IR's own depth limit is IR's to delete, an IR-owned follow-up
+IR's own depth limit is IR's to delete
 (ADR-030 D-8 O-1).
 
 Every fixture is a real v2 wire mutated at one member; each expected
