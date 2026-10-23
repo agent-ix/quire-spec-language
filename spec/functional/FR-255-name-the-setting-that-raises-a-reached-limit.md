@@ -127,7 +127,7 @@ have their own table (Engine limit setting names).
 | `i2.work_units` | I2 v2 reader | work budget | the v2 read limits' work | 1000000 units |
 | `explore.states` | exploration | node count | exploration `Limits` max_states | 10000000 states |
 | `explore.transitions` | exploration | edge count | exploration `Limits` max_transitions | 100000000 transitions |
-| `prepare.work_units` | execution-backend prepare | work budget | `PrepareLimits` work_units | 16777216 units |
+| `prepare.compile_work_units` | execution-backend prepare | work budget | `PrepareLimits` compile_work_units | 16777216 units |
 | `prepare.code_bytes` | execution-backend prepare | input bytes | `PrepareLimits` code_bytes | 67108864 bytes |
 
 S2 has no limit of its own (FR-257). `replay.input_bytes` bounds the replay
