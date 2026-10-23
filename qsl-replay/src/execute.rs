@@ -1331,11 +1331,7 @@ fn function_claim(
     let key = target
         .occurrence_key()
         .ok_or_else(|| fault("function-request-carries-an-occurrence-key"))?;
-    let declaration = OccurrenceKey::new(
-        wire_id(callable.identity),
-        Origin::new(Role::new("declaration"), 0),
-    );
-    if *key == declaration {
+    if *key == declaration_occurrence(wire_id(callable.identity)) {
         return Ok(FunctionClaim::Predicate);
     }
     let graph = compiled.checked.package().graph();
@@ -1374,6 +1370,13 @@ fn function_claim(
         roots,
         recursive,
     }))
+}
+
+/// A function node's one `declaration` occurrence (ADR-013 O-07): the node,
+/// role `declaration`, ordinal 0. The one constructor `call_site`, the
+/// predicate claim and the value-parity claim share.
+pub(crate) fn declaration_occurrence(function: WireNodeId) -> OccurrenceKey {
+    OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))
 }
 
 /// The selected function: its S6a name, and its parameter nodes and

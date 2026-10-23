@@ -385,10 +385,28 @@ fn tc_1252_a_wrong_identity_refuses_obligation_before_the_argument_join() {
 #[test]
 fn tc_1252_a_foreign_occurrence_refuses_before_any_call() {
     let source = unit();
+    let compiled = spine(&source, &BTreeMap::new());
     let inc_node = wire_id(function_node(&source, "inc"));
+    // `inc`'s `x + 1` application: an `expression` occurrence found by its
+    // region text (a record-less occurrence still counts).
+    let graph = compiled.package.graph();
+    let application = graph
+        .occurrences()
+        .filter(|(_, origin, _)| origin.role() == &Role::new("expression"))
+        .find(|(_, _, location)| {
+            graph.region(location).is_some_and(|region| {
+                let (start, end) = (region.start() as usize, region.end() as usize);
+                source.get(start..end) == Some("x + 1")
+                    && source[..start]
+                        .ends_with("function inc using v(x: Int[0, 9]): Integer pure { ")
+            })
+        })
+        .map(|(node, origin, _)| OccurrenceKey::new(wire_id(node), origin))
+        .expect("inc holds an `x + 1` expression occurrence");
+    assert_ne!(application.node(), inc_node);
     let keys = [
         site(&source, "add").site.declaration,
-        OccurrenceKey::new(inc_node, Origin::new(Role::new("expression"), 0)),
+        application,
         OccurrenceKey::new(inc_node, Origin::new(Role::new("declaration"), 1)),
     ];
     for key in keys {
@@ -478,6 +496,23 @@ fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
     assert_ne!(one.claim(), other.claim());
 }
 
+/// The `profile_selections` of the v2 lock of `call_site`'s package bytes,
+/// in the lock's order.
+fn lock_profile_selections(package: &[u8]) -> Vec<ProfileSelection> {
+    let wire: serde_json::Value = serde_json::from_slice(package).expect("package JSON");
+    wire["lock"]["profile_selections"]
+        .as_array()
+        .expect("the lock lists its profile selections")
+        .iter()
+        .map(|row| {
+            ProfileSelection::new(
+                row["profile"].as_str().expect("profile").to_owned(),
+                row["value"].as_str().expect("value").to_owned(),
+            )
+        })
+        .collect()
+}
+
 /// FR-484-AC-9: the input-arm packet filled from `call_site` reconstructs,
 /// round-trips, and the request built from the admitted envelope replays.
 #[trace("TC-1252", "FR-484-AC-9")]
@@ -506,7 +541,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
                 located.package_id.hex(),
             )),
             source_digests: Some(wire.source_digests.clone()),
-            profile_selections: Some(Vec::<ProfileSelection>::new()),
+            profile_selections: Some(lock_profile_selections(&located.package)),
             run_limits: Some(wire.accounting_limits),
             declared_domains: Some(Vec::new()),
             backend: Some("generator-under-test".to_owned()),
@@ -514,27 +549,47 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             source: Some(wire.source.clone()),
             family_payload: Some(NoPayload),
         };
+        let sent = packet.clone();
         let envelope =
             WitnessEnvelope::reconstruct(packet, ReplayLimits::default()).expect("admitted");
         assert!(envelope.declared_domains().is_empty());
         assert_eq!(envelope.trace_position(), None);
-        assert_eq!(envelope.clause_node(), located.site.function);
-        assert_eq!(envelope.occurrence_key(), &located.site.declaration);
-        let again =
-            WitnessEnvelope::reconstruct(envelope.to_packet(), ReplayLimits::default()).unwrap();
-        assert_eq!(again.obligation_identity(), envelope.obligation_identity());
-        assert_eq!(again.source(), envelope.source());
-        assert_eq!(again.backend().as_str(), "generator-under-test");
+        // Every one of the thirteen members round-trips exactly.
+        let back = WitnessEnvelope::reconstruct(envelope.to_packet(), ReplayLimits::default())
+            .expect("the round trip is admitted")
+            .to_packet();
+        assert_eq!(back.obligation_identity, sent.obligation_identity);
+        assert_eq!(back.occurrence_key, sent.occurrence_key);
+        assert_eq!(back.clause_node, sent.clause_node);
+        assert_eq!(back.replay_target.select(), sent.replay_target.select());
+        assert_eq!(back.package_id, sent.package_id);
+        assert_eq!(back.source_digests, sent.source_digests);
+        assert_eq!(back.profile_selections, sent.profile_selections);
+        assert_eq!(back.run_limits, sent.run_limits);
+        assert_eq!(back.declared_domains, sent.declared_domains);
+        assert_eq!(back.backend, sent.backend);
+        assert_eq!(back.trace_position, sent.trace_position);
+        assert_eq!(back.source, sent.source);
+        assert_eq!(back.family_payload, sent.family_payload);
 
+        // The request is built from the admitted envelope's members alone.
         let mut built = wire;
         built.obligation_identity = *envelope.obligation_identity().as_bytes();
+        built.package_id = (
+            Some(envelope.package_id().domain().as_str().to_owned()),
+            envelope.package_id().hex(),
+        );
+        built.source_digests = envelope
+            .source_digests()
+            .iter()
+            .map(crate::RawSourceRef::to_wire)
+            .collect();
+        built.profile_selections = envelope.profile_selections().to_vec();
         built.accounting_limits = envelope.run_limits();
         built.backend = envelope.backend().as_str().to_owned();
         built.source = envelope.source().clone();
-        built.replay_target = crate::RequestTargetWire::function(
-            name(&[function]),
-            envelope.occurrence_key().clone(),
-        );
+        built.replay_target = crate::RequestTargetWire::from(envelope.replay_target().clone());
+        built.replay_target.occurrence_key = Some(envelope.occurrence_key().clone());
         let report = replay_generated(built, integer(generated), ReplayLimits::default());
         assert_eq!(value_kind(report.result()), kind, "{function}");
     }
@@ -567,7 +622,19 @@ fn tc_1252_the_supplied_ceilings_bind_into_the_claim() {
         starved.terminal_value(),
         TerminalValue::Incomplete(crate::IncompleteCause::ResourceExhausted)
     );
-    assert_ne!(wide.claim(), starved.claim());
+    let mut starved_but_b = starved.claim().clone();
+    assert_ne!(starved_but_b.supplied, wide.claim().supplied);
+    assert_eq!(
+        starved_but_b.supplied.admission_work_units(),
+        wide.claim().supplied.admission_work_units()
+    );
+    assert_eq!(
+        starved_but_b.supplied.conversion_work_units(),
+        wide.claim().supplied.conversion_work_units()
+    );
+    assert_eq!(starved_but_b.supplied.numeric_magnitude_bits(), 40);
+    starved_but_b.supplied = wide.claim().supplied;
+    assert_eq!(&starved_but_b, wide.claim(), "the claims differ only in B");
     let omitted = with("wide", m, None);
     assert_eq!(
         omitted.claim(),

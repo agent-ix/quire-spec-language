@@ -27,11 +27,12 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClause};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
-use quire_exact::{Cancel, Identifier, NodeKey, Origin, Role, ValueType};
+use quire_exact::{Cancel, Identifier, NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
 use crate::execute::{
-    callable_parameter_keys, value_parity_obligation, value_parity_preimage, ValueParityPreimage,
+    callable_parameter_keys, declaration_occurrence, value_parity_obligation,
+    value_parity_preimage, ValueParityPreimage,
 };
 use crate::identity::ObligationIdentity;
 use crate::identity::QualifiedName;
@@ -591,7 +592,7 @@ impl sealed::Locate for QualifiedName {
         };
         Ok(FunctionSite {
             function,
-            declaration: OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0)),
+            declaration: declaration_occurrence(function),
             parameters,
             value_parity,
         })
