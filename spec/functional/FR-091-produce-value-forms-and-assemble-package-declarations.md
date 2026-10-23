@@ -140,10 +140,11 @@ as function parameter, result and body types only.
 
 - The S1 output of one complete-V1 unit, `qsl_cst::ParsedSource`, whose CST
   is a `LosslessCst`.
-- For the assembler: the parsed unit that S2 returned for that source, and
-  the unit's source owner `SourceOwner{authority, identity}`, taken from the
-  source reference the unit was compiled from. It is a required input:
-  E3 has no default owner.
+- For the assembler: the parsed unit that S2 returned for each source unit of
+  the package, in request order (FR-480), each with its source owner
+  `SourceOwner{authority, identity}`, taken from the source reference the
+  unit was compiled from. The owner is a required input: E3 has no default
+  owner. A package of one unit passes one parsed unit.
 - For the assembler: an explicit limit set holding the decimal-scale bound
   (default 4096; "Dimension and unit declarations").
 
