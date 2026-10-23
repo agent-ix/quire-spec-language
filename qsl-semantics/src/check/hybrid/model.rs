@@ -91,17 +91,9 @@ pub(in crate::check) fn check_models(
     checked
 }
 
-/// The refusal of a declaration that checks but that no S4 emission writes
-/// yet (FR-447).
+/// The refusal `stop` stands for.
 pub(super) fn into_refusal(stop: Stop) -> CheckRefusal {
     refusal(stop)
-}
-
-pub(in crate::check) fn not_emitted(name: &qsl_forms::DeclaredName) -> CheckRefusal {
-    refusal(Stop::Cause(HybridCause::NotEmitted {
-        name: name.name.clone(),
-        span: name.span,
-    }))
 }
 
 fn refusal(stop: Stop) -> CheckRefusal {
@@ -285,7 +277,7 @@ fn check_one(
                 }
             }
         }
-        for (index, variable) in variables.iter().enumerate() {
+        for variable in variables.iter() {
             if !equation_of.contains_key(variable.name.as_str()) {
                 complete = false;
                 stops.push(Stop::Cause(HybridCause::MissingEquation {
@@ -294,7 +286,6 @@ fn check_one(
                     span: mode.name.span,
                 }));
             }
-            let _ = index;
         }
 
         let mut transitions = Vec::with_capacity(mode.transitions.len());

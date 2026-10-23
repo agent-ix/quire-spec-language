@@ -282,12 +282,12 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // function rather than two.
 pub use field_refinement::RefinementObligation;
 pub use hybrid::{
-    ArithmeticOp, CaptureIndex, CheckedFunctionRef, CheckedHybridClaim, CheckedHybridModel,
-    CheckedMode, CheckedTransition, CompareOp, ContinuousVariable, HybridActivation, HybridCapture,
-    HybridCause, HybridClaimDeclaration, HybridClock, HybridDeclaration, HybridFairness,
-    HybridFormula, HybridHorizon, HybridInterval, HybridModelIndex, HybridTerm, InitialEntry,
-    LogicOp, MalformedReason, ModeIndex, ResetConstraint, TransitionIndex, VariableClass,
-    VariableIndex,
+    hybrid_horizon, ArithmeticOp, CaptureIndex, CheckedFunctionRef, CheckedHybridClaim,
+    CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable,
+    HorizonOutOfRange, HybridActivation, HybridCapture, HybridCause, HybridClaimDeclaration,
+    HybridClock, HybridDeclaration, HybridFairness, HybridFormula, HybridHorizon, HybridInterval,
+    HybridModelIndex, HybridTerm, InitialEntry, LogicOp, MalformedReason, ModeIndex,
+    ResetConstraint, TransitionIndex, VariableClass, VariableIndex,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
@@ -2926,6 +2926,38 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-447, QSpec FR-481: each checked hybrid model, then each claim
+        // over one, after every function their terms may call.
+        let mut lowered_hybrids = Vec::with_capacity(checked_hybrid_models.len());
+        for (index, model) in checked_hybrid_models.iter().enumerate() {
+            match lowering.hybrid_model(&lowering::HybridModelInput {
+                index,
+                model,
+                signatures: signatures.as_slice(),
+            }) {
+                Ok(lowered) => lowered_hybrids.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
+        if lowered_hybrids.len() == checked_hybrid_models.len() {
+            for (index, claim) in checked_hybrid_claim_list.iter().enumerate() {
+                let (Some(model), Some(lowered)) = (
+                    checked_hybrid_models.get(claim.model.get()),
+                    lowered_hybrids.get(claim.model.get()),
+                ) else {
+                    continue;
+                };
+                if let Err(refusal) = lowering.hybrid_claim(&lowering::HybridClaimInput {
+                    index,
+                    claim,
+                    model,
+                    lowered,
+                    signatures: signatures.as_slice(),
+                }) {
+                    refusals.push(refusal);
+                }
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -3408,21 +3440,6 @@ impl PackageDeclarations {
             return Err(checked_state_graph_claims
                 .iter()
                 .map(state_graph_claim::not_emitted)
-                .collect());
-        }
-        // FR-447: likewise, no S4 emission writes a hybrid model or claim yet.
-        if !self.emit_unwritten_hybrids
-            && !(checked_hybrid_models.is_empty() && checked_hybrid_claim_list.is_empty())
-        {
-            return Err(self
-                .hybrids
-                .iter()
-                .map(|declaration| hybrid::not_emitted(&declaration.form.name))
-                .chain(
-                    self.hybrid_claims
-                        .iter()
-                        .map(|declaration| hybrid::not_emitted(&declaration.form.name)),
-                )
                 .collect());
         }
         let mut graph = CheckedGraph {

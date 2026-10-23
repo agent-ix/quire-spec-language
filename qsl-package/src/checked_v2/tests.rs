@@ -1468,13 +1468,7 @@ fn read_fixture_wire_holding(
     selecting: &Value,
     withheld: &[CheckedArtifactRef],
 ) -> (PackageId, Read) {
-    let mut evidence = CheckedPackageEvidence::new();
-    supply_qspec_extension_definitions(&mut evidence, selecting, withheld);
-    for feature in envelope["lock"]["required_features"].as_array().unwrap() {
-        evidence.support_feature(feature.as_str().unwrap());
-    }
-    supply_qspec_domain_package(&mut evidence, envelope);
-    supply_qspec_dependency_packages(&mut evidence, envelope);
+    let evidence = fixture_evidence(envelope, selecting, withheld);
     let package_id = derived_package_id(envelope);
     let outcome = read_v2(
         &fixture_wire_bytes(envelope),
@@ -1484,6 +1478,38 @@ fn read_fixture_wire_holding(
         &pin(package_id),
     );
     (package_id, outcome)
+}
+
+/// The evidence `envelope` is read against: the published definitions that
+/// `selecting`'s lock selects, minus `withheld`, the required features, and
+/// the domain and dependency packages `envelope` selects.
+fn fixture_evidence(
+    envelope: &Value,
+    selecting: &Value,
+    withheld: &[CheckedArtifactRef],
+) -> CheckedPackageEvidence {
+    let mut evidence = CheckedPackageEvidence::new();
+    supply_qspec_extension_definitions(&mut evidence, selecting, withheld);
+    for feature in envelope["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    supply_qspec_domain_package(&mut evidence, envelope);
+    supply_qspec_dependency_packages(&mut evidence, envelope);
+    evidence
+}
+
+/// IR's admitted package for the admitted fixture `envelope`.
+fn admitted_fixture(envelope: &Value) -> std::sync::Arc<quire_contract_model::CheckedPackageV2> {
+    let evidence = fixture_evidence(envelope, envelope, &[]);
+    let read = read_checked_package_v2(
+        &fixture_wire_bytes(envelope),
+        identity("pkg"),
+        V2ReadLimits::default(),
+        &evidence,
+        &pin(derived_package_id(envelope)),
+    )
+    .unwrap_or_else(|failure| panic!("the fixture is admitted: {failure:?}"));
+    read.into_value().admitted
 }
 
 /// ADR-013 C-14 over QSpec's published positive `quire.checked-package/v2`
@@ -1776,6 +1802,68 @@ fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
         }
         (_, other) => panic!("swapped model body: expected malformed_wire, got {other:?}"),
     }
+}
+
+/// FR-447-AC-13: QSL's I2 read-back of `positive-all-families.json` returns
+/// `Tank`'s `CheckedHybridModel`: `x` and `y` classed `hybrid`, one mode
+/// `Filling` whose rates are the bare variable `y` and the literal `1`, and
+/// one transition resetting `x` to `y`. Skipped when `QSPEC_DIR` is unset.
+#[trace("TC-1187", "FR-447-AC-13")]
+#[test]
+fn conformance_tank_reads_back_with_a_bare_variable_rate_and_reset() {
+    use qsl_semantics::check::{
+        CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable,
+        HybridTerm, InitialEntry, ModeIndex, ResetConstraint, VariableClass, VariableIndex,
+    };
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let base = read_fixture(&directory.join("positive-all-families.json"));
+    let package = admitted_fixture(&base);
+    let read = super::read_hybrids(&package, 10_000).expect("the fixture reads back");
+    let name = |text: &str| quire_exact::Identifier::new(text).expect("an identifier");
+    let [tank] = read.models.as_slice() else {
+        panic!("one model: {:?}", read.models);
+    };
+    assert_eq!(
+        tank.model,
+        CheckedHybridModel {
+            name: name("Tank"),
+            variables: vec![
+                ContinuousVariable {
+                    name: name("x"),
+                    class: VariableClass::Hybrid
+                },
+                ContinuousVariable {
+                    name: name("y"),
+                    class: VariableClass::Hybrid
+                },
+            ],
+            initial: vec![InitialEntry {
+                mode: ModeIndex::new(0),
+                condition: HybridTerm::Boolean(true),
+            }],
+            modes: vec![CheckedMode {
+                name: name("Filling"),
+                invariant: HybridTerm::Boolean(true),
+                rates: vec![
+                    HybridTerm::Variable(VariableIndex::new(1)),
+                    HybridTerm::Constant(quire_exact::Rational::from_integer(1_i64.into())),
+                ],
+                transitions: vec![CheckedTransition {
+                    target: ModeIndex::new(0),
+                    guard: HybridTerm::Boolean(true),
+                    resets: vec![ResetConstraint {
+                        variable: VariableIndex::new(0),
+                        relation: CompareOp::Eq,
+                        value: HybridTerm::Variable(VariableIndex::new(1)),
+                    }],
+                }],
+            }],
+        }
+    );
+    assert!(read.claims.is_empty());
 }
 
 /// FR-447-AC-13 (QSpec FR-481 check 5): with `Tank`'s two variables both

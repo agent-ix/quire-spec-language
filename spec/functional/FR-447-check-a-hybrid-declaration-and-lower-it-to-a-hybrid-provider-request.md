@@ -552,9 +552,13 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
     `model-steps`; its activation `origin`, or `each` with the `on each`
     parameter's node at level 1 as `trigger` and its guard's term node; its
     captures, each named by the capture and holding its initializer's term
-    node; its fairness as QSpec FR-481 hybrid fairness members, `declaration`
-    the model node and `name` the mode for `fair S`, and `declaration` the
-    mode node of `S` and `name` the target for `fair S::T`; and its
+    node; its fairness as QSpec FR-481 hybrid fairness members, one per
+    `HybridFairness`: `declaration` the mode node of `S` and `name` the
+    target mode `T` when every transition of the set goes to `T` (`fair
+    S::T`, and `fair S` when all of `S`'s transitions go to one mode), and
+    `declaration` the model node and `name` the mode `S` otherwise (`fair S`
+    over transitions to several modes), the checked set holding the
+    transitions and not the spelling that wrote them; and its
     `HybridFormula`, future and past operators alike, as QSpec FR-370
     formula nodes, each `HybridInterval` in the one form QSpec FR-370 admits
     under the claim's profile: under `quire.temporal.timed/v1` the timed

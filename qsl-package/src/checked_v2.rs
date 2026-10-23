@@ -97,10 +97,12 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
 
 mod clause_root;
+mod hybrid;
 #[cfg(test)]
 pub(crate) mod tests;
 
 pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
+pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
 /// `Result` unpacked so a test matches every arm by pattern.

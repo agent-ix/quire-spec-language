@@ -4022,6 +4022,8 @@ pub struct TransitionForm {
     pub guard: ExpressionForm,
     /// The `reset` block's expression.
     pub reset: ExpressionForm,
+    /// The span from the target's name to the end of the `reset` block.
+    pub span: Span,
 }
 
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form

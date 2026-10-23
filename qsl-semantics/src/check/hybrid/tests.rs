@@ -11,7 +11,7 @@ use quire_semantic_value::checking::CheckingLimits;
 
 use crate::check::{
     ArithmeticOp, CaptureIndex, CheckCause, CheckRefusal, CheckedFunctionRef, CheckedGraph,
-    CheckedHybridClaim, CheckedHybridModel, CompareOp, HybridActivation, HybridClock,
+    CheckedHybridClaim, CheckedHybridModel, CompareOp, HybridActivation, HybridCause, HybridClock,
     HybridFormula, HybridHorizon, HybridInterval, HybridTerm, ModeIndex, PackageDeclarations,
     ResetConstraint, TemporalProfile, TransitionIndex, VariableClass, VariableIndex,
 };
@@ -74,8 +74,7 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
         crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
-    .unwrap_or_else(|refusal| panic!("{text}: the unit assembles: {refusal:?}"))
-    .with_unwritten_hybrids();
+    .unwrap_or_else(|refusal| panic!("{text}: the unit assembles: {refusal:?}"));
     (text, package)
 }
 
@@ -119,6 +118,25 @@ fn sole_refusal(declarations: &str) -> (Code, &'static str, String) {
         panic!("a hybrid cause: {refusal:?}");
     };
     (cause.code(), cause.tag(), named.clone().expect("a region"))
+}
+
+/// The one hybrid cause of a unit that must not check.
+fn sole_cause(declarations: &str) -> HybridCause {
+    let Err(refusals) = check(declarations) else {
+        panic!("`{declarations}` must not check");
+    };
+    let [(refusal, _)] = refusals.as_slice() else {
+        panic!("one refusal for `{declarations}`: {refusals:?}");
+    };
+    let CheckCause::Hybrid(cause) = &refusal.cause else {
+        panic!("a hybrid cause: {refusal:?}");
+    };
+    (**cause).clone()
+}
+
+/// The source text `span` of `declarations` names.
+fn spanned(declarations: &str, span: qsl_foundation::Span) -> String {
+    format!("{HEADER}{declarations}")[span.start..span.end].to_owned()
 }
 
 fn constant(value: i64) -> HybridTerm {
@@ -177,6 +195,71 @@ fn braking_checks_to_a_classified_model_with_its_rates_initial_mode_and_reset() 
             value: constant(0),
         }]
     );
+}
+
+/// FR-447-AC-2, AC-8: the duplicate refusals name both declarations, the
+/// first as well as the second, and the missing-equation refusal names the
+/// mode and the variable.
+#[trace("TC-1187", "FR-447-AC-2")]
+#[test]
+fn duplicate_and_missing_refusals_name_both_declarations() {
+    let duplicate_mode = use_case().replace(
+        "mode Stopped invariant",
+        "mode Moving invariant { true } flow { v' = 0; a' = 0; t' = 1; }\n mode Stopped invariant",
+    );
+    let HybridCause::DuplicateMode { name, first, span } = sole_cause(&duplicate_mode) else {
+        panic!("a duplicate mode");
+    };
+    assert_eq!(name, "Moving");
+    assert_ne!(first, span);
+    assert_eq!(spanned(&duplicate_mode, first), "Moving");
+    assert_eq!(spanned(&duplicate_mode, span), "Moving");
+    assert!(first.start < span.start);
+
+    let equation = braking(
+        INVARIANT,
+        "v' = -a; v' = 0; a' = 0; t' = 1;",
+        TRANSITION,
+        STOPPED_FLOW,
+    );
+    let HybridCause::DuplicateEquation {
+        variable,
+        first,
+        span,
+    } = sole_cause(&equation)
+    else {
+        panic!("a duplicate equation");
+    };
+    assert_eq!(variable, "v");
+    assert_eq!(spanned(&equation, first), "v");
+    assert_eq!(spanned(&equation, span), "v");
+    assert!(first.start < span.start);
+
+    let transition = "transition to Stopped when { v = 0 } reset { v = 0 and v = 1 };";
+    let reset = braking(INVARIANT, FLOW, transition, STOPPED_FLOW);
+    let HybridCause::DuplicateReset {
+        variable,
+        first,
+        span,
+    } = sole_cause(&reset)
+    else {
+        panic!("a duplicate reset");
+    };
+    assert_eq!(variable, "v");
+    assert_eq!(spanned(&reset, first), "v = 0");
+    assert_eq!(spanned(&reset, span), "v = 1");
+
+    let missing = braking(INVARIANT, FLOW, TRANSITION, "v' = 0; a' = 0;");
+    let HybridCause::MissingEquation {
+        mode,
+        variable,
+        span,
+    } = sole_cause(&missing)
+    else {
+        panic!("a missing equation");
+    };
+    assert_eq!((mode.as_str(), variable.as_str()), ("Stopped", "t"));
+    assert_eq!(spanned(&missing, span), "Stopped");
 }
 
 /// FR-447-AC-2: each mutation of `Braking` refuses at its span with the cause
@@ -617,7 +700,6 @@ fn holds_below_30() -> HybridFormula {
 #[test]
 fn slow_enough_checks_to_a_claim_with_its_horizon() {
     let claim = claim_of(&slow_enough("always [0, 10] holds(h.v < 30)"));
-    assert_eq!(claim.name.as_str(), "SlowEnough");
     assert_eq!(claim.clock, HybridClock::ModelTime);
     assert_eq!(claim.activation, HybridActivation::Origin);
     assert!(claim.captures.is_empty() && claim.fairness.is_empty());
