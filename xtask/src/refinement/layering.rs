@@ -1219,6 +1219,128 @@ mod tests {
         assert_eq!(report.results.len(), 18);
     }
 
+    /// FR-345-AC-2 (TC-867): a typed parent refusal followed by child
+    /// admission is reported with both raw source references and parent codes.
+    #[trace("TC-867", "FR-345-AC-2")]
+    #[test]
+    fn a_case_regression_names_both_sources_edge_layers_and_parent_code() {
+        let temp = crate::test_support::tempdir();
+        write_pair(
+            temp.path(),
+            "typed-refusal",
+            "case",
+            EDGES[0],
+            "parent.native",
+            "child.native",
+            "invariant Broken using v on Config::ConfigVersion at current { true }\n",
+        );
+        let report = compare(
+            temp.path(),
+            |input| match input.path.as_str() {
+                "parent.native" => Compilation::classified(
+                    F,
+                    vec![super::super::report::CodeReport {
+                        code: "unsupported_construct",
+                        cause: Some("declaration-form"),
+                    }],
+                ),
+                "child.native" => Compilation::classified(A, Vec::new()),
+                other => panic!("unexpected source path {other}"),
+            },
+            &RegistrySnapshot::default(),
+            None,
+        );
+        let case = report
+            .results
+            .iter()
+            .find_map(|result| match result {
+                EntryResult::Case {
+                    name,
+                    parent,
+                    child,
+                    result,
+                } => Some((name, parent, child, result)),
+                _ => None,
+            })
+            .expect("the valid case is reported");
+        assert_eq!(*case.3, R);
+        assert_eq!(case.0.parent.identity, "ix://test/layering/typed-refusal");
+        assert_eq!(case.0.child.identity, "ix://test/layering/typed-refusal");
+        assert_eq!(case.0.parent_layer, EDGES[0].parent.identity());
+        assert_eq!(case.0.child_layer, EDGES[0].child.identity());
+        assert_eq!(case.1.class, "refused");
+        assert_eq!(case.1.codes[0].code, "unsupported_construct");
+        assert_eq!(case.2.class, "admitted");
+        assert_eq!(
+            report.exit, 30,
+            "missing corpus entries also cause tool failure"
+        );
+    }
+
+    /// FR-345-AC-8 (TC-868): missing required entries each produce a named
+    /// tool failure, and valid entries elsewhere still reach the compile seam.
+    #[trace("TC-868", "FR-345-AC-8")]
+    #[test]
+    fn missing_state_graph_witness_and_e5_distinguishing_are_reported_once() {
+        let temp = crate::test_support::tempdir();
+        for item in EDGES {
+            write_pair(
+                temp.path(),
+                &format!("{}-case", item.name),
+                "case",
+                item,
+                "parent.native",
+                "child.native",
+                "invariant I using v on Config::ConfigVersion at current { true }\n",
+            );
+            if item.name != "E5" {
+                write_pair(
+                    temp.path(),
+                    &format!("{}-distinguishing", item.name),
+                    "distinguishing",
+                    item,
+                    "parent.native",
+                    "child.native",
+                    "invariant I using v on Config::ConfigVersion at current { true }\n",
+                );
+            }
+        }
+        for layer in HeaderLayer::ALL {
+            if layer != HeaderLayer::StateGraph {
+                write_witness(
+                    temp.path(),
+                    layer,
+                    &format!("{}-witness", layer.identity().replace('/', "-")),
+                );
+            }
+        }
+        let report = compare(
+            temp.path(),
+            |input| match input.path.as_str() {
+                "parent.native" => Compilation::classified(P, Vec::new()),
+                "child.native" => Compilation::classified(A, Vec::new()),
+                "witness.native" => Compilation::classified(F, Vec::new()),
+                other => panic!("unexpected source path {other}"),
+            },
+            &RegistrySnapshot::default(),
+            None,
+        );
+        let failures: Vec<_> = report
+            .results
+            .iter()
+            .filter_map(|result| match result {
+                EntryResult::ToolFailure { entry, .. } => Some(entry.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(failures.len(), 2);
+        assert!(failures.iter().any(|entry| entry == &&"E5/distinguishing"));
+        assert!(failures
+            .iter()
+            .any(|entry| entry == &&"quire.state.graph/v1/witness"));
+        assert_eq!(report.exit, 30);
+    }
+
     /// FR-345-AC-5 (TC-868): parent and child bytes may differ only at the
     /// profile identity string.
     #[trace("TC-868", "FR-345-AC-5")]
