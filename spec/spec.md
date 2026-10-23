@@ -454,6 +454,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-448
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-354
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-355
@@ -1128,6 +1130,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-351](functional/FR-351-settle-each-capability-from-its-executed-vectors.md) | FR |
 | [FR-352](functional/FR-352-report-capability-coverage.md) | FR |
 | [FR-353](functional/FR-353-settle-the-complete-v1-qualification-verdict.md) | FR |
+| [FR-448](functional/FR-448-cross-check-verification-backends-over-the-conformance-corpus.md) | FR |
 | [FR-354](functional/FR-354-admit-extensions-from-declarative-grammar-and-typed-node-schemas.md) | FR |
 | [FR-355](functional/FR-355-check-the-quire-fences-of-spec-artifacts.md) | FR |
 | [FR-129](functional/FR-129-check-strong-fairness-constraints.md) | FR |
