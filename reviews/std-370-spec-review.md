@@ -1,5 +1,5 @@
 ---
-id: SR-16216
+id: SR-16247
 title: "spec-review of the QSL analyze provider entry, analyze request, engine choice and canonical request (quire-spec-language PR 1341)"
 type: SpecReview
 analysis: base
@@ -72,3 +72,11 @@ which QSpec FR-290 forbids. It also makes `analyze` and `prove` settle the
 same item differently, so the FR-280 equal-record guarantee fails. FND-002
 and FND-003 are a missing test seam and a missing case. The entry
 signature, the binding refusal and the canonical member table are sound.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | d1e39d04: FR-281 "Negotiated items": "`analyze` does not negotiate and never chooses among engines". Each `NegotiatedItem` carries the settlement CG's `negotiate_*` gave it under QSpec FR-290's candidate table. An unnamed two-candidate item reaches `analyze` settled `invalid-request` `invalid_capability`/`ambiguous-backend`, as through `prove`, and an unheld candidate settles `invalid-request`/`unknown-backend`. FR-281-AC-8 is restated to match, so FR-280's equal-record rule holds. |
+| FND-002 | fixed | d1e39d04: `analyze` and `qsl_analyze::provider::run` take `engines: &Engines`. `Engines::qsl()` holds the layer-A engines, and `Engines::with` adds a `qsl_analyze::Engine`, which is the seam AC-5's and AC-8's test engines use. |
+| FND-003 | fixed | d1e39d04: "If FR-120 admission does not admit the subject binding, then the equal-record rule shall not apply: the provider entry returns one `declined` record per item, while `analyze` returns `StageFailure::Refused` and no record." |
