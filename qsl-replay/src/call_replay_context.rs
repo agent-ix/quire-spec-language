@@ -232,7 +232,7 @@ mod tests {
                 value: Value::Integer(Integer::from(3_i64)),
             }],
             accounting: default_accounting(1_000_000),
-            supplied: crate::SuppliedLimits::default(),
+            supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
         };
         run_with_replay_context(
             SourceIdentity::new("a", "u", "git", "1"),

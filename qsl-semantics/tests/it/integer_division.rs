@@ -10,10 +10,10 @@ use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
 use qsl_semantics::value::{
-    divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
+    divide, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
 };
 use quire_exact::{
-    ChargePoint, DivisionMember, DivisionProfile, Incomplete, InjectedDenial, Integer,
+    modulo, ChargePoint, DivisionMember, DivisionProfile, Incomplete, InjectedDenial, Integer,
     IntegerDomain, IntegerInterval, LimitKind, Meter, Outcome, Refusal, ScalarLimits, Undefined,
 };
 use quire_semantic_value::definition::{PackageCause, PackageRefusal, PackageRefusalCode};

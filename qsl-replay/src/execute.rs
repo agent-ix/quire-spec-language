@@ -30,7 +30,6 @@ use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
-use qsl_semantics::value::supplied::SuppliedRun;
 use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
@@ -39,6 +38,7 @@ use quire_exact::{
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EnvironmentFailure;
+use quire_semantic_value::supplied_stop::SuppliedRun;
 use quire_semantic_value::supplied_stop::{
     SuppliedCause, SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
 };

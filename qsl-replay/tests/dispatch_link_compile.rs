@@ -1195,7 +1195,7 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
             value: quire_exact::Value::Integer(Integer::from(3_i64)),
         }],
         accounting: spine::default_accounting(1_000_000),
-        supplied: qsl_replay::SuppliedLimits::default(),
+        supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
     };
     let result = qsl_replay::run_with_requirements(
         SourceIdentity::new("a", "u", "git", "1"),

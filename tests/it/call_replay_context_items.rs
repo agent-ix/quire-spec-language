@@ -4,13 +4,14 @@
 //! item `items_from_requirements` writes for that member (FR-075). These
 //! need `qsl-route`, which only the root crate's tests hold.
 
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::spine::default_accounting;
 use qsl_replay::{
     run_with_replay_context, Call, CallArgument, CallerLimits, DependencyInput, Integer,
-    ObjectEnvironment, PluginReplayRefusal, SuppliedLimits, TerminalValue, Value,
+    ObjectEnvironment, PluginReplayRefusal, TerminalValue, Value,
 };
 use qsl_route::request::items_from_requirements;
 use qsl_route::Registry;

@@ -32,7 +32,6 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
 use qsl_semantics::model::observation::population_universe_for;
 use qsl_semantics::value::enumeration::mint_variant_id;
-use qsl_semantics::value::supplied::SuppliedRun;
 use quire_exact::{
     admit_text, form, from_admitted_slots, CollectionKind, CollectionType, ConstructionRefusal,
     Decimal, EffectiveId, EnumMember, FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey,
@@ -43,6 +42,7 @@ use quire_exact::{
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
+use quire_semantic_value::supplied_stop::SuppliedRun;
 use quire_semantic_value::supplied_stop::{
     AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
     SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedStop,

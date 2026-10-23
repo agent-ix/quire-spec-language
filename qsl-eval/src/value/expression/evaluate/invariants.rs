@@ -1533,8 +1533,8 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                         // different, uncancelled handle gives the same located
                         // incomplete result, and leaves the run's handle alone.
                         let caller = quire_exact::Cancel::new();
-                        let mut run = qsl_semantics::value::supplied::SuppliedRun::new(
-                            qsl_semantics::value::supplied::SuppliedLimits::default(),
+                        let mut run = quire_semantic_value::supplied_stop::SuppliedRun::new(
+                            quire_semantic_value::supplied_stop::SuppliedLimits::default(),
                             caller.clone(),
                         )
                         .unwrap();

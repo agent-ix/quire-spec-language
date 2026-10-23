@@ -22,7 +22,6 @@ mod value_invariants;
 use evaluate::Machine;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::SelfKind;
-use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
 use quire_eval::Registry;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
@@ -31,6 +30,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::supplied_stop::{
     SuppliedCause, SuppliedFailure, SuppliedPhase, SuppliedStop,
 };
+use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};

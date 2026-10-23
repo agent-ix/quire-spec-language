@@ -5,6 +5,7 @@
 //! a value-validity record only. These need `qsl-route` and the ConfigVersion
 //! domain package, which only the root crate's tests hold.
 
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -12,7 +13,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{default_accounting, SpineLimits};
 use qsl_replay::{
     run_with_requirements, Call, CallArgument, DependencyInput, Integer, ObjectEnvironment,
-    OccurrenceKey, SuppliedLimits, Value,
+    OccurrenceKey, Value,
 };
 use qsl_route::request::items_from_requirements;
 use qsl_route::Registry;

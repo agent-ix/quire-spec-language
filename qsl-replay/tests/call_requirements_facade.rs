@@ -8,6 +8,7 @@
 //! FR-395-AC-2 and FR-075-AC-17 (the items) are in the root crate's
 //! `tests/it/call_requirements_items.rs`.
 
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -15,7 +16,7 @@ use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
     compile_package, run_with_requirements, Call, CallArgument, CallOutcome, DependencyInput,
     Integer, ObjectEnvironment, OccurrenceKey, ReplayLimits, RunRefusal, RunWithRequirements,
-    SourceIdentity, SpineLimits, StageLimits, SuppliedLimits, Value,
+    SourceIdentity, SpineLimits, StageLimits, Value,
 };
 use quire_exact::Cancel;
 

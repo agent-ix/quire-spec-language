@@ -2208,7 +2208,7 @@ const SUPPLIED_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 #[trace("TC-830", "FR-277-AC-4", "FR-277-AC-5")]
 #[test]
 fn run_admission_spends_one_cumulative_budget_and_denies_before_the_call() {
-    use qsl_semantics::value::supplied::SuppliedLimits;
+    use quire_semantic_value::supplied_stop::SuppliedLimits;
     use quire_semantic_value::supplied_stop::{
         AttemptedCount, SuppliedEvent, SuppliedLimitKind, SuppliedPhase,
     };

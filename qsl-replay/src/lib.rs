@@ -256,7 +256,6 @@ pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // without naming `qsl_replay::spine` or `qsl_semantics`.
 pub use qsl_semantics::library::PackageId;
 pub use qsl_semantics::model::object_environment::ObjectEnvironment;
-pub use qsl_semantics::value::supplied::SuppliedLimits;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,

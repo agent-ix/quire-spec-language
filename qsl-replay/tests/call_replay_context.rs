@@ -12,6 +12,7 @@
 //! over each member, whatever that answer is, and the in-crate tests in
 //! `call_replay_context.rs` build a request through the context.
 
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -20,8 +21,8 @@ use qsl_replay::{
     compile_package, run_with_replay_context, run_with_requirements, BackendId, Call, CallArgument,
     CallOutcome, CallerLimits, DependencyInput, DomainKey, DomainKind, FiniteBound, Integer,
     ObjectEnvironment, PluginReplayContext, PluginReplayRefusal, ProofBound, ReplayLimits,
-    RequestIndex, RunRefusal, RunWithReplayContext, SourceIdentity, SpineLimits, SuppliedLimits,
-    TerminalValue, Value, WireNodeId,
+    RequestIndex, RunRefusal, RunWithReplayContext, SourceIdentity, SpineLimits, TerminalValue,
+    Value, WireNodeId,
 };
 use quire_exact::Cancel;
 

@@ -2232,6 +2232,57 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
     assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
 }
 
+/// FR-403-AC-8 (TC-1121): a population document whose members are listed in
+/// two different orders, with a subsetting violation on two of them, refuses
+/// both times naming the violating member with the lowest reference key, on
+/// each of ten runs. The admission walks its members in ascending
+/// reference-key order, so the lookup map's order reaches no refusal.
+#[test]
+#[trace("FR-403-AC-8", "TC-1121")]
+fn the_subsetting_refusal_names_the_lowest_violating_member_in_any_listing_order() {
+    let domain_package = r06_bundle();
+    let view = view_of(&domain_package);
+    let violating = |name: &str| {
+        member_with_fields(
+            name,
+            "model.A",
+            vec![("model.A.all", vec!["a2"]), ("model.A.some", vec!["a3"])],
+        )
+    };
+    let listings: [[&str; 4]; 2] = [["a0", "a1", "a2", "a3"], ["a3", "a1", "a2", "a0"]];
+    for listing in listings {
+        for _ in 0..10 {
+            let members = listing
+                .iter()
+                .map(|name| match *name {
+                    "a0" | "a1" => violating(name),
+                    plain => member(plain, "model.A"),
+                })
+                .collect();
+            let document = PopulationDocument {
+                model_identity: "test/orders".to_owned(),
+                members,
+            };
+            let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+            let outcome = admit_binding(
+                &view,
+                &document,
+                &p1_population_key(),
+                GeneralizationClosure::Closed,
+                Some(5),
+                &mut admission,
+            );
+            let AdmissionOutcome::Refused(refusal) = outcome else {
+                panic!("expected a subsetting refusal, got {outcome:?}");
+            };
+            let ModelRefusalCause::SubsettingViolation { object, .. } = refusal.cause else {
+                panic!("expected subsetting-violation, got {:?}", refusal.cause);
+            };
+            assert_eq!(object, "a0", "listing {listing:?}");
+        }
+    }
+}
+
 /// R06's satisfying counterpart: `a1.some = [a2]`, and `a2` is among
 /// `a1.all`'s one value, so the same one `binding.subset-value` charge
 /// (`n = 1`) discharges instead of refusing. The work total also includes

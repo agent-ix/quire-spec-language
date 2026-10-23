@@ -136,8 +136,10 @@ package the call ran against; nothing is recomputed.
   payloads of `CallOutcome::Refused` and `::Incomplete`), `RunRefusal` and
   `CompileRefusal` (the payload of `RunRefusal::Compile`), `SpineLimits`, `PackageId` (from
   `qsl_semantics::library`), `ObjectEnvironment` (from `qsl_semantics`' model
-  object environment), `SuppliedLimits` (from `qsl_semantics`' value
-  supplied module) and `Cancel` (with `CancelCause`, from `quire_exact`).
+  object environment) and `Cancel` (with `CancelCause`, from `quire_exact`).
+  `Call.supplied` is `quire_semantic_value::supplied_stop::SuppliedLimits`,
+  which a consumer imports from its owner: the root re-exports no moved
+  vocabulary (FR-403).
   `DependencyInput` and `SourceIdentity` are already on the root and are not
   listed. `qsl_replay::spine` stays internal, a consumer names neither it nor
   `qsl_semantics`' checked graph (FR-060, T12-A), as for `compile_admitted`
