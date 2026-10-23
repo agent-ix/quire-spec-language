@@ -183,7 +183,7 @@ FR-243 basis, O-16 category and method.
   counterexample whose universal lasso has at most `k` joint steps; for
   HP-6, no counterexample of at most `k` moves; for HP-1, no counterexample
   whose executions all leave states at depth below `k`.
-- A V-7 record SHALL name its limit, its value and the request member that
+- A V-7 record SHALL name its limit, its value and the request setting that
   raises it.
 - Every record, whatever its verdict, SHALL state the value of each
   model-check limit the run used, FR-126's and FR-184's, with whether the
