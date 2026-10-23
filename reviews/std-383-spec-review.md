@@ -60,3 +60,28 @@ matches QSpec FR-142 exactly: every vector recomputes to the stated row,
 code and retained items. The remaining defects are a stale test case, an
 unstated or narrowed imported-node case, and a misdated ruling. A main merge
 is needed (clean).
+
+## New findings (disposition pass 1)
+
+Re-checked at 0ed018f9 (fix commit 6be05ed6; origin/main is an ancestor;
+`make check-spec-validation` exits 0; FR-091-AC-55 is unique across the 79
+open PRs). The oracle was QSpec origin/main 9c8fc775 FR-142 and TC-187.
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-004 | medium | FR-091 now resolves a unit's `:` name and row 2 against the dimensions and units of an admitted domain package, but it does not state the name-collision refusals that FR-142-AC-19 attaches to package nodes. A source `dimension Time` beside a package dimension `Time` refuses `conflicting_declaration`/`duplicate-declaration` at the source span, naming both declarations. Two admitted packages that each declare a dimension `Rate`, with no source `Rate`, refuse it at the later package's selection row. FR-091's duplicate pre-check covers only source forms (`ambiguous_declaration`/`ambiguous-name`), and FR-091-AC-55 takes only `tick` from FR-142-AC-19. FR-091 says it follows FR-142 "with none of its own", so this part is narrowed. Fix: state both collision rules in FR-091 and add FR-142-AC-19's source-versus-package and two-package vectors to AC-55 and TC-483 step 8. | spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:486-491,994; spec/test-cases/TC-483-assembler-admits-dimensions-and-units.md:54 | missing-requirement |
+| FND-005 | low | FR-091-AC-55 and TC-483 step 8 set up one admitted package `P`, but U11z2 needs a second package `Q` (`Q.T` with unit `Q.s`). TC-483 also expects every package-node refusal at `/lock/model_selections/0`, which holds for U11z2's `P.L` only if `P` comes first in lock order. Fix: name `Q` in the fixture, and give U11z2's selection index or `P`'s lock position. | spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:994; spec/test-cases/TC-483-assembler-admits-dimensions-and-units.md:54,92-93 | wrong-requirement |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-406 now lists AC-21's cause list and maps each FR-142 step, rule and row to its code. Checked against FR-142's row table: rows 1 and 5 are `invalid-value`, row 2 `missing-name`, row 3 `incompatible-definition`, row 4 `conflicting-definition` and row 6 `definition-cycle`. The STD-112 "once QSpec publishes it" text is gone. |
+| FND-002 | fixed | FR-091 states FR-142's imported-node turn rule, admitted members, row 4 and row 5 handling, the base-dimension rule for package nodes and the selection-row locus. AC-55 adds U11r, U11s, U11t, U11u, U11y, U11z1, U11z2 and `tick`, and each recomputes to TC-187's result. The collision part of FR-142-AC-19 is FND-004. |
+| FND-003 | fixed | The amended parts move to a new FR-091-OQ-13 row dated 2026-10-22 and marked "lead default, not an owner answer". OQ-11 keeps (a), (b) and (d) under its original date. |
+| FND-004 | still-open | New in this pass. It needs a fix round. |
+| FND-005 | still-open | New in this pass. It needs a fix round. |
+
+Verdict after disposition pass 1: FND-001 to FND-003 are fixed. Not mergeable
+until FND-004 is fixed; FND-005 is low. TC-406 is also edited by open #1357,
+so expect a textual conflict.
