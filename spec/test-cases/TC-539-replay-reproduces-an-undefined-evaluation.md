@@ -27,7 +27,7 @@ source in the byte provision and universe `{c}` in the request.
 3. Replay it with its last step removed, so it ends at value 1; then with
    `where.locus` naming another expression of the clause.
 4. Replay TC-537 step 4's deadlock-freedom counterexample (`terminal when
-   6 / (3 - c.value) = 0`, prefix to value 3).
+   6 mod (3 - c.value) = 0`, prefix to value 3).
 5. Replay that prefix with `kind: Deadlock`.
 6. Replay FR-126-AC-6's empty-prefix counterexample of `always holds(true)`
    over the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }`
