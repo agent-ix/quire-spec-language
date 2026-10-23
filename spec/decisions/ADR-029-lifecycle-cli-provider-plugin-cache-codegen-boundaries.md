@@ -776,7 +776,8 @@ holds every execution backend:
 pub trait ExecutionBackend {
     type Prepared: PreparedEntries;
     /// Prepare the selected entries of one checked package. An entry this
-    /// backend cannot run settles `Unsupported` for that entry only.
+    /// backend cannot run is listed by `PreparedEntries::unsupported`, for
+    /// that entry only; `PrepareFailure` fails the whole call.
     fn prepare(
         &self,
         package: &CheckedPackage,
@@ -787,7 +788,10 @@ pub trait ExecutionBackend {
 }
 
 pub trait PreparedEntries {
-    /// The same contract as `CheckedPackageEvaluation::call`.
+    /// The selected entries this backend did not prepare, with their causes.
+    fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)];
+    /// The same contract as `CheckedPackageEvaluation::call`; an entry
+    /// listed by `unsupported` returns `CallFailure::Unsupported`.
     fn call(
         &self,
         entry: &QualifiedName,
@@ -807,8 +811,9 @@ pub trait PreparedEntries {
 }
 ```
 
-`PrepareFailure` holds per-entry `Unsupported` causes, `Limit`, `Cancelled`
-and `Fault`. Three backends implement the seam:
+`PrepareFailure` is `Limit`, `Cancelled` or `Fault`, with no per-entry arm;
+FR-294 defines `EntrySelection`, `PrepareLimits`, `PrepareFailure` and
+`UnsupportedEntry`. Three backends implement the seam:
 
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
@@ -1046,7 +1051,7 @@ except the ADR-011 amendment, which is applied in place.
   QSL-390. The checkers' defining drafts are PR #562 (EN-1 closure, SCC and
   ranking), PR #564 (simulation relations), PR #571 (product closure),
   PR #573 (zone) and PR #579 (EN-5).
-- Implementation follow-ups this record states for code: one
+- Code consequences this record states: one
   `qsl-foundation` `BackendId` replacing `qsl_route::BackendId` and
   `qsl_replay::identity::Backend` (FR-288); `ProofCategory` folded into `Category` (FR-285); `format` moved
   from root `src/format.rs` to `qsl_cst::format` (X-12).
