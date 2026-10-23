@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5, FR-230-AC-7 and FR-230-AC-8. Steps 1 to 6 need a header that can select `quire.temporal.complete/v1` and wait for it. Steps 7 and 8 run now.
+Scope: FR-230-AC-1 to FR-230-AC-5, FR-230-AC-7 and FR-230-AC-8. Every unit of steps 1 to 6 and 8 carries the header `profile t = "quire.temporal.complete/v1";`; step 7 carries none.
 
 ## Test Procedure
 
@@ -25,7 +25,7 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 5. Check, with units declared in the unit's own source, `time dense unit ms` and `unit s`, the quantity `3 ms` under `unit s`, `unit hour`, a graph with no base `Time`, two dimensions named `Time` in the source, a unit of `Duration = Time`, a time unit with a nonzero offset, and two graphs declaring `ms` differently.
 6. Check, with `Time`, `s` and `ms` supplied by `acme/rpc` and none in the source, `time dense unit M::ms`, `time dense unit M::s` and `3 M::ms` under `unit M::s`; then a source that also declares `unit ms : Time = 1/1000 * M::s;` and `time dense unit ms`; then a source that also declares `dimension Time;`; then, over the `Rate` variant of `acme/rpc`, a source that declares `dimension Rate;`; then `acme/rpc` and `acme/flow` both selected, with no source `Time`.
 7. Check a unit that selects no `quire.temporal.complete/v1` and writes in its own source `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, `f(c: Clock)`, `g(): Clock` and a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` (FR-230-AC-7).
-8. Check a unit whose header selects `quire.temporal.complete/v1` (FR-230-AC-8).
+8. Check a unit whose header selects `quire.temporal.complete/v1` and writes `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration and a `Clock` field of an object type of the admitted domain package; read its emitted `definition_selections`. Then check the same unit with the header `profile t = "quire.model.complete/v1";` alone (FR-230-AC-7, FR-230-AC-8).
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -38,4 +38,4 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 5: both models check and `3 ms` converts to `3/1000`; `missing_declaration`/`missing-name` naming `hour`; `missing_declaration`/`missing-name` naming `Time`; `ambiguous_declaration`/`ambiguous-name` at assembly; `ill_typed`/`type-mismatch` for the `Duration` unit; `ill_typed`/`type-mismatch`; different package identities.
 - Step 6: both package-unit models check and `3 M::ms` converts to `3/1000`; the source `ms` model checks over the source unit with no ambiguity; the source `Time` and the source `Rate` each refuse `conflicting_declaration`/`duplicate-declaration` at the source declaration's span, naming both declarations; the two-package selection refuses `conflicting_declaration`/`duplicate-declaration` at `/lock/model_selections/1`, naming both `Time` declarations (FR-230-AC-5).
 - Step 7: each construct refused `unsupported_construct`/`declaration-form` at its span in source order, retaining family, owning declaration, selected layers and the required facet, with no other refusal.
-- Step 8: `unknown_profile`/`unsupported-selection` at E3 and no S3 result.
+- Step 8: the first unit resolves at E3, S3 raises no `unsupported_construct` and produces a checked state model with the `TimedModel`, and `definition_selections` hold the six layers of FR-110-AC-13; the second unit refuses each timed construct `unsupported_construct`/`declaration-form`.

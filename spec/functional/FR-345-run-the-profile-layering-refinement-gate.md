@@ -24,7 +24,7 @@ relationships:
 
 QSL SHALL provide `xtask refinement layering <corpus>`, a test gate that
 implements QSpec FR-453's profile-layering gate for QSL's compiler (ADR-017
-RF-3; QSpec capability row V1-TOOL-012). QSpec FR-453 owns the five AD-003
+RF-3; QSpec capability row V1-TOOL-012). QSpec FR-453 owns the six AD-003
 `requires` edges, the two-unit case, the comparison rules and the
 user-subset check. This requirement fixes what QSL builds: the corpus
 reader, the compile of each unit through spine `compile` under FR-110's
@@ -78,8 +78,8 @@ entry or empty corpus, all passed to FR-344's report.
   its `layer`, or names more than one layer, the same holds.
 - If the corpus holds no entry, then the gate SHALL record exactly one
   tool-failure result naming the corpus path, and no other result.
-- If the corpus holds at least one entry, and any of the five layers has no
-  `witness` entry, or any of the five edges has no `case` entry or no
+- If the corpus holds at least one entry, and any of the six layers has no
+  `witness` entry, or any of the six edges has no `case` entry or no
   `distinguishing` entry, then the gate SHALL record one tool-failure
   result per missing item, naming the layer or edge and the missing kind.
   An empty or partial corpus never reports success.
@@ -152,12 +152,13 @@ hook.
 | FR-345-AC-1 | For every combination of `R` and `C` class, the comparison returns the result the table gives; each expected result in the test is a literal, not computed by the gate's code. | Test (TC-867) |
 | FR-345-AC-2 | A case whose parent compile refuses with a typed refusal and whose child compile admits is a `regression` naming both units' `RawSourceRef`s, the edge's two identities and the parent's codes; FR-344 reports verdict violation, exit 10. | Test (TC-867) |
 | FR-345-AC-3 | A case whose parent class is `prohibited` and whose child admits is `not applicable`. | Test (TC-867) |
-| FR-345-AC-4 | Over a layering corpus with cases on each of QSpec FR-453's edges E1 to E5, one seeded case per edge that its parent refuses and its child admits fails the gate naming that case and its edge, and every other case holds or is not applicable. | Test (TC-868) |
+| FR-345-AC-4 | Over a layering corpus with cases on each of QSpec FR-453's edges E1 to E6, one seeded case per edge that its parent refuses and its child admits fails the gate naming that case and its edge, and every other case holds or is not applicable. | Test (TC-868) |
 | FR-345-AC-5 | A case whose two units differ outside the header identity string, and a case naming state core and complete model, are each `tool failure` naming the case; verdict tool failure, exit 30. | Test (TC-868) |
-| FR-345-AC-6 | Each of the five layers admits its witness unit and the witness item, requested with the layer's `witness_request` kind and extent once from each candidate backend by name, settles `supported` under at least one candidate; with two candidates of which one supports and one does not, the layer holds. A layer that refuses its witness, or whose item settles `supported` under no candidate, gives a `regression` naming the layer and the codes or each candidate's identity and disposition; verdict violation, exit 10. | Test (TC-868) |
-| FR-345-AC-7 | On each of E1 to E5, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
+| FR-345-AC-6 | Each of the six layers admits its witness unit and the witness item, requested with the layer's `witness_request` kind and extent once from each candidate backend by name, settles `supported` under at least one candidate; with two candidates of which one supports and one does not, the layer holds. A layer that refuses its witness, or whose item settles `supported` under no candidate, gives a `regression` naming the layer and the codes or each candidate's identity and disposition; verdict violation, exit 10. | Test (TC-868) |
+| FR-345-AC-7 | On each of E1 to E6, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
 | FR-345-AC-9 | `make refinement-layering` runs the gate over `tests/fixtures/refinement/layering/` and passes; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |
+| FR-345-AC-11 | Over a layering corpus that holds E6's `case`, `distinguishing` and `witness` entries (the temporal layer's witness is a timed state model with a clock field, a reset, a guard, a time invariant and one `invariant` clause), E6's both-refuse case holds, its `distinguishing` entry classifies `prohibited` on the parent side naming `quire.model.complete/v1` and `admitted` on the child side, and the temporal witness settles `supported` under a candidate that advertises `operation-contract` in `bounded` mode; a corpus without E6's `distinguishing` entry or without the temporal `witness` entry gives one tool-failure result for each missing item, naming E6 / `distinguishing` or `quire.temporal.complete/v1` / `witness`. | Test (TC-868) |
 
 ## Dependencies
 
@@ -174,6 +175,6 @@ hook.
 
 - ADR-017 §2 RF-3, RF-4, RF-5; §6 Q-5.
 - QSpec FR-453 (STD-119, owner ruling option A: every AD-003 layer
-  header-selectable, all five edges compared); QSpec FR-452, FR-290 and the
+  header-selectable, all six edges compared); QSpec FR-452, FR-290 and the
   V1-TOOL-012 re-trace (STD-117).
 - Implementation ticket QSL-39; specification ticket QSL-387.

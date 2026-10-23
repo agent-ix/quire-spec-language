@@ -51,14 +51,17 @@ for the `abstraction-decl`; QSL FR-304 applies it to the abstraction form.
 A **model construct** is a syntactic form listed in item 5. The unit
 **selects the model profile** when at least one of its header `profile`
 declarations names the identity of the `quire.model.complete/v1` row of the
-DefinitionLock catalog's `header_selectable_layers` (FR-110).
+DefinitionLock catalog's `header_selectable_layers` (FR-110), or names the
+identity of a row whose `requires` closure names it, which is
+`quire.temporal.complete/v1` (item 18).
 
 ## Target design
 
 ### Selection
 
 1. **A header selection and nothing else.** A unit selects the model
-   profile only by naming `quire.model.complete/v1` in a header
+   profile only by naming `quire.model.complete/v1`, or
+   `quire.temporal.complete/v1` whose `requires` closure names it, in a header
    `profile <alias> = "<identity>";` declaration. QSL SHALL NOT infer the
    selection from a construct, from a `model` declaration, from a
    supplied domain package, from an alias or from the fixture a unit
@@ -67,9 +70,10 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 2. **One resolution path.** E3 resolves the identity against the same
    `header_selectable_layers` rows FR-110 uses for the other four layers. The
    model profile adds no second header-profile mechanism and no new refusal
-   code. The five rows (`quire.state.core/v1`, `quire.state.queries/v1`,
-   `quire.state.graph/v1`, `quire.value.complete/v1` and
-   `quire.model.complete/v1`) are header-selectable (FR-110, QSpec FR-453).
+   code. The six rows (`quire.state.core/v1`, `quire.state.queries/v1`,
+   `quire.state.graph/v1`, `quire.value.complete/v1`,
+   `quire.model.complete/v1` and `quire.temporal.complete/v1`) are
+   header-selectable (FR-110, QSpec FR-453).
    Every other header identity keeps FR-110's routing: a clause profile
    resolves in its clause family's catalog (FR-110, ADR-011), and an identity
    no catalog holds refuses `unknown_profile`/`unsupported-selection`, while
@@ -108,7 +112,7 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 
 6. **The `model` declaration is ungated.** QSpec states no gate for the
    `model` declaration, and QSL adds none. State clauses (`invariant`, `pre`
-   and `post`) name a model alias, so a unit that selects any of the four
+   and `post`) name a model alias, so a unit that selects any of the five
    other layers writes them against a model declared in that unit and is
    admitted (FR-110 "Layer selection": state core admits them). The gate is
    on the forms the unit itself writes. A unit that does not select the model
@@ -130,15 +134,16 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
    layer's admitted-form set (for example `reaches`, which state core
    refuses). The object navigation forms `deref` and `reaches` are gated by
    that layer rule alone, with no exception: item 17 states it.
-8. **Protocol, memory and temporal forms are not gated by this requirement.**
+8. **Protocol, memory and timed forms are not gated by this requirement.**
    QSpec's shared grammar (its facet grammar section) names
    `quire.protocol.complete/v1` as the facet of the protocol forms, including
    the memory clause, memory order and fence (QSpec ADR-006 makes it the one
    protocol admission profile), and `quire.temporal.complete/v1` as the
-   temporal facet. Neither is a model construct, and QSL's
-   `header_selectable_layers` has no row for either. Not gated: QSpec names
-   `quire.protocol.complete/v1` and `quire.temporal.complete/v1`; QSL has no
-   such layer. QSL adds no layer and no gate for them here (FR-230's "Timed facet gate" refuses the timed forms; E3 refuses a header that selects `quire.temporal.complete/v1`, because no catalog holds the identity, so every timed construct that reaches S3 lacks the facet); FR-308 and FR-309
+   facet of the timed forms. Neither is a model construct. QSL's
+   `header_selectable_layers` has a row for the temporal facet (item 18) and
+   none for the protocol facet. The timed forms are gated by FR-230's "Timed facet gate" on the unit's
+   selection of `quire.temporal.complete/v1`, not by item 11. QSL adds no
+   layer and no gate for the protocol facet here; FR-308 and FR-309
    name the protocol facet accordingly.
 9. **Why the test is on the unit.** QSpec's shared grammar says a recognised
    construct whose required facet is absent receives a located
@@ -216,6 +221,35 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
     by FR-110's layer rule naming that layer. No model-gate refusal (item 11)
     applies to the forms.
 
+### The timed-model layer
+
+18. **`quire.temporal.complete/v1` is a header-selectable layer.** E3
+    resolves a header profile naming `quire.temporal.complete/v1` through the
+    same `header_selectable_layers` rows as the other layers (FR-110), with no
+    second mechanism and no new refusal code. The row requires
+    `quire.model.complete/v1`. Selecting it therefore selects the model
+    profile (item 1) and admits the forms of the model layer's `requires`
+    closure (item 4), and a unit needs no second header profile for model
+    constructs or value-complete forms. `DefinitionLock::pinned()` SHALL hold
+    the rows of QSpec's complete-temporal lock (`complete-temporal-lock.json`,
+    whose `requires` names the complete-model lock) beside the model lock's.
+    Its `root` role is the `quire.temporal.complete/v1` layer, reached
+    through `header_selectable_layers`, so it collides with no other `root`.
+    A unit whose header profiles resolve to the temporal layer SHALL emit, in
+    `definition_selections`, the layer, every layer its `requires` closure
+    names (the model layer, `quire.state.graph/v1`, `quire.state.queries/v1`,
+    `quire.value.complete/v1` and `quire.state.core/v1`), the
+    complete-value lock's `package_selection` rows FR-110 selects for the
+    union, the complete-model lock's `package_selection.always` rows and the
+    complete-temporal lock's `package_selection.always` rows, and no layer that
+    requires the temporal layer. A unit that selects the model profile and not
+    the temporal layer emits no complete-temporal lock row.
+    The selection of the temporal layer is the unit's header and nothing
+    else, as for the model profile (item 1); FR-230's "Timed facet gate" reads
+    it, so a unit that selects only `quire.model.complete/v1` is refused each
+    timed construct it writes, and a unit that selects the temporal layer is
+    not.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -233,11 +267,13 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 | FR-361-AC-11 | In a value-profile unit, S2 builds the forms of all four families and reports no refusal; the refusals of AC-1 to AC-3 are S3's. | Test (TC-1017) |
 | FR-361-AC-12 | A `body ... using V` where `V` resolves to `quire.value.complete/v1` in a unit that selects only that profile receives one refusal (the family refusal of item 11), not two; the same declaration in a unit that also selects the model profile through another alias receives FR-110's layer refusal alone. | Test (TC-1017) |
 | FR-361-AC-13 | A declaration that writes a `deref` and a declaration that writes a `reaches`, each with a `using` alias that resolves to `quire.value.complete/v1`, are each refused once by FR-110's layer rule naming that layer and retain no family of item 5; the same declarations with an alias that resolves to `quire.state.graph/v1` and with one that resolves to `quire.model.complete/v1` compile, and a declaration whose alias resolves to `quire.value.complete/v1` is still refused in a unit whose header also selects `quire.state.graph/v1` through a second alias. | Test (TC-1015) |
+| FR-361-AC-14 | A unit whose only header profile names `quire.temporal.complete/v1`, with a `model` declaration and a `body` declaration, a dispatched call, a `lookup` and an `abstraction-decl`, compiles with no model-gate refusal; the same unit whose header profile names `quire.value.complete/v1` refuses each construct as AC-1 to AC-3 state. A unit that selects `quire.model.complete/v1` and holds a `time` member is refused it by FR-230's gate and is not refused its model constructs. Its emitted lock's `definition_selections` hold the layer, `quire.model.complete/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`, `quire.value.complete/v1` and `quire.state.core/v1`, the complete-value lock's `package_selection` rows FR-110 selects for the union, the complete-model lock's `package_selection.always` rows and the complete-temporal lock's `package_selection.always` rows, and a unit that selects only `quire.model.complete/v1` emits no complete-temporal lock row. | Test (TC-1017) |
+| FR-361-AC-15 | Under `make conformance`, the rows of `DefinitionLock::pinned()` that come from the complete-temporal lock (role, authority and identity, in order, and its package-selection rules) equal QSpec's complete-temporal lock, and the `quire.temporal.complete/v1` row of its layer table (identity, `requires`, admitted-form file and witness request) equals QSpec's `header_selectable_layers` row, read at run time. | Test (TC-1017) |
 
 ## Dependencies
 
 - FR-110 states header profile resolution, the `header_selectable_layers`
-  rows and the layer rule; the model layer is one of its five layers and this
+  rows and the layer rule; the model layer is one of its six layers and this
   requirement adds the unit-level model test and the complete-model lock rows.
   FR-110's layer selection (FR-110-AC-1, AC-7, AC-8) is built; this
   requirement reads it (items 2 to 4).
@@ -246,6 +282,9 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
   refusal this requirement places at S3. FR-308 and FR-309 name the protocol
   facet, which this requirement does not gate. FR-056 states the `model`
   declaration and domain-package intake, FR-103 the model operations.
+- FR-230 states the timed forms the temporal layer admits and the gate on
+  them; QSpec `temporal-complete.md` and `complete-temporal-lock.json` state
+  the layer and its lock rows.
 - QSpec ADR-006, shared grammar (its facet grammar and model forms
   sections), `model-complete.md`, `complete-model-lock.json`,
   `native-diagnostics.md` (the `unsupported_construct` causes), FR-001,

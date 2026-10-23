@@ -11,12 +11,12 @@ relationships:
 ## Description
 
 Verify `xtask refinement layering` end to end over layering corpora with
-entries on all five QSpec AD-003 `requires` edges E1 to E5 (QSpec FR-453).
+entries on all six QSpec AD-003 `requires` edges E1 to E6 (QSpec FR-453).
 Each `case` and `distinguishing` entry is two units, byte-equal except for
 the identity string of one header `profile` declaration, and both are
 compiled by the running build.
 
-Scope: FR-345-AC-4 to FR-345-AC-9.
+Scope: FR-345-AC-4 to FR-345-AC-9 and FR-345-AC-11.
 
 ## Test Procedure
 
@@ -27,18 +27,18 @@ Steps 1 to 6 pass a test registry holding one backend that advertises
 `operation-contract` and `value-validity` in `bounded` mode, unless a step
 names another.
 
-1. Build a test-only corpus of `entry.json` entries. For each of E1 to E5
+1. Build a test-only corpus of `entry.json` entries. For each of E1 to E6
    it holds:
    - a `case` both layers refuse with a typed refusal (a bounded-integer
      range proof that fails);
    - a `case` using the edge's distinguishing form, which the parent
      prohibits and the child admits;
    - a `distinguishing` entry for the edge;
-   and for each of the five layers a `witness` entry: a bounded-scalar
+   and for each of the six layers a `witness` entry: a bounded-scalar
    monitor invariant (state core), a named-predicate query over a bounded
    log (state queries), a reachability invariant over a finite universe
    (state graph), a record validation function (complete value) and a
-   dispatched operation contract (complete model).
+   dispatched operation contract (complete model) and a timed state model with a clock field, a reset, a guard, a time invariant and one `invariant` clause (complete temporal).
 2. Run `xtask refinement layering` over it twice.
 3. Run the gate core over step 1's corpus with a wrapper that, for each
    edge's both-refuse case, returns for the child unit the `Ok` compile of
@@ -56,7 +56,8 @@ names another.
 6. Run the gate over an empty corpus; over step 1's corpus without the state
    graph `witness` and the E5 `distinguishing` entry; over step 1's corpus
    with one `entry.json` holding an extra member `expected`.
-7. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`,
+7. Run step 1's corpus without the E6 `distinguishing` entry and without the temporal `witness` entry.
+8. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`,
    then over a copy with one `witness` entry removed.
 
 Each expected result is a literal in the test. Tag the test
@@ -69,14 +70,14 @@ Each expected result is a literal in the test. Tag the test
   `not applicable`; each layer result `holds`, every witness item settling
   `supported`; each edge result `holds`. The
   two reports are byte-equal.
-- Step 3: verdict violation, exit 10; exactly five `regression`s, one per
+- Step 3: verdict violation, exit 10; exactly six `regression`s, one per
   edge, each naming its case's two `RawSourceRef`s, its edge's two layer
   identities and the parent's codes; every other result as in step 2.
 - Step 4: each run gives `tool failure` naming the entry; verdict tool
   failure, exit 30.
 - Step 5: the first run gives a `regression` naming `quire.state.core/v1`;
   the second gives a `regression` naming E1; the third gives a
-  `regression` for each of the four layers whose `witness_request` kind is
+  `regression` for each of the five layers whose `witness_request` kind is
   `operation-contract`, naming disposition `unsupported` and the empty
   candidate set, while complete value holds; the fourth gives verdict
   success, every layer holding, with each candidate requested by name and
@@ -88,5 +89,6 @@ Each expected result is a literal in the test. Tag the test
   state graph / `witness` and E5 / `distinguishing`; one naming the
   `entry.json` path and the member `expected`, with every other entry still
   compiled. Each verdict tool failure, exit 30.
-- Step 7: the make target passes over the real corpus, and the gate run
+- Step 7: exactly two tool-failure results, one naming E6 / `distinguishing` and one naming `quire.temporal.complete/v1` / `witness`; verdict tool failure, exit 30 (FR-345-AC-11).
+- Step 8: the make target passes over the real corpus, and the gate run
   over the copy exits non-zero.

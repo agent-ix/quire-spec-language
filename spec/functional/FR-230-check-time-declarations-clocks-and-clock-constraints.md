@@ -224,19 +224,15 @@ facet to be selectable (Timed facet gate).
 ### Timed facet gate
 
 QSpec's shared grammar admits the timed forms (`time-decl`, `time-invariant`,
-`urgent-decl` and the `Clock` type) when the package selects the complete
-facets, and gives a recognised form whose facet is absent a located
-`unsupported_construct`. QSL reads the facet as `quire.temporal.complete/v1`;
-the grammar names no single facet for these forms, so the identity is QSL's
-reading. S1 and S2 build the forms under every selection (FR-393), so the
-refusal is S3's.
-
-No QSL catalog holds `quire.temporal.complete/v1` today (FR-361 item 8), so E3
-refuses a header that selects it, `unknown_profile`/`unsupported-selection`
-(FR-110), before S3 runs. A unit that reaches S3 therefore lacks the facet, and
-the gate below refuses every timed construct it writes. The rules of the other
-sections of this requirement apply to a unit that selects the facet, and take
-effect when the identity is a selectable profile.
+`urgent-decl` and the `Clock` type) when the package selects
+`quire.temporal.complete/v1`, and gives a recognised form whose facet is absent
+a located `unsupported_construct` (QSpec `temporal-complete.md`). The facet is
+a header-selectable layer that requires `quire.model.complete/v1` (FR-110,
+FR-361 item 18). A unit **selects the timed facet** when at least one of its
+header `profile` declarations names `quire.temporal.complete/v1`; it selects
+nothing else (FR-361 item 1). S1 and S2 build the forms under every selection
+(FR-393), so the refusal is S3's. The rules of the other sections of this
+requirement apply to a unit that selects the facet.
 
 The family of a refused construct is `time-declaration` for a `time` member,
 `time-invariant` for a `time invariant`, `urgent-declaration` for an `urgent`
@@ -261,10 +257,6 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
   which the unit does not write; once the facet is selected "Clock fields and
   the domain package" governs it.
 
-Not yet specified: the clock rules for a `Clock` parameter, result or
-source-declared record field in a unit that selects the facet. This requirement
-states the rules for a clock field of a model object type only.
-
 ### Limits
 
 - The checker SHALL accept any number of clocks, any constant and any
@@ -280,8 +272,8 @@ states the rules for a clock field of a model object type only.
 | FR-230-AC-3 | `time tick tick period 1/2 ms unit ms` checks to `TimeSource::Tick` with period `1/2`; `period 0 ms` refuses `invalid_model_binding`/`malformed-declaration`; a tick operation name that resolves to nothing refuses `missing_declaration`/`missing-name`. | Test (TC-685) |
 | FR-230-AC-4 | A guard `(x < 1 or x > 2) and self.ready` checks to two convex parts, `x < 1` and `x > 2`, each with the data predicate `self.ready`. A model with 64 package-admitted clock fields over a universe of 100 objects and a constant of `10^40 ms` checks with no refusal. | Test (TC-685) |
 | FR-230-AC-5 | In a graph whose own source declares base dimension `Time`, root `s` and `ms` (`1/1000` of `s`), `time dense unit ms` and `time dense unit s` check, and a quantity `3 ms` read under `unit s` converts to `3/1000`. A unit of a derived dimension `Duration = Time` refuses `ill_typed`/`type-mismatch`, because `Duration` is not the `Time` node. `time dense unit hour` refuses `missing_declaration`/`missing-name` naming `hour`; a graph with no base `Time` refuses `time dense unit ms` `missing_declaration`/`missing-name` naming `Time` (and not `ms`); two dimensions named `Time` in the unit's source refuse `ambiguous_declaration`/`ambiguous-name` at assembly; a unit `degc` of a time dimension with offset `273` refuses `ill_typed`/`type-mismatch`. Two graphs that declare `ms` as `1/1000` and as `1/100` give different package identities. With base dimension `Time`, root `s` and `ms` supplied by the admitted domain package `acme/rpc` (`model M = "acme/rpc" …`) and none in the source, `time dense unit M::ms` and `time dense unit M::s` check and `3 M::ms` under `unit M::s` converts to `3/1000`; a source that declares `unit ms : Time = 1/1000 * M::s;` beside the package's `ms` checks `time dense unit ms` over the source unit, with no ambiguity; a `Time` declared in both the source and the domain package refuses `conflicting_declaration`/`duplicate-declaration` at the source declaration's span, naming both, and so does a dimension `Rate` declared in both the source and a package `acme/rpc` that declares `Rate`; two admitted domain packages `acme/rpc` and `acme/flow` that both declare a base dimension `Time`, with no source `Time`, refuse `conflicting_declaration`/`duplicate-declaration` at `acme/flow`'s selection row `/lock/model_selections/1`, naming both declarations. | Test (TC-685) |
-| FR-230-AC-7 | A unit whose header selects no `quire.temporal.complete/v1` and whose own source writes `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, a function `f(c: Clock)`, a function `g(): Clock`, a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` refuses each, `unsupported_construct`/`declaration-form` at its span, in source order and every one, retaining its family, its owning declaration, the unit's selected layers and the required facet, with no other refusal. | Test (TC-685) |
-| FR-230-AC-8 | A header that selects `quire.temporal.complete/v1` is refused `unknown_profile`/`unsupported-selection` at E3 with no S3 result, because no catalog holds the identity. | Test (TC-685) |
+| FR-230-AC-7 | A unit whose header selects no `quire.temporal.complete/v1` (a header that selects `quire.model.complete/v1` alone, or no `profile`) and whose own source writes `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, a function `f(c: Clock)`, a function `g(): Clock`, a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` refuses each, `unsupported_construct`/`declaration-form` at its span, in source order and every one, retaining its family, its owning declaration, the unit's selected layers and the required facet, with no other refusal. | Test (TC-685) |
+| FR-230-AC-8 | A header `profile t = "quire.temporal.complete/v1";` resolves at E3 to the temporal layer (FR-110-AC-13), and the unit's S3 check admits its `time` member, `time invariant`, `urgent` declaration and `Clock` in a type position with no `unsupported_construct`/`declaration-form` refusal; the checked state models of AC-1 to AC-5 are produced from units whose header selects the layer. The same unit with the identity `quire.temporal.complete/v1` in no header gets AC-7's refusals. | Test (TC-685) |
 
 ## Dependencies
 
@@ -306,8 +298,8 @@ states the rules for a clock field of a model object type only.
 - QSpec half: QSpec FR-415 (Linear STD-139) owns the shared grammar of the
   `time` member, `Clock` fields, resets, clock constraints, time invariants
   and `urgent` (ADR-026 OV-7).
-- Remaining work: the rules of this requirement wait on E3 admitting
-  `quire.temporal.complete/v1` as a selectable profile (FR-110, FR-361 item 8).
+- Selection of the timed facet: FR-110-AC-13 and FR-361-AC-14 (the header
+  `profile` that names `quire.temporal.complete/v1`).
 - filament-core-data FR-146 (Linear STD-295, agent-ix/filament-core-data#301):
   the `Clock` field type and the `dimensions` and `units` of the admitted
   domain package.
