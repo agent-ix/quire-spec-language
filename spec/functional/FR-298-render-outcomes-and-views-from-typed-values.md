@@ -56,9 +56,11 @@ Text forms:
 
 DOT is available for the state-graph and trace views.
 
-Text and DOT are display forms. Their exact bytes are not normative: the
-structure this requirement states is, and equal inputs render equal bytes.
-JSON bytes are normative, through FR-286 and each view's serialization.
+Text and DOT are display forms. For them `render` guarantees the structure
+this requirement states and byte-equal output for equal inputs; spacing,
+padding and attribute spelling beyond that structure are the renderer's
+choice. JSON output is, byte for byte, FR-286's serialization or the view's
+own serialization.
 
 ### The source provision
 
@@ -67,8 +69,12 @@ JSON bytes are normative, through FR-286 and each view's serialization.
 `SourceRegion` names its source by digest (FR-095), so `render` looks up the
 region's digest in the map. The text diagnostic's `path` is that `Source`'s
 path, and its line and column are FR-001's line and scalar-column
-coordinates of the region's first byte. An admitted `Source` carries its own
-digest, so a provision whose bytes disagree with its key cannot be built.
+coordinates of the region's first byte. `RenderSources::from_sources`
+builds the map from admitted `Source` values and keys each by its own digest;
+it is the only constructor, and no method inserts a `Source` under a key the
+caller supplies, so every key equals its `Source`'s digest. When two given
+`Source` values share a digest, the map keeps the first, whose path the
+diagnostic prints.
 `RenderSources` may be empty; an empty map gives every diagnostic the
 fallback form.
 
@@ -79,8 +85,8 @@ position, in position order, labelled with the position's zero-based index
 and its state. Each position has one edge to the next position. A lasso has
 one more edge, from its last position back to its loop start; a finite
 trace has no edge out of its last position. The deciding position's node,
-when the view has one, is marked as deciding. The node and edge sets are
-normative; attribute spelling, layout and whitespace are not.
+when the view has one, is marked as deciding. The output holds exactly these
+nodes and edges; their attributes and layout are the renderer's choice.
 
 ### Limits and cancellation
 
@@ -129,6 +135,8 @@ returns no bytes and no partial bytes.
   `render` shall refuse `RenderCause::UnsupportedForm` naming the view and
   the form, with catalog code `invalid_quire_context`, cause
   `unsupported-render-form` and category refusal.
+- The `RenderSources` type shall key each `Source` it holds by that
+  `Source`'s own digest.
 - The `render` operation shall look up each diagnostic region's source
   digest in `RenderSources` and take the path, line and column from the
   `Source` it finds.
@@ -165,6 +173,7 @@ returns no bytes and no partial bytes.
 | FR-298-AC-8 | Rendering AC-7's lasso as DOT with `render.output_bytes` set to one below the byte length of its default-limit DOT output returns `StageFailure::Limit(LimitExceeded)` with kind `input-bytes-exceeded`, that bound, the count the refused charge would have reached and setting `render.output_bytes`, no bytes, and exit 22; at exactly that byte length it returns the default-limit bytes. | Test (TC-783) |
 | FR-298-AC-9 | DOT rendering of a retained state graph of 100,000 states, cancelled with `Deadline` from a second thread once the test's charge observer has seen 1,000 output charges, returns `StageFailure::Cancelled(Deadline)`, no bytes, and the observer records at most one charge after the cancellation; with a handle already cancelled with `Requested`, `render` returns `StageFailure::Cancelled(Requested)` before its first charge. Both exit 22. | Test (TC-783) |
 | FR-298-AC-10 | Each AC-2, AC-3 and AC-7 rendering called twice with equal inputs, forms, `RenderSources` and limits returns byte-equal output. The text counterexample rows follow the function's parameter declaration order; the text trace lists positions in increasing index with the loop-start line and the deciding-position line each marked; no structural element AC-2 or AC-7 names is absent. | Test (TC-783) |
+| FR-298-AC-11 | `RenderSources::from_sources` over two admitted `Source` values holds each under its own source digest; over two `Source` values with equal bytes admitted under paths `a.qsl` and `b.qsl`, FR-286-AC-2's refusal over those bytes renders with path `a.qsl`. A `compile_fail` doctest that inserts a `Source` under a caller-supplied digest, or builds `RenderSources` from a map, fails to compile beside a compiling `from_sources` control. | Test (TC-783) |
 
 ## Dependencies
 
