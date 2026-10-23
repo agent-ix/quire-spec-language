@@ -78,6 +78,17 @@ is never mistaken for a proof over every instance count.
   that satisfies `g`, as an environment step independent of the model's
   operations, starting one instance with QSpec FR-428's instance ordinal,
   captures and settled root thread.
+- The records of `T` SHALL be `T`'s value domain as FR-215 enumerates a
+  binder's record type: every record that gives each field a value of its
+  field's domain, the first declared field most significant. A trigger type
+  with a field of an unbounded type is an unbounded root, and the run returns
+  `RequiresBound` naming the trigger binder, `T` and the field before any
+  state is explored (FR-215).
+- The activation guard `g` reads the activation binder and constants only
+  (FR-381). A read of model state in `g`, a named population or a `lookup`
+  included, SHALL refuse at S3 with `ill_typed`/`operator-ineligible` at the
+  read, naming the stage `protocol-activation`, and never as an unresolved
+  name (FR-218 orders the model-state refusal first).
 - Under every activation kind, the step that finishes an instance (its
   `finish` step, FR-206) SHALL remove it with its binders, registrations,
   role instances and queues.
@@ -137,18 +148,14 @@ is never mistaken for a proof over every instance count.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-209-AC-1 | An `on each (x: Tick) when {true}` protocol over a `Cell` (`v: Int[0, 1]`), whose body is one attempt `set` (postcondition `self.v = 1`, always enabled), and the TP-1 claim `always holds(k.v <= 1)`: with `max_live_instances` 1 the run settles V-6, `InstanceBoundReached{bound: max_live_instances 1, states}` with `states` at least 1, naming `max_live_instances` as the member that raises the bound; with 2 it settles V-6 with `bound: max_live_instances 2`; with the field unset the record states `max_live_instances` 3, reached. | Test (TC-654) |
+| FR-209-AC-1 | With `record Tick { n: Int[0, 1]; }`, whose two records `{n: 0}` and `{n: 1}` each give one `activate(Tick)` step at every state below the bound, an `on each (x: Tick) when {true}` protocol over a `Cell` (`v: Int[0, 1]`), whose body is one attempt `set` (postcondition `self.v = 1`, always enabled), and the TP-1 claim `always holds(k.v <= 1)`: with `max_live_instances` 1 the run settles V-6, `InstanceBoundReached{bound: max_live_instances 1, states}` with `states` at least 1, naming `max_live_instances` as the member that raises the bound; with 2 it settles V-6 with `bound: max_live_instances 2`; with the field unset the record states `max_live_instances` 3, reached. | Test (TC-654) |
 | FR-209-AC-2 | The same protocol with guard `{false}`: no `activate` step exists, the run settles V-1, and its record states `max_live_instances` 3, not reached. With the guard back at `{true}`, the claim `always holds(k.v = 0)` and `max_live_instances` 1, the run settles V-4 with a counterexample `activate(Tick)`, `attempt(set)`. | Test (TC-654) |
-| FR-209-AC-3 | With `max_live_instances` 2: after two `activate` steps the instances hold ordinals 0 and 1; once instance 0 finishes and is removed, the next `activate` creates ordinal 0. An instance-limited state is not reported as a deadlock by the deadlock-freedom item. | Test (TC-654) |
+| FR-209-AC-3 | Over FR-209-AC-1's protocol, `Tick` and `Cell`, with `max_live_instances` 2: after two `activate` steps the instances hold ordinals 0 and 1; once instance 0 finishes and is removed, the next `activate` creates ordinal 0. An instance-limited state is not reported as a deadlock by the deadlock-freedom item. | Test (TC-654) |
 | FR-209-AC-4 | A run where both a memory bound (ADR-025) and the instance bound limited a state, and no counterexample was found, settles `MemoryBoundReached`; a run where the instance bound limited a state and `BoundReached` (the completed `max_depth` search horizon) also applies settles `InstanceBoundReached`. | Test (TC-654) |
 | FR-209-AC-5 | Over FR-209-AC-1's protocol and `Cell`, the infinite-trace claim `always eventually holds(k.v = 1)` with the derived scheduler constraints, checked by the liveness engine, finds no fair lasso and settles V-6, `InstanceBoundReached{bound: max_live_instances 1, states}` with `states` at least 1, with `max_live_instances` 1; with 2 it settles V-6 with `bound: max_live_instances 2`; neither run is refused as an unsupported construct. | Test (TC-654) |
 | FR-209-AC-6 | Over the same protocol, `always eventually holds(k.v = 0)` with `max_live_instances` 1 settles V-4 with a lasso whose loop holds `activate(Tick)`, `attempt(set)` and the instance's `finish` and passes through the instance-limited state after `activate`, where `activate` is enabled and not taken; the lasso replays and is not rejected as unfair. | Test (TC-654) |
 | FR-209-AC-7 | FR-209-AC-1's protocol with its body `repeat R by p visible() while { true } attempt Done on set` (no `max`, the shared grammar's `repetition` with `p` the protocol's role) and `always eventually holds(k.v = 0)`, with `max_live_instances` 1, settles V-4 with a lasso whose loop is the `attempt(set)` self-loop at the instance-limited state after `activate(Tick)`, where `activate` is enabled at every loop state and never taken; the lasso is fair and replays. A checker that counts `activate` in a fairness class rejects that loop and settles V-6 instead, so this AC fails for it. | Test (TC-654) |
-
-Remaining work: QSL-968. A record-typed trigger `T` refuses
-`UnenumerableRecord` in the protocol program, so the tests of these ACs use the
-`Int` range trigger `Level` until it lands; the ACs themselves are written
-over the record type `Tick` and are unchanged.
+| FR-209-AC-8 | With `record Tick { n: Int[0, 2]; up: Boolean; }`, `on each (x: Tick) when {x.n > 0}` over FR-209-AC-1's `Cell` and body gives, at the initial state with `max_live_instances` 1, exactly four `activate(Tick)` steps, for `{n: 1, up: false}`, `{n: 1, up: true}`, `{n: 2, up: false}` and `{n: 2, up: true}`, and building the system refuses nothing; with `record Tick { n: Integer; }` the run returns `RequiresBound` naming `x`, `Tick` and `n` before any state is explored. With `Tick` holding a field `key: Reference<M::Cell>` and `cells` a population of `Cell`, the guard `{present(lookup<M::Cell>(M::cells, x.key) absent empty)}` refuses `ill_typed`/`operator-ineligible` at the `lookup`, naming the stage `protocol-activation`, and no `missing-name`. | Test (TC-654) |
 
 ## Dependencies
 

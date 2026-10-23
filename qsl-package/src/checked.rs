@@ -897,9 +897,16 @@ mod tests {
         const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","identity":"edition-def"},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"model_selections":[],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
         const DIGEST: &str = "6dfea2b0a77dead3ac90a7fbd24a68ae18f7cf5d36877d57df6d83f50be77a51";
         assert_eq!(format!("{:x}", Sha256::digest(TEXT.as_bytes())), DIGEST);
-        let preimage: quire_contract_model::CheckedPackageIdentityPreimageV2 =
-            serde_json::from_str(TEXT).expect("the vector is a v2 identity preimage");
         let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
+        // The wire preimage holds the seven selections only; the hashed
+        // `identity_projection` is derived from the graph nodes.
+        let mut selections = value.clone();
+        selections
+            .as_object_mut()
+            .unwrap()
+            .remove("identity_projection");
+        let preimage: quire_contract_model::CheckedPackageIdentityPreimageV2 =
+            serde_json::from_value(selections).expect("the vector is a v2 identity preimage");
         let mut node = value["identity_projection"][0].clone();
         node["occurrences"] = serde_json::json!([]);
         let nodes: Vec<quire_contract_model::CheckedSemanticNodeV2> =
