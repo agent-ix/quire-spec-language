@@ -20,7 +20,7 @@ EN-4's cost SHALL be bounded only by caller-set budgets,
 `StatisticalLimits{max_samples, max_draws, max_cycle_steps}`, each an
 ADR-014 B-5 budget with a published default, plus time, the clause meter and
 cancellation (ADR-024 ST-8). Reaching a budget SHALL stop the run and name
-the budget, its value and the request member that raises it, `max_cycle_steps` included (FR-190). EN-4 SHALL
+the budget, its value and the request setting that raises it, `max_cycle_steps` included (FR-190). EN-4 SHALL
 identify a statistical run by its provenance, from which the run reproduces
 exactly (ADR-024 RP-1 to RP-3).
 
@@ -48,7 +48,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps }  // setting() 
 
 - `StatisticalOutcome::Stopped{stop, partial, provenance}` (FR-189), where
   `stop` is `Limit{limit, value}` for a budget (with `statistical.<member>`
-  as the request member that raises it), `Expansion(ExpansionStop)` for a
+  as the request setting that raises it), `Expansion(ExpansionStop)` for a
   stopped sample expansion such as the clause meter, whose own limit, value
   and setting FR-192 reports (ADR-024 SV-4), or `Cancelled(cause)` for a
   cancelled `Cancel` handle; and `partial`, the counts reached.

@@ -169,8 +169,7 @@ this order, and return the first refusal:
 4. The `type` is not in FR-331's closed set for this member:
    `UnknownSpelling` at `/<member>/type`. That covers every spelling outside FR-331, including
    `kani-vacuous-proof`. It also covers QSL's own outcome-document
-   spellings that FR-331 does not list, such as `scalar-agrees` and
-   `state-constraint`.
+   spellings that FR-331 does not list, such as `scalar-agrees`.
 5. The `type` is a valid FR-331 value that QSL's type cannot hold for a
    plugin: `Unsupported`.
 6. A required payload member is absent: `MissingMember` at its pointer, the

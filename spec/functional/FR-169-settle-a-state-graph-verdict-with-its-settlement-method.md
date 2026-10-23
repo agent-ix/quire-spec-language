@@ -37,7 +37,8 @@ replays. The verdict does not depend on the method. A witness settles
 witnesses from any other run settle `inconclusive`,
 `WellDefinednessUnchecked` (ADR-022 GV-1, RU-5). A `proved` from an
 unreduced exploration settles only after the core checker accepts its
-state-graph certificate, and carries ADR-018 PC-1's `Certified` label; a
+state-graph certificate, or for an HP-5 item (FR-181) its product-closure
+certificate (FR-163), and carries ADR-018 PC-1's `Certified` label; a
 `proved` from a reduced exploration has no core checker and carries
 `Uncertified` (ADR-022 GC-1 to GC-4). `qsl-replay` owns
 `ProofBasis::Witness`, its category and this verdict map, beside the other
@@ -64,6 +65,11 @@ well-definedness unchecked.
 - For `Witnessed` and `Holds` from an unreduced run: the
   `StateGraphCertificate` the engine returns with it (FR-168), and FR-098's
   replay request for the subject, which the checker recompiles.
+- For an HP-5 item: FR-181's outcome for one instance in place of a
+  `StateGraphOutcome`, and for its `Witnessed` the
+  `ProductClosureCertificate` it carries (FR-163) in place of a
+  `StateGraphCertificate`, with FR-098's replay request for the alias's
+  subject.
 
 ## Outputs
 
@@ -119,7 +125,28 @@ names a `ModelState` outside that domain (QSpec FR-331's State locus).
 and the FR-331 terminal record carrying the value, its QSpec FR-360 label,
 its QSpec FR-243 basis, its O-16 category and its settlement method.
 
+`qsl-replay` SHALL hold two settlement entries over the one map below,
+beside `check_state_graph`: `settle_state_graph`, which settles one instance
+of a state-graph item, and `settle_existential`, which settles one instance
+of an HP-5 item from FR-181's outcome. Each entry takes the instance's
+outcome, the run's method, seed and limits (FR-166), the replay request,
+FR-276's `Cancel` handle and FR-170's replay of the instance's evidence, and
+returns the instance's terminal record. `settle_state_graph` checks a
+certificate with `check_state_graph`; `settle_existential` checks the
+`ProductClosureCertificate` of a `Witnessed` with FR-163's
+`check_product_closure`. FR-182's `settle_hyper_check` settles no HP-5
+item.
+
 ## Behavior
+
+- When it settles an HP-5 item, `settle_existential` SHALL read "the
+  checker" in each row below as FR-163's `check_product_closure` and "the
+  certificate" as the `ProductClosureCertificate` FR-181's `Witnessed`
+  carries. An HP-5 item has no `Holds` and no `PathPair`.
+- When it settles an HP-5 item, `settle_existential` SHALL settle each
+  `ProductClosureCheck` alternative, `Accepted`, `Rejected`,
+  `PackageMismatch` or `Stopped`, by the row that `StateGraphCheck`'s
+  alternative of the same name takes, with the same cause.
 
 - The map SHALL be exhaustive, with no `_` arm, and give each input exactly
   one row:
@@ -207,8 +234,8 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
   `incomplete`, `LimitReached{limit, value, setting}`.
 - A proof under a reduction SHALL carry `certification: Uncertified`, with
   no certificate (ADR-022 GC-4).
-- No item SHALL settle `proved` from a witness unless FR-168 returned
-  `Witnessed`, which it returns only from a run that completed with no open
+- No item SHALL settle `proved` from a witness unless FR-168, or FR-181 for
+  an HP-5 item, returned `Witnessed`, which it returns only from a run that completed with no open
   node and no undefined evaluation of the target.
 - No item SHALL settle `proved` from a witness, or `refuted` from a trap,
   path pair or undefined evaluation, before its evidence replays (FR-170).
@@ -233,7 +260,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
   settles only `WellDefinednessUnchecked` (ADR-022 GE-3).
 - A V-5 record SHALL have execution `completed` and truth `pending`, as
   FR-127 states.
-- A V-7 record SHALL name its limit, its value and the request member that
+- A V-7 record SHALL name its limit, its value and the request setting that
   raises it.
 - A verdict SHALL hold for exactly its subject; the obligation identity
   binds the subject, the claim and the instance (ADR-013 O-09).
@@ -254,6 +281,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | FR-169-AC-10 | Rejected certificates, each settling `inconclusive`, `CertificateRejected{rule, at}` and never `proved`: AC-9's `ReachesTwo` certificate with `(2, 2)` removed (`SuccessorMissing` at the first, in certificate order, of the two closure states that reach it, `(1, 2)` and `(2, 1)`; the engine gives `(1, 2)`); with the rank of `(1, 0)` changed to 2 (`RankBroken` at `(0, 0)`, the only ranked state left with no successor one rank lower, because `(1, 0)` keeps its successor `(1, 1)` at rank 1); with `(0, 0)` unranked (`RankMissing` at `(0, 0)`); a hand-built certificate for FR-168-AC-5's item that lists all 9 states (`PredicateUndefined` at the first, in certificate order, of the three states where `va = 2`, because the target divides by zero at each; the engine gives `(2, 0)`); the `InOneWay` certificate over §7.3's unsequenced job with every count 1 and a valid reverse topological order (`CountBroken` at the node with two paths); the sequenced certificate with its order reversed (`OrderBroken` at the first, in certificate order, of its nodes other than the `to` node; the engine gives `tff`). The check with `max_states` 2 stops and settles `failed`, naming `max_states`. | Test (TC-644) |
 | FR-169-AC-11 | A certificate holding a state whose expansion evaluates a contract conjunction undefined is rejected `BadState` at that state and settles `inconclusive`, `CertificateRejected{BadState, at}`, never `proved`: §7.1's subject with universe `{a}`, the one initial state `va = 0` and the guard `pre Guard using v on Config::ConfigVersion::attemptUpdate { 2 div (2 - self.versionNumber) >= 1 }` (the guard of TC-592's FR-167-AC-2 fixture), checked with a hand-built certificate of its 3 states ranked 2, 1 and 0 for `ReachesTwo`, is rejected `BadState` at the state where `va = 2`, whose guard has no value; the same ranks over a subject without the guard are accepted. | Test (TC-644) |
 | FR-169-AC-12 | Package identity. AC-9's `ReachesTwo` certificate carries the `package_id` of the package the engine explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by another package's returns `PackageMismatch{certificate, recompiled}` naming both identities before any rule is evaluated, and the item settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `proved`. AC-9's `ReachesTwo` witness replayed with a request whose `package_id` is stale refuses `PackageIdMismatch` and the item settles `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the request's `package_id`, not `ReplayRefused`. | Test (TC-1141) |
+| FR-169-AC-13 | HP-5 settlement through `settle_existential`. FR-181-AC-1's `Witnessed` outcome with `witness_samples` 0, whose lassos replay and whose FR-163-AC-1 HP-5 certificate `check_product_closure` accepts, settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Explored, Explored]}, certification: Certified}`, success, one `Explored` for each of the vault's two initial snapshots `(h, l) = (0, 0)` and `(1, 0)`. The same outcome settles `inconclusive`, `CertificateRejected{SuccessorMissing, at}` with one member of that certificate removed, `at` the member whose successor is missing; `inconclusive`, `StaleDependency{requested, recompiled}` with its `package_id` replaced by another package's, `requested` the certificate's; and `incomplete`, `LimitReached`, naming `max_states` and its value, when checked with `max_states` 1. None of these settles `proved`. With the last step of one witness's loop removed, its replay refuses as FR-128 refuses a loop that does not close and the item settles `inconclusive`, `ReplayRefused`. FR-181-AC-2's `Trapped` outcome settles `refuted`, `closed-scope`, after its product trap replays. | Test (TC-1198) |
 | FR-169-AC-14 | Malformed certificates, each rejected `Malformed` before any successor is recomputed and settling `inconclusive`, `CertificateRejected{Malformed, at}`, never `proved`: AC-9's `ReachesTwo` certificate with its first two closure entries swapped (at the `ModelState` of the entry that is not greater than the one before it); with one closure entry duplicated (at the duplicate); with one closure entry's domain replaced by `package-fingerprint` (at that `ModelState`, in the `package-fingerprint` domain); with a rank entry whose index is the closure's length (at `Entry { index }`, that length); with two rank entries in descending index order (at the `ModelState` of the second entry's closure state); and the sequenced `InOneWay` certificate with one count set to 3 (at the `ModelState` of that entry's closure state). Each rejection's `at` is written in QSpec FR-331's State or State-graph entry form, the entry index as a `U64String`. | Test (TC-1197) |
 
 ## Dependencies
