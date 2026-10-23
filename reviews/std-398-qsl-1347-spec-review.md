@@ -41,3 +41,21 @@ Also checked:
 ## Verdict
 
 **Mergeable.** No findings.
+
+## Dispositions
+
+Round 1, against head 934e449b: no finding to dispose (the review was clean). The only non-merge commit since the reviewed head adds the SR file. Gate with the combined QSpec stack: exit 0, 19 warnings, identical to origin/main.
+
+## New findings (disposition pass 2)
+
+Round 2, against head 7c0f1f04 (the non-merge commit e8e479a2 since round 1, unary minus on quantities). Gate with the combined QSpec stack: exit 0, 19 warnings, identical to origin/main, at all eight heads.
+
+Checked and sound: `quire.op.quantity.negate` exists in QSpec FR-142 "Quantity negation", FR-322 and QVC PR 21 (8d7f8c1e); `-3 ms` is `-(3 ms)` under the shared grammar (`quantity-literal` is a primary and `unary` binds tighter than the binary operators); the AC-45 vectors hold by hand (n1/n2 `-3 + 5 = 2 = 5 - 3`; n3/n4 `6 m / -0.003 s = -2000 mps`; n5 `3 + 5 = 8`; n6 `0 = 7 - 7`); the QSpec FR-146 negated-literal divisor rule matches.
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-002 | high | FR-093-AC-34 still lists `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }` as refused `ill_typed`/`operator-ineligible` at the negation, and TC-483 step 6 and its expected result (lines 51 and 94 to 95) still check `m` and expect that refusal. The same commit makes `-3 ms` parse as `-(3 ms)` and admits unary minus over a non-affine quantity (the Negation rule and FR-093-AC-45: `n2` `-3 ms + d = d - 3 ms` checks and lowers to a `quire.op.quantity.negate` node). `m` is therefore both refused and admitted. Fix: remove `m` from AC-34 and from TC-483 step 6 and its expected result (AC-45 `n7` already carries the affine refusal), or replace it with a quantity that is still refused. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:1004 | wrong-requirement |
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | still-open | New in round 2: AC-34 and TC-483 step 6 still require the refusal that the unary-minus change removed. |

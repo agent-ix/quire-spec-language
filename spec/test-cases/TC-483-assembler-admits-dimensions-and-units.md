@@ -47,8 +47,8 @@ alias is `v`. The owner is authority `a`, identity `u`.
    FR-093-AC-33 (`h2`, `h3`, `h4` beside `h`, `n`, `k` and `c`, whose
    body is `convert<Quantity<s>>(d) = 3 s`), and pass each checked package
    to IR's v2 reader. Check it with each body of FR-093-AC-34 (`f(3 ghost)`,
-   `f(3 Time)`, `f(rational(1, 0) ms)`, `f(rational(1, 0) ghost)`, `e`,
-   `g2` and `m`), and with `f(rational(1, 100000) ms)` under a rational-bits
+   `f(3 Time)`, `f(rational(1, 0) ms)`, `f(rational(1, 0) ghost)`, `e`
+   and `g2`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
 7. Assemble each unit of FR-091-AC-45, AC-46 and AC-47.
 8. With admitted domain packages `P` and `Q` selected in that lock order, assemble TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2 and FR-142-AC-19's `tick` unit; then FR-091-AC-55's dimension-name collisions (FR-091-AC-55).
@@ -91,8 +91,7 @@ Tag the tests with the AC ids they back and `TC-483`.
   `missing_declaration`/`missing-name` naming `ghost` and `Time`,
   `undefined_expression`/`unproved-nonzero` for both zero denominators
   (`ghost` included), `ill_typed`/`type-mismatch` at
-  `e`'s and `g2`'s comparisons, `ill_typed`/`operator-ineligible` at `m`'s
-  negation, and
+  `e`'s and `g2`'s comparisons, and
   `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`
   and `16`.
 - Step 7: each refused unit refuses with exactly the one error its AC
