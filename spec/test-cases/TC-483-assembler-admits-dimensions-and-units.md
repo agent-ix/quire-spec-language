@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35, FR-091-AC-44, FR-093-AC-33, FR-093-AC-34.
+Scope: FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35, FR-091-AC-44, FR-091-AC-50, FR-093-AC-33, FR-093-AC-34.
 
 ## Test Procedure
 
@@ -48,6 +48,7 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `f(3 Time)`, `f(rational(1, 0) ms)`, `f(rational(1, 0) ghost)`, `e`,
    `g2`, `m` and `q`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
+7. Assemble FR-091-AC-50's unit, then `unit u : Time2 = rational(1, 1);` beside it, then a second `dimension Time;`.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -83,3 +84,4 @@ Tag the tests with the AC ids they back and `TC-483`.
   negation, and
   `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`
   and `16`.
+- Step 7: the first unit assembles with no error and keeps `R::Time` and `R::s` as written; `Time2` refuses with an unresolved-name error naming `Time2`; the second `dimension Time;` refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named (FR-091-AC-50).

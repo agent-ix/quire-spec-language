@@ -98,7 +98,8 @@ span on refusal.
   second SHALL refuse `invalid_timed_model`/`duplicate-time-source` at
   its span, naming the first (QSpec FR-415).
 - The checker SHALL resolve the unit `u` as a unit of QSpec FR-142's time
-  dimension (next section), and SHALL refuse a unit of another dimension with
+  dimension (next section), and SHALL refuse a unit of another dimension,
+  including a unit of a different dimension named `Time`, with
   `ill_typed`/`type-mismatch` at the unit's span.
 - Under `time tick O period p unit u`, the checker SHALL resolve `O` to an
   operation of the model (FR-103), refusing `missing_declaration`/
@@ -122,12 +123,20 @@ package supplies is a checked-package node with no declaration name, owned by
 its selection (QSpec FR-322 "Model-owned members" step 4): the source reaches
 it only through the model alias, `time dense unit M::ms` after
 `model M = "acme/rpc" …`, matched against the `name`s of that package's units,
-and a source `ms` and the package's `ms` are two units. A dimension keeps its single-segment name, so
-the package's `Time` is found by the name `Time`.
+and a source `ms` and the package's `ms` are two units. A dimension the package supplies is reached the same way,
+`M::Time`, and a source `Time` and the package's `Time` are two dimensions
+(QSpec FR-142 "Namespaces").
 
-- The **time dimension** SHALL be the base dimension node declared with the
-  name `Time` in that graph, by the unit's source or by the admitted domain
-  package, and nothing else. The **time units** SHALL be
+- The **time dimension** of a model SHALL be the dimension node of the unit
+  `u` of its `time` member, and that node SHALL be a base dimension node
+  declared with the name `Time` by the unit's source or by an admitted domain
+  package, and nothing else. A graph may hold several such nodes, one for
+  each owner that declares a `Time`; the unit `u` selects which one is the
+  model's time dimension. Every quantity the model reads as time (the period
+  `p`, a clock constant, a reset value and a time-invariant bound) SHALL be a
+  quantity of that node, and SHALL otherwise be refused
+  `ill_typed`/`type-mismatch` at its span (QSpec FR-142 "Dimensions of
+  different owners"). The **time units** SHALL be
   the units typed by that node. A derived dimension whose FR-142 vector is
   `Time` with exponent 1 (for example `Duration = Time`) is a different
   dimension node, and FR-142 converts no unit of one node to a unit of
@@ -137,7 +146,7 @@ the package's `Time` is found by the name `Time`.
   to the same scale do as well.
 - The checker SHALL read `time dense unit u`, `time tick O period p unit u`
   and a quantity such as `3 ms` in this order: the graph has a time base,
-  then `u` is found by name, then `u` is typed by the time dimension, then
+  then `u` is found by name, then `u` is typed by a base dimension named `Time`, then
   `u` has a zero composed offset. It SHALL convert a quantity exactly by
   composing the unit's edges (QSpec FR-142).
 - If the graph has no base dimension named `Time`, the checker SHALL refuse
@@ -145,16 +154,16 @@ the package's `Time` is found by the name `Time`.
   its span, naming `Time`.
 - If a QSL unit's own source declares two dimensions named `Time`, the
   assembler refuses it first, `ambiguous_declaration`/`ambiguous-name`
-  (FR-091), and S3 never sees it. If the unit's source and the admitted domain
-  package both declare a dimension of one name, `Time` or any other, the
-  checker SHALL refuse `conflicting_declaration`/`duplicate-declaration` at
-  the source declaration's span, naming both declarations (QSpec FR-142
-  "Namespaces"); the same holds for two admitted domain packages, at the
-  later package's selection row.
+  (FR-091), and S3 never sees it. If the unit's source and an admitted domain
+  package both declare a dimension of one name, `Time` or any other, or two
+  admitted domain packages do, the declarations are distinct dimensions and
+  the checker SHALL refuse nothing (QSpec FR-142 "Namespaces"); the time
+  dimension is the one the unit `u` is typed by.
 - If the graph has no unit named `u`, the checker SHALL refuse
   `missing_declaration`/`missing-name` at the unit's span, naming `u`.
-- If `u` is a unit of another dimension, the checker SHALL refuse
-  `ill_typed`/`type-mismatch` at the unit's span (FR-230-AC-2).
+- If `u` is a unit whose dimension is not a base dimension named `Time`, the
+  checker SHALL refuse `ill_typed`/`type-mismatch` at the unit's span
+  (FR-230-AC-2).
 - If a time unit's composed offset to its root is not zero, the checker SHALL
   refuse `ill_typed`/`type-mismatch` at the unit's span, naming the offset,
   because FR-142 allows no arithmetic on an affine unit.
@@ -279,9 +288,10 @@ states the rules for a clock field of a model object type only.
 | FR-230-AC-2 | Refusals, each at its span: a second `time` member (`invalid_timed_model`/`duplicate-time-source`); `time dense unit m` (`ill_typed`/`type-mismatch`); `self.n = self.x` with `n: Int` (`invalid_timed_model`/`clock-read-outside-constraint`); `x <= self.y` with both clocks (`invalid_timed_model`/`clock-comparison`); `x >= -1 ms` (`invalid_timed_model`/`negative-clock-constant`); a `Clock` field under `time tick` (`invalid_timed_model`/`clock-without-dense-time`); `self.x = self.x + 1` (`invalid_timed_model`/`clock-write`); a time invariant body `x >= 1` (`invalid_timed_model`/`time-invariant-shape`); `urgent reply` where `reply` guards on `x` (`invalid_timed_model`/`urgent-guard-reads-clock`); `urgent when P` in an untimed model (`missing_declaration`/`missing-name`). Each clock of these vectors is a package-admitted field typed `ix://quire/native/Clock`. | Test (TC-685) |
 | FR-230-AC-3 | `time tick tick period 1/2 ms unit ms` checks to `TimeSource::Tick` with period `1/2`; `period 0 ms` refuses `invalid_model_binding`/`malformed-declaration`; a tick operation name that resolves to nothing refuses `missing_declaration`/`missing-name`. | Test (TC-685) |
 | FR-230-AC-4 | A guard `(x < 1 or x > 2) and self.ready` checks to two convex parts, `x < 1` and `x > 2`, each with the data predicate `self.ready`. A model with 64 package-admitted clock fields over a universe of 100 objects and a constant of `10^40 ms` checks with no refusal. | Test (TC-685) |
-| FR-230-AC-5 | In a graph whose own source declares base dimension `Time`, root `s` and `ms` (`1/1000` of `s`), `time dense unit ms` and `time dense unit s` check, and a quantity `3 ms` read under `unit s` converts to `3/1000`. A unit of a derived dimension `Duration = Time` refuses `ill_typed`/`type-mismatch`, because `Duration` is not the `Time` node. `time dense unit hour` refuses `missing_declaration`/`missing-name` naming `hour`; a graph with no base `Time` refuses `time dense unit ms` `missing_declaration`/`missing-name` naming `Time` (and not `ms`); two dimensions named `Time` in the unit's source refuse `ambiguous_declaration`/`ambiguous-name` at assembly; a unit `degc` of a time dimension with offset `273` refuses `ill_typed`/`type-mismatch`. Two graphs that declare `ms` as `1/1000` and as `1/100` give different package identities. With base dimension `Time`, root `s` and `ms` supplied by the admitted domain package `acme/rpc` (`model M = "acme/rpc" …`) and none in the source, `time dense unit M::ms` and `time dense unit M::s` check and `3 M::ms` under `unit M::s` converts to `3/1000`; a source that declares `unit ms : Time = 1/1000 * M::s;` beside the package's `ms` checks `time dense unit ms` over the source unit, with no ambiguity; a `Time` declared in both the source and the domain package refuses `conflicting_declaration`/`duplicate-declaration` at the source declaration's span, naming both, and so does a dimension `Rate` declared in both the source and a package `acme/rpc` that declares `Rate`; two admitted domain packages `acme/rpc` and `acme/flow` that both declare a base dimension `Time`, with no source `Time`, refuse `conflicting_declaration`/`duplicate-declaration` at `acme/flow`'s selection row `/lock/model_selections/1`, naming both declarations. | Test (TC-685) |
+| FR-230-AC-5 | In a graph whose own source declares base dimension `Time`, root `s` and `ms` (`1/1000` of `s`), `time dense unit ms` and `time dense unit s` check, and a quantity `3 ms` read under `unit s` converts to `3/1000`. A unit of a derived dimension `Duration = Time` refuses `ill_typed`/`type-mismatch`, because `Duration` is not the `Time` node. `time dense unit hour` refuses `missing_declaration`/`missing-name` naming `hour`; a graph with no base `Time` refuses `time dense unit ms` `missing_declaration`/`missing-name` naming `Time` (and not `ms`); two dimensions named `Time` in the unit's source refuse `ambiguous_declaration`/`ambiguous-name` at assembly; a unit `degc` of a time dimension with offset `273` refuses `ill_typed`/`type-mismatch`. Two graphs that declare `ms` as `1/1000` and as `1/100` give different package identities. With base dimension `Time`, root `s` and `ms` supplied by the admitted domain package `acme/rpc` (`model M = "acme/rpc" …`) and none in the source, `time dense unit M::ms` and `time dense unit M::s` check and `3 M::ms` under `unit M::s` converts to `3/1000`; a source that declares `unit ms : Time = 1/1000 * M::s;` beside the package's `ms` checks `time dense unit ms` over the source unit, with no ambiguity; a `Time` declared in both the source and the domain package, and a dimension `Rate` declared in both the source and a package `acme/rpc` that declares `Rate`, are distinct dimensions and check with no refusal, and so do two admitted domain packages `acme/rpc` and `acme/flow` that both declare a base dimension `Time`, with no source `Time`. | Test (TC-685) |
 | FR-230-AC-7 | A unit whose header selects no `quire.temporal.complete/v1` and whose own source writes `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, a function `f(c: Clock)`, a function `g(): Clock`, a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` refuses each, `unsupported_construct`/`declaration-form` at its span, in source order and every one, retaining its family, its owning declaration, the unit's selected layers and the required facet, with no other refusal. | Test (TC-685) |
 | FR-230-AC-8 | A header that selects `quire.temporal.complete/v1` is refused `unknown_profile`/`unsupported-selection` at E3 with no S3 result, because no catalog holds the identity. | Test (TC-685) |
+| FR-230-AC-18 | With the domain packages `acme/rpc` (alias `R`, base dimension `Time`, root `s`, unit `ms` of `1/1000` of `s`) and `acme/flow` (alias `F`, base dimension `Time`, root `sec`) both selected and a source that also declares `dimension Time; unit s : Time = 1;`: `time dense unit R::ms` checks with the `acme/rpc` `Time` as the model's time dimension and `x <= 3 R::ms` and `period 1/2 R::s` check; `time dense unit F::sec` checks with the `acme/flow` `Time` as the time dimension, and so does the source `time dense unit s`; the three models have three different package identities. Under `time dense unit R::ms`, `x <= 3 F::sec` and `x <= 3 s` refuse `ill_typed`/`type-mismatch` at the constant; under `time tick O period 1 F::sec unit R::ms` the period refuses `ill_typed`/`type-mismatch`; a unit `len` of a base dimension `Length` and a unit of a derived `Duration = R::Time` each still refuse `time dense unit` with `ill_typed`/`type-mismatch`. | Test (TC-685) |
 
 ## Dependencies
 
