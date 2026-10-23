@@ -615,7 +615,7 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
         (
             IncompleteCause::ResourceExhausted,
             Some(ReachedLimit {
-                limit: ModelCheckLimit::EvaluationMeter,
+                limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
                 value: 0
             })
         )

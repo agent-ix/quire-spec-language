@@ -354,7 +354,7 @@ pub(super) fn budget_is_ceiling(limits: &ModelCheckLimits, horizon: Option<usize
 /// The budgets the run's stops name.
 #[derive(Clone, Copy)]
 pub(super) struct Budgets {
-    pub(super) meter: u64,
+    pub(super) meter: quire_exact::ScalarLimits,
     pub(super) max_candidates: u64,
 }
 
@@ -366,8 +366,8 @@ pub(super) fn expansion_stop(
     budgets: Budgets,
 ) -> Result<Halt, ModelCheckRefusal> {
     match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter) => {
-            Ok(stopped(ModelCheckLimit::EvaluationMeter, budgets.meter))
+        Some(ExpansionLimit::EvaluationMeter(counter)) => {
+            Ok(stopped(ModelCheckLimit::EvaluationMeter(counter), qsl_replay::meter_bound(&budgets.meter, counter)))
         }
         Some(ExpansionLimit::MaxCandidates) => Ok(stopped(
             ModelCheckLimit::MaxCandidates,
@@ -406,7 +406,7 @@ pub fn check_state_graph(
 ) -> Result<StateGraphRun, ModelCheckRefusal> {
     let seed = request.seed.unwrap_or(DEFAULT_WITNESS_SEED);
     let budgets = Budgets {
-        meter: request.subject.simulation.meter.work_units,
+        meter: request.subject.simulation.meter,
         max_candidates: request.subject.simulation.expansion.max_candidates,
     };
     let no_initial = request.subject.simulation.initial.is_empty();

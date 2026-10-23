@@ -34,7 +34,7 @@ use super::domain::{Domain, Odometer};
 use super::encode::{value_enc, values_equal};
 use super::frames::{identity_bytes, text_of};
 use super::walk::{exhausted, expand_enabled, stop};
-use super::{refused, ModelFinding, ModelSimState, ModelSystem, BROKEN};
+use super::{refused, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, BROKEN};
 use crate::simulation::expansion::{ExpansionLimit, ExpansionStop};
 use crate::value::evaluate_reward;
 
@@ -421,8 +421,8 @@ impl ModelSystem<'_> {
             return Ok(value.clone());
         }
         match verdict(&evaluation.outcome) {
-            Verdict::Undecided(outcome) if outcome.incomplete_code().is_some() => {
-                Err(exhausted(ExpansionLimit::EvaluationMeter))
+            Verdict::Undecided(ClauseOutcome::Incomplete(incomplete)) => {
+                Err(exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)))
             }
             _ => Err(stop(BROKEN)),
         }
@@ -513,7 +513,7 @@ impl ModelSystem<'_> {
                 let value =
                     self.reward_value(reward, arguments.clone())
                         .map_err(|stop| match stop.limit {
-                            Some(ExpansionLimit::EvaluationMeter) => {
+                            Some(ExpansionLimit::EvaluationMeter(_)) => {
                                 AdmissionFailure::Incomplete(super::record(
                                     Code::ResourceExhausted,
                                     "insufficient-next-charge",

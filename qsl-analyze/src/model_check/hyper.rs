@@ -1209,9 +1209,9 @@ impl<'a> Run<'_, 'a> {
             )
         };
         Ok(match stop.limit {
-            Some(ExpansionLimit::EvaluationMeter) => reached(
-                ModelCheckLimit::EvaluationMeter,
-                self.request.meter.work_units,
+            Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
+                ModelCheckLimit::EvaluationMeter(counter),
+                qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             Some(ExpansionLimit::MaxCandidates) => {
                 let subject = component
@@ -1234,11 +1234,11 @@ impl<'a> Run<'_, 'a> {
     fn halt_ending(&self, halt: Halt) -> Result<Ending, ModelCheckRefusal> {
         Ok(match halt {
             Halt::Expansion { component, stop } => self.expansion_ending(Some(component), stop)?,
-            Halt::Meter => Ending::Stopped(
+            Halt::Meter(counter) => Ending::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter,
-                    value: self.request.meter.work_units,
+                    limit: ModelCheckLimit::EvaluationMeter(counter),
+                    value: qsl_replay::meter_bound(&self.request.meter, counter),
                 }),
                 None,
             ),
@@ -2267,7 +2267,7 @@ impl<'a> Run<'_, 'a> {
             TemporalOutcome::Violated { at } => Ok(at.index()),
             TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
                 Err(exhausted(
-                    ModelCheckLimit::EvaluationMeter,
+                    ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
                     self.request.meter.work_units,
                     totals,
                 ))

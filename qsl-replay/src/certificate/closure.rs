@@ -1126,7 +1126,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             Ok(AtomReading::False) => Ok(Some(false)),
             Ok(AtomReading::Undefined(_)) => Ok(None),
             Err(_) => Err(stopped(
-                ModelCheckLimit::EvaluationMeter,
+                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
                 self.meter.work_units,
             )),
         }

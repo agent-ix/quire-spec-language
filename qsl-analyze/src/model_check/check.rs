@@ -2236,8 +2236,11 @@ impl<S: SubjectSystem> Run<'_, S> {
             let mut meter = Meter::new(self.meter);
             let reading = letters
                 .activation(binding, &self.system.atom_state(&node.state), &mut meter)
-                .map_err(|_| {
-                    Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
+                .map_err(|incomplete| {
+                    Self::stopped(
+                        ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                        incomplete.limit,
+                    )
                 })?;
             match reading {
                 AtomReading::True => letter = letter.with(when),
@@ -2266,8 +2269,11 @@ impl<S: SubjectSystem> Run<'_, S> {
                     &self.system.atom_state(&node.state),
                     &mut meter,
                 )
-                .map_err(|_| {
-                    Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
+                .map_err(|incomplete| {
+                    Self::stopped(
+                        ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                        incomplete.limit,
+                    )
                 })?;
             match reading {
                 AtomReading::True => {
@@ -2405,8 +2411,11 @@ impl<S: SubjectSystem> Run<'_, S> {
     /// invariant refuses, any other stop settles V-7 with no limit.
     fn expansion_stop(&self, stop: ExpansionStop) -> Halt {
         match stop.limit {
-            Some(ExpansionLimit::EvaluationMeter) => {
-                Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units).into()
+            Some(ExpansionLimit::EvaluationMeter(counter)) => {
+                Self::stopped(
+                    ModelCheckLimit::EvaluationMeter(counter),
+                    qsl_replay::meter_bound(&self.meter, counter),
+                ).into()
             }
             Some(ExpansionLimit::MaxCandidates) => {
                 Self::stopped(ModelCheckLimit::MaxCandidates, self.max_candidates).into()

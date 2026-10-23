@@ -367,7 +367,7 @@ fn the_annotated_quotient_charges_the_run_meter() {
             cause: IncompleteCause::ResourceExhausted,
             limit:
                 Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter,
+                    limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
                     value: 100,
                 }),
             stats,

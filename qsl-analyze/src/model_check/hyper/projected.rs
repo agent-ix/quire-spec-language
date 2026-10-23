@@ -127,7 +127,7 @@ impl Run<'_, '_> {
             TemporalOutcome::Violated { .. } => Ok(Ok(())),
             TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
                 Ok(Err(exhausted(
-                    ModelCheckLimit::EvaluationMeter,
+                    ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
                     self.request.meter.work_units,
                     totals,
                 )))

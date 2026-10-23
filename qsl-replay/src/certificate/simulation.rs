@@ -122,7 +122,7 @@ impl IncompleteLimit {
     /// The limit's FR-126 spelling; another counter keeps its member name.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::EvaluationMeter => ModelCheckLimit::EvaluationMeter.as_str(),
+            Self::EvaluationMeter => ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits).as_str(),
             Self::Counter(kind) => kind.as_str(),
         }
     }
@@ -462,7 +462,7 @@ impl Run<'_, '_> {
     /// checker found it wrong).
     fn meter_stop(&self) -> Halt {
         stopped(
-            ModelCheckLimit::EvaluationMeter,
+            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
             self.concrete.meter().work_units,
         )
     }

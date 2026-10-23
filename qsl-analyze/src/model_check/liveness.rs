@@ -742,7 +742,7 @@ enum Halt {
     /// A model expansion stopped.
     Expansion(ExpansionStop),
     /// An atom's evaluation exhausted the meter.
-    Meter,
+    Meter(quire_exact::LimitKind),
     /// The caller cancelled the run.
     Cancelled(CancelCause),
     /// The automaton reached `max_automaton_states`.
@@ -856,7 +856,7 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
             let value = self
                 .letters
                 .atom(*atom, self.binding, state, &mut meter)
-                .map_err(|_| self.record(Halt::Meter))?;
+                .map_err(|incomplete| self.record(Halt::Meter(incomplete.limit_kind)))?;
             match value {
                 AtomReading::True => {
                     let atom = Atom::new(index)
@@ -1612,17 +1612,17 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             )
         };
         Ok(match halt {
-            Halt::Meter => reached(
-                ModelCheckLimit::EvaluationMeter,
-                self.request.meter.work_units,
+            Halt::Meter(counter) => reached(
+                ModelCheckLimit::EvaluationMeter(counter),
+                qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             Halt::Cancelled(source) => Ending::Stopped(IncompleteCause::Cancelled { source }, None),
             Halt::Automaton(limit) => reached(ModelCheckLimit::MaxAutomatonStates, limit),
             Halt::Refusal(refusal) => return Err(refusal),
             Halt::Expansion(stop) => match stop.limit {
-                Some(ExpansionLimit::EvaluationMeter) => reached(
-                    ModelCheckLimit::EvaluationMeter,
-                    self.request.meter.work_units,
+                Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
+                    ModelCheckLimit::EvaluationMeter(counter),
+                    qsl_replay::meter_bound(&self.request.meter, counter),
                 ),
                 Some(ExpansionLimit::MaxCandidates) => {
                     reached(ModelCheckLimit::MaxCandidates, self.request.max_candidates)
@@ -2146,7 +2146,7 @@ impl<'r, S: LiveSubject> Run<'r, S> {
             QuotientStop::Meter => Ok(Second::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter,
+                    limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
                     value: self.request.meter.work_units,
                 }),
             )),

@@ -320,8 +320,8 @@ impl Run<'_, '_> {
     /// invariant is a fault, any other stop settles V-7 with no limit.
     fn expansion_stop(&self, stop: ExpansionStop) -> End {
         match stop.limit {
-            Some(ExpansionLimit::EvaluationMeter) => {
-                Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
+            Some(ExpansionLimit::EvaluationMeter(counter)) => {
+                Self::stopped(ModelCheckLimit::EvaluationMeter(counter), qsl_replay::meter_bound(&self.meter, counter))
             }
             Some(ExpansionLimit::MaxCandidates) => {
                 Self::stopped(ModelCheckLimit::MaxCandidates, self.max_candidates)

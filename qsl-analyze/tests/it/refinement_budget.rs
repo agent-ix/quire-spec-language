@@ -162,7 +162,7 @@ fn an_abstract_contract_over_the_budget_stops_the_step_check() {
     assert_eq!(
         limit,
         ReachedLimit {
-            limit: ModelCheckLimit::EvaluationMeter,
+            limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
             value: b
         }
     );
@@ -183,7 +183,7 @@ fn a_run_over_the_budget_stops_and_settles_incomplete() {
     };
     assert_eq!(*cause, IncompleteCause::ResourceExhausted);
     let reached = ReachedLimit {
-        limit: ModelCheckLimit::EvaluationMeter,
+        limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
         value: b,
     };
     assert_eq!(*limit, Some(reached));
@@ -197,7 +197,7 @@ fn a_run_over_the_budget_stops_and_settles_incomplete() {
     assert_eq!(
         record.value,
         TerminalValue::Incomplete(IncompleteCause::LimitReached {
-            limit: ModelCheckLimit::EvaluationMeter,
+            limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
             value: b
         })
     );
@@ -232,7 +232,7 @@ fn a_certificate_checked_over_the_budget_stops_not_rejects() {
     assert_eq!(
         check(b),
         TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
-            limit: ModelCheckLimit::EvaluationMeter,
+            limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
             value: b
         })
     );
@@ -261,7 +261,7 @@ fn a_true_certificate_under_a_small_meter_never_rejects() {
         match check {
             TemporalCertificateCheck::Accepted => {}
             TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached { limit, value }) => {
-                assert_eq!((limit, value), (ModelCheckLimit::EvaluationMeter, work));
+                assert_eq!((limit, value), (ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits), work));
                 stopped += 1;
             }
             other => panic!("work {work}: a true certificate is not rejected: {other:?}"),
@@ -311,7 +311,7 @@ fn a_replay_over_the_budget_settles_incomplete_not_parity() {
         panic!("the replay stops: {settlement:?}");
     };
     let reached = ReachedLimit {
-        limit: ModelCheckLimit::EvaluationMeter,
+        limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
         value: b,
     };
     assert_eq!(limit, reached);
@@ -328,7 +328,7 @@ fn a_replay_over_the_budget_settles_incomplete_not_parity() {
     assert_eq!(
         record.value,
         TerminalValue::Incomplete(IncompleteCause::LimitReached {
-            limit: ModelCheckLimit::EvaluationMeter,
+            limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
             value: b
         })
     );

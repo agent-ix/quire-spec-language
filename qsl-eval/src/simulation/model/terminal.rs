@@ -136,8 +136,8 @@ impl ModelSystem<'_> {
                     if let Some(cause) = outcome.undefined_cause() {
                         return Ok(Reading::Undefined(cause));
                     }
-                    if matches!(outcome, ClauseOutcome::Incomplete(_)) {
-                        return Err(exhausted(ExpansionLimit::EvaluationMeter));
+                    if let ClauseOutcome::Incomplete(incomplete) = outcome {
+                        return Err(exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)));
                     }
                     return Ok(Reading::Refused);
                 }

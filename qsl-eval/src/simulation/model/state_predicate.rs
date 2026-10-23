@@ -99,7 +99,10 @@ impl ModelSystem<'_> {
                         location: evaluation.location,
                     },
                     None if matches!(outcome, ClauseOutcome::Incomplete(_)) => {
-                        return Err(exhausted(ExpansionLimit::EvaluationMeter))
+                        let ClauseOutcome::Incomplete(incomplete) = &outcome else {
+                            return Err(stop(BROKEN));
+                        };
+                        return Err(exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)));
                     }
                     None => PredicateReading::Refused(outcome),
                 },
