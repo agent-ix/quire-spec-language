@@ -1,5 +1,5 @@
 ---
-id: SR-16218
+id: SR-16249
 title: "spec-review of ToolFailure per FR-462 defect and the Z3 cross-check off the terminal record (quire-spec-language PR 1329)"
 type: SpecReview
 analysis: base
@@ -65,3 +65,18 @@ ticket, and the byte-limit diagnostic is dropped under a conditional
 deferral. FND-004 is an unresolved QSpec inconsistency that AC-16 does not
 cover. The fourteen-variant `ToolFailure` table and its serialization are
 correct.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 53cd9e9a: "The terminal record holds the SMT backend's Z3 cross-check beside the certification". FR-290's cross-check table gives `cross_check: Some(CrossCheck { tool, verdict })` on `proved`. QSpec #412 (STD-423) adds FR-331's `cross_check` member, and the body sets the merge order with #412 first. |
+| FND-002 | fixed | 53cd9e9a: FR-290-AC-17 covers QSpec FR-354-AC-2 to AC-4 (`certified`, `uncertified` with no certificate and with a `hole` step, and `CertificateRejected { QueryMismatch, Unrolling }`), with TC-774 step 13. Nothing is handed off. |
+| FND-003 | fixed | 53cd9e9a: `FrameLength { limit, value }` and `TotalBytes { limit, value }` keep the payload, and FR-291-AC-1 asserts `"limit": 1048576, "value": 1048577` and `"limit": 4194304, "value": 4194305`. QSpec #412 adds the members to FR-462 and FR-331's `FailedCause`. |
+| FND-004 | fixed | 53cd9e9a: FR-290-AC-16 has disagreement cases: certified with Z3 `Refuted` stays `proved`, `certified`; uncertified with `Refuted` and a counterexample with `Proved` settle `CrossCheckDisagreement`. QSpec #412 amends FR-349-AC-3 and TB-08 to the same rule. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-005 | medium | The cross-check table has no row for cvc5 `inconclusive`. A cvc5 `inconclusive` with Z3 `Proved` or `Refuted` is a disagreement, but the table does not say whether it settles `inconclusive` with `CrossCheckDisagreement { primary: Inconclusive, .. }`, as QSpec #412's `primary` enum allows, or with cvc5's own cause. The table is also silent on whether a certified proof with Z3 `Inconclusive` counts as a disagreement. Add the cvc5-`inconclusive` row, and state the outcome to match QSpec #412 (SR-16250 FND-003). | spec/functional/FR-290-settle-plugin-results-as-typed-terminal-records.md (cross-check table) | missing-requirement |
