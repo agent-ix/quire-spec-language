@@ -5,6 +5,7 @@
 
 mod abstraction_declaration_forms;
 mod clause_text;
+mod hybrid_forms;
 mod hyper_clause_forms;
 mod identity_free_forms;
 mod model_source_forms;

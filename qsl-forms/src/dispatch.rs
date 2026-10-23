@@ -24,6 +24,7 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
 use super::abstraction_declaration;
+use super::hybrid_declaration;
 use super::hyper_clause;
 use super::probabilistic;
 use super::protocol_clause;
@@ -222,6 +223,9 @@ pub enum LeadingTokenKind {
     /// head is `possible`, `always possible` or `unique path` (FR-165,
     /// ADR-022 SG-1 to SG-3). `always` leads no other declaration.
     StateGraph,
+    /// `hybrid`: the hybrid declaration form, holding its optional initial
+    /// clause, modes, equations and transitions (FR-447).
+    Hybrid,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -439,6 +443,7 @@ fn dispatch(
         LeadingTokenKind::Workload => probabilistic::workload_declaration(construct),
         LeadingTokenKind::Probabilistic => probabilistic::probabilistic_clause(construct),
         LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
+        LeadingTokenKind::Hybrid => hybrid_declaration::hybrid_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -490,6 +495,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"workload" => Some(LeadingTokenKind::Workload),
         b"probabilistic" => Some(LeadingTokenKind::Probabilistic),
         b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
+        b"hybrid" => Some(LeadingTokenKind::Hybrid),
         _ => None,
     }
 }

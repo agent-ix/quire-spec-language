@@ -91,9 +91,9 @@ pub enum WitnessSource {
 
 pub struct StateGraphCertificate {
     pub package_id: PackageId,           // the package the engine explored
-    pub closure: Vec<StateKey>,          // explored model states, sorted
-    pub ranks: Vec<(u64, u32)>,          // `possible`, `always possible`: (state, d)
-    pub counts: Vec<(u64, u8, u64)>,     // `unique path`: (state, count, order)
+    pub closure: Vec<DigestRecord>,      // explored model states' state-key digests, ascending
+    pub ranks: Vec<(u64, u32)>,          // `possible`, `always possible`: (closure index, d)
+    pub counts: Vec<(u64, u8, u64)>,     // `unique path`: (closure index, count, order)
 }
 
 pub enum StateGraphCheck {
@@ -111,9 +111,16 @@ The checker uses FR-338's `CertificateRejection{rule, at}`. FR-338's
 `CertificateRule` gains `PredicateUndefined`, `RankMissing`, `RankBroken`,
 `OrderBroken` and `CountBroken` (`InitialMissing`, `SuccessorMissing`
 and `BadState` are FR-338's own), and its `CertificateLocus` gains
-`ModelState(DigestRecord)`, a model state's
-`quire.simulation.state-key/v1` digest, since a state-graph certificate
-holds model states, not product states.
+`ModelState(DigestRecord)`, a closure entry's digest record, since a
+state-graph certificate holds model states, not product states, and
+`Entry { index: u64 }`, a `ranks` or `counts` entry's closure index that
+names no closure state. The checker also rejects with FR-163's `Malformed`.
+
+The `u64` that opens a `ranks` or `counts` entry is the zero-based index of
+a state in `closure`, and the entry concerns that state. A closure entry's
+digest record is in the `quire.simulation.state-key/v1` domain; a record in
+any other domain is a malformed entry, and only a `Malformed` rejection
+names a `ModelState` outside that domain (QSpec FR-331's State locus).
 
 and the FR-331 terminal record carrying the value, its QSpec FR-360 label,
 its QSpec FR-243 basis, its O-16 category and its settlement method.
@@ -187,6 +194,22 @@ item.
   the order listed here, each over every reached state, and reject with the
   first rule that fails (for `unique path`, `OrderBroken` before
   `CountBroken`):
+  - `Malformed`, before any recomputation, reading the certificate once in
+    its stored order: at the `ModelState` of the first `closure` entry
+    whose digest record is outside the `quire.simulation.state-key/v1`
+    domain or is not strictly greater than the entry before it; then, over
+    `ranks` and then over `counts`, at the first entry whose closure index
+    is not strictly greater than the index before it, names no closure
+    state, or, for `counts`, carries a count above 2. A rank or count entry
+    rejects at the `ModelState` of the closure state its index names, or at
+    `Entry { index }` when the index names none. A certificate carries only
+    the list of its claim's form: a `counts` entry in a certificate for
+    `possible` or `always possible`, or a `ranks` entry in one for
+    `unique path`, rejects `Malformed` by the same locus rule, at the
+    `ModelState` of the closure state its index names, or at
+    `Entry { index }` when the index names none, read in the same pass after
+    the entries before it;
+    `Entry { index }` when the index names none;
   - `InitialMissing`, when an initial state is not in `closure`;
   - `SuccessorMissing`, when a successor that `ModelSystem` computes for a
     reached `closure` state is not in `closure`, as FR-338's `check_closure` does;
@@ -266,6 +289,8 @@ item.
 | FR-169-AC-11 | A certificate holding a state whose expansion evaluates a contract conjunction undefined is rejected `BadState` at that state and settles `inconclusive`, `CertificateRejected{BadState, at}`, never `proved`: §7.1's subject with universe `{a}`, the one initial state `va = 0` and the guard `pre Guard using v on Config::ConfigVersion::attemptUpdate { 2 div (2 - self.versionNumber) >= 1 }` (the guard of TC-592's FR-167-AC-2 fixture), checked with a hand-built certificate of its 3 states ranked 2, 1 and 0 for `ReachesTwo`, is rejected `BadState` at the state where `va = 2`, whose guard has no value; the same ranks over a subject without the guard are accepted. | Test (TC-644) |
 | FR-169-AC-12 | Package identity. AC-9's `ReachesTwo` certificate carries the `package_id` of the package the engine explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by another package's returns `PackageMismatch{certificate, recompiled}` naming both identities before any rule is evaluated, and the item settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `proved`. AC-9's `ReachesTwo` witness replayed with a request whose `package_id` is stale refuses `PackageIdMismatch` and the item settles `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the request's `package_id`, not `ReplayRefused`. | Test (TC-1141) |
 | FR-169-AC-13 | HP-5 settlement through `settle_existential`. FR-181-AC-1's `Witnessed` outcome with `witness_samples` 0, whose lassos replay and whose FR-163-AC-1 HP-5 certificate `check_product_closure` accepts, settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Explored, Explored]}, certification: Certified}`, success, one `Explored` for each of the vault's two initial snapshots `(h, l) = (0, 0)` and `(1, 0)`. The same outcome settles `inconclusive`, `CertificateRejected{SuccessorMissing, at}` with one member of that certificate removed, `at` the member whose successor is missing; `inconclusive`, `StaleDependency{requested, recompiled}` with its `package_id` replaced by another package's, `requested` the certificate's; and `incomplete`, `LimitReached`, naming `max_states` and its value, when checked with `max_states` 1. None of these settles `proved`. With the last step of one witness's loop removed, its replay refuses as FR-128 refuses a loop that does not close and the item settles `inconclusive`, `ReplayRefused`. FR-181-AC-2's `Trapped` outcome settles `refuted`, `closed-scope`, after its product trap replays. | Test (TC-1198) |
+| FR-169-AC-14 | Malformed certificates, each rejected `Malformed` before any successor is recomputed and settling `inconclusive`, `CertificateRejected{Malformed, at}`, never `proved`: AC-9's `ReachesTwo` certificate with its first two closure entries swapped (at the `ModelState` of the entry that is not greater than the one before it); with one closure entry duplicated (at the duplicate); with one closure entry's domain replaced by `package-fingerprint` (at that `ModelState`, in the `package-fingerprint` domain); with a rank entry whose index is the closure's length (at `Entry { index }`, that length); with two rank entries in descending index order (at the `ModelState` of the second entry's closure state); and the sequenced `InOneWay` certificate with one count set to 3 (at the `ModelState` of that entry's closure state). Each rejection's `at` is written in QSpec FR-331's State or State-graph entry form, the entry index as a `U64String`. | Test (TC-1197) |
+| FR-169-AC-15 | A certificate holding the other form's list is rejected `Malformed` before any successor is recomputed and settles `inconclusive`, `CertificateRejected{Malformed, at}`, never `proved`: AC-9's `ReachesTwo` certificate with the `counts` entry `(0, 1, 0)` added, at the `ModelState` of closure state 0; the sequenced `InOneWay` certificate of AC-9 with the `ranks` entry `(0, 0)` added, at the `ModelState` of closure state 0; `ReachesTwo`'s certificate with the `counts` entry `(9, 1, 0)` added, its index naming no state of the 9-state closure, at `Entry { index: 9 }`. AC-9's `ReachesTwo` and sequenced `InOneWay` certificates as the engine returns them, with an empty list of the other form, are accepted. | Test (TC-644) |
 
 ## Dependencies
 

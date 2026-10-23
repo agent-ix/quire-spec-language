@@ -358,8 +358,8 @@ mod tests {
 
     /// FR-064-AC-5's real-site half: runs the real scan over the ADR-010
     /// section 4.3 dispatch strings still compared in the tree, at the one
-    /// typed conversion each now lives in: `CanonicalizationDomain::from_str`
-    /// (`"filament-canonical-json-1"`), `AdapterArtifact::try_from`
+    /// typed conversion each now lives in: `static_authority_digest_refusal`
+    /// (`"sha256-jcs:"`), `AdapterArtifact::try_from`
     /// (`"quire.state.authority-adapter"`) and `clock_binding_name` (the
     /// `"clock:"` prefix, a `strip_prefix`). An allow-list entry at each must
     /// be refused as gating a branch, whether or not a `#[string_edge]` mark
@@ -374,8 +374,8 @@ mod tests {
         let sites = [
             (
                 "src",
-                "src/state/input.rs",
-                "CanonicalizationDomain::from_str",
+                "src/state/evaluation.rs",
+                "static_authority_digest_refusal",
             ),
             ("src", "src/state/input.rs", "AdapterArtifact::try_from"),
             ("src", "src/protocol_artifact/mod.rs", "clock_binding_name"),
