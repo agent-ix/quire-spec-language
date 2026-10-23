@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35, FR-091-AC-44, FR-093-AC-33, FR-093-AC-34.
+Scope: FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35, FR-091-AC-44, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37.
 
 ## Test Procedure
 
@@ -46,8 +46,13 @@ alias is `v`. The owner is authority `a`, identity `u`.
    body is `convert<Quantity<s>>(d) = 3 s`), and pass each checked package
    to IR's v2 reader. Check it with each body of FR-093-AC-34 (`f(3 ghost)`,
    `f(3 Time)`, `f(rational(1, 0) ms)`, `f(rational(1, 0) ghost)`, `e`,
-   `g2`, `m` and `q`), and with `f(rational(1, 100000) ms)` under a rational-bits
+   `g2` and `m`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
+7. Declare FR-093-AC-36's additional dimensions and units beside
+   FR-091-AC-44's. Check and lower each of its bodies `p1` to `p6`, pass each
+   checked package to IR's v2 reader, and evaluate each lowered body with the
+   operand values AC-36 lists. Check each of FR-093-AC-37's bodies `z1` to
+   `z9` in the same units.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -78,8 +83,17 @@ Tag the tests with the AC ids they back and `TC-483`.
   refusals carry FR-093-AC-34's codes and emit no literal node:
   `missing_declaration`/`missing-name` naming `ghost` and `Time`,
   `undefined_expression`/`unproved-nonzero` for both zero denominators
-  (`ghost` included) and for `q`'s division, `ill_typed`/`type-mismatch` at
+  (`ghost` included), `ill_typed`/`type-mismatch` at
   `e`'s and `g2`'s comparisons, `ill_typed`/`operator-ineligible` at `m`'s
   negation, and
   `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`
   and `16`.
+- Step 7: each of `p1` to `p6` checks and lowers, its divisions to
+  `quire.op.quantity.div` nodes over the dividend and the literal node (`p1`'s
+  two divisions share one `3 ms` node, `p3`'s literal has value `"-3"` and
+  `p4`'s value `"1/2"` at the `s` node) with the compound-unit result type
+  AC-36 states; IR's v2 reader admits each package; the evaluations return the
+  verdicts AC-36 lists. `z1`, `z2` and `z3` each refuse
+  `undefined_expression`/`unproved-nonzero` at the first division, `z4` at the
+  literal, `z5` to `z8` at the first division, and `z9`
+  `ill_typed`/`operator-ineligible` at the negation; none emits a node.
