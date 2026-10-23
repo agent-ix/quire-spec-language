@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{Setting, SettingLimits, SourceIdentity};
+use qsl_foundation::{Setting, SourceIdentity};
 use qsl_replay::spine::{
     self, CheckedUnit, DependencyInput, ParseRequest, RefinementClass, SpineLimits, SuppliedLibrary,
 };
@@ -30,6 +30,11 @@ pub struct RegistrySnapshot {
 }
 
 impl RegistrySnapshot {
+    /// Take ownership of a caller-built QSL registry as one immutable run snapshot.
+    pub fn from_registry(registry: Registry) -> Self {
+        Self { registry }
+    }
+
     /// The FR-075 candidate set for one witness kind.
     pub fn candidates(&self, kind: Capability) -> CandidateOutcome {
         self.registry.candidates(kind, None)
@@ -46,6 +51,11 @@ impl RegistrySnapshotBuilder {
     /// Start an empty snapshot builder.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Continue from a caller-built registry without discovering providers.
+    pub fn from_registry(registry: Registry) -> Self {
+        Self { registry }
     }
 
     /// Add one already-admitted backend registration (FR-075/FR-290).
@@ -173,6 +183,33 @@ pub struct CandidateResult {
     pub disposition: &'static str,
 }
 
+/// One witness entry's compile and candidate-negotiation outcome.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WitnessResult {
+    /// FR-341 class of the witness unit.
+    pub class: &'static str,
+    /// Compile refusal codes and causes.
+    pub codes: Vec<super::report::CodeReport>,
+    /// Candidate dispositions, ordered by backend identity.
+    pub candidates: Vec<CandidateResult>,
+    /// A reason such as `not-negotiated` or an empty candidate set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// This witness entry's result.
+    pub result: CaseResult,
+}
+
+/// One distinguishing entry's parent/child comparison.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EdgeComparison {
+    /// Parent-side compile.
+    pub parent: SideResult,
+    /// Child-side compile.
+    pub child: SideResult,
+    /// This distinguishing entry's result.
+    pub result: CaseResult,
+}
+
 /// One result in a layering gate report.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -192,27 +229,22 @@ pub enum EntryResult {
     Layer {
         /// Layer identity.
         layer: String,
-        /// Compile class of its witness unit.
-        class: &'static str,
-        /// Compile codes.
-        codes: Vec<super::report::CodeReport>,
-        /// Candidate dispositions, in registry order.
-        candidates: Vec<CandidateResult>,
-        /// A result detail such as `not-negotiated` or `empty candidate set`.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
-        /// Layer result.
+        /// Every witness entry for the layer.
+        witnesses: Vec<WitnessResult>,
+        /// The aggregate layer result.
         result: CaseResult,
     },
     /// An edge's proper-subset check.
     Edge {
         /// Stable edge name.
         edge: String,
-        /// Parent-side compile.
-        parent: SideResult,
-        /// Child-side compile.
-        child: SideResult,
-        /// Edge result.
+        /// Parent layer identity.
+        parent_layer: String,
+        /// Child layer identity.
+        child_layer: String,
+        /// Every distinguishing entry for the edge.
+        comparisons: Vec<EdgeComparison>,
+        /// The edge result holds only when every comparison holds.
         result: CaseResult,
     },
     /// A malformed or missing corpus item.
@@ -483,10 +515,7 @@ fn read_entry_file(root: &Path, name: &str) -> Result<Vec<u8>, String> {
             Component::Prefix(_) | Component::RootDir => {
                 return Err(format!("{name} is an absolute path"));
             }
-            Component::ParentDir => {
-                return Err(format!("{name} resolves outside the entry directory"))
-            }
-            Component::Normal(_) | Component::CurDir => {}
+            Component::ParentDir | Component::Normal(_) | Component::CurDir => {}
         }
     }
     let canonical = root
@@ -677,15 +706,16 @@ pub fn compare(
 
     let mut results = Vec::new();
     let mut cases = BTreeSet::new();
-    let mut witnesses = BTreeSet::new();
     let mut distinguishing = BTreeSet::new();
+    let mut layer_witnesses: Vec<(HeaderLayer, Vec<WitnessResult>)> = HeaderLayer::ALL
+        .into_iter()
+        .map(|layer| (layer, Vec::new()))
+        .collect();
+    let mut edge_comparisons: Vec<(Edge, Vec<EdgeComparison>)> =
+        EDGES.into_iter().map(|edge| (edge, Vec::new())).collect();
     let mut loaded = Vec::new();
     for directory in directories {
-        let label = directory
-            .file_name()
-            .unwrap_or(directory.as_os_str())
-            .to_string_lossy()
-            .into_owned();
+        let label = directory.join("entry.json").display().to_string();
         match load_entry(&directory) {
             Ok(entry) => loaded.push(entry),
             Err(defect) => results.push(tool_failure(label, defect)),
@@ -734,29 +764,33 @@ pub fn compare(
                     } else {
                         CaseResult::Regression
                     };
-                results.push(EntryResult::Edge {
-                    edge: edge.name.to_owned(),
-                    parent: side_result(parent_compile),
-                    child: side_result(child_compile),
-                    result,
-                });
+                if let Some((_, comparisons)) = edge_comparisons
+                    .iter_mut()
+                    .find(|(known, _)| known.name == edge.name)
+                {
+                    comparisons.push(EdgeComparison {
+                        parent: side_result(parent_compile),
+                        child: side_result(child_compile),
+                        result,
+                    });
+                }
             }
             LoadedEntry::Witness { layer, unit } => {
-                witnesses.insert(layer);
-                results.push(witness_result(
-                    layer,
-                    compile(&unit.source),
-                    registry,
-                    &mut negotiation,
-                ));
+                if let Some((_, witnesses)) = layer_witnesses
+                    .iter_mut()
+                    .find(|(known, _)| *known == layer)
+                {
+                    witnesses.push(witness_result(
+                        layer,
+                        compile(&unit.source),
+                        registry,
+                        &mut negotiation,
+                    ));
+                }
             }
         }
     }
 
-    if cases.is_empty() || distinguishing.is_empty() || witnesses.is_empty() {
-        // A non-empty directory corpus with malformed entries still receives
-        // the missing-item failures below; malformed entries never count.
-    }
     for edge in EDGES {
         if !cases.contains(edge.name) {
             results.push(tool_failure(
@@ -770,13 +804,46 @@ pub fn compare(
                 format!("edge {} has no distinguishing entry", edge.name),
             ));
         }
+        if let Some((_, comparisons)) = edge_comparisons
+            .iter()
+            .find(|(known, _)| known.name == edge.name)
+        {
+            if !comparisons.is_empty() {
+                let result = if comparisons
+                    .iter()
+                    .all(|comparison| comparison.result == CaseResult::Holds)
+                {
+                    CaseResult::Holds
+                } else {
+                    CaseResult::Regression
+                };
+                results.push(EntryResult::Edge {
+                    edge: edge.name.to_owned(),
+                    parent_layer: edge.parent.identity().to_owned(),
+                    child_layer: edge.child.identity().to_owned(),
+                    comparisons: comparisons.clone(),
+                    result,
+                });
+            }
+        }
     }
     for layer in HeaderLayer::ALL {
-        if !witnesses.contains(&layer) {
+        let witnesses = layer_witnesses
+            .iter()
+            .find(|(known, _)| *known == layer)
+            .map(|(_, witnesses)| witnesses)
+            .expect("every header layer has a witness bucket");
+        if witnesses.is_empty() {
             results.push(tool_failure(
                 format!("{}/witness", layer.identity()),
                 format!("layer {} has no witness entry", layer.identity()),
             ));
+        } else {
+            results.push(EntryResult::Layer {
+                layer: layer.identity().to_owned(),
+                result: aggregate_layer_result(witnesses),
+                witnesses: witnesses.clone(),
+            });
         }
     }
     Report::new(results)
@@ -803,11 +870,9 @@ fn witness_result(
     compilation: Compilation,
     registry: &RegistrySnapshot,
     negotiation: &mut Option<&mut NegotiationFn<'_>>,
-) -> EntryResult {
-    let layer_name = layer.identity().to_owned();
+) -> WitnessResult {
     if compilation.class != RefinementClass::Admitted {
-        return EntryResult::Layer {
-            layer: layer_name,
+        return WitnessResult {
             class: super::report::class_name(compilation.class),
             codes: compilation.codes,
             candidates: Vec::new(),
@@ -816,8 +881,7 @@ fn witness_result(
         };
     }
     let Some(checked) = compilation.checked else {
-        return EntryResult::Layer {
-            layer: layer_name,
+        return WitnessResult {
             class: "admitted",
             codes: compilation.codes,
             candidates: Vec::new(),
@@ -826,13 +890,15 @@ fn witness_result(
         };
     };
     let graph = checked.package().graph();
-    let Some(clause) = graph.state_clauses().first() else {
-        return EntryResult::Layer {
-            layer: layer_name,
+    let [clause] = graph.state_clauses() else {
+        return WitnessResult {
             class: "admitted",
             codes: compilation.codes,
             candidates: Vec::new(),
-            reason: Some("witness unit has no compiled state clause".to_owned()),
+            reason: Some(format!(
+                "witness unit has {} compiled state clauses; expected exactly one",
+                graph.state_clauses().len()
+            )),
             result: CaseResult::ToolFailure,
         };
     };
@@ -841,21 +907,21 @@ fn witness_result(
         WitnessKind::OperationContract => Capability::OperationContract,
         WitnessKind::ValueValidity => Capability::ValueValidity,
     };
-    let CandidateOutcome::Candidates(candidate_set) = registry.candidates(capability) else {
-        return EntryResult::Layer {
-            layer: layer_name,
-            class: "admitted",
-            codes: compilation.codes,
-            candidates: Vec::new(),
-            reason: Some(
-                "the registry returned an unknown backend for an unnamed request".to_owned(),
-            ),
-            result: CaseResult::ToolFailure,
-        };
+    let candidate_set = match registry.candidates(capability) {
+        CandidateOutcome::Candidates(candidate_set) => candidate_set,
+        CandidateOutcome::UnknownBackend(_) => {
+            return WitnessResult {
+                class: "admitted",
+                codes: compilation.codes,
+                candidates: Vec::new(),
+                reason: Some("unnamed candidate lookup returned an unknown backend".to_owned()),
+                result: CaseResult::ToolFailure,
+            };
+        }
     };
     if candidate_set.is_empty() {
-        return EntryResult::Layer {
-            layer: layer_name,
+        return WitnessResult {
+            class: "admitted",
             class: "admitted",
             codes: compilation.codes,
             candidates: Vec::new(),
@@ -872,8 +938,7 @@ fn witness_result(
                 disposition: "not-negotiated",
             })
             .collect();
-        return EntryResult::Layer {
-            layer: layer_name,
+        return WitnessResult {
             class: "admitted",
             codes: compilation.codes,
             candidates,
@@ -888,7 +953,10 @@ fn witness_result(
         .map(|candidate| {
             let disposition = negotiation(witness_request, candidate, clause);
             let (name, supports) = match &disposition {
-                Disposition::Supported(target) => ("supported", target.id() == candidate.id()),
+                Disposition::Supported(target) if target.id() == candidate.id() => {
+                    ("supported", true)
+                }
+                Disposition::Supported(_) => ("supported-other-backend", false),
                 Disposition::RequiresBound => ("requires-bound", false),
                 Disposition::Unsupported => ("unsupported", false),
                 Disposition::InvalidRequest => ("invalid-request", false),
@@ -900,8 +968,7 @@ fn witness_result(
             }
         })
         .collect();
-    EntryResult::Layer {
-        layer: layer_name,
+    WitnessResult {
         class: "admitted",
         codes: compilation.codes,
         candidates,
@@ -912,6 +979,21 @@ fn witness_result(
             CaseResult::Regression
         },
     }
+}
+
+fn aggregate_layer_result(witnesses: &[WitnessResult]) -> CaseResult {
+    witnesses
+        .iter()
+        .map(|witness| super::report::Verdict::of(witness.result))
+        .max()
+        .map(|verdict| match verdict {
+            super::report::Verdict::Success => CaseResult::Holds,
+            super::report::Verdict::Violation => CaseResult::Regression,
+            super::report::Verdict::Incomplete => CaseResult::UnresolvedIncomplete,
+            super::report::Verdict::Unsupported => CaseResult::UnresolvedUnsupported,
+            super::report::Verdict::ToolFailure => CaseResult::ToolFailure,
+        })
+        .unwrap_or(CaseResult::ToolFailure)
 }
 
 /// FR-345 / QSpec FR-453: compare the compile classes of an edge case.
@@ -943,7 +1025,10 @@ mod tests {
     use qsl_foundation::BackendId;
     use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
     use qsl_semantics::check::Capability;
+    use serde_json::json;
     use std::collections::BTreeSet;
+    use std::fs;
+    use std::path::Path;
     use CaseResult::{
         Holds as H, NotApplicable as N, Regression as R, ToolFailure as T,
         UnresolvedIncomplete as I, UnresolvedUnsupported as U,
@@ -988,7 +1073,7 @@ mod tests {
 
     /// FR-345's registry seam is a value assembled by its caller; building a
     /// snapshot neither discovers providers nor changes FR-075 routing.
-    #[trace("TC-868", "FR-345-AC-6")]
+    #[trace("TC-868")]
     #[test]
     fn the_snapshot_builder_preserves_registered_witness_candidates() {
         let descriptor = BackendDescriptor::new(
@@ -1013,18 +1098,289 @@ mod tests {
     }
 
     /// The edge table is exactly the six lock rows' direct `requires` edges.
+    #[trace("TC-868", "FR-345-AC-4", "FR-345-AC-7")]
     #[test]
     fn the_edge_table_has_the_six_fr453_pairs() {
-        assert_eq!(EDGES.len(), 6);
+        let lock = DefinitionLock::pinned();
+        let expected: Vec<(HeaderLayer, HeaderLayer)> = HeaderLayer::ALL
+            .into_iter()
+            .flat_map(|child| {
+                lock.layer_row(child)
+                    .requires
+                    .iter()
+                    .copied()
+                    .map(move |parent| (parent, child))
+            })
+            .collect();
+        assert_eq!(EDGES.len(), expected.len());
         assert_eq!(
-            edge(HeaderLayer::ModelComplete, HeaderLayer::TemporalComplete)
-                .unwrap()
-                .name,
-            "E6"
+            EDGES
+                .iter()
+                .map(|item| (item.parent, item.child))
+                .collect::<Vec<_>>(),
+            expected
         );
         assert!(edge(HeaderLayer::StateCore, HeaderLayer::ModelComplete).is_none());
     }
 
+    /// FR-345-AC-4/7 (TC-868): every edge gets a case and a distinguishing
+    /// entry, and the core compares both sides supplied by its compile seam.
+    #[trace("TC-868", "FR-345-AC-4", "FR-345-AC-7")]
+    #[test]
+    fn the_core_compares_cases_and_distinguishing_entries_on_all_edges() {
+        let temp = crate::test_support::tempdir();
+        let corpus = temp.path();
+        for item in EDGES {
+            write_pair(
+                corpus,
+                &format!("{}-case", item.name),
+                "case",
+                item,
+                "parent-case.native",
+                "child-case.native",
+                "invariant Broken using v on Config::ConfigVersion at current { self.missing > 0 }\n",
+            );
+            write_pair(
+                corpus,
+                &format!("{}-distinguishing", item.name),
+                "distinguishing",
+                item,
+                "parent-distinguishing.native",
+                "child-distinguishing.native",
+                "invariant Same using v on Config::ConfigVersion at current { true }\n",
+            );
+            write_witness(corpus, item.child, &format!("{}-witness", item.name));
+        }
+
+        let mut calls = 0;
+        let report = compare(
+            corpus,
+            |input| {
+                calls += 1;
+                let class = match input.path.as_str() {
+                    "parent-case.native" | "child-case.native" => F,
+                    "parent-distinguishing.native" => P,
+                    "child-distinguishing.native" => A,
+                    "witness.native" => F,
+                    other => panic!("unexpected source path {other}"),
+                };
+                let codes = if input.path == "parent-distinguishing.native" {
+                    vec![super::super::report::CodeReport {
+                        code: "unsupported_construct",
+                        cause: Some("declaration-form"),
+                    }]
+                } else {
+                    Vec::new()
+                };
+                Compilation::classified(class, codes)
+            },
+            &RegistrySnapshot::default(),
+            None,
+        );
+
+        assert_eq!(calls, 30);
+        assert_eq!(report.verdict, super::super::report::Verdict::Violation);
+        assert_eq!(report.exit, 10);
+        let cases: Vec<_> = report
+            .results
+            .iter()
+            .filter_map(|result| match result {
+                EntryResult::Case { result, .. } => Some(*result),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cases, vec![H; 6]);
+        let edges: Vec<_> = report
+            .results
+            .iter()
+            .filter_map(|result| match result {
+                EntryResult::Edge {
+                    edge,
+                    parent_layer,
+                    child_layer,
+                    comparisons,
+                    result,
+                } => {
+                    let expected = EDGES.iter().find(|item| item.name == edge).unwrap();
+                    assert_eq!(parent_layer, expected.parent.identity());
+                    assert_eq!(child_layer, expected.child.identity());
+                    assert_eq!(comparisons.len(), 1);
+                    Some(*result)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(edges, vec![H; 6]);
+        assert_eq!(report.results.len(), 18);
+    }
+
+    /// FR-345-AC-5 (TC-868): parent and child bytes may differ only at the
+    /// profile identity string.
+    #[trace("TC-868", "FR-345-AC-5")]
+    #[test]
+    fn a_case_pair_with_another_byte_change_is_a_tool_failure() {
+        let temp = crate::test_support::tempdir();
+        let root = write_pair(
+            temp.path(),
+            "bad-pair",
+            "case",
+            EDGES[0],
+            "parent.native",
+            "child.native",
+            "invariant Broken using v on Config::ConfigVersion at current { true }\n",
+        );
+        let child_path = root.join("child.native");
+        let child = fs::read_to_string(&child_path).unwrap();
+        fs::write(child_path, child.replace("Broken", "Changed")).unwrap();
+
+        let mut called = false;
+        let report = compare(
+            temp.path(),
+            |_| {
+                called = true;
+                Compilation::classified(A, Vec::new())
+            },
+            &RegistrySnapshot::default(),
+            None,
+        );
+        assert!(!called);
+        let (entry, defect) = report
+            .results
+            .iter()
+            .find_map(|result| match result {
+                EntryResult::ToolFailure { entry, defect, .. }
+                    if entry.ends_with("bad-pair/entry.json") =>
+                {
+                    Some((entry, defect))
+                }
+                _ => None,
+            })
+            .expect("malformed pair is reported by its entry.json path");
+        assert!(entry.ends_with("bad-pair/entry.json"));
+        assert!(defect.contains("differ outside"));
+    }
+
+    /// FR-345-AC-8 (TC-868): an empty corpus produces one tool failure.
+    #[trace("TC-868", "FR-345-AC-8")]
+    #[test]
+    fn an_empty_corpus_produces_one_tool_failure() {
+        let temp = crate::test_support::tempdir();
+        let report = compare(
+            temp.path(),
+            |_| panic!("the empty corpus cannot compile a unit"),
+            &RegistrySnapshot::default(),
+            None,
+        );
+        assert_eq!(report.results.len(), 1);
+        assert_eq!(report.exit, 30);
+        assert!(matches!(report.results[0], EntryResult::ToolFailure { .. }));
+    }
+
+    /// FR-345-AC-8 (TC-868): a malformed entry is named by its entry file and
+    /// does not prevent the other entry from compiling.
+    #[trace("TC-868", "FR-345-AC-8")]
+    #[test]
+    fn malformed_entry_fields_are_refused_without_stopping_other_entries() {
+        let temp = crate::test_support::tempdir();
+        let malformed = temp.path().join("malformed");
+        fs::create_dir(&malformed).unwrap();
+        fs::write(
+            malformed.join("entry.json"),
+            r#"{"kind":"witness","expected":true}"#,
+        )
+        .unwrap();
+        write_witness(temp.path(), HeaderLayer::StateCore, "valid-witness");
+
+        let mut calls = 0;
+        let report = compare(
+            temp.path(),
+            |_| {
+                calls += 1;
+                Compilation::classified(F, Vec::new())
+            },
+            &RegistrySnapshot::default(),
+            None,
+        );
+        assert_eq!(calls, 1);
+        let (entry, defect) = report
+            .results
+            .iter()
+            .find_map(|result| match result {
+                EntryResult::ToolFailure { entry, defect, .. }
+                    if entry.ends_with("malformed/entry.json") =>
+                {
+                    Some((entry, defect))
+                }
+                _ => None,
+            })
+            .expect("malformed entry is reported");
+        assert!(entry.ends_with("malformed/entry.json"));
+        assert!(defect.contains("expected"));
+    }
+
+    fn write_pair(
+        corpus: &Path,
+        directory: &str,
+        kind: &str,
+        edge: Edge,
+        parent_path: &str,
+        child_path: &str,
+        declarations: &str,
+    ) -> std::path::PathBuf {
+        let root = corpus.join(directory);
+        fs::create_dir_all(&root).unwrap();
+        let parent_source = format!(
+            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n{declarations}",
+            edge.parent.identity()
+        );
+        let child_source = format!(
+            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n{declarations}",
+            edge.child.identity()
+        );
+        fs::write(root.join(parent_path), parent_source).unwrap();
+        fs::write(root.join(child_path), child_source).unwrap();
+        let entry = json!({
+            "kind": kind,
+            "parent": {
+                "path": parent_path,
+                "authority": "agent-ix",
+                "identity": format!("ix://test/layering/{directory}")
+            },
+            "child": {
+                "path": child_path,
+                "authority": "agent-ix",
+                "identity": format!("ix://test/layering/{directory}")
+            },
+            "packages": [],
+            "dependencies": []
+        });
+        fs::write(root.join("entry.json"), serde_json::to_vec(&entry).unwrap()).unwrap();
+        root
+    }
+
+    fn write_witness(corpus: &Path, layer: HeaderLayer, directory: &str) {
+        let root = corpus.join(directory);
+        fs::create_dir_all(&root).unwrap();
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\ninvariant I using v {{ true }}\n",
+            layer.identity()
+        );
+        fs::write(root.join("witness.native"), source).unwrap();
+        let entry = json!({
+            "kind": "witness",
+            "unit": {
+                "path": "witness.native",
+                "authority": "agent-ix",
+                "identity": format!("ix://test/layering/{directory}")
+            },
+            "layer": layer.identity(),
+            "packages": [],
+            "dependencies": []
+        });
+        fs::write(root.join("entry.json"), serde_json::to_vec(&entry).unwrap()).unwrap();
+    }
+
+    #[trace("TC-868", "FR-345-AC-5")]
     #[test]
     fn a_case_pair_may_change_only_the_profile_identity_string() {
         let parent = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.state.core/v1\";\ninvariant I using v { true }\n";
