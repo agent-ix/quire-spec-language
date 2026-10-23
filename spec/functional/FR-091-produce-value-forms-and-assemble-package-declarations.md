@@ -897,11 +897,17 @@ unsigned integer, both in the `signed-int` and `uint` spellings (`0` or a digit
 string with no leading zero, and `-` only before a nonzero digit string). It is
 a keyword-headed form rather than a call: `decimal` is a reserved word, no name
 resolution applies, and a unit declaration of that spelling is not a
-candidate. A form with a missing or extra argument, a missing comma, a
-fractional, signed (`+`) or leading-zero argument, or a negative scale is a
-syntax error, `invalid_syntax`/`unexpected-token` for the structure and
-`invalid_syntax`/`invalid-token` for the spelling of an argument, at the
-constructor, before S2. The same spelling in the magnitude of a unit
+candidate. The split between the two syntax errors is
+by what S1 reads at the argument position. An argument position that holds a
+numeric token (an optional `+` or `-` sign, digits and an optional fractional
+part, read as one token) whose spelling is not the argument's `signed-int` or
+`uint` spelling is `invalid_syntax`/`invalid-token` at that token: a `+` sign,
+a leading zero, `-0`, a fractional part, and a `-` sign on the scale (`-2` is a
+signed token where a `uint` is required). Every other malformation of the form
+is `invalid_syntax`/`unexpected-token` at the offending token or the constructor:
+a missing or extra argument, a missing comma, a missing parenthesis, a
+non-numeric argument and `decimal` followed by anything but `(`. Both refuse at
+the constructor, before S2. The same spelling in the magnitude of a unit
 declaration or a quantity literal (the assembler's exact numbers and FR-093's quantity
 literals) is an exact number of that position and builds that position's form.
 
@@ -1052,7 +1058,7 @@ every checker of the language.
 | FR-091-AC-49 | `float64(bits: 0x3ff0)`, `float64(bits: 0x3FF0000000000000)`, `float32(bits: 3f800000)`, `float32(bits: 0x3f80000g)`, `float32(bits: 0x3f800000000)` and `float64(0x3ff0000000000000)` refuse `invalid_syntax`/`invalid-token` at the constructor before S2. | Test (TC-1091) |
 | FR-091-AC-55 | Package dimensions and units (QSpec FR-142-AC-16, AC-18, AC-19). With admitted domain packages `P` and `Q` selected by the unit in that lock order, `P` at `/lock/model_selections/0` and `Q` at `/lock/model_selections/1`, `P` declaring the TC-187 `P` dimensions and units and `Q` declaring U11z2's `T` with its unit `s`, each of QSpec TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2, its `P` declarations supplied by `P` and its local declarations in the unit, gives TC-187's result through the assembler. U11r admits a local `cm` that targets `P`'s root `m`. U11s refuses row 6 at `P`'s `L`, retaining `a -> b` and `b -> a`, and `P`'s `m` is not re-checked. U11t refuses row 4 with `P`'s root `m` and the local `m2`. U11u refuses row 1 at `z`. U11y and U11z1 refuse the base-dimension rule at `P`'s `L`, `missing_declaration`/`missing-name`, retaining `L` and `m2`, located at `/lock/model_selections/0` and naming `L`'s FCD identity. U11z2 refuses the base-dimension rule at `P`'s `L` before the later zero scale. FR-142-AC-19's `unit tick : Rate = 1/2 * M::us`, typed by the package dimension `Rate`, is admitted. Dimension-name collisions (QSpec FR-142-AC-19): a unit declaring `dimension Time;` beside `acme/rpc` also declaring a dimension `Time` refuses `conflicting_declaration`/`duplicate-declaration` at the source `dimension Time` span, naming both declarations; two admitted packages that each declare a dimension `Rate`, with no source `Rate`, refuse the same code at the later package's selection row `/lock/model_selections/1`; a source unit `ms` and `acme/rpc`'s unit `ms` both check, as `Quantity<ms>` and `Quantity<M::ms>`. | Test (TC-483) |
 | FR-091-AC-57 | S2 builds, for the bodies `decimal(125, 2)`, `decimal(-5, 0)`, `decimal(0, 3)` and `decimal(1, 4294967295)`, one `DecimalValue` each holding the coefficient `125`, `-5`, `0` and `1` and the scale `2`, `0`, `3` and `4294967295` exactly as written, each with the constructor's span, reduces none of them, and refuses no unit with `UnrepresentedConstruct`; the exact numbers of `unit cm : Length = decimal(1, 2) * m;` and of a quantity literal magnitude still build their unit and quantity forms, not `DecimalValue`. | Test (TC-1232) |
-| FR-091-AC-58 | `decimal(1)`, `decimal(1, 2, 3)`, `decimal 5`, `decimal(1 2)` and `decimal(1, -2)` refuse `invalid_syntax`/`unexpected-token`; `decimal(+1, 2)`, `decimal(01, 2)`, `decimal(-0, 2)`, `decimal(1.5, 2)` and `decimal(1, 02)` refuse `invalid_syntax`/`invalid-token`, each at the constructor before S2. `function decimal using v(): Boolean pure { true }` refuses `invalid_syntax` at the declaration name, because `decimal` is reserved. | Test (TC-1232) |
+| FR-091-AC-58 | `decimal(1)`, `decimal(1, 2, 3)`, `decimal 5`, `decimal(1 2)`, `decimal(1, x)` and `decimal(1, 2` refuse `invalid_syntax`/`unexpected-token` (a missing or extra argument, comma or parenthesis, or a non-numeric argument); `decimal(+1, 2)`, `decimal(01, 2)`, `decimal(-0, 2)`, `decimal(1.5, 2)`, `decimal(1, 02)`, `decimal(1, -2)` and `decimal(1, 2.0)` refuse `invalid_syntax`/`invalid-token` (a numeric token whose spelling is not `signed-int` for the coefficient or `uint` for the scale), each at the constructor before S2. `function decimal using v(): Boolean pure { true }` refuses `invalid_syntax` at the declaration name, because `decimal` is reserved. | Test (TC-1232) |
 
 ## Dependencies
 
