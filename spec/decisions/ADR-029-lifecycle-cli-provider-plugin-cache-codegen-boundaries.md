@@ -337,7 +337,8 @@ ADR-024's EN-4, ADR-028's EN-5, ADR-026's zone search, and later QSL engines.
 SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 
 - **Input.** The checked package; the claim items, each named by its
-  occurrence key; the subject binding (the `ModelSystem` and the initial
+  occurrence key and carrying the settlement CG's `negotiate_*` gave it,
+  which `analyze` routes and never makes itself (FR-281); the subject binding (the `ModelSystem` and the initial
   population, FR-120); each engine's request settings and budgets (for
   example ADR-018's model-check limits); the accounting limits; `&Cancel`.
 - **Output.** `AnalyzeOutcome`: one terminal record per requested item, with
@@ -378,13 +379,16 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 trace the caller supplies. It is the same semantics replay uses (ADR-014
 A-4).
 
-- **Input.** The checked package; one or more temporal clause selections; a
-  trace document holding a finite trace or a lasso (prefix positions, then a
-  non-empty loop), whose positions are admitted as snapshots and invocations
-  (FR-106) before any evaluation; the evaluator limits; `&Cancel`.
+- **Input.** The checked package; one or more temporal clause selections; the
+  bytes of a `quire.monitor-trace/1` trace document holding a finite trace or
+  a lasso (prefix positions, then a non-empty loop) of snapshot
+  `DocumentRef`s, with the snapshot provision they name, each position
+  admitted as an FR-106 snapshot before any evaluation (FR-283); the
+  evaluator limits; `&Cancel`.
 - **Output.** `MonitorOutcome`: one record per clause. The record holds the
   verdict under ADR-014 A-4. Over a finite trace the verdict is a violation
-  at a position, with the QSpec FR-351 separating witness, or pending. Over a
+  at a position, with the QSpec FR-351 separating witness and FR-330's
+  `TemporalCounterexample`, or pending. Over a
   lasso it is a violation or `tested`.
 - **Terminal records.** A violation is category violation (exit 10). An
   evaluation undefined at a position is a violation there, with cause
@@ -460,9 +464,13 @@ pub trait Provider {
 }
 ```
 
-The Kani backend reached through CG, the QSL engines of OP-2 and the plugin
-host's process adapter (§5) each implement it, so the driver handles every
-provider the same way after routing.
+The Kani backend reached through CG, the driver's adapter over the QSL
+engines of OP-2 and the plugin host's process adapter (§5) each implement
+it, so the driver handles every provider the same way after routing. QSL
+depends on no driver crate (FR-280), so a QSL engine never names this trait:
+QSL exposes `qsl_analyze::provider::run` over its own `SubjectBinding`,
+`RoutedItem` and `AnalyzeLimits` types (FR-280, FR-281), and the driver's
+adapter converts its `ProviderRequest` to them and drops `emitted`.
 
 `prove` always passes the run's `CheckedPackage` and passes the
 `EmittedPackage` only when `package` emitted one. S4 refuses to emit a package

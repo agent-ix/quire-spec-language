@@ -63,6 +63,8 @@ pub struct ModelCheckRequest<'a> {
     pub max_store_buffer: Option<u64>,      // FR-225: method bound
     pub max_messages: Option<u64>,          // FR-225: method bound
     pub limits: ModelCheckLimits,
+    pub smt_encoding: SmtEncodingLimits,    // FR-315: the SMT encoding limits, `smt_encoding.*`
+    pub smt_run: SmtRunLimits,              // FR-315: the SMT solver run limits, `smt.*`
 }
 
 pub enum CheckSubject<'a> {

@@ -10,11 +10,12 @@
 //! `Refuted`: that stays with a `Boolean` predicate that is false at its
 //! bindings ([`crate::replay`]).
 
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use quire_exact::{
     evaluate_integer_arithmetic, Incomplete, Integer, IntegerArithmetic, IntegerInterval, Meter,
     Origin, Outcome, Refusal, ScalarLimits, Value,
 };
+use quire_semantic_value::catalog::InternalFault;
 
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 
