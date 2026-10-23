@@ -19,7 +19,7 @@ This catches a wrapper node that splits a declared unit's quantity type from
 its unit, terms emitted in source order instead of canonical order, and a
 single-term compound unit merged with its declared unit.
 
-Scope: FR-094-AC-6, FR-094-AC-7 (its compound-unit and declared-unit cases), FR-094-AC-8, FR-094-CON-1.
+Scope: FR-094-AC-6, FR-094-AC-7 (its compound-unit and declared-unit cases), FR-094-AC-8, FR-094-AC-11, FR-094-CON-1.
 
 ## Test Procedure
 
@@ -43,6 +43,9 @@ read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
    `Velocity = Length / Time`, `metre`, `second`, `mps`, `km = 1000 ×
    metre`), emit `Trip{d: km, v: mps}` and read it back through IR's v2
    reader.
+6. Over FR-093-AC-36's units, check and lower `a / 3 ms` over `a: Quantity<m>`,
+   `d / 3 ms` over `d: Quantity<ms>`, `d / 3 s`, `d / rational(-3, 1) ms`
+   and `a / 0.5 s`, and read the result type node of each division.
 
 Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 
@@ -65,3 +68,9 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
   preimage targets `metre` at scale `1000`; `Velocity` depends on `Length`
   and `Time` and its preimage holds both terms; `mps` is typed by
   `Velocity`; IR admits the package.
+- Step 6: `a / 3 ms` has one `scalar_type`/`compound_unit` node with no
+  `declaration` and no `owner`, whose body holds the `m` term with exponent
+  `1` and the `s` term with exponent `-1` in ascending root-unit key order;
+  `a / 0.5 s` has the same node. `d / 3 ms`, `d / 3 s` and
+  `d / rational(-3, 1) ms` have one node whose body is `aggregate{[]}`. None
+  of the nodes is the `m` unit node.

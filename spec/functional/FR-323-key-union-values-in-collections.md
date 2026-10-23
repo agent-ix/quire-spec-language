@@ -61,10 +61,16 @@ FR-144-AC-6; ADR-012 §16.4 S3 collection element types row).
   payload position order; it does not follow a collection's runtime element
   order. The `result_inner` source applies only to set, bag and ordered-set
   results, as FR-093 defines.
-- A union whose payload contains a type with no FR-144 key (such as an
-  IEEE-bearing type) SHALL make a set, bag or ordered set of it refuse
-  `ill_typed`/`operator-ineligible` at S3, on the same path as an
-  IEEE-bearing element type.
+- The checker SHALL admit a union whose payload contains a `Float32` or
+  `Float64` as an element type of a set, bag or ordered set.
+- The kernel SHALL key such a union by the FR-144 union row over its payload
+  keys, a float's key being its FR-148 `totalOrder` key.
+- The kernel SHALL treat two such union values as the same member exactly when
+  their members and payloads are the same member under QSpec FR-144's
+  collection membership relation, a float being compared by its bits.
+- The checker SHALL admit `=` and `!=` over such a union, and the kernel SHALL
+  compare the float payloads by FR-148 numericEqual (QSpec FR-149), so equality
+  does not follow the bit-level membership relation above.
 
 ## Acceptance Criteria
 
@@ -72,7 +78,7 @@ FR-144-AC-6; ADR-012 §16.4 S3 collection element types row).
 |----|----------|--------------|
 | FR-323-AC-1 | `Set<Shape>`, `Bag<Shape>` and `OrderedSet<Shape>` are admitted at S3. Building each from `Shape::Rect(2, 3)`, `Shape::Empty`, `Shape::Rect(2, 3)` and `Shape::Circle(1)` gives a set of three elements and a bag of four, each sorted by its FR-144 union key exactly as QSpec's union-key vectors order them and the same whatever the input order, and an ordered set of the three elements `Rect(2, 3)`, `Empty`, `Circle(1)` in first-occurrence order; from the reversed input the ordered set is `Circle(1)`, `Rect(2, 3)`, `Empty`. | Test (TC-833) |
 | FR-323-AC-2 | `Sequence<Shape>` of the same four values is admitted and keeps all four in input order. | Test (TC-833) |
-| FR-323-AC-3 | With `union F { Measured(Float64) }` (an IEEE-bearing payload), `Set<F>` refuses `ill_typed`/`operator-ineligible` at its type reference, and `Sequence<F>` is admitted. | Test (TC-833) |
+| FR-323-AC-3 | With `union F { Measured(Float64) }` (a float payload), `Set<F>`, `Bag<F>`, `OrderedSet<F>` and `Sequence<F>` are admitted; building a `Set<F>` from `F::Measured` of the bits `0000000000000000`, `8000000000000000` and `0000000000000000` gives two members visited `Measured(-0)` then `Measured(+0)`, and a `Bag<F>` of the same three gives `Measured(+0)` with multiplicity 2; `f1 = f2` over two values of `F` is admitted and compares the payloads by FR-148 numericEqual, so `Measured(+0) = Measured(-0)` is true and a `Measured` holding a NaN payload is unequal to itself. | Test (TC-833) |
 
 ## Dependencies
 
