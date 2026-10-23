@@ -100,19 +100,72 @@ derives none of them.
 
 | Input | Taken from | Carried as |
 | --- | --- | --- |
-| The proved package reference: `package_id`, the source digests, one `dependencies` entry per dependency selection, and the byte provision | The compiled package the generated code was generated from (`CallSite.package_id` and the sources it was compiled from) | The FR-071 request's package members |
+| The proved package reference: `package_id`, the source digests, one `dependencies` entry per dependency selection, and the byte provision | The compiled package the generated code was generated from (`CallSite.package_id`, and the `RawSourceRef` of every source and supplied library it was compiled from) | The FR-071 request's package members |
+| The semantic profile selections | The `profile_selections` of the v2 lock of `CallSite.package`, in the lock's order (the empty list when the lock records none) | The request's profile selections |
 | The `function` replay target | The `QualifiedName` the producer passed to `call_site` | The request's `replay.function` (QSpec FR-323) |
 | The occurrence key | `FunctionSite.declaration` | The request's `replay.occurrence_key` |
 | The obligation identity | `FunctionSite.value_parity.obligation_identity` | The request's `obligation_identity` |
 | The bindings `b` | The argument vector the generated code was run at, each value keyed by the parameter node id `FunctionSite.parameters` pairs with its parameter | The request's `source`, a `ReplaySource::Input` of one `CanonicalAssignment` per declared parameter |
 | The accounting and stage limits | The producer's replay configuration | The request's accounting and `stage_limits` members (FR-255) |
+| The proof bounds and declared domains | Fixed by the form: the empty list | The request's proof bounds and declared domains |
+| The generator identity | The generated-code driver: the FR-331 `BackendId` of the provider whose `generate` operation produced the artifact it ran | The request's `backend` member (ADR-013 O-19) |
 | The generated outcome | The generated-code driver's observation at `b`: a value, an out-of-range outcome, `Undefined` or `OtherRefusal` | `ValueClaim.generated`, a `ScalarOutcome` |
 | The generated-content identity | The generated-code driver, which authenticates it against the artifact it ran before it hands the claim over | `ValueClaim.content_identity`, a `DigestRecord` |
 
+The proof bounds and declared domains are empty because the obligation is
+checked on the declared signature itself: each argument's `type` binds its
+parameter's declared domain into the identity, the S6a admission of FR-098
+checks the bindings against that signature, and no proving run drew or
+declared a finite bound. A parameter whose declared type has no finite
+bound, such as an unbounded `Integer`, therefore needs no `ProofBound`, and
+a bounded one gets none either, so one rule covers every parameter type.
+
+The generator identity is the claim's `backend` because the provider whose
+generated code the claim is about produced the counterexample; no
+verification backend ran. QSL records it and does not interpret it
+(ADR-013 O-19).
+
+### The input-arm packet
+
+A producer that hands the claim on as an FR-070 `WitnessPacket<NoPayload>`
+before the request is built (CG FR-024's input-arm parity producer) SHALL
+fill every packet member from the inputs above, with exactly these values,
+and nothing else:
+
+| Packet member | Value for a function-value parity claim |
+| --- | --- |
+| `obligation_identity` | `FunctionSite.value_parity.obligation_identity` |
+| `occurrence_key` | `FunctionSite.declaration`: (function node id, `declaration`, 0) |
+| `clause_node` | `FunctionSite.function`, the function node id, which is also the preimage's `node` |
+| `replay_target` | `function`, the `QualifiedName` passed to `call_site`, and no other target member |
+| `package_id` | `CallSite.package_id` |
+| `source_digests` | The `RawSourceRef` of every source the package was compiled from, as the request's package reference names them |
+| `profile_selections` | The lock's `profile_selections`, as in the table above |
+| `run_limits` | The request's accounting limits: there is no proving run, and these are the limits QSL's exact evaluation runs under |
+| `declared_domains` | The empty list |
+| `backend` | The generator identity |
+| `trace_position` | Present with the value none (`Some(None)`): a function claim has no trace position |
+| `source` | `ReplaySource::Input` of the bindings `b` |
+| `family_payload` | `NoPayload` |
+
+`WitnessEnvelope::reconstruct` admits such a packet, and the request built
+from the admitted envelope carries the same members.
+
+### What the claim identity holds
+
 `replay_value_parity` takes the request, the `ValueClaim` and the
-`ReplayLimits`. These eight inputs are the whole claim: two claims that
-agree on all of them are one claim, and a claim that differs from another
-in any one of them is a different claim, whatever its result reads.
+`ReplayLimits`. Its `claim()` holds the obligation identity, the
+`package_id`, the `function` target, the occurrence key, the `source`, the
+effective accounting limits, the generated outcome and the
+generated-content identity, and nothing else. The other retained inputs
+enter the claim through these members: the source digests, the
+dependencies, the byte provision and the profile selections through
+`package_id`, which the replay checks against the package it recompiles
+from them; the stage limits through the effective accounting limits; the
+proof bounds and declared domains are fixed by the form. The generator
+identity is provenance, as on every replay request, and is not a member
+of the claim. Two claims are one claim exactly when their `claim()` values
+are equal, whatever their results read.
 
 ## Inputs
 
@@ -200,6 +253,10 @@ in any one of them is a different claim, whatever its result reads.
   `FunctionSite.value_parity.obligation_identity` and each other retained
   input from the source the Retained claim inputs table names, and SHALL
   NOT compute, spell or hash a value-parity preimage itself.
+- When a producer hands a function-value parity claim on as a
+  `WitnessPacket<NoPayload>`, it SHALL fill each packet member with the
+  value "The input-arm packet" names, and SHALL NOT choose, default or
+  derive any member itself.
 
 ## Acceptance Criteria
 
@@ -213,6 +270,7 @@ in any one of them is a different claim, whatever its result reads.
 | FR-484-AC-6 | AC-5's request with `obligation_identity` replaced by `add`'s identity, by the all-zero identity, or by an identity minted over `inc`'s preimage with `type` changed to 64 `4` digits refuses `ScalarIdentity` (`stale_dependency`/`content-mismatch`) with cause `Obligation` naming the claimed and the recomputed digest, after the occurrence check and before the argument join (an assignment naming `add`'s `y` added still refuses `Obligation`, not `UnknownParameter`), and settles `Inconclusive(ReplayRefused(stale_dependency))` with the claim identity carried. | Test (TC-1252) |
 | FR-484-AC-7 | AC-5's request with the occurrence key replaced by `add`'s `declaration` occurrence, by the `expression` occurrence of `inc`'s `x + 1` application, or by (`inc`'s node, `declaration`, 1) refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming that key and `inc`, before any call and with no charge; with `package_id` stale it refuses `PackageIdMismatch` instead, and for `small` it refuses `NotAValueFunction` instead. | Test (TC-1252) |
 | FR-484-AC-8 | Two `inc` claims that differ only in the generated-content identity carry their own identity unchanged on `Agrees`, `Diverged`, `RefusedInput` and an identity refusal, and their `claim()` values are unequal; a content identity that matches no artifact is not refused. Claims that differ only in the occurrence key are likewise unequal. | Test (TC-1252) |
+| FR-484-AC-9 | Over AC-4's unit with `function grow using v(n: Integer): Integer pure { n + 1 }` added, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each filled by "The input-arm packet" from `call_site` (`clause_node` = `FunctionSite.function`, `occurrence_key` = `FunctionSite.declaration`, `obligation_identity` = `value_parity.obligation_identity`, `profile_selections` = the lock's, `run_limits` = the request's accounting limits, `declared_domains` = `[]`, `backend` = the driver's generator identity, `generator-under-test` in the test, `trace_position` = none, `source` = `Input`), reconstructs through `WitnessEnvelope::reconstruct`; every member round-trips exactly; the request built from the admitted envelope replays `grow` against generated 42 to `Agrees` and `inc` against 5 to `Diverged`. | Test (TC-1252) |
 
 ## Dependencies
 

@@ -16,7 +16,7 @@ function and none for a predicate, and that `replay_value_parity` checks
 the request's occurrence key and obligation identity against the
 recompiled package and carries every retained input into its claim.
 
-Scope: FR-484-AC-1 to FR-484-AC-8.
+Scope: FR-484-AC-1 to FR-484-AC-9.
 
 ## Fixture
 
@@ -28,6 +28,8 @@ Scope: FR-484-AC-1 to FR-484-AC-8.
 - The unit `U`: `function inc using v(x: Int[0, 9]): Integer pure { x + 1 }`,
   `function add using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { x + y }`
   and `function small using v(x: Int[0, 9]): Boolean pure { x < 3 }`.
+- The unit `U'`: `U` with `function grow using v(n: Integer): Integer pure
+  { n + 1 }` added, whose parameter has no finite bound.
 
 ## Test Procedure
 
@@ -41,6 +43,7 @@ Scope: FR-484-AC-1 to FR-484-AC-8.
 | VP-06 | VP-05's request with `add`'s identity; the all-zero identity; an identity over `inc`'s preimage with `type` 64 `4` digits; the first again with an assignment naming `add`'s `y` | `ScalarIdentity` cause `Obligation` naming both digests, settling `Inconclusive(ReplayRefused(stale_dependency))`, for each, the last included | FR-484-AC-6 |
 | VP-07 | VP-05's request with `add`'s `declaration` occurrence; with the `expression` occurrence of `inc`'s `x + 1`; with (`inc`'s node, `declaration`, 1); the first with a stale `package_id`; the request retargeted to `small` | `ClaimOccurrence` naming the key and `inc`, no call and no charge, for the first three; `PackageIdMismatch`; `NotAValueFunction` | FR-484-AC-7 |
 | VP-08 | Two VP-05 claims differing only in `content_identity`, replayed to `Agrees`, `Diverged`, `RefusedInput` (`x` = 12) and an `Obligation` refusal; a `content_identity` naming no artifact; two claims differing only in the occurrence key | Each report carries its own content identity; the claims are unequal; no refusal for the unmatched identity; the occurrence-only claims are unequal | FR-484-AC-8 |
+| VP-09 | Over `U'`, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each member filled as FR-484 "The input-arm packet" names, `backend` `generator-under-test`; reconstruct, serialize and read back; build the request from the admitted envelope and replay `grow` against 42 and `inc` against 5 | Both reconstruct with `declared_domains` `[]`, `trace_position` none, `clause_node` the function node and the `declaration` occurrence; every member round-trips; `Agrees` for `grow`, `Diverged` for `inc` | FR-484-AC-9 |
 
 ## Expected Results
 
@@ -48,5 +51,6 @@ Scope: FR-484-AC-1 to FR-484-AC-8.
   changes the digest.
 - VP-04: the minted identity equals the independently written preimage's;
   a predicate has none.
-- VP-05 to VP-08: the stated settlements, each with the claim identity
-  carried unchanged.
+- VP-05 to VP-09: the stated settlements, each with the claim identity
+  carried unchanged, and VP-09's packets admitted with no member chosen by
+  the producer.
