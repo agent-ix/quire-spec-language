@@ -55,3 +55,20 @@ How each gap and choice the coder recorded was judged:
 | FND-004 | low | Spec gap for draco. FR-281 Behavior 1 ("exactly one terminal record for each requested item") gives no record for (a) an item with more than one candidate. The code refuses the whole request (`AnalyzeRefusal::Ambiguous`), so every other item loses its record too. It also gives none for (b) an engine refusal with no FR-331 record (EN-1 `ModelCheckRefusal`, FR-192 `UnsettledRefusal`), which the code returns as `Err(Unsettled)`. FR-281 or FR-290 should say what each settles. | spec/functional/FR-281-analyze-claims-with-in-process-engines.md; qsl-analyze/src/analyze.rs:268-306 |
 | FND-005 | low | Spec gap for draco. FR-281 asks for "a typed cause that names the claim kind", but FR-286 and the QSpec FR-331 cause vocabulary define no wire spelling for it. The code invents the cause `unsupported-claim-kind` and the outcome member `claim_kind`. Specify them, or name the existing cause to use. | qsl-replay/src/proof_result.rs:449-455; qsl-replay/src/outcome.rs:251-254 |
 | FND-006 | low | Spec gap for draco. FR-280 Behavior 4 spells out EN-4's manifest but not EN-1's (pair, `domains`, `fairness_kinds`). The coder chose (`temporal-satisfaction`, `bounded`), `{population, integer}` and `{weak, strong}`. That choice is consistent with EN-1's code and acceptable. FR-280 should state it. | qsl-analyze/src/model_check/manifest.rs:26-39 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | Deleting `EngineReport::Proof` left FR-281's no-checker rule with no code and no test. That rule says an engine with no core checker settles `proved`, `uncertified`, naming the engine. It is FR-281-AC-4's second half and TC-763 step 2. The AC-4 test is still tagged `FR-281-AC-4` but covers only the rejected-certificate half. That is a fair state while no layer-A engine lacks a core checker, but it must be recorded. Either note AC-4's `uncertified` half as open on QSL-596 and in the test header (as AC-2 and AC-7 are), or restore it through a `cfg(test)` engine per TC-763. FR-281-AC-5's "parameter the function lacks" is now an altered state key (`stale_dependency`), a fair EN-1 adaptation; say so in the test doc. | qsl-analyze/tests/it/analyze.rs:152-197; qsl-analyze/src/analyze.rs:105-115 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | FR-281-AC-2 for an invariant clause is blocked on FR-337: `replay_model_trace` refuses an authored clause. c09ac17f0 removed the AC-2 tag from the deadlock test and records AC-2 open in the test header. Keep AC-2 open on QSL-596. |
+| FND-002 | still-open | The `FR-280-AC-2` tag is still on the EN-4 Service test (`#[trace("TC-761", "FR-280-AC-2", "FR-280-AC-5")]`, tests/it/analyze.rs:417). The fix round moved FR-281-AC-2, not FR-280-AC-2. There is still no EN-1 provider entry. Retag the test to AC-5 only, and either add the EN-1 entry and its equality test or record FR-280-AC-2 open for EN-1. |
+| FND-003 | fixed | c09ac17f0 |
+| FND-004 | deferred | Spec gap left for draco (FR-281/FR-290: ambiguous route and records for refusals). The code's choice stands until the spec rules. |
+| FND-005 | deferred | Spec gap left for draco (cause vocabulary). c09ac17f0 marks the cause provisional in its doc comment. |
+| FND-006 | deferred | Spec gap left for draco (EN-1 manifest content in FR-280). The coder's choice is consistent with EN-1's code. |

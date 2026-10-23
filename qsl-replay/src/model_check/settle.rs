@@ -102,8 +102,11 @@ pub enum Truth {
     Unavailable,
 }
 
-/// One EN-1 item's terminal record (FR-127 Outputs).
+/// One EN-1 item's terminal record (FR-127 Outputs). Only the settlement maps
+/// of this crate construct one, so a `refuted` record always came from a
+/// reproduced replay.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
     /// The terminal value.
     pub value: TerminalValue,

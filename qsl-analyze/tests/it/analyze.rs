@@ -8,7 +8,15 @@
 //! clause's counterexample would settle `refuted` only if
 //! `replay_model_trace` replayed it, and that refuses an authored clause
 //! until FR-337, as for AC-7. The deadlock case here is TC-762 step 2's
-//! refuted item, not AC-2's clause. Not covered, because EN-5 has no solver or certificate checker yet
+//! refuted item, not AC-2's clause.
+//!
+//! Open: the second half of FR-281-AC-4 (TC-763 step 2): a proof from an
+//! engine with no core checker settles `proved`, `uncertified`, naming the
+//! engine. No layer-A engine reports a proof without a checker today, and
+//! `analyze` accepts no engine-supplied proof, so there is no code or test
+//! for it until an engine without a checker exists.
+//!
+//! Not covered, because EN-5 has no solver or certificate checker yet
 //! (QSL-574, QSL-575): FR-281-AC-1's EN-5 item, and so the EN-5 half of
 //! FR-281-AC-3 and of FR-281-AC-6 (EN-1 runs those here). Not covered:
 //! FR-281-AC-7's replay of the undefined value, since `replay_model_trace`
@@ -197,7 +205,9 @@ fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
 /// counterexample the real replay does not reproduce (its prefix truncated)
 /// settles `inconclusive` with `replay_parity`; one the replay refuses (a
 /// state key altered) settles `inconclusive` with `replay_refused`; the
-/// unaltered one settles `refuted`.
+/// unaltered one settles `refuted`. TC-763's "parameter the function lacks"
+/// refusal is adapted to the altered state key, the refusal EN-1's replay
+/// gives a counterexample its model does not take.
 #[trace("TC-763", "FR-281-AC-5")]
 #[test]
 fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
@@ -406,7 +416,8 @@ fn service_request<'w>(
     }
 }
 
-/// FR-280-AC-2 and the `analyze` half of AC-5 (TC-761 step 4): over
+/// The `analyze` half of FR-280-AC-5 (TC-761 step 4); FR-280-AC-2 stays
+/// open for EN-1, which has no provider entry yet: over
 /// `Service`, whose checked package S4 refuses to emit, the record `analyze`
 /// settles for the `2 ms` claim (EN-4, `statistical`, Okamoto, seed 7,
 /// `max_witnesses` 3) is `measured` and rejected with its three witnesses,
@@ -414,7 +425,7 @@ fn service_request<'w>(
 /// package, binding and limits. Both reach one `check_statistical` and one
 /// settlement; the witnesses replay `Reproduced` in
 /// `statistical_witness_replay`.
-#[trace("TC-761", "FR-280-AC-2", "FR-280-AC-5")]
+#[trace("TC-761", "FR-280-AC-5")]
 #[test]
 fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     use crate::prob_world::{self, World};
