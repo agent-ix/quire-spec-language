@@ -38,3 +38,10 @@ Examined, clean:
 Not mergeable: FND-001 (high) block the PR; FND-002 (medium) should be fixed in the same round.
 
 Conflicts with main: none (merge-tree clean). FR-093 AC-table append conflicts with open #1347, #1351, #1355, #1357, #1360, #1369, #1374 and #1379 (same AC-35 position region); resolve by union in id order.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 at 5f0c2dde: `ConvertText` covers integer, decimal, rational, `Float32`, `Float64` and `Quantity<u>` targets for `Text[..]` and `String` operands; AC-35 pins all twelve identities. |
+| FND-002 | fixed | Round 1 at 5f0c2dde: the "Converted equality operand" paragraph is scoped to exact numeric and quantity operands; FR-093-AC-47 adds the `convert<Integer>(t) = 3` vector. |
