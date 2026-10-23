@@ -71,6 +71,12 @@ Delta 877c0f924..4a190547d against the STD-444 amendments: FR-280 Behavior 4 and
 | FND-008 | medium | The refusal-table test injects `Refusal::*` rows straight into `settle`. `model_refusal` and `statistical_refusal`, the classification that FR-281-AC-11 is about, have no test, which is why SR-12366 FND-005, FND-006 and FND-007 pass. The `declined` assertion matches only the cause (`..`), not the diagnostic. There is no `Admission(Refused)` `invalid-input` case and no Symmetry case. Fix: test each classifier arm through `model_item`/`statistical_item`, or call the classifiers directly, and assert each record's full diagnostic. | qsl-analyze/src/analyze.rs:699-767 |
 | FND-009 | low | The FR-281-AC-8, AC-10 and AC-11 tests are unit tests that name those ACs only in doc comments, with no `#[trace]`. The PR body's open list does not mention FR-281-AC-11's EN-1 `Integer` `unbounded-extent` end-to-end case, or the test-engine parts of AC-8 and AC-11, which wait on the unbuilt `Engine` trait. Fix: tag what is covered (AC-10), and record the open AC-8 and AC-11 remainder in the test header and the PR body. | qsl-analyze/src/analyze.rs:546-767; PR #1362 body |
 
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | The new FR-281-AC-11 tests are tagged `TC-762`, but AC-11 is in TC-763's scope (FR-281-AC-4 to AC-7, AC-11). Retag them `#[trace("TC-763", "FR-281-AC-11")]`. | qsl-analyze/src/analyze.rs:710; qsl-analyze/src/analyze/items.rs:243-370 |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -96,3 +102,11 @@ Delta 877c0f924..4a190547d against the STD-444 amendments: FR-280 Behavior 4 and
 | FND-004 | fixed | 4a190547d. The STD-444 amendment (#1389) defines both cases, and the code follows it. Each item settles its own record: an ambiguous route reaches `analyze` as an `invalid-request` disposition, and engine refusals settle by FR-281's table. |
 | FND-005 | fixed | 4a190547d. Per amended FR-281, `ClaimKind` and `claim_kind` are removed. An unadapted item settles by its `unsupported` disposition, with `unsupported_projection`/`unsupported-requested-capability` and the kind in the payload. |
 | FND-006 | fixed | 4a190547d. Amended FR-280 Behavior 4 (#1389) specifies EN-1's manifest. The manifest is unchanged and matches it. |
+
+### Round 4 (861ef597f), final round
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | 861ef597f. The classifier tests call `admission`, `symmetry`, `model_refusal` and `statistical_refusal` directly and assert each full diagnostic, including `Admission(Refused)` `wrong-role-mapping` and Symmetry `invalid-value`. |
+| FND-009 | fixed | 861ef597f. AC-8, AC-10 and AC-11 are tagged, and the PR body records the open AC-11 EN-1 `Integer` case and the test-engine parts. |
+| FND-010 | deferred | A trace-tag nit, not a correctness bug. Per the last-round rule, it is deferred to part 2. |

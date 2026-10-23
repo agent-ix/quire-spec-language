@@ -60,6 +60,12 @@ Delta 877c0f924..4a190547d (the STD-444 rework; the main merge 877c0f924 is excl
 | FND-008 | low | Spec gap for draco, and a questionable fallback. `Extent`, `Protocol`, `Translation`, `Encoding`, `Key`, `Item` and `Footprint` settle `failed` with `runtime_invariant`/`established-invariant-broken`, an internal-fault code. But `Translation` (a past operator over a future one, or too many atoms) and `Footprint` (a form FR-383 gives no rule for) are unsupported constructs, and `Item`/`Protocol` can be request defects. FR-281's table assumes each refusal has an FR-272 code; these types have none. Ask draco for the codes. Until then, prefer `unsupported_construct` for `Translation` and `Footprint`. | qsl-analyze/src/analyze/items.rs:149-157 |
 | FND-009 | low | The item's work closure is bound to its adapter's engine, while the record's backend comes from the caller's disposition, and `AnalyzeItem::disposed` is public. Only the kind/mode consistency check keeps a re-disposed EN-1 item from running under another engine's `BackendId`. That cannot happen today: EN-1's and EN-4's kinds are disjoint and `Engine::new` is crate-private. It becomes a misattributed record once `Engines::with` accepts trait engines. When the `Engine` trait lands, run the engine's own `run`, or refuse a candidate other than the adapter's engine. | qsl-analyze/src/analyze.rs:314-318,410-450 |
 
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | high | `statistical_refusal` intercepts `R::PredicateRefused` before FR-192's map (`settle_statistical_refusal`). The PR body and the QSL-596 comment of 13:01Z say the map "returns no record for PredicateRefused". That is false at #1299's current head (87620e97a): there `settle_statistical_refusal` settles every `PredicateRefused` by FR-192-AC-7's rows (`predicate_refused`: `KernelRefused` gets its own code and cause, `Incomplete` gets `incomplete`/`limit-reached`). #1299 is landing separately. Once both land, `analyze` overrides the correct map for EN-4. It returns `failed` with `runtime_invariant`/`established-invariant-broken` for a predicate meter exhaustion that should be `incomplete`, and for a kernel refusal that should carry its own code. The provider entry (`serve_request`) returns the correct record, so FR-280's analyze-equals-entry rule breaks too. Fix: delete both `R::PredicateRefused` arms and let `settled =>` call the map. Before #1299, `Err(_)` already falls back to `failed` with `BROKEN`; if needed, keep the `FamilyRefused` code under `Err(UnsettledRefusal::PredicateRefused)` only. | qsl-analyze/src/analyze/items.rs:196-206 |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -78,3 +84,14 @@ Delta 877c0f924..4a190547d (the STD-444 rework; the main merge 877c0f924 is excl
 ### Round 3 (4a190547d)
 
 FND-001 to FND-004 are already fixed. No new row is needed: `to_terminal` and `#[non_exhaustive]` are unchanged in the delta.
+
+### Round 4 (861ef597f), final round
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 861ef597f. Inner variants are matched. Only `ComponentCertificateNotBuilt`, `FormNotDecided` and `NotSingleExistential` settle `unsupported`. Request defects settle `failed` with `invalid_runtime_input`/`invalid-value`; engine defects settle `failed` with `BROKEN`. |
+| FND-006 | fixed | 861ef597f. `TerminalRecord::declined_with` keeps the full code and cause, from `CatalogCode::new(record.code.as_str(), record.cause)`; Symmetry carries `INVALID_VALUE`. |
+| FND-007 | still-open | Superseded by FND-010. The "inherited gap" is caused by `analyze`'s own intercept, not by the FR-192 map, because #1299's map settles these rows. |
+| FND-008 | fixed | 861ef597f. Translation and Footprint now settle `unsupported_construct`/`expression-form`. That is an existing FR-272 cause (qsl-eval/src/temporal/outcome.rs:182, qsl-replay/src/spine/bind.rs:240), not an invented one. Extent, Protocol, Encoding, Key and Item still have no spec code; that is deferred to draco (STD-444 follow-up, recorded on QSL-596 at 13:01Z). |
+| FND-009 | deferred | Recorded in a `settle` doc comment. It is unreachable until the `Engine` trait lands (part 2). |
+| FND-010 | still-open | This is a correctness bug: once #1299 lands it gives wrong EN-4 records and breaks analyze-equals-entry. Fix in this PR. |
