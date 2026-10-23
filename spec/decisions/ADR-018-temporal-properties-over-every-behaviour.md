@@ -181,13 +181,15 @@ terminal record may carry the `fairness.strong-would-exclude` diagnostic
 (ADR-019 SV-6), which changes no verdict. Amended by ADR-026: `ProofBasis` also has `ZoneCertified` (a zone-engine
 proof whose certificate the checker accepted), `ClosedForm{analysis}` (a
 schedulability analysis whose evidence was recomputed) and
-`BoundedSolver{method, horizon, jumps}` (a sound hybrid solver result within
-its bounds), each mapped to success, the first two `Certified` and
-`BoundedSolver` `Uncertified`, from a solver with no core checker (PC-1); a
+`BoundedSolver{method, horizon, jumps, exhaustive}` (a sound hybrid solver result within
+its bounds) and `InductiveSolver{method}` (a sound inductive hybrid
+enclosure), each mapped to success, the first two `Certified` and the hybrid
+two `Uncertified`, from a solver with no core checker (PC-1); a
 rejected zone certificate or closed-form evidence settles
 `CertificateRejected` or `ReplayParity`; `InconclusiveCause` also has
-`NoAdmittedBehaviour`, `LassoNotConcretized`, `SufficientTestFailed` and
-`SolverInconclusive` (ADR-026 TD-6, EZ-8, CF-4, RT-6, HY-2).
+`NoAdmittedBehaviour`, `LassoNotConcretized`, `SufficientTestFailed`,
+`SolverInconclusive` and `InsufficientHorizon` (ADR-026 TD-6, EZ-8, CF-4,
+RT-6, HY-2).
 
 **Proof certificates.** A `proved` from EN-1 counts only once a checker in
 the qualified core accepts the certificate EN-1 returns with it (LA-3). A
