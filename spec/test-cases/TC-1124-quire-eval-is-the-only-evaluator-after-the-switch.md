@@ -22,8 +22,9 @@ against recorded expectations. Scope: FR-405-AC-1 to FR-405-AC-10.
    `make evaluator-differential EVALUATOR_CORPUS_DIR=<dir>`. Read the
    switch change's description.
 2. On the switch base, run FR-262-AC-1 to AC-8, AC-10 and AC-11 with each
-   implementation, AC-1 and AC-2 on a thread with a 512 KiB stack. Read the
-   switch change's description.
+   implementation, AC-1 and AC-2 on a thread with a 512 KiB stack, and
+   FR-401-AC-8, including its run over `g(3)`, on `quire-eval`'s evaluator.
+   Read the switch change's description.
 3. Read the `quire-eval` revision in QSL's `Cargo.lock` at the switch head.
    In `agent-ix/quire-eval` at that revision, run FR-401-AC-1's
    `thumbv7em-none-eabi` build and NFR-016's `make audit-unsafe`.
@@ -62,7 +63,8 @@ against recorded expectations. Scope: FR-405-AC-1 to FR-405-AC-10.
 
 1. Every case admits, and both runs report zero divergences. The
    description reports the switch base and both results.
-2. Every criterion passes with each implementation. No depth refusal and
+2. Every FR-262 criterion passes with each implementation, and FR-401-AC-8
+   passes on `quire-eval`'s evaluator. No depth refusal and
    no stack overflow occur. The description reports the result.
 3. Both gates pass.
 4. `qsl-eval/src/value/expression/evaluate.rs` and its submodules,
