@@ -32,11 +32,10 @@ Scope: FR-026-AC-6, FR-027-AC-4, FR-031-AC-5.
 3. Compile a native-compile/1 request with the same two labels, and
    validate the package bytes against the native-linked-package/1 schema.
 4. Compile it again without `identity`.
-5. Run an extraction request whose body record names `authority`
-   `agent-ix`, `identity` `b`, `document` `B` and, as `digest`, the
-   raw-artifact digest of the extracted body's bytes. Then run it without
-   the body's `authority`, without its `digest`, and with a `digest` of
-   other bytes.
+5. Run a `1-draft` native-run/1 request whose program carries an
+   `extraction` body record naming `authority` `agent-ix`, `identity` `b`,
+   `document` `B` and a `digest`, through the command built with no features
+   and through the command built with `--all-features`.
 
 Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
 `#[trace("TC-430", "FR-027-AC-4")]`, and step 5
@@ -49,10 +48,8 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
 - Step 2: the first two refuse at the request stage with `invalid-request`,
   exit 20; the blank label refuses with `invalid_source_identity`, cause
   `blank-label`, `label` `authority`.
-- Step 5: the first runs and renders the native identity (`agent-ix`, `b`,
-  digest) and the formal identity (`B`, digest); the second and third refuse
-  with `invalid-request`, exit 20; the fourth refuses
-  `stale_dependency`/`content-mismatch`, naming both digests.
+- Step 5: each build refuses `invalid-request` at stage `request`, exit 20,
+  with empty stdout.
 - Step 3: the package `source` names the two labels and the source digest,
   and the schema accepts it.
 - Step 4: `invalid-request`, exit 20.

@@ -1,80 +1,91 @@
 ---
 id: FR-031
-title: "Run selected Markdown clauses from files"
+title: "Run a selected Markdown clause through the spine clause runner"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-004
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-030
     type: references
-  - target: ix://agent-ix/quire-spec-language/FR-026
+  - target: ix://agent-ix/quire-spec-language/FR-109
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-100
     type: references
 ---
 ## Description
 
-When a native-run/1 request selects program extraction in an enabled build, the command shall compile its selected Markdown clause through FR-030 and execute the existing runtime workflow.
+When a caller selects one authored clause of an original Markdown document,
+the spine clause runner `qsl_replay::spine::run_clause` (FR-109), built with
+`qsl-replay`'s feature `quire-extraction`, shall run the clause's extracted
+body, the `ExtractedSource` FR-030 yields, as its unit: spine compile (S1 to
+S4) under the body's own identity, then the clause run. The report shall name
+both the original document and the body. This is the one way QSL runs an
+extracted Markdown clause. The `quire-spec` command's native-run/1 request
+has no `extraction` member in any build (FR-100; ADR-011 §7.3 X-4).
 
 ## Inputs
 
-With the quire-extraction feature, program accepts an optional closed extraction
-record containing body: {authority, identity, document, digest}. The
-ordinary program source selects the digest-verified original Markdown document;
-its identity must satisfy Quire's existing SourceLocus schema.
-The body record assigns its derived source a native identity, `authority` and
-`identity` with `digest`, and a formal identity, `document` with `digest`. Each
-is a document identity plus a content digest, the key QSpec FR-202 gives an
-authored source (STD-150): `digest` is the raw-artifact digest of the derived
-body's complete bytes (QSpec FR-018). The command recomputes that digest over
-the extracted body and refuses a body record whose `digest` differs with
-`stale_dependency`/`content-mismatch`, naming both digests. Exactly one authored clause binding selects the Quire heading and native
-clause. Omission preserves ordinary native-source execution. Supplied null or
-positional extraction/body records, duplicate and unknown fields refuse.
-The decoded native/formal pair is explicit, and each identity is a document
-identity plus the content digest of that document's bytes.
-
-This local clause-only mode constructs a Quire context, validated by content,
-for the explicitly selected binding's package and original path/identity, with empty exports/imports and a Markdown target. It does
-not load installed archetype schemas or infer model meaning from Markdown.
-Native model imports retain their existing authority. C's installed-module and
-existing-system adoption remains separate.
+- The original Markdown `Source`, with its four FR-001 labels and the raw
+  bytes the caller digest-verified, and FR-030's `Selection`: the authored
+  clause id, the authored package and the body's own `SourceIdentity`.
+- FR-030's `Limits` for the original document.
+- The other `ClauseRunRequest` members: FR-056's package input, FR-099's
+  dependency input, the snapshot and invocation provisions, the selection, an
+  optional expected `package_id`, and the spine, observation and evaluation
+  limits (FR-109).
 
 ## Outputs
 
-The existing native-run-result/1 report includes an extraction member retaining
-original source identity/digest/formal identity, unchanged Quire availability,
-clauses, raw clause_text and diagnostics, plus verified byte-map region/segments.
-The ordinary source and native diagnostic/event coordinates name the body; the
-map links those bytes to the original. Only completed execution has truth.
-Extraction/compilation failures retain original source, authored selection,
-completed Quire output, native diagnostic and verified original spans when present.
-Other file/model/runtime-input intake failures keep FR-026's existing envelope.
-Unsupported combinations have distinct catalogued codes: extraction-package-conflict,
-extraction-clause-count (with actual count), and extraction-requires-run. A Quire
-context failure uses invalid-quire-context and retains the unchanged producer
-diagnostics. The extraction report is
-constructed through typed serialization before the immutable native result is exposed.
+- A `ClauseRunReport` (FR-109). Its source names the body identity with the
+  raw-artifact digest of the extracted body's complete bytes (QSpec FR-018)
+  and the original document identity with its digest. Its `package_id` is
+  the one the body compiles to under its body identity (FR-109-AC-6).
+- Or FR-030's extraction `Error`, which retains the original source, the
+  selection, any completed Quire extraction outcome and the actual preflight,
+  availability or correspondence cause. No compile or clause run follows,
+  and there is no truth.
 
 ## Behavior
 
-The command shall use existing bounded file intake, model frontend, FR-030 consumer and runtime execution.
-The command shall validate the fixed clause-only context through Quire's public semantic-block validator.
-The command shall validate and retain exactly one authored binding before dependent file I/O.
-The command shall retain original byte correspondence and producer availability separately from native truth.
-If the request combines extraction with selected-package execution or source-only compile export, then the command shall refuse the unsupported combination before dependent files are read.
-If extraction is supplied to a build without quire-extraction, then the request decoder shall refuse the unknown field.
-The command shall preserve existing byte/file/runtime limits and fresh retries.
+The caller shall extract the body through FR-030 before any compile. An
+extraction failure shall end the request with FR-030's error and no partial
+package.
+
+The clause runner shall compile the body under its body identity. It shall
+report compile, select, admit and evaluate outcomes with FR-109's stages,
+categories, truth and exit codes, exactly as for a source given as bytes. A
+body whose fence declares a language other than QSL native shall refuse at
+compile with `unknown_language`, exit 20, with no `package_id` (FR-109-AC-6).
+
+The original document and the body shall keep distinct identities. The
+original selects the Markdown bytes; the body's identity owns the compiled
+declarations and so the `package_id` (FR-001, FR-032-AC-4).
+
+`Selection` names exactly one clause, so a request cannot select a second
+clause. An expected `package_id` that the body does not compile to shall
+refuse at compile with `stale_dependency`, naming both identities
+(FR-109-AC-2).
+
+The original byte and line limits (FR-030) and the spine and evaluation
+limits (FR-109) shall stay independent. When a request exhausts any of them,
+the clause runner shall report incomplete; a fresh request with the same
+inputs and sufficient limits then succeeds.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-031-AC-1 | Actual binary execution of LF/CRLF Markdown aggregate and operation fixtures returns healthy, violating and frame-refused outcomes with exact original/body mapping and unchanged extraction metadata. | Test (TC-109) |
-| FR-031-AC-2 | Invalid/unsupported native bodies and unavailable extraction retain original identity, authored selection and actual producer/compiler failure data. | Test (TC-109) |
-| FR-031-AC-3 | Malformed extraction descriptors, multiple bindings, unsupported mode combinations, stale original bytes and disabled-feature requests refuse without successful execution; mode failures have distinct codes and clause-count details before file I/O. | Test (TC-109) |
-| FR-031-AC-4 | Original line and runtime limits return incomplete, a fresh request succeeds, and ordinary native command behavior remains unchanged. | Test (TC-109) |
-| FR-031-AC-5 | A native-run/1 extraction request whose body record names `authority` `agent-ix`, `identity` `b`, `document` `B` and, as `digest`, the raw-artifact digest of the extracted body's bytes runs, and its result renders the native identity (`agent-ix`, `b`, digest) and the formal identity (`B`, digest). The same request without the body's `authority`, or without its `digest`, refuses at the request stage with `invalid-request` and exits 20; with a `digest` of other bytes it refuses `stale_dependency`/`content-mismatch`, naming both digests. | Test (TC-430) |
+| FR-031-AC-1 | An LF and a CRLF Markdown document whose one selected fence holds FR-108's healthy-parent unit run through `run_clause` report `success`, exit 0, with the `package_id` of the body compiled alone; violating-parent reports `violation`, exit 10; missing-model reports `compile`, `missing_import`/`missing-selection`, exit 20, with no `package_id`. | Test (TC-109) |
+| FR-031-AC-2 | A selected clause the document does not hold, an unavailable extraction and a stale original digest each end with FR-030's error, retaining the original identity, the selection and Quire's actual outcome, with no compile, no `package_id` and no truth; a body in an `ix:formal` fence refuses at compile with `unknown_language`, exit 20. | Test (TC-109) |
+| FR-031-AC-3 | An original over its byte or line limit, and a body run with `work_units` 0, each report incomplete; the same request with default limits then succeeds. | Test (TC-109) |
+| FR-031-AC-4 | The report of AC-1's healthy run names the body identity (`agent-ix`, its body identity, the digest of the extracted body bytes) and the original document identity with its digest; an expected `package_id` of another unit refuses at compile with `stale_dependency`, naming both. | Test (TC-109) |
+| FR-031-AC-5 | A `1-draft` native-run/1 request carrying a program `extraction` body record refuses `invalid-request` at stage `request`, exit 20, through the command built with no features and with `--all-features` (FR-100-AC-3). | Test (TC-430) |
 
 ## Dependencies
 
-- [FR-026](FR-026-run-standalone-native-workflow.md): existing bounded command intake and runtime reports.
-- [FR-030](FR-030-consume-quire-extraction.md): actual optional Quire consumer.
+- [FR-030](FR-030-consume-quire-extraction.md): the extraction consumer and
+  `ExtractedSource`.
+- [FR-109](FR-109-run-a-state-clause-through-the-spine.md): the spine clause
+  runner.
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md): the native-run/1
+  request, which has no `extraction` member.
