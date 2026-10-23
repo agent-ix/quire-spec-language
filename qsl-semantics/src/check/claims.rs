@@ -199,6 +199,9 @@ impl ClaimSite {
 pub struct ValueClaim {
     site: ClaimSite,
     domains: BTreeMap<(BinderSite, Vec<u32>), DomainKind>,
+    /// FR-062 "Extent": every extent root of the claim, whether or not its
+    /// type adds an unbounded domain.
+    roots: Vec<BinderSite>,
     /// ADR-017 AR-4: the object types the claim's operands and guards read
     /// model members of.
     objects: BTreeSet<EffectiveId>,
@@ -284,6 +287,9 @@ pub struct RequirementRecord {
     /// FR-062 "Owner": the name of the `Value` function declaration whose
     /// body holds the claim site; `None` for a record no function holds.
     owner: Option<String>,
+    /// FR-062 "Extent": the parameter and binder nodes the claim's extent
+    /// is rooted at, including roots whose type adds no unbounded domain.
+    extent_roots: BTreeSet<WireNodeId>,
 }
 
 impl RequirementRecord {
@@ -320,12 +326,20 @@ impl RequirementRecord {
             path_condition: Vec::new(),
             references,
             owner: None,
+            extent_roots: BTreeSet::new(),
         }
     }
 
     /// The model elements the record's claim references (ADR-017 AR-4).
     pub(crate) fn references(&self) -> &ModelReferences {
         &self.references
+    }
+
+    /// FR-062 "Extent": the nodes of the claim's extent roots. A function
+    /// parameter outside this set is read nowhere by the application or by
+    /// the guards of its path condition (FR-098 "unread parameters").
+    pub fn extent_roots(&self) -> &BTreeSet<WireNodeId> {
+        &self.extent_roots
     }
 
     /// The claim's capability kind and extent, each unbounded domain keyed
@@ -887,6 +901,7 @@ impl Classify<'_> {
                 path_condition,
             },
             domains,
+            roots,
             objects,
             owner: None,
         })
@@ -1019,6 +1034,10 @@ pub(crate) fn key_claims(
                 kind,
             );
         }
+        let mut extent_roots = BTreeSet::new();
+        for root in &claim.roots {
+            extent_roots.insert(wire(*binders.get(root).ok_or_else(unkeyable)?));
+        }
         let record = RequirementRecord {
             requirements: Requirements::new(
                 Capability::ValueValidity,
@@ -1032,6 +1051,7 @@ pub(crate) fn key_claims(
             path_condition,
             references: ModelReferences::new(claim.objects, [], None),
             owner: Some(owner),
+            extent_roots,
         };
         if records
             .insert(OccurrenceKey::new(wire(*key), origin.clone()), record)

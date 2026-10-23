@@ -24,6 +24,7 @@ use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 mod admitted_charge;
 use admitted_charge::admitted_charge_points;
 
+mod application_claim;
 mod child_composite;
 mod composite;
 mod composite_parity;
@@ -125,6 +126,18 @@ fn parameter(compiled: &ComposedUnit, function: &str, index: usize) -> WireNodeI
     WireNodeId::from_digest(*key.as_bytes())
 }
 
+/// The `declaration` occurrence of `function` in the package `package_id`
+/// names, when the test composed it: the key of the predicate claim. A
+/// package the test did not compose has no such key, and its request carries
+/// a placeholder (it refuses before the claim is selected).
+fn declaration_key(package_id: &PackageId, function: &QualifiedName) -> OccurrenceKey {
+    let [segment] = function.segments() else {
+        return crate::target::test_key();
+    };
+    crate::spine::composed_declaration(&package_id.hex(), segment.as_str())
+        .unwrap_or_else(crate::target::test_key)
+}
+
 fn name(segments: &[&str]) -> QualifiedName {
     QualifiedName::new(
         segments
@@ -167,7 +180,10 @@ fn request(
             digest.hex(),
         )],
         dependencies: Vec::new(),
-        replay_target: crate::RequestTargetWire::function(function, crate::target::test_key()),
+        replay_target: crate::RequestTargetWire::function(
+            function.clone(),
+            declaration_key(&package_id, &function),
+        ),
         source,
         obligation_identity: [2; 32],
         backend: "kani-backend-1".to_owned(),

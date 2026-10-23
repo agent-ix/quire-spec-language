@@ -733,10 +733,10 @@ fn settle(
 }
 
 /// FR-290-AC-12 and the QSL-977 correctness fix: a value-validity item is not
-/// replayed as the owning function's predicate.
+/// replayed as the owning function's predicate but as its application claim.
 #[trace("TC-774", "FR-290-AC-12")]
 #[test]
-fn tc_774_function_contract_items_replay_and_value_validity_items_do_not() {
+fn tc_774_function_contract_and_application_items_replay() {
     let fixture = fixture();
     let context = context(&fixture, CallerLimits::default());
     let (p, p_x) = declaration(&fixture, "p");
@@ -783,33 +783,39 @@ fn tc_774_function_contract_items_replay_and_value_validity_items_do_not() {
     assert_eq!(wire.obligation_identity, *identity.as_bytes());
 
     // `r(x) = x + 1 > 3` holds for every x, yet `r(0)` is false: the item at
-    // `r`'s application is a value-validity item, so replaying the owner as a
-    // predicate would wrongly refute it. It is non-replayable and settles
-    // inconclusive, while `r`'s own function-contract item is still replayed.
+    // an application of `r` is a value-validity item, so it replays the
+    // application claim, which holds (the application is defined), and
+    // settles `inconclusive`, while `r`'s own function-contract item is the
+    // predicate claim and settles `refuted`.
     let (r, r_x) = declaration(&fixture, "r");
-    let r_application = fixture
+    let r_applications: Vec<OccurrenceKey> = fixture
         .checked
         .package()
         .graph()
         .requirements()
         .iter()
-        .find(|(_, record)| record.owner() == Some("r"))
+        .filter(|(_, record)| record.owner() == Some("r"))
         .map(|(key, _)| key.clone())
-        .expect("r's application has a requirement record");
-    let record = settle(&context, &r_application, &[bound_at(r_x)], input(r_x, 0));
-    assert_eq!(
-        record.value(),
-        &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
-            Code::UnknownRequiredFeature
-        ))
-    );
-    assert!(record.replay_result().is_none());
+        .collect();
+    assert_eq!(r_applications.len(), 2, "`+` and `>`");
+    for application in &r_applications {
+        let record = settle(&context, application, &[bound_at(r_x)], input(r_x, 0));
+        assert!(
+            matches!(
+                record.value(),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+            ),
+            "{record:?}"
+        );
+        assert_eq!(record.backend(), Some(&plugin()));
+    }
     assert_eq!(
         settle(&context, &r, &[bound_at(r_x)], input(r_x, 0)).value(),
         &TerminalValue::Refuted
     );
 
-    // A value-validity item at `q`'s application `x + 1` is non-replayable.
+    // FR-290-AC-12: the application item of `q`'s `x + 1` at `x = 9` selects
+    // `q` at the item's occurrence and settles `replay-parity`.
     let (q, q_x) = declaration(&fixture, "q");
     let application = fixture
         .checked
@@ -820,25 +826,86 @@ fn tc_774_function_contract_items_replay_and_value_validity_items_do_not() {
         .find(|(_, record)| record.owner() == Some("q"))
         .map(|(key, _)| key.clone())
         .expect("q's application has a requirement record");
-    for key in [&application, &q] {
-        let refusal = context
-            .request(key, &[bound_at(q_x)], &plugin(), input(q_x, 9))
-            .err()
-            .expect("a non-replayable item");
-        assert_eq!(
-            refusal,
-            PluginReplayRefusal::NotReplayable { key: key.clone() }
-        );
-        let record = settle(&context, key, &[bound_at(q_x)], input(q_x, 9));
-        assert_eq!(
-            record.value(),
-            &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
-                Code::UnknownRequiredFeature
-            ))
-        );
-        assert!(record.replay_result().is_none());
-        assert_eq!(record.backend(), Some(&plugin()));
-    }
+    let wire = context
+        .request(&application, &[bound_at(q_x)], &plugin(), input(q_x, 9))
+        .expect("an application item");
+    assert_eq!(
+        wire.replay_target
+            .members
+            .function
+            .as_ref()
+            .map(ToString::to_string),
+        Some("q".to_owned())
+    );
+    assert_eq!(
+        wire.replay_target.occurrence_key.as_ref(),
+        Some(&application)
+    );
+    let entries = BoundEntries::new(vec![bound_at(q_x)]).unwrap();
+    let identity =
+        process_provider_obligation(application.node(), application.origin(), &entries).unwrap();
+    assert_eq!(wire.obligation_identity, *identity.as_bytes());
+    let record = settle(&context, &application, &[bound_at(q_x)], input(q_x, 9));
+    assert!(matches!(
+        record.value(),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
+    assert_eq!(record.backend(), Some(&plugin()));
+
+    // A function declaration whose result is not `Boolean` is no
+    // function-contract item.
+    let refusal = context
+        .request(&q, &[bound_at(q_x)], &plugin(), input(q_x, 9))
+        .err()
+        .expect("a non-predicate declaration");
+    assert_eq!(
+        refusal,
+        PluginReplayRefusal::NotReplayable { key: q.clone() }
+    );
+    let record = settle(&context, &q, &[bound_at(q_x)], input(q_x, 9));
+    assert_eq!(
+        record.value(),
+        &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+            Code::UnknownRequiredFeature
+        ))
+    );
+    assert!(record.replay_result().is_none());
+    assert_eq!(record.backend(), Some(&plugin()));
+}
+
+/// FR-290-AC-15: an application item whose application is undefined under
+/// the assignments is refuted, and a value outside the owner's declared
+/// domain is a replay refusal.
+#[trace("TC-774", "FR-290-AC-15")]
+#[test]
+fn tc_774_an_undefined_application_item_is_refuted() {
+    let source = format!("{SOURCE}function m using v(x: Int[0, 9]): Integer pure {{ 10 mod x }}\n");
+    let fixture = fixture_of(&source, &BTreeMap::new(), &DependencyInput::default());
+    let context = context(&fixture, CallerLimits::default());
+    let (_, x) = declaration(&fixture, "m");
+    let application = fixture
+        .checked
+        .package()
+        .graph()
+        .requirements()
+        .iter()
+        .find(|(_, record)| record.owner() == Some("m"))
+        .map(|(key, _)| key.clone())
+        .expect("m's application has a requirement record");
+    let bounds = [bound_at(x)];
+    let refuted = settle(&context, &application, &bounds, input(x, 0));
+    assert_eq!(refuted.value(), &TerminalValue::Refuted);
+    assert_eq!(refuted.backend(), Some(&plugin()));
+    let defined = settle(&context, &application, &bounds, input(x, 3));
+    assert!(matches!(
+        defined.value(),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
+    let outside = settle(&context, &application, &bounds, input(x, 12));
+    assert_eq!(
+        outside.value(),
+        &TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::InvalidRuntimeInput))
+    );
 }
 
 /// FR-290-AC-13.
@@ -902,28 +969,19 @@ fn tc_774_limits_flow_into_the_request_and_refusals_are_ordered() {
     }
 
     // The occurrence checks come before the bound check: a non-replayable
-    // item with two bounds at one key is `NotReplayable`, not a duplicate.
-    let (_, q_x) = declaration(&fixture, "q");
-    let application = fixture
-        .checked
-        .package()
-        .graph()
-        .requirements()
-        .iter()
-        .find(|(_, record)| record.owner() == Some("q"))
-        .map(|(key, _)| key.clone())
-        .expect("q's application has a requirement record");
+    // item (a non-`Boolean` function's declaration) with two bounds at one key is `NotReplayable`, not a duplicate.
+    let (q_declaration, q_x) = declaration(&fixture, "q");
     assert_eq!(
         context
             .request(
-                &application,
+                &q_declaration,
                 &[bound_at(q_x), bound_at(q_x)],
                 &plugin(),
                 Vec::new()
             )
             .err(),
         Some(PluginReplayRefusal::NotReplayable {
-            key: application.clone()
+            key: q_declaration.clone()
         })
     );
     // Only the `declaration` occurrence at ordinal 0 names a function.
