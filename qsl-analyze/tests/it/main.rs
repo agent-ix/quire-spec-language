@@ -57,6 +57,7 @@ mod release_acquire;
 mod ring_world;
 mod schedulability;
 mod scheduler_fairness;
+mod smt_query;
 mod state_graph;
 mod state_graph_certificate;
 mod state_graph_settle;
