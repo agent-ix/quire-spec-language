@@ -27,7 +27,7 @@ Scope: FR-267-AC-1 to FR-267-AC-3.
    `basis`; set `basis` to `closed-scope`, keeping `witness`; remove
    `witness`, keeping `decisive-counterexample`; set `format` to
    `native-run-result/1`; set `format` to `native-run-result/3`.
-3. Run `quire-spec run` over a native-run/1 request whose source declares
+3. Call `command`'s `run` in process over a native-run/1 request whose source declares
    `edition "9-draft"`, in the change that lands FR-100's clause runner.
 
 Tag the tests `#[trace("TC-742", "FR-267-AC-n")]`.
@@ -41,7 +41,7 @@ Tag the tests `#[trace("TC-742", "FR-267-AC-n")]`.
   re-encoding, and each read gives the written basis and record.
 - Step 2: eight refusals, each naming the edited member; the two `format`
   edits refuse under the unsupported-version rule.
-- Step 3: exit 20, empty stdout, a stderr envelope holding exactly
+- Step 3: exit 20, no result document, a refusal envelope holding exactly
   `format` `native-run-result/2`, `stage` `profile`,
   `code` `unknown_edition`, `message`, `details` and `basis` `unavailable`,
   with no `witness` member.
