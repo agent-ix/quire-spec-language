@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{Setting, SourceIdentity};
+use qsl_foundation::{Setting, SettingLimits, SourceIdentity};
 use qsl_replay::spine::{
     self, CheckedUnit, DependencyInput, ParseRequest, RefinementClass, SpineLimits, SuppliedLibrary,
 };
@@ -921,7 +921,6 @@ fn witness_result(
     };
     if candidate_set.is_empty() {
         return WitnessResult {
-            class: "admitted",
             class: "admitted",
             codes: compilation.codes,
             candidates: Vec::new(),
