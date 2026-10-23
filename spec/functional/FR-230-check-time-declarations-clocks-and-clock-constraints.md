@@ -167,12 +167,12 @@ and a source `ms` and the package's `ms` are two units. A dimension the package 
 `M::Time`, and a source `Time` and the package's `Time` are two dimensions
 (QSpec FR-142 "Namespaces").
 
-- The **time dimension** of a model SHALL be the dimension node of the unit
-  `u` of its `time` member, and that node SHALL be a base dimension node
-  declared with the name `Time` by the unit's source or by an admitted domain
-  package, and nothing else. A graph may hold several such nodes, one for
-  each owner that declares a `Time`; the unit `u` selects which one is the
-  model's time dimension. Every quantity the model reads as time (the period
+- The **time dimension** of a model SHALL be the exact nominal dimension node
+  referenced by its checked timed-model root's `time_dimension` binding. It is
+  the base dimension declared as `Time` that the resolved time unit's
+  `dimension_node_id` identifies. The unit resolution selects the exact
+  nominal node; the reader never guesses among same-named nodes or uses
+  declaration order. Every quantity the model reads as time (the period
   `p`, a clock constant, a reset value and a time-invariant bound) SHALL be a
   quantity of that node, or of a dimension node that a dimension equivalence
   of the unit relates to it (QSpec FR-142 "Dimension equivalence"; FR-091),
@@ -180,22 +180,18 @@ and a source `ms` and the package's `ms` are two units. A dimension the package 
   equivalence's root ratio (FR-230-AC-28), and SHALL
   otherwise be refused `ill_typed`/`type-mismatch` at its span (QSpec FR-142
   "Dimensions of different owners"). The **time units** SHALL be
-  the units typed by that node. A derived dimension whose FR-142 vector is
-  `Time` with exponent 1 (for example `Duration = Time`) is a different
-  dimension node, and FR-142 converts no unit of one node to a unit of
-  another unless a dimension equivalence relates them, so its units are not
-  time units. For example, a graph with the
+  the units typed by that node. The explicit binding records this resolved
+  authority in the checked graph; dimension names and dimensional vectors do
+  not choose among candidate nodes. A unit on another nominal dimension is
+  not a time unit. For example, a graph with the
   root `s` and a unit `ms` whose edge to `s` has scale `1/1000` makes `ms`
   and `s` time units; any zero-offset root and any edge chain that composes
   to the same scale do as well.
 - The checker SHALL read `time dense unit u`, `time tick O period p unit u`
-  and a quantity such as `3 ms` in this order: the graph has a time base,
-  then `u` is found by name, then `u` is typed by a base dimension named `Time`, then
-  `u` has a zero composed offset. It SHALL convert a quantity exactly by
+  and a quantity such as `3 ms` in this order: `u` is found by name, its
+  dimension node is verified as the base `Time` dimension and recorded as the
+  explicit root `time_dimension`, then `u` has a zero composed offset. It SHALL convert a quantity exactly by
   composing the unit's edges (QSpec FR-142).
-- If the graph has no base dimension named `Time`, the checker SHALL refuse
-  a `time` member or a time quantity `missing_declaration`/`missing-name` at
-  its span, naming `Time`.
 - If a QSL unit's own source declares two dimensions named `Time`, the
   assembler refuses it first, `ambiguous_declaration`/`ambiguous-name`
   (FR-091), and S3 never sees it. If the unit's source and an admitted domain
@@ -203,11 +199,13 @@ and a source `ms` and the package's `ms` are two units. A dimension the package 
   admitted domain packages do, the declarations are distinct dimensions and
   the checker SHALL refuse nothing (QSpec FR-142 "Namespaces"); the time
   dimension is the one the unit `u` is typed by.
+- If the graph has no base dimension named `Time`, the checker SHALL refuse a
+  `time` member or time quantity `missing_declaration`/`missing-name` at its
+  span, naming `Time`.
 - If the graph has no unit named `u`, the checker SHALL refuse
   `missing_declaration`/`missing-name` at the unit's span, naming `u`.
-- If `u` is a unit whose dimension is not a base dimension named `Time`, the
-  checker SHALL refuse `ill_typed`/`type-mismatch` at the unit's span
-  (FR-230-AC-2).
+- If `u` is typed by a dimension other than the base `Time` dimension, the
+  checker SHALL refuse `ill_typed`/`type-mismatch` at the unit's span.
 - If a time unit's composed offset to its root is not zero, the checker SHALL
   refuse `ill_typed`/`type-mismatch` at the unit's span, naming the offset,
   because FR-142 allows no arithmetic on an affine unit.
@@ -350,11 +348,20 @@ ill-formed use.
 - **Checked package.** The checked package SHALL hold no value/type node for
   `Clock`, an alias of it, `Option<Clock>`, a clock parameter or a clock result.
   It SHALL emit one `timed_model`/`timed_model` root node owned by the state
-  model, with dependency edges to its `time_source`, `clock_place`,
+  model, with an explicit `time_dimension` reference equal to the resolved
+  unit's nominal `dimension_node_id` and dependency edges to its `time_source`, `clock_place`,
   `clock_reset`, `clock_guard`, `time_invariant`, `urgency` and
   `clock_constraint` nodes. Each node's closed body records its canonical
-  kind-specific data: source kind, resolved unit and tick operation/period;
-  place owner and ordered field/tuple/union/collection-slot path and guards;
+  kind-specific data: source kind and resolved unit; a tick source additionally
+  carries its model and a `state`/`operation_anchor` reference whose context
+  equals both the source and root model, whose operation resolves as an
+  operation declared by that model, and whose period is exact. A generic
+  `function` node is not a tick operation. A place carries its owner, ordered
+  field/tuple/union/collection-slot path, and `resolved_path` rows in one-to-one
+  path order; each row records declaring type, member identity/type and, for a
+  collection, its kind and bounds. These rows are checked-package data joined
+  to the selected declaration; I2 does not reopen source text or infer members
+  from a spelling. The remaining node data records guards;
   reset target and exact converted value; guard/invariant constraint terms;
   urgency predicate or operation; and every bound's comparison, exact value
   and resolved unit. `Clock` remains a place, never a value type. Record and
@@ -589,6 +596,9 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-30 | Changing only the resolved time-source kind, unit, tick operation or exact period changes the corresponding timed-node key and package identity; changing only a clock place's owning model or ordered field/tuple/union/collection-slot path, presence guard or collection bound changes that place key and package identity; changing only a reset target/value, guard term, invariant term, urgency condition/operation, or clock-constraint comparator/bound/unit changes its timed-node key and package identity. Reordering source occurrences without changing canonical semantic order leaves node keys and package identity unchanged. | Test (TC-685) |
 | FR-230-AC-31 | I2 admits a complete timed-node subgraph whose root owns each referenced node and whose places and exact time quantities agree with the checked model; it refuses a missing root as `invalid_package`/`missing-timed-model`, a dangling or wrong-kind edge as `invalid_package`/`timed-node-reference`, a duplicate place as `invalid_package`/`duplicate-clock-place`, a noncanonical path as `invalid_package`/`malformed-clock-place`, and a non-time unit or malformed quantity as `ill_typed`/`invalid-time-quantity`, reporting the first failing timed node in ascending node-id digest order. | Test (TC-685) |
 | FR-230-AC-32 | A checked timed model reaches S4 and I2 read-back without `TimedModelNotEmitted`; the emitted timed-model nodes reconstruct the same time source, clock places, guards, resets, invariants, urgency and normalized constraints, and the reconstructed checked package identity equals the producer's identity. | Test (TC-685) |
+| FR-230-AC-33 | The checked timed root's explicit `time_dimension` equals the resolved unit's nominal `dimension_node_id`, and every time-valued quantity uses that dimension or an admitted FR-142 equivalence; names and declaration order do not select it. | Test (TC-685; QSpec FR-322-AC-123) |
+| FR-230-AC-34 | Each clock place carries one ordered `resolved_path` row per path step; rows identify declaring type, member identity/type and collection kind/bounds, with the terminal row identifying `Clock`. I2 validates cardinality, order and joins to the selected declaration without source access; a missing, extra or mismatched row refuses `invalid_package`/`malformed-clock-place`. | Test (TC-685; QSpec FR-322-AC-124) |
+| FR-230-AC-35 | A tick source references a `state`/`operation_anchor`, carries its model explicitly, and the anchor context equals the source and root model; the operation resolves among that model's declarations. A function node, unresolved operation or anchor for another model refuses `invalid_package`/`timed-node-reference`. | Test (TC-685; QSpec FR-322-AC-125) |
 
 ## Dependencies
 
