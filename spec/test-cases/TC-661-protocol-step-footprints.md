@@ -12,7 +12,7 @@ relationships:
 
 Verify per-step read and write footprints, enabling footprints, independence and visibility over the protocol locations.
 
-Scope: FR-216-AC-1 to FR-216-AC-7.
+Scope: FR-216-AC-1 to FR-216-AC-8.
 
 ## Test Procedure
 
@@ -47,6 +47,9 @@ Scope: FR-216-AC-1 to FR-216-AC-7.
    `(0, Refund, 0)` in both. Declare a `Peer` population and an attempt
    type `PeerAttempt` with one field `p: Reference<Peer>`, and read the
    footprint of a `cattempt` of `Refund` over it.
+8. Read `join(P)`'s read, enabling and write footprints under FR-206-AC-11's
+   `join predicate(f) [c, a] outstanding cancel`, and its dependence with
+   the attempt that ends branch `a`.
 
 Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
 
@@ -72,3 +75,6 @@ Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
   `(0, Refund, 0)` in the commit step's write footprint under both `attempts`
   variants; the `Peer` membership in the reference-typed `cattempt`'s read
   footprint.
+- Step 8: `inst(P)` and the owning thread's `ctl` only, in the read and
+  enabling footprints; dependent with the attempt that ends `a`; the write
+  footprint FR-216-AC-3 gives `join any` under `cancel`.
