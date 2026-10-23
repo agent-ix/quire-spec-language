@@ -25,6 +25,7 @@
 mod bounds;
 mod claim;
 pub mod manifest;
+pub mod provider;
 mod method;
 mod model;
 mod regenerative;
