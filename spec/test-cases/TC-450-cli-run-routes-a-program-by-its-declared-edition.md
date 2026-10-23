@@ -38,7 +38,8 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
    member `depth`, with an `accounting` of `5`, and with a top-level
    a legacy `work_units` member directly in `call`. Run the program
    `extraction` request twice more: through the command built with no
-   features and through the command built with `--all-features`.
+   features and through the command built with
+   `--features qsl-replay/quire-extraction`.
 5. Run a `0-draft` standalone request with a `call` added; then with a
    `libraries` entry added.
 6. Run a `1-draft` program that imports `test/geometry` and declares
@@ -63,7 +64,9 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
   `message` names the program file and `7-draft`.
 - Step 4: each request refuses `invalid-request` at stage `request`, exit 20,
   empty stdout, and no model file is read; the `extraction` request refuses
-  so in both builds.
+  so, naming `extraction`, in the build with no features, and refuses
+  `extraction-requires-run` at stage `request`, exit 20, empty stdout, with
+  no model file read, in the build with `qsl-replay`'s `quire-extraction`.
 - Step 5: each refuses `invalid-request` at stage `request`, exit 20, empty
   stdout.
 - Step 6: exit 0 and a `completed` outcome.
