@@ -1361,11 +1361,12 @@ ticket that L1-D1 relaxes. Stage placement matches the relaxed edges:
 Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
 
 - **Family hooks.** ADR-011 S2 form builder, ADR-011 S3 `check` and
-  `requirements`, ADR-011 S4 `package` emission, ADR-011 S6a `evaluate`. A
+  `requirements`, ADR-011 S6a `evaluate`; S4 has no family hook, because the
+  v2 emitter writes every family's lowered nodes (ADR-012 §2 "Packaging"). A
   missing hook is a compile error: the ADR-012 seam S2 and S3 matches that
-  call a family's hooks have one arm per family and no `_` arm, and the
-  ADR-012 seam S1 stage-participation table has one entry per family
-  (ADR-012 §5.1). At the ADR-011 S6a evaluation stage, a family that sits
+  call a family's hooks have one arm per family and no `_` arm, and a family
+  takes part in a stage exactly through the hooks it implements (ADR-012 §2,
+  §5.1). At the ADR-011 S6a evaluation stage, a family that sits
   out evaluation is absent from S6a's input type: S6a dispatches over the
   families that implement `ReferenceEvaluation`, which excludes `Relation`,
   so it has no `Relation` arm and no family-dispatch refusal (ADR-013 O-16).
