@@ -79,7 +79,10 @@ happens-before computation, so a summary bug cannot produce a false race.
   otherwise compare the bounds with the run's.
 - The executor SHALL read a cut store as enabled wherever it reads
   enabledness, the lasso fairness check against the memory and scheduler
-  constraints included, as FR-225 does (ADR-025 MB-3).
+  constraints included, as FR-225 does (ADR-025 MB-3). A store is a step of
+  its thread's branch, in that branch's FR-212 class, so a cut store keeps
+  its branch's class enabled; `flush` and the other memory steps are in no
+  class (ADR-025 MF-4).
 - When a step names a message or slot depth that does not exist at its
   pre-state, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
@@ -109,6 +112,7 @@ happens-before computation, so a summary bug cannot produce a false race.
 | FR-227-AC-3 | FR-224-AC-2's race counterexample under `ra` replays to `reproduced-with-evaluated-witness`. An envelope whose `earlier` names the flag store, which is not an access to `data`, settles `inconclusive`, `ReplayParity`; so does the AC-1 shape of FR-224, whose `data` load runs only after its flag load read 1, with a `release`/`acquire` flag and a forged race on `data`. | Test (TC-672) |
 | FR-227-AC-4 | The lasso of FR-228-AC-2, in which `w`'s buffer stays `[x := 1]` through `r`'s repeated load of `x`, refuses `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s constraint. | Test (TC-672) |
 | FR-227-AC-5 | `SB`'s `tso` counterexample replays to `reproduced-with-evaluated-witness` with `max_store_buffer` unset and with 1, since no buffer holds more than one store. `SB`'s `ra` counterexample replays to `reproduced-with-evaluated-witness` with `max_messages` unset (4); with `max_messages` 1 it refuses `invalid_runtime_input`/`invalid-value` at its first store, which would add a second message to its location. | Test (TC-1230) |
+| FR-227-AC-6 | FR-228-AC-2's program under `ra` with `max_messages` 1, where `w`'s store `x := 1` is cut at every state because it would add a second message to `x`: the hand-built lasso whose stem is `fork` and whose loop is `r`'s load reading 0 refuses `invalid_runtime_input`/`invalid-value` as unfair under `w`'s scheduler constraint, since `w`'s store is enabled at every loop state and never taken. A replay that read the cut store as not enabled would find `w` with no enabled step and accept the lasso. | Test (TC-1230) |
 
 ## Dependencies
 

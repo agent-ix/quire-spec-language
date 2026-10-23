@@ -20,7 +20,7 @@ their `Tso` and `Ra` components under the memory bounds, and expand
 subject carry; that a certificate with a state a bound cuts is rejected; and
 that a counterexample step a bound cuts refuses.
 
-Scope: FR-338-AC-21, FR-338-AC-22, FR-227-AC-5, FR-217-AC-8.
+Scope: FR-338-AC-21, FR-338-AC-22, FR-227-AC-5, FR-227-AC-6, FR-217-AC-8.
 
 ## Test Procedure
 
@@ -38,9 +38,11 @@ Scope: FR-338-AC-21, FR-338-AC-22, FR-227-AC-5, FR-217-AC-8.
 6. Replay FR-209-AC-6's lasso with `max_live_instances` 1, then unset;
    replay the two-`activate` prefix with 2, then 1; replay FR-209-AC-7's
    lasso with 1.
+7. Replay FR-227-AC-6's hand-built lasso over FR-228-AC-2's program under
+   `ra` with `max_messages` 1.
 
 Tag the tests `#[trace("TC-1230", "FR-338-AC-n")]`,
-`#[trace("TC-1230", "FR-227-AC-5")]` and `#[trace("TC-1230", "FR-217-AC-8")]`.
+`#[trace("TC-1230", "FR-227-AC-n")]` and `#[trace("TC-1230", "FR-217-AC-8")]`.
 
 ## Expected Results
 
@@ -59,3 +61,5 @@ Tag the tests `#[trace("TC-1230", "FR-338-AC-n")]`,
   re-executes with 2 and refuses `invalid_runtime_input`/`invalid-value`
   at the second `activate` with 1; FR-209-AC-7's lasso
   `reproduced-with-evaluated-witness`, not refused as unfair.
+- Step 7: refused `invalid_runtime_input`/`invalid-value` as unfair under
+  `w`'s scheduler constraint.
