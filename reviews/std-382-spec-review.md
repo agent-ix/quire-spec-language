@@ -90,7 +90,10 @@ exits 0; FR-338-AC-21, AC-22 and TC-1230 are unique across the 79 open PRs).
 | FND-001 | fixed | FR-217 and FR-227 now say that the cut `activate` or store is enabled but left unexpanded. Replay refuses a step that takes it and reads it as enabled wherever it reads enabledness, the lasso fairness check included, as FR-209 and FR-225 do. The contradiction is gone. The discriminating vector is FND-003. |
 | FND-002 | fixed | FR-338 places both bound rules after a reached state's `BadState` checks and before its successors' membership, with the first failing state in breadth-first expansion order reported. AC-21, AC-22 and TC-1230 name the state. Recomputed: the depth-2 `tso` state with `x` and `y` buffered, and the depth-2 state with two `activate(Tick)`, are each the unique shallowest limited state. Under `ra` with `max_messages` 1 the first store is cut at the initial state. |
 | FND-003 | still-open | New in this pass. It needs a fix round. |
+| FND-003 | fixed | FR-227-AC-6 (TC-1230 step 7) replays FR-228-AC-2's program under `ra` with `max_messages` 1. `w`'s store is cut at every state, and the loop is `r`'s load reading 0, so the lasso is refused as unfair under `w`'s scheduler constraint. Re-derived: the cut store keeps `w`'s FR-212 branch class enabled (ADR-025 MF-4), so the lasso is weakly unfair, while a replay that reads the store as not enabled accepts it. The AC can fail. |
 
 Verdict after disposition pass 1: FND-001 and FND-002 are fixed. The
 re-derived FR-338-AC-21 and AC-22 states hold. Not mergeable until FND-003 is
 fixed.
+
+Verdict after disposition pass 2: every finding is fixed, `make check-spec-validation` exits 0 at e3bf34ee, and the head merges cleanly with origin/main 28a76640. Mergeable.
