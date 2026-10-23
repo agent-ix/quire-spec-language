@@ -34,3 +34,11 @@ amended statement no longer gives.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-395-AC-9 still reads "A consumer reaches the entry, its result types and FR-100's call types through the `qsl_replay` root alone". `Call.supplied`'s type is one of FR-100's call types, and after the amendment it comes from `quire_semantic_value`. TC-1089's own test file (qsl-replay/tests/call_requirements_root_only.rs) now imports it from there. So the AC contradicts the amended statement, and the test that backs it no longer meets its literal text. Fix: amend AC-9 to except `SuppliedLimits`, for example "... through the `qsl_replay` root alone, except `SuppliedLimits`, which comes from `quire_semantic_value::supplied_stop`". | spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md:178 |
+
+## Dispositions
+
+Round 1 was reviewed at b5e0c0d03, and the fix commit is 31f5d6c09. `quire validate` passes on FR-395 (exit 0). TC-1089 does not repeat the "root alone" wording, so it needs no change.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 31f5d6c09 | FR-395-AC-9 now adds "except `Call.supplied`'s `SuppliedLimits`, which the consumer imports from `quire_semantic_value::supplied_stop`". That matches the amended statement and call_requirements_root_only.rs. |

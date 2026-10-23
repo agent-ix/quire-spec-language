@@ -52,3 +52,11 @@ AC-8 test's fixture does not match the AC's member count.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | FR-403-AC-8 says the document's "three members are listed in two different orders, with a subsetting violation on two of them". The test admits four members (`a0`..`a3`), with `a0` and `a1` violating and `a2`/`a3` as subset targets. It asserts the intended property, but a reader cannot match the fixture to the AC. Fix one of them: either the AC says "members" (or "four"), or the fixture uses three members. | qsl-semantics/tests/it/model_population.rs:2235-2284 |
+
+## Dispositions
+
+Round 1 was reviewed at b5e0c0d03, and the fix commit is 31f5d6c09. I mutation-checked it: I changed `admit_binding`'s subsetting walk to document order and ran the test. It failed on listing `["a3", "a2", "a1"]` (left `"a2"`, right `"a1"`), then passed after the change was reverted. So the test detects a document-order walk.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 31f5d6c09 | The fixture now has three members. `a1` and `a2` each violate subsetting, `a3` is plain, and the two listings are `[a1, a2, a3]` and `[a3, a2, a1]`. The test expects `a1`, which matches FR-403-AC-8. |

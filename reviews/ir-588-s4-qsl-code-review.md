@@ -69,3 +69,15 @@ correct.
 | FND-003 | low | A relocation-history comment is now false. It says `PreconditionFailure` "moved to `value::expression::causes` ... narrowed to `pub(crate)`", but the type is now `quire_eval::PreconditionFailure` (pub) and causes.rs no longer has it. Delete the history paragraph rather than rewriting it: where an item used to live is not a feature. | qsl-semantics/src/value/mod.rs:198-203 |
 | FND-004 | low | The three new `compile_fail` doctests (`value::supplied::SuppliedRun`, `model::refusal::render_identity`, `value::modulo`) have no error code. Their neighbours use `compile_fail,E0432`. Without the code, a doctest passes on any compile error, such as a typo in the snippet, so it can stop checking that the path is gone without anyone noticing. Fix: `compile_fail,E0432`. | qsl-eval/src/lib.rs:69-79 |
 | FND-005 | low | Import hygiene in the repointed files. A second `use quire_semantic_value::supplied_stop::...` line sits beside the existing one instead of being merged into it (qsl-eval/src/value/expression/mod.rs:30-33, qsl-replay/src/execute.rs:41-42, execute/argument.rs:45-46, execute/composite_parity.rs:23-24, execute/value_parity.rs:20-21, execute/tests/composite_parity.rs:25-26, execute/tests/supplied.rs:17-18, qsl-eval/tests/it/supplied_phases.rs:31-38). In six test files the new `use quire_semantic_value` is placed above `use std::` (qsl-replay/tests/{call_replay_context,call_replay_context_root_only,call_requirements_facade,call_requirements_root_only}.rs, tests/it/{call_replay_context_items,call_requirements_items}.rs). | see summary |
+
+## Dispositions
+
+Round 1 was reviewed at b5e0c0d030b0e7759d1eb6910f4395a7ba581f75. The fix commit is 31f5d6c09. b5e0c0d03 moves both git deps back to `branch = "main"` (SV 472e609f, quire-eval a92145c3), with one lock entry each, which clears the merge-order condition. Ran: qsl-semantics `model_population::` with `--features test-support` (72 passed), qsl-eval doctests (13 passed), `cargo fmt --check` (clean).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 31f5d6c09 | `absent_key` now uses `let display = render_identity(&key);`, imported from `quire_semantic_value::catalog`. |
+| FND-002 | still-open | The PR body now names quire-driver instead of CG. It lists three sites but misses the fourth: `src/execute.rs:231` (`supplied: qsl_semantics::value::supplied::SuppliedLimits::default()`) on quire-driver main. No quire-driver PR adapting the import exists yet, and its deps follow QSL `main`, so merging this PR breaks quire-driver at its next lock update. Still missing: list all four sites, and open the paired quire-driver PR to land with this one. |
+| FND-003 | fixed 31f5d6c09 | The relocation-history paragraph about `PreconditionFailure` has been deleted from qsl-semantics/src/value/mod.rs. |
+| FND-004 | fixed 31f5d6c09 | All three doctests are now `compile_fail,E0432`, and they pass. |
+| FND-005 | fixed 31f5d6c09 | No changed file still has two `use quire_semantic_value::supplied_stop` lines, and the six test files now import SV after `std`. |
