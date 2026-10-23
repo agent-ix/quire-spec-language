@@ -12,8 +12,8 @@ use super::frame::identifier;
 use super::*;
 use crate::spine::OperationName;
 use crate::{
-    call_site, CallSite, CallSiteRefusal, FrameOperation, OperationSite, QualifiedName,
-    TerminalValue,
+    call_site, CallSite, CallSiteRefusal, DeclineCode, FrameOperation, OperationSite,
+    ProofRefusalCause, QualifiedName, TerminalValue,
 };
 
 const PACKAGE: &str = CONFIG_VERSION_PACKAGE_IDENTITY;
@@ -30,14 +30,19 @@ fn origin(identity: &str) -> serde_json::Value {
     }})
 }
 
-fn construct(name: &str, meaning: &str, members: serde_json::Value) -> serde_json::Value {
+fn construct(
+    name: &str,
+    meaning: &str,
+    shape: &str,
+    members: serde_json::Value,
+) -> serde_json::Value {
     json!({
         "kind": {"module": PACKAGE, "name": name},
         "moduleVersion": "1.0.0",
         "manifestDigest": PLACEHOLDER_DIGEST,
         "construct": {
             "identity": "none",
-            "shape": "record",
+            "shape": shape,
             "members": members,
             "meaning": meaning,
         },
@@ -131,34 +136,45 @@ fn owners_document(touch_diamond: bool) -> Vec<u8> {
         (
             "process",
             "quire.meaning.model.process/v1",
+            "record",
             json!({"identityFields": "required", "steps": "required"}),
         ),
         (
             "state_machine",
             "quire.meaning.model.state-machine/v1",
+            "record",
             json!({"states": "required", "transitions": "required"}),
         ),
         (
             "record_value_type",
             "quire.meaning.model.record-value-type/v1",
+            "record",
             json!({}),
         ),
         (
             "event_type",
             "quire.meaning.model.event-type/v1",
+            "record",
             json!({"occurrenceField": "required"}),
         ),
         (
             "persistence_interface",
             "quire.meaning.model.persistence-interface/v1",
+            "record",
             json!({"persists": "required"}),
+        ),
+        (
+            "variant_type",
+            "quire.meaning.model.variant-type/v1",
+            "enumeration",
+            json!({"variants": "required"}),
         ),
     ];
     let declared = envelope["constructs"]
         .as_array_mut()
         .expect("constructs is an array");
-    for (name, meaning, members) in constructs {
-        declared.push(construct(name, meaning, members));
+    for (name, meaning, shape, members) in constructs {
+        declared.push(construct(name, meaning, shape, members));
     }
     let machine = |name: &str, supertypes: Vec<String>, operations: Vec<serde_json::Value>| {
         // A specializing machine inherits `placed`; redeclaring it conflicts.
@@ -234,6 +250,18 @@ fn owners_document(touch_diamond: bool) -> Vec<u8> {
                 "occurrenceField": id("Happened/at"),
                 "fields": [field("Happened", "at", "ix://quire/native/Timestamp", "required")],
             }),
+        ),
+        declaration(
+            "Color",
+            "variant_type",
+            json!({"variants": [{
+                "identity": id("variant/Color-Red"),
+                "name": "Red",
+                "origin": {"source": {
+                    "sourceIdentity": id("spec"), "path": "spec.qspec",
+                    "startLine": 1, "startColumn": 3,
+                }},
+            }]}),
         ),
         declaration(
             "Store",
@@ -316,6 +344,18 @@ fn frame_operation(object: &str, operation: &str) -> FrameOperation {
     }
 }
 
+/// `refusal` settles `Declined` with cause `InvalidInput` and its own code.
+fn assert_declined_with_code(refusal: &CallSiteRefusal, what: &str) {
+    assert_eq!(
+        TerminalValue::from_call_site_refusal(refusal),
+        TerminalValue::Declined {
+            cause: ProofRefusalCause::InvalidInput,
+            code: DeclineCode::Qsl(refusal.code()),
+        },
+        "{what}"
+    );
+}
+
 fn clause_names(site: &OperationSite) -> Vec<&str> {
     site.clauses
         .iter()
@@ -344,23 +384,27 @@ fn anchor_context_form(unit: &str, document: &[u8], anchor: crate::WireNodeId) -
         .to_owned()
 }
 
-/// The `frame` node and its `generated` occurrence the compiled graph holds
-/// for the one operation frame whose anchor is `site.anchor`.
-fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite) {
+/// The frame `site` names is the compiled graph's frame of the operation
+/// that `owner` declares, at its `generated` occurrence.
+fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, owner: &str) {
     let packages = qsl_semantics::model::intake::package_input([document]);
     let compiled = compile_config_version_unit(unit, &packages);
-    let frames: Vec<_> = compiled
-        .package
-        .graph()
+    let graph = compiled.package.graph();
+    let frame = graph
         .semantic_graph()
         .nodes()
-        .filter(|node| {
-            node.node_tag() == qsl_semantics::check::NodeTag::State
-                && node.semantic_form() == "frame"
-        })
-        .map(|node| crate::WireNodeId::from_digest(*node.key().as_bytes()))
-        .collect();
-    assert!(frames.contains(&site.frame), "{frames:?}");
+        .find(|node| crate::WireNodeId::from_digest(*node.key().as_bytes()) == site.frame)
+        .expect("the frame is a node of the compiled graph");
+    assert_eq!(frame.semantic_form(), "frame");
+    let checked = graph
+        .operation_frame_by_identity(frame.key())
+        .expect("the compiled graph holds an operation frame for the node");
+    assert_eq!(
+        graph
+            .declaring_object(&identifier("Config"), checked.operation().declaring)
+            .map(quire_exact::Identifier::as_str),
+        Some(owner)
+    );
     assert_eq!(
         site.frame_occurrence,
         crate::OccurrenceKey::new(
@@ -385,7 +429,7 @@ fn call_site_selects_a_process_operation() {
         anchor_context_form(&unit, &document, site.site.anchor),
         "process"
     );
-    assert_generated_frame(&unit, &document, &site.site);
+    assert_generated_frame(&unit, &document, &site.site, "Flow");
 
     let refusal =
         locate(&unit, &document, &selection("Flow", "stop")).expect_err("Flow declares no `stop`");
@@ -420,7 +464,7 @@ fn call_site_selects_a_state_machine_operation_and_its_inherited_one() {
         anchor_context_form(&unit, &document, declared.site.anchor),
         "state_machine"
     );
-    assert_generated_frame(&unit, &document, &declared.site);
+    assert_generated_frame(&unit, &document, &declared.site, "OrderLifecycle");
 
     let inherited = locate(&unit, &document, &selection("ExpressLifecycle", "place"))
         .expect("place is inherited by ExpressLifecycle");
@@ -467,6 +511,7 @@ fn call_site_refuses_a_non_owner_and_an_ambiguous_operation() {
     let owners = [
         ("Holder", "record value type"),
         ("Happened", "event type"),
+        ("Color", "enum (variant type)"),
         ("VersionNumber", "scalar type"),
         ("Store", "persistence interface"),
         ("config_history", "population"),
@@ -491,13 +536,7 @@ fn call_site_refuses_a_non_owner_and_an_ambiguous_operation() {
                 .starts_with("invalid_model_binding/malformed-declaration"),
             "{kind}: {refusal}"
         );
-        assert!(
-            matches!(
-                TerminalValue::from_call_site_refusal(&refusal),
-                TerminalValue::Declined { .. }
-            ),
-            "{kind}"
-        );
+        assert_declined_with_code(&refusal, kind);
     }
 
     let wanted = selection("C", "touch");
@@ -519,8 +558,89 @@ fn call_site_refuses_a_non_owner_and_an_ambiguous_operation() {
             .starts_with("ambiguous_declaration/ambiguous-name"),
         "{refusal}"
     );
-    assert!(matches!(
-        TerminalValue::from_call_site_refusal(&refusal),
-        TerminalValue::Declined { .. }
-    ));
+    assert_declined_with_code(&refusal, "ambiguous touch");
+}
+
+/// FR-115-AC-6 over a state machine, and FR-116's target resolution: the
+/// `Config::OrderLifecycle::place` selection resolves to the state machine
+/// (never an object type), and the `frame_operation` `call_site` returns
+/// resolves back to the same frame for a process and a state machine alike.
+/// A target naming `ExpressLifecycle`, which only inherits `place`, is
+/// refused as an object that is not the declaring object.
+#[trace("TC-1162", "FR-115-AC-6", "FR-121-AC-25", "FR-121-AC-26")]
+#[test]
+fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
+    use crate::execute::frame::resolve_target;
+    use crate::{MalformedOperationReason, ReplayRefusal};
+
+    let document = owners_document(false);
+    let unit = owners_unit(&document, &format!("{FLOW_CLAUSES}\n{LIFECYCLE_CLAUSES}"));
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let compiled = compile_config_version_unit(&unit, &packages);
+    let graph = compiled.package.graph();
+    let package_id = compiled.emitted.package_id();
+
+    for (owner, name) in [("Flow", "go"), ("OrderLifecycle", "place")] {
+        let site = locate(&unit, &document, &selection(owner, name))
+            .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
+        let (context, frame) = resolve_target(graph, &site.site.frame_operation, package_id)
+            .unwrap_or_else(|refusal| panic!("{owner}::{name}: {refusal:?}"));
+        assert_eq!(
+            crate::WireNodeId::from_digest(*frame.frame().as_bytes()),
+            site.site.frame
+        );
+        assert_eq!(frame.operation().declaring, context);
+        assert_eq!(
+            graph
+                .declaring_object(&identifier("Config"), context)
+                .map(quire_exact::Identifier::as_str),
+            Some(owner)
+        );
+    }
+
+    let inherited = frame_operation("ExpressLifecycle", "place");
+    let Err(refusal) = resolve_target(graph, &inherited, package_id) else {
+        panic!("ExpressLifecycle only inherits place");
+    };
+    assert!(
+        matches!(
+            &refusal,
+            ReplayRefusal::MalformedOperationTarget {
+                reason: MalformedOperationReason::OnlyInherited,
+                ..
+            }
+        ),
+        "{refusal:?}"
+    );
+}
+
+/// FR-121: a field selection is for object types only. `Config::Flow.n` and
+/// `Config::OrderLifecycle.placed` name fields of a process and a state
+/// machine, and refuse `UnknownField`, as they did before processes and state
+/// machines became operation owners.
+#[trace("TC-1162", "FR-121-AC-18")]
+#[test]
+fn a_field_of_a_process_or_state_machine_is_not_selectable() {
+    let document = owners_document(false);
+    let unit = owners_unit(&document, FLOW_CLAUSES);
+    for (owner, field) in [("Flow", "n"), ("OrderLifecycle", "placed")] {
+        let wanted = crate::FieldName {
+            model: identifier("Config"),
+            object: identifier(owner),
+            field: identifier(field),
+        };
+        let refusal = call_site(
+            source(),
+            "call-site-owners.native",
+            unit.as_bytes(),
+            [document.as_slice()],
+            &DependencyInput::default(),
+            &wanted,
+        )
+        .expect_err("fields are selected on object types only");
+        assert!(
+            matches!(*refusal, CallSiteRefusal::UnknownField { .. }),
+            "{owner}.{field}: {refusal:?}"
+        );
+    }
 }

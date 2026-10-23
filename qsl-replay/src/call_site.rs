@@ -603,7 +603,7 @@ impl sealed::Locate for OperationName {
         let refuse = |build: fn(OperationName, DigestRecord) -> CallSiteRefusal| {
             Box::new(build(self.clone(), package_id))
         };
-        if graph.names_non_object_declaration(&self.model, &self.object) {
+        if graph.names_non_owner_declaration(&self.model, &self.object) {
             return Err(refuse(|selection, package| {
                 CallSiteRefusal::NotAnOperationOwner { selection, package }
             }));
