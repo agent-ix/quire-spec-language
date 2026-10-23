@@ -107,27 +107,26 @@ constraint, in FR-123's order.
   (ADR-018 DL-6). It SHALL pass the same request limits and Cancel handle
   to the closure check, and immediately propagate `Rejected` or `Stopped`
   unchanged.
-- The checker SHALL charge component enumeration, partition and
-  acceptance/fairness work to the same counters, continuing the closure
-  check's consumption within the one invocation (FR-338). The checker SHALL
-  charge once each product state, edge or automaton state that the
-  component rules materialize first, and SHALL NOT charge again one that
-  the closure check charged. The checker SHALL charge the subject's FR-120
-  evaluation meter once per model state for each FR-120 enabled-set or
-  fairness-enabledness evaluation the component rules perform, and the
-  checker SHALL reuse, charging nothing, a value the closure check already
-  evaluated. The closure check evaluates the successor expansion and the
-  atoms of each state and no constraint's enabled set; the first component
-  rule that reads a model state's enabled set charges it, and every later
-  read of that model state, from any component, `sub` level, constraint or
-  product state sharing it, reuses it.
-- The checker SHALL check the Cancel handle at each charge and at each
-  component, listed state and computed edge it reads. When component work
-  reaches a limit, the checker SHALL return
-  `Stopped(IncompleteCause::LimitReached{limit, value, setting})` with the
-  actual consumed value and the request setting; when the handle is
-  cancelled, it SHALL return `Stopped(IncompleteCause::Cancelled{source})`,
-  as FR-338 specifies.
+- The checker's component work (enumeration, partition, `sub` levels and
+  every witness rule) SHALL read only facts the closure check computed: the
+  reached product states, their edges, the automaton states, each model
+  state's enabled set (the labels of its FR-120 transitions, FR-130,
+  ADR-019 FS-1) and each state's phase. It SHALL evaluate no contract
+  clause or atom and SHALL materialize no product state, edge or automaton
+  state, since the components partition the closure's reached states.
+  Component work therefore SHALL charge none of `max_states`,
+  `max_transitions` and `max_automaton_states` and SHALL NOT consume the
+  subject's FR-120 evaluation meter. The meter is not cumulative across the
+  invocation: FR-120 gives each clause evaluation a fresh `Meter` with the
+  request's budget (FR-107), so every meter stop of a component check comes
+  from a clause evaluation inside the closure check.
+- The checker SHALL check the Cancel handle at each component, listed state
+  and computed edge component work reads; cancellation is the only stop
+  component work can reach. When the handle is cancelled during component
+  work, the checker SHALL return `Stopped(IncompleteCause::Cancelled{source})`,
+  as FR-338 specifies. A limit stop of a component check SHALL be the
+  closure check's own `Stopped(IncompleteCause::LimitReached{limit, value,
+  setting})`, propagated unchanged.
   `Accepted` requires every component check to finish; no stop is translated into a defect or an accepted proof.
 - The checker SHALL reject with `NotPartition` when the components do not
   partition the closure's reached states.
@@ -170,7 +169,7 @@ constraint, in FR-123's order.
 | FR-339-AC-3 | Accepted vector: FR-228-AC-5's synthesized SCC with `r` the only accepting state yields a component certificate whose component `{p, q, r}` carries `UnfairVisibility` naming the pair (`b`, `ℓ`), with `sub` `{r}` (`Trivial`) then `{p, q}` (`MissingAcceptance`), and `check_components` accepts it although the removed edge `q → r` goes from `{p, q}` to the earlier `{r}`; the same certificate with the witness `UnfairWeak` over that pair, or with `q → r` not removed (so `BackwardEdge` fires), is rejected. | Test (TC-526) |
 | FR-339-AC-5 | Fixture: ADR-018 §6's example unit with universe `{a, b}`, both versions 0, and a checked package that carries the clause's `temporal_clause` node in QSpec FR-370's shape with a guarded `on each` activation, as in FR-338-AC-10 (S4 refuses an `on each` clause `NotEmitted`, FR-337), the condition read by the test's own letters. `eventually holds(c.versionNumber = 2)` under infinite-trace `on each` with the condition `c.versionNumber = 1` and a weak `each` constraint on `attemptUpdate` returns a `ComponentCertificate` in which, for binding `a`, the component of the active states at `(1,0)`, `(1,1)`, `(1,2)` carries `UnfairWeak` naming `upd(a)` and the component of the waiting states carries `MissingAcceptance{set: 0}` (symmetrically for `b`); `check_components` accepts it and FR-127 settles `proved`. The same clause with the condition `c.versionNumber = 7` and no fairness constraint gives a certificate whose every non-trivial component carries `MissingAcceptance{set: 0}`, accepted. Rejected vectors on the first certificate: the waiting component's witness changed to `UnfairWeak` naming `upd(a)` is `WitnessFails` (edges inside it take `upd(a)`); the active component's witness changed to `MissingAcceptance{set: 0}` is `WitnessFails` at its first state; the closure with binding `a`'s active state at `(1,0)` removed is `SuccessorMissing` at it; with the condition undefined at version 1, `BadState` at binding `a`'s waiting state at `(0,0)`, whose expansion reads it. | Test (TC-1215) |
 | FR-339-AC-4 | Package identity. AC-1's certificate carries in its closure the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its closure's `package_id` replaced by that of the same unit with the claim's target edited to `c.versionNumber = 1` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the closure's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with AC-2's `upd(a)` witness (a `WitnessFails` defect) still returns `PackageMismatch`, because no rule is evaluated. | Test (TC-1141) |
-| FR-339-AC-6 | Charges. AC-1's certificate checked with `max_states`, `max_transitions` and `max_automaton_states` equal to the product states, edges and automaton states its closure holds is `Accepted`; with `max_states` one below that count the closure check returns `Stopped(LimitReached{MaxStates, value, setting})` with the consumed value and the request's setting, never `Rejected` or `Accepted`. Component-work exhaustion: the `Ring` unit (population `rings`, field `v: Int[0, 2]`, universe `{r}`, initial `v` 0, operations `a` from 0 to 1, `x` from 0 to 0, `b` from 1 to 2 and `c` from 2 to 0, no `terminal` declaration) with `always eventually holds(r.v = 1)` under a weak constraint on `a` (no granularity) returns `Holds{Exhaustive}` over five product states `(0,q0)`, `(0,q1)`, `(1,q0)`, `(2,q0)`, `(2,q1)` (canonical breadth-first indices 0 to 4) and nine edges, with two automaton states, and a certificate whose components are listed `{(0,q0), (1,q0), (2,q0)}` (`MissingAcceptance`), `{(2,q1)}` (`Trivial`), `{(0,q1)}` (`UnfairWeak` naming `a`, enabled at `v` 0 and taken by no edge inside, whose one edge is `x`). Checked with `max_states` 5, `max_transitions` 9 and `max_automaton_states` 2 it is `Accepted`, since the closure check charges all five product states, nine edges and two automaton states and the three components charge none of them. Let `M` be the evaluation-meter units the closure check consumes (the same certificate with no components) and `E` the units FR-120's enabled-set evaluation of the model state `v` 0 charges: the first two components read no enabled set and charge nothing, and the third charges `E` once, however many of its product states share `v` 0. With the meter budget `M + E` the certificate is `Accepted`; with `M + E - 1` the checker returns `Stopped(LimitReached{EvaluationMeter, value, setting})` at that enabled-set evaluation during the third component, with the consumed value `M + E - 1` and the request's meter setting, and the counters still 5, 9 and 2. AC-1's certificate checked with a Cancel handle cancelled at its first check after the closure check completes returns `Stopped(Cancelled{source: Requested})`. Each stop settles `incomplete` (FR-127), never `CertificateRejected` or `proved`. | Test (TC-526) |
+| FR-339-AC-6 | Charges. AC-1's certificate checked with `max_states`, `max_transitions` and `max_automaton_states` equal to the product states, edges and automaton states its closure holds is `Accepted`; with `max_states` one below that count the closure check returns `Stopped(LimitReached{MaxStates, value, setting})` with the consumed value and the request's setting, never `Rejected` or `Accepted`. Component work charges nothing: the `Ring` unit (population `rings`, field `v: Int[0, 2]`, universe `{r}`, initial `v` 0, operations `a` from 0 to 1, `x` from 0 to 0, `b` from 1 to 2 and `c` from 2 to 0, no `terminal` declaration) with `always eventually holds(r.v = 1)` under a weak constraint on `a` (no granularity) returns `Holds{Exhaustive}` over five product states `(0,q0)`, `(0,q1)`, `(1,q0)`, `(2,q0)`, `(2,q1)` (canonical breadth-first indices 0 to 4) and nine edges, with two automaton states, and a certificate whose components are listed `{(0,q0), (1,q0), (2,q0)}` (`MissingAcceptance`), `{(2,q1)}` (`Trivial`), `{(0,q1)}` (`UnfairWeak` naming `a`, enabled at `v` 0 by the closure's enabled set and taken by no edge inside, whose one edge is `x`). Checked with `max_states` 5, `max_transitions` 9 and `max_automaton_states` 2 it is `Accepted`: the closure check charges all five product states, nine edges and two automaton states and the three components charge none of them. Under the default meter budget the certificate is `Accepted`, as FR-338's closure check of its closure alone is. Under a meter budget whose `work_units` is 0, the closure check's first clause or atom evaluation at the initial state is denied, and `check_components` returns `Stopped(LimitReached{EvaluationMeter, value, setting})` equal in limit, value and setting to the stop FR-338's closure check of the same closure returns under that budget, before any component rule runs; for every meter budget the certificate is accepted exactly when its closure check alone completes. AC-1's certificate checked with a Cancel handle cancelled at its first check after the closure check completes returns `Stopped(Cancelled{source: Requested})`. Each stop settles `incomplete` (FR-127), never `CertificateRejected` or `proved`. | Test (TC-526) |
 
 ## Dependencies
 

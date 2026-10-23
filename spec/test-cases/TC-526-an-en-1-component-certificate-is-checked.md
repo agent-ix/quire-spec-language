@@ -28,8 +28,9 @@ Scope: FR-339-AC-1 to FR-339-AC-3 and FR-339-AC-6.
    `max_states` one below, then with a Cancel handle cancelled at its first
    check after the closure check completes.
 5. Check the certificate of FR-339-AC-6's `Ring` proof with `max_states` 5,
-   `max_transitions` 9 and `max_automaton_states` 2; with the meter budget
-   `M + E`; with `M + E - 1`.
+   `max_transitions` 9 and `max_automaton_states` 2; under the default
+   meter budget; under a meter budget whose `work_units` is 0, then check
+   its closure alone (FR-338) under that budget.
 
 Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
 
@@ -42,5 +43,6 @@ Tag the tests `#[trace("TC-526", "FR-339-AC-n")]`.
 - Step 4: accepted; `Stopped(LimitReached{MaxStates, value, setting})`;
   `Stopped(Cancelled{source: Requested})`; neither stop settles
   `CertificateRejected` or `proved`.
-- Step 5: accepted; accepted; `Stopped(LimitReached{EvaluationMeter, M + E - 1,
-  setting})` during the third component with the counters at 5, 9 and 2.
+- Step 5: accepted; accepted; `Stopped(LimitReached{EvaluationMeter, value,
+  setting})` equal in limit, value and setting to the closure-only check's
+  stop, returned before any component rule runs.
