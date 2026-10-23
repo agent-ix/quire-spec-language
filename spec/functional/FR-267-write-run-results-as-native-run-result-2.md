@@ -191,7 +191,7 @@ row.
 | `holds` | `Completed(true)` | none | `success`, `true`, `closed-scope` | absent |
 | `violated` | `Completed(false)` | `position`, `counterexample` | `violation`, `false`, `closed-scope` | absent |
 | `undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample` | `violation`, `false`, `closed-scope` | `{"kind": "undefined", "reason": R}`, `R` the undefined value's FR-100 reason |
-| `insufficient-data` | `Undefined` with `insufficient-data` | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | `{"kind": "undefined", "reason": "insufficient-data"}` |
+| `insufficient-data` | `InsufficientData` (FR-327) | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | `{"kind": "undefined", "reason": "insufficient-data"}` |
 | `pending` | `Pending` | none | `inconclusive`, absent, `unsettled` | absent |
 | `missing-fairness-premise` | `MissingFairnessPremise` | `constraint` | `unsupported`, absent, `unavailable` | `{"kind": "refused", "code": "unsupported_projection", "cause": "missing-fairness-premise"}` |
 | `incomplete` | `Incomplete` | none | `incomplete`, absent, `unavailable` | FR-100's `{"kind": "incomplete", "limit": ...}` |
