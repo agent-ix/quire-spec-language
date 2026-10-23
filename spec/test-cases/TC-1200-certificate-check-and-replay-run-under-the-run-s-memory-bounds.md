@@ -1,5 +1,5 @@
 ---
-id: TC-1198
+id: TC-1200
 title: "The certificate check and replay run under the run's memory bounds"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-227
     type: verifies
 ---
-# TC-1198: The certificate check and replay run under the run's memory bounds
+# TC-1200: The certificate check and replay run under the run's memory bounds
 
 ## Description
 
@@ -29,8 +29,8 @@ Scope: FR-338-AC-15, FR-227-AC-5.
 3. Replay `SB`'s `tso` counterexample with `max_store_buffer` unset, then 1.
 4. Replay `SB`'s `ra` counterexample with `max_messages` unset, then 1.
 
-Tag the tests `#[trace("TC-1198", "FR-338-AC-15")]` and
-`#[trace("TC-1198", "FR-227-AC-5")]`.
+Tag the tests `#[trace("TC-1200", "FR-338-AC-15")]` and
+`#[trace("TC-1200", "FR-227-AC-5")]`.
 
 ## Expected Results
 
