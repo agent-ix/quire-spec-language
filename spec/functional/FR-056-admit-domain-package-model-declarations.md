@@ -691,7 +691,7 @@ unchanged.
 
 A `typeRef` of the form `ix://quire/unit/<name>` on a field, an operation
 parameter, an operation result, an alias `target`, a sequence `items`, a map
-`values` or a variant case `payloadType` names a unit of the compiling unit
+`values` names a unit of the compiling unit
 (QSpec FR-322 "Model-owned members" step 4; FR-322-AC-80). Intake SHALL admit
 it unresolved and carry it on the member. The assembler SHALL resolve
 `<name>`, the unit's qualified name, in the unit namespace of the compiling
@@ -701,9 +701,18 @@ of it. A name that matches no unit SHALL refuse `missing_declaration`/
 `missing-name`, naming the member and its typed member path
 (`Operation.params[i].typeRef`, `Operation.returns.typeRef`,
 `TypeDefinition.target`, `TypeDefinition.items` or `TypeDefinition.values`).
-A unit `typeRef` as a `reference` `target` or a constraint `appliesTo` is
-refused by intake (QSpec FR-154). Admitting the form depends on the semantic-IR
+A unit `typeRef` as a constraint `appliesTo` is admitted and read as a unit
+constraint (FR-230 "Unit-typed members"); as a `reference` `target` it refuses
+`invalid_model_binding`/`malformed-declaration`, because a quantity has no
+identity to refer to. Admitting the form depends on the semantic-IR
 reader accepting it (QSpec FR-208 "Field types").
+
+A variant case `payloadType` of `ix://quire/native/Clock` or of a unit is read by
+QSpec FR-154's variant payload row as every payload type is, `unsupported_construct`/
+`declaration-form` at `Variant.payloadType` (FR-056-AC-25): the merged row reads
+"A case of a variant type (FR-208) has a `payloadType` that resolves |
+`unsupported_construct`/`declaration-form`". That row refuses every payload type, so a
+clock or unit payload is one case of it and not a capability this requirement removes.
 
 A `typeRef` `ix://quire/native/Clock` on a field, an operation parameter, an
 operation result, an alias `target`, a sequence `items` or a map `values` is a clock member (QSpec FR-154, FR-415
@@ -1052,8 +1061,9 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-48 | A function over `a: Bytes`, `b: Bytes` with the bodies `a = b`, `a != b`, `length(a)` and `concat(a, b)`, and over `x: JsonObject`, `y: JsonObject` with the bodies `x = y` and `x != y`, checks with the result types `Boolean`, `Boolean`, `Integer`, `Bytes`, `Boolean` and `Boolean`. Evaluation: `00ff` = `00ff` is `true`, `00ff` = `00fe`, `00ff` = `00ff00` and `""` = `00` are `false`, `length` of `""` is `0` and of `deadbeef` is `4`, `concat(00ff, 10)` is `00ff10`, `concat("", a)` is `a`; the JsonObject payloads `{"a":1,"b":[true,null]}` and `{"a":1,"b":[true,null]}` are equal and `{"a":1,"b":[true,null]}` against `{"a":1,"b":[null,true]}`, `{"a":2,"b":[true,null]}` and `{"a":1}` are unequal. The same comparisons over record fields, call results and `let` bindings give the same results. | Test (TC-1231) |
 | FR-056-AC-49 | `a = x` over `a: Bytes`, `x: JsonObject`, `a = s` over `s: String`, `x = t` over `t: Text[0, 8; nfc]`, `a = n` over `n: Integer` and `a = u` over `u: UUID` each refuse `ill_typed`/`type-mismatch`; `a < b`, `a + b` over `Bytes`, `x <= y` over `JsonObject`, `length(x)` and `concat(x, y)` over `JsonObject` each refuse `ill_typed`/`operator-ineligible`; `length(s)` over `String`, `concat(a, s)` and `length(a, a)` refuse `ill_typed`/`type-mismatch`; a unit that also declares `function length using v(b: Bytes): Integer pure { 0 }` refuses the call `length(b)` as `ambiguous_declaration`/`ambiguous-name`. A `Duration` parameter beside a unit declaring `dimension Time; unit s : Time = rational(1, 1);` has the type `Quantity<s>`, `d = rational(3, 2) s` over `d: Duration` checks, and the same `Duration` with no unit `s`, with two units `s`, and with `unit s` typed by a dimension other than `Time` refuse `missing_declaration`/`missing-name`, `ambiguous_declaration`/`ambiguous-name` and `ill_typed`/`operator-ineligible` respectively. | Test (TC-1231) |
 | FR-056-AC-42 | A domain package whose operation parameter has `typeRef` `ix://quire/unit/ms` is admitted by intake with the `typeRef` unresolved; the assembler resolves it to the unit `ms` of a compiling unit that declares `ms`, and refuses it `missing_declaration`/`missing-name` naming `Operation.params[0].typeRef` when the unit declares no `ms`. A `typeRef` of the form `ix://quire/unit/<name>` on a field and on a result behave the same. | Test (TC-147) |
-| FR-056-AC-44 | A domain package whose operation parameter, operation result and alias `target` have `typeRef` `ix://quire/native/Clock`, whose field `Call.s` is typed by that alias, whose field `Call.w` is a clock with presence `optional`, whose record value type `Timer` holds a clock field `x`, whose sequence `items`, map `values` and field `Call.q` (multiplicity `{0, 3, true, false}`) are `Clock` is admitted by intake with no declaration built for any clock; `Call.w` is `Option<Clock>` and `Call.q`, the sequence and the map are clock collections. A `reference` `target` of `Clock` refuses intake with FR-154's `malformed-declaration`. | Test (TC-147) |
+| FR-056-AC-44 | A domain package whose operation parameter, operation result and alias `target` have `typeRef` `ix://quire/native/Clock`, whose field `Call.s` is typed by that alias, whose field `Call.w` is a clock with presence `optional`, whose record value type `Timer` holds a clock field `x`, whose sequence `items`, map `values` and field `Call.q` (multiplicity `{0, 3, true, false}`) are `Clock` is admitted by intake with no declaration built for any clock; `Call.w` is `Option<Clock>` and `Call.q`, the sequence and the map are clock collections. A `reference` `target` of `Clock` is admitted and read as `Reference<Clock>`, a place reference (FR-230 "Clock references"), with no declaration built for the clock. | Test (TC-147) |
 | FR-056-AC-45 | A domain package whose alias `target`, sequence `items` and map `values` have `typeRef` `ix://quire/unit/ms` is admitted with each `typeRef` unresolved; the assembler resolves each to the unit `ms` of a compiling unit that declares `ms`, reading `Quantity<ms>`, `Sequence<Quantity<ms>>` and `Map<Text, Quantity<ms>>`, and refuses each `missing_declaration`/`missing-name` naming `TypeDefinition.target`, `TypeDefinition.items` and `TypeDefinition.values` when the unit declares no `ms`. | Test (TC-147) |
+| FR-056-AC-50 | A domain package whose `reference` type `ClockRef` has `target` `ix://quire/native/Clock`, whose field `Call.r` is typed `ClockRef`, and whose constraints `max` `"3"` and `min` `"1"` have `appliesTo` the alias `Timeout` of `Clock` is admitted by intake with no declaration built for any clock; `Call.r` is `Reference<Clock>`, the `max` constraint is a clock constraint and the `min` constraint is refused at S3 by FR-230-AC-25. A constraint `max` `"10"` with `appliesTo` the alias `Level` of `ix://quire/unit/ms` is admitted and read as the interval of FR-230-AC-26; a `reference` `target` `ix://quire/unit/ms` refuses `invalid_model_binding`/`malformed-declaration` at `TypeDefinition.target`; a variant case `payloadType` of `ix://quire/native/Clock` or `ix://quire/unit/ms` refuses `unsupported_construct`/`declaration-form` at `Variant.payloadType` (FR-056-AC-25). | Test (TC-147) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148) |
 
 ### FR-056-AC-17

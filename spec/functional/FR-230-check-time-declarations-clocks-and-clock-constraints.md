@@ -404,6 +404,37 @@ ill-formed use.
   components SHALL refuse `invalid_timed_model`/`clock-write` at the occurrence, and a clock
   collection written anywhere but as the right side of such a conjunct SHALL refuse
   `clock-write`. A frame that does not name `f` SHALL leave its places and provenance unchanged.
+- **Clock references.** `Reference<Clock>` (a package `reference` whose `target` is
+  `ix://quire/native/Clock`, or an alias of it) SHALL denote one clock place of the model, named
+  by object, field path and, in a clock collection, slot, in the order of "Places". A value of
+  `Reference<Clock>` is data: it holds no clock value, so it SHALL be stored in any field,
+  parameter, result, record component or collection element a data value may occupy, and
+  `Option<Reference<Clock>>` is absent or one place. The checker SHALL admit `ref(p)`, for `p` a
+  place expression, as a data term whose value is the place `p` denotes, and `deref(r)` for `r` a
+  `Reference<Clock>` as a place expression. A `deref(r)` SHALL check as one place for each place
+  `r` can denote (every place of the model whose type is the clock type the reference targets),
+  each with the data condition `r = ref(place)`, and a constraint over it SHALL record the
+  disjunction of those guarded constraints, as a path through a reference field does. A
+  `deref(r)` of an absent `Option<Reference<Clock>>`, or of a reference to a slot place, SHALL be
+  accepted only where the same guard conjunct, the precondition or the time invariant's
+  predicate establishes `present(r)` and the slot's presence, and SHALL be refused otherwise
+  `undefined_expression`/`unproved-presence` at the `deref`. A reset `deref(r) = c` SHALL check as
+  a reset of each place `r` can denote, under the frame rule of "Operation parameters". `=` and
+  `!=` over two `Reference<Clock>` compare the places they denote, by object, field path and
+  slot, and never the clocks' values; they are data reads. A reference to a slot place names the
+  slot, so it keeps naming that slot when the collection moves its element. The state key of
+  a state SHALL hold, for a `Reference<Clock>`, the place's index in the "Places" order and no
+  clock value.
+- **Clock constraints on a type.** A package constraint whose `appliesTo` is the clock type
+  (`ix://quire/native/Clock` itself or an alias of it) is a **clock constraint**. The keywords
+  admitted are `max`, with `operands.value` an exact non-negative rational number of the model's
+  time unit, which the checker SHALL record as the time invariant `x <= c` on every clock place of
+  that type (the places typed by the alias, or every clock place when `appliesTo` is `Clock`),
+  guarded by the place's presence, and `min`, with the same operand, which the checker SHALL
+  refuse `invalid_timed_model`/`time-invariant-shape` because a lower bound on every clock is not
+  an upper-bound invariant and no clock is below it at a reset. Any other keyword on a clock
+  refuses `invalid_model_binding`/`malformed-declaration` at the constraint, because no other
+  keyword has a meaning for a clock. A time source is required as for any clock place.
 - **Dense time.** A clock place held by a model object field SHALL check by
   "Clocks and resets", under `Dense` only. A function, predicate or record
   type that mentions `Clock` is admitted in any unit; the requirement binds
@@ -428,14 +459,25 @@ position that takes a type, and the checker SHALL treat it alike in each.
   position, and a quantity of another unit, including another unit of the same
   dimension, SHALL refuse `ill_typed`/`type-mismatch` at the expression.
 - A package field, operation parameter, operation result, alias `target`,
-  sequence `items`, map `values` and variant `payloadType` whose `typeRef` is
+  sequence `items` and map `values` whose `typeRef` is
   `ix://quire/unit/<name>` SHALL read as `Quantity<u>` at that position, the
   alias, sequence or map as the alias, `Sequence<Quantity<u>>` or
   `Map<Text, Quantity<u>>` of it (FR-056). A `name` that matches no unit SHALL
   refuse `missing_declaration`/`missing-name` naming the member and its typed
-  member path.
-- A unit-typed member SHALL carry no default and no constraint: its domain is
-  every quantity of the unit.
+  member path. A variant case `payloadType` of a unit or of `Clock` is read by QSpec FR-154's
+  variant payload row as every payload type is (FR-056).
+- A unit-typed member SHALL carry no default. A package constraint whose
+  `appliesTo` is the unit (`ix://quire/unit/<name>` or an alias of it) SHALL admit the keywords
+  `min` and `max`, `operands.value` an exact rational number of the unit written as a canonical
+  rational string, and the constrained position's domain SHALL be the quantities of the unit
+  from `min` to `max`. A literal of the position outside that interval SHALL refuse
+  `ill_typed`/`type-mismatch` at the literal, and an operation whose postcondition does not
+  establish the interval for a written position is reported by the invariant check as for an
+  `Int[lower, upper]` position. Any other keyword on a unit refuses
+  `invalid_model_binding`/`malformed-declaration` at the constraint. A unit-typed member
+  without a constraint has every quantity of the unit as its domain. A `reference` `target` of a
+  unit refuses `invalid_model_binding`/`malformed-declaration`, because a quantity has no
+  identity to refer to.
 
 ### Timed facet gate
 
@@ -509,6 +551,9 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-21 | `self.ts[1].x = 0 ms` checks as a reset of slot 1 and refuses `undefined_expression`/`unproved-presence` at `1` unless the precondition establishes `1 < size(self.ts)`; `self.m[k].x = 0 ms` resets by key and `self.m[k] = Timer { x: 0 ms, n: 1 }` replaces the entry with a fresh one; `forall(e in self.ts: e.n > 1 implies e.x = 0 ms)` records a reset with the data predicate `e.n > 1`; the guard `forall(e in self.ts: e.x <= 3 ms)` records one entry for each size 0 to 3 with the conjunction over the live slots (true for size 0); `exists(e in self.ts: e.n = 2 and e.x >= 1 ms)` records one convex part for each slot with the data predicate "holds the slot" and `n = 2`; a time invariant body `forall(e in self.ts: e.x <= 3 ms)` records `x <= 3` on each live slot and a body `exists(...)` refuses `time-invariant-shape`; `self.a = self.b`, `contains(self.ts, t)` and `count<Int>(e in self.ts: e.x >= 1 ms)` over clock collections refuse `clock-read-outside-constraint`, while `size(self.ts) > 1` and `e.n` check as data reads. | Test (TC-685) |
 | FR-230-AC-22 | `Option<Clock>` is covered in every position: a field, an operation parameter `arm(c: Option<Clock>)` with `c = 0 ms` (one instance for each guarded place, each making its place present), a function result `maybe(o: Timer): Option<Clock>` with the body `o.x` (a place expression) and the body `absent` (an inactive place), an alias target, a record component, a union payload, `Option<Timer>` with `value(self.o).x >= 1 ms` refusing `undefined_expression`/`unproved-presence` unless `present(self.o)` holds, `Sequence<Option<Clock>>` with a slot whose `value` needs both the slot's and the element's presence, and `Option<Sequence<Clock>>` whose slots are live only while the option is present. | Test (TC-685) |
 | FR-230-AC-23 | A domain package `acme/rpc` with a sequence type over `ix://quire/native/Clock`, a map type over it, a field `Call.q` of clock multiplicity `{0, 3, true, false}`, a field `Call.r` typed `Timer` with `{0, 2, true, false}` and an operation parameter and result of multiplicity `{0, 2, true, false}` checks to the clock collections `Call.q`, `Call.r.[slot].x` and the parameter and result of those shapes, with static dimension `3 + 2` for one `Call`; a model whose collection maximum is `4` instead of `3` has a different package identity. | Test (TC-685) |
+| FR-230-AC-24 | With object `Call` holding clocks `x` and `y` and a field `r: Reference<Clock>`, a universe of two calls, and `time dense unit ms`, the precondition `deref(self.r) >= 1 ms` checks to four convex parts, `Call1.x >= 1`, `Call1.y >= 1`, `Call2.x >= 1` and `Call2.y >= 1`, each with the data condition `self.r = ref(place)`; the postcondition `self.r = ref(self.x)` writes the data value of the place `Call.x` of `self` and resets no clock; `deref(self.r) = 0 ms` resets each of the four places and refuses `invalid_timed_model`/`clock-write` at the reset when the frame names only `Call.x`. `ref(self.x) = ref(other.x)` checks as a data comparison and is false for two calls; `deref(self.r)` over `r: Option<Reference<Clock>>` refuses `undefined_expression`/`unproved-presence` at the `deref` without `present(self.r)` in the guard and checks with it. Two states that differ only in clock values have the same state key, and two that differ in `r` have different state keys. A `ref(self.q[0])` for a slot place names slot `0` and still names slot `0` after the collection reorders its elements. | Test (TC-685) |
+| FR-230-AC-25 | A constraint `max` `"3"` whose `appliesTo` is the alias `Timeout` of `Clock` checks as the time invariant `x <= 3` on every place typed `Timeout` and on no other clock, guarded by the presence of an `Option<Timeout>` place; the same constraint with `appliesTo` `ix://quire/native/Clock` bounds every clock place of the model by `3`; a `min` `"1"` constraint refuses `invalid_timed_model`/`time-invariant-shape`; `minLength` and `format` constraints and a negative or non-rational `max` operand each refuse `invalid_model_binding`/`malformed-declaration` at the constraint; the same constraint under a `time tick` or untimed unit refuses `clock-without-dense-time`. | Test (TC-685) |
+| FR-230-AC-26 | A constraint `min` `"0"` and `max` `"10"` whose `appliesTo` is the alias `Level` of `ix://quire/unit/ms` gives `Level` the domain of the quantities of `ms` from `0` to `10`: `5 ms` checks and `11 ms` refuses `ill_typed`/`type-mismatch` at the literal; a keyword `minLength` on it refuses `invalid_model_binding`/`malformed-declaration`; a package `reference` whose `target` is `ix://quire/unit/ms` refuses `invalid_model_binding`/`malformed-declaration` at `TypeDefinition.target`. | Test (TC-685) |
 
 ## Dependencies
 

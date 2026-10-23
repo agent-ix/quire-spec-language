@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-23. Steps 1 to 7 and 10 to 21 need a header that can select `quire.temporal.complete/v1` and wait for it. Steps 8 and 9 run now.
+Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-26. Steps 1 to 7 and 10 to 24 check units whose header selects `quire.temporal.complete/v1`; steps 8 and 9 check the facet gate.
 
 ## Test Procedure
 
@@ -39,6 +39,9 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 19. Check the selectors, quantified reads, resets by selection, time invariant bodies and refused queries of FR-230-AC-21.
 20. Check the `Option<Clock>` positions of FR-230-AC-22.
 21. Check the package clock collections of FR-230-AC-23, then the same package with the maximum changed.
+22. Check the place references, `ref` and `deref` terms, resets through a reference, comparisons and state keys of FR-230-AC-24.
+23. Check the clock constraints of FR-230-AC-25 under `time dense`, `time tick` and an untimed unit.
+24. Check the unit constraints and the unit `reference` target of FR-230-AC-26.
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -65,3 +68,6 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 19: the resets, the guard entries by size, the convex parts for `exists`, `unproved-presence` at `1`, `time-invariant-shape` for the `exists` body and `clock-read-outside-constraint` for `=`, `contains` and `count`, with `size` and `e.n` admitted.
 - Step 20: each `Option<Clock>` position as stated, with the instances of `arm`, the place expressions of `maybe` and the refusals.
 - Step 21: the clock collections of the package with dimension `5` for one `Call`, and a different package identity under the changed maximum.
+- Step 22: the four guarded convex parts, the data write of `ref(self.x)`, `clock-write` at the reset outside the frame, the data comparison, `unproved-presence` without and no refusal with `present(self.r)`, equal state keys for equal data and different keys for different `r`, and slot `0` kept across a reorder.
+- Step 23: the `x <= 3` invariants on the typed places, the bound on every clock, `time-invariant-shape` for `min`, `malformed-declaration` for the other keywords and operands, and `clock-without-dense-time` under `time tick` and untimed units.
+- Step 24: `5 ms` checks, `11 ms` refuses `ill_typed`/`type-mismatch`, and `malformed-declaration` for `minLength` and for the unit `reference` target.
