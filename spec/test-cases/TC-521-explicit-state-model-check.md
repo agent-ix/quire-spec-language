@@ -53,6 +53,13 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    FR-370's shape, with its `when` condition read by the test's own letters.
 10. The stutter-step clause of FR-126-AC-17 over `Counter`, then its
     counterexample replayed.
+11. The guarded TP-4 clauses of FR-126-AC-16, from the same test-built
+    checked package form: over the example unit, `eventually
+    holds(c.versionNumber = 2)` `on each` when `c.versionNumber = 1` under a
+    weak `each` constraint and under a weak constraint with no granularity,
+    then when `c.versionNumber = 7` with no fairness, then with the
+    condition undefined at version 1; over `Counter`, `always eventually
+    holds(c.value = 0)` `on each` when `c.value = 3` and when `c.value = 7`.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
@@ -94,3 +101,9 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 10: `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a
   terminal-stutter loop at position 3 and length 4; then
   `reproduced-with-evaluated-witness`.
+- Step 11: `Holds{Exhaustive}` with an accepted component certificate;
+  `Violated` bound to `a` with the stem `(0,0) -upd(a)-> (1,0)` and the
+  three-step `upd(b)` loop, length 4; `Holds{Exhaustive}`; `Violated`,
+  `kind: UndefinedEvaluation` naming the activation at position 1;
+  `Violated` with the prefix to value 3 and the terminal stutter loop;
+  `Holds{Exhaustive}`.

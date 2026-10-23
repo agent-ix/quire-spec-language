@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-126
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-370
+    type: references
 ---
 # FR-339: Check an EN-1 component certificate
 
@@ -69,6 +71,13 @@ pub fn check_components(
 A `ComponentCertificate` names its `package_id` once, as its closure's
 `package_id` (FR-338); its components carry none.
 
+`MissingAcceptance`'s `set` indexes the generalized Büchi acceptance sets
+of the item's automaton in FR-338's order, by the canonical bytes of their
+identities. For a TP-4 clause with a guarded `on each` activation (context
+activation `"each-when"`, FR-338 "Guarded TP-4 clause") the sets include
+the activation set `["activation"]`, which is index 0; a state belongs to it
+exactly when its key's phase is `"active"`.
+
 `UnfairWeak`'s index is into the clause's resolved constraints: one per
 `whole` constraint, and one per transition identity of an `each`
 constraint, in FR-123's order.
@@ -124,6 +133,13 @@ constraint, in FR-123's order.
   load any listed pair, with every witness below holding over that subgraph.
   An edge so removed is exempt from `BackwardEdge` and from every witness
   below the `UnfairVisibility` (ADR-025 MF-2).
+- For a guarded TP-4 clause, the checker SHALL run the closure check by
+  FR-338's guarded rules, re-reading the `when` condition at every reached
+  state, and SHALL decide `MissingAcceptance{set: 0}` from the phases of the
+  component's states: it holds exactly when no state of the component is
+  active. A component of waiting states has no fair accepting cycle by that
+  witness whatever fairness it meets; a component that holds an active
+  state needs another witness.
 - The checker SHALL accept otherwise.
 
 ## Acceptance Criteria
@@ -134,6 +150,7 @@ constraint, in FR-123's order.
 | FR-339-AC-2 | Rejected vectors: AC-1's certificate with the witness of `{(*, 0, q1)}` changed to `UnfairWeak` naming `upd(a)`, which edges inside the component take, is rejected `WitnessFails` at that component's first state; with those two components listed before the components that reach them, `BackwardEdge`; with one state listed in two components, `NotPartition`; with a component's witness `Trivial` over a state with a self-edge, `WitnessFails`. | Test (TC-526) |
 | FR-339-AC-3 | Accepted vector: FR-228-AC-5's synthesized SCC with `r` the only accepting state yields a component certificate whose component `{p, q, r}` carries `UnfairVisibility` naming the pair (`b`, `ℓ`), with `sub` `{r}` (`Trivial`) then `{p, q}` (`MissingAcceptance`), and `check_components` accepts it although the removed edge `q → r` goes from `{p, q}` to the earlier `{r}`; the same certificate with the witness `UnfairWeak` over that pair, or with `q → r` not removed (so `BackwardEdge` fires), is rejected. | Test (TC-526) |
 | FR-339-AC-4 | Package identity. AC-1's certificate carries in its closure the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its closure's `package_id` replaced by that of the same unit with the claim's target edited to `c.versionNumber = 1` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the closure's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with AC-2's `upd(a)` witness (a `WitnessFails` defect) still returns `PackageMismatch`, because no rule is evaluated. | Test (TC-1141) |
+| FR-339-AC-5 | Fixture: ADR-018 §6's example unit with universe `{a, b}`, both versions 0, and a checked package that carries the clause's `temporal_clause` node in QSpec FR-370's shape with a guarded `on each` activation, as in FR-338-AC-10 (S4 refuses an `on each` clause `NotEmitted`, FR-337), the condition read by the test's own letters. `eventually holds(c.versionNumber = 2)` under infinite-trace `on each` with the condition `c.versionNumber = 1` and a weak `each` constraint on `attemptUpdate` returns a `ComponentCertificate` in which, for binding `a`, the component of the active states at `(1,0)`, `(1,1)`, `(1,2)` carries `UnfairWeak` naming `upd(a)` and the component of the waiting states carries `MissingAcceptance{set: 0}` (symmetrically for `b`); `check_components` accepts it and FR-127 settles `proved`. The same clause with the condition `c.versionNumber = 7` and no fairness constraint gives a certificate whose every non-trivial component carries `MissingAcceptance{set: 0}`, accepted. Rejected vectors on the first certificate: the waiting component's witness changed to `UnfairWeak` naming `upd(a)` is `WitnessFails` (edges inside it take `upd(a)`); the active component's witness changed to `MissingAcceptance{set: 0}` is `WitnessFails` at its first state; the closure with binding `a`'s active state at `(1,0)` removed is `SuccessorMissing` at it; with the condition undefined at version 1, `BadState` at binding `a`'s waiting state at `(0,0)`, whose expansion reads it. | Test (TC-526) |
 
 ## Dependencies
 

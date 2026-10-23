@@ -13,7 +13,7 @@ relationships:
 Verify that `check_closure` accepts a safety proof's closure and rejects a
 missing initial state, a missing successor and a bad state.
 
-Scope: FR-338-AC-1 to FR-338-AC-7 and FR-338-AC-10. Canonical translation-state cases below
+Scope: FR-338-AC-1 to FR-338-AC-7, FR-338-AC-10 and FR-338-AC-11. Canonical translation-state cases below
 are prospective qualification procedures; this artifact claims no execution.
 
 ## Test Procedure
@@ -74,6 +74,10 @@ are prospective qualification procedures; this artifact claims no execution.
    `"each"`; then, with the condition false at values 0 and 1 and undefined
    at value 2, the certificate of exactly the value-0 and value-1
    obligation-free `"each-when"` states.
+10. Over FR-339-AC-5's fixture, encode the guarded TP-4 clause's waiting
+    and active keys; then supply an active key as `["buchi", branch]`, a
+    waiting key carrying `[[],"negative"]`, a `guarded-buchi` key under the
+    `"infinite"` activation, and the phase `"selected"`.
 
 Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 
@@ -111,3 +115,5 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
   deadline body; `SuccessorMissing` at the value-2 deadline state; accepted
   with the extra misread state; `ShapeMismatch` at the least refused state;
   `BadState` at the value-1 product state.
+- Step 10: the exact `guarded-buchi` waiting and active bodies; each
+  supplied negative refuses `ShapeMismatch` at `ProductState`.
