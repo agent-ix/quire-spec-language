@@ -4017,7 +4017,13 @@ fn a_kernel_foreign_reference_builds_a_record_with_both_universes() {
 }
 
 #[test]
-#[trace("TC-919", "FR-090-AC-13", "FR-090-AC-16", "FR-090-AC-17", "FR-401-AC-9")]
+#[trace(
+    "TC-919",
+    "FR-090-AC-13",
+    "FR-090-AC-16",
+    "FR-090-AC-17",
+    "FR-401-AC-9"
+)]
 fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_prefixes() {
     let domain = fixture_f1();
     let view = view_of(&domain);
