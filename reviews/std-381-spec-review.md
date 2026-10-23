@@ -88,7 +88,11 @@ ancestor; `make check-spec-validation` exits 0).
 | FND-004 | fixed | FR-176-AC-5 names the tuple `a = (0, 0)`, `b = (1, 0)`, which recomputes as the first initial tuple with an `h` 1. FR-128-AC-7 now says `P` is not read. |
 | FND-005 | still-open | New in this pass. It needs a fix round. |
 | FND-006 | still-open | New in this pass. It needs a fix round. |
+| FND-005 | fixed | The deadlock-freedom predicate is `6 mod (3 - c.value) = 0` in FR-126-AC-9, TC-537 step 4, FR-411-AC-3, FR-168-AC-12 and TC-1142, matching FR-128-AC-6, AC-7 and TC-539 step 4. The conjuncts of FR-176-AC-4, FR-177-AC-5 and AC-10 are now `(if present(x) then 1 mod value(x) else 0) = 0`. Recomputed: undefined at `step(0)`, true at `step(1)` and when absent, the old truth pattern, so FR-183-AC-12's two envelopes still settle as stated. |
+| FND-006 | fixed | FR-128-AC-6's row ends with `\| Test (TC-539) \|` again and has the table's three cells. |
 
 Verdict after disposition pass 1: FND-001 to FND-004 are fixed, and every
 re-derived vector holds (FR-128-AC-6 and AC-7 under `mod`, FR-176-AC-5,
 FR-183-AC-9 to AC-12). Not mergeable until FND-005 and FND-006 are fixed.
+
+Verdict after disposition pass 2: every finding is fixed and `make check-spec-validation` exits 0 at d53d8d1c. Mergeable on content. The head no longer merges cleanly with origin/main 28a76640: TC-539 conflicts with #1363 (STD-425). A main merge is needed before landing.
