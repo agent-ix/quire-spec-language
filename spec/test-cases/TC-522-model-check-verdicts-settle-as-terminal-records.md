@@ -15,7 +15,7 @@ Verify the map from EN-1's outcomes and their replay results to
 category of every `ProofBasis` and new inconclusive cause; each replay
 refusal path; a faulting replay; and the named limit of a run that reached it.
 
-Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
+Scope: FR-127-AC-1 to FR-127-AC-5, FR-127-AC-7 to FR-127-AC-10 and FR-127-AC-16.
 
 ## Test Procedure
 
@@ -43,13 +43,18 @@ Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
    `Proved{Exhaustive, Trusted}`, and the category of
    `Inconclusive(CertificateRejected)`.
 9. Settle a replay result with cause `Verdicts`.
+10. Settle FR-126-AC-19's work_units run and the stand-in outcomes of
+    FR-127-AC-16 (`value_occurrences` 7, `integer_bits` at `u64::MAX`,
+    `max_candidates` 1); settle FR-203's build stopped by the same
+    `work_units` meter stop; pass each record's `setting` to the settings
+    operation with the value 1.
 
 Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 
 ## Expected Results
 
 - Step 1: each row exactly as FR-127's table; depth 2 and method
-  `explicit-state` on V-5; the limit-reached record names `max_states`, value 2, setting `max_states`.
+  `explicit-state` on V-5; the limit-reached record names `max_states`, value 2, setting `model_check.max_states`.
 - Step 2: inconclusive `KaniVacuousProof`; success five times, each value
   keeping its certification; inconclusive four times.
 - Step 3: `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success;
@@ -58,10 +63,10 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
   `inconclusive`, `ReplayRefused`; `inconclusive`, `ReplayParity`;
   `failed`, category failed.
 - Step 4: `incomplete`, `unavailable`,
-  `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`,
+  `Incomplete(LimitReached{max_automaton_states, 50, model_check.max_automaton_states})`,
   the record stating the three limits used;
   `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth
-  `pending`; a limit-reached record naming `EvaluationMeter`, value 0;
+  `pending`; `Incomplete(LimitReached{work_units, 0, accounting.work_units})`;
   `incomplete`, `Incomplete(Cancelled{Requested})`, written
   `cancelled{source: "requested"}`, and `Incomplete(Cancelled{Deadline})`,
   written `cancelled{source: "deadline"}`.
@@ -74,3 +79,11 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 - Step 8: `proved`, success, five times, labelled `Certified`, `Certified`,
   `Uncertified`, `Uncertified` and `Trusted`; inconclusive.
 - Step 9: `inconclusive`, `ReplayParity`, written `replay-parity`.
+- Step 10: `failed`, execution `resource-incomplete`, `unavailable`,
+  category incomplete, with `LimitReached{work_units, 0,
+  accounting.work_units}`, `{value_occurrences, 7,
+  accounting.value_occurrences}`, `{integer_bits, 18446744073709551615,
+  accounting.integer_bits}` and `{max_candidates, 1,
+  expansion.max_candidates}`; the `work_units` record equals FR-203's;
+  the settings operation accepts every `setting`; no record names `meter`,
+  a bare counter or a bare `max_candidates`.

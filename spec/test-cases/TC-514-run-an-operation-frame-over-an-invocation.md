@@ -21,7 +21,7 @@ succeeds, a change outside the frame is a violation with its frame witness,
 and stale or
 missing inputs refuse before evaluation.
 
-Scope: FR-115-AC-1 to FR-115-AC-7, FR-109-AC-9, FR-267-AC-11 and
+Scope: FR-115-AC-1 to FR-115-AC-7, FR-109-AC-10, FR-267-AC-11 and
 QSpec FR-352-AC-9.
 
 ## Test Procedure
@@ -84,5 +84,5 @@ Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
   `basis: closed-scope`, no outcome and no FR-351 witness. The other change
   variants round-trip. Every malformed edit refuses with a located member.
 
-Step 7 verifies FR-115-AC-7, FR-109-AC-9, FR-267-AC-11 and QSpec
+Step 7 verifies FR-115-AC-7, FR-109-AC-10, FR-267-AC-11 and QSpec
 FR-352-AC-9.

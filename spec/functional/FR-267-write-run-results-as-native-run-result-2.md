@@ -76,12 +76,11 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
   FR-100's Reference form and the existing FR-286 outcome route.
 - The library serializer of an FR-109 `ClauseRunReport` SHALL write every
   clause-run result document with `format` `native-run-result/2`.
-- From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), the `run` command SHALL write every command-error envelope
+- From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), the `run` command SHALL return every command-error envelope
   with that format; before it, FR-100's refusals use FR-026's
   `native-run-result/1` envelope. A
-  function run's output is FR-100's `spine-run-result/1`, the `quire-spec`
-  CLI's current output, retired when the driver's verbs land (ADR-029
-  CB-1); the outcome document is FR-286's `quire-outcome/1`.
+  function run's result document is FR-100's `spine-run-result/1`; the
+  outcome document is FR-286's `quire-outcome/1`.
 - A clause-run document SHALL carry the report's disposition and usage in
   the members QSpec FR-352 defines for them, `basis` on every
   document, and `witness` exactly when `basis` is
@@ -191,7 +190,7 @@ row.
 | `holds` | `Completed(true)` | none | `success`, `true`, `closed-scope` | absent |
 | `violated` | `Completed(false)` | `position`, `counterexample` | `violation`, `false`, `closed-scope` | absent |
 | `undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample` | `violation`, `false`, `closed-scope` | `{"kind": "undefined", "reason": R}`, `R` the undefined value's FR-100 reason |
-| `insufficient-data` | `Undefined` with `insufficient-data` | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | `{"kind": "undefined", "reason": "insufficient-data"}` |
+| `insufficient-data` | `InsufficientData` (FR-327) | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | `{"kind": "undefined", "reason": "insufficient-data"}` |
 | `pending` | `Pending` | none | `inconclusive`, absent, `unsettled` | absent |
 | `missing-fairness-premise` | `MissingFairnessPremise` | `constraint` | `unsupported`, absent, `unavailable` | `{"kind": "refused", "code": "unsupported_projection", "cause": "missing-fairness-premise"}` |
 | `incomplete` | `Incomplete` | none | `incomplete`, absent, `unavailable` | FR-100's `{"kind": "incomplete", "limit": ...}` |
@@ -397,7 +396,7 @@ condition is false; the reader refuses `null` or a default in its place.
 |----|----------|--------------|
 | FR-267-AC-1 | FR-266-AC-1's `AllBelow` over `high` report writes a document with `format` `native-run-result/2`, `basis` `decisive-counterexample` and a `witness` holding the `forall`'s occurrence key, the reference to `mid`, `index` 1, the population-root value path and no `trace_position` member; the bytes equal their own RFC 8785 re-encoding, and reading them back gives an equal basis and record. The `AllBelow` over `low` report writes `closed-scope` with no `witness` member, and the exhausted-work report writes `unavailable` with no `witness` member. | Test |
 | FR-267-AC-2 | Each of these edits of FR-267-AC-1's `high` document refuses, naming the member: `index` removed; an extra member in `witness`; `trace_position` given as `0`; `basis` removed; `basis` `closed-scope` with the `witness` kept; `basis` `decisive-counterexample` with `witness` removed; `format` set to `native-run-result/1`; `format` set to `native-run-result/3`. | Test |
-| FR-267-AC-3 | From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), `run` over a native-run/1 request whose source declares `edition "9-draft"` writes nothing to stdout and writes a command-error envelope to stderr whose `format` is `native-run-result/2`, with exactly the members `format`, `stage` (`profile`), `code` (`unknown_edition`), `message`, `details` and `basis` (`unavailable`), no `witness` member, exiting 20. | Test |
+| FR-267-AC-3 | From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), `run` over a native-run/1 request whose source declares `edition "9-draft"` returns an outcome carrying no result document and a command-error envelope whose `format` is `native-run-result/2`, with exactly the members `format`, `stage` (`profile`), `code` (`unknown_edition`), `message`, `details` and `basis` (`unavailable`), no `witness` member, exiting 20. | Test |
 | FR-267-AC-4 | A valid `/2` document with no CG receipt is accepted by the wire reader but CG refuses its campaign binding, retaining the decoded outcome and an absent-receipt diagnostic; no campaign qualification, measured coverage classification or coverage discharge results. | Test |
 | FR-267-AC-5 | With an authenticated CG receipt associating the supplied result, producer execution, generated source and source map, CG accepts the binding and retains the result's original disposition, basis and witness. A bound violation, refusal, unsupported or incomplete result remains that outcome and cannot become success through receipt validation. | Test |
 | FR-267-AC-6 | Starting with AC-5's matching inputs, independently replacing the result, producer execution, generated source or source map causes CG to refuse the binding and identify the mismatched association, even when the replacement has the same path or QSL `package_id`. The original decoded outcome and available input identities remain available, with no campaign qualification, measured coverage classification or coverage discharge. | Test |

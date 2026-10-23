@@ -25,7 +25,7 @@ EN-1 limit they are ADR-014 B-5 budgets of QSL's own provider that the
 request sets, each with a published default that applies only when the
 request sets none. They are resource budgets, never modelling limits: no
 form, formula size, arity or depth is capped. Reaching one stops the run
-and settles V-7, naming the limit, its value and the request member that
+and settles V-7, naming the limit, its value and the request setting that
 raises it.
 
 ## Use case
@@ -82,7 +82,7 @@ pub enum ModelCheckLimit {
 - Every terminal record SHALL state the value of `max_witness_set` and
   `max_relation_tuples` the run used, and whether the request set it or the
   published default applied, whatever the verdict (FR-182).
-- A stopped record SHALL name the limit, its value and the request member
+- A stopped record SHALL name the limit, its value and the request setting
   that raises it, and SHALL carry no counterexample.
 - `max_depth` SHALL stay a method parameter that settles V-5, never V-7.
 
