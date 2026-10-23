@@ -1,5 +1,5 @@
 ---
-id: TC-1194
+id: TC-1199
 title: "An SMT proof settles through the qsl-replay handoff by its checker result"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-127
     type: verifies
 ---
-# TC-1194: An SMT proof settles through the qsl-replay handoff by its checker result
+# TC-1199: An SMT proof settles through the qsl-replay handoff by its checker result
 
 ## Description
 
@@ -33,8 +33,8 @@ Scope: FR-314-AC-6 and FR-127-AC-14.
    `BoundedComplete{depth: 3}` and `certificate: None`, and with
    FR-315-AC-30's faulting rebuild.
 
-Tag the tests `#[trace("TC-1194", "FR-314-AC-6")]` and
-`#[trace("TC-1194", "FR-127-AC-14")]`.
+Tag the tests `#[trace("TC-1199", "FR-314-AC-6")]` and
+`#[trace("TC-1199", "FR-127-AC-14")]`.
 
 ## Expected Results
 
