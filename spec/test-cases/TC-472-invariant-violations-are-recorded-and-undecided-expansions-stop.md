@@ -16,7 +16,7 @@ findings, that undecided successor sets stop the run incomplete,
 initial-state admission, requires-bound, and sampled-trace findings, stops
 and replay.
 
-Scope: FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9.
+Scope: FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9, FR-120-AC-19, FR-120-AC-20.
 
 ## Test Procedure
 
@@ -55,6 +55,10 @@ and the sampler is the `quire.simulation.sampler/v1`
    `pre Never { false }`; `post LowPost { self.ready() }` on `ready` and no
    `pre` clause. Not covered: the `test/tallies` package (`Tally`,
    `touch()`) and the `pre Aaa { false }` name-order case.
+7. QSpec TC-196 D10's two `B/size` clause orders in one unit, with the
+   `absent-key` lookup clause (FR-120-AC-20); then the same clauses split
+   across two linked source units, in both link orders and with either
+   clause in either unit (FR-120-AC-19).
 
 Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
 
@@ -99,3 +103,6 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   finding. `LowPost`: no `ready` successor, and `t1` has
   `ContractUndetermined { <ready>, Some(<t1's digest>), LowPost,
   FamilyResult::Undefined precondition-false }`.
+- Step 7: D10's results, reason `absent-key` and then
+  `precondition-false`, with the charges FR-120-AC-20 names; the split
+  variants give the same results and charges in every order and placement.
