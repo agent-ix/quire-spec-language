@@ -4,11 +4,12 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use qsl_foundation::diagnostic::{category_of, Category};
+use qsl_foundation::diagnostic::category_of;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
-use qsl_foundation::CatalogCode;
 use quire_canonical::Encode;
 use quire_exact::ValueType;
+use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::simulation::expansion::{Expansion, ExpansionStop, StateFindings};
@@ -488,8 +489,9 @@ pub fn explore_request<S: TransitionSystem>(
 
 #[cfg(test)]
 mod stop_category_tests {
-    use super::{stop_category, CatalogCode, Category};
+    use super::stop_category;
     use ix_trace_rs::trace;
+    use quire_semantic_value::catalog::{CatalogCode, Category};
 
     /// FR-101-AC-12: a stop for an unavailable observation or an incomplete
     /// population is incomplete, as is a stop at a work budget; a refusal
