@@ -1051,7 +1051,7 @@ except the ADR-011 amendment, which is applied in place.
   QSL-390. The checkers' defining drafts are PR #562 (EN-1 closure, SCC and
   ranking), PR #564 (simulation relations), PR #571 (product closure),
   PR #573 (zone) and PR #579 (EN-5).
-- Implementation follow-ups this record states for code: one
+- Code consequences this record states: one
   `qsl-foundation` `BackendId` replacing `qsl_route::BackendId` and
   `qsl_replay::identity::Backend` (FR-288); `ProofCategory` folded into `Category` (FR-285); `format` moved
   from root `src/format.rs` to `qsl_cst::format` (X-12).
