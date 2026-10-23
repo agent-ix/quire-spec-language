@@ -71,11 +71,12 @@ happens-before computation, so a summary bug cannot produce a false race.
   rule over the thread observation, a memory step by its model.
 - The executor SHALL build each `Tso` component under the subject's
   `max_store_buffer` and each `Ra` component under its `max_messages`, as
-  the run built them (FR-225). A store that the bound cuts at its pre-state
-  is enabled but left unexpanded by the bound, so no run under the bound
-  takes it: the executor SHALL refuse a step that takes it with
-  `invalid_runtime_input`/`invalid-value`, naming the step. The executor
-  SHALL NOT otherwise compare the bounds with the run's.
+  the run built them (FR-225).
+- If a step takes a store that the bound cuts at its pre-state, then the
+  executor SHALL refuse it with `invalid_runtime_input`/`invalid-value`,
+  naming the step: the cut store is enabled but left unexpanded by the
+  bound, so no run under the bound takes it. The executor SHALL NOT
+  otherwise compare the bounds with the run's.
 - The executor SHALL read a cut store as enabled wherever it reads
   enabledness, the lasso fairness check against the memory and scheduler
   constraints included, as FR-225 does (ADR-025 MB-3).
