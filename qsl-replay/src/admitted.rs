@@ -610,6 +610,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::DependencyIdentityMismatch { .. }
             | ReplayRefusal::PackageIdMismatch { .. }
             | ReplayRefusal::UnknownFunction { .. }
+            | ReplayRefusal::ClaimOccurrence { .. }
             | ReplayRefusal::UnknownParameter(_)
             | ReplayRefusal::DuplicateArgument(_)
             | ReplayRefusal::UnboundParameter(_)
