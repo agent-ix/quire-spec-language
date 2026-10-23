@@ -24,8 +24,8 @@ Scope: FR-344-AC-1 to FR-344-AC-3, FR-344-AC-6 and FR-344-AC-7.
 2. Read the report of the fourth set.
 3. Build a corpus of three identity pairs, creating their directories in
    the reverse of their names' order. Run the gate twice.
-4. Feed the report function a layering result set: one case, the five
-   layer results and the five edge results, built in reverse of the
+4. Feed the report function a layering result set: one case, the six
+   layer results and the six edge results, built in reverse of the
    expected order. Add two entry-level tool failures (`b/entry.json`,
    `a/entry.json`) and two missing-item tool failures (E5 /
    `distinguishing`, state graph / `witness`), in that order.

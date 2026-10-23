@@ -491,10 +491,11 @@ regression.
 #### RF-3 Profile layering (#192, V1-TOOL-012)
 
 Q-5 is answered (amended 2026-10-01; QSpec FR-453): every QSpec AD-003 layer
-is header-selectable, and the gate compares all five `requires` edges (state
+is header-selectable, and the gate compares all six `requires` edges (state
 core to state queries, state queries to state graph, state core to complete
-value, state graph to complete model, complete value to complete model).
-FR-110's layer selection resolves a header naming any of the five layers, and
+value, state graph to complete model, complete value to complete model,
+complete model to complete temporal).
+FR-110's layer selection resolves a header naming any of the six layers, and
 S3 admits each declaration under that layer's admitted-form set, so both
 sides of every edge compile in the running build. A hand-written "parent
 refused" expectation that no compile checks is not V1-TOOL-012 evidence, and
