@@ -560,7 +560,7 @@ fn an_exhausted_budget_is_incomplete_naming_work_units() {
     assert_eq!(
         classified.classification.limits(),
         [ReachedLimit {
-            name: "work_units",
+            name: "accounting.work_units",
             bound: 0
         }]
     );
