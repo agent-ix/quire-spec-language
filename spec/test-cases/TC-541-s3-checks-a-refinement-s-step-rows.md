@@ -14,7 +14,7 @@ Verify that every concrete operation, and over a protocol subject every
 concrete step class, needs exactly one written-out step row, and that
 receivers, arguments and results are typed against the abstract operation.
 
-Scope: FR-136-AC-1 to FR-136-AC-10.
+Scope: FR-136-AC-1 to FR-136-AC-11.
 
 ## Test Procedure
 
@@ -47,6 +47,11 @@ protocol subject over a model with operations `incA` and `incB`.
     `tso` for the `sc` protocol with no `flush` row, and one selecting `sc`
     for the `tso` protocol; check a protocol with an `sc` and a `tso`
     outermost `parallel` and one `flush` row.
+11. In a build that holds `protocol-abstract-side`, check a unit declaring,
+    in this order, an invariant over a concrete object type whose body is a
+    non-Boolean field read, `CasTwice` without its `population` row, and
+    step 6's `Run` refinement with a row naming `Other` and no control-node
+    rows; then check it with the invariant and the `Other` row removed.
 
 Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 
@@ -82,3 +87,9 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
   the `sc` protocol refuses at `flush`; the request selecting `tso` refuses
   `missing-name` naming `flush` when admitted; the request selecting `sc`
   admits with the row unused; one row covers both `parallel` nodes.
+- Step 11: exactly three refusals, in order: `ill_typed`/`non-boolean-root`
+  at the invariant, `missing_declaration`/`missing-name` naming
+  `Spec::counters`, and `invalid_model_binding`/`conflicting-binding` at
+  `Other`'s first row; none for `Twice`'s header or for coverage, and no
+  `CheckedRefinement`. Without the invariant and the `Other` row: the
+  `Spec::counters` refusal and `missing-name` naming the `fork` node.
