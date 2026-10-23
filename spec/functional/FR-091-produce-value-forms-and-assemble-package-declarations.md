@@ -141,10 +141,11 @@ type is admitted as a parameter, result, body and model field type.
 
 - The S1 output of one complete-V1 unit, `qsl_cst::ParsedSource`, whose CST
   is a `LosslessCst`.
-- For the assembler: the parsed unit that S2 returned for that source, and
-  the unit's source owner `SourceOwner{authority, identity}`, taken from the
-  source reference the unit was compiled from. It is a required input:
-  E3 has no default owner.
+- For the assembler: the parsed unit that S2 returned for each source unit of
+  the package, in request order (FR-480), each with its source owner
+  `SourceOwner{authority, identity}`, taken from the source reference the
+  unit was compiled from. The owner is a required input: E3 has no default
+  owner. A package of one unit passes one parsed unit.
 - For the assembler: an explicit limit set holding the decimal-scale bound
   (default 4096; "Dimension and unit declarations").
 
@@ -479,20 +480,29 @@ or a unit is an unresolved type name. A source-declared dimension and unit are
 used by name outside a type form: FR-230 reads them as the time dimension and
 its time units.
 
-The assembler refuses, reporting every error found. It runs the
-unit-graph topology checks only when every other check below passes, so a
-topology error is never reported beside a name, cycle, zero-denominator or
-limit error:
+The assembler refuses, reporting every error it finds among the following.
+It runs the unit-graph topology check below only when none of them is
+found, so a topology error is never reported beside a duplicate-name,
+unresolved-name, zero-denominator or limit error:
 
 - **Duplicate dimension or unit name.** A name declared by more than one
   dimension form, or by more than one unit form. The error names the name
   and the span of each declaration.
-- **Unresolved dimension or unit name.** A dimension term or a unit's `:`
-  name that names no dimension form, or a target that names no unit form.
-  The error names the name and its span.
-- **Dimension or unit cycle.** A dimension whose terms reach that
-  dimension again through derived dimensions, or a unit whose target chain
-  reaches that unit again. The error names the cycle's dependency edges.
+- **Dimension name shared with a domain package.** The dimension namespace
+  holds the unit's dimension forms and the dimensions of every admitted
+  domain package, each by its single-segment name (QSpec FR-142). A
+  dimension name declared both by a dimension form and by an admitted
+  domain package, or by two admitted domain packages, refuses
+  `conflicting_declaration`/`duplicate-declaration`, naming both
+  declarations. The error is at the dimension form's span when the unit
+  declares the name, and otherwise at the selection row
+  `/lock/model_selections/<i>` of the later package in lock order. A
+  package unit carries no declaration name and is named through its
+  selection's model alias (`M::ms`), so a source unit `ms` and a package
+  unit `ms` are two units and never a duplicate.
+- **Unresolved unit dimension name.** A unit's `:` name that names neither
+  a dimension form of the unit nor a dimension of an admitted domain package
+  (FR-056, QSpec FR-154). The error names the name and its span.
 - **Zero denominator.** An exact number `rational(n, 0)`. The error names
   its span.
 - **Decimal scale limit.** An exact number `decimal(c, s)` whose `s` is
@@ -500,12 +510,47 @@ limit error:
   as an explicit limit (ADR-011 §2.3), default 4096, because forming
   `10^s` costs work that grows with `s`. The limit refusal names limit kind
   work budget, the bound, the actual `s` and the exact number's span.
-- **Unit-graph topology.** The following each name the declarations they
-  concern: a derived dimension whose normalized terms are empty; a unit
-  whose scale is zero; a targetless unit whose scale is not one or whose
-  offset is not zero (a non-identity root); a unit whose target has a
-  different dimension; and a dimension whose units have two targetless
-  roots.
+
+**Unit-graph topology.** The assembler checks the unit's dimensions and
+units by QSpec FR-142 "Dimension and conversion algebra", with FR-142's
+rules, order and causes and none of its own:
+
+- It takes the dimension nodes in FR-142's turn-list order, built by
+  walking the declarations in source order. A dimension of an admitted
+  domain package is an imported node of that list. A source declaration
+  that mentions it gives it its turn when it is first reached, before the
+  declaration that reached it and before the nodes reached through its
+  terms. Every package dimension not yet reached takes its turn after the
+  last source declaration's turn, in the lock order of its selection and
+  then in its authored order within the package.
+- An imported node's definition, terms and units count as admitted and are
+  not re-checked. At its turn, rows 1 to 6 apply to the local units typed by
+  it, with the package's units of that dimension as admitted members of the
+  graph: a local targetless unit beside the package's root is a second root
+  (row 4, retaining the package root and the local unit), a local cycle is
+  row 6, a local zero scale is row 1, and a local unit that targets a
+  package unit of its own node adds no cycle and no targetless unit. Row 5
+  applies only to a local root of a node with no package root. The
+  base-dimension rule applies to a package base dimension at its turn as to
+  a local one. A refusal of a package node is located at its selection row
+  `/lock/model_selections/<i>` and names the node's FCD identity.
+- At each node's turn it runs FR-142's step (-1) over a local dimension's
+  own terms (a term that names no dimension; a dimension in a dimension
+  cycle or with a self-term, its edges from the cycle's dimension declared
+  first), then step (0)'s base-dimension rule, then rows 1 to 3 over the
+  node's local units in source order, then rows 4 to 6 over the node. Row 2
+  is a unit target that names no unit of the package, neither a unit form
+  nor a unit of an admitted domain package; row 6 is a unit target cycle,
+  its edges retained from the cycle's least unit by source position.
+- It reports the first defect found and no other: a node is refused by the
+  earliest row that applies to its earliest local unit, and a later node is
+  not examined once an earlier one is refused. The error carries the code
+  and cause FR-142's step, rule or row gives and names the declarations it
+  retains.
+- A derived dimension whose normalized terms are empty, such as
+  `dimension N = L / L;`, is the dimensionless dimension, and the assembler
+  admits it. Its units form `N`'s own graph under rows 1 to 6, and its empty
+  map creates no base-dimension obligation.
 
 With no error, the assembler builds each preimage, owner and
 `qualified_declaration` as for an enum:
@@ -866,13 +911,13 @@ code or code/cause:
 | duplicate enum member | `ambiguous_declaration`/`ambiguous-name` |
 | nominal-admission fault | `runtime_invariant`/`established-invariant-broken` |
 | duplicate dimension or unit name | `ambiguous_declaration`/`ambiguous-name` |
-| unresolved dimension or unit name | `missing_declaration`/`missing-name` |
-| dimension or unit cycle | `invalid_package`/`definition-cycle` |
+| dimension name shared with a domain package | `conflicting_declaration`/`duplicate-declaration` |
+| unresolved unit dimension name | `missing_declaration`/`missing-name` |
 | zero denominator | `undefined_expression`/`unproved-nonzero` |
 | decimal-scale limit | `stage_limit_exceeded`/`work-budget-exceeded` |
 | type-environment allocator denial | `resource_exhausted`/`allocation-failed` |
 | type-environment reservation size arithmetic or representation overflow | `resource_exhausted`/`reservation-size-overflow` |
-| unit-graph topology | `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12) |
+| unit-graph topology | the code and cause QSpec FR-142 gives the defect: `missing_declaration`/`missing-name` (an unknown term, the base-dimension rule, row 2), `invalid_package`/`definition-cycle` (a dimension cycle, row 6), `invalid_package`/`invalid-value` (rows 1 and 5), `invalid_package`/`incompatible-definition` (row 3), `invalid_package`/`conflicting-definition` (row 4) |
 | unresolved state clause operation (FR-104) | `missing_declaration`/`missing-name` |
 | ambiguous state clause operation (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
 | ambiguous state clause population (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
@@ -889,14 +934,10 @@ retains the visible name and the distinct conflicting declarations and
 loci. The nominal-admission-fault row follows the assembler's other broken
 invariants (the declared-type handle, a domain package's object type).
 The duplicate dimension or unit name row follows the duplicate-enum-member
-row, the cycle row follows the alias-cycle row (FR-091-OQ-7), and the
-zero-denominator row follows the check stage's own refusal of
+row, and the zero-denominator row follows the check stage's own refusal of
 `rational(n, 0)` in an expression (`Obligation::Nonzero`). The unit-graph
-topology row has no catalog cause yet: `ill_typed` retains an operator
-locus and expected and actual types, and `invalid_package`/`invalid-value`
-a field path in a package document, so neither fits. The interim value is
-`invalid_package`/`unit-graph-topology`, and no other spelling, until
-STD-112 publishes the causes and replaces it (FR-091-OQ-12).
+topology row takes QSpec FR-142's causes, so one defect has one code in
+every checker of the language.
 
 ## Constraints
 
@@ -929,7 +970,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted over that owner. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) it gives a different key for each of the three. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
 | FR-091-AC-19 | The assembler admits a parameter typed `Float64[nearest-even]`, `Float32[toward-zero]` or `Float64`. Resolving each gives a `ValueType::Float` of the written width and rounding mode `nearest-even`, `toward-zero` and `exact` (the bare spelling). The evaluator rounds a `Float64[mode]` `+` by that mode. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`, and returns no `PackageDeclarations`. | Test (TC-405) |
 | FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
-| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The undeclared-alias cause returns `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit name cause `missing_declaration`/`missing-name`, the dimension or unit cycle cause `invalid_package`/`definition-cycle`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology cause returns `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12). | Test (TC-406) |
+| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the dimension name shared with a domain package cause `conflicting_declaration`/`duplicate-declaration`, the unresolved unit dimension name cause `missing_declaration`/`missing-name`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph topology cause returns the code and cause of its QSpec FR-142 step, rule or row. | Test (TC-406) |
 | FR-091-AC-22 | For a unit with one profile selection, alias `v`, and `function f using v(): Boolean pure { true }`, the assembler records `f`'s `using` alias as resolved to that selection. With `function g using w(): Boolean pure { true }` added, it returns one refusal holding an undeclared-alias error, code `missing_declaration`/`missing-selection`, that names `w` and the span of `g`'s `using` field, and no `PackageDeclarations`. A unit that declares two profile selections with alias `v` refuses with a duplicate-alias error, code `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection spans. | Test (TC-412) |
 | FR-091-AC-23 | S1 admits a unit whose function parameter is typed `Float32` or `Float64` with no `[mode]`, and S2 builds that parameter's type form with head `Float32` or `Float64` and no rounding mode. | Test (TC-405) |
 | FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" as u;`, with no library supplied as `test/units`, refuses at stage `intake`, before assembly, with `missing_import`/`missing-selection` naming `test/units` at the import's identity string (FR-099, ADR-015 D-1), and emits no package. | Test (TC-405) |
@@ -942,8 +983,8 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-31 | S2 builds, for `dimension Length;`, a dimension form named `Length` with no terms. For `dimension Accel = Length * Time^-2 / Mass;` it builds terms `Length` (no operator, no exponent), `Time` (`*`, exponent `-2`) and `Mass` (`/`, no exponent), each with the span of its name and of its exponent when written. For `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);` it builds a unit form named `C` with dimension name `Temperature`, scale `rational` with parts `1` and `1`, target `K` and offset `decimal` with parts `27315` and `2`, each with its span. For `unit m : Length = rational(1, 1);` the unit form has no target and no offset. | Test (TC-482) |
 | FR-091-AC-32 | The assembler returns, for vectors Q1 to Q10's sources in one unit under source owner (`a`, `u`), `units` holding dimensions keyed Q1 to Q5 and units keyed Q6 to Q10. Q3's and Q4's terms are the base terms the vectors list, so `Accel = Speed / Time` normalizes to `Length^1 Time^-2`. `km`'s edge has scale `1000` (from `rational(2000, 2)`), `cm`'s scale `1/100` (from `decimal(1, 2)`), and `C`'s offset `5463/20`; `C` is affine and `km` is not. `nominal_spans` holds the span of each declared name by its key. A unit with no dimension or unit form has the empty `units`. With the decimal-scale bound set to `4`, `unit c : Length = decimal(1, 5) * m;` gives a limit refusal, `stage_limit_exceeded`/`work-budget-exceeded`, naming bound `4`, actual `5` and the span of `decimal(1, 5)`, and `decimal(1, 4)` assembles. | Test (TC-483) |
 | FR-091-AC-33 | A parameter typed `m`, in a unit that declares `dimension Length;` and `unit m : Length = rational(1, 1);`, refuses with an unresolved-type-name error naming `m`. | Test (TC-483) |
-| FR-091-AC-34 | The assembler returns one refusal, and no `PackageDeclarations`, for a unit with `dimension Length;`, `dimension Mass;`, `dimension Mass;`, `dimension Area = Width^2;`, `dimension P = Q; dimension Q = P;`, `unit a : Length = rational(1, 0);`, `unit b : Length = rational(2, 1) * c;` and `unit c : Length = rational(1, 2) * b;`. It holds exactly these errors: a duplicate-name error naming `Mass` and both spans (`ambiguous_declaration`/`ambiguous-name`); an unresolved-name error naming `Width` (`missing_declaration`/`missing-name`); a cycle error with edges `P`→`Q` and `Q`→`P`, and a cycle error with edges `b`→`c` and `c`→`b` (`invalid_package`/`definition-cycle`); and a zero-denominator error at `rational(1, 0)` (`undefined_expression`/`unproved-nonzero`). | Test (TC-483) |
-| FR-091-AC-35 | The assembler refuses each of these units with one unit-graph topology error naming the declarations it concerns, and returns no `PackageDeclarations`: `dimension L; dimension N = L / L;` (empty normalized terms); `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;` (zero scale); `dimension L; unit r : L = rational(2, 1);` (non-identity root); `dimension L; dimension T; unit r : L = rational(1, 1); unit s : T = rational(1, 1) * r;` (cross-dimension target); and `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);` (two roots). Each error's catalog code is `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12). | Test (TC-483) |
+| FR-091-AC-34 | The assembler returns one refusal, and no `PackageDeclarations`, for a unit with `dimension Length;`, `dimension Mass;`, `dimension Mass;`, `dimension Area = Width^2;`, `dimension P = Q; dimension Q = P;`, `unit a : Length = rational(1, 0);`, `unit b : Length = rational(2, 1) * c;`, `unit c : Length = rational(1, 2) * b;` and `unit d : Ghost = rational(1, 1);`. It holds exactly these errors: a duplicate-name error naming `Mass` and both spans (`ambiguous_declaration`/`ambiguous-name`); an unresolved-name error naming `Ghost` (`missing_declaration`/`missing-name`); and a zero-denominator error at `rational(1, 0)` (`undefined_expression`/`unproved-nonzero`). The topology check does not run, so `Width`, the `P`/`Q` cycle and the `b`/`c` cycle are not reported. With the second `dimension Mass;`, `unit a` and `unit d` removed, the unit refuses with exactly one topology error, the first defect: at `Length`'s turn, row 6, `invalid_package`/`definition-cycle` with edges `b -> c` and `c -> b`; `Width` and the `P`/`Q` cycle, at later turns, are not reported. | Test (TC-483) |
+| FR-091-AC-35 | Each of these units refuses with exactly one topology error carrying its QSpec FR-142 row's code and cause and naming what the row retains, and returns no `PackageDeclarations`: `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;` (row 1, `invalid_package`/`invalid-value`, `z` and its scale 0); `dimension L; unit r : L = rational(1, 1); unit u : L = rational(1, 1) * ghost;` (row 2, `missing_declaration`/`missing-name`, `u` and `ghost`); `dimension L; dimension T; unit r : L = rational(1, 1); unit s : T = rational(1, 1) * r;` (row 3, `invalid_package`/`incompatible-definition`, `s`, `r`, `L` and `T`); `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);` (row 4, `invalid_package`/`conflicting-definition`, `L`, then `r` and `q` in source order); and `dimension L; unit r : L = rational(2, 1);` (row 5, `invalid_package`/`invalid-value`, `r`, scale 2 and offset 0). `dimension L; dimension N = L / L;` assembles, `N` being the dimensionless dimension with empty terms, and so does `dimension L; unit m : L = rational(1, 1); dimension N = L / L; unit one : N = rational(1, 1);`. | Test (TC-483) |
 | FR-091-AC-36 | Check admits `function u using v(x: Int[0, 18446744073709551615]): Boolean pure { x >= 0 }` and the same function with `x: Int[0, 9223372036854775808]` and with `x: Int[0, 18446744073709551616]` (2^64, inside i128); each parameter's resolved type is `ValueType::Int` with exactly those bounds. The 2^64 unit also keys, lowers and replays like the others (FR-092-AC-14, FR-098-AC-11). Check admits a parameter typed `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]`, whose bounds are `i128::MIN` and `i128::MAX` exactly, and the body `x <= 170141183460469231731687303715884105727` over it. | Test (TC-909) |
 | FR-091-AC-37 | Check refuses `Int[0, 170141183460469231731687303715884105728]` (`i128::MAX + 1`) with `IntegerOutsideI128` naming site `upper`, value `170141183460469231731687303715884105728`, limit `i128::MAX` and the type form's span, and `Int[-170141183460469231731687303715884105729, 0]` naming site `lower` and limit `i128::MIN`. Each refusal's catalog code is `ill_typed`/`type-mismatch`, and the compile returns no checked package, so nothing is keyed or lowered. | Test (TC-909) |
 | FR-091-AC-38 | Over `x: Int[-170141183460469231731687303715884105728, 0]`: the body `x >= -170141183460469231731687303715884105728` checks, its right operand is one `Integer` literal of value `i128::MIN` with no `Negate` node, that literal node keys to FR-092 vector L7, and lowering writes it as one literal. The body `x >= -170141183460469231731687303715884105727` checks with its right operand a `Negate` of the literal 170141183460469231731687303715884105727, as before. The bodies `x < 170141183460469231731687303715884105728`, `x >= -(170141183460469231731687303715884105728)` and `x >= -170141183460469231731687303715884105729` refuse `IntegerOutsideI128` at the literal's span, with site `literal`, the literal's value as written, limit `i128::MAX` and code `ill_typed`/`type-mismatch`, and return no checked package. | Test (TC-909) |
@@ -953,6 +994,10 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-42 | `"\ud800"` and `"\q"` refuse `invalid_syntax`/`invalid-escape`, and an unterminated literal, a literal holding a raw line feed and `Timestamp(007)` refuse `invalid_syntax`/`invalid-token`, each at the offending token with no form. `UUID(x)` over a `String` parameter, `UUID(5)`, `Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`, `Timestamp()` and `Timestamp(1, 2)` each refuse `ill_typed`/`type-mismatch` at the argument (at the call for `Timestamp()` and `Timestamp(1, 2)`). `function UUID using v(): Boolean pure { true }` beside a use `UUID("00112233-4455-6677-8899-aabbccddeeff")` refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the declaration's span and the native constructor with no span; `M::UUID("00112233-4455-6677-8899-aabbccddeeff")` over an alias `M` that declares no `UUID` refuses `missing_declaration`/`missing-name`. A parameter or field named `timestamp` or `uuid` stays valid. | Test (TC-1052) |
 | FR-091-AC-43 | Check refuses `UUID("00112233-4455-6677-8899-AABBCCDDEEFF")`, `UUID("00112233445566778899aabbccddeeff")`, `UUID("{00112233-4455-6677-8899-aabbccddeeff}")`, `UUID("urn:uuid:00112233-4455-6677-8899-aabbccddeeff")`, `UUID("00112233-4455-6677-8899-aabbccddeef")`, `UUID("00112233-4455-6677-8899-aabbccddeefg")` and `UUID("")` with `MalformedUuidLiteral`, code `ill_typed`/`type-mismatch`, naming the argument as written and the call's span. It refuses `Timestamp(170141183460469231731687303715884105728)` and `Timestamp(-170141183460469231731687303715884105729)` with `IntegerOutsideI128`, site `literal`, limit `i128::MAX` in both cases (the second names the positive literal 170141183460469231731687303715884105729, as FR-091-AC-38 states), code `ill_typed`/`type-mismatch`; `Timestamp(170141183460469231731687303715884105727)` checks. A refused literal reaches no keying, lowering or IR. | Test (TC-1052) |
 | FR-091-AC-44 | In a unit declaring `dimension Time;`, `unit s : Time = rational(1, 1);` and `unit ms : Time = rational(1, 1000) * s;`, S1 parses `d: Quantity<ms>` as a `Quantity` type form over the qualified name `ms`, and the assembler resolves it to the type of the unit node `ms`, introducing no declaration; `d: Quantity<Time>` (a dimension) and `d: Quantity<nothing>` each refuse with an unresolved-name error naming the name (`missing_declaration`/`missing-name`), and `f(3 s)` where `f` takes `d: Quantity<ms>` refuses `ill_typed`/`type-mismatch` at the argument. A unit declaring a unit `ms` and a record `ms` checks, the type position meaning the record and `Quantity<ms>` the unit; two units named `ms` declared in one unit of compilation refuse at the two declarations, each named, `ambiguous_declaration`/`ambiguous-name` (the duplicate dimension or unit name rule); and a declaration named `Quantity` refuses `invalid_syntax` (QSpec FR-142-AC-13). | Test (TC-483) |
+| FR-091-AC-45 | Base-dimension rule (QSpec FR-142-AC-16). `dimension L; dimension A = L ^ 2; unit m2 : A = rational(1, 1);` refuses with one error at `L`'s turn, `missing_declaration`/`missing-name`, naming `L` and `m2`, the first unit in source order whose dimension has a nonzero exponent of `L`; with `unit m : L = rational(1, 1);` added it assembles. `dimension L; dimension A = L ^ 2;`, with no unit, assembles: a unitless base dimension carried by no unit-bearing dimension, and a derived dimension without a unit, are not refused. `dimension L; dimension N = L / L; unit one : N = rational(1, 1);` assembles, since `N`'s empty map names no base dimension. | Test (TC-483) |
+| FR-091-AC-46 | First defect (QSpec FR-142-AC-15). `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * ghost;` refuses row 1 at `z`, not row 2; `dimension L; unit r : L = rational(1, 1); unit u : L = rational(1, 1) * ghost; unit z : L = rational(0, 1) * r;` refuses row 2 at `u`, the earlier unit; `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1); unit s : L = rational(1, 1) * s;` refuses row 4 (`r`, `q`), not row 6 (`s`'s self-cycle); `dimension L; dimension T; unit t : T = rational(0, 1) * tr; unit tr : T = rational(1, 1); unit l : L = rational(2, 1);` refuses row 5 at `L`'s root `l`, not row 1 at `t`, since `L` takes its turn before `T`; `dimension A = B; dimension B = A; dimension L; unit l : L = rational(2, 1);` refuses step (-1)'s `invalid_package`/`definition-cycle` at `A`, edges `A -> B` and `B -> A`, not row 5 at `l`. | Test (TC-483) |
+| FR-091-AC-47 | Least-unit cycle (QSpec FR-142-AC-15). `dimension L; unit r : L = rational(1, 1); unit y : L = rational(1, 1) * x; unit x : L = rational(1, 1) * y;` refuses row 6, `invalid_package`/`definition-cycle`, with edges `y -> x` then `x -> y`, from `y`, the cycle's least unit by source position, not from `x`, the least by name. | Test (TC-483) |
+| FR-091-AC-55 | Package dimensions and units (QSpec FR-142-AC-16, AC-18, AC-19). With admitted domain packages `P` and `Q` selected by the unit in that lock order, `P` at `/lock/model_selections/0` and `Q` at `/lock/model_selections/1`, `P` declaring the TC-187 `P` dimensions and units and `Q` declaring U11z2's `T` with its unit `s`, each of QSpec TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2, its `P` declarations supplied by `P` and its local declarations in the unit, gives TC-187's result through the assembler. U11r admits a local `cm` that targets `P`'s root `m`. U11s refuses row 6 at `P`'s `L`, retaining `a -> b` and `b -> a`, and `P`'s `m` is not re-checked. U11t refuses row 4 with `P`'s root `m` and the local `m2`. U11u refuses row 1 at `z`. U11y and U11z1 refuse the base-dimension rule at `P`'s `L`, `missing_declaration`/`missing-name`, retaining `L` and `m2`, located at `/lock/model_selections/0` and naming `L`'s FCD identity. U11z2 refuses the base-dimension rule at `P`'s `L` before the later zero scale. FR-142-AC-19's `unit tick : Rate = 1/2 * M::us`, typed by the package dimension `Rate`, is admitted. Dimension-name collisions (QSpec FR-142-AC-19): a unit declaring `dimension Time;` beside `acme/rpc` also declaring a dimension `Time` refuses `conflicting_declaration`/`duplicate-declaration` at the source `dimension Time` span, naming both declarations; two admitted packages that each declare a dimension `Rate`, with no source `Rate`, refuse the same code at the later package's selection row `/lock/model_selections/1`; a source unit `ms` and `acme/rpc`'s unit `ms` both check, as `Quantity<ms>` and `Quantity<M::ms>`. | Test (TC-483) |
 
 ## Dependencies
 
@@ -993,8 +1038,9 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 - The dimension and unit hand-off: the assembler ends at an admitted
   `UnitGraph` in `PackageDeclarations::units`, which keeps each unit's and
   dimension's preimage bytes; FR-094's lowering builds their nodes.
-- STD-112 (QSpec catalog causes for unit-graph topology errors) and QSpec
-  FR-142 "Quantity type reference" (the complete-V1 source form `Quantity<u>`).
+- QSpec FR-142 "Dimension and conversion algebra" (the unit-graph topology
+  rules, order and causes) and "Quantity type reference" (the complete-V1
+  source form `Quantity<u>`).
 - Resolving a selection's definition reference against the library lock is
   the M-4 lock evidence.
 - FR-091-AC-17's code needs the QSpec catalog to name an alias cycle under
@@ -1026,7 +1072,8 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-5, integer operators | Resolved: S2 maps `div`, `rem` and `mod` to distinct forms regardless of reachability. Check uses the declaration's resolved `using` selection: absent `quire.value.complete/v1` refuses each at its operator locus; selected complete value admits well-typed forms. The checked package's exactly-one integer-division law governs `div`/`rem`; `mod` stays Euclidean. Their checker and evaluator arms are required by FR-091-AC-39 and QSpec FR-147. `/` has no integer-division meaning; QSpec FR-149 owns exact integer-to-rational promotion only under complete value. | QSpec FR-147 and its shared grammar admit these operators only under the complete-value facet, while QSpec FR-039 preserves the state-only refusal. S2 must not discard the distinction before profile admission. | QSpec changes the facet, operator law or slash rule. |
 | FR-091-OQ-5, other constructs | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed unrepresented constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. Float literals depend on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
-| FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, terms sort by key, and a derived dimension that cancels to no terms refuses. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (c) A dimension or unit cycle is `invalid_package`/`definition-cycle` and an unresolved name `missing_declaration`/`missing-name`; the topology errors take the STD-112 causes (FR-091-OQ-12). (d) Units are named as types through `Quantity<u>` (QSpec FR-142). | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (c) follows FR-091-OQ-7 and the catalog's `missing-name`; no existing cause fits the topology errors. (d) the complete-V1 `type-ref` names a quantity type as `Quantity<u>` over a unit (QSpec FR-142-AC-11), and reading any other type name as a unit would invent syntax meaning. A quantity-typed operation parameter is therefore the `Quantity<u>` annotation (FR-185). | QSpec publishes STD-112's causes, or changes or withdraws `Quantity<u>` (FR-142). |
+| FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, and terms sort by key. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (d) Units are named as types through `Quantity<u>` (QSpec FR-142). Parts of (a) and (c) of this ruling are replaced by FR-091-OQ-13. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (d) the complete-V1 `type-ref` names a quantity type as `Quantity<u>` over a unit (QSpec FR-142-AC-11), and reading any other type name as a unit would invent syntax meaning. A quantity-typed operation parameter is therefore the `Quantity<u>` annotation (FR-185). | QSpec changes or withdraws `Quantity<u>` (FR-142). |
+| FR-091-OQ-13 | Unit-graph topology (lead default, 2026-10-22, not an owner answer). A derived dimension that cancels to no terms is the dimensionless dimension, admitted. The dimension and unit topology, including dimension term resolution, dimension and unit cycles, and package dimensions and units as imported nodes, takes QSpec FR-142's rules, order and causes. | QSpec FR-142 fixes the topology rules, their first-defect order and their causes, and admits `N = L / L` (FR-142-AC-15 to AC-19); following it gives every checker of the language one refusal for one unit graph. | QSpec changes FR-142's topology rules or causes. |
 
 ## Open Questions
 
@@ -1044,10 +1091,3 @@ decided; the last column names the fact that reopens it.
   `Expression` variant are forms the complete-V1 profile admits and the
   producer does not represent. The Catalog codes table keeps
   `unsupported_construct` for these two causes.
-- **FR-091-OQ-12: Which catalog causes code the unit-graph topology
-  errors?** STD-112 asks QSpec for a cause for each of: a unit whose target
-  has a different dimension, a dimension with two roots, a zero scale and a
-  non-identity root. A derived dimension whose normalized terms are empty
-  needs one as well, and STD-112 does not list it yet. Until QSpec answers,
-  FR-091-AC-35's code is the interim `invalid_package`/`unit-graph-topology`. A missing root cannot arise from source
-  that passes the other checks.

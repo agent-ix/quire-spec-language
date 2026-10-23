@@ -317,8 +317,8 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
    by ADR-022 SG-4, a state-graph form). An arm that
    does not discharge the form settles `unsupported`, warned,
    `unsupported_projection`/`unsupported-requested-capability`, naming the
-   required capability. CG's `negotiate_kani` settles on modes alone today; the
-   form check is CG follow-up work, which the QSL-42 and QSL-43 exit cases do
+   required capability. CG's `negotiate_kani` settles on modes alone; the
+   form check is CG's, which the QSL-42 and QSL-43 exit cases do
    not need, since no liveness or quantifier backend is registered for them.
 5. **Kani.** Kani advertises its kinds with mode `bounded` only. The Kani
    provider manifest that states this is CG's (QSpec FR-331); until CG

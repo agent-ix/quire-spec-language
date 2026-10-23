@@ -93,8 +93,7 @@ impl Emitted {
     /// QSL's I2 read of `envelope` as the package pinned at its own
     /// recomputed `package_id`.
     fn read_envelope(&self, envelope: &Value) -> Read {
-        let package_id =
-            qsl_semantics::library::PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
+        let package_id = crate::checked_v2::tests::derived_package_id(envelope);
         read_v2(
             &jcs(envelope),
             library(),
