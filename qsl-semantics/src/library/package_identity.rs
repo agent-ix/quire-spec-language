@@ -286,7 +286,7 @@ fn wire_node_id(value: NodeRef<'_>) -> Option<WireNodeId> {
 }
 
 /// The node tags of the V2 semantic graph.
-const NODE_TAGS: [&str; 15] = [
+const NODE_TAGS: [&str; 16] = [
     "scalar_type",
     "composite_type",
     "bounded_domain",
@@ -297,6 +297,7 @@ const NODE_TAGS: [&str; 15] = [
     "relation",
     "state",
     "temporal",
+    "timed_model",
     "protocol",
     "claim",
     "correspondence",
