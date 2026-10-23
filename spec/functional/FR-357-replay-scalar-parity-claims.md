@@ -155,6 +155,12 @@ request the default refuses (TC-904).
   is no parameter, a parameter bound twice and a parameter left unbound each
   refuse; no operand drawn per operation, literal or intermediate subterm, is a
   function-level witness.
+- The function entry SHALL refuse a request carrying semantic profile
+  selections with `ReplayRefusal::UnusedProfileSelections`
+  (`invalid_runtime_input`/`unknown-member`), after the replay-target check
+  and before the recompile, as FR-484 states: a value-parity claim has no
+  proving run, and the lock's clause-profile rows are bound through
+  `package_id`.
 - The function entry SHALL refuse a function declared `Boolean` with
   `ReplayRefusal::NotAValueFunction`, before any call.
 - The function entry SHALL then check the request's occurrence key against

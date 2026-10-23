@@ -1,7 +1,7 @@
 ---
 type: index
 title: "Plan-013 — Complete-V1 native delivery"
-description: "Contents of the complete-V1 QSL and WASM delivery plan."
+description: "Contents of the complete-V1 QSL delivery plan."
 okf_version: "0.1"
 ---
 # Plan-013 — Complete-V1 native delivery
@@ -16,5 +16,4 @@ okf_version: "0.1"
 * [Task-050](./tasks/Task-050-model-graph-semantics.md) - QSL #131 domain-package model intake and #120 model graph semantics.
 * [Task-051](./tasks/Task-051-reference-runtime.md) - QSL #121 reference runtime and simulation.
 * [Task-052](./tasks/Task-052-native-tooling.md) - QSL #122 lifecycle tooling.
-* [Task-053](./tasks/Task-053-wasm-parity.md) - quire-wasm #6 pure bounded parity.
 * [Task-054](./tasks/Task-054-complete-v1-qualification.md) - QSL #123 complete qualification.
