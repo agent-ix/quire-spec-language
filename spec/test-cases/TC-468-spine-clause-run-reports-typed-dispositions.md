@@ -35,7 +35,9 @@ Build `ClauseRunRequest`s from FR-108's fixtures, in memory.
    constructs other than `Completed`, pass it through `run_clause`'s mapping
    and through FR-100's, and compare; FR-100's internal failures (the kernel
    `CheckedInvariant` and a `CallFailure::Fault`) among them.
-6. With feature `quire-extraction`: extract a Markdown document whose one
+6. In `qsl-replay`'s tests, built with
+   `cargo test -p qsl-replay --features quire-extraction` (the root crate has
+   no `quire-extraction` feature): extract a Markdown document whose one
    selected fence holds the step 1 unit through `qsl_source::extract`, and
    run healthy-parent, violating-parent and missing-model with that
    extracted source as the unit; then healthy-parent with the same unit

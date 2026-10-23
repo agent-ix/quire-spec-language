@@ -312,6 +312,9 @@ impl DeclarationRegions {
             CheckCause::StateGraph(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span()?)
             }
+            CheckCause::Hybrid(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
             CheckCause::ProtocolObligation(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }

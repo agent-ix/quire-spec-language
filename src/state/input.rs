@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-049: immutable typed state inputs and closed outcomes.
 
-use std::str::FromStr;
 use std::sync::Arc;
-
-use qsl_foundation::digest::ByteDigest;
 
 use crate::protocol_artifact::{wire, ProtocolNumber};
 
@@ -49,41 +46,32 @@ pub struct ObjectKey {
     pub identifier: String,
 }
 
-/// The canonicalization domain a producer digest is computed over: the one
-/// spelling the state input contract admits, decoded once at the edge
-/// ([`FromStr`]) so no later code compares the wire string.
+/// Producer digest of RFC 8785 canonical JSON, spelled `sha256-jcs:` followed
+/// by 64 lowercase hexadecimal characters. The evaluator checks the spelling
+/// before using the selected authority.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalDigest(pub String);
+
+/// Static selection member whose digest was rejected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CanonicalizationDomain {
-    /// `filament-canonical-json-1`.
-    FilamentCanonicalJson1,
+pub enum StaticAuthorityMember {
+    /// Selected document.
+    Document,
+    /// Selected model.
+    Model,
+    /// Selected profile.
+    Profile,
+    /// Selected configuration.
+    Configuration,
 }
 
-/// The offered canonicalization domain is not one the contract admits.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("unsupported canonicalization domain")]
-pub struct UnsupportedCanonicalizationDomain;
-
-impl FromStr for CanonicalizationDomain {
-    type Err = UnsupportedCanonicalizationDomain;
-
-    #[ix_trace_rs::string_edge]
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        match text {
-            "filament-canonical-json-1" => Ok(Self::FilamentCanonicalJson1),
-            _ => Err(UnsupportedCanonicalizationDomain),
-        }
-    }
-}
-
-/// Producer canonical digest at the authority's static selection: a
-/// `sha256` digest ([`ByteDigest`] is the algorithm-prefixed SHA-256 spelling,
-/// checked when parsed) in a closed canonicalization domain.
+/// Reason a StaticAuthority digest spelling is invalid.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CanonicalDigest {
-    /// Canonicalization domain the digest was computed over.
-    pub domain: CanonicalizationDomain,
-    /// Computed `sha256` digest value.
-    pub value: ByteDigest,
+pub enum StaticAuthorityDigestCause {
+    /// The spelling does not carry the `sha256-jcs:` prefix.
+    WrongDomain,
+    /// The suffix is not 64 lowercase hexadecimal characters.
+    Malformed,
 }
 
 /// The artifact reference is not the authority-adapter artifact the state
@@ -133,8 +121,7 @@ pub struct ObservationDigest(pub String);
 /// Static document, model, profile and configuration identity and digest
 /// required by composed evaluation.
 ///
-/// Each identity is paired with a `sha256` digest in the
-/// `filament-canonical-json-1` domain, typed by [`CanonicalDigest`].
+/// Each identity is paired with a `sha256-jcs` digest, typed by [`CanonicalDigest`].
 /// `StaticAuthority` is a plain Rust struct the
 /// caller builds directly from those checked identities and digests.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -464,6 +451,13 @@ pub enum Refusal {
     DuplicateObject(ObjectKey),
     /// The supplied authority evidence's identities or digests are malformed.
     MalformedAuthorityEvidence,
+    /// A static selection digest has the wrong domain or malformed spelling.
+    StaticAuthorityDigest {
+        /// First invalid member in document, model, profile, configuration order.
+        member: StaticAuthorityMember,
+        /// Reason the member's digest was refused.
+        cause: StaticAuthorityDigestCause,
+    },
     /// The supplied authority evidence does not match what the named binding requires.
     Authority(wire::Handle),
     /// The supplied authority adapter does not ground the offered authority evidence.
