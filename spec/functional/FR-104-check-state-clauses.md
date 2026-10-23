@@ -161,6 +161,23 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   `<=`, `>` and `>=` supply no expected type and coerce nothing: between an
   `Integer` operand and an `Int[..]` operand they are an integer ordering and
   are accepted.
+- The checker SHALL type infix decimal arithmetic by QSpec FR-140's rule,
+  wherever it is written and whether or not its position supplies an
+  expected type. A binary `+`, `-` or `*` whose operands, ignoring
+  parentheses, have one named `Decimal[..]` type, and are not both
+  `decimal(c,s)` literals, SHALL have that type, with the type's `smax` as
+  its target scale; a literal operand SHALL take the other operand's type.
+  So `a + b = b + a` with `a` and `b` of one decimal type is an equality of
+  that type (QSpec FR-149). Operands of two distinct named decimal types
+  SHALL refuse `ill_typed`/`type-mismatch` at the arithmetic node until a
+  `convert` selects one type. An operation whose operands are both literals
+  and whose position supplies no unique expected type SHALL refuse
+  `ill_typed`/`ambiguous-literal` at the arithmetic node.
+- The checker SHALL NOT record a range obligation for decimal arithmetic or
+  widen its type: a result outside the type's range is refused when it is
+  evaluated, `decimal_out_of_domain`/`outside-domain` (QSpec FR-140). A
+  result that needs a wider type takes it from a typed position, such as a
+  declared function result or a `convert` target.
 
 ### Observations of reads
 
@@ -316,6 +333,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
 | FR-104-AC-11 | Over the ConfigVersion package with `bound HistoryBound on Config::config_history [8]` (FR-380), `NoCycle` yields an `operation-contract` record whose one domain, the `config_history` population keyed as in FR-104-AC-5, is a `Population(Some(8))` domain with available finite bound `Cardinality{8}` and is not listed among the unbounded domains, so a clause whose only domains are bounded has extent `Bounded`; the population covering `ConfigVersion` is still the one `config_history`, and a second population `archive` of `ConfigVersion` with or without a bound of its own still refuses `ambiguous_declaration`/`ambiguous-name` at each clause's `on`. Without the `bound` declaration the record is FR-104-AC-5's. | Test (TC-1054) |
 | FR-104-AC-12 | Extend TC-459 step 7's fixture package with an object type `Counter { tally: Int[0,3]; next: Int[0,3]; }` and an operation `bump` declared on it. `self.tally < 3 and self.next = self.tally + 1` checks as `pre G using v on Config::Counter::bump` and as `invariant I using v on Config::Counter at current`; with `record Pair { tally: Int[0,3]; }`, `function f using v(earlier: Pair, later: Pair, n: Integer): Boolean pure { ... }` with body `earlier.tally < 3 and later.tally = earlier.tally + 1` checks. With `self.tally < 3 and` or `earlier.tally < 3 and` removed, each refuses `undefined_expression`/`unproved-range` at the sum. `later.tally = earlier.tally` checks; `later.tally = -earlier.tally` and `later.tally = n` each refuse `ill_typed`/`type-mismatch` at the comparison. | Test (TC-1084) |
+| FR-104-AC-13 | With `type P = Decimal[-99, 99; 2, 2; nearest-even];` and `type R = Decimal[0, 1000; 1, 1; exact];`, `function c using v(a: P, b: P): Boolean pure { a + b = b + a }` checks with each sum typed `P`, as do the bodies `a * b = b * a`, `a - b = a - b` and `a + decimal(1, 2) = b`, the last with the literal typed `P`. With `b: R`, `a + b = b + a` refuses `ill_typed`/`type-mismatch` at the first `a + b`. `let s = decimal(1, 2) + decimal(2, 2) in s = a` refuses `ill_typed`/`ambiguous-literal` at the sum. Evaluating `c` with `a = decimal(1, 2)`, `b = decimal(2, 2)` returns `true`, and with `a = decimal(99, 2)`, `b = decimal(1, 2)` it is refused `decimal_out_of_domain`/`outside-domain`. | Test (TC-1084) |
 
 ## Dependencies
 
