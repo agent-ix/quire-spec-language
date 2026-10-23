@@ -119,6 +119,7 @@ them needs no facade.
 | `FamilyOutcome`, `FamilyResult`, `EvalOutcome` (the S6a result vocabulary) | E, `quire_eval` | S0, from `qsl_semantics::family` |
 | `Evaluation`, `CallFailure` | E, `quire_eval` | S0, from `qsl-eval`'s `value::expression`, public at `qsl_eval::value` |
 | The registry, its admission result (`Accepted`, `RegistrySealed`, `CallableNotAdmitted`, `SignatureMismatch`, `DuplicateBinding`), the admitted signature, the session, the step result, the body factory and invocation-state contract, and the child request | E, `quire_eval` | S0, new |
+| `PrepareLimitReached`, `PrepareSetting` (`CallFailure::Limit`'s payload, FR-279 and FR-294) | E, `quire_eval` | S0, new |
 | `WrongSnapshotCause` | SV, `quire_semantic_value::call` | S1, from `qsl_semantics::check::refusal`, unless FR-400's X-13 has moved it |
 
 These stay where they are and are not part of the leaf: `qsl-foundation`'s
@@ -161,6 +162,17 @@ cfg, so FR-063's probe builds, whose `RUSTFLAGS` also reach git
 dependencies, still make every QSL match over the type non-exhaustive. `qsl-foundation`
 names the moved catalog vocabulary through its dependency on SV; SV depends on
 no QSL crate, so that edge closes no cycle.
+
+`CallFailure` has the arm `Limit(PrepareLimitReached)`: a `PrepareLimits`
+bound that `execute`'s `prepare` reached (FR-279, FR-294).
+`PrepareLimitReached { setting, bound, actual }` holds a `PrepareSetting`
+(`CompileWorkUnits` or `CodeBytes`, whose `name()` is
+`prepare.compile_work_units` or `prepare.code_bytes`), the configured bound
+and the counter the refused charge reached, as `u64`s, and no `Locus`, so
+the leaf depends on no QSL crate for it. `CallFailure::category` returns
+`Category::Incomplete` for the arm, and its catalog code is
+`stage_limit_exceeded`. No evaluator in the leaf returns it; only `execute`
+does, from `qsl-eval`'s `PrepareFailure::Limit(LimitExceeded)`.
 
 ### The checked closure the leaf reads
 
