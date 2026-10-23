@@ -155,10 +155,9 @@ spelling QSL writes.
   bounded-complete only for a TP-2 `on origin` item unrolled to `depth >=
   h`, because below `h` the claim can fail at a position the query does
   not reach, so a refutation of the shallower query proves nothing.
-  FR-127's settlement map SHALL apply the same rule to a `BoundedComplete`
-  result that comes with no certificate, before it settles `Uncertified`:
-  such a result settles `inconclusive`, `CertificateRejected{ShapeMismatch,
-  Query { part: Unrolling }}`, never `proved`.
+  FR-127's "Bounded-complete basis rule" applies the same rule first, to a
+  `BoundedComplete` result with or without a certificate, so a result that
+  breaks it never reaches this checker or FR-127's no-certificate path.
 - The checker SHALL encode each expected query with FR-315 from the
   recompiled package and the re-admitted subject at the basis's depth: the
   unrolling for `BoundedComplete{depth}`, and the base case and the step

@@ -78,13 +78,18 @@ Merge: the PR body says "No open PR touches FR-315", but #1356 does.
 table, where both append after AC-32; keep both PRs' rows in id order.
 #1354 merges cleanly with #1312, #1310 and #1342.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The new FR-314 bullet sets a rule for FR-127's settlement map: a `BoundedComplete` result with no certificate that is below the horizon, or not for a TP-2 `on origin` item, settles `inconclusive` `CertificateRejected{ShapeMismatch}`. FR-127 itself is not edited, and open #1312 rewrites that path: `settle_smt_proof` "with no certificate SHALL run no check" and settles `Uncertified`. Once both land, FR-127 says the uncertified path checks nothing while FR-314 requires the horizon check there. Fix: state the horizon rule in FR-127, or in `settle_smt_proof` if #1312 lands first, and record the merge order with #1312. | spec/functional/FR-314-check-an-smt-proof-certificate.md (new ShapeMismatch bullet); #1312 spec/functional/FR-127-settle-a-model-check-verdict-as-a-terminal-record.md |
+
 ## Dispositions
 
-| FND | outcome | reason |
+| FND | Outcome | Reason |
 | --- | --- | --- |
-| FND-001 | fixed | Row 3 now also refuses `query-kind` for `Unrolling{depth < h}` of every `on origin` monitor item, and the Monitors bullet says why. FR-314 gains a basis rule: `ShapeMismatch` at `Query { part: Unrolling }`, before any encoding, for a `BoundedComplete{depth}` basis whose item is not TP-2 `on origin` or whose depth is below the horizon. FR-127's map applies the same rule to a basis with no certificate. The direct `always[0,u]` bullet states that an unsatisfiable answer below `u` is no proof. AC-35 now holds the depth 0/1/3 refusals, and new FR-314-AC-8 (TC-1201 step 8) holds the vector the finding names. |
-| FND-002 | fixed | The guarded false-extension vectors now use the condition `c.value + 2 = c.value`. Its undefinedness is FR-104's range coercion of the sum into `Int[0, 3]` (linear, as in AC-31): defined and false at 0 and 1, undefined at 2. AC-36, AC-37 and TC-1201 step 4 are updated. |
-| FND-003 | fixed | Rule 4c now names the instance of the failure that rules 3, 4, 4a and 4b actually read. When a definedness failure is read, that is the first definedness failure in disjunct order, never a violation's instance. Otherwise it is the first violation's instance, or the first rejecting monitor's. |
-| FND-004 | fixed | The citation of FR-338 "Guarded TP-4 clause" is gone. The bullet now states what main holds: TP-4 has no proof query, and EN-2's lasso searches (ADR-018 DS-3) read the condition through the letter seam as FR-126 reads it, then replay through FR-128. No merge-order dependency on #1310 remains. |
-| FND-005 | fixed | TC-1201 now says that the `on each` and guarded packages are built by the test in QSpec FR-370's shape, because S3/S4 refuse them `NotEmitted` (FR-337, QSL-926), as FR-126-AC-16 does. |
-| Merge note | fixed | The PR body now says #1356 touches FR-315 and states the union resolution of the AC rows. |
+| FND-001 | fixed | Fix commit 97ba934d1 (head 49de7405). Row 3 refuses `query-kind` for `Unrolling{depth < h}` for every `on origin` monitor item. FR-314 rejects `ShapeMismatch` at `Query { part: Unrolling }`, before encoding, any `BoundedComplete` basis below the horizon or for an item that is not TP-2 `on origin`. Hand-checked: AC-35 depths 0, 1 and 3 are below horizon 4 and refused. FR-314-AC-8 depth 0 (h 4), `always[0,3]` depth 2 (h 3) and the TP-1 basis are rejected; AC-1 depth 3 is still accepted. |
+| FND-002 | fixed | The condition is now `c.value + 2 = c.value`. FR-104 coerces the sum into `Int[0, 3]` (as AC-31), so it is defined at 0 and 1, where it is false, and undefined at 2. The printed term is linear. The clause never activates. Hand-checked: at depth 2 the only failure is the condition at position 2, so the prefix is 0, 1, 2 and the result is UndefinedEvaluation at 2. `inc`'s postcondition never fails on the path. |
+| FND-003 | fixed | Rule 4c now names the instance of the failure that rules 3, 4, 4a and 4b read. A definedness failure is attributed to its own instance and never to a violation's. |
+| FND-004 | fixed | The citation of FR-338 "Guarded TP-4 clause" is gone. The bullet now cites ADR-018 DS-3 and FR-126's letter-seam reading, which are on main. |
+| FND-005 | fixed | TC-1201 now states that `on each` and guarded packages are test-built, in FR-370's shape, as FR-126-AC-16 does. |

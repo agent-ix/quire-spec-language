@@ -7,6 +7,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-314
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-127
+    type: verifies
 ---
 # TC-1201: The SMT encoding reads every TP-2 formula, guarded clauses and several instances through per-instance monitors
 
@@ -19,7 +21,7 @@ instance, with one monitor per instance, the false-extension end letter,
 the past-the-end distinctness form and the reading of satisfiable models
 by rules 4, 4b and 4c.
 
-Scope: FR-315-AC-33 to FR-315-AC-39 and FR-314-AC-8.
+Scope: FR-315-AC-33 to FR-315-AC-39, FR-314-AC-8 and FR-127-AC-15.
 
 S3 and S4 refuse an `on each` clause, guarded or not, `NotEmitted`
 (FR-337, QSL-926), so the test builds the checked package of each `on each`
@@ -69,7 +71,8 @@ printed script.
    rules 4 and 4c, and replay the prefix with its `over_binding`.
 8. Check FR-314-AC-8's `BoundedComplete` bases below the horizon and for a
    TP-1 item, with and without a certificate, and FR-314-AC-1's accepted
-   bounded certificate.
+   bounded certificate; settle FR-127-AC-15's results, with and without a
+   certificate.
 
 Tag the tests `#[trace("TC-1201", "FR-315-AC-n")]`.
 
@@ -117,3 +120,6 @@ Tag the tests `#[trace("TC-1201", "FR-315-AC-n")]`.
   `ShapeMismatch` at `Query { part: Unrolling }` before any encoding and
   settled `inconclusive`, `CertificateRejected`, with or without a
   certificate; the accepted certificate still `Verified` (FR-314-AC-8).
+  FR-127-AC-15's results settle `CertificateRejected{ShapeMismatch, ..}`
+  with no check run and unchanged meters, except the horizon-3 result,
+  which settles `Proved{BoundedComplete{depth: 3}, Uncertified}`.
