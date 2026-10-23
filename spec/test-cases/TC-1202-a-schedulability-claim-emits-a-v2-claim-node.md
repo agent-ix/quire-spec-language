@@ -1,12 +1,12 @@
 ---
-id: TC-1201
+id: TC-1202
 title: "A schedulability claim emits a v2 claim node the I2 reader resolves"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-454
     type: verifies
 ---
-# TC-1201: A schedulability claim emits a v2 claim node the I2 reader resolves
+# TC-1202: A schedulability claim emits a v2 claim node the I2 reader resolves
 
 ## Description
 
@@ -39,7 +39,7 @@ with `jitter 0 ms` on `a`; a unit declaring `CtlFp`'s claim twice.
    period `0`), recompute the node key and `package_id`, and feed each to
    the I2 reader.
 
-Tag the tests `#[trace("TC-1201", "FR-454-AC-n")]`.
+Tag the tests `#[trace("TC-1202", "FR-454-AC-n")]`.
 
 ## Expected Results
 
