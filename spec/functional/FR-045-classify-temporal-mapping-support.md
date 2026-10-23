@@ -25,15 +25,20 @@ semantic dimension against the retained native subject.
 The support table is owned by `ix://agent-ix/quire-specification/FR-095`. This
 requirement implements the classification only; it emits no TL formula, no
 valuation request and no correspondence record, and it establishes no bridge.
+QSpec FR-095 names the Contract-IR native-to-TL bridge as the owner of that
+emission: the bridge takes a `Supported` classification, with the TL target
+and the premises it names, as its input, generates the TL formula, valuation
+request and source/result-correspondence record, and discharges each named
+premise. A classification is the bridge's input and never its output.
 
 The disposition SHALL be a total function of three inputs and nothing else:
 the declaration's selected profile, the operator kinds reachable from its root,
 and the surrounding-execution closure named in the request. The first two come
 from the admitted declaration; the third comes from the request, because the
 support table keys on it. It SHALL NOT consult a backend capability report, an
-installed TL version, a syntax match or a historical result. This keeps the classification decidable in this repository
-while `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability
-remain outstanding; the emission half of FR-095 stays outside this scope.
+installed TL version, a syntax match or a historical result, so the
+classification is decided from the admitted package and the request alone,
+whatever TL release or bridge is installed.
 
 ### Closure axis ruling
 
@@ -119,7 +124,7 @@ The classifier SHALL NOT report a declaration as supported because its formula
 bytes match a TL formula; equal formula bytes establish no definition selection.
 
 For a supported classification, the classifier SHALL name the premises the
-absent bridge would still have to discharge: total Boolean predicate projection,
+bridge has to discharge: total Boolean predicate projection,
 preserved source and clause identity, preserved model, type and predicate
 bindings, preserved evaluation anchor and immutable capture environment,
 preserved clock and observation binding, preserved interval, preserved closure
@@ -148,7 +153,8 @@ encode. Naming them is not discharging them.
   TL row selector.
 - **Peer**: [FR-043](./FR-043-evaluate-bounded-native-temporal.md) evaluates
   natively and is unaffected by this classification.
-- **Blocked, recorded as remaining work on compiler #38**: the emission half of
-  `ix://agent-ix/quire-specification/FR-095` — the TL formula, valuation request
-  and correspondence record — depends on `quire-contract-ir#63`,
-  `quire-contract-ir#64` and actual TL capability, and is not implemented here.
+- **Downstream**: the Contract-IR native-to-TL bridge
+  (`quire-contract-ir#64`, its executable composition `quire-contract-ir#71`)
+  emits the TL formula, valuation request and correspondence record of
+  `ix://agent-ix/quire-specification/FR-095` from a `Supported` classification,
+  over the total Boolean predicate projection of `quire-contract-ir#63`.
