@@ -103,14 +103,14 @@ list.
   at `/package/dependencies`), before it checks any source count or builds
   any dependency input.
 - The package reference's `sources` SHALL name the proved package's source
-  units, one or more `quire.source.bytes/v1` sources in FR-480's canonical
-  unit order, and each of its `dependencies` entries (QSpec FR-323) SHALL
-  name that dependency's source units the same way. The executor recompiles
-  each list as one unit list (FR-480), each source under its four FR-001
+  units, one or more `quire.source.bytes/v1` sources in any order, and each
+  of its `dependencies` entries (QSpec FR-323) SHALL name that dependency's
+  source units the same way. The executor recompiles each list as one unit
+  list in FR-480's canonical unit order, each source under its four FR-001
   labels. A `sources` list or an entry that is empty, names a definition
-  document, repeats one (authority, identity) or is not in canonical unit
-  order refuses before any recompile, `invalid_package`/`invalid-value` at
-  that list's pointer: the recompile reads no definition document.
+  document or repeats one (authority, identity) refuses before any
+  recompile, `invalid_package`/`invalid-value` at that list's pointer: the
+  recompile reads no definition document.
 - The executor SHALL read the optional `refinement_internals` value of the
   package reference, at `/package/refinement_internals`, and of each
   `dependencies` entry, at `/package/dependencies/<n>/refinement_internals`,
@@ -549,7 +549,7 @@ predicate claim (ADR-031 SW-7).
 
 - Each ADR-013 O-26 refusal SHALL be a typed `ReplayRefusal` variant with no
   partial result: request decode refusals (FR-071), a limit above the
-  reader limit, a `sources` list that is not a unit list in canonical order (FR-480), a
+  reader limit, a `sources` list that is empty, repeats a unit or names a definition document (FR-480), a
   `dependencies` entry whose `package_id` differs from the recompiled
   closure's selection of its identity (`DependencyIdentityMismatch`), a
   `dependencies` list that is not strictly ascending or holds an entry the

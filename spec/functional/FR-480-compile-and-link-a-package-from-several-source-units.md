@@ -67,7 +67,8 @@ the package means the same whichever order the two files are listed in.
   `ParsedSource`, in request order, with the `AdmittedModels`, dependency
   input and lock evidence. FR-027's native-compile/1 `1-draft` request names
   the unit list as its `program`: one source selection, or a non-empty array
-  of source selections in request order.
+  of source selections in request order (FR-027 states the command's
+  edition, intake and refusal rules for each unit).
 
 ## Outputs
 
@@ -92,7 +93,7 @@ the package means the same whichever order the two files are listed in.
 - **Source order** is request order, then the byte offset within a unit. It
   is QSpec FR-142's source order. It orders refusal reports, FR-091's "in
   source order" lists and FR-142's turn list. It never orders the admitted
-  package: see "Identity and emission".
+  package: see "Ownership, identity and emission".
 
 ### Headers
 
@@ -132,8 +133,16 @@ the package means the same whichever order the two files are listed in.
   one unit are, `ambiguous_declaration`/`ambiguous-name` (FR-091; QSpec
   FR-151 "native declaration names"), naming both declarations, each with
   its unit.
-- A unit SHALL NOT import another unit of its own package. A name is
-  reached through the package namespace, never through an alias.
+- An `import` names a library of the dependency input (FR-099), never a
+  unit of the package. A unit reaches a sibling unit's declarations through
+  the package namespace, never through an alias.
+- If the dependency input supplies a library whose source has the
+  (authority, identity) of a unit of the package, then the compiler SHALL
+  refuse with `invalid_package`/`conflicting-definition`, naming the unit
+  and the library entry, before any unit is parsed: one source cannot be
+  both a unit of the package and a library it imports. An `import` naming
+  a library the dependency input does not supply is refused as FR-099
+  refuses it (`missing_import`/`missing-selection`).
 - Cycles across units (alias cycles, definition and call-graph cycles,
   FR-142 dimension and unit cycles) are refused as the same cycle within one
   unit is, with the cycle's edges named in source order.
@@ -168,8 +177,15 @@ the package means the same whichever order the two files are listed in.
   writes the graph as the one-unit emission writes it, taking the units in
   canonical unit order and writing a node shared by several units (an
   application-keyed node, a builtin, a model-owned node) once, at its first
-  position. Reordering the unit list therefore leaves the package bytes and
-  the `package_id` unchanged.
+  position.
+- Occurrences and their ordinals SHALL be numbered across units in
+  canonical unit order: the occurrences recorded in an earlier unit of that
+  order come first, and within one unit FR-093's insertion order and
+  FR-092's source-position order apply unchanged. A node shared by several
+  units therefore has one sequence of occurrences and `source_map` rows,
+  whatever the request order. Refusals keep source order.
+- Reordering the unit list therefore leaves the package bytes and the
+  `package_id` unchanged.
 - Each declared node's `declaration` occurrence regions SHALL name its own
   unit's source in the source map (QSpec FR-322-AC-52).
 - The spine SHALL return one checked unit per source unit, each binding that
@@ -180,26 +196,28 @@ the package means the same whichever order the two files are listed in.
 
 ### Replay and import of a several-unit package
 
-- A package reference's `sources` (QSpec FR-323) SHALL list the package's
-  `lock.sources`: one or more `quire.source.bytes/v1` sources, in canonical
-  unit order. The FR-098 executor recompiles them as one unit list. A
-  `dependencies` entry's `sources` likewise lists that library's units.
+- A package reference's `sources` (QSpec FR-323) names the package's
+  `lock.sources`: one or more `quire.source.bytes/v1` sources. QSpec states
+  no order for that list, so the FR-098 executor SHALL accept it in any
+  order and recompile it as one unit list in canonical unit order, which
+  gives the package that `lock.sources` describes. A `dependencies` entry's
+  `sources` likewise lists that library's units.
 - FR-098 SHALL refuse, before any recompile, a `sources` list that is empty,
-  names a definition document, repeats one (authority, identity) or is not
-  in canonical unit order, with `invalid_package`/`invalid-value` at
-  `/package/sources` (or the entry's `sources`).
+  names a definition document or repeats one (authority, identity), with
+  `invalid_package`/`invalid-value` at `/package/sources` (or the entry's
+  `sources`).
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-480-AC-1 | QSpec TC-196 D10 split across two units: unit `U1` holds D01, `PX` and `pre PA`; unit `U2` holds `pre PB1` and `pre PB2`, both on `M::B::size` through `U2`'s own `model M` alias. Evaluating `I` for `d1` gives D10's first result (`undefined`, reason `absent-key`, with `PB2` and `PA` not evaluated). With the two bodies' names swapped it gives D10's second result (`undefined`, reason `precondition-false`, after the false clause and `PA`, the lookup clause neither evaluated nor charged). Each result is equal, charges included, for the unit lists `[U1, U2]` and `[U2, U1]`, and with `PB1` in `U1` and `PB2` in `U2`. Both orders give byte-equal packages with one `package_id`, and `lock.sources` lists `U1` and `U2` in canonical unit order. | Test (TC-1210) |
-| FR-480-AC-2 | Unit `A` declares `record Point { x: Integer; }` and unit `B` declares `function px using v(p: Point): Integer pure { p.x }`. The list `[B, A]` checks, and `px`'s parameter type is `A`'s `Point` node. With `record Point { x: Integer; }` also declared in `B`, the compile refuses `ambiguous_declaration`/`ambiguous-name`, naming both declarations with their units. A `B` that writes `import A` refuses as an import of a library that the dependency input does not supply (FR-099). | Test (TC-1210) |
+| FR-480-AC-1 | QSpec TC-196 D10 split across two units: unit `U1` holds D01, `PX` and `pre PA`; unit `U2` holds `pre PB1` and `pre PB2`, both on `M::B::size` through `U2`'s own `model M` alias. Evaluating `I` for `d1` gives D10's first result (`undefined`, reason `absent-key`, with `PB2` and `PA` not evaluated). With the two bodies' names swapped it gives D10's second result (`undefined`, reason `precondition-false`, after the false clause and `PA`, the lookup clause neither evaluated nor charged). Each result is equal, charges included, for the unit lists `[U1, U2]` and `[U2, U1]`, and so is each result with `PB1` in `U1` and `PB2` in `U2`, again in both link orders. Each placement gives byte-equal packages with one `package_id` in both orders, and `lock.sources` lists `U1` and `U2` in canonical unit order. The body node of `false`, shared by `pre PA` in `U1` and `pre PB2` in `U2`, has its `expression` occurrences numbered `U1`'s first in both orders, with equal `source_map` rows. | Test (TC-1210) |
+| FR-480-AC-2 | Unit `A` declares `record Point { x: Integer; }` and unit `B` declares `function px using v(p: Point): Integer pure { p.x }`. The list `[B, A]` checks, and `px`'s parameter type is `A`'s `Point` node. With `record Point { x: Integer; }` also declared in `B`, the compile refuses `ambiguous_declaration`/`ambiguous-name`, naming both declarations with their units. A `B` that writes `import A` refuses as an import of a library that the dependency input does not supply (FR-099). With a dependency input that also supplies a library whose source has `A`'s (authority, identity), the compile refuses `invalid_package`/`conflicting-definition` before any parse, naming the unit `A` and the library entry. | Test (TC-1210) |
 | FR-480-AC-3 | QSpec FR-151-AC-16: units `A` and `B` select one domain package as `model M` and `model N` respectively, and each declares an `operation-body` for a different operation of it; the package links. When `B`'s body targets `A`'s operation instead, the compile refuses `conflicting_declaration`/`duplicate-declaration` (FR-302) with no partial package. Two units selecting that package's identity under two digests refuse `invalid_package`/`conflicting-definition`, naming both selections. | Test (TC-1210) |
 | FR-480-AC-4 | A unit whose header declares edition `0-draft` beside a `1-draft` unit, or the profile selections in another order, refuses `invalid_package`/`conflicting-definition` at the later unit's header, naming both headers; two units spelling one profile's alias `v` and `w` check. An empty unit list refuses `invalid_package`/`invalid-value`, and two sources with one (authority, identity) refuse `invalid_package`/`conflicting-definition` before any parse. | Test (TC-1210) |
 | FR-480-AC-5 | AC-2's package with `Point` moved from `A` to `B`, and `B` keeping `px`, has a `Point` node whose `owner` is `B`'s `SourceOwner`, a different `Point` node id and a different `package_id`. A source-map `declaration` region of `Point` names `B`'s source. | Test (TC-1210) |
 | FR-480-AC-6 | QSpec TC-187 U11q through QSL: document 1 declares `dimension T;` and `unit z : T = rational(0, 1) * z2; unit z2 : T = rational(1, 1);`, and document 2 declares `dimension L;` and `unit u_self : L = rational(1, 1) * u_self;`. The list `[1, 2]` refuses row 1 at `z`, and `[2, 1]` refuses row 6 at `u_self` (FR-091, FR-142 source order). | Test (TC-1210) |
-| FR-480-AC-7 | AC-1's package replays: an FR-098 request whose package reference lists `U1` and `U2` in canonical unit order, with both sources in the byte provision, recompiles to the same `package_id` and replays the D10 call. The same reference with the two sources reversed, or with one source repeated, refuses before any recompile, `invalid_package`/`invalid-value` at `/package/sources`. With `U2` dropped, `U1` alone recompiles to another `package_id`, and the executor refuses it on FR-098's `package_id` comparison (`stale_dependency`/`content-mismatch`). A reference naming a definition document refuses before any recompile. | Test (TC-1210) |
+| FR-480-AC-7 | AC-1's package replays: an FR-098 request whose package reference lists `U1` and `U2` in canonical unit order, with both sources in the byte provision, recompiles to the same `package_id` and replays the D10 call. The same reference with the two sources reversed recompiles to the same `package_id` and replays; with one source repeated it refuses before any recompile, `invalid_package`/`invalid-value` at `/package/sources`. With `U2` dropped, `U1` alone recompiles to another `package_id`, and the executor refuses it on FR-098's `package_id` comparison (`stale_dependency`/`content-mismatch`). A reference naming a definition document refuses before any recompile. | Test (TC-1210) |
 | FR-480-AC-8 | The spine returns two checked units for AC-2's package, each binding its own source digest and type report. A type report built from `A`'s bytes and bound to `B`'s source is refused by FR-362's digest comparison. | Test (TC-1210) |
 
 ## Dependencies
