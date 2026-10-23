@@ -24,8 +24,10 @@ use qsl_eval::value::{
     input_refusal_code, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
 };
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
+use qsl_semantics::check::Capability;
 use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -34,11 +36,13 @@ use qsl_semantics::value::supplied::SuppliedRun;
 use quire_eval::CallFailure;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
-    Cancel, CancelCause, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType,
+    Cancel, CancelCause, LimitKind, Meter, NodeKey, Origin, Outcome, Role, ScalarLimits, Value,
+    ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EnvironmentFailure;
+use quire_semantic_value::location::Location;
 use quire_semantic_value::supplied_stop::{
     SuppliedCause, SuppliedFailure, SuppliedStop, UnsupportedHelperStop,
 };
@@ -65,6 +69,7 @@ use qsl_foundation::Setting;
 use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
 use quire_exact::Identifier;
 use quire_semantic_value::catalog::Category;
+use std::collections::BTreeSet;
 
 mod argument;
 mod object_environment;
@@ -195,6 +200,20 @@ pub enum ReplayRefusal {
         selection: QualifiedName,
         /// The recompiled package it was looked up in.
         package: PackageId,
+    },
+    /// FR-098 "The claim a function request decides": the request's
+    /// `occurrence_key` selects no claim of the selected function. It is
+    /// neither the function's `declaration` occurrence nor the key of a
+    /// `value-validity` record the function owns (a key whose node the
+    /// package does not hold, another function's declaration, an occurrence
+    /// holding no record, a record of another kind or owner). Refused before
+    /// any call, with no charge.
+    #[error("missing_declaration/missing-name: the occurrence {key} selects no claim of the function {function}")]
+    ClaimOccurrence {
+        /// The request's occurrence key.
+        key: OccurrenceKey,
+        /// The selected function.
+        function: QualifiedName,
     },
     /// An argument names a node that is not a parameter of the selected
     /// function.
@@ -433,9 +452,9 @@ impl ReplayRefusal {
             }
             Self::DependencySelections(_) => Code::InvalidPackage,
             Self::DependencyInput(refusal) => refusal.code(),
-            Self::UnknownFunction { .. } | Self::UnknownOperation { .. } => {
-                Code::MissingDeclaration
-            }
+            Self::UnknownFunction { .. }
+            | Self::UnknownOperation { .. }
+            | Self::ClaimOccurrence { .. } => Code::MissingDeclaration,
             Self::WrongReplayTarget { .. } => Code::InvalidRuntimeInput,
             Self::MalformedOperationTarget { .. } => Code::InvalidModelBinding,
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
@@ -484,6 +503,7 @@ impl ReplayRefusal {
             }
             Self::UnknownFunction { .. }
             | Self::UnknownOperation { .. }
+            | Self::ClaimOccurrence { .. }
             | Self::UnknownClause { .. } => Some("missing-name"),
             Self::FrameIdentity(_)
             | Self::ClauseIdentity(_)
@@ -620,10 +640,7 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
-/// # let key = OccurrenceKey::new(
-/// #     WireNodeId::from_digest([0; 32]),
-/// #     Origin::new(Role::new("declaration"), 0),
-/// # );
+/// # let key = site.site.declaration.clone();
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function("small", key),
 /// #   profile_selections: vec![],
@@ -696,10 +713,7 @@ pub enum DependencySelectionsCause {
 /// #     work_units: u64::MAX,
 /// #     result_units: u64::MAX,
 /// # };
-/// # let key = OccurrenceKey::new(
-/// #     WireNodeId::from_digest([0; 32]),
-/// #     Origin::new(Role::new("declaration"), 0),
-/// # );
+/// # let key = site.site.declaration.clone();
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function(small, key),
 /// #   profile_selections: vec![],
@@ -773,12 +787,14 @@ pub fn replay_with_cancel(
     )?;
     let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
-    let call = select(&compiled, function, Claim::Predicate)?;
+    let claim = function_claim(&compiled, function, request.replay_target())?;
+    let call = select(&compiled, function, claim.kind())?;
     let joined = arguments(
         package,
         &call,
         request.source(),
         request.obligation_identity(),
+        claim.unread_roots(),
     )?;
     // FR-098 step 1, after the join and before any conversion.
     if request.object_environment().is_some()
@@ -831,21 +847,47 @@ pub fn replay_with_cancel(
         return Err(ReplayRefusal::Cancelled(cause));
     }
     let mut limit = None;
+    // FR-098 "Application claim: the observation": the call stopped
+    // undefined at the application step of the claim's own site. A stop
+    // inside an operand, in a nested function or at another occurrence of
+    // the node is a different location and no observation. `Location` has
+    // no frame, so in a recursive function a stop at the site may belong to
+    // a nested call of the function itself: it then settles `NoValue`, which
+    // loses a reproduction and never invents one.
+    let failed_at_site = match &claim {
+        FunctionClaim::Application(application) => {
+            !application.recursive && evaluation.location.as_ref() == Some(&application.site)
+        }
+        FunctionClaim::Predicate => false,
+    };
     let (replayed, value) = match evaluation.outcome {
-        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => (
-            if holds {
-                Category::Success
-            } else {
-                Category::Violation
-            },
-            Some(EvaluatedValue::Boolean(holds)),
-        ),
-        // `select` admitted only a function declared `Boolean`.
-        FamilyOutcome::Evaluated(Outcome::Completed(_)) => {
-            return Err(ReplayRefusal::Fault(InternalFault::new(
-                "replay",
-                "boolean-function-completes-a-boolean",
-            )));
+        FamilyOutcome::Evaluated(Outcome::Completed(value)) => match (&claim, value) {
+            (FunctionClaim::Predicate, Value::Boolean(holds)) => (
+                if holds {
+                    Category::Success
+                } else {
+                    Category::Violation
+                },
+                Some(EvaluatedValue::Boolean(holds)),
+            ),
+            // A completed call with no failing observation holds the claim,
+            // whether or not it evaluated the occurrence on any path. FR-098's
+            // "completes outside the record's result bound" arm is not
+            // implemented: no checked package reaches it, and omitting it
+            // fails safe (a missed reproduction, never an invented one).
+            (FunctionClaim::Application(_), _) => {
+                (Category::Success, Some(EvaluatedValue::Boolean(true)))
+            }
+            // `select` admitted only a function declared `Boolean`.
+            (FunctionClaim::Predicate, _) => {
+                return Err(ReplayRefusal::Fault(InternalFault::new(
+                    "replay",
+                    "boolean-function-completes-a-boolean",
+                )));
+            }
+        },
+        FamilyOutcome::Evaluated(Outcome::Undefined(_)) if failed_at_site => {
+            (Category::Violation, Some(EvaluatedValue::Boolean(false)))
         }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => (Category::Refusal, None),
         FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
@@ -1222,9 +1264,115 @@ fn labels(reference: &RawSourceRef) -> SourceIdentity {
 enum Claim {
     /// A Boolean predicate is false at the bindings ([`replay`]).
     Predicate,
+    /// An application of the function's body is undefined at the bindings
+    /// ([`replay`]); the function may declare any result type.
+    Application,
     /// The generated code's outcome equals QSL's `f(b)`
     /// ([`replay_value_parity`]).
     ValueParity,
+}
+
+/// The claim a `function` request's `occurrence_key` selects (FR-098 "The
+/// claim a function request decides").
+enum FunctionClaim {
+    /// The function's `declaration` occurrence: the function returns `true`.
+    Predicate,
+    /// A `value-validity` record the function owns: the application at the
+    /// record's occurrence is defined and within the record's result bound.
+    Application(ApplicationClaim),
+}
+
+/// An application claim: where its application is evaluated and which of
+/// the function's parameters its extent reads.
+struct ApplicationClaim {
+    /// The record's claim site, the `Location` `check` paired with its key.
+    site: Location,
+    /// The extent roots that are parameter nodes of the function.
+    roots: BTreeSet<NodeKey>,
+    /// The owning function is in a recursion group (FR-092). A stop at the
+    /// site may then be a nested call's, and `Location` carries no frame.
+    recursive: bool,
+}
+
+impl FunctionClaim {
+    /// The claim as `select` reads it.
+    fn kind(&self) -> Claim {
+        match self {
+            Self::Predicate => Claim::Predicate,
+            Self::Application(_) => Claim::Application,
+        }
+    }
+
+    /// The extent roots an application claim's replay source must bind; an
+    /// owner parameter outside them may be left unbound (FR-098 "unread
+    /// parameters"). `None` for a predicate claim, which binds every
+    /// parameter.
+    fn unread_roots(&self) -> Option<&BTreeSet<NodeKey>> {
+        match self {
+            Self::Predicate => None,
+            Self::Application(application) => Some(&application.roots),
+        }
+    }
+}
+
+/// Resolve the claim `target`'s occurrence key selects for the function
+/// `name`, after the function resolves and before the argument join: the
+/// predicate claim at the function's `declaration` occurrence, else the
+/// application claim of a `value-validity` record the function owns, else
+/// [`ReplayRefusal::ClaimOccurrence`].
+fn function_claim(
+    compiled: &Recompiled,
+    name: &QualifiedName,
+    target: &ReplayTarget,
+) -> Result<FunctionClaim, ReplayRefusal> {
+    let (segment, callable) = lookup(compiled, name)?;
+    let fault = |invariant| ReplayRefusal::Fault(InternalFault::new("replay", invariant));
+    let key = target
+        .occurrence_key()
+        .ok_or_else(|| fault("function-request-carries-an-occurrence-key"))?;
+    let declaration = OccurrenceKey::new(
+        wire_id(callable.identity),
+        Origin::new(Role::new("declaration"), 0),
+    );
+    if *key == declaration {
+        return Ok(FunctionClaim::Predicate);
+    }
+    let graph = compiled.checked.package().graph();
+    let refused = || ReplayRefusal::ClaimOccurrence {
+        key: key.clone(),
+        function: name.clone(),
+    };
+    let record = graph
+        .requirements()
+        .get(key)
+        .filter(|record| {
+            record.requirements().kind() == Capability::ValueValidity
+                && record.owner() == Some(segment.as_str())
+        })
+        .ok_or_else(refused)?;
+    let semantic = graph.semantic_graph();
+    let node = semantic.resolve_wire(key.node()).ok_or_else(refused)?;
+    let site = graph
+        .occurrence(node, key.origin())
+        .cloned()
+        .ok_or_else(|| fault("requirement-record-has-a-claim-site"))?;
+    let roots = record
+        .extent_roots()
+        .iter()
+        .map(|root| {
+            semantic
+                .resolve_wire(*root)
+                .ok_or_else(|| fault("extent-root-is-a-node"))
+        })
+        .collect::<Result<_, _>>()?;
+    let recursive = semantic
+        .node(callable.identity)
+        .is_some_and(|node| node.recursion().is_some());
+    Ok(FunctionClaim::Application(ApplicationClaim {
+        site,
+        roots,
+        recursive,
+    }))
 }
 
 /// The selected function: its S6a name, and its parameter nodes and
@@ -1340,7 +1488,7 @@ fn select(
     let package = compiled.checked.package();
     let (segment, callable) = lookup(compiled, name)?;
     match (claim, *callable.result == ValueType::Boolean) {
-        (Claim::Predicate, true) | (Claim::ValueParity, false) => {}
+        (Claim::Predicate, true) | (Claim::ValueParity, false) | (Claim::Application, _) => {}
         (Claim::Predicate, false) => {
             return Err(ReplayRefusal::NotAPredicate {
                 selection: name.clone(),
@@ -1383,7 +1531,37 @@ fn arguments(
     call: &Selected,
     source: &ReplaySource,
     obligation: ObligationIdentity,
+    roots: Option<&BTreeSet<NodeKey>>,
 ) -> Result<Vec<WitnessValue>, ReplayRefusal> {
+    // FR-098 "Application claim: unread parameters": a parameter outside the
+    // claim's extent roots, of type `Boolean` or an integer type, may be left
+    // unbound and takes its nearest-to-zero value.
+    let filled = |position: usize| -> Option<WitnessValue> {
+        let unread = roots.is_some_and(|roots| {
+            call.parameters
+                .get(position)
+                .is_some_and(|parameter| !roots.contains(parameter))
+        });
+        if !unread {
+            return None;
+        }
+        match call.types.get(position)? {
+            ValueType::Boolean => Some(WitnessValue::Boolean(false)),
+            ValueType::Integer => Some(WitnessValue::Integer(0)),
+            ValueType::Int(interval) => {
+                let nearest = if interval.contains(&quire_exact::Integer::zero()) {
+                    quire_exact::Integer::zero()
+                } else if interval.lower() > &quire_exact::Integer::zero() {
+                    interval.lower().clone()
+                } else {
+                    interval.upper().clone()
+                };
+                // A bound beyond `i128` has no `WitnessValue`; the parameter then stays unbound.
+                Some(WitnessValue::Integer(nearest.to_string().parse().ok()?))
+            }
+            _ => None,
+        }
+    };
     let values = match source {
         ReplaySource::Input(assignments) => {
             let mut values: Vec<Option<WitnessValue>> = std::iter::repeat_with(|| None)
@@ -1406,8 +1584,11 @@ fn arguments(
             values
                 .into_iter()
                 .zip(&call.parameters)
-                .map(|(value, parameter)| {
-                    value.ok_or(ReplayRefusal::UnboundParameter(wire_id(*parameter)))
+                .enumerate()
+                .map(|(position, (value, parameter))| {
+                    value
+                        .or_else(|| filled(position))
+                        .ok_or(ReplayRefusal::UnboundParameter(wire_id(*parameter)))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -1424,12 +1605,29 @@ fn arguments(
                     })
                 })
                 .collect::<Result<Vec<_>, ReplayRefusal>>()?;
-            witness
-                .decode(&bindings)
+            let decoded = witness
+                .decode_optional(&bindings, |binding| {
+                    call.parameters
+                        .iter()
+                        .position(|parameter| wire_id(*parameter) == binding.parameter)
+                        .is_some_and(|position| filled(position).is_some())
+                })
                 .map_err(|refusal| ReplayRefusal::Witness {
                     obligation,
                     refusal,
-                })?
+                })?;
+            decoded
+                .into_iter()
+                .enumerate()
+                .map(|(position, value)| {
+                    value.or_else(|| filled(position)).ok_or_else(|| {
+                        ReplayRefusal::Fault(InternalFault::new(
+                            "replay",
+                            "optional-witness-binding-is-filled",
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
         }
     };
     Ok(values)
