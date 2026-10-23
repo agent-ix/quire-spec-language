@@ -14,7 +14,7 @@ Verify FR-273: with the canonical types tagged and the verdict table carried
 out, the gate finds no second definition in the QSL workspace and `make ci`
 runs it and passes.
 
-Scope: FR-273-AC-1.
+Scope: FR-273-AC-1 to FR-273-AC-49.
 
 ## Test Procedure
 
@@ -23,6 +23,8 @@ Scope: FR-273-AC-1.
 2. With the M-6c, M-6d and M-6e deletions FR-273's `delete` rows cite landed,
    run `cargo xtask canonical-types` over the QSL workspace.
 3. Run `make ci`.
+4. For each verdict-table row n of FR-273, read the row's namesake in the
+   QSL workspace's shipped code and the gate's findings from step 2.
 
 Tag the tests `#[trace("TC-748", "FR-273-AC-1")]`.
 
@@ -33,3 +35,8 @@ Tag the tests `#[trace("TC-748", "FR-273-AC-1")]`.
 - Step 2: no finding and exit 0.
 - Step 3: `make ci` runs `canonical-types` among its prerequisites and
   passes.
+- Step 4: FR-273-AC-n holds for every row: a `delete` row's item does not
+  exist, a `rename` row's item carries the row's name in its definition and
+  every use, `qsl_replay::identity::QualifiedName` does not exist and
+  `qsl-replay` names `qsl_eval::value::expression::family::QualifiedName`,
+  each `keep` row's `pub use` names the row's path with no `as`, and the gate reports no `copy` finding for `quire_semantic_value::location::{Location, Origin}` (FR-273-AC-49).
