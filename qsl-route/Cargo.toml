@@ -14,6 +14,7 @@ description = "ADR-011 §6.1 layer R: the #185 capability-backend registry and r
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts that this table
 # names no other workspace crate.
 [dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-semantic-value = { workspace = true }
@@ -22,7 +23,6 @@ thiserror = "2.0.20"
 [dev-dependencies]
 # Layer K: the request writer's tests name an occurrence key's origin.
 quire-exact = { workspace = true }
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `tests/it/route_registry.rs` (TC-205) writes a throwaway manifest for
 # `cargo deny check bans` into a scratch directory.
 tempfile = "3.27.0"

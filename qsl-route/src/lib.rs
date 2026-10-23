@@ -139,6 +139,7 @@ impl DynamicsKind {
     }
 
     /// Read an exact manifest spelling.
+    #[ix_trace_rs::string_edge]
     pub fn from_wire(label: &str) -> Option<Self> {
         match label {
             "discrete" => Some(Self::Discrete),

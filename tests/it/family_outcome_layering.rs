@@ -455,7 +455,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // layer 3's `Capability`, F's `ByteDigest`, `CatalogCode` and
             // `MemoryModelName` (FR-226),
             // SV's `PropertyForm` for the FR-124 deadlock-freedom item, and
-            // `thiserror` for `RegistrationRefusal`, and nothing of layer 4,
+            // `thiserror` for `RegistrationRefusal`, and `ix-trace-rs` for the
+            // required FR-064 string-edge marker; nothing of layer 4,
             // K or the root crate. The whole `[dependencies]` table is checked, so a
             // planted third-party crate fails it too.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
@@ -463,6 +464,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             assert_eq!(
                 normal,
                 [
+                    "ix-trace-rs",
                     "qsl-foundation",
                     "qsl-semantics",
                     "quire-semantic-value",
