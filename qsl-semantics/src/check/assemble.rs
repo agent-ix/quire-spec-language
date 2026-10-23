@@ -723,6 +723,9 @@ struct Unit {
     /// Each `refinement` declaration's form, in source order, resolved by the
     /// caller into the unit's `RefinementDeclaration`s (FR-135).
     refinements: Vec<qsl_forms::RefinementForm>,
+    /// Each `hybrid` declaration's form, in source order, resolved by the
+    /// caller into the unit's `HybridDeclaration`s (FR-447).
+    hybrids: Vec<qsl_forms::HybridForm>,
     /// The timed declarations (FR-393), refused until FR-230 checks them.
     timed: Vec<(TimedConstruct, Span)>,
     /// Each state-graph claim's form, in source order, resolved by the
@@ -750,6 +753,7 @@ impl Unit {
             probabilistic: Vec::new(),
             terminals: Vec::new(),
             refinements: Vec::new(),
+            hybrids: Vec::new(),
             timed: Vec::new(),
             state_graph_claims: Vec::new(),
         };
@@ -795,6 +799,7 @@ impl Unit {
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
                 DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
+                DeclarationForm::Hybrid(hybrid) => unit.hybrids.push(*hybrid),
                 DeclarationForm::TimeSource(time) => {
                     unit.timed.push((TimedConstruct::TimeSource, time.span));
                 }
@@ -3236,6 +3241,7 @@ impl PackageDeclarations {
                 return refuse(errors);
             }
         };
+        let hybrids = hybrid_declarations(unit.hybrids, &resolve)?;
         // FR-103, FR-302: the view of each selected model, with `has_body`
         // set from the bodies that resolved into it. A model no body names
         // keeps the view intake admitted, whose `has_body` is false
@@ -3315,6 +3321,7 @@ impl PackageDeclarations {
         package.state_graph_claims = state_graph_claims;
         package.terminals = terminals;
         package.refinements = refinements;
+        package.hybrids = hybrids;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         // FR-092: a protocol's node is declared at the protocol's name.
@@ -3611,6 +3618,37 @@ fn refinement_declarations(
             .cloned();
         match selection {
             Some(selection) => declarations.push(super::RefinementDeclaration { form, selection }),
+            None => errors.push(AssemblyError {
+                cause: AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                span: form.profile.span,
+            }),
+        }
+    }
+    if errors.is_empty() {
+        Ok(declarations)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-447: each `hybrid` declaration's `using` alias resolved to one of the
+/// unit's profile selections, as every native declaration's is.
+fn hybrid_declarations(
+    forms: Vec<qsl_forms::HybridForm>,
+    resolve: &Resolve<'_>,
+) -> Result<Vec<super::HybridDeclaration>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut declarations = Vec::with_capacity(forms.len());
+    for form in forms {
+        let selection = resolve
+            .profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        match selection {
+            Some(selection) => declarations.push(super::HybridDeclaration { form, selection }),
             None => errors.push(AssemblyError {
                 cause: AssemblyCause::UndeclaredAlias {
                     alias: form.profile.alias.clone(),

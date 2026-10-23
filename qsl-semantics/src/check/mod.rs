@@ -115,6 +115,7 @@ mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
+mod hybrid;
 mod hyper_clause;
 mod hyper_typing;
 mod node_key;
@@ -280,6 +281,11 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
 pub use field_refinement::RefinementObligation;
+pub use hybrid::{
+    ArithmeticOp, CaptureIndex, CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp,
+    ContinuousVariable, HybridCause, HybridDeclaration, HybridTerm, InitialEntry, LogicOp,
+    MalformedReason, ModeIndex, ResetConstraint, TransitionIndex, VariableClass, VariableIndex,
+};
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
@@ -529,6 +535,8 @@ pub struct CheckedGraph {
     temporal_clauses: Vec<TemporalClauseNode>,
     /// FR-165: every checked state-graph claim, in declaration order.
     state_graph_claims: Vec<CheckedStateGraphClaim>,
+    /// FR-447: every checked hybrid model, in declaration order.
+    hybrid_models: Vec<CheckedHybridModel>,
     /// FR-185: every checked random parameter, reward and workload.
     probabilistic: CheckedProbabilisticModel,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -2431,6 +2439,18 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-447: each `hybrid` declaration, checked against the same
+        // package-wide node total.
+        let checked_hybrid = hybrid::check_models(&self.hybrids, limits.nodes(), &mut nodes_used);
+        let hybrid_exhausted = checked_hybrid
+            .refusals
+            .iter()
+            .any(|refusal| matches!(refusal.cause, CheckCause::ResourceExhausted(_)));
+        refusals.extend(checked_hybrid.refusals);
+        if hybrid_exhausted {
+            return Err(refusals);
+        }
+        let checked_hybrid_models = checked_hybrid.models;
         // FR-172: each `hyper` clause and `relation`, checked through the
         // `TemporalTrace` family under the unit's one temporal profile. A
         // clause that checks is refused as not emitted, as a `temporal`
@@ -3358,6 +3378,14 @@ impl PackageDeclarations {
                 .map(state_graph_claim::not_emitted)
                 .collect());
         }
+        // FR-447: likewise, no S4 emission writes a hybrid model yet.
+        if !self.emit_unwritten_hybrids && !checked_hybrid_models.is_empty() {
+            return Err(self
+                .hybrids
+                .iter()
+                .map(|declaration| hybrid::not_emitted(&declaration.form))
+                .collect());
+        }
         let mut graph = CheckedGraph {
             source,
             scope,
@@ -3386,6 +3414,7 @@ impl PackageDeclarations {
             protocols: checked_protocols,
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
+            hybrid_models: checked_hybrid_models,
             probabilistic: probabilistic_model,
             operation_frames,
             model_objects,
@@ -3831,6 +3860,11 @@ impl CheckedGraph {
     /// FR-165: every checked state-graph claim, in declaration order.
     pub fn state_graph_claims(&self) -> &[CheckedStateGraphClaim] {
         &self.state_graph_claims
+    }
+
+    /// FR-447: every checked hybrid model, in declaration order.
+    pub fn hybrid_models(&self) -> &[CheckedHybridModel] {
+        &self.hybrid_models
     }
 
     /// FR-185: the package's checked random parameters, rewards and
