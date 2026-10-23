@@ -22,7 +22,7 @@ Fixtures: the declarations of FR-393-AC-1; a unit with a field named `time` and 
 2. Dispatch units beginning `time invariant`, `time` and `urgent`; build the unit with the `time` field and `period` parameter.
 3. Parse the three claims of FR-393-AC-3 and `eventually[0,3] holds(p)`; read each operator's interval.
 4. Build `eventually[0 s, 0.003 s] holds(p)`, `eventually(2 ms, 2 ms] holds(p)`, `eventually[3 ms, 2 ms] holds(p)` and the two-`time` unit; parse `eventually[0 ms, x] holds(p)`.
-5. Parse `eventually[0, 3 ms] holds(p)` and `eventually[0 ms, 3] holds(p)`.
+5. Parse `eventually[0, 3 ms] holds(p)` and `eventually[0 ms, 3] holds(p)`; build `always [2 s, *] holds(p)`.
 6. Build the `Rpc` unit under both facet selections and compare the forms.
 7. Build the three `Clock` units.
 
@@ -34,6 +34,6 @@ Tag the tests `#[trace("TC-1078", "FR-393-AC-n")]`.
 - Step 2: exactly one call each, to `time_invariant`, `time_decl` and `urgent_decl`; the `time` and `period` names build as identifiers.
 - Step 3: `Some(Timed)` with flags `(true, false)` and `(false, true)`, `None`, and `Some(Steps{0, Finite(3)})`.
 - Step 4: upper magnitude `3/1000`; the next three build; `eventually[0 ms, x]` fails at S1 at `x`'s span with no form.
-- Step 5: a parse diagnostic at `3 ms` and `3` respectively, no form.
+- Step 5: a parse diagnostic at `3 ms` and `3` respectively, no form; the open-ended interval builds as a timed interval with lower quantity `2 s` and open upper end.
 - Step 6: equal forms and no facet diagnostic.
 - Step 7: `TypeForm::Clock`; a named type form with no `TypeForm::Clock`; a parse diagnostic at the declared name.

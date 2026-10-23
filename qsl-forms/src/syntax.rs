@@ -3439,6 +3439,9 @@ pub struct TemporalClauseForm {
     /// `clock` member is written (QSpec FR-252: S3 binds the subject's
     /// default clock).
     pub clock: Option<ClockForm>,
+    /// The span of the whole `clock "..."` member, for refusals that belong
+    /// to the clause rather than its string literal.
+    pub clock_clause_span: Option<Span>,
     /// The activation.
     pub activation: ActivationForm,
     /// The fairness constraints in source order.

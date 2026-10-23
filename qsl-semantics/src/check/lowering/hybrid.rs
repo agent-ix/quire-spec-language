@@ -395,10 +395,9 @@ impl Lowering<'_> {
 
     /// The `temporal`/`fairness` node of `constraint` (QSpec FR-481 "Hybrid
     /// claims"). A constraint over the transitions of one mode `S` is
-    /// written `declaration` the mode node and `name` the target mode when
-    /// every transition goes to one target (`fair S::T`), and `declaration`
-    /// the model node and `name` the mode otherwise (`fair S`): the checked
-    /// constraint holds the transition set, and this is its one encoding.
+    /// written `declaration` the model node and `name` the mode for `fair S`,
+    /// or `declaration` the mode node and `name` the target for `fair S::T`.
+    /// The checked constraint retains which source form was written.
     fn hybrid_fairness(
         &mut self,
         constraint: &HybridFairness,
@@ -406,7 +405,7 @@ impl Lowering<'_> {
         boolean: NodeKey,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let Some((mode, position)) = constraint.transitions.first().copied() else {
+        let Some((mode, _)) = constraint.transitions.first().copied() else {
             return Err(stage_fault(location, "fairness-names-a-transition"));
         };
         let model = input.model;
@@ -422,22 +421,21 @@ impl Lowering<'_> {
             .modes
             .get(mode.get())
             .ok_or_else(|| stage_fault(location, "fairness-mode-checked"))?;
-        let target_of = |(owner, position): (crate::check::hybrid::ModeIndex, _)| {
-            let position: crate::check::hybrid::TransitionIndex = position;
-            model
+        let (declaration, name) = if let Some(target) = constraint.named_target {
+            let valid_target = constraint.transitions.iter().all(|(owner, position)| {
+                *owner == mode
+                    && model
+                        .modes
+                        .get(owner.get())
+                        .and_then(|mode| mode.transitions.get(position.get()))
+                        .is_some_and(|transition| transition.target == target)
+            });
+            if !valid_target {
+                return Err(stage_fault(location, "fairness-target-checked"));
+            }
+            let target = model
                 .modes
-                .get(owner.get())
-                .and_then(|mode| mode.transitions.get(position.get()))
-                .map(|transition| transition.target)
-        };
-        let first_target = target_of((mode, position));
-        let one_target = constraint
-            .transitions
-            .iter()
-            .all(|transition| transition.0 == mode && target_of(*transition) == first_target);
-        let (declaration, name) = if one_target {
-            let target = first_target
-                .and_then(|target| model.modes.get(target.get()))
+                .get(target.get())
                 .ok_or_else(|| stage_fault(location, "fairness-target-checked"))?;
             (mode_node(mode)?, target.name.clone())
         } else {

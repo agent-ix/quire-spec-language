@@ -728,12 +728,27 @@ fn slow_enough_checks_to_a_claim_with_its_horizon() {
         (
             Code::UnsupportedConstruct,
             "declaration-form",
-            "\"wall\"".to_owned()
+            "clock \"wall\"".to_owned()
         )
     );
     assert_eq!(
         claim_refusal(&slow_enough("always [0, 10] holds(h.w < 30)")),
         (Code::MissingDeclaration, "missing-name", "h.w".to_owned())
+    );
+}
+
+/// FR-447: a hyper expression in a hybrid claim is refused at S3 at the
+/// expression, after S2 has preserved its syntax.
+#[trace("TC-1220", "FR-447-AC-3")]
+#[test]
+fn hybrid_claim_hyper_expression_refuses_at_s3() {
+    assert_eq!(
+        claim_refusal(&slow_enough("holds(h.v @ a > 0)")),
+        (
+            Code::UnsupportedConstruct,
+            "expression-form",
+            "h.v @ a > 0".to_owned()
+        )
     );
 }
 
@@ -782,6 +797,7 @@ fn slows_checks_activation_captures_and_fairness() {
     assert_eq!(claim.fairness.len(), 1);
     assert_eq!(claim.fairness[0].kind, FairnessKind::Weak);
     assert_eq!(claim.fairness[0].granularity, FairnessGranularity::Whole);
+    assert_eq!(claim.fairness[0].named_target, Some(ModeIndex::new(1)));
     assert_eq!(
         claim.fairness[0].transitions,
         [(ModeIndex::new(0), TransitionIndex::new(0))]
@@ -810,6 +826,7 @@ fn slows_checks_activation_captures_and_fairness() {
     let strong = claim_of(&with_braking2(&strong));
     assert_eq!(strong.fairness[0].kind, FairnessKind::Strong);
     assert_eq!(strong.fairness[0].granularity, FairnessGranularity::Each);
+    assert_eq!(strong.fairness[0].named_target, None);
     assert_eq!(
         strong.fairness[0].transitions,
         [(ModeIndex::new(0), TransitionIndex::new(0))]

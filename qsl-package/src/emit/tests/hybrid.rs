@@ -491,6 +491,123 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
     );
 }
 
+/// FR-447-AC-12 (QSpec FR-481-AC-8, AC-9): every restored hybrid node is
+/// equal to the QSpec vector, not merely the members named in the example.
+#[trace("TC-1220", "FR-447-AC-12", "QSpec-FR-481-AC-8", "QSpec-FR-481-AC-9")]
+#[test]
+fn braking2_restored_nodes_match_qspec_vectors() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::PathBuf::from(qspec)
+        .join("proposals/checked-package-v2/hybrid-node-vectors.json");
+    let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect("QSpec vectors"))
+        .expect("QSpec vector JSON");
+    let expected = fixture["restored_nodes"]
+        .as_array()
+        .expect("QSpec restored nodes");
+    let (emission, wire) = compile(BRAKING2);
+    admitted(&emission);
+    let expected_ids: BTreeSet<String> = expected
+        .iter()
+        .map(|node| {
+            node["node_id"]["digest"]
+                .as_str()
+                .expect("QSpec node id")
+                .to_owned()
+        })
+        .collect();
+    let base_ids: BTreeSet<String> = fixture["nodes"]
+        .as_array()
+        .expect("QSpec base nodes")
+        .iter()
+        .map(|node| {
+            node["node_id"]["digest"]
+                .as_str()
+                .expect("QSpec node id")
+                .to_owned()
+        })
+        .collect();
+    let model = declared(&wire, "hybrid_model", &["Braking2"]);
+    let mut pending: Vec<String> = std::iter::once(model)
+        .chain(of_form(&wire, "temporal_clause"))
+        .map(|node| {
+            node["node_id"]["digest"]
+                .as_str()
+                .expect("node id")
+                .to_owned()
+        })
+        .collect();
+    let mut reached = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !reached.insert(id.clone()) {
+            continue;
+        }
+        let node = node_with(&wire, &id);
+        pending.extend(
+            node["dependencies"]
+                .as_array()
+                .expect("node dependencies")
+                .iter()
+                .map(|dependency| {
+                    dependency["digest"]
+                        .as_str()
+                        .expect("dependency id")
+                        .to_owned()
+                }),
+        );
+        pending.push(
+            node["semantic_type"]["digest"]
+                .as_str()
+                .expect("type id")
+                .to_owned(),
+        );
+    }
+    let actual_ids: BTreeSet<String> = reached.difference(&base_ids).cloned().collect();
+    assert_eq!(actual_ids, expected_ids, "complete restored node set");
+    for node in expected {
+        let id = node["node_id"]["digest"].as_str().expect("QSpec node id");
+        let mut actual = node_with(&wire, id).clone();
+        let mut expected = node.clone();
+        // A package's source map may attach more occurrences to a shared
+        // semantic node; it does not change the node's semantic content.
+        actual.as_object_mut().unwrap().remove("occurrences");
+        expected.as_object_mut().unwrap().remove("occurrences");
+        assert_eq!(actual, expected, "QSpec restored node {id}");
+    }
+}
+
+/// QSpec FR-481: `fair Moving` and `fair Moving::Stopped` name different
+/// declarations even when all of Moving's transitions target Stopped.
+#[trace("TC-1187", "FR-447-AC-5", "QSpec-FR-481-AC-9")]
+#[test]
+fn fairness_member_preserves_the_source_mode_or_target_form() {
+    let mut package_ids = Vec::new();
+    for (source, declaration, name) in [
+        ("fair Moving;", "model", "Moving"),
+        ("fair Moving::Stopped;", "mode", "Stopped"),
+    ] {
+        let claim = format!(
+            "temporal MovingFair using p over (h: Braking) clock \"model-time\" \
+             on origin {{ {source} always [0, 10] true }}"
+        );
+        let (emission, wire, checked) = compile_checked(&format!("{}{}", braking(FLOW), claim));
+        admitted(&emission);
+        assert_read_back_equals(&read_back_hybrids(&emission, &wire), &checked);
+        package_ids.push(package_id(&emission));
+        let model = declared(&wire, "hybrid_model", &["Braking"]);
+        let mode = declared(&wire, "hybrid_mode", &["Braking", "Moving"]);
+        let claim = clause(&wire, "h");
+        let fair = node_with(&wire, target(&claim["body"]["arguments"][4]["members"][0]));
+        let member = &fair["body"]["operation"]["member"];
+        let expected = if declaration == "model" { model } else { mode };
+        assert_eq!(member["declaration"], expected["node_id"], "{source}");
+        assert_eq!(member["name"], name, "{source}");
+    }
+    assert_ne!(package_ids[0], package_ids[1]);
+}
+
 /// FR-447-AC-14: `always [0, 10] true` emits `quire.op.temporal.true` under
 /// the `always` node and no `holds` node; `SlowEnough` emits the
 /// `temporal_profile` law its `using` alias selects.
