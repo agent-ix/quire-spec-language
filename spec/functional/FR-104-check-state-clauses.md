@@ -167,6 +167,8 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   parentheses, have one named `Decimal[..]` type, and are not both
   `decimal(c,s)` literals, SHALL have that type, with the type's `smax` as
   its target scale; a literal operand SHALL take the other operand's type.
+  A binary `/` SHALL be typed the same way, rounding into the target scale by
+  the type's mode, and a unary `-` SHALL have its operand's decimal type.
   So `a + b = b + a` with `a` and `b` of one decimal type is an equality of
   that type (QSpec FR-149). Operands of two distinct named decimal types
   SHALL refuse `ill_typed`/`type-mismatch` at the arithmetic node until a
