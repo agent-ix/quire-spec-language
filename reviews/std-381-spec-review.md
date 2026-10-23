@@ -67,3 +67,28 @@ rests on a deferral (QSL-898) inside the ticket's scope. FND-002 and FND-003
 leave the HP-3 half of the order unbacked and untested. The ∀∀ order, the
 single-subject order and the recomputed vault vectors are correct. A main
 merge is also needed (clean).
+
+## New findings (disposition pass 1)
+
+Re-checked at f28dcf92 (fix commits d04bfe12 and a1b428b2; origin/main is an
+ancestor; `make check-spec-validation` exits 0).
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-005 | medium | The `/` to `mod` rewrite of the deadlock-freedom predicate is not carried to the vectors it quotes. FR-128-AC-6 replays "FR-126-AC-9's deadlock-freedom counterexample under `terminal when 6 mod (3 - c.value) = 0`", and TC-539 step 4 replays "TC-537 step 4's deadlock-freedom counterexample (`terminal when 6 mod (3 - c.value) = 0`)". FR-126-AC-9 and TC-537 step 4 still produce that counterexample under `6 / (3 - c.value) = 0`, and FR-411-AC-3, FR-168-AC-12 and TC-1142 restate "FR-128-AC-6's unit" with `/`. The fix commit says integer `/` is ill-typed where no Rational is expected, so the quoted source vector is the ill-typed one. FR-183-AC-12 also reuses FR-176-AC-4's and FR-177-AC-5's `1 / value(...)` conjuncts, which the same reasoning makes ill-typed. Fix: give FR-126-AC-9, TC-537 step 4, FR-411-AC-3, FR-168-AC-12 and TC-1142 the same `mod` predicate (or keep `/` in FR-128-AC-6, AC-7 and TC-539 step 4), and use `mod` conjuncts in FR-183-AC-12, or state why `1 / value(...)` is typed there. | spec/functional/FR-128-replay-a-model-counterexample.md:208-209; spec/test-cases/TC-539-replay-reproduces-an-undefined-evaluation.md:29-30; spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:458; spec/test-cases/TC-537-undefined-claim-evaluation-refutes-in-the-model-checker.md:35; spec/functional/FR-411-emit-a-checked-model-terminal-declaration-as-a-v2-terminal-node.md:96 | wrong-requirement |
+| FND-006 | medium | FR-128-AC-6's rewritten row has lost its Verification cell. The row ends after the criteria text, with one cell fewer than the table header (`ID`, `Criteria`, `Verification`). Before the fix it read `Test (TC-539)`. The AC now declares no verification method, although TC-539 still covers it. Fix: restore `\| Test (TC-539) \|` at the end of the row. | spec/functional/FR-128-replay-a-model-counterexample.md:208 | wrong-requirement |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-128-AC-6 now specifies the replay of an authored clause's undefined `pre CanInc` to `reproduced-with-evaluated-witness` at position 0. The `AuthoredUndefined` refusal, QSL-898 and TC-539's "Not built" are gone, and AC-6 and AC-7 no longer conflict. |
+| FND-002 | fixed | FR-177 "Ranking findings" states the order within a position (`μ_U`, `μ_E`, the letter, then universal contracts). FR-183 step 3 reads only universal components and cites FR-177 for HP-3. |
+| FND-003 | fixed | FR-183-AC-12 (TC-602 step 13) adds a `μ_E` locus envelope that settles `inconclusive`, `Verdicts`, and a `μ_U` locus envelope that reproduces. Recomputed: an implementation that reads `μ_E` first reproduces the first envelope and so fails the AC. |
+| FND-004 | fixed | FR-176-AC-5 names the tuple `a = (0, 0)`, `b = (1, 0)`, which recomputes as the first initial tuple with an `h` 1. FR-128-AC-7 now says `P` is not read. |
+| FND-005 | still-open | New in this pass. It needs a fix round. |
+| FND-006 | still-open | New in this pass. It needs a fix round. |
+
+Verdict after disposition pass 1: FND-001 to FND-004 are fixed, and every
+re-derived vector holds (FR-128-AC-6 and AC-7 under `mod`, FR-176-AC-5,
+FR-183-AC-9 to AC-12). Not mergeable until FND-005 and FND-006 are fixed.
