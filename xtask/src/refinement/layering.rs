@@ -1148,7 +1148,9 @@ mod tests {
                 "child-distinguishing.native",
                 "invariant Same using v on Config::ConfigVersion at current { true }\n",
             );
-            write_witness(corpus, item.child, &format!("{}-witness", item.name));
+        }
+        for layer in HeaderLayer::ALL {
+            write_witness(corpus, layer, &format!("{}-witness", layer.identity()));
         }
 
         let mut calls = 0;
