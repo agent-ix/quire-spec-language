@@ -225,7 +225,7 @@ impl Refusals {
     /// empty fixture is a fixture bug worth failing loudly on, not a
     /// production caller's concern -- production code builds a `Refusals`
     /// through [`Self::new`] or [`TryFrom`] instead, neither of which can
-    /// panic. Follows [`DeclarationKey::fixture`]'s identical
+    /// panic. Follows `DeclarationKey::fixture`'s identical
     /// `test`/`test-support` gate.
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_vec(refusals: Vec<ModelRefusal>) -> Self {

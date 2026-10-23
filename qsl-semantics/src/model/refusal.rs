@@ -1536,7 +1536,10 @@ pub mod fixtures {
     use quire_exact::UniverseId;
 
     fn key(identity: &str) -> DeclarationKey {
-        DeclarationKey::fixture(identity)
+        DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: identity.to_owned(),
+        }
     }
 
     fn effective_id() -> crate::model::key::EffectiveId {
