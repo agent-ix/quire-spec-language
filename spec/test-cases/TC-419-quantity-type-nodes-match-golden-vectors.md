@@ -48,10 +48,14 @@ read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
    and `a / 0.5 s`, and read the result type node of each division.
 7. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) each declaring base
    dimension `Time` and a root unit, emit the unit of FR-094-AC-12 with
-   `dimension R::Time ~ F::Time;`, with `dimension F::Time ~ R::Time;` in its
-   place, and with `dimension R::Time ~ Time;` added; read the equivalence
-   nodes and the `Time` nodes, and read each package back through IR's v2
-   reader.
+   `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, with
+   `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place, and with
+   `dimension R::Time ~ Time by 1 R::s = 1 s;` added; then with a third package
+   `acme/clock` (alias `G`, root `ms`) `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;`
+   and its reversed spelling; read the equivalence nodes and the `Time` nodes,
+   read each package back through IR's v2 reader, and read the same packages
+   with the node's `root_scale` set to `0/1`, `-1/1`, `2000/2`, removed, and
+   with the base ratios not multiplying to one.
 
 Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 
@@ -82,8 +86,10 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
   of the nodes is the `m` unit node.
 - Step 7: one `scalar_type`/`dimension_equivalence` node with no
   `declaration`, self-typed, preimage ids in ascending digest order, key
-  `b13bf9ac…12ca` under QSpec's vector owner, exactly the two package `Time`
-  keys as dependencies and one `anchor` occurrence of ordinal 0; the reversed
-  spelling gives the same key; the added `R::Time ~ Time` is a second node of
-  ordinal 1; the `Time` nodes keep their keys; the node is emitted with no
-  quantity type naming either dimension; IR admits each package.
+  `bbf770ea…00d4` and `root_scale` 1/1 under QSpec's vector owner, exactly the two
+  package `Time` keys as dependencies and one `anchor` occurrence of ordinal 0; the
+  reversed spelling gives the same key; the added `R::Time ~ Time` is a second node of
+  ordinal 1; the `acme/clock` pair has `root_scale` 1000/1 and key `d707eb94…6c24` in
+  both spellings; the `Time` nodes keep their keys; the node is emitted with no
+  quantity type naming either dimension; IR admits each package and refuses each
+  changed `root_scale` with `invalid_semantic_graph`.

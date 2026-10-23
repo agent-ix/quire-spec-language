@@ -209,7 +209,8 @@ The `Value` family owns the `enum` (including `ordered enum`), `dimension`,
 `unit` and `predicate` declaration productions. The `dimension` production
 reads the token and a qualified name: a `~` after that name makes the
 declaration a dimension-equivalence form (the shared grammar's
-`dimension-equivalence`, `dimension R::Time ~ F::Time;`), and otherwise the
+`dimension-equivalence`, `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`,
+whose `by` clause states the ratio between the two canonical roots), and otherwise the
 name is the single-segment identifier of a dimension form. No other family has a
 dispatch entry, production function or parsed-form type for them. Enum,
 dimension and unit declarations are value types (QSpec FR-322 classes them
@@ -260,10 +261,17 @@ the unit's edition. It carries no semantic identity (FR-067-AC-2).
   written, as a `quire_exact::Integer` built from the signed-integer
   tokens, with its span. A form with no `=` has no terms and declares a
   base dimension.
-- **Dimension-equivalence form.** It carries the two qualified names as
-  written, in source order, each with its span, and the span of the
-  declaration. It resolves, reorders and reduces nothing: `dimension R::Time ~
-  F::Time;` and `dimension F::Time ~ R::Time;` are two forms.
+- **Dimension-equivalence form.** It carries the two dimension names as
+  written, in source order, each with its span; the two **ratio terms** of the
+  `by` clause in source order, each holding a ratio number, a unit name and the
+  term's span; and the span of the declaration. A ratio number is an unsigned
+  integer, `rational(n, d)` or `decimal(c, s)` and carries its spelling kind
+  (`integer`, `rational` or `decimal`), its two parts as `quire_exact::Integer`
+  values built from their tokens (an integer is its value over 1) and its
+  span. A unit name is a qualified name as written, with its span. The form
+  resolves, reorders and reduces nothing: `dimension R::Time ~ F::Time by 1
+  R::s = 1 F::s;` and `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;` are two
+  forms.
 - **Unit form.** It carries the declared name and its span; the dimension's
   qualified name after `:`, with its span; the scale, the exact number
   after `=`; the target's qualified name after `*`, with its span, when
@@ -482,10 +490,11 @@ key that step 4 recomputes. A refusal from a constructor, `admit` or
 
 The rulings on FR-091-OQ-11 and FR-091-OQ-14 (Rulings) fix this section.
 Dimension names and unit names are two namespaces of their own: a dimension
-term, a unit's `:` name and each name of a dimension equivalence look up
+term, a unit's `:` name and each dimension name of a dimension equivalence look up
 dimension forms only (a bare name) or the dimensions of a selected domain
-package (`M::Name`), and a unit's `*` target looks
-up unit forms only. A type form looks up neither, except `Quantity<u>`, which looks up the unit
+package (`M::Name`), and a unit's `*` target and each unit name of a dimension
+equivalence's `by` clause look up unit forms only (a bare name) or the units of a
+selected domain package (`M::name`). A type form looks up neither, except `Quantity<u>`, which looks up the unit
 namespace (QSpec FR-142 "Quantity type reference"; FR-091-AC-44): any other type form that names a dimension
 or a unit is an unresolved type name. A source-declared dimension and unit are
 used by name outside a type form: FR-230 reads them as the time dimension and
@@ -525,25 +534,41 @@ units by QSpec FR-142 "Dimension and conversion algebra", with FR-142's
 rules, order and causes and none of its own:
 
 - It decides each dimension-equivalence form by QSpec FR-142 "Dimension
-  equivalence" steps 1 to 4, the first match winning, with those steps' codes
-  and causes. A name resolves as a dimension term does: a bare name to a
+  equivalence" steps 1 to 7, the first match winning, with those steps' codes
+  and causes. A dimension name resolves as a dimension term does: a bare name to a
   dimension form of the unit, `M::Name` to the dimension `Name` of the
-  document of the admitted package that the model alias `M` selects. It takes
-  the base pairs (both names resolve to a dimension that has no terms) first,
-  steps 1 to 3 in source order, before the first dimension turn, and every
-  other pair, steps 1 to 4 in source order, after the last turn; a pair
-  that step 1 refuses is not classified and is refused in the first phase. An
+  document of the admitted package that the model alias `M` selects; a unit name
+  of the `by` clause resolves as a unit's `*` target does, a bare name to a unit
+  form of the unit and `M::name` to the unit `name` of that package's document.
+  Step 4 reads which dimension node a unit belongs to (its `:` name, or the package
+  unit's dimension); step 5 forms the unit's composed offset and scale to its canonical
+  root as the product of the reduced scales and the sum of the scaled offsets along its
+  target chain (a source unit's from its forms, a package unit's from its document), and
+  refuses a unit whose composed offset is not zero and a ratio number that is not
+  positive. Step 6 forms the **root ratio** of the pair, `(y * b) / (x * a)` reduced
+  (`x U = y V`, `a` and `b` the composed scales of `U` and `V`), and the ratio each base
+  dimension's root has against its class representative's root from the base pairs. Step 7
+  walks the base pairs in source order, assigns each node a root size against the first node
+  of its component, and refuses the first declaration whose ratio disagrees with the sizes
+  the earlier declarations fixed. It takes the base pairs (both names resolve to a
+  dimension that has no terms) first, steps 1 to 5 in source order and then step 7 over
+  them, before the first dimension turn, and every other pair, steps 1 to 6 in source
+  order, after the last turn; a pair that step 1 refuses is not classified and is refused
+  in the first phase. A unit whose target chain a row 1, 2, 3 or 6 defect breaks fixes no
+  scale: the equivalence naming it is decided up to step 4 and the dimension's turn reports
+  the defect. An
   equivalence form is not a node of the turn list and mentions no dimension
   for its walk, so a package dimension that only an equivalence names takes
   its turn with the package dimensions not yet reached. A refusal is located
   at the equivalence form's span and retains what the step names.
-- Equal pairs are decided on node identity, so `dimension Length ~ Length;`
-  is step 2, a pair written in the other order is step 3, and a source
+- Equal pairs are decided on node identity, so `dimension Length ~ Length by 1 m = 1 m;`
+  is step 2, a pair written in the other order, with any ratio, is step 3, and a source
   dimension and a package dimension that carry one name are two nodes.
-- The base-dimension rule at a base dimension's turn does not refuse a base
-  dimension whose base class (QSpec FR-142 "Dimension equivalence") has a
-  member with a unit, since the class root anchors the result; the classes
-  are the components of the base pairs admitted by the first phase.
+- The base-dimension rule at a base dimension's turn applies to a base
+  dimension related by an equivalence exactly as to any other: an equivalence
+  names a unit of each of its two dimensions (step 4), so it never anchors a base
+  dimension that has none. The base classes (QSpec FR-142 "Dimension
+  equivalence") are the components of the base pairs admitted by the first phase.
 - It takes the dimension nodes in FR-142's turn-list order, built by
   walking the declarations in source order. A dimension of an admitted
   domain package is an imported node of that list. A source declaration
@@ -601,10 +626,12 @@ With no error, the assembler builds each preimage, owner and
    with `nominal_key`, the function that mints an enum's key. It then mints
    each dimension equivalence's key over its
    `quire.dimension-equivalence-node/v1` preimage `{version, owner,
-   dimension_node_ids}`, `owner` the unit's `SourceOwner` and
+   dimension_node_ids, root_scale}`, `owner` the unit's `SourceOwner`,
    `dimension_node_ids` the keys of the two related dimension nodes, distinct
-   and in ascending digest order, so a pair written in either order has one
-   key. An equivalence rewrites no dimension: every `terms` list and every
+   and in ascending digest order, and `root_scale` the reduced root ratio of step 6 as
+   `{numerator, denominator}` decimal strings, stated for the node listed first (the
+   reciprocal when the declaration names the dimensions in descending order), so a pair
+   written in either order, with either unit spelling of one ratio, has one key. An equivalence rewrites no dimension: every `terms` list and every
    dimension key is the one the dimensions alone give.
 4. **Unit preimages.** A unit's `quire.unit-node/v1` preimage has its
    dimension's key as `dimension_node_id`, its target's key as
@@ -654,14 +681,17 @@ The method reproduces QSpec's `dimension-velocity` (`7296d20b…da53`) and
 | Q9 | `unit K : Temperature = rational(1, 1);` | dimension Q5, target `null`, scale 1/1, offset 0/1 | `5cc7dfb7cedf23b3dff8012718e3cea37586ed90c6b824affb6fafee10db49db` |
 | Q10 | `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);` | dimension Q5, target Q9, scale 1/1, offset 5463/20 | `12b65987f369f8908be0d690d372e2b3fc3bae7623672a83a942a950663c67fa` |
 | Q11 | `dimension Distance;` | `terms: []` | `e402b4b3ebd1630980c6f13837122250f20153e8f18cf5bc5c7bec976c5e4ff8` |
-| Q12 | `dimension Distance ~ Length;` | `dimension_node_ids: [Q11, Q1]` (ascending digest) | `139d32276f77e2a4687c67485a898936736150b3bd6d07ca1a97d98de0829274` |
+| Q12 | `unit dist : Distance = rational(1, 1);` and `dimension Distance ~ Length by 1 dist = 1 km;` | `dimension_node_ids: [Q11, Q1]` (ascending digest), `root_scale` 1000/1 (`km` is 1000 roots of `Length`, `dist` 1 root of `Distance`) | `9be8d947f22ee11db4f61907e02f77c54f5e0ae1c832d97e92deea656973ff4c` |
+| Q13 | `dimension Length ~ Distance by 1 cm = 2 dist;` | `dimension_node_ids: [Q11, Q1]`, `root_scale` 1/200 (`cm` is 1/100 of a root of `Length`, so one root of `Length` is 200 roots of `Distance` and one root of `Distance`, listed first, is 1/200 root of `Length`) | `ad8ecf7942364032822ddc4a7b80afea30fc77911ac3680b8d4831108138a4e4` |
 
 Q12's preimage is `{version: "quire.dimension-equivalence-node/v1", owner,
-dimension_node_ids}` with `owner` the source owner above. The same method
+dimension_node_ids, root_scale}` with `owner` the source owner above. The same method
 reproduces QSpec's `dimension-equivalence-rpc-flow-time`
-(`b13bf9ac…12ca`) from owner `{kind: "source", authority: "agent-ix",
-identity: "example"}` and the keys of QSpec's `model-dimension-acme-rpc-time`
-and `model-dimension-acme-flow-time` for `dimension R::Time ~ F::Time;`.
+(`bbf770ea…00d4`, `root_scale` 1/1), `dimension-equivalence-rpc-clock-time`
+(`d707eb94…6c24`, 1000/1) and `dimension-equivalence-flow-clock-time`
+(`584c6bbc…714b`, 1000/1) from owner `{kind: "source", authority: "agent-ix",
+identity: "example"}` and the keys of QSpec's `model-dimension-acme-rpc-time`,
+`model-dimension-acme-flow-time` and `model-dimension-acme-clock-time`.
 
 ### Predicates
 
@@ -1039,7 +1069,7 @@ code or code/cause:
 | decimal-scale limit | `stage_limit_exceeded`/`work-budget-exceeded` |
 | type-environment allocator denial | `resource_exhausted`/`allocation-failed` |
 | type-environment reservation size arithmetic or representation overflow | `resource_exhausted`/`reservation-size-overflow` |
-| unit-graph topology | the code and cause QSpec FR-142 gives the defect: `missing_declaration`/`missing-name` (an unknown term, an unresolved equivalence name, the base-dimension rule, row 2), `invalid_package`/`definition-cycle` (a dimension cycle, an equivalence of one node, row 6), `invalid_package`/`invalid-value` (rows 1 and 5), `invalid_package`/`incompatible-definition` (an equivalence whose maps differ, row 3), `invalid_package`/`conflicting-definition` (a repeated equivalence pair, row 4) |
+| unit-graph topology | the code and cause QSpec FR-142 gives the defect: `missing_declaration`/`missing-name` (an unknown term, an unresolved equivalence dimension or unit name, the base-dimension rule, row 2), `invalid_package`/`definition-cycle` (a dimension cycle, an equivalence of one node, row 6), `invalid_package`/`invalid-value` (rows 1 and 5, an equivalence's affine unit or non-positive ratio number), `invalid_package`/`incompatible-definition` (an equivalence whose maps or ratio differ or whose unit is of another dimension, row 3), `invalid_package`/`conflicting-definition` (a repeated equivalence pair or a base cycle whose ratios do not multiply to one, row 4) |
 | unresolved state clause operation (FR-104) | `missing_declaration`/`missing-name` |
 | ambiguous state clause operation (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
 | ambiguous state clause population (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
@@ -1126,10 +1156,12 @@ every checker of the language.
 | FR-091-AC-56 | `Bytes("")`, `Bytes("00ff")` and `Bytes("deadbeef")`, and `JsonObject("{}")`, `JsonObject("[]")`, `JsonObject("3")`, `JsonObject("null")` and `JsonObject("{\"a\":1,\"b\":[true,null]}")`, are admitted with the types `Bytes` and `JsonObject`; `Bytes("00FF")`, `Bytes("0")`, `Bytes("0x00")` and `Bytes("00 ff")` refuse `ill_typed`/`type-mismatch` with the cause `MalformedBytesLiteral` naming the text as written and the span of the call, and `JsonObject("{\"b\":1,\"a\":1}")`, `JsonObject("{\"a\": 1}")`, `JsonObject("1.0")`, `JsonObject("{\"a\":1,\"a\":2}")`, `JsonObject("")` and `JsonObject("{")` the same with `MalformedJsonObjectLiteral`. `Bytes(x)` over `x: String`, `Bytes(5)`, `JsonObject(x)` and `Bytes("00", "11")` refuse `ill_typed`/`type-mismatch`; `"00ff"` at a `Bytes` slot refuses the same; a unit declaring `function Bytes using v(x: Integer): Integer pure { x }` makes `Bytes("00")` an `ambiguous_declaration`/`ambiguous-name` naming the declaration and the native constructor; `3 s` and `rational(3, 2) s` are `Duration` values where the unit `s` is typed by a base dimension `Time`. | Test (TC-1231) |
 | FR-091-AC-57 | S2 builds, for the bodies `decimal(125, 2)`, `decimal(-5, 0)`, `decimal(0, 3)` and `decimal(1, 4294967295)`, one `DecimalValue` each holding the coefficient `125`, `-5`, `0` and `1` and the scale `2`, `0`, `3` and `4294967295` exactly as written, each with the constructor's span, reduces none of them, and refuses no unit with `UnrepresentedConstruct`; the exact numbers of `unit cm : Length = decimal(1, 2) * m;` and of a quantity literal magnitude still build their unit and quantity forms, not `DecimalValue`. | Test (TC-1232) |
 | FR-091-AC-58 | `decimal(1)`, `decimal(1, 2, 3)`, `decimal 5`, `decimal(1 2)`, `decimal(1, x)` and `decimal(1, 2` refuse `invalid_syntax`/`unexpected-token` (a missing or extra argument, comma or parenthesis, or a non-numeric argument); `decimal(+1, 2)`, `decimal(01, 2)`, `decimal(-0, 2)`, `decimal(1.5, 2)`, `decimal(1, 02)`, `decimal(1, -2)` and `decimal(1, 2.0)` refuse `invalid_syntax`/`invalid-token` (a numeric token whose spelling is not `signed-int` for the coefficient or `uint` for the scale), each at the constructor before S2. `function decimal using v(): Boolean pure { true }` refuses `invalid_syntax` at the declaration name, because `decimal` is reserved. | Test (TC-1232) |
-| FR-091-AC-59 | S2 builds, for `dimension Distance ~ Length;`, one dimension-equivalence form with the names `Distance` and `Length` in that order, each with its span and the declaration's span, and no dimension form; for `dimension R::Time ~ F::Time;` a form whose names are the qualified names `R::Time` and `F::Time` as written, each with the span of both segments; and for `dimension R::Time ~ F::Time;` followed by `dimension F::Time ~ R::Time;` two forms in source order. `dimension Length;` and `dimension Accel = Length * Time^-2 / Mass;` still build dimension forms. `dimension R::Time;`, `dimension A ~ B ~ C;`, `dimension A ~;` and `dimension A ~ B = C;` each refuse `invalid_syntax` at the offending token and build no form. | Test (TC-482) |
-| FR-091-AC-60 | Dimension equivalence decisions (QSpec FR-142-AC-22). With `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` with a root unit, and a unit declaring `dimension Time;`, the assembler admits `dimension R::Time ~ F::Time;`, `dimension R::Time ~ Time;`, and, with `dimension Dur = R::Time;` after `dimension R::Time ~ F::Time;`, `dimension Dur ~ F::Time;`; `dimension A ~ B;`, `dimension B ~ C;` and `dimension C ~ A;` over three source base dimensions are admitted together. It refuses each of these with exactly one error at the equivalence form: `dimension R::Time ~ Z::Time;` with no model alias `Z`, `dimension R::Time ~ R::Speed;` where `acme/rpc` declares no `Speed`, and `dimension R::Time ~ Nothing;`, `missing_declaration`/`missing-name` at the unresolved name; `dimension R::Time ~ R::Time;` and `dimension Time ~ Time;`, `invalid_package`/`definition-cycle` retaining the edge `node -> node`; `dimension F::Time ~ R::Time;` after `dimension R::Time ~ F::Time;`, `invalid_package`/`conflicting-definition` at the later form retaining both; and, with `acme/rpc` declaring `Area = Length ^ 2`, `dimension R::Time ~ R::Area;`, and `dimension Dur ~ F::Time;` with no `dimension R::Time ~ F::Time;`, `invalid_package`/`incompatible-definition` retaining both nodes. `dimension R::Speed ~ F::Speed;` over speeds that are `Length / Time` of their package is admitted after `dimension R::Length ~ F::Length;` and `dimension R::Time ~ F::Time;` and refused `incompatible-definition` without them. A source declaring `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1);` and `dimension L ~ L;` refuses `definition-cycle` for the equivalence and not row 1 at `z`, because base pairs are decided before the first turn; the same source with `dimension Dur = L; dimension L2; dimension Dur ~ L2;` in place of `dimension L ~ L;` refuses row 1 at `z` and not the equivalence's `incompatible-definition`, because every other pair is decided after the last turn. The decisions are the same in any source order of the equivalence forms within a phase. | Test (TC-483) |
-| FR-091-AC-61 | The assembler mints keys for Q11 and Q12's sources under source owner (`a`, `u`) as the vector table gives, Q12 `139d32276f77e2a4687c67485a898936736150b3bd6d07ca1a97d98de0829274`; `dimension Length ~ Distance;` and `dimension Distance ~ Length;` give that one key, the `dimension_node_ids` in ascending digest order; Q1's and Q11's keys are the same with and without the equivalence; a dimension `Speed = Length / Time` keeps its `terms` and key (Q3's) beside `dimension Length ~ Distance;`. Over the two package dimensions of QSpec's `model-dimension-acme-rpc-time` and `model-dimension-acme-flow-time` and owner `{kind: "source", authority: "agent-ix", identity: "example"}`, `dimension R::Time ~ F::Time;` mints `b13bf9ac7b4c98085b9ef9127e3cbfc20142f88e4c9f889cc03f01fb723512ca`. `nominal_spans` holds the declaration span of each equivalence under its key. | Test (TC-483) |
-| FR-091-AC-62 | Effect on the admitted graph and the base-dimension rule (QSpec FR-142-AC-24). With `acme/rpc` declaring base dimension `Mass` with root unit `kg` and `acme/flow` declaring base dimension `Mass` with no unit, `dimension Force = F::Mass; unit n : Force = rational(1, 1);` refuses `missing_declaration`/`missing-name` by the base-dimension rule at `F::Mass`'s turn, naming `ix://acme/flow/dimension/Mass` and `n`, and assembles after `dimension R::Mass ~ F::Mass;`. The admitted `UnitGraph` over `dimension R::Time ~ F::Time;` holds the equivalence node beside the three `Time` nodes, derives one class of `R::Time` and `F::Time` whose class root is the canonical root of the member holding the least dimension node key that has a root, and derives one class of `Distance` and `Length` for Q12; a graph with no equivalence derives no class. | Test (TC-483) |
+| FR-091-AC-59 | S2 builds, for `dimension Distance ~ Length by 1 dist = 1 km;`, one dimension-equivalence form with the dimension names `Distance` and `Length` in that order, each with its span, two ratio terms (the integer `1` with the unit name `dist`, the integer `1` with the unit name `km`) each with its spans, and the declaration's span, and no dimension form; for `dimension R::Time ~ F::Time by 1 R::s = rational(1, 1000) F::ms;` a form whose names are the qualified names `R::Time` and `F::Time` and whose unit names are `R::s` and `F::ms` as written, each with the span of both segments, the second number a `rational` with parts `1` and `1000`; for `decimal(5, 1)` in a ratio term a `decimal` number with coefficient `5` and scale `1`; and for `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` followed by `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;` two forms in source order. `dimension Length;` and `dimension Accel = Length * Time^-2 / Mass;` still build dimension forms. `dimension R::Time;`, `dimension A ~ B ~ C;`, `dimension A ~;`, `dimension A ~ B = C;`, `dimension A ~ B;` (no `by` clause), `dimension A ~ B by 1 u;`, `dimension A ~ B by u = 1 v;`, `dimension A ~ B by 1 u = 1;` and `dimension A ~ B by 1 u = 1 v w;` each refuse `invalid_syntax` at the offending token and build no form. | Test (TC-482) |
+| FR-091-AC-60 | Dimension equivalence decisions (QSpec FR-142-AC-22). With `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` with root unit `s`, and a unit declaring `dimension Time; unit s : Time = rational(1, 1);`, the assembler admits `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `dimension R::Time ~ Time by 1 R::s = 1 s;`, and, with `dimension Dur = R::Time; unit dsec : Dur = rational(1, 1);` after `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `dimension Dur ~ F::Time by 1 dsec = 1 F::s;`; `dimension A ~ B by 1 ua = 1 ub;`, `dimension B ~ C by 1 ub = 1000 uc;` and `dimension C ~ A by 1000 uc = 1 ua;` over three source base dimensions with root units `ua`, `ub`, `uc` are admitted together. It refuses each of these with exactly one error at the equivalence form: `dimension R::Time ~ Z::Time by 1 R::s = 1 Z::s;` with no model alias `Z`, `dimension R::Time ~ R::Speed by 1 R::s = 1 R::mps;` where `acme/rpc` declares no `Speed`, `dimension R::Time ~ Nothing by 1 R::s = 1 s;` and `dimension R::Time ~ F::Time by 1 R::s = 1 F::second;` where `acme/flow` declares no `second`, `missing_declaration`/`missing-name` at the unresolved name; `dimension R::Time ~ R::Time by 1 R::s = 1 R::s;` and `dimension Time ~ Time by 1 s = 1 s;`, `invalid_package`/`definition-cycle` retaining the edge `node -> node`; `dimension F::Time ~ R::Time by 1 F::s = 1 R::s;` and `dimension F::Time ~ R::Time by 1 F::s = 2 R::s;` after `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `invalid_package`/`conflicting-definition` at the later form retaining both; and, with `acme/rpc` declaring `Area = Length ^ 2` and its root `m2`, `dimension R::Time ~ R::Area by 1 R::s = 1 R::m2;`, and `dimension Dur ~ F::Time by 1 dsec = 1 F::s;` with no `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;`, `invalid_package`/`incompatible-definition` retaining both nodes. `dimension R::Speed ~ F::Speed by 1 R::mps = 1 F::mps;` over speeds that are `Length / Time` of their package, each `mps` the root of its speed, is admitted after `dimension R::Length ~ F::Length by 1 R::m = 1 F::m;` and `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` and refused `incompatible-definition` without them. A source declaring `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1);` and `dimension L ~ L by 1 r = 1 r;` refuses `definition-cycle` for the equivalence and not row 1 at `z`, because base pairs are decided before the first turn; the same source with `dimension Dur = L; unit rd : Dur = rational(1, 1); dimension L2; unit r2 : L2 = rational(1, 1); dimension Dur ~ L2 by 1 rd = 1 r2;` in place of `dimension L ~ L …;` refuses row 1 at `z` and not the equivalence's `incompatible-definition`, because every other pair is decided after the last turn. The decisions are the same in any source order of the equivalence forms within a phase. | Test (TC-483) |
+| FR-091-AC-61 | The assembler mints keys for Q11, Q12 and Q13's sources under source owner (`a`, `u`) as the vector table gives: Q12 `9be8d947f22ee11db4f61907e02f77c54f5e0ae1c832d97e92deea656973ff4c` (`root_scale` 1000/1) and Q13 `ad8ecf7942364032822ddc4a7b80afea30fc77911ac3680b8d4831108138a4e4` (1/200, the reciprocal of the ratio written for the descending order); `dimension Length ~ Distance by 1 km = 1 dist;` and `dimension Distance ~ Length by 1 dist = 1 km;` give Q12's one key, the `dimension_node_ids` in ascending digest order and the ratio stated for the node listed first, and `by 1 dist = 1000 m` gives it too (one ratio, two unit spellings); Q1's and Q11's keys are the same with and without the equivalence; a dimension `Speed = Length / Time` keeps its `terms` and key (Q3's) beside `dimension Length ~ Distance by 1 km = 1 dist;`. Over the package dimensions of QSpec's `model-dimension-acme-rpc-time`, `model-dimension-acme-flow-time` and `model-dimension-acme-clock-time` and owner `{kind: "source", authority: "agent-ix", identity: "example"}`, `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;` (flow's `ms` is `1/1000` of its root `s`) mints `bbf770ea312108434ee12d0ca4448c6d3d53a0004484b93b8ec577ff1ede00d4`, `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` (clock's root is `ms`) mints `d707eb948ab055a64cf90b8009997ebc54c9bfe5361479afb6485c9c2df56c24` and `dimension F::Time ~ G::Time by 1 F::s = 1000 G::ms;` mints `584c6bbcb5056cf9dd5d10504339e49c5507348601530e5ef6d67bc5e351714b`, the QSpec vectors of the same names. `nominal_spans` holds the declaration span of each equivalence under its key. | Test (TC-483) |
+| FR-091-AC-62 | Effect on the admitted graph and the base-dimension rule (QSpec FR-142-AC-24). With `acme/rpc` declaring base dimension `Mass` with root unit `kg` and `acme/flow` declaring base dimension `Mass` with no unit, `dimension R::Mass ~ F::Mass by 1 R::kg = 1 F::kg;` refuses `missing_declaration`/`missing-name` at `F::kg`, and `dimension Force = F::Mass; unit n : Force = rational(1, 1);` refuses `missing_declaration`/`missing-name` by the base-dimension rule at `F::Mass`'s turn, naming `ix://acme/flow/dimension/Mass` and `n`, with or without any equivalence. The admitted `UnitGraph` over `dimension R::Time ~ F::Time by 1 R::s = 1 F::s;` holds the equivalence node beside the three `Time` nodes, derives one class of `R::Time` and `F::Time` whose class root is the canonical root of the member holding the least dimension node key, and derives one class of `Distance` and `Length` for Q12; a graph with no equivalence derives no class. | Test (TC-483) |
+| FR-091-AC-63 | Ratio checks (QSpec FR-142-AC-22 steps 4, 5, 6 and 7). With the packages of FR-091-AC-60 and `acme/rpc` declaring `unit m : Length = rational(1, 1)`, the assembler refuses `invalid_package`/`incompatible-definition` at the form, retaining the unit and the dimension node it was named for, for `dimension R::Time ~ F::Time by 1 R::m = 1 F::s;` and `dimension R::Time ~ F::Time by 1 F::s = 1 R::s;` (each unit named for the other dimension); `invalid_package`/`invalid-value`, retaining the unit and its composed offset `5` or the number, for `dimension R::Time ~ F::Time by 1 R::s = 1 F::local;` where `acme/flow` declares `unit local : Time = rational(1, 1) * s + rational(5, 1);`, for `by 0 R::s = 1 F::s` and for `by rational(-1, 1) R::s = 1 F::s`; `invalid_package`/`incompatible-definition` retaining both nodes for the speeds of FR-091-AC-60 declared `by 1 R::mps = 2 F::mps` after the base pairs (the base roots fix the ratio 1), and the same speeds `by 1 R::mps = 1 F::mps` admitted; and, over three source base dimensions with roots `ua`, `ub`, `uc`, `invalid_package`/`conflicting-definition` at the third form, retaining all three in source order, for `A ~ B by 1 ua = 1 ub;`, `B ~ C by 1 ub = 1000 uc;`, `C ~ A by 1 uc = 1 ua;`. A ratio written through a larger unit is the same ratio: `by 1 R::s = 1 F::s` and `by 1 R::s = 1000 F::ms` (flow's `ms` is `1/1000` of its root) are both admitted and mint one key, and a source unit `unit tenth : A = rational(1, 10) * ua;` gives `dimension A ~ B by 1 tenth = 1 ub` the ratio 10 (one root of `A` is ten roots of `B`). | Test (TC-483) |
+| FR-091-AC-64 | The unequal-root graph (QSpec FR-142-AC-26). With `acme/rpc` (alias `R`, root `s`) and `acme/clock` (alias `G`, base `Time`, root `ms`, `unit s : Time = rational(1000, 1) * ms;`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;`, `dimension R::Time ~ G::Time by 1 R::s = 1 G::s;` and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` each assemble and mint the one key `d707eb94…6c24` (root ratio 1000), the admitted `UnitGraph` derives one class of the two with class root the root `s` of `acme/rpc` (the least dimension node key in QSpec's vectors) and gives the root `ms` of `acme/clock` an identification edge to it with scale `1/1000` and offset `0`; with `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;` (flow's root `s`) also declared, `dimension F::Time ~ G::Time by 1 F::s = 1000 G::ms;` is admitted and `dimension F::Time ~ G::Time by 1 F::s = 1001 G::ms;` refuses `invalid_package`/`conflicting-definition` at itself retaining the three forms in source order. | Test (TC-483) |
 
 ## Dependencies
 
@@ -1209,7 +1241,7 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
 | FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, and terms sort by key. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (d) Units are named as types through `Quantity<u>` (QSpec FR-142). Parts of (a) and (c) of this ruling are replaced by FR-091-OQ-13. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (d) the complete-V1 `type-ref` names a quantity type as `Quantity<u>` over a unit (QSpec FR-142-AC-11), and reading any other type name as a unit would invent syntax meaning. A quantity-typed operation parameter is therefore the `Quantity<u>` annotation (FR-185). | QSpec changes or withdraws `Quantity<u>` (FR-142). |
 | FR-091-OQ-13 | Unit-graph topology (lead default, 2026-10-22, not an owner answer). A derived dimension that cancels to no terms is the dimensionless dimension, admitted. The dimension and unit topology, including dimension term resolution, dimension and unit cycles, and package dimensions and units as imported nodes, takes QSpec FR-142's rules, order and causes. | QSpec FR-142 fixes the topology rules, their first-defect order and their causes, and admits `N = L / L` (FR-142-AC-15 to AC-19); following it gives every checker of the language one refusal for one unit graph. | QSpec changes FR-142's topology rules or causes. |
-| FR-091-OQ-14 | Dimension equivalence in the assembler (lead default, 2026-10-23, not an owner answer; Peter may veto). The assembler decides every `dimension A ~ B;` by QSpec FR-142's four steps inside the topology check, in the two phases FR-142 fixes, and treats a pair that step 1 refuses as decided in the first phase. An equivalence form is no node of the turn list, so a package dimension that only an equivalence names takes its turn with the unreached package dimensions. `UnitGraph::admit` holds the equivalence nodes and derives the classes; no dimension key or `terms` list changes. | FR-142 fixes the steps and the phases but states neither where a step-1 refusal of a non-base pair falls nor whether an equivalence reaches a package dimension for the turn walk; these two readings give one refusal per unit graph and change no admitted result. | QSpec states either point differently. |
+| FR-091-OQ-14 | Dimension equivalence in the assembler (lead default, 2026-10-23, not an owner answer; Peter may veto). The assembler decides every `dimension A ~ B by x U = y V;` by QSpec FR-142's seven steps inside the topology check, in the two phases FR-142 fixes, and treats a pair that step 1 refuses as decided in the first phase. An equivalence form is no node of the turn list, so a package dimension that only an equivalence names takes its turn with the unreached package dimensions. A unit whose target chain a row 1, 2, 3 or 6 defect breaks fixes no scale, so the equivalence naming it is decided up to step 4 and the unit's dimension reports the defect at its turn. `UnitGraph::admit` holds the equivalence nodes (with their `root_scale`) and derives the classes and the class-root edges; no dimension key or `terms` list changes. | FR-142 fixes the steps and the phases but states neither where a step-1 refusal of a non-base pair falls, whether an equivalence reaches a package dimension for the turn walk, nor how a ratio is read through a defective chain; these three readings give one refusal per unit graph and change no admitted result. | QSpec states any point differently. |
 
 ## Open Questions
 

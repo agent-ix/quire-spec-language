@@ -49,11 +49,13 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph
   topology cause returns its QSpec FR-142 step, rule or row code:
   `missing_declaration`/`missing-name` for an unknown term, an unresolved
-  dimension-equivalence name, the base-dimension rule and row 2;
+  dimension-equivalence dimension or unit name, the base-dimension rule and row 2;
   `invalid_package`/`definition-cycle` for a dimension cycle, an equivalence
-  of one node and row 6; `invalid_package`/`invalid-value` for rows 1 and 5;
-  `invalid_package`/`incompatible-definition` for an equivalence whose maps
-  differ and row 3; and `invalid_package`/`conflicting-definition` for a
-  repeated equivalence pair and row 4.
+  of one node and row 6; `invalid_package`/`invalid-value` for rows 1 and 5 and
+  an equivalence's affine unit or non-positive number;
+  `invalid_package`/`incompatible-definition` for an equivalence whose maps or
+  ratio differ or whose unit is of another dimension, and row 3; and
+  `invalid_package`/`conflicting-definition` for a repeated equivalence pair, a
+  base cycle whose ratios do not multiply to one, and row 4.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
