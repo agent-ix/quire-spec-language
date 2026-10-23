@@ -11,26 +11,28 @@ relationships:
 ## Description
 
 Verify S2's hybrid form, S3's checks, refusals and classification, the
-checked hybrid claim, the provider request and S4's emission refusal.
+checked hybrid claim, S4's emitted hybrid nodes and the provider request
+served in process and by a process provider.
 
 Scope: FR-447-AC-1 to FR-447-AC-5.
 
 ## Test Procedure
 
 Fixtures: the `Braking` declaration and the `SlowEnough` claim of FR-447's
-use case; an in-process fixture hybrid provider; a process fixture provider
-advertising the same kind.
+use case; an in-process fixture hybrid provider; a process fixture hybrid
+provider advertising the same kind and requirement, which reads the model and
+claim from the package bytes it receives.
 
 1. Build and check `Braking`; read its `HybridForm` and `CheckedHybridModel`.
 2. Check each mutation FR-447-AC-2 lists, one at a time.
 3. Check `SlowEnough`, the nested, `until`, interval-free and `[0, *]`
    bodies FR-447-AC-3 lists, and each claim mutation it lists.
 4. Write the request for `SlowEnough` and negotiate it with the in-process
-   fixture registered, then with no provider; compare the checked package
-   identities
-   of `Braking` and of `Braking` with `Moving`'s `v' = -a` replaced by
-   `v' = -2 * a`.
-5. Run S4 over the package; route the item to the process fixture provider.
+   fixture registered, then with only the process fixture registered, then
+   with no provider; compare the checked package identities of `Braking` and
+   of `Braking` with `Moving`'s `v' = -a` replaced by `v' = -2 * a`.
+5. Run S4 over the package and read the emitted bytes with QSpec's v2
+   reader; run S4 over the `v' = -2 * a` package and compare `package_id`s.
 
 Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 
@@ -42,10 +44,13 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 - Step 3: the stated formula with horizon 10; horizons 15, 4, `None` and
   `None`; each claim mutation refused as stated.
 - Step 4: one `temporal-satisfaction` item, extent `bounded`, carrying the
-  hybrid-dynamics requirement, routed to the in-process fixture, which reads
-  `Braking` from the checked package; `unsupported`,
+  hybrid-dynamics requirement, whose `claim` names `SlowEnough`'s
+  `temporal_clause` node, routed to the in-process fixture, which reads
+  `Braking` from the checked package; with only the process fixture, routed
+  to it, which receives the v2 bytes and reads `Braking` and `SlowEnough`
+  from their QSpec FR-478 nodes; `unsupported`,
   `unsupported-requested-capability` with none; different checked package
   identities.
-- Step 5: `unsupported_construct`/`not-yet-implemented` naming `Braking` and
-  `hybrid-model`; the process provider's item `unsupported` with a
-  diagnostic.
+- Step 5: the package is emitted and admitted, holding FR-447-AC-5's
+  `hybrid_model`, `hybrid_mode`, `hybrid_transition` and `temporal_clause`
+  nodes; the two `package_id`s differ.
