@@ -30,6 +30,9 @@ Scope: FR-327-AC-5, FR-328-AC-5, FR-329-AC-6, FR-330-AC-5, FR-331-AC-4.
 
 Fixture: the `Counter` unit, the closed trace and the prefix with `c.value`
 0, 1, 2, and the observed lasso with an empty prefix and loop 0, 1, 2.
+Each clause's undefined letter is `3 mod (2 - c.value)` at `c.value` 2, the
+Euclidean remainder by zero; the step 4 unit compiles from source with no
+refusal.
 
 1. Evaluate the two clauses of FR-327-AC-5 over the closed trace.
 2. Evaluate FR-328-AC-5's clause over the prefix.
