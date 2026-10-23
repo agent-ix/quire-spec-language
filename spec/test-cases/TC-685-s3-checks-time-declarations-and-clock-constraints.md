@@ -27,7 +27,6 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 7. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) both selected and a source that declares `dimension Time; unit s : Time = 1;`, check `time dense unit R::ms`, `time dense unit F::sec` and `time dense unit s`; under `time dense unit R::ms` check `x <= 3 R::ms`, `x <= 3 F::sec` and `x <= 3 s`; check `time tick O period 1/2 R::s unit R::ms` and `time tick O period 1 F::sec unit R::ms`; check `time dense unit len` and a unit of `Duration = R::Time` (FR-230-AC-18).
 8. Check a unit that selects no `quire.temporal.complete/v1` and writes in its own source `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, `f(c: Clock)`, `g(): Clock` and a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` (FR-230-AC-7).
 9. Check a unit whose header selects `quire.temporal.complete/v1` (FR-230-AC-8).
-
 10. Check the `within` predicate of FR-230-AC-9 in a precondition, a time invariant body, a conjunction, with `self.limit` as the bound, with `5` as the clock, with a body that assigns the clock and one that resets it, and in an `invariant` clause.
 11. Check `pick` and `peer_clock` of FR-230-AC-10 in guards, and `g(): Clock { 0 }`.
 12. Check the `Timer` record, the tuple field and the three-object universe of FR-230-AC-11, including the whole read `self.u = self.t`, the `let` literal and the checked `Timer` node.
