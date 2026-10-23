@@ -15,7 +15,7 @@ broken or missing rank, an undefined predicate, an undefined contract
 conjunction, a broken count and a broken order, each settling `CertificateRejected{rule, at}`, and a check that a
 limit stops.
 
-Scope: FR-169-AC-10, FR-169-AC-11.
+Scope: FR-169-AC-10, FR-169-AC-11, FR-169-AC-15.
 
 ## Test Procedure
 
@@ -33,9 +33,12 @@ FR-168-AC-5's item; §7.3's unsequenced job; TC-592's guarded subject (FR-167-AC
    and 0 for `ReachesTwo`, over the guarded subject, and over the same
    subject without the guard.
 6. Settle each step's result.
+7. Check `ReachesTwo`'s certificate with the `counts` entry `(0, 1, 0)`
+   added, and the sequenced `InOneWay` certificate with the `ranks` entry
+   `(0, 0)` added; settle each.
 
-Tag the tests `#[trace("TC-644", "FR-169-AC-10")]` or
-`#[trace("TC-644", "FR-169-AC-11")]`.
+Tag the tests `#[trace("TC-644", "FR-169-AC-10")]`,
+`#[trace("TC-644", "FR-169-AC-11")]` or `#[trace("TC-644", "FR-169-AC-15")]`.
 
 ## Expected Results
 
@@ -53,3 +56,6 @@ Tag the tests `#[trace("TC-644", "FR-169-AC-10")]` or
 - Step 6: each rejection settles `inconclusive`,
   `CertificateRejected{rule, at}`, never `proved`; step 4 settles
   `failed`, naming `max_states`.
+- Step 7: `Malformed` at `Entry { index: 0 }` for each, with no successor
+  recomputed; each settles `inconclusive`, `CertificateRejected{Malformed,
+  at}`, never `proved`.
