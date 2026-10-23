@@ -48,7 +48,7 @@ use quire_semantic_value::supplied_stop::{
 };
 
 use crate::bounds::ReplayLimits;
-use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
+use crate::identity::{ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef};
 use crate::limits::CallerLimits;
 use crate::request::StageLimits;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire};
@@ -407,6 +407,16 @@ pub enum ReplayRefusal {
     /// `object_environment`).
     #[error("invalid_runtime_input/unknown-member: `object_environment` is supplied for a function with no Reference parameter")]
     UnusedObjectEnvironment,
+    /// FR-484: a function-value parity request carries `profile_selections`.
+    /// A value-parity claim has no proving run, so the list is fixed empty
+    /// and lock rows bind through the `package_id` alone
+    /// (`invalid_runtime_input`/`unknown-member`). Refused before the
+    /// recompile, with no call and no charge.
+    #[error("invalid_runtime_input/unknown-member: `profile_selections` is supplied for a function-value parity claim, which has no proving run")]
+    UnusedProfileSelections {
+        /// The request's selections, in request order.
+        selections: Vec<ProfileSelection>,
+    },
     /// FR-098 step 2, FR-100: a reference argument's universe is not the
     /// universe of its declared `Reference<T>`'s object type
     /// (`foreign_reference`/`foreign-universe`).
@@ -464,7 +474,9 @@ impl ReplayRefusal {
             | Self::ScalarIdentity(_)
             | Self::TargetMismatch { .. } => Code::StaleDependency,
             Self::UnknownClause { .. } => Code::MissingDeclaration,
-            Self::UnusedObjectEnvironment => Code::InvalidRuntimeInput,
+            Self::UnusedObjectEnvironment | Self::UnusedProfileSelections { .. } => {
+                Code::InvalidRuntimeInput
+            }
             Self::ForeignReference { .. } => Code::ForeignReference,
             Self::ObjectEnvironment(failure) => failure.code(),
             Self::ParityBound(refusal) => refusal.code(),
@@ -515,7 +527,9 @@ impl ReplayRefusal {
             Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::ModelTrace(refusal) => Some(refusal.cause()),
-            Self::UnusedObjectEnvironment => Some("unknown-member"),
+            Self::UnusedObjectEnvironment | Self::UnusedProfileSelections { .. } => {
+                Some("unknown-member")
+            }
             Self::ForeignReference { .. } => Some("foreign-universe"),
             Self::ObjectEnvironment(failure) => failure.cause(),
             Self::Input(refusal) => Some(refusal.cause()),
