@@ -107,10 +107,20 @@ Option<StaticReplay> }`, and for a reproduced trace
   the whole real line, `Compare` as definitely true, definitely false or
   undecided, `Logic` and `Not` over those three values, `Conditional` as the
   hull of the branches its condition does not exclude, and `Call` by
-  evaluating the function's checked body over the argument intervals.
+  evaluating the function's checked body over the argument intervals. A
+  recursive call SHALL be evaluated only while its `decreases` measure
+  (FR-062) evaluates to a definite interval value: a recursive call whose
+  measure interval is undecided, or whose base-case condition is undecided,
+  SHALL take the whole value range of the function's result type (the
+  real line for an unbounded numeric type, undecided for `Boolean`), so
+  static replay always terminates.
 - A check SHALL fail only when its value is definitely false.
 - Static replay SHALL settle no value: QSL SHALL keep the outcome as
-  `SolverInconclusive{trace, replay: Some(outcome)}`.
+  `SolverInconclusive{trace, replay: Some(outcome)}`, written on the stored
+  record as QSpec FR-193's `replay` member (`static`, and `exact` when exact
+  replay ran and did not reproduce). QSL SHALL refuse a provider entry whose
+  cause carries `replay` with `invalid_result`/`unknown-member` at
+  `/cause/replay`.
 
 ### Exact replay
 
@@ -119,8 +129,10 @@ Option<StaticReplay> }`, and for a reproduced trace
   carrying `before`, every interval a point, and in every mode the trace
   dwells in each rate built from `Constant`, `Variable`, `Negate`, `+`, `-`
   and `*`, after expanding every `Call` whose function is not recursive, with
-  no cycle in the relation "`y` occurs in `x`'s rate". Any other trace SHALL
-  give `NotExact`.
+  no cycle in the relation "`y` occurs in `x`'s rate", and with no recursive
+  call in any invariant, guard, reset, initial condition, activation
+  condition, capture or claim atom the replay evaluates. Any other trace
+  SHALL give `NotExact`.
 - QSL SHALL compute each dwell's solution as polynomials in time with exact
   rational coefficients, integrating the rates in that relation's order from
   the state's point, and SHALL decide QSpec FR-193's exact checks 1 to 5 over
@@ -134,13 +146,18 @@ Option<StaticReplay> }`, and for a reproduced trace
   set. A finite prefix SHALL reproduce only as a bad prefix: the claim false
   on every behaviour that extends it, every position past the prefix's end
   read as unknown.
-- If every check holds, then exact replay SHALL return `Reproduced` with
-  kind `Formula`. If an expression has no value at an instant of the
-  replayed prefix (a division by zero, an argument outside its parameter's
-  range), then it SHALL return `Reproduced` with kind
-  `UndefinedEvaluation{where, cause}`, `where` naming the state, its time
-  stamp and the expression's locus. Otherwise it SHALL return
-  `NotReproduced` at the first failing check.
+- When checks 1 to 4 hold, exact replay SHALL decide by the decisive
+  instant of QSpec FR-193 "Trace replay": the earliest instant at which the
+  prefix up to it is a bad prefix of the claim or an expression the replay
+  evaluates has no value (a division by zero, an argument outside its
+  parameter's range). If an expression has no value at that instant, it
+  SHALL return `Reproduced` with kind `UndefinedEvaluation{where, cause}`,
+  `where` naming that instant's state, its time stamp and the expression's
+  locus; otherwise `Reproduced` with kind `Formula`. A `loop_to` trace
+  reproduces with kind `UndefinedEvaluation` at the earliest instant of its
+  periodic behaviour with no value, else with kind `Formula` when check 5
+  holds. Otherwise it SHALL return `NotReproduced` at the first failing
+  check.
 
 ### Settlement
 
@@ -164,8 +181,8 @@ Option<StaticReplay> }`, and for a reproduced trace
 | FR-450-AC-2 | Against `always [0, 12] holds(h.v > 0)`, the point trace from `(Moving, v = 20, a = 2, t = 0)` with `before` `(time 10, v = 0, a = 2, t = 10)` and transition 0 to `(Stopped, time 10, v = 0, a = 2, t = 10)` replays `Reproduced` with kind `Formula`, from a `solver-inconclusive` cause and from a provider's `refuted` entry alike, and the item settles `refuted` with that trace as its `Counterexample` and one `counterexamples` entry; against `SlowEnough` the same trace gives `NotReproduced` at check `Claim` and the item stays `inconclusive`. | Test (TC-1221) |
 | FR-450-AC-3 | The AC-2 trace with `before` `v = 1` gives `NotReproduced` at check `Dwell`; the same trace with `before.time` 9 gives `NotReproduced` at check `Dwell`; as a provider's `refuted` entry each settles `inconclusive`, `ReplayParity`, with no `counterexamples` entry. | Test (TC-1221) |
 | FR-450-AC-4 | With `Moving`'s flow `v' = -v`, the AC-2 trace gives `NotExact` and is replayed statically only, settling `inconclusive`; with `Moving`'s flows `v' = -a` and `a' = -1 / 10` it is replayed exactly, with `a(t) = 2 - t / 10` and `v(t) = 20 - 2t + t^2 / 20`, and gives `NotReproduced` at check `Dwell` because `v(10) = 5`; with a flow `v' = drag(v)` over a recursive `drag`, it gives `NotExact`. | Test (TC-1221) |
-| FR-450-AC-5 | The AC-2 trace against `always [0, 12] holds(1 / (h.v - 5) < 100)` replays `Reproduced` with kind `UndefinedEvaluation`, naming the instant at time 15/2 in `Moving`, where `v = 5`, and the division's locus, and settles `refuted` with cause `UndefinedEvaluation{where, cause}`. | Test (TC-1221) |
-| FR-450-AC-6 | Over `Bounce` (mode `Up` with `x' = 1` and a transition to `Down` when `x = 1`; mode `Down` with `x' = -1` and a transition to `Up` when `x = 0`; resets `true`), against `eventually always holds(h.x < 1)` under the infinite-trace profile, the point trace from `(Up, x = 0)` through `Down` at time 1 back to `(Up, x = 0)` at time 2 with `loop_to` 0 reproduces as a periodic behaviour, also with `fair Up;`; the same trace whose last state has `x = 1/2` gives `NotReproduced` at check `Loop`, as does a loop whose dwells are all 0. | Test (TC-1221) |
+| FR-450-AC-5 | The AC-2 trace against `always [0, 12] holds(1 / (h.v - 5) != 0)`, true up to the undefined instant, replays `Reproduced` with kind `UndefinedEvaluation`, naming the instant at time 15/2 in `Moving`, where `v = 5`, and the division's locus, and settles `refuted` with cause `UndefinedEvaluation{where, cause}`; against `always [0, 12] holds(1 / (h.v - 5) < 100)`, false from time 1499/200 before that instant, it replays `Reproduced` with kind `Formula`, the decisive instant 1499/200; against a claim whose atom calls a recursive function it gives `NotExact`; static replay of a guard calling a recursive function whose measure interval is undecided terminates with that call's result range. | Test (TC-1221) |
+| FR-450-AC-6 | Over `Bounce` (mode `Up` with `x' = 1` and a transition to `Down` when `x = 1`; mode `Down` with `x' = -1` and a transition to `Up` when `x = 0`; resets `true`), against `eventually always holds(h.x < 1)` under the infinite-trace profile, the point trace from `(Up, x = 0)` through `Down` at time 1 back to `(Up, x = 0)` at time 2 with `loop_to` 0 reproduces as a periodic behaviour, also with `fair Up;`; the same trace with `loop_to` 1, whose last state `(Up, x = 0)` is not the `Down` state it names, gives `NotReproduced` at check `Loop`; the same trace whose last state has `x = 1/2` gives `NotReproduced` at check `Jump`, the reset `true` keeping `x = 0`; and a `loop_to` 2, naming the last state, is refused `invalid_result`/`invalid-value` at `/loop`. | Test (TC-1221) |
 
 ## Dependencies
 

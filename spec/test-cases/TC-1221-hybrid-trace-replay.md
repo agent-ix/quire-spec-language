@@ -30,7 +30,7 @@ provider, each returning a scripted entry with a scripted `HybridTrace`.
 3. Return each altered trace FR-450-AC-3 lists, as a provider's `refuted`
    entry.
 4. Replay AC-2's trace over each changed flow FR-450-AC-4 lists.
-5. Replay AC-2's trace against the claim FR-450-AC-5 lists.
+5. Replay AC-2's trace against each claim FR-450-AC-5 lists, and statically replay the guard calling the recursive function.
 6. Replay each `Bounce` trace FR-450-AC-6 lists, with and without
    `fair Up;`.
 
@@ -50,7 +50,10 @@ Tag the tests `#[trace("TC-1221", "FR-450-AC-n")]`.
 - Step 4: `NotExact` and `inconclusive`; exact replay with the stated
   polynomials and `NotReproduced` at `Dwell`; `NotExact`.
 - Step 5: `Reproduced`, kind `UndefinedEvaluation` at time 15/2, the item
-  `refuted` with cause `UndefinedEvaluation{where, cause}`.
+  `refuted` with cause `UndefinedEvaluation{where, cause}`; `Reproduced`,
+  kind `Formula`, decisive at time 1499/200; `NotExact`; static replay
+  terminating with the call's result range.
 - Step 6: `Reproduced` with and without the fairness constraint;
-  `NotReproduced` at `Loop` for the two altered traces.
+  `NotReproduced` at `Loop` for `loop_to` 1 and at `Jump` for the `x = 1/2`
+  trace; the `loop_to` 2 trace refused at `/loop`.
 - Both fixture providers give the same outcomes.
