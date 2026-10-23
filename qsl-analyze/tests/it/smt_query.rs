@@ -38,7 +38,7 @@ fn bytes(
 }
 
 /// The facade encodes the engine's item, byte-equal across calls, and
-/// refuses the deadlock-freedom item without a script.
+/// encodes the deadlock-freedom item.
 #[trace("TC-900", "FR-315-AC-1", "FR-315-AC-2")]
 #[test]
 fn the_facade_encodes_the_engine_s_item_and_refuses_the_ones_it_cannot() {
@@ -51,8 +51,7 @@ fn the_facade_encodes_the_engine_s_item_and_refuses_the_ones_it_cannot() {
     assert!(text.starts_with("(set-logic QF_LIA)\n"), "{text}");
     assert!(text.contains("(assert (= s0.c.value 0))\n"), "{text}");
     assert_eq!(first, bytes(&subject, &clauses[0], kind).expect("encodes"));
-    assert!(matches!(
-        encode_smt_query(&subject, ModelCheckItem::DeadlockFreedom, kind),
-        Err(SmtEncodingRefusal::ItemForm { .. })
-    ));
+    let deadlock = encode_smt_query(&subject, ModelCheckItem::DeadlockFreedom, kind)
+        .expect("the deadlock-freedom item encodes");
+    assert!(deadlock.ends_with(b"(check-sat)\n"));
 }

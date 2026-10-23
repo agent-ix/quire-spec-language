@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-315 Outputs: `SmtEncodingRefusal`, the refusal that names the construct
-//! the encoding has no form for, with its locus.
+//! the encoding has no form for, with its locus. Each variant is one code of
+//! FR-315's refusal table, and [`SmtEncodingRefusal::code`] spells it.
 
 use qsl_foundation::InternalFault;
+use qsl_semantics::model::observation::AdmissionFailure;
+
+use crate::automaton::AutomatonError;
+use crate::simulation::NotSimulated;
 
 /// Where in a checked clause body a refused expression is: the clause and the
 /// node's index in the clause's checked body.
@@ -20,12 +25,55 @@ impl std::fmt::Display for ExpressionLocus {
     }
 }
 
-/// Why no script was written (FR-315 Outputs). Each variant is one condition
-/// a caller distinguishes; none is told apart by its message.
+/// What an `object-lifecycle` refusal is about.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LifecycleLocus {
+    /// An operation whose frame creates or deletes objects.
+    Operation(String),
+    /// A universe object that is not held at one type by every initial state.
+    Object(String),
+}
+
+/// Why no script was written (FR-315 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SmtEncodingRefusal {
-    /// A field of a universe object has a sort the encoding has no form for
-    /// (FR-315-AC-3).
+    /// `item-form`: the item has no proof query of this form.
+    #[error("the item is {form}, which FR-315 gives no proof query")]
+    ItemForm {
+        /// The form.
+        form: &'static str,
+    },
+    /// `item-form`: the clause's property-automaton translation refused.
+    #[error("the property automaton does not build: {0}")]
+    ItemTranslation(#[from] AutomatonError),
+    /// `profile`: the clause binds a profile with no proof query.
+    #[error("the clause binds a profile with no proof query")]
+    Profile,
+    /// `query-kind`: the item has no query of this kind.
+    #[error("a {form} item has no `{kind}` query")]
+    QueryKind {
+        /// The query kind's name.
+        kind: &'static str,
+        /// The item's form.
+        form: &'static str,
+    },
+    /// `subject-admission`: FR-120's admission of the subject refused.
+    #[error("the subject does not admit: {0}")]
+    SubjectAdmission(AdmissionFailure),
+    /// `no-initial-state`: the subject has no initial state.
+    #[error("the subject has no initial state")]
+    NoInitialState,
+    /// `object-lifecycle`: the objects of a state copy are not fixed.
+    #[error("the objects of a state copy are not fixed at {0:?}")]
+    ObjectLifecycle(LifecycleLocus),
+    /// `constant-name`: a name cannot be printed, or two constants would
+    /// print the same name.
+    #[error("the name `{name}` cannot be printed as one distinct constant")]
+    ConstantName {
+        /// The name.
+        name: String,
+    },
+    /// `field-sort`: a field has a sort with no SMT form (FR-315-AC-3).
     #[error("field `{object}.{field}` has {sort}, which has no SMT sort")]
     FieldSort {
         /// The object's key.
@@ -35,138 +83,78 @@ pub enum SmtEncodingRefusal {
         /// The field's sort, as the refusal names it.
         sort: &'static str,
     },
-    /// An expression of a clause or atom is outside the `QF_LIA` fragment
-    /// the encoding prints.
-    #[error("the {form} at {locus} has no QF_LIA form")]
-    Expression {
-        /// The construct.
-        form: &'static str,
-        /// Where it is.
-        locus: ExpressionLocus,
-    },
-    /// An operation parameter has a type with no finite value domain here.
+    /// `parameter-domain`: an operation parameter has no finite domain.
     #[error("parameter `{parameter}` of operation `{operation}` has no finite domain")]
-    OperationParameter {
+    ParameterDomain {
         /// The operation's name.
         operation: String,
         /// The parameter's name.
         parameter: String,
     },
-    /// An operation creates or deletes objects, so the universe objects of a
-    /// state copy are not fixed.
-    #[error("operation `{operation}` creates or deletes objects")]
-    OperationLifecycle {
-        /// The operation's name.
-        operation: String,
-    },
-    /// A universe object is not held by every initial state, or is held at a
-    /// different type.
-    #[error("object `{object}` is not held at one type by every initial state")]
-    ObjectLifecycle {
-        /// The object's key.
-        object: String,
-    },
-    /// Two populations hold an object under one key, so a constant name
-    /// `s<i>.<object>.<field>` would name both.
-    #[error("two populations hold an object under the key `{object}`")]
-    ObjectNameClash {
-        /// The key.
-        object: String,
-    },
-    /// A name cannot be printed as an SMT-LIB symbol.
-    #[error("the name `{name}` cannot be printed as an SMT-LIB symbol")]
-    UnprintableName {
-        /// The name.
-        name: String,
-    },
-    /// The subject has no initial state, so it has no object to declare.
-    #[error("the subject has no initial state")]
-    NoInitialState,
-    /// The item has no instance (FR-125 `NoInstance`).
+    /// `requires-bound`: a population that admits the `over` type has no
+    /// universe.
+    #[error("the clause's instances are not finite: {0:?}")]
+    RequiresBound(NotSimulated),
+    /// `no-instance`: the clause has zero instances.
     #[error("the item has no instance")]
     NoInstance,
-    /// An instance's object is absent from the universe or has a type the
-    /// clause's `over` parameter does not admit.
+    /// `instance-binding`: an instance's object does not conform to the
+    /// `over` type.
     #[error("the instance `{key}` binds no object of the `over` type")]
     InstanceBinding {
         /// The instance's key.
         key: String,
     },
-    /// The item is of a form the proof queries do not cover.
-    #[error("the item is {form}, which FR-315 gives no proof query")]
-    ItemForm {
-        /// The form.
-        form: &'static str,
-    },
-    /// The item is not encoded for this kind of query.
-    #[error("a {form} item has no `{kind}` query")]
-    QueryKind {
-        /// The query kind's name.
-        kind: &'static str,
-        /// The item's form.
-        form: &'static str,
-    },
-    /// The item's monitor is larger than the encoding prints.
-    #[error("the item's monitor has {atoms} atoms and {states} states; the encoding prints at most {max_atoms} and {max_states}")]
-    MonitorBound {
-        /// The letter's atoms.
-        atoms: usize,
-        /// The monitor states reached so far.
-        states: usize,
-        /// The most atoms printed.
-        max_atoms: usize,
-        /// The most states printed.
-        max_states: usize,
-    },
-    /// An item of a form that reads one instance at a time has several
-    /// instances (a monitor is built for one instance).
-    #[error("the {form} item has {count} instances")]
+    /// `several-instances`: a TP-3 item has more than one instance.
+    #[error("the monitored item has {count} instances")]
     SeveralInstances {
-        /// The item's form.
-        form: &'static str,
         /// The number of instances.
         count: usize,
     },
-    /// The clause's instances are not finite (FR-125 `RequiresBound`).
-    #[error("the clause's instances are not finite: {0:?}")]
-    Instances(crate::simulation::NotSimulated),
-    /// An operation's argument vectors or a step's disjuncts exceed what the
-    /// encoding writes.
-    #[error("a step relation holds more than {max} disjuncts or argument vectors")]
-    TooManySteps {
-        /// The bound that was exceeded.
-        max: usize,
-    },
-    /// A bounded `eventually` is unrolled to fewer steps than its horizon,
-    /// so no position-wise violation reading is exact.
-    #[error("depth {depth} is below the horizon {horizon} of a bounded `eventually`")]
-    Horizon {
-        /// The requested depth.
-        depth: u64,
-        /// The item's horizon.
-        horizon: u64,
-    },
-    /// Two names would print the same constant.
-    #[error("the name `{name}` holds a `.`, which would make constant names ambiguous")]
-    AmbiguousName {
-        /// The name.
-        name: String,
-    },
-    /// The query would declare more constants than the encoding writes.
-    #[error("depth {depth} declares more than {max} constants")]
+    /// `too-large`: a size measure passes its limit.
+    #[error("{measure} is {value}, over the limit {limit}")]
     TooLarge {
-        /// The requested depth.
-        depth: u64,
-        /// The most constants a script declares.
-        max: usize,
+        /// The measure.
+        measure: &'static str,
+        /// Its value.
+        value: u64,
+        /// Its limit.
+        limit: u64,
     },
-    /// The subject did not admit (FR-120 `ModelSystem::new`).
-    #[error("the subject does not admit: {0}")]
-    Subject(#[from] qsl_semantics::model::observation::AdmissionFailure),
-    /// The property automaton did not build.
-    #[error("the property automaton does not build: {0}")]
-    Automaton(#[from] crate::automaton::AutomatonError),
-    /// An invariant of the subject broke.
+    /// `out-of-fragment`: an expression is outside the `QF_LIA` fragment.
+    #[error("the {form} at {locus} has no QF_LIA form")]
+    OutOfFragment {
+        /// The construct.
+        form: &'static str,
+        /// Where it is.
+        locus: ExpressionLocus,
+    },
+    /// An invariant of the subject broke; not a code of the table.
     #[error("encoding broke invariant {0:?}")]
     Fault(InternalFault),
+}
+
+impl SmtEncodingRefusal {
+    /// The refusal's code in FR-315's table; `internal-fault` for a broken
+    /// invariant.
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::ItemForm { .. } | Self::ItemTranslation(_) => "item-form",
+            Self::Profile => "profile",
+            Self::QueryKind { .. } => "query-kind",
+            Self::SubjectAdmission(_) => "subject-admission",
+            Self::NoInitialState => "no-initial-state",
+            Self::ObjectLifecycle(_) => "object-lifecycle",
+            Self::ConstantName { .. } => "constant-name",
+            Self::FieldSort { .. } => "field-sort",
+            Self::ParameterDomain { .. } => "parameter-domain",
+            Self::RequiresBound(_) => "requires-bound",
+            Self::NoInstance => "no-instance",
+            Self::InstanceBinding { .. } => "instance-binding",
+            Self::SeveralInstances { .. } => "several-instances",
+            Self::TooLarge { .. } => "too-large",
+            Self::OutOfFragment { .. } => "out-of-fragment",
+            Self::Fault(_) => "internal-fault",
+        }
+    }
 }

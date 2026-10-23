@@ -10,7 +10,7 @@
 
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 
-use crate::automaton::{translate, Atom, Letter, Monitor, StateId};
+use crate::automaton::{translate, AutomatonError, Letter, Monitor, StateId};
 use crate::smt::SmtEncodingRefusal;
 
 /// The most `holds` atoms of a letter the encoding tabulates.
@@ -33,7 +33,6 @@ pub struct Move {
 #[derive(Clone, Debug)]
 pub struct MonitorTable {
     atoms: Vec<FormulaNodeId>,
-    live: bool,
     initial: usize,
     rejecting: Option<usize>,
     states: usize,
@@ -41,51 +40,48 @@ pub struct MonitorTable {
 }
 
 impl MonitorTable {
+    /// The refusal for an automaton error: the state limit is a size limit.
+    fn translation(error: AutomatonError) -> SmtEncodingRefusal {
+        match error {
+            AutomatonError::StateLimit { limit } => SmtEncodingRefusal::TooLarge {
+                measure: "monitor-states",
+                value: limit.saturating_add(1),
+                limit,
+            },
+            other => SmtEncodingRefusal::ItemTranslation(other),
+        }
+    }
+
     /// Tabulate the bad-prefix monitor of `clause`.
     ///
     /// # Errors
     ///
-    /// [`SmtEncodingRefusal::Automaton`] when the translation does not
-    /// build, [`SmtEncodingRefusal::ItemForm`] for a guarded activation, and
-    /// [`SmtEncodingRefusal::MonitorBound`] when the monitor has more atoms
-    /// or states than the encoding tabulates.
+    /// [`SmtEncodingRefusal::ItemTranslation`] when the translation does not
+    /// build and [`SmtEncodingRefusal::TooLarge`] when the monitor has more
+    /// atoms or states than the encoding tabulates.
     pub fn of(clause: &CheckedTemporalClause) -> Result<Self, SmtEncodingRefusal> {
-        let automaton = translate(clause, MAX_STATES as u64)?;
-        if automaton.when().is_some() {
-            return Err(SmtEncodingRefusal::ItemForm {
-                form: "guarded by a `when` condition",
-            });
-        }
+        let automaton = translate(clause, MAX_STATES as u64).map_err(Self::translation)?;
         let atoms = automaton.atoms().to_vec();
-        if atoms.len() + usize::from(automaton.live().is_some()) > MAX_ATOMS {
-            return Err(SmtEncodingRefusal::MonitorBound {
-                atoms: atoms.len(),
-                states: 0,
-                max_atoms: MAX_ATOMS,
-                max_states: MAX_STATES,
+        if atoms.len() > MAX_ATOMS {
+            return Err(SmtEncodingRefusal::TooLarge {
+                measure: "monitor-atoms",
+                value: atoms.len() as u64,
+                limit: MAX_ATOMS as u64,
             });
         }
-        // The atom that marks the represented positions is the letter bit
-        // after the `holds` atoms; the encoding reads it as "not ended".
-        let live = automaton.live();
-        if live.is_some_and(|atom: Atom| atom.index() != atoms.len()) {
-            return Err(SmtEncodingRefusal::Fault(
-                qsl_foundation::InternalFault::new(
-                    "smt-encoding",
-                    "live-atom-follows-the-holds-atoms",
-                ),
-            ));
-        }
-        let bits = atoms.len() + usize::from(live.is_some());
-        let mut monitor = Monitor::bad_prefix(automaton, MAX_STATES as u64)?;
-        let initial = monitor.initial()?;
+        let bits = atoms.len();
+        let mut monitor =
+            Monitor::bad_prefix(automaton, MAX_STATES as u64).map_err(Self::translation)?;
+        let initial = monitor.initial().map_err(Self::translation)?;
         let mut reached: Vec<StateId> = vec![initial];
         let mut moves = Vec::new();
         let mut next = 0;
         while let Some(&from) = reached.get(next) {
             next += 1;
             for letter in 0..(1u64 << bits) {
-                let to = monitor.step(from, Letter::from_bits(letter))?;
+                let to = monitor
+                    .step(from, Letter::from_bits(letter))
+                    .map_err(Self::translation)?;
                 let target = match reached.iter().position(|seen| *seen == to) {
                     Some(position) => position,
                     None => {
@@ -102,13 +98,12 @@ impl MonitorTable {
         }
         let mut rejecting = None;
         for (position, state) in reached.iter().enumerate() {
-            if monitor.is_rejecting(*state)? {
+            if monitor.is_rejecting(*state).map_err(Self::translation)? {
                 rejecting = Some(position);
             }
         }
         Ok(Self {
             atoms,
-            live: live.is_some(),
             initial: 0,
             rejecting,
             states: reached.len(),
@@ -119,11 +114,6 @@ impl MonitorTable {
     /// The `holds` atoms of the letter, atom `i` being bit `i`.
     pub fn atoms(&self) -> &[FormulaNodeId] {
         &self.atoms
-    }
-
-    /// Whether the letter's last bit marks the represented positions.
-    pub const fn reads_live(&self) -> bool {
-        self.live
     }
 
     /// The initial monitor state, read before position 0.

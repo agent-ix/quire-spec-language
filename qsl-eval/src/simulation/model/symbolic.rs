@@ -15,7 +15,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 
 use super::domain::Domain;
 use super::{ClauseInfo, ModelSystem};
-use crate::smt::SmtEncodingRefusal;
+use crate::smt::{LifecycleLocus, SmtEncodingRefusal};
 
 /// One declared field of a universe object.
 #[derive(Clone, Debug)]
@@ -28,6 +28,15 @@ pub(crate) struct SymbolicField {
     pub(crate) value_type: ValueType,
     /// Whether the field is declared `?`.
     pub(crate) optional: bool,
+    /// The position of the field among the type's declared fields.
+    pub(crate) declared: usize,
+    /// The number of values of the field's finite domain (absent excluded);
+    /// `None` for a field with no finite domain, which no frame lets an
+    /// operation write (FR-120 "Post-states").
+    pub(crate) domain_len: Option<u128>,
+    /// The domain's values in FR-120's order, left empty when the domain
+    /// holds more than [`MAX_FIELD_VALUES`].
+    pub(crate) values: Vec<Value>,
 }
 
 /// One operation that applies to an object, with the clauses that apply to
@@ -81,7 +90,9 @@ pub(crate) struct SymbolicSubject<'a> {
 }
 
 /// The most values an operation parameter's domain may hold.
-const MAX_DOMAIN: u128 = 1 << 12;
+const MAX_DOMAIN: u128 = 1 << 16;
+/// The most values of a written field's domain kept for the candidates.
+const MAX_FIELD_VALUES: u128 = 1 << 16;
 
 fn fault(invariant: &'static str) -> SmtEncodingRefusal {
     SmtEncodingRefusal::Fault(qsl_foundation::InternalFault::new(
@@ -122,9 +133,9 @@ impl<'a> ModelSystem<'a> {
                     .iter()
                     .any(|(held, held_key, _)| held == population && held_key == key)
                 {
-                    return Err(SmtEncodingRefusal::ObjectLifecycle {
-                        object: key.clone(),
-                    });
+                    return Err(SmtEncodingRefusal::ObjectLifecycle(LifecycleLocus::Object(
+                        key.to_string(),
+                    )));
                 }
             }
         }
@@ -157,16 +168,12 @@ impl<'a> ModelSystem<'a> {
                         })
                 });
             if let Some(object) = mismatch {
-                return Err(SmtEncodingRefusal::ObjectLifecycle { object });
+                return Err(SmtEncodingRefusal::ObjectLifecycle(LifecycleLocus::Object(
+                    object.to_string(),
+                )));
             }
         }
         rows.sort_by(|left, right| (&left.1, &left.0).cmp(&(&right.1, &right.0)));
-        if let Some(pair) = rows.windows(2).find(|pair| pair[0].1 == pair[1].1) {
-            return Err(SmtEncodingRefusal::ObjectNameClash {
-                object: pair[0].1.clone(),
-            });
-        }
-
         let mut references = Vec::new();
         let mut identified = Vec::new();
         for (population, key, type_key) in &rows {
@@ -189,11 +196,27 @@ impl<'a> ModelSystem<'a> {
                 .get(type_key)
                 .ok_or_else(|| fault("type-fields"))?
                 .iter()
-                .map(|field| SymbolicField {
-                    key: field.key.clone(),
-                    name: field.name.clone(),
-                    value_type: field.value_type.clone(),
-                    optional: field.optional,
+                .enumerate()
+                .map(|(declared, field)| {
+                    let domain = Domain::of(&field.value_type, &references, self.types);
+                    let domain_len = domain.as_ref().map(Domain::len);
+                    let values = domain
+                        .filter(|domain| domain.len() <= MAX_FIELD_VALUES)
+                        .map(|domain| {
+                            (0..domain.len())
+                                .map_while(|index| domain.nth(index))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    SymbolicField {
+                        key: field.key.clone(),
+                        name: field.name.clone(),
+                        value_type: field.value_type.clone(),
+                        optional: field.optional,
+                        declared,
+                        domain_len,
+                        values,
+                    }
                 })
                 .collect();
             fields.sort_by(|left, right| left.name.cmp(&right.name));
@@ -205,6 +228,12 @@ impl<'a> ModelSystem<'a> {
                 reference,
                 fields,
                 operations,
+            });
+        }
+
+        if let Some(pair) = rows.windows(2).find(|pair| pair[0].1 == pair[1].1) {
+            return Err(SmtEncodingRefusal::ConstantName {
+                name: pair[0].1.clone(),
             });
         }
 
@@ -251,9 +280,9 @@ impl<'a> ModelSystem<'a> {
                 || effect.deletes_receiver
                 || !effect.deletes_arguments.is_empty();
             if lifecycle {
-                return Err(SmtEncodingRefusal::OperationLifecycle {
-                    operation: application.name.clone(),
-                });
+                return Err(SmtEncodingRefusal::ObjectLifecycle(
+                    LifecycleLocus::Operation(application.name.clone()),
+                ));
             }
             let parameters = application.declaration.parameters().to_vec();
             let domains = parameters

@@ -84,7 +84,7 @@ pub use probabilistic::{
 };
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
-pub(crate) use symbolic::{SymbolicObject, SymbolicOperation, SymbolicSubject};
+pub(crate) use symbolic::{SymbolicOperation, SymbolicSubject};
 pub use terminal::TerminalClass;
 pub(crate) use walk::{Applied, Budget};
 

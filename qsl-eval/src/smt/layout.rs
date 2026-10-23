@@ -7,7 +7,7 @@
 use quire_exact::{Integer, Value, ValueType};
 use std::ops::Not;
 
-use crate::simulation::model::{SymbolicObject, SymbolicSubject};
+use crate::simulation::model::SymbolicSubject;
 use crate::smt::script::{symbol, Script, Sort, Term};
 use crate::smt::SmtEncodingRefusal;
 
@@ -19,6 +19,36 @@ impl StateCopy {
     /// The copy at `position` of a single subject.
     pub fn at(position: u64) -> Self {
         Self(format!("s{position}"))
+    }
+}
+
+/// The state an expression reads: a declared copy, or a candidate post-state
+/// that takes literals for the fields an operation may write and the base
+/// copy's constants for every other field (FR-120 "Post-states").
+#[derive(Clone, Debug)]
+pub enum StateRef {
+    /// A declared copy.
+    Copy(StateCopy),
+    /// A candidate over `base`.
+    Candidate {
+        /// The copy the unwritten fields keep.
+        base: StateCopy,
+        /// The literal of each written field, by (object, field) position.
+        written: std::rc::Rc<Vec<((usize, usize), FieldTerms)>>,
+    },
+}
+
+impl StateRef {
+    /// The terms of `field` of `object` in this state.
+    pub fn terms(&self, layout: &StateLayout, object: usize, field: usize) -> Option<FieldTerms> {
+        match self {
+            Self::Copy(copy) => layout.terms(copy, object, field),
+            Self::Candidate { base, written } => written
+                .iter()
+                .find(|(at, _)| *at == (object, field))
+                .map(|(_, terms)| terms.clone())
+                .or_else(|| layout.terms(base, object, field)),
+        }
     }
 }
 
@@ -135,46 +165,42 @@ impl StateLayout {
     ///
     /// [`SmtEncodingRefusal::FieldSort`] naming the first field, in object and
     /// field order, whose sort has no SMT form;
-    /// [`SmtEncodingRefusal::UnprintableName`] for a name that cannot be
+    /// [`SmtEncodingRefusal::ConstantName`] for a name that cannot be
     /// printed.
     pub(crate) fn of(subject: &SymbolicSubject<'_>) -> Result<Self, SmtEncodingRefusal> {
+        // Names first, then sorts, in the order of FR-315's refusal table.
+        for object in &subject.objects {
+            for name in std::iter::once(&object.key).chain(object.fields.iter().map(|f| &f.name)) {
+                if name.chars().any(|c| c == '.') {
+                    return Err(SmtEncodingRefusal::ConstantName { name: name.clone() });
+                }
+            }
+            for field in &object.fields {
+                symbol(&format!("s0.{}.{}.present", object.key, field.name))?;
+            }
+        }
         let mut objects = Vec::new();
         for object in &subject.objects {
-            objects.push(Self::object(object)?);
-        }
-        Ok(Self { objects })
-    }
-
-    fn object(object: &SymbolicObject<'_>) -> Result<ObjectLayout, SmtEncodingRefusal> {
-        if object.key.chars().any(|c| c == '.') {
-            return Err(SmtEncodingRefusal::AmbiguousName {
-                name: object.key.clone(),
-            });
-        }
-        let mut fields = Vec::new();
-        for field in &object.fields {
-            if field.name.chars().any(|c| c == '.') {
-                return Err(SmtEncodingRefusal::AmbiguousName {
+            let mut fields = Vec::new();
+            for field in &object.fields {
+                let sort =
+                    sort_of(&field.value_type).map_err(|sort| SmtEncodingRefusal::FieldSort {
+                        object: object.key.clone(),
+                        field: field.name.clone(),
+                        sort,
+                    })?;
+                fields.push(FieldLayout {
                     name: field.name.clone(),
+                    optional: field.optional,
+                    sort,
                 });
             }
-            let sort =
-                sort_of(&field.value_type).map_err(|sort| SmtEncodingRefusal::FieldSort {
-                    object: object.key.clone(),
-                    field: field.name.clone(),
-                    sort,
-                })?;
-            symbol(&format!("s0.{}.{}.present", object.key, field.name))?;
-            fields.push(FieldLayout {
-                name: field.name.clone(),
-                optional: field.optional,
-                sort,
+            objects.push(ObjectLayout {
+                key: object.key.clone(),
+                fields,
             });
         }
-        Ok(ObjectLayout {
-            key: object.key.clone(),
-            fields,
-        })
+        Ok(Self { objects })
     }
 
     /// The objects in ascending key order.
@@ -221,7 +247,7 @@ impl StateLayout {
                 .chain(field.optional.then_some((".present", Sort::Bool)))
                 {
                     if let Term::Const(name) = Self::constant(copy, object, field, suffix) {
-                        script.declare(name, sort);
+                        script.declare(&name, sort);
                     }
                 }
             }
@@ -278,10 +304,7 @@ impl StateLayout {
                     }
                 }
             }
-            let state = Term::all(conjuncts);
-            if !states.contains(&state) {
-                states.push(state);
-            }
+            states.push(Term::all(conjuncts));
         }
         Ok(Term::any(states))
     }
@@ -301,10 +324,7 @@ impl StateLayout {
             self.terms(right, object, field)?,
         );
         Some(match (before.present, after.present) {
-            (Some(was), Some(is)) => Term::all([
-                was.clone().equal(is),
-                was.implies(before.value.equal(after.value)),
-            ]),
+            (Some(was), Some(is)) => Term::all([before.value.equal(after.value), was.equal(is)]),
             _ => before.value.equal(after.value),
         })
     }

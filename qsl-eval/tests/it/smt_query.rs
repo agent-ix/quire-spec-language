@@ -285,6 +285,11 @@ impl World {
         self.query_with(&["c"], clause, kind)
     }
 
+    fn deadlock(&self, kind: SmtQueryKind) -> Result<String, SmtEncodingRefusal> {
+        encode_smt_query(&self.subject(&["c"]), SmtItem::DeadlockFreedom, kind)
+            .map(|script| String::from_utf8(script).expect("a script is UTF-8"))
+    }
+
     fn query_with(
         &self,
         keys: &[&str],
@@ -306,6 +311,10 @@ const COUNTER_CONTRACT: &str = "pre CanInc using v on M::Counter::inc { self.val
      post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n";
 
 fn counter(profile: &str, formulas: &[&str]) -> World {
+    counter_with(COUNTER_CONTRACT, profile, formulas)
+}
+
+fn counter_with(contracts: &str, profile: &str, formulas: &[&str]) -> World {
     let document = document(
         "Counter",
         vec![field("Counter", "value", &ident("Level"), "required")],
@@ -314,7 +323,7 @@ fn counter(profile: &str, formulas: &[&str]) -> World {
     world(
         ("Counter", "c"),
         &document,
-        COUNTER_CONTRACT,
+        contracts,
         profile,
         formulas,
         &[("c", json!({"value": {"integer": "0"}}))],
@@ -599,26 +608,26 @@ fn an_unrolling_declares_the_copies_and_asserts_the_negated_property() {
         declared(&script),
         [
             "s0.c.value Int)",
-            "e0 Bool)",
+            "h0 Bool)",
             "s1.c.value Int)",
-            "e1 Bool)",
+            "h1 Bool)",
             "s2.c.value Int)",
-            "e2 Bool)",
+            "h2 Bool)",
             "s3.c.value Int)",
-            "e3 Bool)"
+            "h3 Bool)"
         ]
     );
     assert!(script.starts_with("(set-logic QF_LIA)\n"));
     assert!(script.ends_with("(check-sat)\n"));
     has(&script, "(assert (= s0.c.value 0))");
-    has(&script, "(assert (not e0))");
+    has(&script, "(assert (not h0))");
     has(
         &script,
-        "(assert (or (and (not e0) (not e1) (< s0.c.value 3) (= (- s1.c.value s0.c.value) 1)) (and (not e0) e1 (= s0.c.value s1.c.value)) (and e0 e1 (= s0.c.value s1.c.value))))",
+        "(assert (and (or (= h0 h1) (not (and (< s0.c.value 3) (or (= (- 0 s0.c.value) 1) (= (- 1 s0.c.value) 1) (= (- 2 s0.c.value) 1) (= (- 3 s0.c.value) 1))))) (or h1 (and (< s0.c.value 3) (= (- s1.c.value s0.c.value) 1)))))",
     );
     has(
         &script,
-        "(assert (or (not (and (not e0) (<= s0.c.value 3))) (not (and (not e1) (<= s1.c.value 3))) (not (and (not e2) (<= s2.c.value 3))) (not (and (not e3) (<= s3.c.value 3)))))",
+        "(assert (or h0 (not (and (not h0) (<= s0.c.value 3))) h1 (not (and (not h1) (<= s1.c.value 3))) h2 (not (and (not h2) (<= s2.c.value 3))) h3 (not (and (not h3) (<= s3.c.value 3)))))",
     );
     let again = world
         .query(0, SmtQueryKind::Unrolling { depth: 3 })
@@ -783,7 +792,7 @@ fn the_base_case_steps_the_initial_monitor_over_position_zero() {
 fn a_nonlinear_atom_is_refused_with_its_locus() {
     let world = counter(INFINITE, &["always holds(c.value * c.value <= 3)"]);
     match world.query(0, SmtQueryKind::Unrolling { depth: 1 }) {
-        Err(SmtEncodingRefusal::Expression { form, locus }) => {
+        Err(SmtEncodingRefusal::OutOfFragment { form, locus }) => {
             assert_eq!(form, "nonlinear multiplication");
             assert_eq!(locus.clause, "C0");
         }
@@ -809,15 +818,6 @@ fn items_without_a_proof_query_are_refused() {
             ..
         })
     ));
-    let subject = world.subject(&["c"]);
-    assert!(matches!(
-        encode_smt_query(
-            &subject,
-            SmtItem::DeadlockFreedom,
-            SmtQueryKind::Unrolling { depth: 1 }
-        ),
-        Err(SmtEncodingRefusal::ItemForm { .. })
-    ));
     let live = counter(INFINITE, &["eventually holds(c.value = 3)"]);
     assert!(matches!(
         live.query(0, SmtQueryKind::Unrolling { depth: 1 }),
@@ -836,30 +836,53 @@ fn a_bounded_eventually_is_violated_where_every_position_is_false() {
         .expect("encodes");
     has(
         &script,
-        "(assert (and (not (and (not e0) (= s0.c.value 3))) (not (and (not e1) (= s1.c.value 3))) (not (and (not e2) (= s2.c.value 3)))))",
+        "(assert (and (not (and (not h0) (= s0.c.value 3))) (not (and (not h1) (= s1.c.value 3))) (not (and (not h2) (= s2.c.value 3)))))",
     );
 }
 
-/// A bounded `eventually` unrolled to fewer steps than its horizon, and a
-/// query too deep to write, refuse instead of answering wrongly.
+/// Queries too large to write refuse with the measure, value and limit.
 #[trace("TC-900")]
 #[test]
-fn a_query_that_cannot_be_exact_or_written_is_refused() {
-    let world = counter(BOUNDED, &["eventually[0,3] holds(c.value = 3)"]);
-    assert_eq!(
-        world.query(0, SmtQueryKind::Unrolling { depth: 2 }),
-        Err(SmtEncodingRefusal::Horizon {
-            depth: 2,
-            horizon: 3
-        })
-    );
+fn a_query_too_large_to_write_is_refused_with_its_measure() {
     let deep = counter(INFINITE, &["always holds(c.value <= 3)"]);
-    assert!(matches!(
-        deep.query(0, SmtQueryKind::Unrolling { depth: u64::MAX }),
-        Err(SmtEncodingRefusal::TooLarge { .. })
-    ));
-    assert!(matches!(
-        deep.query(0, SmtQueryKind::InductionStep { depth: 1 << 12 }),
-        Err(SmtEncodingRefusal::TooLarge { .. })
-    ));
+    match deep.query(0, SmtQueryKind::Unrolling { depth: u64::MAX }) {
+        Err(SmtEncodingRefusal::TooLarge { measure, .. }) => assert_eq!(measure, "constants"),
+        other => panic!("expected too-large, got {other:?}"),
+    }
+}
+
+/// DL-7: the deadlock-freedom item is violated at a terminal state no
+/// declaration intends, and holds where the terminal state is intended.
+#[trace("TC-900")]
+#[test]
+fn a_deadlock_is_a_terminal_state_no_declaration_intends() {
+    let undeclared = counter_with(COUNTER_CONTRACT, INFINITE, &[]);
+    let sat_at = |world: &World, depth| {
+        satisfiable(
+            &world
+                .deadlock(SmtQueryKind::Unrolling { depth })
+                .expect("encodes"),
+        )
+    };
+    // The chain reaches value 3, where `inc` is disabled, at position 3.
+    assert!(!sat_at(&undeclared, 2));
+    assert!(sat_at(&undeclared, 3));
+    let any = counter_with(
+        &format!("{COUNTER_CONTRACT}terminal Halt using v on M any;\n"),
+        INFINITE,
+        &[],
+    );
+    assert!(!sat_at(&any, 4));
+    let at_three = counter_with(
+        &format!("{COUNTER_CONTRACT}terminal Done using v on M when {{ self.value = 3 }};\n"),
+        INFINITE,
+        &[],
+    );
+    assert!(!sat_at(&at_three, 4));
+    let at_two = counter_with(
+        &format!("{COUNTER_CONTRACT}terminal Done using v on M when {{ self.value = 2 }};\n"),
+        INFINITE,
+        &[],
+    );
+    assert!(sat_at(&at_two, 4));
 }

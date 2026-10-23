@@ -344,7 +344,7 @@ fn apply<'t>(head: &str, operands: impl IntoIterator<Item = &'t Term>, out: &mut
 ///
 /// # Errors
 ///
-/// [`SmtEncodingRefusal::UnprintableName`] when `name` holds a character a
+/// [`SmtEncodingRefusal::ConstantName`] when `name` holds a character a
 /// quoted symbol cannot hold.
 ///
 /// `#[string_edge]`: classifies the characters of a name from the package, to
@@ -361,63 +361,83 @@ pub fn symbol(name: &str) -> Result<String, SmtEncodingRefusal> {
         return Ok(name.to_owned());
     }
     if name.is_empty() || name.contains(['|', '\\']) {
-        return Err(SmtEncodingRefusal::UnprintableName {
+        return Err(SmtEncodingRefusal::ConstantName {
             name: name.to_owned(),
         });
     }
     Ok(format!("|{name}|"))
 }
 
-/// A `QF_LIA` script: the declarations and the assertions of one query.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// The most bytes of a canonical script (FR-315 "Size limits").
+pub const MAX_SCRIPT_BYTES: usize = 1 << 28;
+
+/// A `QF_LIA` script: the declarations and the assertions of one query, kept
+/// in their printed form so that its size is known as it grows.
+#[derive(Clone, Debug)]
 pub struct Script {
-    declarations: Vec<(String, Sort)>,
-    assertions: Vec<Term>,
+    text: String,
+    declared: usize,
+    exceeded: bool,
+}
+
+impl Default for Script {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Script {
-    /// An empty script.
+    /// A script with its `(set-logic QF_LIA)` command.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            text: String::from("(set-logic QF_LIA)\n"),
+            declared: 0,
+            exceeded: false,
+        }
+    }
+
+    fn push(&mut self, command: &str) {
+        if self.text.len().saturating_add(command.len()) > MAX_SCRIPT_BYTES {
+            self.exceeded = true;
+        } else {
+            self.text.push_str(command);
+        }
     }
 
     /// Declare the constant `symbol` of `sort`, after the ones declared so
-    /// far.
-    pub fn declare(&mut self, symbol: String, sort: Sort) {
-        self.declarations.push((symbol, sort));
+    /// far. Declarations precede every assertion.
+    pub fn declare(&mut self, symbol: &str, sort: Sort) {
+        self.declared += 1;
+        self.push(&format!("(declare-const {symbol} {})\n", sort.spelling()));
     }
 
     /// Assert `term` after the assertions so far. An assertion that is the
     /// constant `true` says nothing and is dropped.
-    pub fn assert(&mut self, term: Term) {
-        if !term.is_truth(true) {
-            self.assertions.push(term);
+    pub fn assert(&mut self, term: &Term) {
+        if term.is_truth(true) || self.exceeded {
+            return;
         }
+        let mut out = String::from("(assert ");
+        term.print(&mut out);
+        out.push_str(")\n");
+        self.push(&out);
     }
 
     /// The number of constants declared so far.
-    pub fn declared(&self) -> usize {
-        self.declarations.len()
+    pub const fn declared(&self) -> usize {
+        self.declared
+    }
+
+    /// Whether a command would have passed [`MAX_SCRIPT_BYTES`].
+    pub const fn exceeded(&self) -> bool {
+        self.exceeded
     }
 
     /// The canonical printing: `(set-logic QF_LIA)`, the declarations in the
     /// order given, one `assert` per assertion, then `(check-sat)`.
-    pub fn render(&self) -> Vec<u8> {
-        let mut out = String::from("(set-logic QF_LIA)\n");
-        for (symbol, sort) in &self.declarations {
-            out.push_str("(declare-const ");
-            out.push_str(symbol);
-            out.push(' ');
-            out.push_str(sort.spelling());
-            out.push_str(")\n");
-        }
-        for assertion in &self.assertions {
-            out.push_str("(assert ");
-            assertion.print(&mut out);
-            out.push_str(")\n");
-        }
-        out.push_str("(check-sat)\n");
-        out.into_bytes()
+    pub fn render(mut self) -> Vec<u8> {
+        self.text.push_str("(check-sat)\n");
+        self.text.into_bytes()
     }
 }
 
@@ -469,9 +489,9 @@ mod tests {
     #[test]
     fn a_script_prints_in_canonical_order() {
         let mut script = Script::new();
-        script.declare("x".to_owned(), Sort::Int);
-        script.assert(Term::constant("x").equal(Term::int(0)));
-        script.assert(Term::truth(true));
+        script.declare("x", Sort::Int);
+        script.assert(&Term::constant("x").equal(Term::int(0)));
+        script.assert(&Term::truth(true));
         assert_eq!(
             String::from_utf8(script.render()).expect("UTF-8"),
             "(set-logic QF_LIA)\n(declare-const x Int)\n(assert (= x 0))\n(check-sat)\n"

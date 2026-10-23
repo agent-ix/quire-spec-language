@@ -21,7 +21,7 @@ use quire_semantic_value::location::Location;
 use std::ops::Not;
 
 use crate::simulation::model::SymbolicSubject;
-use crate::smt::layout::{FieldSort, StateCopy, StateLayout};
+use crate::smt::layout::{FieldSort, StateLayout, StateRef};
 use crate::smt::refusal::ExpressionLocus;
 use crate::smt::script::{Comparison, Term};
 use crate::smt::SmtEncodingRefusal;
@@ -70,16 +70,25 @@ impl Encoded {
 /// operation's, `current` the state an invariant or an atom reads.
 #[derive(Clone, Debug)]
 pub struct Views {
-    /// The copy `Observation::Pre` reads.
-    pub pre: StateCopy,
-    /// The copy `Observation::Post` reads.
-    pub post: StateCopy,
-    /// The copy `Observation::Current` reads.
-    pub current: StateCopy,
+    /// The state `Observation::Pre` reads.
+    pub pre: StateRef,
+    /// The state `Observation::Post` reads.
+    pub post: StateRef,
+    /// The state `Observation::Current` reads.
+    pub current: StateRef,
 }
 
 impl Views {
-    fn copy(&self, observation: Observation) -> &StateCopy {
+    /// Views that read `state` whatever the observation.
+    pub fn of(state: StateRef) -> Self {
+        Self {
+            pre: state.clone(),
+            post: state.clone(),
+            current: state,
+        }
+    }
+
+    fn state(&self, observation: Observation) -> &StateRef {
         match observation {
             Observation::Pre => &self.pre,
             Observation::Post => &self.post,
@@ -137,7 +146,7 @@ impl<'r, 'a> Reader<'r, 'a> {
     }
 
     fn refuse(&self, node: CheckedNode<'_>, form: &'static str) -> SmtEncodingRefusal {
-        SmtEncodingRefusal::Expression {
+        SmtEncodingRefusal::OutOfFragment {
             form,
             locus: ExpressionLocus {
                 clause: self.clause.to_owned(),
@@ -421,7 +430,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             return Err(self.refuse(node, "attribute of a computed reference"));
         };
         let observation = self.observation_of(node.location());
-        let copy = self.views.copy(observation);
+        let state = self.views.state(observation);
         let layout = self
             .layout
             .objects()
@@ -432,9 +441,8 @@ impl<'r, 'a> Reader<'r, 'a> {
             .iter()
             .position(|field| field.name() == name)
             .ok_or_else(|| self.refuse(node, "field outside the layout"))?;
-        let terms = self
-            .layout
-            .terms(copy, object, index)
+        let terms = state
+            .terms(self.layout, object, index)
             .ok_or_else(|| self.refuse(node, "field outside the layout"))?;
         let value = match layout.fields()[index].sort() {
             FieldSort::Bool => Sym::Bool(terms.value),
