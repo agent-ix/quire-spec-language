@@ -34,9 +34,11 @@ FR-401-AC-10.
    Over the FR-090 population query of `model_reference_queries.rs`, call
    `call` and `evaluate` the same way, and again with a handle that trips at
    its n-th poll for each n of the suite's expected prefix.
-3. Over the `Compare` package, call `call_supplied` with a supplied-value run
-   over an uncancelled handle and a meter whose installed handle is a
-   different handle, cancelled with `Requested`, then with `Deadline`.
+3. Over the `Compare` package and over the two-argument `g` package, call
+   `call_supplied` with a supplied-value run over an uncancelled handle and a
+   meter whose installed handle is a different handle, cancelled with
+   `Requested`, then with `Deadline`. Then call it with the caller's run over
+   a handle cancelled with `Requested` and the meter's handle not cancelled.
 
 ## Expected Results
 
@@ -52,4 +54,6 @@ FR-401-AC-10.
 3. `call_supplied` returns `Ok` with `Outcome::Incomplete` at
    `ChargePoint::FunctionCall`; no charge is admitted, the meter's
    `tripped()` equals the cause, the run's handle is not tripped, and the
-   result is never `CallFailure::Cancelled`.
+   result is never `CallFailure::Cancelled`. With the caller's run
+   cancelled, `call_supplied` returns `CallFailure::Cancelled` with cause
+   `Requested`, zero consumed counters and no admitted charge.
