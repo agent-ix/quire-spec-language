@@ -42,3 +42,9 @@ Examined, clean:
 Mergeable: only low findings remain.
 
 Merge-tree against origin/main and every other open QSL head touching FR-430 or TC-1170: clean. Gate output has 26 warning lines, none in the touched files.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head a3091082. ll` (precondition `not self.sent`, reset `x`), step map `send -> send`, `poll -> stutter`, mapping `sent -> sent`: with the time invariant `when not self.sent { x <= 0 }`, the `poll` loop at `sent = false` is the only cycle on which `send` is enabled and not taken, and its total delay is 0, so it do |
