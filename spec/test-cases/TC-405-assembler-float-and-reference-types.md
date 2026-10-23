@@ -16,8 +16,8 @@ Verify the explicit resolution arms for `Float32`/`Float64` and
 `Reference<Q>`. A floating type in a function signature is admitted and
 carries its rounding mode (FR-091-OQ-4, ADR-013 R-07), and a floating type
 written without a mode is admitted by S1 and read as mode `exact` (QSpec
-FR-148). A native floating model field has no QSpec FR-322 member type and
-remains an explicit unsupported-feature refusal (FR-056-AC-20). A model
+FR-148). A native floating model field assembles to a field of that width
+with rounding mode `exact` (FR-056-AC-20, QSpec FR-322 "Model-owned members"). A model
 reference with no admitted domain package is an unresolved name.
 
 Scope: FR-091-AC-19, FR-091-AC-23, FR-056-AC-20.
@@ -56,6 +56,6 @@ Tag steps 1–3 with `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, step 
   `missing_import`/`missing-selection` naming `test/units`, located at the
   import's identity string.
 - Step 3 returns no `PackageDeclarations` value.
-- Step 5 refuses at the unit's `model` declaration with
-  `unknown_required_feature`/`unsupported-feature` and returns no
-  `PackageDeclarations`. Neither refusal names or infers a rounding mode.
+- Step 5 assembles, and `reading` resolves to a `ValueType::Float` of the
+  native type's width with rounding mode `exact`; it returns a
+  `PackageDeclarations` value.

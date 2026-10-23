@@ -20,7 +20,7 @@ Scope: FR-323-AC-1, FR-323-AC-2, FR-323-AC-3, FR-046-AC-9.
    `Sequence<Shape>`, then build each from `Shape::Rect(2, 3)`,
    `Shape::Empty`, `Shape::Rect(2, 3)`, `Shape::Circle(1)`, and again from
    those values reversed.
-2. Check `Set<F>` and `Sequence<F>` for `union F { Measured(Float64) }`.
+2. Check `Set<F>`, `Bag<F>`, `OrderedSet<F>` and `Sequence<F>` for `union F { Measured(Float64) }`, build a `Set<F>` and a `Bag<F>` from `F::Measured` of the bits `0000000000000000`, `8000000000000000` and `0000000000000000`, and evaluate `f1 = f2` over two values of `F`.
 3. Evaluate predicate `isRect(s: Shape)` (a `case` over `s`) on
    `Shape::Rect(2, 3)` and `Shape::Empty`; over a `Sequence<Shape>` of
    `Shape::Empty, Shape::Rect(2, 3), Shape::Rect(2, 3)` evaluate `contains`
@@ -35,7 +35,9 @@ Tag each test `#[trace("TC-833", "<AC id>")]`.
   set holds `Rect(2, 3)`, `Empty`, `Circle(1)` and, from the reversed input,
   `Circle(1)`, `Rect(2, 3)`, `Empty` (first-occurrence order, not key
   order); the sequence keeps all four in input order.
-- Step 2: `Set<F>` refuses `ill_typed`/`operator-ineligible` at its type
-  reference; `Sequence<F>` is admitted.
+- Step 2: all four types are admitted; the set holds `Measured(-0)` then
+  `Measured(+0)`; the bag holds `Measured(+0)` with multiplicity 2 and
+  `Measured(-0)` with multiplicity 1; `f1 = f2` refuses
+  `ill_typed`/`operator-ineligible`.
 - Step 3: `true`, `false`; `contains` is `true`; `filter` keeps both `Rect`
   occurrences in order; `count` is 2.

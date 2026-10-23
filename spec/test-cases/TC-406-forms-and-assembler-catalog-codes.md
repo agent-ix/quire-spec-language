@@ -34,7 +34,6 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 - `RecoveringCst` returns `invalid_syntax`.
 - `NoDispatchEntry` and `UnrepresentedConstruct` return
   `unsupported_construct`.
-- The floating-type cause returns `unknown_required_feature`.
 - Unresolved type name returns `missing_declaration`, ambiguous type name
   returns `ambiguous_declaration`, and ill-formed bounds return `ill_typed`.
 - The undeclared-alias cause returns `missing_declaration`, the
