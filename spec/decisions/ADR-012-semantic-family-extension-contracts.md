@@ -276,9 +276,9 @@ it is the hook's return type and the `check` core defines the hook.
 
 The rule for a family that sits out a stage depends on the stage. At an
 evaluation stage, the family is absent from the stage's input type, so no arm
-and no refusal exists for it. This follows the #214 precedent below: a
-contract part that nothing can legitimately construct is left out, not
-stubbed. Nothing produces an S6a evaluation of a `Relation` declaration:
+and no refusal exists for it, by the rule for contract parts with no
+construction below: a contract part that nothing can legitimately construct
+is left out, not stubbed. Nothing produces an S6a evaluation of a `Relation` declaration:
 the abstraction relation has no FR-057 capability kind (§7.2), so no
 counterexample of it exists, and the refinement gates are test gates whose
 cases reach S6a as clause runs (ADR-017 RF-1), not as a `Relation` declaration
@@ -323,103 +323,39 @@ Decided under QSL-242, for these reasons:
   F1/F2) had no consumer: its caller discarded its output and built the
   bytes another way.
 
-**#214's implementation record.** #214 (FR-062/FR-065) implements this
-contract for real, migrating `Value`'s function-declaration and
-function-application forms as the one representative family, and finds
-that several parts of the design-level shape above have no real
-construction with only one family migrated and that family carrying no
-FR-057 capability kind and no typed refusal cause distinct from its
-existing checking refusals. Rather than keep a part of the contract that
-nothing can ever legitimately construct (an uninhabited type whose own
-`#[allow(dead_code)]` would be the only way past the lint gate), #214
-narrows the implemented trait shape to what it can back with a real
-caller, and records what is deferred here so the intent survives past this
-one PR:
+**Contract parts with no construction.** A family implements a contract
+part only where that part has a real construction site in the family. A part
+that nothing can legitimately construct is left out, not stubbed: no
+uninhabited type, no method that returns `None` unconditionally, and no
+variant that no caller builds. The parts above therefore hold for every
+family as follows.
 
-- `FamilyContract::requirements()` and the `Requirements`/`CapabilityKind`/
-  `Extent`/`Bound` types are **not implemented**. FR-057/#229 states plainly that function-application has no FR-057 capability
-  kind at all ("no kind for an expression nested in a clause, such as a
-  function application"), so a `requirements()` for this family would
-  return `None` unconditionally -- not a real function, its own absence
-  wearing a signature. ADR-013 §7 S-6 adds
-  `Requirements` and `requirements()` back to the contract with the ADR-014
-  bound types; each family with a real FR-057 kind implements it in its own
-  migration, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
-- `FamilyContract::Cause` is **not a trait associated type**; `check`
-  returns `CheckOutcome<Self::Checked>` with no cause type parameter.
-  Function declaration has no typed refusal cause distinct from `Value`'s
-  existing checking refusals (`CheckCause`), so a `Cause` enum for it would
-  have zero real variants; a probe over such an enum tests only its own
-  `catalog_code()` mapping, not a seam (S4, §5.1). The family whose
-  migration first has a real typed cause adds `Cause` back to the trait and
-  to FR-063's seam-probe checked-in list (S4) in that change.
-- `PackageRefusal` is **deleted**; `FamilyContract::package` itself is
-  **deleted entirely** (PR #262 review, findings F1/F2, a correction to
-  this paragraph's earlier "`package` returns `()`" text). Its one real
-  caller, `CheckedPackage::emit_function_package_v2` (deleted itself, along with the second `quire.checked-function-package/v2`
-  producer it belonged to), wrote `package`'s output into a scratch buffer
-  it never read back, then built its actual returned bytes independently
-  through `family::emit_v2` -- a hook nothing consumed. QSL-242 settled
-  that the contract has no `package` part ("Packaging" above).
-- `StageFailure` carries only `Limit`, not `Fault` (this paragraph's
-  earlier text) and not a family-typed `Refused`. `Fault(InternalFault)`'s
-  one construction site compared `mint_declaration_identity`'s output
-  against itself -- a pure function called twice with the same arguments,
-  which cannot fail by construction -- so PR #262 review (finding F7)
-  deleted it along with the fabricated comparison that was its only
-  caller. `src/diagnostic.rs`'s own `InternalFault` (landed after #214's
-  first pass, from #213 S-5) is that type's real eventual home for a
-  future stage entry with a genuine internal-fault outcome.
-- The S1 stage-participation table (`stage_hooks(FamilyKind, Stage) ->
-  HookStatus`) is **deleted** (PR #262 review, finding F7): its only
-  non-test callers were three `assert_eq!` sites asserting a hand-written
-  `match`'s own literal result against itself, and removing those
-  fabricated callers left the table with no real reader. FR-063-AC-6's
-  checked-in S1 list narrows from two locations to one accordingly (see
-  FR-063's and `xtask/src/seam_probe.rs`'s own correction notes).
-- `ReferenceEvaluation::EvaluateRefusal` carries only `Refused(String)`, not
-  an `Incomplete` variant carrying a real meter state: `quire-exact`'s own
-  `Meter::charge`/`charge_plan` are `pub(crate)`
-  (`quire-exact/src/accounting.rs:551,595`), not exported, so no family
-  migrated so far can construct a real `Incomplete` from outside
-  `quire-exact`. This is an export gap in `quire-exact` (#213's own scope),
-  not a QSL-side design choice; #214 defers `Incomplete` to when that gap
-  closes rather than fabricate a caller for an unreachable variant.
+- `Cause`: every family's `check` refuses with `StageFailure::Refused` of its
+  own `Cause`, which implements `CatalogCoded`. A family whose refusals are
+  the shared checking refusals takes `CheckRefusal` as its `Cause`, and adds
+  its own enum, with its seam-probe entry (§5.3), when it has a refusal
+  `CheckRefusal` does not name.
+- `requirements()`: every family implements it, and a family whose claim
+  forms carry no FR-057 kind returns no claim (§7.2). Its value is read from
+  the extents `check` classified, so the method stays pure and total.
+- `StageFailure` holds `Limit`, `Refused`, `Cancelled` (ADR-029 LC-3) and
+  `Fault`. `Fault` carries an `InternalFault` (FR-275) only from a check
+  whose failure is possible: never from a pure function compared with its
+  own output.
+- There is no `package` part ("Packaging" below) and no stage-participation
+  table. A family's participation in a stage is the hooks it implements and
+  the stage input types it appears in, and both are checked by the compiler.
+- An `evaluate` hook charges the meter it is given. A charge the meter cannot
+  afford returns the kernel `Outcome`'s incomplete result inside
+  `EvalOutcome::Kernel`, while `check` answers an exhausted meter with
+  `StageFailure::Limit` and never with an incomplete result (FR-062-AC-5).
+- A family's `check` makes the family's admission decision: the typing,
+  definedness and termination verdict of its forms, beside its identity and
+  provenance. The S3 typer reaches a migrated form only through a thin
+  dispatch seam (§4.3) and holds no second checker for it (FR-065-CON-2).
 
-**What #214 actually delivers against the design intent above (PR #262
-review headline finding).** The narrowing recorded here is about which
-contract *parts* have a real construction site; it is not a claim that the
-part which remains -- `check` -- performs the family's admission decision.
-It does not, for either form #214 migrates: `ValueFunctionFamily::check`
-mints an identity and records one diagnostic, refusing only on a
-checking resource limit; the real typing, definedness and termination verdict
-for function declarations is made entirely by the unchanged `Typer`,
-invoked unconditionally immediately after, for every declaration, and
-`Expression::Call` (function application) never calls any
-`FamilyContract` method at all -- `Self::call` in `check.rs` is Typer's own
-unchanged method, with one incidental call to `family::mint_call_identity`
-added for identity. Both the contract's `check` and the unchanged `Typer`
-run for every declaration and every call. This is not the ADR-011 §7.3
-M-6e side-by-side hazard in the narrow sense that rule targets -- `Typer`
-was never a separate, deprecated *old* admission path left running by
-oversight; it is the only checker either form has ever had, and the
-contract's `check` was never built to replace it, only to mint identity
-alongside it -- but it does mean FR-065's own text ("check... exclusively
-through the contract") is delivered only for identity and provenance
-minting, not for the checking decision itself. FR-065's Status section
-records this by Acceptance Criterion; the real migration (moving the
-checking itself into `ValueFunctionFamily::check` and removing it from
-`Typer`) is filed as its own, separate ticket rather than attempted as
-part of #214.
-
-None of this changes the six-part contract's design intent above, which
-remains the target shape; it is what #214 could back with a real,
-non-fabricated caller against the one family it migrated, and -- for the
-checking decision itself -- less than #214's own first-pass report
-claimed. See
-[docs/family-migration-recipe.md](../../docs/family-migration-recipe.md)
-for the recipe each later family migration follows, including when each
-deferred part comes back.
+[docs/family-migration-recipe.md](../../docs/family-migration-recipe.md) is
+the procedure a family migration follows to meet these rules.
 
 ## 3. Family-owned responsibilities
 

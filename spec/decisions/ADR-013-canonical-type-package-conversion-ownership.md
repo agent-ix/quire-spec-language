@@ -724,7 +724,8 @@ Why S6a admits no `Relation` (owner ruling on FR-090-OQ-2):
    reach S6a as clause runs, not as a `Relation` declaration.
    `CheckedPackage::call` resolves functions only.
 2. An unrepresentable state is better than a runtime refusal that nothing
-   emits. ADR-012 §2's #214 precedent applies: a contract part that nothing
+   emits. ADR-012 §2's rule for contract parts with no construction
+   applies: a contract part that nothing
    can legitimately construct is left out, not stubbed.
 3. No catalog code is needed. The `quire.native.diagnostics/v1` catalog
    defines none for a family that does not evaluate natively,
