@@ -125,13 +125,16 @@ impl Run<'_, '_> {
             .map_err(|_| fault("the-evaluator-reads-the-projected-prefix"))?;
         match outcome {
             TemporalOutcome::Violated { .. } => Ok(Ok(())),
-            TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
-                Ok(Err(exhausted(
-                    ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
-                    self.request.meter.work_units,
-                    totals,
-                )))
-            }
+            TemporalOutcome::Incomplete(incomplete) => Ok(Err(exhausted(
+                ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                incomplete.limit,
+                totals,
+            ))),
+            TemporalOutcome::WindowLimitReached(_) => Ok(Err(exhausted(
+                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                self.request.meter.work_units,
+                totals,
+            ))),
             _ => Err(fault("the-evaluator-confirms-the-monitor")),
         }
     }

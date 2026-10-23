@@ -650,6 +650,41 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     );
 }
 
+/// Trace: FR-126-AC-5, FR-126-AC-19, FR-127-AC-4, FR-255-AC-9
+#[trace("TC-521", "FR-126-AC-5", "FR-126-AC-19", "FR-127-AC-4")]
+#[test]
+fn a_terminal_when_meter_denial_stops_deadlock_check() {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&document(false)).expect("counter model document");
+    document["types"][1]["operations"] = serde_json::json!([]);
+    let document = serde_json::to_vec(&document).expect("model document");
+    let world = world_with(
+        document,
+        "terminal Done using v on M when { self.value = 0 };\n",
+        &[&[("c", 0)]],
+    );
+    let outcome = run(
+        &world,
+        &["c"],
+        ModelCheckItem::DeadlockFreedom,
+        None,
+        ModelCheckLimits::default(),
+        ZERO,
+    )
+    .expect("checked");
+    let ModelCheckOutcome::Stopped { cause, limit, .. } = outcome else {
+        panic!("terminal predicate exhaustion stops the run: {outcome:?}");
+    };
+    assert_eq!(cause, IncompleteCause::ResourceExhausted);
+    let reached = limit.expect("denied meter counter");
+    assert_eq!(
+        reached.limit,
+        ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits)
+    );
+    assert_eq!(reached.value, 0);
+    assert_eq!(reached.limit.setting(), "accounting.work_units");
+}
+
 /// Verifies the cancelled-handle row of FR-126-AC-5 over a TP-1 clause: the
 /// clause's root is resolved from the package, and a handle cancelled before
 /// the call stops that resolution, so the run returns `Stopped{Cancelled,

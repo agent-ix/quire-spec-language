@@ -815,7 +815,10 @@ fn a_stopped_check_names_what_stopped_it() {
             &Cancel::new()
         )
         .expect("checked"),
-        stop(ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits), 0)
+        stop(
+            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+            0
+        )
     );
     for source in [CancelCause::Requested, CancelCause::Deadline] {
         let cancel = Cancel::new();

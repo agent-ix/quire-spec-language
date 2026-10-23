@@ -137,7 +137,9 @@ impl ModelSystem<'_> {
                         return Ok(Reading::Undefined(cause));
                     }
                     if let ClauseOutcome::Incomplete(incomplete) = outcome {
-                        return Err(exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)));
+                        return Err(exhausted(ExpansionLimit::EvaluationMeter(
+                            incomplete.limit_kind,
+                        )));
                     }
                     return Ok(Reading::Refused);
                 }

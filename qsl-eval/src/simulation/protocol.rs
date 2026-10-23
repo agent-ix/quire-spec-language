@@ -56,7 +56,8 @@ use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{self, EncodingRefusal};
 use crate::simulation::model::encode::{map_enc, reference_enc, Enc};
 use crate::simulation::model::{
-    verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
+    verdict, ClauseOutcome, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict,
+    BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::progress::ZeroProgressError;
@@ -1412,7 +1413,10 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                             }
                         } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
                             return Err(ExpansionStop {
-                                cause: CatalogCode::new("resource_exhausted", "insufficient-next-charge"),
+                                cause: CatalogCode::new(
+                                    "resource_exhausted",
+                                    "insufficient-next-charge",
+                                ),
                                 limit: Some(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)),
                             });
                         } else {

@@ -323,7 +323,10 @@ fn the_horizon_and_every_limit_stop_the_example_run_naming_what_stopped_it() {
         .expect("checked");
     assert_eq!(
         stopped(metered),
-        reached(ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits), 0)
+        reached(
+            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+            0
+        )
     );
 }
 

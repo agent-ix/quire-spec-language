@@ -674,7 +674,10 @@ fn limits_and_cancellation_stop_a_liveness_run_naming_what_stopped_it() {
     );
     assert_eq!(
         stopped(with(None, defaults, ZERO, &live)),
-        reached(ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits), 0)
+        reached(
+            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+            0
+        )
     );
     let cancelled = Cancel::new();
     cancelled.cancel(CancelCause::Requested);

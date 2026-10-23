@@ -148,7 +148,9 @@ impl ModelCheckLimit {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
-            Self::EvaluationMeter(counter) => crate::limits::AccountingLimits::setting_of(counter).name(),
+            Self::EvaluationMeter(counter) => {
+                crate::limits::AccountingLimits::setting_of(counter).name()
+            }
             Self::MaxCandidates => "expansion.max_candidates",
             Self::SolverSteps => "max_solver_steps",
             Self::WitnessSamples => "witness_samples",
@@ -192,8 +194,17 @@ mod tests {
     /// Trace: FR-126-AC-19, FR-127-AC-16, FR-255-AC-9
     #[test]
     fn evaluation_meter_stop_names_the_accounting_setting() {
-        assert_eq!(ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits).setting(), "accounting.work_units");
-        assert_eq!(ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::IntegerBits).as_str(), "integer_bits");
-        assert_eq!(ModelCheckLimit::MaxCandidates.setting(), "expansion.max_candidates");
+        assert_eq!(
+            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits).setting(),
+            "accounting.work_units"
+        );
+        assert_eq!(
+            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::IntegerBits).as_str(),
+            "integer_bits"
+        );
+        assert_eq!(
+            ModelCheckLimit::MaxCandidates.setting(),
+            "expansion.max_candidates"
+        );
     }
 }

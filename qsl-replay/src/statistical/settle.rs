@@ -194,9 +194,10 @@ fn expansion_stop(stop: &ExpansionStop, subject: SubjectLimits<'_>) -> Statistic
         }))
     };
     match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter(counter)) => {
-            reached(ModelCheckLimit::EvaluationMeter(counter), meter_bound(subject.meter, counter))
-        }
+        Some(ExpansionLimit::EvaluationMeter(counter)) => reached(
+            ModelCheckLimit::EvaluationMeter(counter),
+            meter_bound(subject.meter, counter),
+        ),
         Some(ExpansionLimit::MaxCandidates) => reached(
             ModelCheckLimit::MaxCandidates,
             subject.expansion.max_candidates,
@@ -429,10 +430,18 @@ mod tests {
             })))
         };
         let exhausted = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
-        let metered = expansion(Some(ExpansionLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits)), exhausted);
+        let metered = expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::WorkUnits,
+            )),
+            exhausted,
+        );
         assert_eq!(
             metered.value,
-            incomplete(ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits), 4_096)
+            incomplete(
+                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                4_096
+            )
         );
         let json = wire(metered);
         assert_eq!(json["result"], "incomplete");
@@ -441,7 +450,9 @@ mod tests {
         assert_eq!(json["cause"]["value"], 4_096);
         assert_eq!(json["cause"]["setting"], "accounting.work_units");
         let integer_bits = wire(expansion(
-            Some(ExpansionLimit::EvaluationMeter(quire_exact::LimitKind::IntegerBits)),
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::IntegerBits,
+            )),
             exhausted,
         ));
         assert_eq!(integer_bits["cause"]["limit"], "integer_bits");

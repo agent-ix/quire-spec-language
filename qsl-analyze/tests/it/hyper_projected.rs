@@ -555,7 +555,9 @@ fn an_evaluator_that_runs_out_while_confirming_stops_the_item() {
     assert_eq!(cause, IncompleteCause::ResourceExhausted);
     assert_eq!(
         limit.map(|reached| reached.limit),
-        Some(ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits))
+        Some(ModelCheckLimit::EvaluationMeter(
+            quire_exact::LimitKind::WorkUnits
+        ))
     );
 }
 

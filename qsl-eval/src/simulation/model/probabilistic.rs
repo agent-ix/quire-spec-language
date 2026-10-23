@@ -421,9 +421,9 @@ impl ModelSystem<'_> {
             return Ok(value.clone());
         }
         match verdict(&evaluation.outcome) {
-            Verdict::Undecided(ClauseOutcome::Incomplete(incomplete)) => {
-                Err(exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)))
-            }
+            Verdict::Undecided(ClauseOutcome::Incomplete(incomplete)) => Err(exhausted(
+                ExpansionLimit::EvaluationMeter(incomplete.limit_kind),
+            )),
             _ => Err(stop(BROKEN)),
         }
     }

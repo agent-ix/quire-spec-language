@@ -261,7 +261,13 @@ fn a_true_certificate_under_a_small_meter_never_rejects() {
         match check {
             TemporalCertificateCheck::Accepted => {}
             TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached { limit, value }) => {
-                assert_eq!((limit, value), (ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits), work));
+                assert_eq!(
+                    (limit, value),
+                    (
+                        ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                        work
+                    )
+                );
                 stopped += 1;
             }
             other => panic!("work {work}: a true certificate is not rejected: {other:?}"),

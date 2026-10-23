@@ -93,19 +93,20 @@ impl ModelSystem<'_> {
             readings.push(match verdict(&evaluation.outcome) {
                 Verdict::True => PredicateReading::True,
                 Verdict::False => PredicateReading::False,
-                Verdict::Undecided(outcome) => match outcome.undefined_cause() {
-                    Some(cause) => PredicateReading::Undefined {
-                        cause,
-                        location: evaluation.location,
-                    },
-                    None if matches!(outcome, ClauseOutcome::Incomplete(_)) => {
-                        let ClauseOutcome::Incomplete(incomplete) = &outcome else {
-                            return Err(stop(BROKEN));
-                        };
-                        return Err(exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)));
+                Verdict::Undecided(outcome) => {
+                    if let Some(cause) = outcome.undefined_cause() {
+                        PredicateReading::Undefined {
+                            cause,
+                            location: evaluation.location,
+                        }
+                    } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
+                        return Err(exhausted(ExpansionLimit::EvaluationMeter(
+                            incomplete.limit_kind,
+                        )));
+                    } else {
+                        PredicateReading::Refused(outcome)
                     }
-                    None => PredicateReading::Refused(outcome),
-                },
+                }
             });
         }
         Ok(readings)

@@ -122,7 +122,9 @@ impl IncompleteLimit {
     /// The limit's FR-126 spelling; another counter keeps its member name.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::EvaluationMeter => ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits).as_str(),
+            Self::EvaluationMeter => {
+                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits).as_str()
+            }
             Self::Counter(kind) => kind.as_str(),
         }
     }
@@ -165,9 +167,13 @@ impl EvaluationOutcome {
         }
     }
 
-    /// Whether the evaluation only ran out of the evaluation meter.
-    pub fn is_meter_only(self) -> bool {
-        self == Self::Incomplete(IncompleteLimit::EvaluationMeter)
+    /// The accounting counter an incomplete evaluation exhausted.
+    pub fn meter_counter(self) -> Option<LimitKind> {
+        match self {
+            Self::Incomplete(IncompleteLimit::EvaluationMeter) => Some(LimitKind::WorkUnits),
+            Self::Incomplete(IncompleteLimit::Counter(counter)) => Some(counter),
+            Self::Refused => None,
+        }
     }
 }
 
@@ -460,16 +466,16 @@ impl Run<'_, '_> {
     /// The stop of a verdict, or a `BadState` finding, that only ran out of
     /// the evaluation meter (PC-2: a certificate is rejected only when the
     /// checker found it wrong).
-    fn meter_stop(&self) -> Halt {
+    fn meter_stop(&self, counter: LimitKind) -> Halt {
         stopped(
-            ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
-            self.concrete.meter().work_units,
+            ModelCheckLimit::EvaluationMeter(counter),
+            crate::meter_bound(&self.concrete.meter(), counter),
         )
     }
 
-    /// Whether `undetermined` only ran out of the evaluation meter.
-    fn meter_only(undetermined: &Undetermined) -> bool {
-        EvaluationOutcome::of_undetermined(undetermined).is_meter_only()
+    /// The counter `undetermined` exhausted, if its evaluation stopped.
+    fn meter_counter(undetermined: &Undetermined) -> Option<LimitKind> {
+        EvaluationOutcome::of_undetermined(undetermined).meter_counter()
     }
 
     fn encoding<T>(result: Result<T, qsl_eval::simulation::EncodingRefusal>) -> Step<T> {
@@ -609,9 +615,8 @@ impl Run<'_, '_> {
         match verdict {
             StepVerdict::Stopped(reached) => stopped(reached.limit, reached.value),
             StepVerdict::Fault(_) => Self::fault("refinement-step"),
-            StepVerdict::Undetermined(undetermined) if Self::meter_only(undetermined) => {
-                self.meter_stop()
-            }
+            StepVerdict::Undetermined(undetermined) => Self::meter_counter(undetermined)
+                .map_or(otherwise, |counter| self.meter_stop(counter)),
             _ => otherwise,
         }
     }
@@ -704,8 +709,8 @@ impl Run<'_, '_> {
                     return Err(failed(FailedStep::Undefined(Box::new(evaluation))))
                 }
                 StepVerdict::Undetermined(undetermined) => {
-                    if Self::meter_only(&undetermined) {
-                        return Err(self.meter_stop());
+                    if let Some(counter) = Self::meter_counter(&undetermined) {
+                        return Err(self.meter_stop(counter));
                     }
                     return Err(failed(FailedStep::Undetermined(UndeterminedStep::new(
                         undetermined,

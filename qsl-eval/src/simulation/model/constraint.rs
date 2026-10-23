@@ -77,7 +77,9 @@ impl ModelSystem<'_> {
                         });
                     }
                     return Err(match outcome {
-                        ClauseOutcome::Incomplete(incomplete) => exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)),
+                        ClauseOutcome::Incomplete(incomplete) => {
+                            exhausted(ExpansionLimit::EvaluationMeter(incomplete.limit_kind))
+                        }
                         ClauseOutcome::FamilyRefused(code) => stop(code),
                         ClauseOutcome::KernelRefused(_)
                         | ClauseOutcome::NotBoolean

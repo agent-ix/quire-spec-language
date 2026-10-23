@@ -162,12 +162,18 @@ pub(super) fn conjunction(
         .map_err(|_| stop(BROKEN))?;
     match evaluation.outcome {
         ClauseSetOutcome::Incomplete => {
-            let counter = evaluation.results.iter().find_map(|entry| {
-                match verdict(&entry.evaluation.evaluation.outcome) {
-                    Verdict::Undecided(ClauseOutcome::Incomplete(incomplete)) => Some(incomplete.limit_kind),
-                    _ => None,
-                }
-            }).ok_or_else(|| stop(BROKEN))?;
+            let counter = evaluation
+                .results
+                .iter()
+                .find_map(
+                    |entry| match verdict(&entry.evaluation.evaluation.outcome) {
+                        Verdict::Undecided(ClauseOutcome::Incomplete(incomplete)) => {
+                            Some(incomplete.limit_kind)
+                        }
+                        _ => None,
+                    },
+                )
+                .ok_or_else(|| stop(BROKEN))?;
             Err(exhausted(ExpansionLimit::EvaluationMeter(counter)))
         }
         ClauseSetOutcome::True => Ok(Conjunction::True),

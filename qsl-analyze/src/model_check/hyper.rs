@@ -2265,13 +2265,16 @@ impl<'a> Run<'_, 'a> {
         .map_err(|_| fault("the-evaluator-reads-the-lasso"))?;
         Ok(match outcome {
             TemporalOutcome::Violated { at } => Ok(at.index()),
-            TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
-                Err(exhausted(
-                    ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
-                    self.request.meter.work_units,
-                    totals,
-                ))
-            }
+            TemporalOutcome::Incomplete(incomplete) => Err(exhausted(
+                ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                incomplete.limit,
+                totals,
+            )),
+            TemporalOutcome::WindowLimitReached(_) => Err(exhausted(
+                ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
+                self.request.meter.work_units,
+                totals,
+            )),
             _ => return Err(fault("the-evaluator-confirms-the-automaton")),
         })
     }

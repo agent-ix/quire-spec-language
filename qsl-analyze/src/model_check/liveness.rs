@@ -2143,11 +2143,11 @@ impl<'r, S: LiveSubject> Run<'r, S> {
     /// naming it (FR-153 "Limits").
     fn quotient_stop(&self, stop: QuotientStop) -> Result<Second<Tr<S>>, ModelCheckRefusal> {
         match stop {
-            QuotientStop::Meter => Ok(Second::Stopped(
+            QuotientStop::Meter(counter) => Ok(Second::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
-                    value: self.request.meter.work_units,
+                    limit: ModelCheckLimit::EvaluationMeter(counter),
+                    value: qsl_replay::meter_bound(&self.request.meter, counter),
                 }),
             )),
             QuotientStop::Cancelled => self.cancelled(),
@@ -2375,8 +2375,8 @@ impl<'a> Run<'_, ModelSystem<'a>> {
             let mut queue: VecDeque<ModelTransition> = identities.iter().cloned().collect();
             while let Some(identity) = queue.pop_front() {
                 for (_, generator) in &generators {
-                    if meter.charge(Charge::new(ChargePoint::GraphExpand)).is_err() {
-                        return Ok(Err(QuotientStop::Meter));
+                    if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::GraphExpand)) {
+                        return Ok(Err(QuotientStop::Meter(incomplete.limit_kind)));
                     }
                     let image = match self.system.permute_transition(&identity, generator) {
                         Ok(image) => image,

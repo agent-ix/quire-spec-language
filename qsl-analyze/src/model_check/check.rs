@@ -2411,12 +2411,11 @@ impl<S: SubjectSystem> Run<'_, S> {
     /// invariant refuses, any other stop settles V-7 with no limit.
     fn expansion_stop(&self, stop: ExpansionStop) -> Halt {
         match stop.limit {
-            Some(ExpansionLimit::EvaluationMeter(counter)) => {
-                Self::stopped(
-                    ModelCheckLimit::EvaluationMeter(counter),
-                    qsl_replay::meter_bound(&self.meter, counter),
-                ).into()
-            }
+            Some(ExpansionLimit::EvaluationMeter(counter)) => Self::stopped(
+                ModelCheckLimit::EvaluationMeter(counter),
+                qsl_replay::meter_bound(&self.meter, counter),
+            )
+            .into(),
             Some(ExpansionLimit::MaxCandidates) => {
                 Self::stopped(ModelCheckLimit::MaxCandidates, self.max_candidates).into()
             }

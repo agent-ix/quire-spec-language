@@ -130,9 +130,10 @@ pub(super) fn poll(cancel: &Cancel) -> Step<()> {
 /// limit, and a broken invariant is `checker`'s fault.
 pub(super) fn expansion_halt(stop: &ExpansionStop, budgets: Budgets, checker: Checker) -> Halt {
     match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter(counter)) => {
-            stopped(ModelCheckLimit::EvaluationMeter(counter), crate::model_check::limits::meter_bound(&budgets.meter, counter))
-        }
+        Some(ExpansionLimit::EvaluationMeter(counter)) => stopped(
+            ModelCheckLimit::EvaluationMeter(counter),
+            crate::model_check::limits::meter_bound(&budgets.meter, counter),
+        ),
         Some(ExpansionLimit::MaxCandidates) => {
             stopped(ModelCheckLimit::MaxCandidates, budgets.max_candidates)
         }

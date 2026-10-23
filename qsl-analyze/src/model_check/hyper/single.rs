@@ -537,7 +537,15 @@ impl<'a> Run<'_, 'a> {
             TemporalOutcome::Violated { .. } | TemporalOutcome::Undefined(_) => {
                 return Ok(Ok(None))
             }
-            TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => {
+            TemporalOutcome::Incomplete(incomplete) => {
+                return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
+                    stopped(
+                        ModelCheckLimit::EvaluationMeter(incomplete.limit_kind),
+                        incomplete.limit,
+                    )
+                })));
+            }
+            TemporalOutcome::WindowLimitReached(_) => {
                 return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
                     stopped(
                         ModelCheckLimit::EvaluationMeter(quire_exact::LimitKind::WorkUnits),
