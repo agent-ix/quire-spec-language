@@ -22,9 +22,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{BinaryOperator, DeclaredClauseKind, ExprNode, Expression, StateClauseKind};
-use qsl_foundation::diagnostic::{CatalogCode, Code};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, IllTypedCause, ValueType};
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::check::DispatchOperation;

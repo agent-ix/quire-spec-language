@@ -16,7 +16,6 @@ use qsl_eval::simulation::{
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::CatalogCode;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -29,6 +28,7 @@ use qsl_semantics::model::observation::{
 use qsl_semantics::model::state::{ModelState, StateModel};
 use quire_exact::Cancel;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -943,7 +943,7 @@ fn an_exhausted_budget_is_undetermined_or_stops_the_run() {
     assert_eq!(frontier.len(), 1);
     assert_eq!(
         exploration.outcome.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
 
     let mut world = self::world(vec![increment()], "");
@@ -1666,7 +1666,7 @@ fn an_undecided_precondition_is_a_contract_finding() {
     assert_eq!(
         *evaluation,
         ClauseOutcome::FamilyUndefined(
-            qsl_foundation::diagnostic::UndefinedReason::PreconditionFalse
+            quire_semantic_value::catalog::UndefinedReason::PreconditionFalse
         )
     );
 
@@ -1699,7 +1699,7 @@ fn an_undecided_precondition_is_a_contract_finding() {
         assert_eq!(
             *evaluation,
             ClauseOutcome::FamilyUndefined(
-                qsl_foundation::diagnostic::UndefinedReason::PreconditionFalse
+                quire_semantic_value::catalog::UndefinedReason::PreconditionFalse
             )
         );
     }

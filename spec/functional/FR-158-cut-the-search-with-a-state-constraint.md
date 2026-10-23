@@ -17,6 +17,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-126
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-215
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-025
+    type: depends_on
 ---
 # FR-158: Cut the model-check search with a state constraint
 
@@ -42,12 +46,14 @@ boundary states, never `proved` (US-019).
 
 - A checked `constraint` clause of the unit (spelling QSpec's; ADR-021 §7.3
   writes `constraint Low using v on M::Counter at current { self.v <= 1 }`).
-- `ModelCheckRequest.reductions.constraint: Option<ClauseName>` (FR-159).
+- `ModelCheckRequest.reductions.constraint: Option<ClauseName>` (FR-159),
+  whether the request's subject is a model subject or a protocol subject
+  (FR-215).
 
 ## Outputs
 
-`ModelSystem` implements FR-101's `holds_constraint` hook and always
-returns `Some`. Its value:
+`ModelSystem` and `ProtocolSystem` (FR-215) each implement FR-101's
+`holds_constraint` hook and always return `Some`. Its value:
 
 ```rust
 pub enum ConstraintValue {
@@ -86,7 +92,18 @@ and, per run, the count of boundary states reached.
 - **Resolution.** The pre-check SHALL resolve the request's constraint name
   to a checked `constraint` clause of the subject's package; a name that
   resolves to none SHALL refuse `invalid_runtime_input`/`invalid-value`,
-  naming it, before any expansion.
+  naming it, before any expansion. The same resolution and refusal apply to
+  a request whose subject is a protocol subject.
+- **Protocol subjects.** `ProtocolSystem`'s `holds_constraint` SHALL evaluate
+  the clause, by the truth rule above, over the model state of the protocol
+  state: each shared location of a weak `parallel` holds its memory value
+  (ADR-025 MS-2: under `tso` the value in memory, under `ra` the value of its
+  mo-last message), and every other location holds its value in place, as a
+  `holds` atom reads them. A value still in a store buffer, a message that is
+  not mo-last, and a thread observation (ADR-025 MA-5) are not read. Under
+  `sc` the model state is the protocol state's model state unchanged. Every
+  other rule of this requirement holds for a protocol subject as stated; the
+  memory bounds interact with the constraint as FR-225 states.
 - **Boundary states.** The engine SHALL store, key, count toward
   `max_states`, and read with the property automaton and the safety monitor
   every product state whose model state does not satisfy the constraint,
@@ -119,6 +136,7 @@ universe `{a, b, c}`, all at 0; constraint `Low` (`self.v <= 1`); instance
 | FR-158-AC-2 | `always holds(x.v <= 2)` returns `ConstraintReached{boundary_states: 12}` (the unconstrained run returns `Violated` at `(3,0,0)`). `eventually holds(x.v = 3)` under the empty fairness set returns `ConstraintReached{12}`: no boundary state is stutter-extended, so no lasso is formed (the unconstrained run returns `Holds`). The deadlock-freedom item returns `ConstraintReached{12}`: no boundary state is a deadlock (the unconstrained run returns `Violated` at `(3,3,3)`). | Test (TC-580) |
 | FR-158-AC-3 | A constraint that evaluates `Undefined` at a reached state settles the item `Violated` with cause `UndefinedEvaluation` and a replaying counterexample ending at that state, and that state is not a boundary state. A request naming an absent constraint refuses `invalid_runtime_input`/`invalid-value` naming it, with no state expanded. A constraint false at the initial state makes it a boundary state, and the run stores one state. With no universe for `counters`, the constrained run still returns `RequiresBound`. | Test (TC-581) |
 | FR-158-AC-4 | The constrained and unconstrained requests for one claim have equal obligation identities and different request identities, no result of one settles the other, and the constrained run's terminal record names `Low` in its method. Repeating AC-1's run gives equal outcomes and equal boundary counts. | Test (TC-581) |
+| FR-158-AC-5 | Over ADR-025 §10's `SB` with `constraint Zero using v on M::Cell at current { self.v <= 0 }` named by the request: under `sc` the run stores 3 states, expands the initial state and settles `ConstraintReached{boundary_states: 2}`, the states after `Sx` and after `Sy` being boundary states; under `tso` the run settles `Violated` with the unconstrained run's depth-4 counterexample `Sx`, `Sy`, `Lx`, `Ly`, because `Zero` reads memory values and no state on that path has flushed a store; under `ra` (`max_messages` 4) the run stores 3 states and settles `ConstraintReached{boundary_states: 2}` with no counterexample, because after `Sx` the mo-last message of `x` holds 1 although `right`'s view still reads `x`'s initial message, and after `Sy` likewise for `y`, so every state after a store is a boundary state and the unconstrained run's violation, which needs both stores, is never reached. `ProtocolSystem`'s `offered_reductions` names the constraint. A request over `SB` naming an absent constraint refuses `invalid_runtime_input`/`invalid-value` naming it, with no state expanded. | Test (TC-581) |
 
 ## Dependencies
 

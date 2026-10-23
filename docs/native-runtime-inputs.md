@@ -33,9 +33,8 @@ for those wrappers. The existing IR BoundPackage/binder remains the backend
 boundary. No dependency on uncommitted B work or edits to B/C/Filament/TL are
 introduced. The last inspection found B's VP04 specification work in progress.
 
-Runtime library implementation depends on the landed FR-015/016 APIs. LC02's
-strict package/projection handoff and FS03 acceptance are tracked separately
-and are not declared complete by this intermediate API. Backend qualification
+Runtime library implementation depends on the landed FR-015/016 APIs. This API does not cover LC02's
+strict package/projection handoff or FS03 acceptance. Backend qualification
 and opaque Quire integration are separate, later stages of the original
 assignment.
 

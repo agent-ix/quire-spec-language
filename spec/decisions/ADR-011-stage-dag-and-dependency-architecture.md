@@ -286,8 +286,6 @@ E9 details:
   `StageFailure::Refused` cause (an ADR-013 O-26 refusal) and `Fault` as an
   internal fault. Neither yields a parity verdict; ADR-013 C-09 gives the item's terminal
   value.
-  AD-016 arrow 7 is stale here. Remaining work:
-  agent-ix/quire-specification#141.
 - A packet whose `package_id` differs from the recompiled package's refuses
   with a typed cause and yields no verdict.
 - The packet's `source` is a `ReplaySource`: `Witness(Witness)` or
@@ -444,9 +442,7 @@ An expectation that evaluates through a `quire-exact` operation shares that
 operation with any function under proof that calls it (ADR-013 O-13). For a
 proof of a `quire-exact` operation, or of an RT op that calls one, the
 expectation comes from the QSpec operation vectors or from a checked-in
-specification model that calls no `quire-exact` operation. AD-016 arrow 4 and
-its crate-table line 406 are stale here. Remaining work:
-agent-ix/quire-specification#141.
+specification model that calls no `quire-exact` operation.
 
 For each module a counted gate claims, the gate passes only if all of these
 hold:
@@ -1100,6 +1096,15 @@ flowchart BT
   QEV & QRP --> QEL
   RT --> QEL
   CG --> QEL
+  TLS[tl-syntax]
+  TLM[tl-mltl]
+  QML[quire-mltl]
+  QSL -->|temporal correspondence only| TLS & TLM & QML
+  TLO[tl-oracle]
+  QOB[quire-observation]
+  TLM --> TLS & TLO
+  TLO --> TLS
+  QML --> TLM & TLS & QOB
 ```
 
 Differences from today (ADR-010 §3.2), each removed in its owning change:
@@ -1112,6 +1117,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
 | QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted; X-3 (`qsl-cst`) is extracted; X-4 (`qsl-source`) is extracted; X-5 (`qsl-forms`) is extracted; X-6 (`qsl-semantics`) is extracted; X-7 (`qsl-package`) is extracted; X-8 (`qsl-eval`) is extracted; X-9 (`qsl-route`) is extracted; X-10 (`qsl-replay`) is extracted; `located_json` is not extracted: it is deleted with `model_source` in M-6c (§7.3 X-2). | X-2 to X-10 |
+| QSL root → `tl-syntax`, `tl-mltl`, `quire-mltl` | **New**, for the root crate's `temporal` correspondence stage only (FR-045 "Correspondence"): it hands generated TL artifacts to their owners' public readers and joins the TL result with the native one. No other QSL crate or module names these crates. None of them depends on QSL (their manifests name only each other, `tl-oracle` and `quire-observation`; `tl-oracle` depends on `tl-syntax`), so the edges add no cycle. QSL holds the native subject, the `/2` package and the native evaluator, so the stage sits where both owners are reachable. | FR-045 |
 | QSL → FCD | **Admitted** (AD-016). Only `model::intake` imports FCD crates. | QSL PR #200 |
 | QSL → `quire-exact`, RT → `quire-exact`, CG → `quire-exact` | **New**; a git dependency on the repository `agent-ix/quire-exact` at `branch = "main"` | X-1, carried out as #213 S-1 after the AD-016 amendment (TK-10, QC-15) |
 | QSL → `quire-semantic-value`, RT → `quire-semantic-value`, CG → `quire-semantic-value` | **New.** FB-05's shared-leaf class: a permitted normal edge from QSL, RT and CG to the repository `agent-ix/quire-semantic-value`, at `branch = "main"`. | X-11 |
@@ -1129,8 +1135,7 @@ Rules:
   type. It adds no crate edge, and no QSL test reads a path inside a cargo
   checkout. The parity comparator stays in
   agent-ix/quire-contract-codegen#50. The end-to-end run of proof and replay is
-  agent-ix/quire-contract-codegen#87. Remaining work:
-  agent-ix/quire-contract-ir#146.
+  agent-ix/quire-contract-codegen#87.
 - A dependency needed only by tests is a dev dependency.
 
 ### 7.2 Extraction criteria
@@ -1295,11 +1300,11 @@ The approved crate extractions are X-1 to X-11.
 | OBS-029 | The IR root → QSL edge is removed: neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (§7.1, FB-05). |
 | OBS-030 | `CheckedPackage::call` on `qsl_package::CheckedPackage`, through the layer-5 `CheckedPackageEvaluation` trait (§4, as amended), is the S6a entry. The CG replay adapter wires it, first in the skeleton spine and then in #217. |
 | OBS-031 | #215 runs the backend direction and API-surface checks (§7.1, T-12). |
-| OBS-036 | The replay executor is QSL S6a (`CheckedPackage::call` on `qsl_package::CheckedPackage` through `CheckedPackageEvaluation`, §4 as amended; AD-016 arrow 7). agent-ix/quire-contract-ir#140 is the implementing change: it amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. FR-031-AC-3 gets its own coverage row, discharged by the replay crossing test in agent-ix/quire-integration (§7.1), after agent-ix/quire-contract-ir#145 removes the stub tags. Remaining work: agent-ix/quire-contract-ir#146. |
+| OBS-036 | The replay executor is QSL S6a (`CheckedPackage::call` on `qsl_package::CheckedPackage` through `CheckedPackageEvaluation`, §4 as amended; AD-016 arrow 7). agent-ix/quire-contract-ir#140 amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. FR-031-AC-3 gets its own coverage row, discharged by the replay crossing test in agent-ix/quire-integration (§7.1). |
 | OBS-037 | Forbidden bypass FB-03. The handoffs to IR are deleted in the PRs that land S4 emission over the checked graph (#218, #223; M-6d). |
 | OBS-038 | Closed against #205 as amended (2026-09-19): "Runtime owns executable operations, exact numeric predicates and the host ABI. QSL owns reference semantics and the native replay executor (`CheckedPackage::call`, AD-016 arrow 7); Codegen reconstructs the replay request and Contract IR holds the counterexample packet." ADR-013 OQ-H and QC-29 amend its last clause: QSL `qsl-replay` owns the counterexample packet (`WitnessEnvelope`) and CG builds it. No native replay surface belongs in IR (agent-ix/quire-contract-ir#140). |
 | OBS-039 | Closed against the same #205 text. #205 and AD-016 agree. |
-| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in `quire-contract-model`, already a dependency (Remaining work: agent-ix/quire-contract-ir#146). The replay crossing test lives in agent-ix/quire-integration, which depends on QSL, CG and IR, so the test adds no QSL → CG edge; the parity comparator is agent-ix/quire-contract-codegen#50 and the end-to-end run is agent-ix/quire-contract-codegen#87 (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
+| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in `quire-contract-model`, already a dependency. The replay crossing test lives in agent-ix/quire-integration, which depends on QSL, CG and IR, so the test adds no QSL → CG edge; the parity comparator is agent-ix/quire-contract-codegen#50 and the end-to-end run is agent-ix/quire-contract-codegen#87 (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
 | OBS-041 | The QSL → FCD edge is admitted, confined to `model::intake`. A test-only crate stays a dev dependency. PR #200 meets these before merge. |
 | OBS-005 (secondary) | `quire-exact` exists as a leaf crate in the QSL repo (X-1, #213 S-1). The primary decision is #211's. |
 | OBS-017 (secondary) | One QSL type per QSL stage output, met by deleting the native-v1 type with no rename (§4). Stage type names are ADR-013 T-1's. |
@@ -1366,11 +1371,12 @@ ticket that L1-D1 relaxes. Stage placement matches the relaxed edges:
 Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
 
 - **Family hooks.** ADR-011 S2 form builder, ADR-011 S3 `check` and
-  `requirements`, ADR-011 S4 `package` emission, ADR-011 S6a `evaluate`. A
+  `requirements`, ADR-011 S6a `evaluate`; S4 has no family hook, because the
+  v2 emitter writes every family's lowered nodes (ADR-012 §2 "Packaging"). A
   missing hook is a compile error: the ADR-012 seam S2 and S3 matches that
-  call a family's hooks have one arm per family and no `_` arm, and the
-  ADR-012 seam S1 stage-participation table has one entry per family
-  (ADR-012 §5.1). At the ADR-011 S6a evaluation stage, a family that sits
+  call a family's hooks have one arm per family and no `_` arm, and a family
+  takes part in a stage exactly through the hooks it implements (ADR-012 §2,
+  §5.1). At the ADR-011 S6a evaluation stage, a family that sits
   out evaluation is absent from S6a's input type: S6a dispatches over the
   families that implement `ReferenceEvaluation`, which excludes `Relation`,
   so it has no `Relation` arm and no family-dispatch refusal (ADR-013 O-16).

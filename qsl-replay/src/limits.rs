@@ -108,6 +108,78 @@ impl AccountingLimits {
     }
 }
 
+/// FR-298: the output-byte budget of `render`, the FR-255 setting
+/// `render.output_bytes`. The default is 16777216 bytes (QSpec FR-461
+/// rule 2); the bound is used as given, including zero.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RenderLimits {
+    /// Inclusive count of every byte `render` returns, newlines included.
+    pub output_bytes: usize,
+}
+
+impl Default for RenderLimits {
+    fn default() -> Self {
+        Self {
+            output_bytes: 16_777_216,
+        }
+    }
+}
+
+impl SettingLimits for RenderLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![(
+            Setting::RenderOutputBytes,
+            u64::try_from(self.output_bytes).unwrap_or(u64::MAX),
+        )]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        if setting != Setting::RenderOutputBytes {
+            return false;
+        }
+        self.output_bytes = usize::try_from(bound).unwrap_or(usize::MAX);
+        true
+    }
+}
+
+/// FR-294: the translation work and generated code size one execution
+/// backend `prepare` may use, the FR-255 settings `prepare.compile_work_units`
+/// and `prepare.code_bytes`. Each bound is used as given, including zero.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PrepareLimits {
+    /// Compile work units one `prepare` may charge.
+    pub compile_work_units: u64,
+    /// Generated code bytes one `prepare` may keep.
+    pub code_bytes: u64,
+}
+
+impl Default for PrepareLimits {
+    fn default() -> Self {
+        Self {
+            compile_work_units: 16_777_216,
+            code_bytes: 67_108_864,
+        }
+    }
+}
+
+impl SettingLimits for PrepareLimits {
+    fn bounds(&self) -> Vec<(Setting, u64)> {
+        vec![
+            (Setting::PrepareCompileWorkUnits, self.compile_work_units),
+            (Setting::PrepareCodeBytes, self.code_bytes),
+        ]
+    }
+
+    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
+        match setting {
+            Setting::PrepareCompileWorkUnits => self.compile_work_units = bound,
+            Setting::PrepareCodeBytes => self.code_bytes = bound,
+            _ => return false,
+        }
+        true
+    }
+}
+
 /// Every limits type a caller can configure, one field per stage.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CallerLimits {
@@ -125,6 +197,10 @@ pub struct CallerLimits {
     pub replay: ReplayLimits,
     /// Formatter output bytes, configured independently of replay stages.
     pub format: qsl_cst::format::FormatLimits,
+    /// Rendered output bytes (FR-298).
+    pub render: RenderLimits,
+    /// Execution-backend prepare (FR-294).
+    pub prepare: PrepareLimits,
     /// The call's accounting budgets (`quire.value.accounting/v1`).
     pub accounting: AccountingLimits,
 }
@@ -187,7 +263,7 @@ impl CallerLimits {
         limits
     }
 
-    fn parts(&self) -> [&dyn SettingLimits; 7] {
+    fn parts(&self) -> [&dyn SettingLimits; 9] {
         [
             &self.spine,
             &self.library,
@@ -196,6 +272,8 @@ impl CallerLimits {
             &self.explore,
             &self.replay,
             &self.format,
+            &self.render,
+            &self.prepare,
         ]
     }
 }
@@ -206,7 +284,7 @@ impl SettingLimits for CallerLimits {
     }
 
     fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
-        let parts: [&mut dyn SettingLimits; 7] = [
+        let parts: [&mut dyn SettingLimits; 9] = [
             &mut self.spine,
             &mut self.library,
             &mut self.admission,
@@ -214,6 +292,8 @@ impl SettingLimits for CallerLimits {
             &mut self.explore,
             &mut self.replay,
             &mut self.format,
+            &mut self.render,
+            &mut self.prepare,
         ];
         parts.into_iter().any(|part| part.set_bound(setting, bound))
     }
@@ -408,6 +488,9 @@ mod tests {
         mapped.set_bound(Setting::S3RationalBits, 37);
         mapped.set_bound(Setting::IntakeInputBytes, 35);
         mapped.set_bound(Setting::FormatOutputBytes, 36);
+        mapped.set_bound(Setting::RenderOutputBytes, 38);
+        mapped.set_bound(Setting::PrepareCompileWorkUnits, 39);
+        mapped.set_bound(Setting::PrepareCodeBytes, 40);
         let built = CallerLimits {
             spine: SpineLimits {
                 source: qsl_cst::Limits::default()
@@ -451,6 +534,11 @@ mod tests {
                 .with_max_transitions(26),
             replay: ReplayLimits::default().with_input_bytes(18),
             format: qsl_cst::format::FormatLimits::default().with_output_bytes(36),
+            render: RenderLimits { output_bytes: 38 },
+            prepare: PrepareLimits {
+                compile_work_units: 39,
+                code_bytes: 40,
+            },
             ..CallerLimits::default()
         };
         assert_eq!(by_builder(built), mapped.bounds());

@@ -11,7 +11,7 @@
 //! bytes; nothing here reads or admits those bytes. Nothing here evaluates
 //! the function.
 
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{checked_node_id, checked_occurrence, CheckedPackage};
@@ -23,6 +23,7 @@ use quire_contract_model::{
     CheckedScalarOperandRange,
 };
 use quire_exact::{Cancel, Integer, Value, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::Origin as BodyOrigin;
 
 use super::call::{admit_model_arguments, bind_arguments, convert_call_failure, select};
@@ -369,7 +370,7 @@ fn admit_values(
         .map_err(|stop| Box::new(RunRefusal::Supplied(stop)))?;
     qsl_eval::value::admit_arguments(parameters, arguments, objects, types, &mut run).map_err(
         |failure| match failure {
-            qsl_eval::value::CallFailure::Cancelled(cause) => cancelled(cause),
+            quire_eval::CallFailure::Cancelled(cause) => cancelled(cause),
             other => convert_call_failure(other),
         },
     )?;

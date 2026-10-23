@@ -48,9 +48,9 @@ use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind,
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
-use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
 use crate::{CandidateOutcome, CandidateSet, Registry};
 use qsl_foundation::BackendId;

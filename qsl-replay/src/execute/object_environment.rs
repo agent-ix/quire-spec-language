@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::DigestDomain;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -14,6 +14,7 @@ use qsl_semantics::model::observation::{
     ObservationRole, ResolveBundle,
 };
 use quire_exact::{NodeKey, ObjectReference, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::relationship_extent::Resolution;
 
