@@ -1843,7 +1843,10 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
         "fixture id is independently recomputed"
     );
     let Read::Verified {
-        package, admitted, ..
+        package,
+        admitted,
+        timed_models,
+        ..
     } = outcome
     else {
         panic!("timed fixture must pass the real IR reader: {outcome:?}");
@@ -1885,6 +1888,92 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     assert_eq!(
         admitted.source_map().len(),
         envelope["source_map"].as_array().unwrap().len()
+    );
+
+    let [timed] = timed_models.as_slice() else {
+        panic!("one timed model is reconstructed");
+    };
+    assert_eq!(timed.source.kind, "tick");
+    assert_eq!(timed.source.period.as_deref(), Some("1/2"));
+    assert_eq!(timed.clock_places.len(), 1);
+    assert_eq!(timed.clock_places[0].path.len(), 2);
+    assert!(matches!(
+        &timed.clock_places[0].path[0],
+        super::timed_model::ClockPathStep::Field(name) if name == "clock"
+    ));
+    assert!(matches!(
+        &timed.clock_places[0].path[1],
+        super::timed_model::ClockPathStep::Slot { collection, minimum: 0, maximum: None, .. }
+            if collection == "map"
+    ));
+    assert_eq!(timed.resets.len(), 1);
+    assert_eq!(timed.guards.len(), 1);
+    assert_eq!(timed.invariants.len(), 1);
+    assert_eq!(timed.urgencies.len(), 2);
+    assert_eq!(timed.normalized_constraints.len(), 1);
+    assert_eq!(timed.normalized_constraints[0].bound, "3/1");
+    assert_eq!(timed.normalized_constraints[0].comparison, "le");
+    assert_eq!(timed.normalized_constraints[0].unit, timed.source.unit);
+}
+
+/// FR-415-AC-17 / FR-322-AC-122: the typed timed-model writer re-emits all
+/// eight structural forms and the resulting package is admitted by I2.
+#[trace("TC-367", "FR-415-AC-17", "FR-322-AC-122")]
+#[test]
+fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let original = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let (_, read_outcome) = read_fixture_wire(&original);
+    let Read::Verified {
+        admitted,
+        timed_models,
+        ..
+    } = read_outcome
+    else {
+        panic!("timed fixture must pass the real IR reader: {read_outcome:?}");
+    };
+    let [timed] = timed_models.as_slice() else {
+        panic!("one typed timed model is reconstructed");
+    };
+
+    let emitted_nodes = timed.write_nodes();
+    assert_eq!(emitted_nodes.len(), 9);
+    assert_eq!(
+        emitted_nodes
+            .iter()
+            .map(|node| node.semantic_form.as_ref())
+            .collect::<Vec<_>>(),
+        [
+            "time_source",
+            "clock_place",
+            "clock_reset",
+            "clock_guard",
+            "time_invariant",
+            "urgency",
+            "urgency",
+            "clock_constraint",
+            "timed_model",
+        ]
+    );
+    let round_tripped = super::timed_model::CheckedTimedModel::from_nodes(&emitted_nodes)
+        .expect("writer output reconstructs as the same typed model");
+    assert_eq!(round_tripped, timed_models);
+
+    let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
+        .expect("QSL writes the checked timed model into a complete package");
+    let emitted_package: Value =
+        serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
+    assert_eq!(
+        emission.package().package_id().hex(),
+        derived_package_id(&emitted_package).hex()
+    );
+    let (_, writer_outcome) = read_fixture_wire(&emitted_package);
+    assert!(
+        matches!(writer_outcome, Read::Verified { .. }),
+        "QSL typed timed-model writer output is admitted as a complete package: {writer_outcome:?}"
     );
 }
 

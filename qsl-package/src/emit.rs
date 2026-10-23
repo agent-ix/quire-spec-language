@@ -90,10 +90,10 @@ use quire_contract_model::{
     CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
     CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
-    CheckedPackageLockV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm,
-    ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedPackageLockV2, CheckedPackageV2, CheckedRational, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage,
+    NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -113,6 +113,7 @@ use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
+use crate::checked_v2::CheckedTimedModel;
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -200,6 +201,10 @@ pub enum EmitRefusal {
         /// The unit's selected header profile identity, when it selects one.
         profile: Option<&'static str>,
     },
+    /// The typed timed models do not describe exactly the timed nodes in the
+    /// already-admitted base package.
+    #[error("typed timed models do not match the admitted package's timed-node set")]
+    TimedModelNodeSetMismatch,
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -221,6 +226,7 @@ impl EmitRefusal {
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
             Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::TimedModelNodeSetMismatch => Code::RuntimeInvariant,
         }
     }
 
@@ -234,7 +240,8 @@ impl EmitRefusal {
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
             | Self::Abstraction(_)
-            | Self::Cancelled { .. } => None,
+            | Self::Cancelled { .. }
+            | Self::TimedModelNodeSetMismatch => None,
         }
     }
 }
@@ -1054,6 +1061,95 @@ pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
         return Ok(emission.clone());
     }
     emit_checked_with_cancel(package, &Cancel::new())
+}
+
+/// Emit a complete admitted package using typed timed models for its timed
+/// nodes. The base package supplies the already-checked non-timed graph,
+/// lock, source map, capability report and diagnostics; every timed node is
+/// rewritten from `models` in its original graph position. The supplied
+/// models must cover the base package's timed-node identities exactly.
+///
+/// This writer does not mint node identities: each timed node carries its
+/// checked identity metadata, and the package identity is recomputed from the
+/// complete graph before the IR encoder writes the package.
+pub fn emit_timed_models(
+    base: &CheckedPackageV2,
+    models: &[CheckedTimedModel],
+) -> Result<Emission, EmitRefusal> {
+    let expected = base
+        .graph()
+        .nodes
+        .iter()
+        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .map(|node| node.node_id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut timed = BTreeMap::new();
+    for node in models.iter().flat_map(CheckedTimedModel::write_nodes) {
+        if node.node_tag.as_ref() != "timed_model"
+            || timed.insert(node.node_id.clone(), node).is_some()
+        {
+            return Err(EmitRefusal::TimedModelNodeSetMismatch);
+        }
+    }
+    if expected != timed.keys().cloned().collect() {
+        return Err(EmitRefusal::TimedModelNodeSetMismatch);
+    }
+
+    let nodes = base
+        .graph()
+        .nodes
+        .iter()
+        .map(|node| {
+            if node.node_tag.as_ref() == "timed_model" {
+                timed
+                    .remove(&node.node_id)
+                    .ok_or(EmitRefusal::TimedModelNodeSetMismatch)
+            } else {
+                Ok(node.clone())
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !timed.is_empty() {
+        return Err(EmitRefusal::TimedModelNodeSetMismatch);
+    }
+
+    let semantic_graph = CheckedSemanticGraphV2 {
+        graph_version: base.graph().graph_version.clone(),
+        nodes,
+    };
+    let identity = base.identity_preimage();
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: &identity.version,
+        edition: &identity.edition,
+        profile_selections: &identity.profile_selections,
+        definition_selections: &identity.definition_selections,
+        model_selections: &identity.model_selections,
+        required_features: &identity.required_features,
+        dependency_selections: &identity.dependency_selections,
+        identity_projection: &semantic_graph.nodes,
+    };
+    let lock = base.lock().clone();
+    let source_map = base.source_map().to_vec();
+    let capability_report = base.capability_report().to_vec();
+    let diagnostics = base.diagnostics().clone();
+    let package = EmittedPackage::new(&preimage, |package_id: PackageId| {
+        encode_checked_package_v2(
+            &preimage,
+            &semantic_id(package_id),
+            &lock,
+            &semantic_graph,
+            &source_map,
+            &capability_report,
+            &diagnostics,
+            crate::checked::EMIT_LIMITS,
+        )
+        .map_err(EmitRefusal::from)
+    })?;
+    Ok(Emission {
+        package,
+        omitted: Vec::new(),
+        evidence: own_evidence(&lock),
+    })
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
