@@ -174,8 +174,8 @@ outright before the target-kind charge.
   (`qsl-semantics/src/model/qualified.rs`). This is consistent with AD-006's export table, which names no export
   record for the five systems meanings beyond binding to their FR-152 kind.
 - `ComponentRecord::has_part_signature` (`qsl-semantics/src/model/domain_package.rs`) and
-  `classify`'s `unsupplied("part-signature", ...)` refusal arm for it are
-  not part of the model: this requirement's meaning-id classification (the
+  `classify`'s `unsupplied("part-signature", ...)` refusal arm for it shall
+  not exist: this requirement's meaning-id classification (the
   "Classification is by declared meaning id and end kind" clause above)
   names no check against it, and the binder classifies Parts by meaning id
   alone.

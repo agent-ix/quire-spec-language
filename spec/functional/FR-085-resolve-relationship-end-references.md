@@ -105,9 +105,9 @@ as a Connection is
   is the only place a plain object-to-object relationship's ends
   are resolved. For a relationship where one end resolves to a declared
   object type and the other end resolves to neither a declared object type
-  nor a declared endpoint, it refuses only the missing end with this
-  requirement's `missing_declaration`/`missing-name` cause and does not
-  report the legitimately resolving end (FR-085-AC-1).
+  nor a declared endpoint, `classify` shall refuse only the missing end with
+  this requirement's `missing_declaration`/`missing-name` cause and shall
+  not report the legitimately resolving end (FR-085-AC-1).
 - **Downstream:** relationship end resolution feeds the object-reference
   fields the evaluator later dereferences; this requirement does not itself
   perform reachability or dereference evaluation, which is
