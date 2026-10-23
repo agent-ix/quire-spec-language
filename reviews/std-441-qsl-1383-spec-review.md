@@ -43,3 +43,34 @@ Gates: `QSPEC_DIR=/Users/peter/dev/quire-specification make check-spec-validatio
 ## Verdict
 
 Not mergeable: FND-001 (high) blocks the PR. FND-002 (medium) and FND-003 (low) should be fixed in the same round. The identity itself (preimage, vectors, minting site, recompute check, refusal codes, claim binding) is correct and consistent with the operator path.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-004 | medium | The retained inputs and the claim inventory leave out request members that QSpec FR-323 requires for a request that supplies function arguments. A value-parity Input-arm request does supply arguments, so it needs the complete `limits.supplied` object (A, H and the magnitude bound B), and the request also carries `state_environment` and `object_environment`. None of these appears in the Retained claim inputs table. "What the claim identity holds" says `claim()` holds "nothing else". Yet FR-323 makes the supplied ceilings part of request identity, and B decides whether an unbounded argument such as `grow`'s `n` is admitted. Two claims that differ only in B therefore read as one claim with different results. Fix: name these members and their source (FR-323 defaults, empty state and object environment for a pure function), and either put the effective supplied ceilings in `claim()` or state why they are not claim members. | spec/functional/FR-484-identify-a-function-value-parity-claim-and-retain-its-replay-inputs.md:101-168 | missing-requirement |
+| FND-005 | low | "the FR-331 `BackendId`" resolves to QSL's own FR-331, "replay a temporal counterexample over an observed trace". The `BackendId` and provider envelope are QSpec FR-331. Write "QSpec FR-331". | spec/functional/FR-484-identify-a-function-value-parity-claim-and-retain-its-replay-inputs.md:111 | wrong-requirement |
+
+## Dispositions
+
+Round 1, fix head fb83a5b2 (QSpec #422 head 1c7e0677 adds only the SR-16304 file).
+
+I hand-checked the packet round trip against `WitnessEnvelope::reconstruct` (qsl-replay/src/witness.rs:958-1038). Reconstruct checks that every member is present, refuses an empty `backend`, and checks the encoded size. It does not reject an empty `declared_domains` list.
+
+- `inc` at x = 3 and `grow` at n = 41, with every member filled as "The input-arm packet" states (`backend` `generator-under-test`, `declared_domains` `Some([])`, `trace_position` `Some(None)`, `family_payload` `NoPayload`), are both admitted, and `to_packet` returns the same members.
+- Replay from the admitted envelope gives `grow(41)` = 42 (`Agrees`) and `inc(3)` = 4 against 5 (`Diverged`).
+- Leaving `declared_domains` empty is consistent with QSL. Only `composite_parity` reads `request.declared_domains()`; `replay_value_parity` never does, and S6a admission checks the arguments against the signature.
+
+Gates:
+- QSL `make check-spec-validation` exits 0 with QSPEC_DIR at the shared clone and at #422 merged with the current main (19 pre-existing warnings).
+- QSpec #422 merged with main 4aa0af73 (the merge is clean): `quire validate` gives exactly 86 failure lines, and cargo passes 24 + 136.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | See after_excerpt in the Linear dispositions comment. |
+| FND-002 | fixed | See after_excerpt in the Linear dispositions comment. |
+| FND-003 | fixed | See after_excerpt in the Linear dispositions comment. |
+| FND-004 | still-open | New finding of this round: `limits.supplied`, `state_environment` and `object_environment` are not named, and the supplied ceilings are outside `claim()`. |
+| FND-005 | still-open | New finding of this round: the unqualified FR-331 reference. |
+
+Round 1 verdict: Not mergeable. FND-004 (medium) and FND-005 (low) are open. FND-001 to FND-003 are fixed.

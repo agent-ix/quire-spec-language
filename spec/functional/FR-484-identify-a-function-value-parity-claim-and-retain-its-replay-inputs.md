@@ -107,8 +107,11 @@ derives none of them.
 | The obligation identity | `FunctionSite.value_parity.obligation_identity` | The request's `obligation_identity` |
 | The bindings `b` | The argument vector the generated code was run at, each value keyed by the parameter node id `FunctionSite.parameters` pairs with its parameter | The request's `source`, a `ReplaySource::Input` of one `CanonicalAssignment` per declared parameter |
 | The accounting and stage limits | The producer's replay configuration | The request's accounting and `stage_limits` members (FR-255) |
+| The supplied-value ceilings: admission work A, conversion work H and the numeric magnitude bound B | The producer's replay configuration, each omitted ceiling resolved to its published default (A and H 16777216 units, B 4096 bits, QSpec FR-323, QSL FR-277) | The request's complete effective `limits.supplied` object |
+| The state environment | Fixed by the form: the empty state environment (no anchors, values, populations, frames or captures) | The request's `state_environment` |
+| The object environment | Fixed by the form: none | The request's object environment, absent |
 | The proof bounds and declared domains | Fixed by the form: the empty list | The request's proof bounds and declared domains |
-| The generator identity | The generated-code driver: the FR-331 `BackendId` of the provider whose `generate` operation produced the artifact it ran | The request's `backend` member (ADR-013 O-19) |
+| The generator identity | The generated-code driver: the QSpec FR-331 `BackendId` of the provider whose `generate` operation produced the artifact it ran | The request's `backend` member (ADR-013 O-19) |
 | The generated outcome | The generated-code driver's observation at `b`: a value, an out-of-range outcome, `Undefined` or `OtherRefusal` | `ValueClaim.generated`, a `ScalarOutcome` |
 | The generated-content identity | The generated-code driver, which authenticates it against the artifact it ran before it hands the claim over | `ValueClaim.content_identity`, a `DigestRecord` |
 
@@ -119,6 +122,14 @@ checks the bindings against that signature, and no proving run drew or
 declared a finite bound. A parameter whose declared type has no finite
 bound, such as an unbounded `Integer`, therefore needs no `ProofBound`, and
 a bounded one gets none either, so one rule covers every parameter type.
+
+The supplied-value ceilings are retained because they decide what the
+replay admits: B bounds the bit length of every supplied `Integer` and
+`Rational`, so a binding of an unbounded parameter (an `Integer` with no
+declared range) is admitted under one B and refused under a smaller one.
+The state and object environments are empty because the claim is about a
+`pure` function: its call reads no state and no object population, and
+`replay_value_parity` evaluates it under the empty object environment.
 
 The generator identity is the claim's `backend` because the provider whose
 generated code the claim is about produced the counterexample; no
@@ -141,7 +152,7 @@ and nothing else:
 | `package_id` | `CallSite.package_id` |
 | `source_digests` | The `RawSourceRef` of every source the package was compiled from, as the request's package reference names them |
 | `profile_selections` | The lock's `profile_selections`, as in the table above |
-| `run_limits` | The request's accounting limits: there is no proving run, and these are the limits QSL's exact evaluation runs under |
+| `run_limits` | The request's accounting limits (`ScalarLimitsV1`): there is no proving run, and these are the limits QSL's exact evaluation runs under. The supplied-value ceilings are not a packet member; they travel in the request's `limits.supplied` only |
 | `declared_domains` | The empty list |
 | `backend` | The generator identity |
 | `trace_position` | Present with the value none (`Some(None)`): a function claim has no trace position |
@@ -156,13 +167,16 @@ from the admitted envelope carries the same members.
 `replay_value_parity` takes the request, the `ValueClaim` and the
 `ReplayLimits`. Its `claim()` holds the obligation identity, the
 `package_id`, the `function` target, the occurrence key, the `source`, the
-effective accounting limits, the generated outcome and the
-generated-content identity, and nothing else. The other retained inputs
+effective accounting limits, the effective supplied-value ceilings (A, H
+and B), the generated outcome and the generated-content identity, and
+nothing else. The other retained inputs
 enter the claim through these members: the source digests, the
 dependencies, the byte provision and the profile selections through
 `package_id`, which the replay checks against the package it recompiles
 from them; the stage limits through the effective accounting limits; the
-proof bounds and declared domains are fixed by the form. The generator
+proof bounds and declared domains and the empty state and object
+environments are fixed by the form, and no environment is read by the
+call, so neither can change an outcome. The generator
 identity is provenance, as on every replay request, and is not a member
 of the claim. Two claims are one claim exactly when their `claim()` values
 are equal, whatever their results read.
@@ -242,8 +256,10 @@ are equal, whatever their results read.
   `claim()`: the request's obligation identity, its `package_id` as
   supplied, its `function` target as sent (absent for another target), its
   occurrence key as sent (absent when the request carries none), its
-  `source` as supplied, its effective accounting limits, and the
-  `ValueClaim`'s generated outcome and generated-content identity.
+  `source` as supplied, its effective accounting limits, its effective
+  `limits.supplied` ceilings (each omitted ceiling resolved to its
+  published default, so an omitted B and a stated 4096 are one claim), and
+  the `ValueClaim`'s generated outcome and generated-content identity.
 - The generated-content identity is carry-and-bind: QSL SHALL bind it into
   the claim identity and carry it unchanged, and SHALL NOT recompute,
   authenticate or refuse it. QSL never sees the generated artifact; the
@@ -271,6 +287,7 @@ are equal, whatever their results read.
 | FR-484-AC-7 | AC-5's request with the occurrence key replaced by `add`'s `declaration` occurrence, by the `expression` occurrence of `inc`'s `x + 1` application, or by (`inc`'s node, `declaration`, 1) refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming that key and `inc`, before any call and with no charge; with `package_id` stale it refuses `PackageIdMismatch` instead, and for `small` it refuses `NotAValueFunction` instead. | Test (TC-1252) |
 | FR-484-AC-8 | Two `inc` claims that differ only in the generated-content identity carry their own identity unchanged on `Agrees`, `Diverged`, `RefusedInput` and an identity refusal, and their `claim()` values are unequal; a content identity that matches no artifact is not refused. Claims that differ only in the occurrence key are likewise unequal. | Test (TC-1252) |
 | FR-484-AC-9 | Over AC-4's unit with `function grow using v(n: Integer): Integer pure { n + 1 }` added, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each filled by "The input-arm packet" from `call_site` (`clause_node` = `FunctionSite.function`, `occurrence_key` = `FunctionSite.declaration`, `obligation_identity` = `value_parity.obligation_identity`, `profile_selections` = the lock's, `run_limits` = the request's accounting limits, `declared_domains` = `[]`, `backend` = the driver's generator identity, `generator-under-test` in the test, `trace_position` = none, `source` = `Input`), reconstructs through `WitnessEnvelope::reconstruct`; every member round-trips exactly; the request built from the admitted envelope replays `grow` against generated 42 to `Agrees` and `inc` against 5 to `Diverged`. | Test (TC-1252) |
+| FR-484-AC-10 | AC-9's `grow` request at `n` = 2^40 (a 41-bit value), retained with B 4096, replays against generated 2^40 + 1 to `Agrees`; the same request with B 40 settles `RefusedInput` (the magnitude bound refuses the binding), and its `claim()` differs from the first only in B; the same request with B omitted has a `claim()` equal to the first; and two claims differing only in A or only in H are unequal. | Test (TC-1252) |
 
 ## Dependencies
 

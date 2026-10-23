@@ -16,7 +16,7 @@ function and none for a predicate, and that `replay_value_parity` checks
 the request's occurrence key and obligation identity against the
 recompiled package and carries every retained input into its claim.
 
-Scope: FR-484-AC-1 to FR-484-AC-9.
+Scope: FR-484-AC-1 to FR-484-AC-10.
 
 ## Fixture
 
@@ -44,6 +44,7 @@ Scope: FR-484-AC-1 to FR-484-AC-9.
 | VP-07 | VP-05's request with `add`'s `declaration` occurrence; with the `expression` occurrence of `inc`'s `x + 1`; with (`inc`'s node, `declaration`, 1); the first with a stale `package_id`; the request retargeted to `small` | `ClaimOccurrence` naming the key and `inc`, no call and no charge, for the first three; `PackageIdMismatch`; `NotAValueFunction` | FR-484-AC-7 |
 | VP-08 | Two VP-05 claims differing only in `content_identity`, replayed to `Agrees`, `Diverged`, `RefusedInput` (`x` = 12) and an `Obligation` refusal; a `content_identity` naming no artifact; two claims differing only in the occurrence key | Each report carries its own content identity; the claims are unequal; no refusal for the unmatched identity; the occurrence-only claims are unequal | FR-484-AC-8 |
 | VP-09 | Over `U'`, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each member filled as FR-484 "The input-arm packet" names, `backend` `generator-under-test`; reconstruct, serialize and read back; build the request from the admitted envelope and replay `grow` against 42 and `inc` against 5 | Both reconstruct with `declared_domains` `[]`, `trace_position` none, `clause_node` the function node and the `declaration` occurrence; every member round-trips; `Agrees` for `grow`, `Diverged` for `inc` | FR-484-AC-9 |
+| VP-10 | VP-09's `grow` request at `n` = 2^40 with B 4096, B 40 and B omitted, each against generated 2^40 + 1; two `grow` claims differing only in A, then only in H | `Agrees`; `RefusedInput` with a `claim()` differing only in B; a `claim()` equal to the B 4096 one; the A-only and H-only pairs unequal | FR-484-AC-10 |
 
 ## Expected Results
 
@@ -51,6 +52,6 @@ Scope: FR-484-AC-1 to FR-484-AC-9.
   changes the digest.
 - VP-04: the minted identity equals the independently written preimage's;
   a predicate has none.
-- VP-05 to VP-09: the stated settlements, each with the claim identity
+- VP-05 to VP-10: the stated settlements, each with the claim identity
   carried unchanged, and VP-09's packets admitted with no member chosen by
   the producer.

@@ -99,8 +99,9 @@ request the default refuses (TC-904).
   occurrence key as the request sent it (absent when it carries none), the
   `source` bindings as supplied, the request's effective accounting limits
   (its accounting limits overlaid by its `stage_limits` counter entries,
-  FR-255 Behavior 10), never either member alone, the generated
-  outcome and the generated-content identity. A
+  FR-255 Behavior 10), never either member alone, the effective
+  `limits.supplied` ceilings (FR-484), the generated outcome and the
+  generated-content identity. A
   `ScalarAgrees` claim identity is the report's `claim()`.
 - When the operator entry settles a claim, it SHALL check the claim's preimage
   against the recompiled package, after the node, operator and function-body
