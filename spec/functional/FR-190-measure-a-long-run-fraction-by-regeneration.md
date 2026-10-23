@@ -71,7 +71,7 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
 - A cycle whose total weight is 0 SHALL be kept; a run whose closed cycles
   all have weight 0 has no estimate yet and continues.
 - A request naming the regenerative method for a claim that is not a
-  long-run fraction, or the Okamoto or SPRT method for a long-run fraction,
+  long-run fraction, or the Okamoto, SPRT or Clopper–Pearson method for a long-run fraction,
   EN-4 SHALL refuse as `NotStatistical`.
 
 ## Acceptance Criteria

@@ -291,7 +291,8 @@ pub(crate) fn retains(
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_foundation::diagnostic::{CatalogCoded, Code, LimitKind};
+    use qsl_foundation::diagnostic::{Code, LimitKind};
+    use quire_semantic_value::catalog::CatalogCoded;
 
     use super::*;
 

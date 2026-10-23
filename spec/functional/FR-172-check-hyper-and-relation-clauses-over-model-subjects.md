@@ -162,6 +162,22 @@ pub struct CheckedModelRelation {
   `x`, its arguments `x.p`, its receiver's pre-state `pre(x.self.f)`,
   post-state `x.self.f` and result `x.result` (ADR-023 HS-8).
 
+### Body expressions
+
+- S3 SHALL type every expression of a `hyper` body or a `relation` body
+  that is not an indexed atom, a step label or an execution read under the
+  value typer's rules: expected types, literal typing, and the range and
+  definedness obligations a value clause body carries. An expression the
+  value typer refuses in a value clause body SHALL refuse in a `hyper` or
+  `relation` body with the same code and cause, located at the same
+  expression; a `let` that shadows an enclosing `let` is refused at the
+  inner `let`, as the value typer refuses it.
+- If a `let` in a `hyper` body or a `relation` body binds the name of one of
+  the clause's trace variables, object parameters or execution variables,
+  then S3 SHALL refuse `ambiguous_declaration`/`ambiguous-name` at that
+  `let`, naming the trace variable, object parameter or execution
+  variable.
+
 ### Identity
 
 - The checked clause's identity SHALL bind every subject alias in order,
@@ -178,6 +194,7 @@ pub struct CheckedModelRelation {
 | FR-172-AC-3 | §13's clause with `align skip { V::Vault::mix }` checks with `align_skip` holding `mix`; `align skip { }`, `align skip { V::Vault::mix, V::Vault::mix }`, `align skip { N::Device::tick }` in a clause over `V` alone, and `align skip` with `fair weak V::Vault::step` each refuse `unsupported_construct`/`expression-form`. | Test (TC-597) |
 | FR-172-AC-4 | FR-171-AC-3's `Det` checks with two model execution bindings to `step`. `NonInterference` and the same clause with its quantifiers' fairness sets swapped between `a` and `b` (one empty, one `weak step`) have different node identities, as do the clause and the same clause with an extra `match` conjunct. | Test (TC-597) |
 | FR-172-AC-5 | In a unit that declares alias `V` (the vault model, object type `Vault` with fields `h` and `l` and operation `step`) and alias `N` (the device model, object type `Device` with operation `tick`), `NonInterference` over `V` with `match { a.step.op = V::Vault::step and b.step.op = stutter }` checks with both conjuncts in `mu_universal`. `match { V::Vault::step != a.step.op }` checks with its one conjunct in `mu_universal` and holds at exactly the joint steps at which `match { a.step.op != V::Vault::step }` holds. Refusals at the qualified name: `a.step.op = N::Device::tick` with `a` of `V` (`ill_typed`/`type-mismatch`); `a.step.receiver = V::Vault::step` and a bare conjunct `V::Vault::step` (`ill_typed`/`type-mismatch`); `a.step.op = V::Vault::nope` (`missing_declaration`/`missing-name`); `a.step.op = V::Vault::l`, naming a field of `Vault` (`unsupported_construct`/`expression-form`, the state-read refusal). | Test (TC-597) |
+| FR-172-AC-6 | FR-171-AC-3's `Det` with body `half(x.i) < rational(3, 4)`, for a function `half` over `x.i`'s type whose declared result is `Rational[0, 1; 1, 2]`, refuses `undefined_expression`/`unproved-range` at `rational(3, 4)`, as a value clause over a parameter `x` of a record type with one field `i` of `x.i`'s type refuses the same body. `Det` with body `rational(1, 2) < rational(3, 4)`, and `NonInterference` with that comparison in its body, each refuse `ill_typed`/`ambiguous-literal` at the literal a value clause with that body is refused at. `NonInterference` with `let a = 1 in a = 1` in its body refuses `ambiguous_declaration`/`ambiguous-name` at that `let`, naming trace variable `a`; with `let v = 1 in v = 1` it refuses the same at that `let`, naming object parameter `v`. `Det` with body `let x = 1 in x = 1` refuses the same at that `let`, naming execution variable `x`. | Test (TC-597) |
 
 ## Dependencies
 

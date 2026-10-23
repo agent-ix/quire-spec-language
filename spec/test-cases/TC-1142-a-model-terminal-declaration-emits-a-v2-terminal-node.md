@@ -28,14 +28,14 @@ Use FR-126-AC-9's `Counter` unit.
    with `Done` renamed `Stop`, and the deadlock-freedom item's obligation
    identity with the `when` declaration and with none.
 3. Compile FR-128-AC-6's unit with `terminal Done using v on Counter when {
-   6 / (3 - self.value) = 0 };` and replay its deadlock-freedom
+   6 mod (3 - self.value) = 0 };` and replay its deadlock-freedom
    counterexample; replay the same counterexample, its envelope naming the
    `when` unit's `package_id`, in a request whose byte provision holds the
    unit with `terminal Halt using v on Counter any;` in its place.
 4. Edit step 1's `when` node to `mode` `some`, and separately to `condition`
    the empty aggregate; after each edit set `dependencies` to the body's
-   targets, recompute the node key, rewrite the `identity_projection` entry
-   and recompute the `package_id`, and feed the package to the I2 reader.
+   targets, recompute the node key and the
+   `package_id`, and feed the package to the I2 reader.
 
 Tag the tests `#[trace("TC-1142", "FR-411-AC-n")]` with the AC each step
 backs.

@@ -47,8 +47,9 @@ Tag the tests `#[trace("TC-1166", "<criterion>")]`.
 
 - Step 1: `Incomplete(LimitReached{max_candidates, 2,
   expansion.max_candidates})`.
-- Step 2: `Incomplete(LimitReached{...})` naming the exhausted counter and
-  `B` by FR-255 Behavior 9's rule.
+- Step 2: `Incomplete(LimitReached{work_units, B, accounting.work_units})`:
+  the exhausted counter, `B` and the setting `accounting.work_units` by
+  FR-255 Behavior 9's rule.
 - Step 3: `failed` with `integer_out_of_domain`/`outside-domain`; the same
   Behavior 9 `LimitReached` for the predicate's counter.
 - Step 4: each `failed`, `runtime_invariant`/`established-invariant-broken`.
