@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37.
+Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60 to FR-091-AC-62, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44.
 
 ## Test Procedure
 
@@ -51,13 +51,18 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `g2` and `m`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
 7. Assemble each unit of FR-091-AC-45, AC-46 and AC-47.
-8. With admitted domain packages `P` and `Q` selected in that lock order, assemble TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2 and FR-142-AC-19's `tick` unit; then FR-091-AC-55's dimension-name collisions (FR-091-AC-55).
+8. With admitted domain packages `P` and `Q` selected in that lock order, assemble TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2 and FR-142-AC-19's `unit tick : M::Rate` and `unit tick : Rate` units; then FR-091-AC-55's shared dimension names (FR-091-AC-55).
 9. Declare FR-093-AC-36's additional dimensions and units beside
    FR-091-AC-44's. Check and lower each of its bodies `p1` to `p6`, pass each
    checked package to IR's v2 reader, and evaluate each lowered body with the
    operand values AC-36 lists. Check each of FR-093-AC-37's bodies `z1` to
    `z9` in the same units.
 10. Assemble FR-091-AC-50's unit, then `unit u : Time2 = rational(1, 1);` beside it, then a second `dimension Time;`.
+11. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) each declaring base dimension `Time` and a root unit, assemble each unit of FR-091-AC-60: the admitted equivalences, each refusal, the speeds with and without the length and time equivalences, the two phase-order units, and the equivalences in each source order within a phase.
+12. Mint the keys of FR-091-AC-61: Q11 and Q12, `dimension Length ~ Distance;` and `dimension Distance ~ Length;`, Q3's `Speed` beside `dimension Length ~ Distance;`, and `dimension R::Time ~ F::Time;` under owner (`agent-ix`, `example`) over QSpec's two package `Time` dimension vectors; read `nominal_spans`.
+13. Assemble FR-091-AC-62's `Force` units without and with `dimension R::Mass ~ F::Mass;`, and read the classes of the admitted graph over `dimension R::Time ~ F::Time;` and over Q12.
+14. Declare FR-093-AC-43's `Period`, `sec`, `msec` and `dimension Period ~ Time;` beside FR-091-AC-44's units. Check and lower each of `c1` to `c4`, pass each checked package to IR's v2 reader, and evaluate `c1` to `c3` with the operand values AC-43 lists; check `c1` again without the equivalence.
+15. Under the same units check each of FR-093-AC-44's `a1` to `a4`, then check and lower `a5` to `a8`, pass each package to IR's v2 reader and evaluate each with the operand values AC-44 lists.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -96,9 +101,9 @@ Tag the tests with the AC ids they back and `TC-483`.
 - Step 7: each refused unit refuses with exactly the one error its AC
   names, the first defect in FR-142's order; each admitted unit assembles.
 - Step 8: each vector's TC-187 result, with `P`'s node refusals located at
-  `/lock/model_selections/0`; `tick` admitted; the collisions refuse
-  `conflicting_declaration`/`duplicate-declaration` at the source span and
-  at `/lock/model_selections/1`; the two `ms` units check.
+  `/lock/model_selections/0`; `unit tick : M::Rate` admitted and `unit tick : Rate`
+  refused `missing_declaration`/`missing-name` at `Rate`; the source `Time` beside the package `Time`, and two
+  packages' `Rate`, assemble with no error; the two `ms` units check.
 - Step 9: each of `p1` to `p6` checks and lowers, its divisions to
   `quire.op.quantity.div` nodes over the dividend and the literal node (`p1`'s
   two divisions share one `3 ms` node, `p3`'s literal has value `"-3"` and
@@ -109,3 +114,8 @@ Tag the tests with the AC ids they back and `TC-483`.
   literal, `z5` to `z8` at the first division, and `z9`
   `ill_typed`/`operator-ineligible` at the negation; none emits a node.
 - Step 10: the first unit assembles with no error and keeps `R::Time` and `R::s` as written; `Time2` refuses with an unresolved-name error naming `Time2`; the second `dimension Time;` refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named (FR-091-AC-50).
+- Step 11: each admitted equivalence assembles; each refusal is the one error FR-091-AC-60 names, at the equivalence form, with the retained nodes it lists; the phase-order units report the equivalence first for `L ~ L` and the row 1 defect first for `Dur ~ L2`; the decisions are the same in every source order within a phase.
+- Step 12: the keys FR-091-AC-61 gives, Q12 `139d3227…9274` from either spelling, Q1's, Q11's and Q3's keys unchanged, `b13bf9ac…12ca` for the package pair, and a span under each equivalence key.
+- Step 13: `Force` refuses the base-dimension rule at `F::Mass` naming `ix://acme/flow/dimension/Mass` and `n` without the equivalence and assembles with it; the graph holds one class of `R::Time` and `F::Time` and one of `Distance` and `Length`, and no class for a graph with no equivalence.
+- Step 14: `c1` to `c3` check and lower to `quire.op.quantity.convert` (mode `rounding` = `exact`) with the verdicts AC-43 lists; IR's v2 reader admits each package; `c4` and the no-equivalence `c1` refuse `ill_typed` at the conversion.
+- Step 15: `a1` to `a4` refuse `ill_typed`/`type-mismatch`; `a5` to `a8` check and lower with the node shapes and verdicts AC-44 lists, `a7`'s two divisions sharing one dimensionless compound-unit node and `a8`'s two products one compound-unit node.

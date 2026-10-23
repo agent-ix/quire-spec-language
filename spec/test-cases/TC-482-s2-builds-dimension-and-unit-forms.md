@@ -19,7 +19,7 @@ This catches an S2 production that reduces or normalizes (the assembler
 does both), drops a term's operator, reads an absent exponent as a written
 one, or loses a span.
 
-Scope: FR-091-AC-31.
+Scope: FR-091-AC-31, FR-091-AC-59.
 
 ## Test Procedure
 
@@ -34,7 +34,14 @@ alias is `v`.
    `unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);`.
 4. Run S1 and S2 on a unit declaring `unit m : Length = rational(1, 1);`.
 
-Tag the test `#[trace("FR-091-AC-31", "TC-482")]`.
+5. Run S1 and S2 on a unit declaring `dimension Distance ~ Length;`, then
+   `dimension R::Time ~ F::Time;`, then `dimension R::Time ~ F::Time;`
+   followed by `dimension F::Time ~ R::Time;`.
+6. Run S1 and S2 on each of `dimension R::Time;`, `dimension A ~ B ~ C;`,
+   `dimension A ~;` and `dimension A ~ B = C;`.
+
+Tag the test `#[trace("FR-091-AC-31", "TC-482")]` and the steps 5 and 6 tests
+`#[trace("FR-091-AC-59", "TC-482")]`.
 
 ## Expected Results
 
@@ -47,3 +54,10 @@ Tag the test `#[trace("FR-091-AC-31", "TC-482")]`.
   `27315` and `2`, each with its span.
 - Step 4: a unit form with scale `rational` `1`, `1`, no target and no
   offset.
+- Step 5: one dimension-equivalence form with the names `Distance` and
+  `Length` in that order, each with its span, and no dimension form; one form
+  whose names are the qualified names `R::Time` and `F::Time` as written, each
+  with the span of both segments; two forms in source order, the second naming
+  `F::Time` first.
+- Step 6: each refuses `invalid_syntax` at the offending token and builds no
+  form.

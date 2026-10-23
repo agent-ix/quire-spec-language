@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-26. Steps 1 to 7 and 10 to 24 check units whose header selects `quire.temporal.complete/v1`; steps 8 and 9 check the facet gate.
+Scope: FR-230-AC-1 to FR-230-AC-5, FR-230-AC-7 to FR-230-AC-27. Steps 1 to 7 and 10 to 25 check units whose header selects `quire.temporal.complete/v1`, and wait for a header that can select it; steps 8 and 9 check the facet gate and run now.
 
 ## Test Procedure
 
@@ -27,21 +27,22 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 7. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) both selected and a source that declares `dimension Time; unit s : Time = 1;`, check `time dense unit R::ms`, `time dense unit F::sec` and `time dense unit s`; under `time dense unit R::ms` check `x <= 3 R::ms`, `x <= 3 F::sec` and `x <= 3 s`; check `time tick O period 1/2 R::s unit R::ms` and `time tick O period 1 F::sec unit R::ms`; check `time dense unit len` and a unit of `Duration = R::Time` (FR-230-AC-18).
 8. Check a unit that selects no `quire.temporal.complete/v1` and writes in its own source `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, `f(c: Clock)`, `g(): Clock` and a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` (FR-230-AC-7).
 9. Check a unit whose header selects `quire.temporal.complete/v1` (FR-230-AC-8).
-10. Check the `within` predicate of FR-230-AC-9 in a precondition, a time invariant body, a conjunction, with `self.limit` as the bound, with `5` as the clock, with a body that assigns the clock and one that resets it, and in an `invariant` clause.
-11. Check `pick` and `peer_clock` of FR-230-AC-10 in guards, and `g(): Clock { 0 }`.
-12. Check the `Timer` record, the tuple field and the three-object universe of FR-230-AC-11, including the whole read `self.u = self.t`, the `let` literal and the checked `Timer` node.
-13. Check the `Alias`, `Option<Clock>` and union-case fields of FR-230-AC-12 with the three guards, the two writes and the time invariant.
-14. Check `reset(c: Clock)` with a frame naming `Call.x` and with an empty frame, and `check(c: Clock)` (FR-230-AC-13).
-15. Check the `time tick` and untimed fields `t: Timer` and `ts: Sequence<Timer>` of FR-230-AC-14 and the unit declarations that raise no refusal.
-16. Check the `Quantity<ms>` positions of FR-230-AC-15, the domain package of FR-230-AC-16 and the unit positions of FR-230-AC-17, each with its refused variants.
-17. Check the clock collections, the static dimension and the `Map<Timer, Int>` key of FR-230-AC-19.
-18. Check the collection-valued writes and their refusals of FR-230-AC-20.
-19. Check the selectors, quantified reads, resets by selection, time invariant bodies and refused queries of FR-230-AC-21.
-20. Check the `Option<Clock>` positions of FR-230-AC-22.
-21. Check the package clock collections of FR-230-AC-23, then the same package with the maximum changed.
-22. Check the place references, `ref` and `deref` terms, resets through a reference, comparisons and state keys of FR-230-AC-24.
-23. Check the clock constraints of FR-230-AC-25 under `time dense`, `time tick` and an untimed unit.
-24. Check the unit constraints and the unit `reference` target of FR-230-AC-26.
+10. Over step 7's packages and source with `dimension R::Time ~ F::Time;` declared, check `time dense unit R::ms` with `x <= 3 F::sec`, with a reset of `x` to `2 F::sec` and with `x <= 3 s`; check `time tick O period 1 F::sec unit R::ms`; check the `len` and `Duration = R::Time` units again; compare the package identities with those of step 7 and of the same models without the equivalence.
+11. Check the `within` predicate of FR-230-AC-9 in a precondition, a time invariant body, a conjunction, with `self.limit` as the bound, with `5` as the clock, with a body that assigns the clock and one that resets it, and in an `invariant` clause.
+12. Check `pick` and `peer_clock` of FR-230-AC-10 in guards, and `g(): Clock { 0 }`.
+13. Check the `Timer` record, the tuple field and the three-object universe of FR-230-AC-11, including the whole read `self.u = self.t`, the `let` literal and the checked `Timer` node.
+14. Check the `Alias`, `Option<Clock>` and union-case fields of FR-230-AC-12 with the three guards, the two writes and the time invariant.
+15. Check `reset(c: Clock)` with a frame naming `Call.x` and with an empty frame, and `check(c: Clock)` (FR-230-AC-13).
+16. Check the `time tick` and untimed fields `t: Timer` and `ts: Sequence<Timer>` of FR-230-AC-14 and the unit declarations that raise no refusal.
+17. Check the `Quantity<ms>` positions of FR-230-AC-15, the domain package of FR-230-AC-16 and the unit positions of FR-230-AC-17, each with its refused variants.
+18. Check the clock collections, the static dimension and the `Map<Timer, Int>` key of FR-230-AC-19.
+19. Check the collection-valued writes and their refusals of FR-230-AC-20.
+20. Check the selectors, quantified reads, resets by selection, time invariant bodies and refused queries of FR-230-AC-21.
+21. Check the `Option<Clock>` positions of FR-230-AC-22.
+22. Check the package clock collections of FR-230-AC-23, then the same package with the maximum changed.
+23. Check the place references, `ref` and `deref` terms, resets through a reference, comparisons and state keys of FR-230-AC-24.
+24. Check the clock constraints of FR-230-AC-25 under `time dense`, `time tick` and an untimed unit.
+25. Check the unit constraints and the unit `reference` target of FR-230-AC-26.
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -56,18 +57,19 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 7: the three `time` members check with three different package identities; `x <= 3 F::sec` and `x <= 3 s` under `R::ms` and the `1 F::sec` period refuse `ill_typed`/`type-mismatch` at the constant and the period; `3 R::ms` and `1/2 R::s` check; `len` and the `Duration` unit refuse `ill_typed`/`type-mismatch` (FR-230-AC-18).
 - Step 8: each construct refused `unsupported_construct`/`declaration-form` at its span in source order, retaining family, owning declaration, selected layers and the required facet, with no other refusal.
 - Step 9: `unknown_profile`/`unsupported-selection` at E3 and no S3 result.
-- Step 10: the expansions of FR-230-AC-9 with no `within` node in the checked package; `clock-bound-not-constant`, `ill_typed`/`type-mismatch`, `clock-read-outside-constraint`, `clock-write` and `clock-read-outside-constraint` at the call, each at its span.
-- Step 11: two convex parts with `self.l` and `not self.l`; two parts with `self.peer = c1` and `self.peer = c2`; `ill_typed`/`type-mismatch` at the body.
-- Step 12: three clocks `Call.t.x`; the guard, the reset and the data write; `clock-read-outside-constraint` at `self.t`; the data write; `clock-write`; the place `Call.p.0`; a `Timer` node listing `n` only.
-- Step 13: `w` a clock; the guard with `present(self.v)`; `undefined_expression`/`unproved-presence`; the reset that makes `v` present; the drop; the guarded invariant bound; the guarded place `Call.state.Armed` and a payload-free case.
-- Step 14: one instance per place of `Call.x`, naming it; `invalid_timed_model`/`clock-write`; one instance per clock place.
-- Step 15: `clock-without-dense-time` for the tick and untimed fields; no refusal for the declarations.
-- Step 16: every position checks and is typed by the one unit node; `ill_typed`/`type-mismatch`; `missing_declaration`/`missing-name`; the package clocks of FR-230-AC-16; the `Quantity<M::ms>` positions, and `missing_declaration`/`missing-name` naming each member path.
-- Step 17: the places and shapes, the dimension `11` for one object with `s` adding none, `s` with at most one element, `ts` typed over the `Timer` data node, and `ill_typed`/`operator-ineligible` at the map key.
-- Step 18: the provenance records of AC-20 and `clock-write` at each refused occurrence and position.
-- Step 19: the resets, the guard entries by size, the convex parts for `exists`, `unproved-presence` at `1`, `time-invariant-shape` for the `exists` body and `clock-read-outside-constraint` for `=`, `contains` and `count`, with `size` and `e.n` admitted.
-- Step 20: each `Option<Clock>` position as stated, with the instances of `arm`, the place expressions of `maybe` and the refusals.
-- Step 21: the clock collections of the package with dimension `5` for one `Call`, and a different package identity under the changed maximum.
-- Step 22: the four guarded convex parts, the data write of `ref(self.x)`, `clock-write` at the reset outside the frame, the data comparison, `unproved-presence` without and no refusal with `present(self.r)`, equal state keys for equal data and different keys for different `r`, and slot `0` kept across a reorder.
-- Step 23: the `x <= 3` invariants on the typed places, the bound on every clock, `time-invariant-shape` for `min`, `malformed-declaration` for the other keywords and operands, and `clock-without-dense-time` under `time tick` and untimed units.
-- Step 24: `5 ms` checks, `11 ms` refuses `ill_typed`/`type-mismatch`, and `malformed-declaration` for `minLength` and for the unit `reference` target.
+- Step 10: `x <= 3 F::sec` checks with the constant `3000` in `R::ms`, the reset converts to `2000` and the tick period is `1000`; `x <= 3 s`, the `len` unit and the `Duration` unit refuse `ill_typed`/`type-mismatch`; the three models have three different package identities, each different from the same model without the equivalence (FR-230-AC-27).
+- Step 11: the expansions of FR-230-AC-9 with no `within` node in the checked package; `clock-bound-not-constant`, `ill_typed`/`type-mismatch`, `clock-read-outside-constraint`, `clock-write` and `clock-read-outside-constraint` at the call, each at its span.
+- Step 12: two convex parts with `self.l` and `not self.l`; two parts with `self.peer = c1` and `self.peer = c2`; `ill_typed`/`type-mismatch` at the body.
+- Step 13: three clocks `Call.t.x`; the guard, the reset and the data write; `clock-read-outside-constraint` at `self.t`; the data write; `clock-write`; the place `Call.p.0`; a `Timer` node listing `n` only.
+- Step 14: `w` a clock; the guard with `present(self.v)`; `undefined_expression`/`unproved-presence`; the reset that makes `v` present; the drop; the guarded invariant bound; the guarded place `Call.state.Armed` and a payload-free case.
+- Step 15: one instance per place of `Call.x`, naming it; `invalid_timed_model`/`clock-write`; one instance per clock place.
+- Step 16: `clock-without-dense-time` for the tick and untimed fields; no refusal for the declarations.
+- Step 17: every position checks and is typed by the one unit node; `ill_typed`/`type-mismatch`; `missing_declaration`/`missing-name`; the package clocks of FR-230-AC-16; the `Quantity<M::ms>` positions, and `missing_declaration`/`missing-name` naming each member path.
+- Step 18: the places and shapes, the dimension `11` for one object with `s` adding none, `s` with at most one element, `ts` typed over the `Timer` data node, and `ill_typed`/`operator-ineligible` at the map key.
+- Step 19: the provenance records of AC-20 and `clock-write` at each refused occurrence and position.
+- Step 20: the resets, the guard entries by size, the convex parts for `exists`, `unproved-presence` at `1`, `time-invariant-shape` for the `exists` body and `clock-read-outside-constraint` for `=`, `contains` and `count`, with `size` and `e.n` admitted.
+- Step 21: each `Option<Clock>` position as stated, with the instances of `arm`, the place expressions of `maybe` and the refusals.
+- Step 22: the clock collections of the package with dimension `5` for one `Call`, and a different package identity under the changed maximum.
+- Step 23: the four guarded convex parts, the data write of `ref(self.x)`, `clock-write` at the reset outside the frame, the data comparison, `unproved-presence` without and no refusal with `present(self.r)`, equal state keys for equal data and different keys for different `r`, and slot `0` kept across a reorder.
+- Step 24: the `x <= 3` invariants on the typed places, the bound on every clock, `time-invariant-shape` for `min`, `malformed-declaration` for the other keywords and operands, and `clock-without-dense-time` under `time tick` and untimed units.
+- Step 25: `5 ms` checks, `11 ms` refuses `ill_typed`/`type-mismatch`, and `malformed-declaration` for `minLength` and for the unit `reference` target.

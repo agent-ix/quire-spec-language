@@ -19,7 +19,7 @@ This catches a wrapper node that splits a declared unit's quantity type from
 its unit, terms emitted in source order instead of canonical order, and a
 single-term compound unit merged with its declared unit.
 
-Scope: FR-094-AC-6, FR-094-AC-7 (its compound-unit and declared-unit cases), FR-094-AC-8, FR-094-AC-11, FR-094-CON-1.
+Scope: FR-094-AC-6, FR-094-AC-7 (its compound-unit and declared-unit cases), FR-094-AC-8, FR-094-AC-11, FR-094-AC-12, FR-094-CON-1.
 
 ## Test Procedure
 
@@ -46,6 +46,12 @@ read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
 6. Over FR-093-AC-36's units, check and lower `a / 3 ms` over `a: Quantity<m>`,
    `d / 3 ms` over `d: Quantity<ms>`, `d / 3 s`, `d / rational(-3, 1) ms`
    and `a / 0.5 s`, and read the result type node of each division.
+7. With `acme/rpc` (alias `R`) and `acme/flow` (alias `F`) each declaring base
+   dimension `Time` and a root unit, emit the unit of FR-094-AC-12 with
+   `dimension R::Time ~ F::Time;`, with `dimension F::Time ~ R::Time;` in its
+   place, and with `dimension R::Time ~ Time;` added; read the equivalence
+   nodes and the `Time` nodes, and read each package back through IR's v2
+   reader.
 
 Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 
@@ -74,3 +80,10 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
   `a / 0.5 s` has the same node. `d / 3 ms`, `d / 3 s` and
   `d / rational(-3, 1) ms` have one node whose body is `aggregate{[]}`. None
   of the nodes is the `m` unit node.
+- Step 7: one `scalar_type`/`dimension_equivalence` node with no
+  `declaration`, self-typed, preimage ids in ascending digest order, key
+  `b13bf9ac…12ca` under QSpec's vector owner, exactly the two package `Time`
+  keys as dependencies and one `anchor` occurrence of ordinal 0; the reversed
+  spelling gives the same key; the added `R::Time ~ Time` is a second node of
+  ordinal 1; the `Time` nodes keep their keys; the node is emitted with no
+  quantity type naming either dimension; IR admits each package.
