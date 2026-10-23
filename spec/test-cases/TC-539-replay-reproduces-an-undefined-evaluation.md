@@ -15,7 +15,7 @@ counterexample by evaluating the replayed letters and finding the first
 undefined one at `where` with the recorded cause, and that any other
 position or a missing position is a disagreement.
 
-Scope: FR-128-AC-5, FR-128-AC-6.
+Scope: FR-128-AC-5 to FR-128-AC-7.
 
 ## Test Procedure
 
@@ -33,6 +33,9 @@ source in the byte provision and universe `{c}` in the request.
    subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from value 2.
    Not built: replay refuses it as `AuthoredUndefined`; its reproduction is
    Remaining work: QSL-898.
+7. Add FR-128-AC-7's `pre CanInc { 6 mod (3 - self.value) >= 0 }` to
+   step 4's subject and replay the prefix to value 3 with `where.locus`
+   naming `CanInc`, then with it naming the `terminal when` predicate.
 
 Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 
@@ -48,3 +51,6 @@ Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 - Step 6: refused `unsupported_construct`/`not-yet-implemented`; the
   reproduction (`reproduced-with-evaluated-witness`, value `Undefined` with
   cause `DivisionByZero` at position 0) is Remaining work: QSL-898.
+- Step 7: `reproduced-with-evaluated-witness`, `trace_position` 3, with
+  the `CanInc` locus; `inconclusive`, `ReplayParity` with the predicate
+  locus.
