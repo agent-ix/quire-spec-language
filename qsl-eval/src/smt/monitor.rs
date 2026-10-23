@@ -33,6 +33,7 @@ pub struct Move {
 #[derive(Clone, Debug)]
 pub struct MonitorTable {
     atoms: Vec<FormulaNodeId>,
+    live: bool,
     initial: usize,
     rejecting: Option<usize>,
     states: usize,
@@ -56,7 +57,7 @@ impl MonitorTable {
             });
         }
         let atoms = automaton.atoms().to_vec();
-        if atoms.len() > MAX_ATOMS {
+        if atoms.len() + usize::from(automaton.live().is_some()) > MAX_ATOMS {
             return Err(SmtEncodingRefusal::MonitorBound {
                 atoms: atoms.len(),
                 states: 0,
@@ -64,11 +65,18 @@ impl MonitorTable {
                 max_states: MAX_STATES,
             });
         }
-        // The positions of an unrolling are all represented, so the atom
-        // that marks the represented positions always holds.
-        let live = automaton
-            .live()
-            .map_or(0, |atom: Atom| 1u64 << atom.index());
+        // The atom that marks the represented positions is the letter bit
+        // after the `holds` atoms; the encoding reads it as "not ended".
+        let live = automaton.live();
+        if live.is_some_and(|atom: Atom| atom.index() != atoms.len()) {
+            return Err(SmtEncodingRefusal::Fault(
+                qsl_foundation::InternalFault::new(
+                    "smt-encoding",
+                    "live-atom-follows-the-holds-atoms",
+                ),
+            ));
+        }
+        let bits = atoms.len() + usize::from(live.is_some());
         let mut monitor = Monitor::bad_prefix(automaton, MAX_STATES as u64)?;
         let initial = monitor.initial()?;
         let mut reached: Vec<StateId> = vec![initial];
@@ -76,8 +84,8 @@ impl MonitorTable {
         let mut next = 0;
         while let Some(&from) = reached.get(next) {
             next += 1;
-            for letter in 0..(1u64 << atoms.len()) {
-                let to = monitor.step(from, Letter::from_bits(letter | live))?;
+            for letter in 0..(1u64 << bits) {
+                let to = monitor.step(from, Letter::from_bits(letter))?;
                 let target = match reached.iter().position(|seen| *seen == to) {
                     Some(position) => position,
                     None => {
@@ -100,6 +108,7 @@ impl MonitorTable {
         }
         Ok(Self {
             atoms,
+            live: live.is_some(),
             initial: 0,
             rejecting,
             states: reached.len(),
@@ -110,6 +119,11 @@ impl MonitorTable {
     /// The `holds` atoms of the letter, atom `i` being bit `i`.
     pub fn atoms(&self) -> &[FormulaNodeId] {
         &self.atoms
+    }
+
+    /// Whether the letter's last bit marks the represented positions.
+    pub const fn reads_live(&self) -> bool {
+        self.live
     }
 
     /// The initial monitor state, read before position 0.

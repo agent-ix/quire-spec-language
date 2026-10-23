@@ -21,10 +21,9 @@ mod layout;
 mod monitor;
 mod query;
 mod refusal;
-mod relation;
+pub(crate) mod relation;
 pub mod script;
 
 pub use kind::SmtQueryKind;
 pub use query::{encode_smt_query, SmtItem};
 pub use refusal::{ExpressionLocus, SmtEncodingRefusal};
-pub use relation::{StepDisjunct, StepLabel, StepRelation};

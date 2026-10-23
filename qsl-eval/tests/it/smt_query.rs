@@ -321,6 +321,234 @@ fn counter(profile: &str, formulas: &[&str]) -> World {
     )
 }
 
+// ---------------------------------------------------------------------------
+// A solver-free reading of a script: satisfiability by search over small
+// domains, so a test can tell an unsat query from a sat one.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+enum Sexp {
+    Atom(String),
+    List(Vec<Sexp>),
+}
+
+fn parse(text: &str) -> Vec<Sexp> {
+    let spaced = text.replace('(', " ( ").replace(')', " ) ");
+    let mut stack: Vec<Vec<Sexp>> = vec![Vec::new()];
+    for token in spaced.split_whitespace() {
+        match token {
+            "(" => stack.push(Vec::new()),
+            ")" => {
+                let done = stack.pop().expect("balanced");
+                stack.last_mut().expect("balanced").push(Sexp::List(done));
+            }
+            atom => stack
+                .last_mut()
+                .expect("balanced")
+                .push(Sexp::Atom(atom.to_owned())),
+        }
+    }
+    stack.pop().expect("balanced")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Val {
+    Bool(bool),
+    Int(i64),
+}
+
+fn constants(term: &Sexp, names: &BTreeMap<String, usize>, found: &mut Vec<usize>) {
+    match term {
+        Sexp::Atom(name) => {
+            if let Some(index) = names.get(name) {
+                found.push(*index);
+            }
+        }
+        Sexp::List(items) => items.iter().for_each(|item| constants(item, names, found)),
+    }
+}
+
+fn eval(term: &Sexp, names: &BTreeMap<String, usize>, env: &[Val]) -> Val {
+    let int = |value: Val| match value {
+        Val::Int(value) => value,
+        Val::Bool(_) => panic!("an integer was expected"),
+    };
+    let boolean = |value: Val| match value {
+        Val::Bool(value) => value,
+        Val::Int(_) => panic!("a Boolean was expected"),
+    };
+    match term {
+        Sexp::Atom(atom) => match atom.as_str() {
+            "true" => Val::Bool(true),
+            "false" => Val::Bool(false),
+            _ => match names.get(atom) {
+                Some(index) => env[*index],
+                None => Val::Int(atom.parse().expect("a numeral")),
+            },
+        },
+        Sexp::List(items) => {
+            let Some(Sexp::Atom(head)) = items.first() else {
+                panic!("an application")
+            };
+            let operands: Vec<Val> = items[1..]
+                .iter()
+                .map(|item| eval(item, names, env))
+                .collect();
+            match (head.as_str(), operands.as_slice()) {
+                ("not", [only]) => Val::Bool(!boolean(*only)),
+                ("and", all) => Val::Bool(all.iter().all(|value| boolean(*value))),
+                ("or", all) => Val::Bool(all.iter().any(|value| boolean(*value))),
+                ("=>", [left, right]) => Val::Bool(!boolean(*left) || boolean(*right)),
+                ("=", [left, right]) => Val::Bool(left == right),
+                ("<=", [left, right]) => Val::Bool(int(*left) <= int(*right)),
+                ("<", [left, right]) => Val::Bool(int(*left) < int(*right)),
+                (">=", [left, right]) => Val::Bool(int(*left) >= int(*right)),
+                (">", [left, right]) => Val::Bool(int(*left) > int(*right)),
+                ("+", all) => Val::Int(all.iter().map(|value| int(*value)).sum()),
+                ("-", [only]) => Val::Int(-int(*only)),
+                ("-", [left, right]) => Val::Int(int(*left) - int(*right)),
+                ("*", [left, right]) => Val::Int(int(*left) * int(*right)),
+                ("mod", [left, right]) => Val::Int(int(*left).rem_euclid(int(*right))),
+                ("ite", [test, then, other]) => {
+                    if boolean(*test) {
+                        *then
+                    } else {
+                        *other
+                    }
+                }
+                other => panic!("an unknown operator {other:?}"),
+            }
+        }
+    }
+}
+
+/// Whether some assignment of the declared constants satisfies the script,
+/// Integers ranging over `0..8`.
+fn satisfiable(script: &str) -> bool {
+    let mut names = BTreeMap::new();
+    let mut kinds = Vec::new();
+    let mut assertions = Vec::new();
+    for command in parse(script) {
+        let Sexp::List(items) = command else { continue };
+        match items.as_slice() {
+            [Sexp::Atom(head), Sexp::Atom(name), Sexp::Atom(sort)] if head == "declare-const" => {
+                names.insert(name.clone(), kinds.len());
+                kinds.push(sort == "Bool");
+            }
+            [Sexp::Atom(head), term] if head == "assert" => assertions.push(term.clone()),
+            _ => {}
+        }
+    }
+    // Check each assertion as soon as its last constant is assigned.
+    let mut by_last: Vec<Vec<&Sexp>> = vec![Vec::new(); kinds.len() + 1];
+    for assertion in &assertions {
+        let mut found = Vec::new();
+        constants(assertion, &names, &mut found);
+        by_last[found.into_iter().max().map_or(0, |last| last + 1)].push(assertion);
+    }
+    fn search(
+        at: usize,
+        kinds: &[bool],
+        names: &BTreeMap<String, usize>,
+        by_last: &[Vec<&Sexp>],
+        env: &mut Vec<Val>,
+    ) -> bool {
+        if !by_last[at]
+            .iter()
+            .all(|term| eval(term, names, env) == Val::Bool(true))
+        {
+            return false;
+        }
+        if at == kinds.len() {
+            return true;
+        }
+        let domain: Vec<Val> = if kinds[at] {
+            vec![Val::Bool(false), Val::Bool(true)]
+        } else {
+            (0..8).map(Val::Int).collect()
+        };
+        for value in domain {
+            env.push(value);
+            let found = search(at + 1, kinds, names, by_last, env);
+            env.pop();
+            if found {
+                return true;
+            }
+        }
+        false
+    }
+    search(0, &kinds, &names, &by_last, &mut Vec::new())
+}
+
+fn sat(world: &World, clause: usize, kind: SmtQueryKind) -> bool {
+    satisfiable(&world.query(clause, kind).expect("encodes"))
+}
+
+/// Regression for SR-12356 FND-001: a state whose guard holds is no reason
+/// to cut a path. `value <= 2` is violated at step 3 of the chain, so the
+/// unrolling and the base case are satisfiable at depth 4 too, and the
+/// stutter keeps the path alive. (The step case at depth 4 needs five pairwise
+/// distinct states of a four-valued field and is unsatisfiable on its own.)
+#[trace("TC-900")]
+#[test]
+fn a_violation_at_step_three_is_found_at_depth_four() {
+    let world = counter(INFINITE, &["always holds(c.value <= 2)"]);
+    for kind in [
+        SmtQueryKind::Unrolling { depth: 3 },
+        SmtQueryKind::Unrolling { depth: 4 },
+        SmtQueryKind::InductionBase { depth: 4 },
+        SmtQueryKind::InductionStep { depth: 3 },
+    ] {
+        assert!(sat(&world, 0, kind), "{kind:?}");
+    }
+    assert!(!sat(
+        &counter(INFINITE, &["always holds(c.value <= 3)"]),
+        0,
+        SmtQueryKind::Unrolling { depth: 4 }
+    ));
+}
+
+/// Regression for SR-12356 FND-002: a finite trace that ends before `depth`
+/// reads every atom false past its end, so a violation found at depth 3 is
+/// found at depth 5, and the horizon past the last state of the chain is a
+/// violation of `always[0,4]`.
+#[trace("TC-900")]
+#[test]
+fn a_finite_trace_may_end_before_the_depth() {
+    let world = counter(
+        BOUNDED,
+        &[
+            "always[0,5] holds(c.value <= 2)",
+            "always[0,4] holds(c.value <= 3)",
+        ],
+    );
+    assert!(sat(&world, 0, SmtQueryKind::Unrolling { depth: 3 }));
+    assert!(sat(&world, 0, SmtQueryKind::Unrolling { depth: 5 }));
+    assert!(sat(&world, 1, SmtQueryKind::Unrolling { depth: 4 }));
+}
+
+/// A bounded `always` whose atom holds at every position of a trace that is
+/// as long as its horizon has no violation when the subject cannot end early:
+/// an operation without a postcondition that is always enabled.
+#[trace("TC-900")]
+#[test]
+fn a_finite_trace_cannot_end_where_an_operation_is_certainly_enabled() {
+    let document = document(
+        "Counter",
+        vec![field("Counter", "value", &ident("Level"), "required")],
+        vec![operation("Counter", "poke", &["value"])],
+    );
+    let world = world(
+        ("Counter", "c"),
+        &document,
+        "",
+        BOUNDED,
+        &["always[0,2] holds(c.value <= 3)"],
+        &[("c", json!({"value": {"integer": "0"}}))],
+    );
+    assert!(!sat(&world, 0, SmtQueryKind::Unrolling { depth: 2 }));
+}
+
 fn slot(formulas: &[&str], held: Json) -> World {
     let document = document(
         "Slot",
@@ -357,8 +585,9 @@ fn declared(script: &str) -> Vec<&str> {
 }
 
 /// FR-315-AC-1: the bounded `Counter` item declares the four copies in
-/// order, asserts the initial predicate, one transition per step and the
-/// negated property; equal inputs give byte-equal scripts.
+/// order, each followed by its end flag, asserts the initial predicate, one
+/// transition per step and the negated property; equal inputs give byte-equal
+/// scripts. A finite trace may end, so each step also has the end disjuncts.
 #[trace("TC-900", "FR-315-AC-1")]
 #[test]
 fn an_unrolling_declares_the_copies_and_asserts_the_negated_property() {
@@ -370,26 +599,26 @@ fn an_unrolling_declares_the_copies_and_asserts_the_negated_property() {
         declared(&script),
         [
             "s0.c.value Int)",
+            "e0 Bool)",
             "s1.c.value Int)",
+            "e1 Bool)",
             "s2.c.value Int)",
-            "s3.c.value Int)"
+            "e2 Bool)",
+            "s3.c.value Int)",
+            "e3 Bool)"
         ]
     );
     assert!(script.starts_with("(set-logic QF_LIA)\n"));
     assert!(script.ends_with("(check-sat)\n"));
     has(&script, "(assert (= s0.c.value 0))");
-    for step in 0..3 {
-        has(
-            &script,
-            &format!(
-                "(assert (and (< s{step}.c.value 3) (= (- s{next}.c.value s{step}.c.value) 1)))",
-                next = step + 1
-            ),
-        );
-    }
+    has(&script, "(assert (not e0))");
     has(
         &script,
-        "(assert (or (not (<= s0.c.value 3)) (not (<= s1.c.value 3)) (not (<= s2.c.value 3)) (not (<= s3.c.value 3))))",
+        "(assert (or (and (not e0) (not e1) (< s0.c.value 3) (= (- s1.c.value s0.c.value) 1)) (and (not e0) e1 (= s0.c.value s1.c.value)) (and e0 e1 (= s0.c.value s1.c.value))))",
+    );
+    has(
+        &script,
+        "(assert (or (not (and (not e0) (<= s0.c.value 3))) (not (and (not e1) (<= s1.c.value 3))) (not (and (not e2) (<= s2.c.value 3))) (not (and (not e3) (<= s3.c.value 3)))))",
     );
     let again = world
         .query(0, SmtQueryKind::Unrolling { depth: 3 })
@@ -417,7 +646,7 @@ fn the_step_case_has_no_initial_state_and_the_base_case_has_one() {
     // Under infinite-trace the terminal stutter is one more disjunct.
     has(
         &base,
-        "(assert (or (and (< s0.c.value 3) (= (- s1.c.value s0.c.value) 1)) (and (not (< s0.c.value 3)) (= s0.c.value s1.c.value))))",
+        "(assert (or (and (< s0.c.value 3) (= (- s1.c.value s0.c.value) 1)) (= s0.c.value s1.c.value)))",
     );
 }
 
@@ -461,7 +690,7 @@ fn a_field_with_no_smt_sort_is_refused_by_name() {
 /// `value` read it cannot prove present (`Unproved(Presence)`), so the
 /// spec's `always holds(value(s.held) <= 3)` does not check; the guarded
 /// claim stands in for it.
-#[trace("TC-900", "FR-315-AC-4")]
+#[trace("TC-900")]
 #[test]
 fn an_optional_field_is_a_value_and_a_presence_constant() {
     let world = slot(
@@ -549,7 +778,7 @@ fn the_base_case_steps_the_initial_monitor_over_position_zero() {
 
 /// An expression outside `QF_LIA` refuses, naming the construct and the
 /// clause it is in.
-#[trace("TC-900", "FR-315-AC-3")]
+#[trace("TC-900")]
 #[test]
 fn a_nonlinear_atom_is_refused_with_its_locus() {
     let world = counter(INFINITE, &["always holds(c.value * c.value <= 3)"]);
@@ -563,7 +792,7 @@ fn a_nonlinear_atom_is_refused_with_its_locus() {
 }
 
 /// Items and kinds the proof queries do not cover refuse without a script.
-#[trace("TC-900", "FR-315-AC-3")]
+#[trace("TC-900")]
 #[test]
 fn items_without_a_proof_query_are_refused() {
     let world = counter(
@@ -598,7 +827,7 @@ fn items_without_a_proof_query_are_refused() {
 
 /// A bounded `eventually` is violated where its atom is false at every
 /// position of the horizon.
-#[trace("TC-900", "FR-315-AC-1")]
+#[trace("TC-900")]
 #[test]
 fn a_bounded_eventually_is_violated_where_every_position_is_false() {
     let world = counter(BOUNDED, &["eventually[0,2] holds(c.value = 3)"]);
@@ -607,6 +836,30 @@ fn a_bounded_eventually_is_violated_where_every_position_is_false() {
         .expect("encodes");
     has(
         &script,
-        "(assert (and (not (= s0.c.value 3)) (not (= s1.c.value 3)) (not (= s2.c.value 3))))",
+        "(assert (and (not (and (not e0) (= s0.c.value 3))) (not (and (not e1) (= s1.c.value 3))) (not (and (not e2) (= s2.c.value 3)))))",
     );
+}
+
+/// A bounded `eventually` unrolled to fewer steps than its horizon, and a
+/// query too deep to write, refuse instead of answering wrongly.
+#[trace("TC-900")]
+#[test]
+fn a_query_that_cannot_be_exact_or_written_is_refused() {
+    let world = counter(BOUNDED, &["eventually[0,3] holds(c.value = 3)"]);
+    assert_eq!(
+        world.query(0, SmtQueryKind::Unrolling { depth: 2 }),
+        Err(SmtEncodingRefusal::Horizon {
+            depth: 2,
+            horizon: 3
+        })
+    );
+    let deep = counter(INFINITE, &["always holds(c.value <= 3)"]);
+    assert!(matches!(
+        deep.query(0, SmtQueryKind::Unrolling { depth: u64::MAX }),
+        Err(SmtEncodingRefusal::TooLarge { .. })
+    ));
+    assert!(matches!(
+        deep.query(0, SmtQueryKind::InductionStep { depth: 1 << 12 }),
+        Err(SmtEncodingRefusal::TooLarge { .. })
+    ));
 }

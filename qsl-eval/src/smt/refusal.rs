@@ -130,6 +130,28 @@ pub enum SmtEncodingRefusal {
     /// The clause's instances are not finite (FR-125 `RequiresBound`).
     #[error("the clause's instances are not finite: {0:?}")]
     Instances(crate::simulation::NotSimulated),
+    /// An operation's argument vectors or a step's disjuncts exceed what the
+    /// encoding writes.
+    #[error("a step relation holds more than {max} disjuncts or argument vectors")]
+    TooManySteps {
+        /// The bound that was exceeded.
+        max: usize,
+    },
+    /// A bounded `eventually` is unrolled to fewer steps than its horizon,
+    /// so no position-wise violation reading is exact.
+    #[error("depth {depth} is below the horizon {horizon} of a bounded `eventually`")]
+    Horizon {
+        /// The requested depth.
+        depth: u64,
+        /// The item's horizon.
+        horizon: u64,
+    },
+    /// Two names would print the same constant.
+    #[error("the name `{name}` holds a `.`, which would make constant names ambiguous")]
+    AmbiguousName {
+        /// The name.
+        name: String,
+    },
     /// The query would declare more constants than the encoding writes.
     #[error("depth {depth} declares more than {max} constants")]
     TooLarge {

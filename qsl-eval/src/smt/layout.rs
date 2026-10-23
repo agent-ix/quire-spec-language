@@ -146,8 +146,18 @@ impl StateLayout {
     }
 
     fn object(object: &SymbolicObject<'_>) -> Result<ObjectLayout, SmtEncodingRefusal> {
+        if object.key.chars().any(|c| c == '.') {
+            return Err(SmtEncodingRefusal::AmbiguousName {
+                name: object.key.clone(),
+            });
+        }
         let mut fields = Vec::new();
         for field in &object.fields {
+            if field.name.chars().any(|c| c == '.') {
+                return Err(SmtEncodingRefusal::AmbiguousName {
+                    name: field.name.clone(),
+                });
+            }
             let sort =
                 sort_of(&field.value_type).map_err(|sort| SmtEncodingRefusal::FieldSort {
                     object: object.key.clone(),

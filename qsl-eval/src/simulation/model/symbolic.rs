@@ -80,6 +80,9 @@ pub(crate) struct SymbolicSubject<'a> {
     pub(crate) package: &'a CheckedPackage,
 }
 
+/// The most values an operation parameter's domain may hold.
+const MAX_DOMAIN: u128 = 1 << 12;
+
 fn fault(invariant: &'static str) -> SmtEncodingRefusal {
     SmtEncodingRefusal::Fault(qsl_foundation::InternalFault::new(
         "smt-encoding",
@@ -126,23 +129,34 @@ impl<'a> ModelSystem<'a> {
             }
         }
         for state in &self.initial {
-            let held: usize = state
-                .state
-                .populations
-                .values()
-                .map(std::collections::BTreeMap::len)
-                .sum();
-            let same = held == rows.len()
-                && rows.iter().all(|(population, key, type_key)| {
-                    state
+            let mismatch = rows
+                .iter()
+                .find(|(population, key, type_key)| {
+                    !state
                         .state
                         .populations
                         .get(population)
                         .and_then(|objects| objects.get(key))
                         .is_some_and(|object| &object.type_identity == type_key)
+                })
+                .map(|row| row.1.clone())
+                .or_else(|| {
+                    state
+                        .state
+                        .populations
+                        .iter()
+                        .find_map(|(population, objects)| {
+                            objects
+                                .keys()
+                                .find(|key| {
+                                    !rows.iter().any(|(held, held_key, _)| {
+                                        held == population && held_key == *key
+                                    })
+                                })
+                                .cloned()
+                        })
                 });
-            if !same {
-                let object = rows.first().map(|row| row.1.clone()).unwrap_or_default();
+            if let Some(object) = mismatch {
                 return Err(SmtEncodingRefusal::ObjectLifecycle { object });
             }
         }
@@ -252,33 +266,41 @@ impl<'a> ModelSystem<'a> {
                         position,
                     ) {
                         Some(support) => Some(support.values()),
-                        None => Domain::of(value_type, references, self.types).map(|domain| {
-                            (0..domain.len())
-                                .map_while(|index| domain.nth(index))
-                                .collect()
-                        }),
+                        None => Domain::of(value_type, references, self.types)
+                            .filter(|domain| domain.len() <= MAX_DOMAIN)
+                            .map(|domain| {
+                                (0..domain.len())
+                                    .map_while(|index| domain.nth(index))
+                                    .collect()
+                            }),
                     }
                 })
                 .collect();
-            let applicable = |group: &[ClauseInfo]| -> Vec<&'a CheckedStateClause> {
-                group
-                    .iter()
-                    .filter(|clause| {
-                        clause.operation.as_ref().is_some_and(|(owner, name)| {
-                            *owner == application.declaring && *name == application.name
-                        }) && self.types.conforms(type_id, clause.context)
-                    })
-                    .filter_map(|clause| package.graph().state_clause(&clause.name))
-                    .collect()
-            };
+            let applicable =
+                |group: &[ClauseInfo]| -> Result<Vec<&'a CheckedStateClause>, SmtEncodingRefusal> {
+                    group
+                        .iter()
+                        .filter(|clause| {
+                            clause.operation.as_ref().is_some_and(|(owner, name)| {
+                                *owner == application.declaring && *name == application.name
+                            }) && self.types.conforms(type_id, clause.context)
+                        })
+                        .map(|clause| {
+                            package
+                                .graph()
+                                .state_clause(&clause.name)
+                                .ok_or_else(|| fault("clause-resolves"))
+                        })
+                        .collect()
+                };
             operations.push(SymbolicOperation {
                 name: application.name.clone(),
                 parameters,
                 domains,
                 modifies: effect.modifies.iter().cloned().collect(),
                 receiver_modifies: effect.receiver_modifies.iter().cloned().collect(),
-                preconditions: applicable(&self.clauses.preconditions),
-                postconditions: applicable(&self.clauses.postconditions),
+                preconditions: applicable(&self.clauses.preconditions)?,
+                postconditions: applicable(&self.clauses.postconditions)?,
             });
         }
         Ok(operations)

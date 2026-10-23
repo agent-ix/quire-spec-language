@@ -15,33 +15,15 @@ use qsl_semantics::check::CheckedStateClause;
 use quire_exact::Value;
 use std::ops::Not;
 
-use crate::simulation::model::{SymbolicObject, SymbolicOperation, SymbolicSubject};
+use crate::simulation::model::{SymbolicOperation, SymbolicSubject};
 use crate::smt::expression::{Reader, Sym, Views};
 use crate::smt::layout::{StateCopy, StateLayout};
 use crate::smt::script::Term;
 use crate::smt::SmtEncodingRefusal;
 
-/// What a step is: the application it takes, or the terminal stutter.
-#[derive(Clone, Debug)]
-pub enum StepLabel {
-    /// An operation applied to a receiver.
-    Operation {
-        /// The receiver's key.
-        receiver: String,
-        /// The operation's declared name.
-        operation: String,
-        /// One value per declared parameter.
-        arguments: Vec<Value>,
-    },
-    /// The terminal stutter (ADR-018 SM-4).
-    Stutter,
-}
-
 /// One disjunct of the step relation.
 #[derive(Clone, Debug)]
 pub struct StepDisjunct {
-    /// The step the disjunct is.
-    pub label: StepLabel,
     /// The disjunct: preconditions, postconditions and frame (or, for the
     /// stutter, no enabled operation and every field unchanged).
     pub holds: Term,
@@ -57,11 +39,19 @@ pub struct StepDisjunct {
 #[derive(Clone, Debug)]
 pub struct StepRelation {
     disjuncts: Vec<StepDisjunct>,
+    end_allowed: Term,
 }
 
+/// The most disjuncts one step relation holds.
+pub const MAX_DISJUNCTS: usize = 1 << 14;
+/// The most argument vectors one operation applies to.
+pub const MAX_ARGUMENT_VECTORS: usize = 1 << 12;
+
 impl StepRelation {
-    /// The disjuncts: the operations, then the terminal stutter when
-    /// `stutter` (the infinite-trace profile).
+    /// The disjuncts: the operations, then the stutter when `stutter` (the
+    /// infinite-trace profile). Under infinite-trace the stutter holds
+    /// unconditionally: it only repeats a state, so it adds no reachable
+    /// state and the relation over-approximates FR-120's terminal stutter.
     ///
     /// # Errors
     ///
@@ -76,46 +66,57 @@ impl StepRelation {
         stutter: bool,
     ) -> Result<Self, SmtEncodingRefusal> {
         let mut disjuncts = Vec::new();
-        let mut enabled = Vec::new();
+        let mut surely_enabled = Vec::new();
         for (receiver, object) in subject.objects.iter().enumerate() {
             for operation in &object.operations {
                 for arguments in argument_vectors(operation)? {
+                    if disjuncts.len() >= MAX_DISJUNCTS {
+                        return Err(SmtEncodingRefusal::TooManySteps { max: MAX_DISJUNCTS });
+                    }
                     let step = Application {
                         subject,
                         layout,
                         from,
                         to,
                         receiver,
-                        object,
                         operation,
                         arguments: &arguments,
                     };
-                    let (disjunct, guard) = step.disjunct()?;
-                    enabled.push(guard);
+                    let (disjunct, enabled) = step.disjunct()?;
+                    // An operation with a postcondition may have no
+                    // post-state, which the encoding cannot decide, so only
+                    // an operation without one is certainly enabled.
+                    if operation.postconditions.is_empty() {
+                        surely_enabled.push(enabled);
+                    }
                     disjuncts.push(disjunct);
                 }
             }
         }
+        let end_allowed = Term::any(surely_enabled).not();
         if stutter {
-            let mut conjuncts: Vec<Term> = enabled.into_iter().map(Term::not).collect();
+            let mut conjuncts = Vec::new();
             for (object, layout_object) in layout.objects().iter().enumerate() {
                 for field in 0..layout_object.fields().len() {
                     conjuncts.extend(layout.unchanged(from, to, object, field));
                 }
             }
             disjuncts.push(StepDisjunct {
-                label: StepLabel::Stutter,
                 holds: Term::all(conjuncts),
                 guard_failure: Term::truth(false),
                 post_failure: Term::truth(false),
             });
         }
-        Ok(Self { disjuncts })
+        Ok(Self {
+            disjuncts,
+            end_allowed,
+        })
     }
 
-    /// The disjuncts in order.
-    pub fn disjuncts(&self) -> &[StepDisjunct] {
-        &self.disjuncts
+    /// The condition under which a finite trace may end at the `from` copy:
+    /// no operation without a postcondition is enabled there.
+    pub fn end_allowed(&self) -> Term {
+        self.end_allowed.clone()
     }
 
     /// The transition assertion: some disjunct holds.
@@ -155,6 +156,11 @@ fn argument_vectors(
                 operation: operation.name.clone(),
                 parameter: name.clone(),
             })?;
+        if vectors.len().saturating_mul(values.len()) > MAX_ARGUMENT_VECTORS {
+            return Err(SmtEncodingRefusal::TooManySteps {
+                max: MAX_ARGUMENT_VECTORS,
+            });
+        }
         vectors = vectors
             .into_iter()
             .flat_map(|prefix| {
@@ -176,7 +182,6 @@ struct Application<'s, 'a> {
     from: &'s StateCopy,
     to: &'s StateCopy,
     receiver: usize,
-    object: &'s SymbolicObject<'a>,
     operation: &'s SymbolicOperation<'a>,
     arguments: &'s [Value],
 }
@@ -197,22 +202,27 @@ impl Application<'_, '_> {
         };
         let mut guard_defined = Vec::new();
         let mut guards = Vec::new();
+        let mut enabled = Vec::new();
         for clause in &self.operation.preconditions {
             let (value, defined) = self.read(clause, &before)?;
-            guards.push(Term::all([defined.clone(), value]));
+            // An undefined guard is a refutation found at this copy, so the
+            // disjunct stays satisfiable there and the path goes on.
+            guards.push(defined.clone().implies(value.clone()));
+            enabled.push(Term::all([defined.clone(), value]));
             guard_defined.push(defined);
         }
         let mut post_defined = Vec::new();
         let mut posts = Vec::new();
         for clause in &self.operation.postconditions {
             let (value, defined) = self.read(clause, &across)?;
-            posts.push(Term::all([defined.clone(), value]));
+            posts.push(defined.clone().implies(value));
             post_defined.push(defined);
         }
         let frame = self.frame();
-        let enabled = Term::all(guards);
+        let enabled = Term::all(enabled);
         let holds = Term::all(
-            std::iter::once(enabled.clone())
+            guards
+                .into_iter()
                 .chain(posts)
                 .chain(std::iter::once(Term::all(frame.clone()))),
         );
@@ -222,11 +232,6 @@ impl Application<'_, '_> {
             Term::all(post_defined).not(),
         ]);
         let disjunct = StepDisjunct {
-            label: StepLabel::Operation {
-                receiver: self.object.key.clone(),
-                operation: self.operation.name.clone(),
-                arguments: self.arguments.to_vec(),
-            },
             holds,
             guard_failure: Term::all(guard_defined).not(),
             post_failure,

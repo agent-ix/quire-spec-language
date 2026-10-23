@@ -4,12 +4,19 @@
 //!
 //! The script is, in order: `(set-logic QF_LIA)`; the `declare-const`
 //! commands in ascending (position, object, field) order, with each monitor
-//! state `m<i>` after the copy at position `i`; one range assertion per ranged
-//! constant; the initial-state predicate on copy 0 (and the initial monitor
-//! step) for `Unrolling` and `InductionBase`; one transition assertion per
-//! step, each followed by its monitor steps; for `InductionStep` the pairwise
-//! distinctness of the copies and the property and definedness conditions at
-//! the positions before the last; the negated property; `(check-sat)`.
+//! state `m<i>` and, under a finite-trace profile, each end flag `e<i>` after
+//! the copy at position `i`; one range assertion per ranged constant; the
+//! initial-state predicate on copy 0 (and `not e0`) for `Unrolling` and
+//! `InductionBase`; one transition assertion per step; then the monitor steps
+//! (the initial step at position 0, then one per position); for
+//! `InductionStep` the pairwise distinctness of the copies and the property
+//! and definedness conditions at the positions before the last; the negated
+//! property; `(check-sat)`.
+//!
+//! Under infinite-trace the stutter holds unconditionally, so it adds no
+//! reachable state. Under a finite-trace profile a behaviour may end at a
+//! state where no operation without a postcondition is enabled; `e<i>` marks
+//! the positions past its end, where every atom reads false.
 
 use qsl_semantics::check::{
     CheckedNode, CheckedTemporalClause, FormulaNodeId, TemporalClauseNode, TemporalProfile,
@@ -31,6 +38,12 @@ use crate::smt::{SmtEncodingRefusal, SmtQueryKind};
 
 /// The most constants a script declares.
 pub const MAX_CONSTANTS: usize = 1 << 20;
+/// The deepest unrolling a script is written for.
+pub const MAX_DEPTH: u64 = 1 << 12;
+/// The most pairwise-distinctness assertions of an induction step.
+pub const MAX_PAIRS: u64 = 1 << 16;
+/// The most monitor-step assertions a script holds.
+pub const MAX_MONITOR_ASSERTIONS: usize = 1 << 18;
 
 /// What a proof query is about (FR-315 Inputs).
 #[derive(Clone, Copy)]
@@ -187,6 +200,15 @@ pub fn encode_smt_query(
         .flat_map(|object| object.fields())
         .map(|field| 1 + usize::from(field.is_optional()))
         .sum();
+    let pairs = depth.saturating_mul(depth.saturating_add(1)) / 2;
+    if depth > MAX_DEPTH
+        || (matches!(kind, SmtQueryKind::InductionStep { .. }) && pairs > MAX_PAIRS)
+    {
+        return Err(SmtEncodingRefusal::TooLarge {
+            depth,
+            max: MAX_CONSTANTS,
+        });
+    }
     let copies = usize::try_from(depth)
         .ok()
         .and_then(|depth| depth.checked_add(1));
@@ -260,6 +282,12 @@ pub fn encode_smt_query(
                     count: atoms.instances.len(),
                 });
             }
+            if bounded == BoundedKind::Eventually && kind.depth() < upper {
+                return Err(SmtEncodingRefusal::Horizon {
+                    depth: kind.depth(),
+                    horizon: upper,
+                });
+            }
             Property::Bounded(bounded, upper, atom)
         }
         _ => {
@@ -269,17 +297,28 @@ pub fn encode_smt_query(
                     count: atoms.instances.len(),
                 });
             }
-            Property::Monitor(MonitorTable::of(clause)?)
+            let table = MonitorTable::of(clause)?;
+            let asserted = table
+                .moves()
+                .len()
+                .saturating_mul(usize::try_from(depth).unwrap_or(usize::MAX));
+            if asserted > MAX_MONITOR_ASSERTIONS {
+                return Err(SmtEncodingRefusal::TooLarge {
+                    depth,
+                    max: MAX_MONITOR_ASSERTIONS,
+                });
+            }
+            Property::Monitor(table)
         }
     };
-    let stutter = clause.profile() == TemporalProfile::InfiniteTrace;
+    let infinite = clause.profile() == TemporalProfile::InfiniteTrace;
     Query {
         kind,
         layout: &layout,
         subject: &symbolic,
         atoms,
         property,
-        stutter,
+        infinite,
     }
     .script()
     .map(|script| script.render())
@@ -292,7 +331,10 @@ struct Query<'q, 'a> {
     subject: &'q SymbolicSubject<'a>,
     atoms: Atoms<'q, 'a>,
     property: Property,
-    stutter: bool,
+    /// Whether the profile is infinite-trace. Under a finite-trace profile a
+    /// behaviour may end before `depth`: `e<i>` holds at the positions past
+    /// its end, where every atom reads false (FR-125 false-extension).
+    infinite: bool,
 }
 
 impl Query<'_, '_> {
@@ -313,6 +355,32 @@ impl Query<'_, '_> {
         }
     }
 
+    /// The flag that marks `position` as past the end of a finite trace.
+    fn ended(&self, position: u64) -> Option<Term> {
+        (!self.infinite).then(|| Term::constant(format!("e{position}")))
+    }
+
+    /// `term` where the trace has not ended, `otherwise` where it has.
+    fn alive(&self, position: u64, term: Term, otherwise: Term) -> Term {
+        match (self.ended(position), &otherwise) {
+            (None, _) => term,
+            (Some(ended), Term::Bool(false)) => Term::all([ended.not(), term]),
+            (Some(ended), Term::Bool(true)) => Term::any([ended, term]),
+            (Some(ended), _) => ended.select(otherwise, term),
+        }
+    }
+
+    /// The conjunction over instances of `atom` at `position` and its
+    /// definedness; past the end of a finite trace the atom is false and
+    /// defined.
+    fn atom(&self, atom: FormulaNodeId, position: u64) -> Result<(Term, Term), SmtEncodingRefusal> {
+        let (value, defined) = self.atoms.all_instances(atom, &StateCopy::at(position))?;
+        Ok((
+            self.alive(position, value, Term::truth(false)),
+            self.alive(position, defined, Term::truth(true)),
+        ))
+    }
+
     fn script(&self) -> Result<Script, SmtEncodingRefusal> {
         let depth = self.kind.depth();
         let mut script = Script::new();
@@ -321,6 +389,9 @@ impl Query<'_, '_> {
             self.layout.declare(&copy, &mut script);
             if self.monitor().is_some() {
                 script.declare(format!("m{position}"), Sort::Int);
+            }
+            if !self.infinite {
+                script.declare(format!("e{position}"), Sort::Bool);
             }
         }
         for position in 0..=depth {
@@ -336,17 +407,24 @@ impl Query<'_, '_> {
         }
         if self.kind.starts_initial() {
             script.assert(self.layout.initial(&StateCopy::at(0), self.subject)?);
+            if let Some(ended) = self.ended(0) {
+                script.assert(ended.not());
+            }
         }
+        // The relation out of each position `0..=depth`: the last is read for
+        // its guards only, since the query takes no step past `depth`.
         let mut relations = Vec::new();
-        for step in 0..depth {
+        for step in 0..=depth {
             let relation = StepRelation::build(
                 self.subject,
                 self.layout,
                 &StateCopy::at(step),
                 &StateCopy::at(step + 1),
-                self.stutter,
+                self.infinite,
             )?;
-            script.assert(relation.transition());
+            if step < depth {
+                script.assert(self.transition(step, &relation));
+            }
             relations.push(relation);
         }
         if let Some(table) = self.monitor() {
@@ -360,6 +438,49 @@ impl Query<'_, '_> {
         }
         script.assert(Term::any(self.negated(&relations)?));
         Ok(script)
+    }
+
+    /// The transition assertion from `step` to `step + 1`. Under a
+    /// finite-trace profile the trace may also end at the `from` copy when no
+    /// operation is certainly enabled there, and stays ended afterwards.
+    fn transition(&self, step: u64, relation: &StepRelation) -> Term {
+        if self.infinite {
+            return relation.transition();
+        }
+        let (from, to) = (StateCopy::at(step), StateCopy::at(step + 1));
+        let same = self.layout.differs(&from, &to).not();
+        let (was, is) = (
+            self.ended(step).unwrap_or(Term::truth(false)),
+            self.ended(step + 1).unwrap_or(Term::truth(false)),
+        );
+        Term::any([
+            Term::all([was.clone().not(), is.clone().not(), relation.transition()]),
+            Term::all([
+                was.clone().not(),
+                is.clone(),
+                same.clone(),
+                relation.end_allowed(),
+            ]),
+            Term::all([was, is, same]),
+        ])
+    }
+
+    /// Some guard is undefined at the `from` copy of `step`, where the trace
+    /// has not ended.
+    fn guard_failure(&self, step: u64, relation: &StepRelation) -> Term {
+        match self.ended(step) {
+            Some(ended) => Term::all([ended.not(), relation.guard_failure()]),
+            None => relation.guard_failure(),
+        }
+    }
+
+    /// Some enabled application of `step` has an undefined postcondition
+    /// between its copies, the trace not ending there.
+    fn post_failure(&self, step: u64, relation: &StepRelation) -> Term {
+        match (self.ended(step), self.ended(step + 1)) {
+            (Some(was), Some(is)) => Term::all([was.not(), is.not(), relation.post_failure()]),
+            _ => relation.post_failure(),
+        }
     }
 
     /// The monitor's initial step and its steps along the path.
@@ -393,42 +514,44 @@ impl Query<'_, '_> {
         Ok(())
     }
 
-    /// The value of each atom of the monitor's letter at `position`.
+    /// The truth of each bit of the monitor's letter at `position`: the atoms,
+    /// then the marker of a represented position when the monitor reads one.
     fn letter(&self, table: &MonitorTable, position: u64) -> Result<Vec<Term>, SmtEncodingRefusal> {
-        let copy = StateCopy::at(position);
-        table
-            .atoms()
-            .iter()
-            .map(|atom| self.atoms.read(*atom, 0, &copy).map(|(value, _)| value))
-            .collect()
+        let mut terms = Vec::new();
+        for atom in table.atoms() {
+            terms.push(self.atom(*atom, position)?.0);
+        }
+        if table.reads_live() {
+            terms.push(self.alive(position, Term::truth(true), Term::truth(false)));
+        }
+        Ok(terms)
     }
 
-    /// The copies at positions `0..=depth` are pairwise distinct (some field
-    /// or the monitor state differs between every two).
+    /// The copies at positions `0..=depth` are pairwise distinct (some field,
+    /// the monitor state or the end flag differs between every two).
     fn assert_distinct(&self, script: &mut Script) {
         let depth = self.kind.depth();
         for left in 0..=depth {
             for right in left + 1..=depth {
-                let mut differs = self
+                let mut differences = vec![self
                     .layout
-                    .differs(&StateCopy::at(left), &StateCopy::at(right));
+                    .differs(&StateCopy::at(left), &StateCopy::at(right))];
                 if self.monitor().is_some() {
-                    differs = Term::any([
-                        differs,
-                        monitor_constant(left).equal(monitor_constant(right)).not(),
-                    ]);
+                    differences.push(monitor_constant(left).equal(monitor_constant(right)).not());
                 }
-                script.assert(differs);
+                if let (Some(was), Some(is)) = (self.ended(left), self.ended(right)) {
+                    differences.push(was.equal(is).not());
+                }
+                script.assert(Term::any(differences));
             }
         }
     }
 
     /// The property reading at `position`.
     fn reading(&self, position: u64) -> Result<Reading, SmtEncodingRefusal> {
-        let copy = StateCopy::at(position);
         match &self.property {
             Property::Invariant(atom) => {
-                let (value, defined) = self.atoms.all_instances(*atom, &copy)?;
+                let (value, defined) = self.atom(*atom, position)?;
                 Ok(Reading {
                     violation: value.not(),
                     defined,
@@ -441,7 +564,7 @@ impl Query<'_, '_> {
                         defined: Term::truth(true),
                     });
                 }
-                let (value, defined) = self.atoms.all_instances(*atom, &copy)?;
+                let (value, defined) = self.atom(*atom, position)?;
                 Ok(Reading {
                     violation: value.not(),
                     defined,
@@ -456,7 +579,7 @@ impl Query<'_, '_> {
                 };
                 let mut defined = Vec::new();
                 for atom in table.atoms() {
-                    defined.push(self.atoms.read(*atom, 0, &copy)?.1);
+                    defined.push(self.atom(*atom, position)?.1);
                 }
                 Ok(Reading {
                     violation,
@@ -466,36 +589,40 @@ impl Query<'_, '_> {
         }
     }
 
-    /// The property, its definedness and the definedness of the step out of
-    /// `position` hold (EN-3's step case before the last position).
+    /// The property, its definedness and the definedness of the step into
+    /// and out of `position` hold (EN-3's step case before the last
+    /// position).
     fn holds_before_last(
         &self,
         position: u64,
         relations: &[StepRelation],
     ) -> Result<Term, SmtEncodingRefusal> {
         let reading = self.reading(position)?;
+        let index = usize::try_from(position).map_err(|_| fault("position"))?;
         let mut conjuncts = vec![reading.violation.not(), reading.defined];
-        if let Some(step) = relations.get(usize::try_from(position).map_err(|_| fault("position"))?)
-        {
-            conjuncts.push(step.guard_failure().not());
+        if let Some(step) = relations.get(index) {
+            conjuncts.push(self.guard_failure(position, step).not());
         }
-        if let Some(previous) = position
-            .checked_sub(1)
-            .and_then(|previous| usize::try_from(previous).ok())
-            .and_then(|previous| relations.get(previous))
-        {
-            conjuncts.push(previous.post_failure().not());
+        if let (Some(previous), Some(step)) = (position.checked_sub(1), index.checked_sub(1)) {
+            if let Some(relation) = relations.get(step) {
+                conjuncts.push(self.post_failure(previous, relation).not());
+            }
         }
         Ok(Term::all(conjuncts))
     }
 
     /// The negated property: a violation or a definedness failure at some
-    /// position, or for `InductionStep` at the last.
+    /// position, or for `InductionStep` at the last. A guard is read at every
+    /// position the property covers, the last included, since the state there
+    /// is expanded too.
     fn negated(&self, relations: &[StepRelation]) -> Result<Vec<Term>, SmtEncodingRefusal> {
         let depth = self.kind.depth();
         let last = matches!(self.kind, SmtQueryKind::InductionStep { .. });
-        let horizon = self.horizon();
-        let positions = if last { depth..=depth } else { 0..=horizon };
+        let positions = if last {
+            depth..=depth
+        } else {
+            0..=self.horizon()
+        };
         let mut disjuncts = Vec::new();
         let mut eventually = Vec::new();
         for position in positions {
@@ -508,16 +635,13 @@ impl Query<'_, '_> {
             }
             disjuncts.push(reading.defined.not());
             let index = usize::try_from(position).map_err(|_| fault("position"))?;
-            if !last && position < horizon {
-                if let Some(step) = relations.get(index) {
-                    disjuncts.push(step.guard_failure());
-                }
+            if let Some(step) = relations.get(index) {
+                disjuncts.push(self.guard_failure(position, step));
             }
-            if let Some(previous) = index
-                .checked_sub(1)
-                .and_then(|previous| relations.get(previous))
-            {
-                disjuncts.push(previous.post_failure());
+            if let (Some(previous), Some(step)) = (position.checked_sub(1), index.checked_sub(1)) {
+                if let Some(relation) = relations.get(step) {
+                    disjuncts.push(self.post_failure(previous, relation));
+                }
             }
         }
         if !eventually.is_empty() {
