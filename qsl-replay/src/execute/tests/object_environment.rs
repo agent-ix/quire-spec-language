@@ -1276,7 +1276,7 @@ fn a_written_environment_document_round_trips_through_admission() {
 fn an_admission_fault_stays_a_fault() {
     use crate::execute::object_environment::environment_refusal;
     use crate::proof_result::TerminalValue;
-    let fault = AdmissionFailure::Fault(qsl_foundation::diagnostic::InternalFault::new(
+    let fault = AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
         "test",
         "broken-invariant",
     ));

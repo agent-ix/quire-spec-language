@@ -23,6 +23,8 @@ qsl-eval = { path = "../qsl-eval" }
 qsl-replay = { path = "../qsl-replay" }
 quire-exact = { workspace = true }
 quire-semantic-value = { workspace = true }
+# ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
+quire-eval = { workspace = true }
 # The package document's bytes are its RFC 8785 encoding (ADR-013:113).
 quire-canonical = { workspace = true }
 serde_json = "1.0.151"

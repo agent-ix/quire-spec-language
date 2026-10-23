@@ -6,8 +6,8 @@ use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     construct_collection, form_collection, ChargePoint, CollectionKind, CollectionType, Deferred,
     Integer, IntegerInterval, Meter, Outcome, ScalarLimits, Value, ValueType,

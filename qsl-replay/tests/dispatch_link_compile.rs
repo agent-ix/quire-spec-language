@@ -12,11 +12,11 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
 };
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     EffectiveId, FieldValue, Integer, LimitKind, Meter, ObjectId, ObjectReference, Outcome,
     UniverseId, Value as Quire,

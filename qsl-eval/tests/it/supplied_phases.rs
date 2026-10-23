@@ -15,16 +15,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::supplied::{
-    AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedFailure, SuppliedLimitKind,
-    SuppliedLimits, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop, SuppliedStorageUnit,
-    ADMISSION_WORK_UNITS, CONVERSION_WORK_UNITS, DEFAULT_SUPPLIED_WORK_UNITS,
-};
+use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun, DEFAULT_SUPPLIED_WORK_UNITS};
+use quire_eval::CallFailure;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     form, Cancel, CancelCause, Decimal, Integer, Meter, Outcome, ScalarLimits, Value, ValueType,
 };
@@ -32,6 +29,11 @@ use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageRequest;
 use quire_semantic_value::supplied_membership::{InvalidMembershipCause, MembershipPart, PathStep};
+use quire_semantic_value::supplied_stop::{
+    AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedFailure, SuppliedLimitKind,
+    SuppliedLocus, SuppliedPhase, SuppliedStop, SuppliedStorageUnit, ADMISSION_WORK_UNITS,
+    CONVERSION_WORK_UNITS,
+};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -128,7 +130,7 @@ fn call(
     limits: SuppliedLimits,
     cancel: Cancel,
 ) -> (
-    Result<qsl_eval::value::Evaluation, CallFailure>,
+    Result<quire_eval::Evaluation, CallFailure>,
     Meter,
     SuppliedRun,
 ) {
@@ -144,7 +146,7 @@ fn call(
     (result, meter, run)
 }
 
-fn stop_of(failure: Result<qsl_eval::value::Evaluation, CallFailure>) -> SuppliedStop {
+fn stop_of(failure: Result<quire_eval::Evaluation, CallFailure>) -> SuppliedStop {
     match failure {
         Err(CallFailure::Supplied(stop)) => *stop,
         other => panic!("a supplied-phase stop, got {other:?}"),
@@ -716,7 +718,7 @@ fn a_decimal_type_link_over_b_names_the_endpoint_operand() {
 fn seq_with_permit(
     package: &CheckedPackage,
     permit: impl Fn(StorageRequest) -> bool + 'static,
-) -> (Result<qsl_eval::value::Evaluation, CallFailure>, Meter) {
+) -> (Result<quire_eval::Evaluation, CallFailure>, Meter) {
     let mut meter = Meter::new(UNLIMITED);
     let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new())
         .expect("the run")

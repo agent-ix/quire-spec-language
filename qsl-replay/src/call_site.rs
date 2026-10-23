@@ -20,7 +20,6 @@
 //! [`crate::spine::Call`]; it names a call site, it does not make one.
 
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, SourceIdentity};
@@ -29,6 +28,7 @@ use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClau
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
 use quire_exact::{Cancel, Identifier, NodeKey, Origin, Role};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::execute::callable_parameter_keys;
 use crate::identity::QualifiedName;
