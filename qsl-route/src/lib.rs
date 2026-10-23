@@ -57,10 +57,13 @@ pub mod routing;
 
 use qsl_foundation::bound::DomainKind;
 pub use qsl_foundation::digest::ManifestDigest;
-use qsl_foundation::{BackendId, CatalogCode, MemoryModelName};
+use qsl_foundation::{BackendId, MemoryModelName};
 #[cfg(test)]
-use qsl_foundation::{Category, Code, EmptyBackendIdentity};
+use qsl_foundation::{Code, EmptyBackendIdentity};
 use qsl_semantics::check::Capability;
+use quire_semantic_value::catalog::CatalogCode;
+#[cfg(test)]
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::FairnessKind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 

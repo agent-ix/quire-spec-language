@@ -29,11 +29,10 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::{
-    BudgetDenial, CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
-};
+use qsl_foundation::diagnostic::{BudgetDenial, Code, LimitExceeded, ALLOCATION_FAILED};
 use qsl_foundation::Setting;
 use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
+use quire_semantic_value::catalog::{CatalogCoded, InternalFault};
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};

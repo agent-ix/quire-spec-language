@@ -14,7 +14,7 @@ relationships:
 
 Verify HP-3 checking on ADR-023 §8.2, the `n = 0` case, the `max_witness_set` budget, the ranking of findings, the canonical lasso and the shape of an `Undefined` counterexample.
 
-Scope: FR-177-AC-1 to FR-177-AC-12, FR-183-AC-6.
+Scope: FR-177-AC-1 to FR-177-AC-12, FR-183-AC-6, FR-183-AC-12.
 
 ## Test Procedure
 
@@ -32,8 +32,9 @@ Fixtures: §8.2's `Opaque` over the leaky and secure vaults; FR-177-AC-3's two-e
 10. `Opaque` over the secure vault with FR-177-AC-10's undefined universal `match` conjunct, with one and with two universal variables.
 11. FR-177-AC-11's two-instance requests.
 12. FR-177-AC-12's requests with an undefined `μ_U` at a state whose `X` is empty.
+13. Replay FR-183-AC-12's two hand-built `Undefined` envelopes, the `μ_E` locus with full paths and the `μ_U` locus with `b`'s path one step short.
 
-Tag the tests `#[trace("TC-602", "FR-177-AC-n")]`.
+Tag the tests `#[trace("TC-602", "FR-177-AC-n")]`, and step 13 `#[trace("TC-602", "FR-183-AC-12")]`.
 
 ## Expected Results
 
@@ -49,3 +50,4 @@ Tag the tests `#[trace("TC-602", "FR-177-AC-n")]`.
 - Step 10: `Violated` with an `Undefined` counterexample at position 1, cause `division-by-zero`, `a`'s trace one step long and `b`'s with no step; `variables` and `state_keys` of two entries, then three in the order `a`, `c`, `b`.
 - Step 11: the first instance's counterexample; `Violated` at `max_states` 7 and `Stopped` at 6; the second instance's `Undefined` counterexample at position 0.
 - Step 12: `HyperRefusal::NoPartnerPath`, no outcome, at the earlier position.
+- Step 13: `inconclusive`, `Verdicts` for the `μ_E` locus; `reproduced-with-evaluated-witness` for the `μ_U` locus.
