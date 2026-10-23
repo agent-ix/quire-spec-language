@@ -34,6 +34,14 @@ pub struct CallRequirement {
 }
 
 impl CallRequirement {
+    /// The item of the record at `occurrence`, at `request_index`.
+    pub(crate) fn new(occurrence: OccurrenceKey, request_index: RequestIndex) -> Self {
+        Self {
+            occurrence,
+            request_index,
+        }
+    }
+
     /// The record's occurrence key, which is the item's `occurrence()`.
     pub fn occurrence(&self) -> &OccurrenceKey {
         &self.occurrence
@@ -58,6 +66,16 @@ pub struct CallRequirements {
 }
 
 impl CallRequirements {
+    /// The requirement items `members` of `call`, from the compile whose id is `package_id`.
+    pub(crate) fn new(package_id: PackageId, call: &Call, members: Vec<CallRequirement>) -> Self {
+        Self {
+            package_id,
+            function: call.function.clone(),
+            arguments: call.arguments.clone(),
+            members,
+        }
+    }
+
     /// The `package_id` of the compile that produced the members.
     pub fn package_id(&self) -> PackageId {
         self.package_id
@@ -181,7 +199,8 @@ pub fn run_with_requirements(
         call,
         objects,
         cancel,
-        |graph| {
+        |checked, _, _| {
+            let graph = checked.package().graph();
             associate(graph.requirements(), graph, &call.function)
                 .map_err(|fault| Box::new(RunRefusal::Fault(fault)))
         },
@@ -189,12 +208,7 @@ pub fn run_with_requirements(
     Ok(RunWithRequirements {
         package_id,
         outcome,
-        requirements: CallRequirements {
-            package_id,
-            function: call.function.clone(),
-            arguments: call.arguments.clone(),
-            members,
-        },
+        requirements: CallRequirements::new(package_id, call, members),
     })
 }
 
@@ -217,10 +231,10 @@ pub(crate) fn associate(
             return Err(InternalFault::new("spine-run", "requirement-owner-known"));
         }
         if owner == Some(function) {
-            members.push(CallRequirement {
-                occurrence: occurrence.clone(),
-                request_index: RequestIndex::new(position),
-            });
+            members.push(CallRequirement::new(
+                occurrence.clone(),
+                RequestIndex::new(position),
+            ));
         }
     }
     Ok(members)

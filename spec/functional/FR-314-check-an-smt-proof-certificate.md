@@ -112,6 +112,7 @@ pub enum SmtProofCheck {
     Unverifiable { part: QueryPart, step: u64 },  // first command with an unchecked rule
     Unencodable { part: QueryPart },              // refinement only: FR-315 refuses the row's query
     Stopped(IncompleteCause),                     // LimitReached{limit, value, setting} or Cancelled{source}
+    Fault(InternalFault),                         // FR-315 returned `SmtEncodingRefusal::Fault` rebuilding a query
 }
 
 pub enum ModelCheckLimit {
@@ -242,6 +243,10 @@ number of step rows of the recompiled refinement's `steps` array.
   order, `Unencodable { part: Step { row: Some(r) } }` naming that row; a
   certificate with a refused row is never `Verified`. `Unencodable` is distinct
   from `Unverifiable`, so no command index stands for a whole part.
+- When FR-315 returns `SmtEncodingRefusal::Fault` while the checker rebuilds
+  any query, the checker SHALL return `SmtProofCheck::Fault` carrying that
+  `InternalFault` and check nothing further. FR-127 settles it `failed`
+  (FR-315 "Internal faults").
 - The checker SHALL return `Verified` only when every row is encodable and the
   base and every step part refute their queries using checked rules alone.
 
