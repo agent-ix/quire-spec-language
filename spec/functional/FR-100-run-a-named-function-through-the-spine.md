@@ -632,10 +632,9 @@ only. Accounting setting member semantics are owned by QSL-656; this branch
 does not duplicate that amendment or TC-951. No implementation branch is
 created by this spec.
 
-Remaining work (implementation, with the native-run deletion change, FR-312):
-the code still requires a `sha256:` source digest on each source selection
-and checks the file against it; both go, and the command reads each named
-file's bytes as they are.
+A source selection carries no `sha256:` source digest and the command checks
+no file against one (FR-312); the command reads each named file's bytes as
+they are.
 
 Implemented. `qsl_replay::spine::run` and the CLI `run` command render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,
@@ -655,6 +654,5 @@ Every exit status is FR-285's `Category::exit_code` of the outcome's
 category, and an undefined outcome exits 10 (FR-100-AC-10, FR-100-AC-11,
 TC-786).
 
-Remaining work (implementation, Linear QSL-381): the program selection and the `source`
-member still carry the revision namespace and revision; they carry the two
-FR-001 labels (QSpec STD-150).
+The program selection and the `source` member carry the two FR-001 labels
+(QSpec STD-150), not a revision namespace and revision.
