@@ -19,7 +19,7 @@ use qsl_forms::TypeFormHead;
 use quire_contract_model::{
     BoundedDomainForm, CheckedNodeKind, ClaimForm, CompositeTypeForm, CorrespondenceForm,
     ExpressionForm, FunctionForm, ModelForm, ProtocolForm, RelationForm, ScalarTypeForm, StateForm,
-    TemporalForm,
+    TemporalForm, TimedModelForm,
 };
 
 use super::super::extent_agreement::{package_declaring, records};
@@ -476,6 +476,8 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     const NO_RECORD_FORM: &str =
         "lowering's record_form maps only object types, systems interfaces, record value types and variant types to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
+    const NO_TIMED_EMIT: &str =
+        "FR-393 rejects timed declarations before a timed CheckedGraph node can reach the emitter";
     &[
         (
             K::CompositeType(CompositeTypeForm::Alias),
@@ -514,6 +516,14 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
         (K::Temporal(TemporalForm::Deadline), NO_TAG),
+        (K::TimedModel(TimedModelForm::Model), NO_TIMED_EMIT),
+        (K::TimedModel(TimedModelForm::Source), NO_TIMED_EMIT),
+        (K::TimedModel(TimedModelForm::Place), NO_TIMED_EMIT),
+        (K::TimedModel(TimedModelForm::Reset), NO_TIMED_EMIT),
+        (K::TimedModel(TimedModelForm::Guard), NO_TIMED_EMIT),
+        (K::TimedModel(TimedModelForm::Invariant), NO_TIMED_EMIT),
+        (K::TimedModel(TimedModelForm::Urgency), NO_TIMED_EMIT),
+        (K::TimedModel(TimedModelForm::Constraint), NO_TIMED_EMIT),
         (K::Protocol(ProtocolForm::Role), NO_TAG),
         (K::Protocol(ProtocolForm::Channel), NO_TAG),
         (K::Protocol(ProtocolForm::Queue), NO_TAG),

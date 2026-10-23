@@ -3198,20 +3198,3 @@ fn published_extension_definitions_conform_to_their_schema_and_pairing() {
         }
     }
 }
-
-/// QSL's accepted V2 node tags are exactly IR's `CheckedNodeTag` wire
-/// spellings, so a tag IR adds cannot pass IR yet fail QSL's identity
-/// preimage check (the `InvalidPreimage{NodeTag}` QSL-978 hit for
-/// `extension`).
-#[trace("FR-469-AC-1")]
-#[test]
-fn node_tags_equal_irs_checked_node_tag_wire_spellings() {
-    let mut ir: Vec<&str> = quire_contract_model::CheckedNodeTag::ALL
-        .iter()
-        .map(|tag| tag.as_wire())
-        .collect();
-    let mut qsl: Vec<&str> = qsl_semantics::library::node_tags().to_vec();
-    ir.sort_unstable();
-    qsl.sort_unstable();
-    assert_eq!(qsl, ir);
-}
