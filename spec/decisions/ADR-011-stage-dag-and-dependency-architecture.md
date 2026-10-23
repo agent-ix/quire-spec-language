@@ -1454,8 +1454,11 @@ The owner ruled this on QSL-8.
   through native compile and writes native-linked-package/1 bytes. Each
   source takes exactly one path. A declared edition neither compiler reads
   refuses with `unknown_edition` (FR-027).
-- Native `compile`, `lower` and native-compile/1 are deleted with M-6c
-  (§7.3; ADR-011-OQ-2, OQ-3), not in M-6a.
+- Native `compile` (the `0-draft` arm of native-compile/1) and `lower` are
+  deleted with M-6c (§7.3; ADR-011-OQ-2, OQ-3), not in M-6a.
+  native-compile/1 stays as the request of a `1-draft` compile. From M-6c a
+  `0-draft` source is an edition neither compiler reads, and CLI `compile`
+  and `run` refuse it with `unknown_edition` (FR-027, FR-100).
 
 ## Owner rulings (2026-09-19)
 

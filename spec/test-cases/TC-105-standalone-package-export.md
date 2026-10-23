@@ -1,6 +1,6 @@
 ---
 id: TC-105
-title: "Export and reread exact standalone compiler output"
+title: "CLI compile intake, arity and output failures for a 1-draft request"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-027
@@ -8,21 +8,30 @@ relationships:
 ---
 ## Description
 
-Integration, P1: use the real compile binary to emit a selected native package
-without runtime inputs, then reread its exact bytes through the existing API.
+Integration, P1: run the real compile binary on `1-draft` native-compile/1
+requests and check its intake refusals, intake limits, arity errors and
+output failures.
+
+Scope: FR-027-AC-3.
 
 ## Test Procedure
 
-Run compile on source-only files and compare with the existing static pipeline.
-Reread the output with exact bindings. Mutate format, fields, source selection
-and syntax; run the existing standalone and syntax command tests.
-Copy only the request-selected sources into a fresh compile directory. Check
-command-specific arity errors before file I/O, named count exhaustion for model,
-snapshot and invocation groups, and unchanged catalog spellings. On Linux,
-redirect the actual binary's artifact output to /dev/full and require exit 30,
-[FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure.
+1. Compile a `1-draft` request whose program source digest is stale, then
+   one whose program source has malformed syntax.
+2. Compile a `1-draft` request whose library sources exceed
+   `dependent_bytes`; compile it again with the limit raised to its size.
+3. Run compile with a wrong argument count, with no request file present.
+4. On Linux, compile a valid `1-draft` request with the binary's stdout
+   redirected to /dev/full.
+
+Tag the tests `#[trace("TC-105", "FR-027-AC-3")]`.
 
 ## Expected Results
 
-Successful bytes/digest match with no wrapper or newline. Refusals preserve their
-stage/code and produce no package bytes; other commands retain their behavior.
+- Step 1: each refuses with its original stage and code, exit 20, empty
+  stdout.
+- Step 2: the first refuses naming `dependent_bytes`, its configured value
+  and its CLI option; the second compiles, exit 0.
+- Step 3: exit 20 before any file is read.
+- Step 4: exit 30, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code
+  for tool failure.
