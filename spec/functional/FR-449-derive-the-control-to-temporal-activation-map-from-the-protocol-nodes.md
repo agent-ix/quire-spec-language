@@ -21,7 +21,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-370
     type: references
-  - target: ix://agent-ix/quire-specification/FR-478
+  - target: ix://agent-ix/quire-specification/FR-479
     type: references
 ---
 # FR-449: Derive the control-to-temporal activation map from the protocol nodes
@@ -57,7 +57,7 @@ protocol's activation, and FR-337 the temporal clause node. This
 requirement specifies what QSL derives and returns. The map selects no
 truth: each required temporal clause keeps its own body, activation and
 evaluation (QSpec FR-370; FR-327 to FR-329). An obligation is bound to a row
-only by QSpec FR-478's protocol-obligation activation binding, which the
+only by QSpec FR-479's protocol-obligation activation binding, which the
 protocol consumer (QProtocol) constructs from the row and its admitted
 trigger observation; QSL derives the rows and constructs no binding.
 

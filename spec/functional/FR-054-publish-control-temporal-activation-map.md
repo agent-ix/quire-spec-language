@@ -7,7 +7,7 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-052, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-449, type: references }
   - { target: ix://agent-ix/quire-specification/FR-464, type: references }
-  - { target: ix://agent-ix/quire-specification/FR-478, type: references }
+  - { target: ix://agent-ix/quire-specification/FR-479, type: references }
 ---
 # FR-054: Publish control-to-temporal activation mappings
 
@@ -17,7 +17,7 @@ relationships:
 The control-to-temporal activation map is derived from the checked package's
 `protocol_clause` node by [FR-449](FR-449-derive-the-control-to-temporal-activation-map-from-the-protocol-nodes.md)
 (QSpec FR-464 "Activation relation"), and an obligation is bound to its map
-row only by QSpec FR-478's activation binding. The text below records the
+row only by QSpec FR-479's activation binding. The text below records the
 retired `/3` contract; the table under "Coverage by FR-449" states where each
 of its rules holds on the spine. This file and TC-143 are deleted in the change
 that deletes the `/3` producer (`protocol_artifact::native::temporal_v3`) and
@@ -80,15 +80,15 @@ one control that establishes an obligation of that clause.
 | AC-2: a missing mapping refuses | A `requires temporal` name with no temporal clause refuses at S3 `missing_declaration`/`missing-name` (FR-449-AC-6); a requirement or trigger absent from the clause's `dependencies` refuses at the I2 reader `missing_declaration`/`missing-name` with no map (FR-449-AC-5) |
 | AC-2: a duplicate mapping refuses | A clause required twice is one `requirements` entry and one row (FR-218, FR-449-AC-2); a set repeating an entry refuses `invalid_semantic_graph` (QSpec FR-464-AC-3) |
 | AC-2: a foreign or out-of-range handle refuses | A requirement binds only a local temporal clause and refuses an imported name `missing_declaration`/`missing-name` (FR-218); a key no node of the graph carries refuses `missing_declaration`/`missing-name` (FR-449-AC-5, FR-383-AC-17) |
-| AC-2: a non-event-triggered mapping refuses | Extended: an `origin` protocol's rows carry `Origin` (FR-449-AC-2), and QSpec FR-478 refuses a `trigger_event` origin on an `Origin` row and a `whole_execution` origin on an `Each` row with `invalid_runtime_input`/`conflicting-identity` (FR-478-AC-5) |
+| AC-2: a non-event-triggered mapping refuses | Extended: an `origin` protocol's rows carry `Origin` (FR-449-AC-2), and QSpec FR-479 refuses a `trigger_event` origin on an `Origin` row and a `whole_execution` origin on an `Each` row with `invalid_runtime_input`/`conflicting-identity` (FR-479-AC-5) |
 | AC-2: a reordered mapping refuses | Rows are in ascending node-id digest order; a `requirements` set out of that order refuses `invalid_semantic_graph` (QSpec FR-464-AC-3) |
-| AC-2: a substituted mapping refuses | The clause node is the only carrier; retargeting a requirement changes the clause key and the `package_id` (QSpec FR-464-AC-3), and a binding whose row the package's relation does not hold refuses `missing_declaration`/`missing-name` (QSpec FR-478-AC-4) |
+| AC-2: a substituted mapping refuses | The clause node is the only carrier; retargeting a requirement changes the clause key and the `package_id` (QSpec FR-464-AC-3), and a binding whose row the package's relation does not hold refuses `missing_declaration`/`missing-name` (QSpec FR-479-AC-4) |
 | AC-3: `/1` and `/2` stay byte-identical and the versions refuse each other | No versioned map wire exists: the checked package v2 nodes are the only carrier (FR-383), so there is no version to upgrade, translate or infer |
-| AC-4: a profile or clock match, display name, source position, timestamp or observation cannot substitute for a row | A temporal clause sharing the protocol's clock that the protocol does not require gives no row (FR-449-AC-3); no name, position, profile, clock, timestamp or observation adds, removes or substitutes a row (FR-449 Behavior; QSpec FR-464 "Activation relation", FR-478-AC-4) |
+| AC-4: a profile or clock match, display name, source position, timestamp or observation cannot substitute for a row | A temporal clause sharing the protocol's clock that the protocol does not require gives no row (FR-449-AC-3); no name, position, profile, clock, timestamp or observation adds, removes or substitutes a row (FR-449 Behavior; QSpec FR-464 "Activation relation", FR-479-AC-4) |
 
 ## Dependencies
 
 - [FR-050](FR-050-publish-authenticated-temporal-artifacts.md) owns the frozen
   `/2` temporal-selection contract.
-- QSpec FR-052 owns the authored relation; QSpec FR-478 constructs the
+- QSpec FR-052 owns the authored relation; QSpec FR-479 constructs the
   obligation activation binding from an FR-449 map row.
