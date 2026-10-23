@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-447
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-450
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-290
     type: references
   - target: ix://agent-ix/quire-specification/FR-193
@@ -36,7 +38,8 @@ negotiation to a registered external solver provider, and map the provider's
 result to a verdict (ADR-026 HY-1 to HY-3). EN-6 checks clocks, the variables whose
 rate is 1 everywhere; every other rate and every flow goes to the provider.
 A solver result settles `proved` only where its method is sound for the
-claim, otherwise `inconclusive`, and never `refuted`.
+claim, otherwise `inconclusive`, and `refuted` only when QSL replays its
+trace exactly (FR-450).
 
 ## Use case
 
@@ -44,9 +47,9 @@ A robotics engineer models a vehicle's braking distance with a
 differential equation and asks whether it never reaches an obstacle within
 10 s. A δ-complete solver answers `unsat`, and the claim is proved within
 that horizon and jump bound. A flowpipe that touches the unsafe set leaves
-the claim inconclusive, because no solver witness replays exactly; the path
-the solver reports to the unsafe set stays on the record for the engineer to
-read, marked unverified.
+the claim inconclusive, because its trace is an enclosure that QSL replays
+only statically (FR-450); the path the solver reports to the unsafe set
+stays on the record for the engineer to read, with its replay outcome.
 
 ## Inputs
 
@@ -58,8 +61,18 @@ read, marked unverified.
   `Unknown(Option<HybridTrace>)` or `Stopped(limit)`, and
 
   ```rust
-  pub struct HybridTrace { pub start: TraceState, pub jumps: Vec<TraceJump> }
-  pub struct TraceJump { pub transition: u64, pub state: TraceState }
+  pub struct HybridTrace {
+      pub start: TraceState,
+      pub jumps: Vec<TraceJump>,
+      pub delta: Option<ExactRational>,        // the solver's tolerance; None reads 0
+      pub loop_to: Option<u64>,                // the state a lasso's last state returns to
+  }
+  pub struct TraceJump {
+      pub transition: u64,
+      pub before: Option<TraceBefore>,         // the state just before the jump
+      pub state: TraceState,
+  }
+  pub struct TraceBefore { pub time: ExactInterval, pub enclosure: Vec<ExactInterval> }
   pub struct TraceState {
       pub mode: ModeIndex,
       pub time: ExactInterval,                 // seconds
@@ -98,26 +111,29 @@ The FR-331 terminal record of the claim.
 | Provider result | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
 | `Unsat` or `EnclosureDisjoint` from a method sound for that outcome | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}, certification: Uncertified}` | success |
-| `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result from a method not sound for its outcome | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive{trace})`, `trace` the outcome's `Option<HybridTrace>`, `None` for an outcome that carries none | inconclusive |
+| `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result from a method not sound for its outcome | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive{trace, replay})`, `trace` the outcome's `Option<HybridTrace>`, `None` for an outcome that carries none, and `replay` its FR-450 static replay outcome, `None` with no trace | inconclusive |
 | `Stopped(max_solver_steps)`, or any deterministic budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
 | `Stopped(max_solver_time)`, or a provider overrun of its `deadline_ms` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)` (FR-293) | incomplete |
 | A run the caller's frontend ends at its own deadline (FR-276) | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source: deadline})`, never `TimedOut` | incomplete |
 
 - A horizon SHALL be a non-negative exact rational number of seconds, and
   the record SHALL write it in the `ExactRational` wire form.
-- No provider result SHALL settle `refuted`.
+- A provider result SHALL settle `refuted` only through FR-450's exact
+  replay of its trace, and every other provider result SHALL take the map
+  above.
 - A `DeltaSat`, `EnclosureMeetsUnsafe` or `Unknown` outcome SHALL carry the
   path the solver reports to the possible violation as `Some(trace)`, and
   `None` when the solver reports no path. QSL SHALL keep that trace on the
-  item's `inconclusive` record as `SolverInconclusive{trace}`, as QSpec
-  FR-193-AC-2 retains it.
+  item's `inconclusive` record as `SolverInconclusive{trace, replay}`, as
+  QSpec FR-193-AC-2 retains it.
 - A kept trace is unverified evidence in O-16 category inconclusive
-  (ADR-013), so QSL SHALL neither replay it, make it a `Counterexample` or
-  a `counterexamples` entry, nor settle any value from it.
+  (ADR-013) until replay: QSL SHALL replay it by FR-450, keep its static
+  replay outcome as `replay`, and make it a `Counterexample` and a
+  `counterexamples` entry only when FR-450's exact replay reproduces it.
 - QSL SHALL check a trace against the claim's `CheckedHybridModel` before
   keeping it, and SHALL refuse the result `invalid_result`/`invalid-value`
   at the member as QSpec FR-193 "Hybrid trace" states: a mode or transition
-  the model does not have, a `start` outside the initial mode, a jump to a
+  the model does not have, a `start` outside every initial mode, a jump to a
   mode other than its transition's target, an enclosure that does not have
   exactly one interval per continuous variable, and an interval whose lower
   bound exceeds its upper bound.
@@ -173,7 +189,7 @@ The FR-331 terminal record of the claim.
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
 | FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `max_solver_steps` stop settles `incomplete`, `LimitReached{limit: max_solver_steps, ...}`; a `max_solver_time` stop and a provider `deadline_ms` overrun each settle `incomplete`, `TimedOut`; a frontend deadline settles `incomplete`, `Cancelled{source: deadline}`. No fixture result settles `refuted`. | Test (TC-705) |
 | FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled{source: deadline}` raised on a run whose frontend FR-276 deadline fires; a wire `max_solver_time` of 1.5, a zero budget, an unknown `hybrid.limits` member, an empty `hybrid` and a `hybrid` with an empty `limits` are each refused by the hybrid provider before consumption; a request that sets no budget omits both members; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes, a `TimedOut` result of the shorter one being stored by neither. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: max_solver_steps, value: 1000, setting: hybrid.max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
-| FR-250-AC-4 | A fixture `EnclosureMeetsUnsafe` over FR-447's `Braking` carrying a trace that starts in `Moving` and takes transition 0 to `Stopped` settles `inconclusive`, `SolverInconclusive{trace: Some(..)}`, the trace equal to the fixture's, with no `counterexamples` entry and no replay run; a `DeltaSat` carrying none settles `SolverInconclusive{trace: None}`; that trace with transition 1, with an enclosure missing `t`, and with a time interval whose lower bound is 3 and upper bound 2, is each refused `invalid_result`/`invalid-value` at the member. Through the plugin reader (FR-290), a `solver-inconclusive` entry carrying that trace in QSpec FR-193's wire form on the `Braking` claim reads `SolverInconclusive{trace: Some(..)}` with the same trace, and the same entry on an FR-468 refinement item is `Malformed` at `/cause/trace`. | Test (TC-705) |
+| FR-250-AC-4 | A fixture `EnclosureMeetsUnsafe` over FR-447's `Braking` carrying a trace that starts in `Moving` and takes transition 0 to `Stopped` settles `inconclusive`, `SolverInconclusive{trace: Some(..), replay: Some(..)}`, the trace equal to the fixture's and `replay` its FR-450 static replay outcome, with no `counterexamples` entry; a `DeltaSat` carrying none settles `SolverInconclusive{trace: None}`; that trace with transition 1, with an enclosure missing `t`, and with a time interval whose lower bound is 3 and upper bound 2, is each refused `invalid_result`/`invalid-value` at the member. Through the plugin reader (FR-290), a `solver-inconclusive` entry carrying that trace in QSpec FR-193's wire form on the `Braking` claim reads `SolverInconclusive{trace: Some(..)}` with the same trace, and the same entry on an FR-468 refinement item is `Malformed` at `/cause/trace`. | Test (TC-705) |
 
 ## Dependencies
 
@@ -187,6 +203,8 @@ The FR-331 terminal record of the claim.
   `solver-inconclusive{trace}` cause).
 - [FR-447](FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md)
   (the checked hybrid model, its classification and the provider request).
+- [FR-450](FR-450-replay-a-hybrid-trace-against-the-checked-hybrid-model.md)
+  (trace replay and the hybrid refutation).
 
 ## References
 

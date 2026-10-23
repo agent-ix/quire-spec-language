@@ -1,12 +1,12 @@
 ---
 id: TC-705
-title: "Hybrid solver results map to proved or inconclusive, never refuted"
+title: "Hybrid solver results map to verdicts"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-250
     type: verifies
 ---
-# TC-705: Hybrid solver results map to proved or inconclusive, never refuted
+# TC-705: Hybrid solver results map to verdicts
 
 ## Description
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-705", "FR-250-AC-n")]`.
 - Step 1: `v` hybrid, `t` a clock; routed to the fixture; `unsupported`, `unsupported-requested-capability` with none.
 - Step 2: the rows of FR-250's table, with no `refuted`.
 - Step 3: solver budgets 2, 2, 1 and 60 s, the run using the rounded value; the time stop and the `deadline_ms` overrun are `incomplete` with cause `TimedOut`, the frontend deadline stop `Cancelled{source: deadline}`, the wire 1.5, the zero budget, the unknown member, the empty `hybrid` and the empty `limits` are each refused by the provider before consumption, the unset budgets are omitted from the request, and the stored record holds no wall-time member; the key bytes are equal; the step stop is `LimitReached{max_solver_steps, 1000, hybrid.max_solver_steps}`, the default 1,000,000.
-- Step 4: `inconclusive`, `SolverInconclusive{trace: Some(..)}` equal to the fixture's trace, with no `counterexamples` entry and no replay; `SolverInconclusive{trace: None}`; each malformed trace refused `invalid_result`/`invalid-value` at the member. The plugin entry reads `SolverInconclusive{trace: Some(..)}` on the `Braking` claim and is `Malformed` at `/cause/trace` on the refinement item.
+- Step 4: `inconclusive`, `SolverInconclusive{trace: Some(..)}` equal to the fixture's trace, with its FR-450 static replay outcome and no `counterexamples` entry; `SolverInconclusive{trace: None}`; each malformed trace refused `invalid_result`/`invalid-value` at the member. The plugin entry reads `SolverInconclusive{trace: Some(..)}` on the `Braking` claim and is `Malformed` at `/cause/trace` on the refinement item.
