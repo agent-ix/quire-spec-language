@@ -46,8 +46,8 @@ the same package, entry, arguments, environment and accounting limits
 6. **Failures.** An internal error of the backend is `Fault` (exit 30) and
    never a verdict. An entry the backend cannot translate settles
    unsupported for that entry, listed by `unsupported` with FR-294's
-   `UnsupportedEntry` and cause `Untranslatable { location }` at the first
-   construct it cannot translate.
+   `UnsupportedEntry` and cause `Untranslatable { construct, location }`
+   naming the first construct it cannot translate.
 7. **No effects.** Generated code performs no I/O and calls only the kernel
    and the semantic-value runtime.
 
@@ -139,7 +139,7 @@ from `prepare`.
 | FR-295-AC-3 | FR-262-AC-1's `count` called with `100000`, on a thread with a 512 KiB stack, returns the interpreter's outcome on each backend, both with `work_units` sized for it and with `work_units` one below the run's measured spend; `prepare.code_bytes` set to 1 makes `prepare` return `PrepareFailure::Limit(LimitExceeded)` naming `prepare.code_bytes`, and `prepare.compile_work_units` set to 0 makes it return the same failure naming `prepare.compile_work_units`. | Test (TC-780) |
 | FR-295-AC-4 | A backend made to hit an injected internal error returns `Fault`, exit 30, and no value. The JSON outcome documents (FR-286) of one call on the interpreter and on each other backend are byte-equal. | Test (TC-780) |
 | FR-295-AC-5 | The gate's default seed is `0x51534C2D4A495431`. Two generator runs at the default seed and count 10,000 yield byte-equal source units and argument tuples, and a run at another seed yields a different first unit. Every unit the run yields is admitted by `check`, holds 1 to 8 functions of 0 to 4 parameters with bodies of at most 64 expression nodes, and calls only earlier functions. Over the 10,000 units, each of the eight listed forms and each of the five scalar types occurs in at least 100 units, every bounded `Int` parameter's tuples include both range ends, and the interpreter's outcomes include at least one `Completed` and one `Undefined`. A gate run with FR-295-AC-1's rounding backend names the seed, the unit's index, its source bytes, the entry, the arguments and both outcomes, and regenerating at that seed and index yields byte-equal source. | Test (TC-779) |
-| FR-295-AC-6 | A test backend that cannot translate one expression form, run through the gate at the default seed, lists each generated entry using that form as unsupported with `UnsupportedEntry { backend, cause: Untranslatable { location } }`, `location` the form's first use in the entry; the gate report lists each such entry with its `UnsupportedEntry`, compares every other entry with the interpreter, and passes; the same backend with FR-295-AC-1's rounding fault added fails the gate. | Test (TC-779) |
+| FR-295-AC-6 | A test backend that cannot translate one expression form, run through the gate at the default seed, lists each generated entry using that form as unsupported with `UnsupportedEntry { backend, cause: Untranslatable { construct: ExpressionForm(<the form's name>), location } }`, `location` the form's first use in the entry; the gate report lists each such entry with its `UnsupportedEntry`, compares every other entry with the interpreter, and passes; the same backend with FR-295-AC-1's rounding fault added fails the gate. | Test (TC-779) |
 
 ## Dependencies
 
