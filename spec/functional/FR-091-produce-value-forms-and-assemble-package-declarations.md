@@ -782,7 +782,10 @@ The resolution `match` has one explicit arm per type-form head:
 
 An enum member written as an expression, `E::m`, is resolved by `check`
 against `enums`, as FR-141 and the check stage already do: a case that `E`
-does not declare refuses there with `missing_declaration`/`missing-name`.
+does not declare refuses there with `missing_declaration`/`missing-name`. A
+bare member `m` is a `Name` the assembler does not resolve; `check` resolves
+it to `E::m` where its position supplies the expected enum type `E`
+(FR-317 "Bare enum members").
 
 The assembler refuses in these cases:
 
