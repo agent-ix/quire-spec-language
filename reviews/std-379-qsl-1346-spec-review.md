@@ -37,3 +37,12 @@ Examined, clean:
 Not mergeable: FND-001 (high) block the PR.
 
 Conflicts with main: the PR inherits #1311's conflict in FR-338 (`git merge-tree` of #1311 with main conflicts; the own delta is clean). #1311 also conflicts with open #1327, #1354 and #1377, so #1346 does too through it. Not mergeable until #1311 is rebased and merged and #1346 is retargeted to main.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix e1886dfe. The Malformed bullet now applies the existing locus rule to a wrong-form entry. AC-15: the added entries at index 0 reject at the `ModelState` of closure state 0, and a `counts` entry `(9, 1, 0)` over the 9-state closure rejects at `Entry { index: 9 }`. Hand-checked: closure indices are 0 to 8, so 9 names none. |
+| FND-002 | fixed | TC-644 step 7 now also checks TC-643's engine certificates, whose other list is empty, and expects them accepted. |
+
+Round 1 verdict at e1886dfe: Mergeable after #1311 (head 0b758559) lands: the own delta (git diff 0b758559...e1886dfe) is clean and both findings are fixed. #1311 and #1346 merge-tree cleanly with current origin/main. Retarget #1346 to main after #1311 merges. Gate: exit 0, 19 warnings.
