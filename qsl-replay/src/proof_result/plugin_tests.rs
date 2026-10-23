@@ -765,7 +765,7 @@ fn tc_774_function_contract_and_application_items_replay() {
     };
     assert_eq!(
         arm.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
 
     // `p`'s `x > 3` application item is the application claim: at `x = 0`

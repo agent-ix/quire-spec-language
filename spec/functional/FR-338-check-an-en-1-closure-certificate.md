@@ -45,6 +45,17 @@ claims and finds every successor inside it and no bad state.
   the model subject re-admitted by FR-120 from its byte provision and
   universes (FR-125), and the item: a TP-1, TP-2 or TP-3 clause, or the
   deadlock-freedom item (FR-124).
+- Over a protocol subject with a weak `parallel` (FR-215, FR-221, FR-222),
+  the request's memory bounds: `max_store_buffer: Option<u64>` and
+  `max_messages: Option<u64>`, the values the run used, each `None`
+  meaning 4, the default FR-225 publishes.
+- Over a protocol subject with an `on each` protocol (FR-209), the
+  request's instance bound: `max_live_instances: Option<u64>`, the value
+  the run used, `None` meaning 3, the default ADR-027 AE-4 publishes.
+- For an SMT proof checked by FR-314, the request's encoding limits:
+  `smt_encoding: SmtEncodingLimits` (FR-315), the values of the run's
+  `ModelCheckRequest.smt_encoding` (FR-126), under which CG's SMT backend
+  encoded the item's queries. EN-1's own checks read no member of it.
 - A `ClosureCertificate`.
 
 ```rust
@@ -142,13 +153,12 @@ alternative `["deadlock-freedom"]`, selecting the fixed formula below.
 `binding` is the ordered vector of `[parameter_node,bound_value]` for the
 item's actual concrete over/argument binding, with NodeId as above.
 For a parameter bound to an instance (an `over` parameter, FR-125
-"Instancing"), `bound_value` is the closed array `["instance",population,key]`:
-`population` is the JSON string whose value is the instance's population's
-declaration identity text (FR-120 "Identities") and `key` the JSON string
-whose value is the instance's key in that population's universe. It
-carries no object type and no `UniverseId`, so two populations that share
-a key give two contexts, and the key's object changing its most-specific
-type across states leaves the context unchanged. For every other
+"Instancing"), `bound_value` is the closed array `["instance",key]`: `key`
+is the JSON string whose value is the instance's key. An instance is
+identified by its key alone (QSpec FR-361), so the context carries no
+population, no object type and no `UniverseId`: a key that several
+overlapping populations list gives one context, and two subjects that
+admit the key with different types give the same context. For every other
 parameter, `bound_value` is QSpec FR-181's complete typed canonical
 value. Parameter order is the
 checked item's binding order; a genuinely parameter-free item uses `[]`.
@@ -727,6 +737,49 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
   reached state is expanded and the required non-progress check completes
   with no admitted violating lasso.
 
+### Memory bounds
+
+- Over a protocol subject with a weak `parallel`, the checker SHALL build
+  each `Tso` component under the request's `max_store_buffer` and each `Ra`
+  component under its `max_messages`, as the run built them (FR-225), and
+  expand each reached state through the protocol system under them.
+- The checker SHALL NOT refuse a request for its memory bounds and SHALL
+  NOT compare them with the run's: they are method parameters outside the
+  obligation identity (FR-225), and the closure check decides.
+- If a reached state is bound-limited under the request's bounds, an
+  enabled store that the bound cuts (FR-225), then the checker SHALL reject
+  with `SuccessorMissing` at that product state: the cut store's successor
+  is a successor of the subject that the certificate does not show, and
+  FR-225 settles V-1 only when no state was bound-limited.
+- The checker SHALL check this rule at a reached state when it expands the
+  state, after that state's `BadState` checks and before its successors'
+  membership. Among reached states, the first in the checker's breadth-first
+  expansion order that fails any rule is the one reported, as for
+  `SuccessorMissing` above.
+- Over an `sc` subject the checker SHALL read neither bound.
+
+### Instance bound
+
+- Over a protocol subject with an `on each` protocol, the checker SHALL
+  expand each reached state through the protocol system under the request's
+  `max_live_instances`, as the run did (FR-209): an `activate` step at a
+  state with that many live instances is not expanded.
+- The checker SHALL NOT refuse a request for its instance bound and SHALL
+  NOT compare it with the run's: it is a method parameter outside the
+  obligation identity (ADR-027 AE-4), and the closure check decides.
+- If a reached state is instance-limited under the request's bound, an
+  enabled `activate` step that the bound leaves unexpanded (FR-209), then
+  the checker SHALL reject with `SuccessorMissing` at that product state:
+  the unexpanded activation's successor is a successor of the subject that
+  the certificate does not show, and FR-209 settles V-1 only when no state
+  was instance-limited.
+- The checker SHALL check this rule where it checks the memory-bound rule
+  above, after a reached state's `BadState` checks and before its
+  successors' membership, the first failing state in breadth-first
+  expansion order being reported.
+- Over a subject with no `on each` protocol the checker SHALL read no
+  instance bound.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -739,9 +792,11 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
 | FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve, with a certificate whose `package_id` equals the recompiled one, is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
-| FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]`, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has two instances, and each instance's `context` is `[root, profile, "infinite", [[N, ["instance", T, "a"]]]]` with `N` the `over` parameter's NodeId and `T` the JSON string of `P1`'s, respectively `P2`'s, declaration identity text; the two contexts' octets differ exactly in `T`, and a certificate state carrying `P1`'s context is not admitted under `P2`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", T, "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the four-element `["instance", T, "a", O]` with `O` the JSON string of `Counter`'s declaration identity text; and `["instance", T, {"type":"text","value":"a"}]`. Over a subject with population `P1` of `Counter`, universe `["a"]`, and two initial states, one holding a `Counter` under key `a` and one holding a `Fast` (a subtype of `Counter`) under key `a`, the instance's context octets are equal in both. | Test (TC-1164) |
+| FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]` and `a` admitted, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has one instance, whose `context` is `[root, profile, "infinite", [[N, ["instance", "a"]]]]` with `N` the `over` parameter's NodeId; renaming `P1` or `P2` leaves the context's octets unchanged. Over populations `P1` with universe `["a"]` and `P2` with universe `["b"]`, the two instances' contexts differ exactly in the key, and a certificate state carrying `a`'s context is not admitted under `b`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the three-element `["instance", T, "a"]` with `T` the JSON string of `P1`'s declaration identity text; and `["instance", {"type":"text","value":"a"}]`. The context carries no type: over two subjects with population `P1` of `Counter` and universe `["a"]`, one whose initial state holds a `Counter` under `a` and one whose initial state holds a `Fast` (a subtype of `Counter`) under `a`, the instance's context octets are equal. | Test (TC-1164) |
 | FR-338-AC-10 | Fixture: the `Counter` subject (no `terminal` declaration) and a checked package of its unit that carries the guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation aggregate `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's Boolean guard term), built by the test because S4 refuses an `on each` clause `NotEmitted` (FR-337, QSL-926); the same package supplies the engine's clause and stands as the request's recompiled package, and each `when` condition is read by the test's own letters as in FR-126-AC-16. `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value = 7` returns `Holds` whose certificate holds values 0 to 3, each with activation `"each-when"` and state body `["safety",[[[],[],[],[]]]]`, and `check_closure` accepts it, so FR-127 settles `proved`. `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with the condition `c.value >= 2` returns `Holds` whose certificate `check_closure` accepts, its value-0 and value-1 states having body `["bounded",["each"],[[[],[],[],[]]]]` and its value-2 state body `["bounded",["each"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; that certificate with the value-2 state's body replaced by `["bounded",["each"],[[[],[],[],[]]]]` (the condition misread as false) is rejected `SuccessorMissing` at the value-2 product state with the deadline body; the same certificate with the misread value-2 state added beside the deadline one is accepted; the accepted certificate with every key's activation replaced by `"each"` is rejected `ShapeMismatch` at the least refused `ProductStateRef` (AC-8's order). With the condition false at values 0 and 1 and undefined at value 2, the certificate holding exactly the value-0 and value-1 states, each with activation `"each-when"` and body `["bounded",["each"],[[[],[],[],[]]]]`, is rejected `BadState` at the value-1 product state, whose expansion reads the undefined condition at value 2. | Test (TC-525) |
 | FR-338-AC-11 | Package identity. AC-1's certificate carries the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by that of the same unit with the claim's bound edited to `1001` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with its initial product state also removed (AC-2's `InitialMissing` defect) still returns `PackageMismatch`, because no rule is evaluated. A request whose clause root is the edited unit's clause node, which does not resolve in AC-1's recompiled package, with a certificate naming the edited unit's `package_id`, returns `PackageMismatch` and settles `Inconclusive(StaleDependency{requested, recompiled})`, not `Failed`, because the package comparison precedes the clause-root resolution. | Test (TC-1141) |
+| FR-338-AC-21 | Memory bounds. Over FR-225-AC-2's `tso` program with `always holds(x.v <= 1)`, the run with `max_store_buffer` 3 settles V-1 with a certificate; the request carrying `max_store_buffer` 3 is accepted, and the same certificate under a request carrying 2 is rejected `SuccessorMissing` at the shallowest bound-limited product state, the one whose storing branch has buffered its stores to `x` and `y` while the loading branch has taken no step, with no refusal. The same program under `ra`, run with `max_messages` unset, settles V-1, and its certificate is accepted under a request with `max_messages` unset (4) and rejected `SuccessorMissing` at the initial product state under a request with 1, where the first store would add a second message. | Test (TC-1230) |
+| FR-338-AC-22 | Instance bound. Over FR-209-AC-2's protocol with guard `{false}`, which has no `activate` step, the run settles V-1 with a certificate, and the certificate is accepted under a request with `max_live_instances` unset (3) and under one with 1. Over FR-209-AC-1's protocol (guard `{true}`), a certificate holding every product state the run with `max_live_instances` 2 explored, offered for `always holds(k.v <= 1)` under a request carrying 2, is rejected `SuccessorMissing` at the shallowest instance-limited product state, the one after two `activate(Tick)` steps with both instances at their start and `k.v` 0, with no refusal. | Test (TC-1230) |
 
 ## Dependencies
 

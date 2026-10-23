@@ -337,7 +337,8 @@ ADR-024's EN-4, ADR-028's EN-5, ADR-026's zone search, and later QSL engines.
 SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 
 - **Input.** The checked package; the claim items, each named by its
-  occurrence key; the subject binding (the `ModelSystem` and the initial
+  occurrence key and carrying the settlement CG's `negotiate_*` gave it,
+  which `analyze` routes and never makes itself (FR-281); the subject binding (the `ModelSystem` and the initial
   population, FR-120); each engine's request settings and budgets (for
   example ADR-018's model-check limits); the accounting limits; `&Cancel`.
 - **Output.** `AnalyzeOutcome`: one terminal record per requested item, with
@@ -378,13 +379,16 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 trace the caller supplies. It is the same semantics replay uses (ADR-014
 A-4).
 
-- **Input.** The checked package; one or more temporal clause selections; a
-  trace document holding a finite trace or a lasso (prefix positions, then a
-  non-empty loop), whose positions are admitted as snapshots and invocations
-  (FR-106) before any evaluation; the evaluator limits; `&Cancel`.
+- **Input.** The checked package; one or more temporal clause selections; the
+  bytes of a `quire.monitor-trace/1` trace document holding a finite trace or
+  a lasso (prefix positions, then a non-empty loop) of snapshot
+  `DocumentRef`s, with the snapshot provision they name, each position
+  admitted as an FR-106 snapshot before any evaluation (FR-283); the
+  evaluator limits; `&Cancel`.
 - **Output.** `MonitorOutcome`: one record per clause. The record holds the
   verdict under ADR-014 A-4. Over a finite trace the verdict is a violation
-  at a position, with the QSpec FR-351 separating witness, or pending. Over a
+  at a position, with the QSpec FR-351 separating witness and FR-330's
+  `TemporalCounterexample`, or pending. Over a
   lasso it is a violation or `tested`.
 - **Terminal records.** A violation is category violation (exit 10). An
   evaluation undefined at a position is a violation there, with cause
@@ -460,9 +464,13 @@ pub trait Provider {
 }
 ```
 
-The Kani backend reached through CG, the QSL engines of OP-2 and the plugin
-host's process adapter (§5) each implement it, so the driver handles every
-provider the same way after routing.
+The Kani backend reached through CG, the driver's adapter over the QSL
+engines of OP-2 and the plugin host's process adapter (§5) each implement
+it, so the driver handles every provider the same way after routing. QSL
+depends on no driver crate (FR-280), so a QSL engine never names this trait:
+QSL exposes `qsl_analyze::provider::run` over its own `SubjectBinding`,
+`RoutedItem` and `AnalyzeLimits` types (FR-280, FR-281), and the driver's
+adapter converts its `ProviderRequest` to them and drops `emitted`.
 
 `prove` always passes the run's `CheckedPackage` and passes the
 `EmittedPackage` only when `package` emitted one. S4 refuses to emit a package
@@ -706,21 +714,32 @@ and `generate` artifacts. Parsing, checking, packaging, execution and
 monitoring are cheap and deterministic and run every time.
 
 **CA-2 Key.** The key is one canonical content identity: a digest in a
-QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of:
+QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of QSpec
+FR-306's closed object `{operation, package_id, request, backend, manifest,
+target}`, and no other member:
 
-- the operation (`prove`, `analyze` or `generate`);
-- the subject's `package_id`. Its FR-322 preimage binds the source digests,
+- `operation`: `prove`, `analyze` or `generate`;
+- `package_id`: the subject's identity. Its FR-322 preimage binds the source digests,
   profiles, model selections and each dependency's `package_id`;
-- the canonical request: the items by occurrence key, the claims, the
+- `request`: the canonical request, the items by occurrence key, the claims, the
   domains and bounds, the options that affect a result, and every
   deterministic budget that can move a result to `incomplete` (work units,
   state and transition budgets);
-- the provider's `BackendId`, the identity string alone, and the provider
-  manifest's content identity, the `ManifestDigest` that layer R computes over
-  the FR-331 manifest's canonical bytes, in its domain, as the `manifest`
-  member. A change to any manifest member, the tool version included,
-  changes the key;
-- for `generate`, the generation target and its options.
+- `backend`: the provider's `BackendId`, the identity string alone;
+- `manifest`: the provider manifest's content identity, the `ManifestDigest`
+  that layer R computes over the canonical bytes of the provider's complete
+  QSpec FR-331 descriptor, as a `quire.tool-manifest.jcs/v1` digest record. A
+  change to any descriptor member changes the key. The tool version is the
+  descriptor's `tool.version`: every descriptor carries `tool` (QSpec FR-331
+  "Backend tool"), `{name, version}` of the executable a backend that fronts
+  an external tool invokes, queried from that executable at each invocation,
+  or of the crate that implements a pure in-process engine, at its version
+  in the producer's build, with `build`, the `quire.build-inputs/v1` digest
+  of the provider code's build inputs that the producer's build computes. A
+  tool upgrade, an engine release, and an engine code change under an
+  unchanged crate version therefore each change the `ManifestDigest` and the
+  key and leave the `BackendId` unchanged;
+- `target`: for `generate` only, the generation target and its options.
 
 Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's
 `max_solver_time`), application version strings and the execution backend that
@@ -742,11 +761,19 @@ the value parses with the same typed reader that reads a fresh result.
 Anything else is a miss. A writer writes to a temporary name and renames it
 into place. Two writers of one key write identical bytes, so a race is
 harmless. The store is a directory the caller names. Eviction keeps the
-store under the caller's size limit.
+store under the caller's size limit. For an item routed to a backend that
+fronts an external tool, the cache is read only after that item's QSpec
+FR-290 tool probe passes, and the probe passes only when the executable about
+to run reports the descriptor's `tool.version`; a failed probe settles the
+item `unsupported` with `tool-unavailable` and reads no entry. So a tool
+replaced on the host after the registry was built never returns an entry
+keyed by the old version (QSpec FR-306 "Read after the probe").
 
 **CA-5 What is never stored.** A result whose category is internal failure,
 a cancelled or deadline result, a time-limited `incomplete`, and any member
-that records wall time. A plugin's results are not stored (RU-5).
+that records wall time. A `tool-unavailable` result, whose outcome depends on
+the host's tool and not on the key, is not stored. A plugin's results are not
+stored (RU-5).
 
 ### 7. Execution backends, AOT and JIT
 
@@ -757,7 +784,8 @@ holds every execution backend:
 pub trait ExecutionBackend {
     type Prepared: PreparedEntries;
     /// Prepare the selected entries of one checked package. An entry this
-    /// backend cannot run settles `Unsupported` for that entry only.
+    /// backend cannot run is listed by `PreparedEntries::unsupported`, for
+    /// that entry only; `PrepareFailure` fails the whole call.
     fn prepare(
         &self,
         package: &CheckedPackage,
@@ -768,7 +796,10 @@ pub trait ExecutionBackend {
 }
 
 pub trait PreparedEntries {
-    /// The same contract as `CheckedPackageEvaluation::call`.
+    /// The selected entries this backend did not prepare, with their causes.
+    fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)];
+    /// The same contract as `CheckedPackageEvaluation::call`; an entry
+    /// listed by `unsupported` returns `CallFailure::Unsupported`.
     fn call(
         &self,
         entry: &QualifiedName,
@@ -788,8 +819,9 @@ pub trait PreparedEntries {
 }
 ```
 
-`PrepareFailure` holds per-entry `Unsupported` causes, `Limit`, `Cancelled`
-and `Fault`. Three backends implement the seam:
+`PrepareFailure` is `Limit`, `Cancelled` or `Fault`, with no per-entry arm;
+FR-294 defines `EntrySelection`, `PrepareLimits`, `PrepareFailure` and
+`UnsupportedEntry`. Three backends implement the seam:
 
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
@@ -1027,7 +1059,7 @@ except the ADR-011 amendment, which is applied in place.
   QSL-390. The checkers' defining drafts are PR #562 (EN-1 closure, SCC and
   ranking), PR #564 (simulation relations), PR #571 (product closure),
   PR #573 (zone) and PR #579 (EN-5).
-- Implementation follow-ups this record states for code: one
+- Code consequences this record states: one
   `qsl-foundation` `BackendId` replacing `qsl_route::BackendId` and
   `qsl_replay::identity::Backend` (FR-288); `ProofCategory` folded into `Category` (FR-285); `format` moved
   from root `src/format.rs` to `qsl_cst::format` (X-12).
