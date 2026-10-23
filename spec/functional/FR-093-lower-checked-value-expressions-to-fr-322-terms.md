@@ -279,6 +279,7 @@ to `x`'s node.
 | `Coerce(e, interval)` (an integer admitted into an `Int[..]` that does not contain its type) | `convert` | `quire.op.numeric.narrow` | member `type_argument{declaration: T(Int[interval])}` | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand type is an exact numeric type other than the target | `convert` | `quire.op.numeric.convert` | member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertScalar(target, e)` whose operand is a quantity | `convert` | `quire.op.quantity.convert` | member `type_argument` of the target type node; mode `rounding` = `exact` (Quantity conversion) | `[ref(e)]` |
+| `ConvertText(target, e)` (`convert<T>(e)` whose operand has a `Text[..]` or `String` type, QSpec FR-478) | `convert` | `quire.op.text.to_<k>` for a `Text[..]` operand, `quire.op.string.to_<k>` for a `String` operand, where `<k>` is `integer` (`Integer`, `Int[..]`), `decimal` (`Decimal`, `Decimal[..]`), `rational` (`Rational`, `Rational[..]`), `float32`, `float64` or `quantity` (`Quantity<u>`) for the target | law `text_profile` for a `Text[..]` operand, then law `ieee_profile` for a `float32` or `float64` target; mode `rounding` = the target's mode for a decimal or IEEE target (`exact` when the target omits it) and `exact` for a quantity target, no mode for an integer or rational target; member `type_argument` of the target type node | `[ref(e)]` |
 | `ConvertDecimal(e, target)` (`convert<T>(e)` to a decimal) | `convert` | `quire.op.numeric.convert` when exact, `quire.op.numeric.convert_rounding` when FR-149 classifies it as scale reduction | member `type_argument` of `target`'s node; for `convert_rounding`, mode `rounding` = `target`'s mode | `[ref(e)]` |
 | `IeeeToRational(e, domain)` | `convert` | `quire.op.ieee.to_rational` | law `ieee_profile`; member `type_argument` of `domain`'s node | `[ref(e)]` |
 | `ConvertCollection{target, operand}` | `convert` | `quire.op.collection.convert` | member `type_argument` of `target`'s node; leaves `result_inner` | `[ref(e)]` |
@@ -326,21 +327,49 @@ rational magnitude and no numeric domain, so the rounding mode it pins is
 into an exact target with no loss. `quire.op.quantity.convert` therefore
 carries mode `rounding` = `exact`.
 
+**Text to number.** `check` SHALL build a `convert<T>(e)` whose `e` has a
+`Text[..]` or `String` type as a `ConvertText(T, e)` node of type `T` when `T`
+is an integer, decimal, rational, `Float32`, `Float64` or `Quantity<u>` type
+(QSpec FR-478). A target equal to `e`'s own type builds no node, as for
+every `convert` (below). For any other target there is no conversion from
+text, and `check` refuses it with `ill_typed`/`operator-ineligible` at the `convert`,
+building no node. A `ConvertText` is never a `ConvertScalar`,
+`ConvertDecimal`, `Coerce` or `IeeeToRational`: it lowers by its own row,
+inside or outside an `Equality`.
+
+It is a `convert`, so its `rounding` mode is pinned by the target type alone
+(QSpec FR-322 `type_pinned_modes`): a decimal or IEEE target's declared mode,
+`exact` for a quantity, and no mode for an integer or rational target. A
+`Text[..]` operand gives its `text_profile` law, with the lock's text-profile
+definition as for every text identity, and its profile is read from the
+operand's type node, not from a `text_profile` mode. A `String` operand takes
+no `text_profile` law, as for `quire.op.string.eq`, and lowering selects a
+`quire.op.string.to_*` identity for it, never a `quire.op.text.*` one. An IEEE
+target adds the `ieee_profile` law, whose lock evidence is FR-397's selection.
+The operand's text-leaf list is unchanged. In a pure function body a
+`ConvertText` carries no obligation (QSpec FR-146). Its undefined outcome for
+text that is not a number, and its refusals for a number outside `T` or a
+strict `exact` rounding, are FR-478's at evaluation.
+
 A `Coerce` exists only for a narrowing: an integer whose type an `Int[..]`
 contains is admitted with no node, and a `ConvertScalar` whose operand type
 equals its target builds no node; its parent references the operand's node.
 
 **Converted equality operand.** An `Equality` operand written `convert<T>(e)`,
-whose `e` has a type other than `T`, is checked as a `ConvertScalar(T, e)`
-node of type `T`. It lowers by the `ConvertScalar` rows:
-`quire.op.numeric.convert`, or `quire.op.quantity.convert` for a quantity.
-The equality's operand family `<f>` is that of the compared type `T`, and its
+whose `e` has an exact numeric or quantity type other than `T`, is checked as
+a `ConvertScalar(T, e)` node of type `T`. It lowers by the `ConvertScalar`
+rows: `quire.op.numeric.convert`, or `quire.op.quantity.convert` for a
+quantity. An `Equality` operand written `convert<T>(e)` whose `e` has a
+`Text[..]` or `String` type is checked as a `ConvertText(T, e)` node, by the
+"Text to number" rule above, and lowers by the `ConvertText` row. Either way,
+the equality's operand family `<f>` is that of the compared type `T`, and its
 argument at that operand's position references the convert node, never `e`'s
-node. A `convert<T>(e)` whose `e` already has type `T` builds no node. A
-conversion keeps the value, so a guard (`=`, `!=` or an ordering) comparing an
-integer-typed chain of conversions with an integer literal bounds the
-chain's innermost integer operand as the comparison of that operand itself
-does.
+node. A `convert<T>(e)` whose `e` already has type `T` builds no node. An
+exact numeric conversion keeps the value, so a guard (`=`, `!=` or an
+ordering) comparing an integer-typed chain of such conversions with an integer
+literal bounds the chain's innermost integer operand as the comparison of that
+operand itself does. A `ConvertText` reads a number out of text, so a guard over
+it bounds no operand.
 
 The model nodes, the `Reference<T>` and `Population<T>[N]` type nodes and
 the model rows' vectors E4 to E9 are
@@ -949,6 +978,8 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
 | FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. In one unit beside `h`, `function h2 using v(): Boolean pure { f(0.5 ms) }` and `function h3 using v(): Boolean pure { f(rational(2, 4) ms) }` lower their arguments to one shared literal node of value `"1/2"`, and `function h4 using v(): Boolean pure { f(3 ms) }` references `h`'s `3 ms` node; `function n using v(): Boolean pure { f(rational(-3, 1) ms) }` lowers a literal of value `"-3"`; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
 | FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
+| FR-093-AC-35 | Over `t: Text[0, 8; nfc]`, each of `convert<Int[0, 99]>(t)`, `convert<Decimal[0, 1000; 0, 2; nearest-even]>(t)`, `convert<Rational[-9, 9; 1, 9]>(t)`, `convert<Float32[toward-zero]>(t)`, `convert<Float64>(t)` and, with FR-091-AC-44's units, `convert<Quantity<ms>>(t)` as a pure function body lowers to one `convert` node over `[ref(t)]` with member `type_argument` naming the target type node. The identities are `quire.op.text.to_integer`, `to_decimal`, `to_rational`, `to_float32`, `to_float64` and `to_quantity`. Each carries law `text_profile` with the lock's `quire.value.text.unicode-17.0.0/v1` definition; `to_float32` and `to_float64` also carry law `ieee_profile`. The modes are: none for `to_integer` and `to_rational`, `{"kind":"rounding","value":"nearest-even"}` for `to_decimal`, `toward-zero` for `to_float32`, `exact` for `to_float64` and `exact` for `to_quantity`. No node carries a `text_profile` mode. Over `s: String` the same six bodies lower to `quire.op.string.to_integer` to `quire.op.string.to_quantity` with the same members and modes, the `ieee_profile` law for the two IEEE targets and no `text_profile` law. No function carries a body obligation. | Test (TC-1196) |
+| FR-093-AC-47 | `function g using v(t: Text[0, 8; nfc]): Boolean pure { convert<Integer>(t) = 3 }` lowers the comparison to `quire.op.integer.eq` with arguments `[ref(the convert node), ref(the literal 3)]`, where the convert node is `quire.op.text.to_integer` over `[ref(t)]` and no `ConvertScalar` or `quire.op.numeric.convert` node is built. Over the same `t`, `convert<Boolean>(t)`, `convert<Text[0, 4; nfc]>(t)`, `convert<String>(t)` and, for `s: String`, `convert<Text[0, 8; nfc]>(s)` each refuse `ill_typed`/`operator-ineligible` at the `convert` and build no node; `convert<Text[0, 8; nfc]>(t)` builds no node. | Test (TC-1196) |
 
 ## Dependencies
 
