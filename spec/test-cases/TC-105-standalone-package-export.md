@@ -17,8 +17,9 @@ Run compile on source-only files and compare with the existing static pipeline.
 Reread the output with exact bindings. Mutate format, fields, source selection
 and syntax; run the existing standalone and syntax command tests.
 Copy only the request-selected sources into a fresh compile directory. Check
-command-specific arity errors before file I/O, named count exhaustion for model,
-snapshot and invocation groups, and unchanged catalog spellings. On Linux,
+command-specific arity errors before file I/O, a library source taking the request one
+byte over `dependent_bytes` and the same request with the limit raised, a
+request of 65 small library files under the limit, and unchanged catalog spellings. On Linux,
 redirect the actual binary's artifact output to /dev/full and require exit 30,
 [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure.
 
