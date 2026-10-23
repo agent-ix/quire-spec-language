@@ -44,3 +44,9 @@ Examined, clean:
 Mergeable: only low findings remain.
 
 Conflicts with open heads: #1311 (FR-169), #1346 (FR-169), #1330 (FR-163), each textual in rows or neighbouring hunks; clean against origin/main. The PR body mentions #1311 only.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head 4d72e8b3. HP-5 settlement through `settle_existential`. FR-181-AC-1's `Witnessed` outcome with `witness_samples` 0, whose lassos replay and whose FR-163-AC-1 HP-5 certificate `check_product_closure` accepts, settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Explored, Explored]}, certification: Cer |
