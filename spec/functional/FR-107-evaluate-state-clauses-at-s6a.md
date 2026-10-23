@@ -237,17 +237,20 @@ it, with a fresh meter built from `limits` (FR-120).
   arms), and `True` only when every entry is `Completed(true)`, including
   for an empty set (FR-120's conjunction).
 - The combined outcome SHALL be a function of the entries' verdicts alone
-  (`True`, `False`, not a completed Boolean, `Incomplete`). No clause checked
-  in `CheckMode::Linked` evaluates to a kernel `Undefined` or `Refused`: a
+  (`True`, `False`, not a completed Boolean, `Incomplete`). A clause checked
+  in `CheckMode::Linked` evaluates to a kernel `Undefined` or `Refused` only
+  through an IEEE operation that QSpec FR-148 leaves undefined or refuses
+  (a strict `exact` rounding, a NaN payload that the target width cannot
+  hold, a NaN or infinity converted to a `Rational`; FR-397): a
   division and a `value(..)` carry nonzero and presence obligations
-  (FR-091, FR-104 "Definedness facts"), a `sum` that could leave its domain
-  is refused at checking (FR-100, "Undefined outcomes"), and no float value
-  reaches a clause. A family result other than a completed Boolean is
+  (FR-091, FR-104 "Definedness facts") and a `sum` that could leave its domain
+  is refused at checking (FR-100, "Undefined outcomes"). A family result other than a completed Boolean is
   reached by a clause: a dispatched call whose selected precondition is
   false evaluates to `FamilyResult::Undefined` with reason
   `precondition-false` (FR-301-AC-2). So the family-result rows are tested
   through `evaluate_clause_set` and the kernel `Undefined` and `Refused` rows
-  by giving the combination those verdicts directly.
+  by giving the combination those verdicts directly and by the IEEE clauses
+  of FR-397-AC-20.
 - A clause named twice in the slice SHALL be refused
   `CallFailure::Input(InputRefusal::DuplicateClause)` naming it. An unknown
   name and a mismatched `AdmittedObservations` are refused as

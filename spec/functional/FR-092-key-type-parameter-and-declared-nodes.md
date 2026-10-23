@@ -138,6 +138,14 @@ spelled by its `value_kind`:
   count, `0` or an optional `-` before a nonzero digit and further digits, as
   for `integer`;
   QSpec FR-322 "Scalar literal values" fixes these three spellings;
+- `decimal`: the coefficient and scale of a `decimal(c, s)` constructor as
+  QSpec FR-322 "Scalar literal values" spells them: the digits of `|c|` with
+  the decimal point placed `s` digits from the right, padded on the left with
+  zeros so that at least one digit precedes the point, no point when `s` is
+  `0`, and `-` only before a nonzero `c`. So `(125, 2)` is `"1.25"`, `(5, 2)`
+  is `"0.05"`, `(10, 0)` is `"10"`, `(0, 2)` is `"0.00"` and `(-5, 1)` is
+  `"-0.5"`. The spelling keeps the scale as written, so `decimal(10, 1)` and
+  `decimal(100, 2)` are two values of one magnitude and two literal nodes;
 - `none`: `null`.
 
 Building a type node and lowering a checked expression each walk a tree of
