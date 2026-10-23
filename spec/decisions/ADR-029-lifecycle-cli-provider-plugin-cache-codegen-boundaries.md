@@ -726,9 +726,11 @@ target}`, and no other member:
   "Backend tool"), `{name, version}` of the executable a backend that fronts
   an external tool invokes, queried from that executable at each invocation,
   or of the crate that implements a pure in-process engine, at its version
-  in the producer's build. A tool upgrade or an engine release therefore
-  changes the `ManifestDigest` and the key and leaves the `BackendId`
-  unchanged;
+  in the producer's build, with `build`, the `quire.build-inputs/v1` digest
+  of the provider code's build inputs that the producer's build computes. A
+  tool upgrade, an engine release, and an engine code change under an
+  unchanged crate version therefore each change the `ManifestDigest` and the
+  key and leave the `BackendId` unchanged;
 - `target`: for `generate` only, the generation target and its options.
 
 Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's
