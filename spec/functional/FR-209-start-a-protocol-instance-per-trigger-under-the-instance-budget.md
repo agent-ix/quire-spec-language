@@ -78,6 +78,17 @@ is never mistaken for a proof over every instance count.
   that satisfies `g`, as an environment step independent of the model's
   operations, starting one instance with QSpec FR-428's instance ordinal,
   captures and settled root thread.
+- The records of `T` SHALL be `T`'s value domain as FR-215 enumerates a
+  binder's record type: every record that gives each field a value of its
+  field's domain, the first declared field most significant. A trigger type
+  with a field of an unbounded type is an unbounded root, and the run returns
+  `RequiresBound` naming the trigger binder, `T` and the field before any
+  state is explored (FR-215).
+- The activation guard `g` reads the activation binder and constants only
+  (FR-381). A read of model state in `g`, a named population or a `lookup`
+  included, SHALL refuse at S3 with `ill_typed`/`operator-ineligible` at the
+  read, naming the stage `protocol-activation`, and never as an unresolved
+  name (FR-218 orders the model-state refusal first).
 - Under every activation kind, the step that finishes an instance (its
   `finish` step, FR-206) SHALL remove it with its binders, registrations,
   role instances and queues.
@@ -144,6 +155,7 @@ is never mistaken for a proof over every instance count.
 | FR-209-AC-5 | Over FR-209-AC-1's protocol and `Cell`, the infinite-trace claim `always eventually holds(k.v = 1)` with the derived scheduler constraints, checked by the liveness engine, finds no fair lasso and settles V-6, `InstanceBoundReached{bound: max_live_instances 1, states}` with `states` at least 1, with `max_live_instances` 1; with 2 it settles V-6 with `bound: max_live_instances 2`; neither run is refused as an unsupported construct. | Test (TC-654) |
 | FR-209-AC-6 | Over the same protocol, `always eventually holds(k.v = 0)` with `max_live_instances` 1 settles V-4 with a lasso whose loop holds `activate(Tick)`, `attempt(set)` and the instance's `finish` and passes through the instance-limited state after `activate`, where `activate` is enabled and not taken; the lasso replays and is not rejected as unfair. | Test (TC-654) |
 | FR-209-AC-7 | FR-209-AC-1's protocol with its body `repeat R by p visible() while { true } attempt Done on set` (no `max`, the shared grammar's `repetition` with `p` the protocol's role) and `always eventually holds(k.v = 0)`, with `max_live_instances` 1, settles V-4 with a lasso whose loop is the `attempt(set)` self-loop at the instance-limited state after `activate(Tick)`, where `activate` is enabled at every loop state and never taken; the lasso is fair and replays. A checker that counts `activate` in a fairness class rejects that loop and settles V-6 instead, so this AC fails for it. | Test (TC-654) |
+| FR-209-AC-8 | With `record Tick { n: Int[0, 2]; up: Boolean; }`, `on each (x: Tick) when {x.n > 0}` over FR-209-AC-1's `Cell` and body gives, at the initial state with `max_live_instances` 1, exactly four `activate(Tick)` steps, for `{n: 1, up: false}`, `{n: 1, up: true}`, `{n: 2, up: false}` and `{n: 2, up: true}`, and building the system refuses nothing; with `record Tick { n: Integer; }` the run returns `RequiresBound` naming `x`, `Tick` and `n` before any state is explored. With `Tick` holding a field `key: Reference<M::Cell>` and `cells` a population of `Cell`, the guard `{present(lookup<M::Cell>(M::cells, x.key) absent empty)}` refuses `ill_typed`/`operator-ineligible` at the `lookup`, naming the stage `protocol-activation`, and no `missing-name`. | Test (TC-654) |
 
 Remaining work: QSL-968. A record-typed trigger `T` refuses
 `UnenumerableRecord` in the protocol program, so the tests of these ACs use the
