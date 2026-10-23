@@ -2007,12 +2007,19 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                     .remove(52);
             }
             "dangling-tick-operation" => {
-                candidate["semantic_graph"]["nodes"][44]["body"]["members"][3]["value"]["target"]
-                    ["digest"] = json!("0".repeat(64))
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let target = &mut source["body"]["members"][3]["value"]["target"];
+                let old = target.clone();
+                target["digest"] = json!("0".repeat(64));
+                let replacement = target.clone();
+                replace_dependency(&mut source["dependencies"], &old, &replacement);
             }
             "function-as-tick-operation" => {
-                candidate["semantic_graph"]["nodes"][44]["body"]["members"][3]["value"]["target"] =
-                    candidate["semantic_graph"]["nodes"][5]["node_id"].clone()
+                let target = candidate["semantic_graph"]["nodes"][5]["node_id"].clone();
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let old = source["body"]["members"][3]["value"]["target"].clone();
+                source["body"]["members"][3]["value"]["target"] = target.clone();
+                replace_dependency(&mut source["dependencies"], &old, &target);
             }
             "duplicate-clock-place" => {
                 let places = candidate["semantic_graph"]["nodes"][52]["body"]["members"][3]
@@ -2064,8 +2071,11 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                 rows[1]["members"][2]["value"]["value"] = json!("Sequence<Evil>[slot]");
             }
             "tick-model-context-mismatch" => {
-                candidate["semantic_graph"]["nodes"][44]["body"]["members"][2]["value"]["target"] =
-                    candidate["semantic_graph"]["nodes"][14]["node_id"].clone()
+                let target = candidate["semantic_graph"]["nodes"][14]["node_id"].clone();
+                let source = &mut candidate["semantic_graph"]["nodes"][44];
+                let old = source["body"]["members"][2]["value"]["target"].clone();
+                source["body"]["members"][2]["value"]["target"] = target.clone();
+                replace_dependency(&mut source["dependencies"], &old, &target);
             }
             "unresolved-tick-operation" => {
                 candidate["semantic_graph"]["nodes"][53]["body"]["members"][1]["value"]["value"] =
@@ -2108,6 +2118,16 @@ fn assert_timed_refusal(
         ),
         "{id}: refusal locus, got {locus:?}"
     );
+}
+
+fn replace_dependency(dependencies: &mut Value, old: &Value, replacement: &Value) {
+    let entries = dependencies.as_array_mut().expect("node dependencies");
+    let entry = entries
+        .iter_mut()
+        .find(|entry| *entry == old)
+        .expect("body reference has a matching dependency");
+    *entry = replacement.clone();
+    entries.sort_by(|left, right| left["digest"].as_str().cmp(&right["digest"].as_str()));
 }
 
 /// FR-322-AC-100: each `adverse.json` `shipped_projection_cases` entry is
