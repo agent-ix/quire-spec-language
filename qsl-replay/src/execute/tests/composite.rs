@@ -466,7 +466,7 @@ fn tc_906_the_node_limit_stops_the_replay_before_the_call() {
     assert_eq!(raised.charges(), unlimited.charges());
 }
 
-/// FR-255-AC-10 (TC-921): a `stage_limits` entry `work_units` is the
+/// FR-255-AC-10 (TC-921): a `stage_limits` entry `accounting.work_units` is the
 /// call's `work_units` whatever the request's accounting limits give it,
 /// and every other counter keeps the request's value; for FR-098-AC-9's
 /// counterexample the entry one below the node count settles `NoValue`

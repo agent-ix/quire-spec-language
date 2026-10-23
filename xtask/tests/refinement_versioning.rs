@@ -524,8 +524,8 @@ fn a_stated_budget_reaches_both_runs_and_a_stated_nothing_uses_defaults() {
     assert_eq!(
         entry["limits"],
         json!([
-            {"side": "prior", "name": "accounting.work_units", "bound": 1, "member": "accounting"},
-            {"side": "superseding", "name": "accounting.work_units", "bound": 1, "member": "accounting"},
+            {"side": "prior", "name": "work_units", "bound": 1, "member": "accounting"},
+            {"side": "superseding", "name": "work_units", "bound": 1, "member": "accounting"},
         ])
     );
     assert_eq!(report.verdict, Verdict::Incomplete);
@@ -730,7 +730,7 @@ fn an_exhausted_budget_is_unresolved_and_names_its_limit() {
     assert_eq!(at_charge["result"], "unresolved (incomplete)");
     assert_eq!(
         at_charge["limits"],
-        json!([{"side": "superseding", "name": "accounting.work_units", "bound": fits, "member": "accounting"}])
+        json!([{"side": "superseding", "name": "work_units", "bound": fits, "member": "accounting"}])
     );
     let below = run(fits - 1);
     assert_eq!(below["prior"]["class"], "incomplete");

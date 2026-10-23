@@ -2432,7 +2432,7 @@ fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses_for_a_valu
 
 /// FR-255-AC-11 (TC-921): two requests that reach the same effective
 /// accounting limits, one wholly in `accounting_limits` and one with
-/// `work_units` and `value_occurrences` only as `stage_limits` entries over
+/// `accounting.work_units` and `accounting.value_occurrences` only as `stage_limits` entries over
 /// other values, give the same claim identity, settlement and charges, with
 /// limits that fit and with `work_units` too small.
 #[trace("TC-921", "FR-255-AC-11")]

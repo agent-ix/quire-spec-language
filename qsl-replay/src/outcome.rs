@@ -2085,8 +2085,8 @@ mod tests {
     }
 
     /// FR-255-AC-7: `seven` under the accounting limits the settings
-    /// operation returns for `work_units=0` settles `Incomplete` naming the
-    /// counter, bound, count and setting; under `work_units=1000000` it
+    /// operation returns for `accounting.work_units=0` settles `Incomplete` naming the
+    /// counter, bound, count and setting; under `accounting.work_units=1000000` it
     /// completes with 7.
     #[trace("TC-921", "FR-255-AC-7")]
     #[test]
