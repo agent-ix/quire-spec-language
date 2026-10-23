@@ -132,9 +132,10 @@ The complete-V1 grammar is QSpec's `proposals/quire-v1/shared-grammar.md`,
 which `qsl-cst` transcribes (`qsl-cst/src/grammar.rs`). It is the authority
 for the syntax this requirement maps.
 
-A domain package's native `Float32`/`Float64` model field is still refused
-with the floating-type error (`Unmapped::Float`); floating types are admitted
-as function parameter, result and body types only.
+A domain package's native `Float32`/`Float64` model field resolves to
+`ValueType::Float` of its width with the strict `exact` rounding mode, as a
+function parameter, result and body type of that spelling does; a floating
+type is admitted as a parameter, result, body and model field type.
 
 ## Inputs
 
@@ -298,6 +299,8 @@ The `Value` production maps each CST expression construct to one
 | `true`, `false` | `Boolean` |
 | unsigned integer literal | `Integer` |
 | `rational(n, d)` | `Rational(n, d)` |
+| `decimal(c, s)` | `DecimalValue{coefficient, scale}`, the signed integer `c` and the unsigned integer `s` exactly as written |
+| `float32(bits: 0xHHHHHHHH)`, `float64(bits: 0xHHHHHHHHHHHHHHHH)` | `FloatBits{width, bits}`, the width `32` or `64` and the bit pattern as an unsigned integer |
 | quoted text `"..."` | `String`, holding the decoded Unicode scalar sequence |
 | identifier, qualified name, enum value `E::m` | `Name`, spelled as written with `::` separators |
 | `let x = v in b` | `Let` |
@@ -361,8 +364,7 @@ measure:
 
 A construct that no family's variant represents refuses the whole unit with
 cause `UnrepresentedConstruct`, naming the construct's CST production and
-span. These constructs are `decimal(..)`, `float32(bits: ..)`
-and `float64(bits: ..)`, `null` outside a record field value, `none`,
+span. These constructs are `null` outside a record field value, `none`,
 `self`, `result`, indexing `e[i]`, `size<T>(e)` and
 `reaches(..)`. S2 returns no form for any declaration of that unit.
 `reaches(..)` is a `StateModel` construct (model-graph reachability), and
@@ -682,7 +684,7 @@ The resolution `match` has one explicit arm per type-form head:
   `toward-zero`, `toward-positive`, `toward-negative`, `nearest-even`,
   `nearest-away`) are admitted. A mode the grammar does not spell is
   `ill-formed scalar bounds`. A domain package's native `Float32`/`Float64`
-  model field is still refused with the floating-type error (a follow-up);
+  model field carries no mode spelling and resolves with `exact`;
 - `Reference<Q>` resolves `Q` against the admitted domain packages (I1). With
   no admitted domain package, `Q` is an unresolved name;
 - the unreserved names `String`, `UUID` and `Timestamp` resolve to the native
@@ -914,6 +916,48 @@ at a `UUID` slot, `"00ff"` at a `Bytes` slot and the integer `5` at a `Timestamp
 `ill_typed`/`type-mismatch` at the literal as every typed mismatch does, with
 no coercion. FR-093 lowers the five literals.
 
+### Decimal constructor
+
+The unit language writes an exact decimal constant with the constructor of QSpec
+`shared-grammar.md`: `decimal(c, s)`, whose `c` is a signed integer and `s` an
+unsigned integer, both in the `signed-int` and `uint` spellings (`0` or a digit
+string with no leading zero, and `-` only before a nonzero digit string). It is
+a keyword-headed form rather than a call: `decimal` is a reserved word, no name
+resolution applies, and a unit declaration of that spelling is not a
+candidate. A form with a missing or extra argument, a missing comma, a
+fractional, signed (`+`) or leading-zero argument, or a negative scale is a
+syntax error, `invalid_syntax`/`unexpected-token` for the structure and
+`invalid_syntax`/`invalid-token` for the spelling of an argument, at the
+constructor, before S2. The same spelling in the magnitude of a unit
+declaration or a quantity literal (the assembler's exact numbers and FR-093's quantity
+literals) is an exact number of that position and builds that position's form.
+
+S2 builds `DecimalValue{coefficient, scale}` for each value-position
+constructor, keeping the coefficient and the scale as written, with the span of
+the constructor. It reduces nothing, raises no power of ten and refuses no
+scale, so `decimal(1, 4294967295)` builds. Typing, the bound on the scale,
+lowering and evaluation are
+[FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)'s "Decimal
+constructors".
+
+### Float bit constructors
+
+The unit language writes a float constant with the bit constructors of QSpec
+`shared-grammar.md`: `float32(bits: 0xHHHHHHHH)` and
+`float64(bits: 0xHHHHHHHHHHHHHHHH)`. The digits are exactly eight (`float32`)
+or sixteen (`float64`) lowercase hexadecimal digits after `0x`, so signed zero
+and every NaN payload survive parsing. They are keyword-headed forms rather
+than calls: `float32` and `float64` are reserved words, no name resolution
+applies, and a unit declaration of that spelling is not a candidate. A form
+with another digit count, an uppercase or non-hexadecimal digit, no `0x`, no
+`bits` label or a missing colon is a lexical or syntax error,
+`invalid_syntax`/`invalid-token`, at the constructor, before S2.
+
+S2 builds `FloatBits{width, bits}` for each constructor, keeping the bit
+pattern as an unsigned 32-bit or 64-bit integer and the span of the
+constructor. Typing, lowering and evaluation are
+[FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)'s.
+
 ### Catalog codes
 
 Each S2 and assembler cause has one exhaustive `catalog_code()` (ADR-013
@@ -930,7 +974,6 @@ code or code/cause:
 | ill-formed scalar bounds | `ill_typed` |
 | integer outside i128 (`IntegerOutsideI128`), a bound or a literal | `ill_typed`/`type-mismatch` |
 | malformed UUID literal (`MalformedUuidLiteral`) | `ill_typed`/`type-mismatch` |
-| floating type (a domain package model field only) | `unknown_required_feature`/`unsupported-feature` |
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
 | alias cycle | `invalid_package`/`definition-cycle` (catalog extension proposed, Dependencies) |
@@ -947,14 +990,6 @@ code or code/cause:
 | unresolved state clause operation (FR-104) | `missing_declaration`/`missing-name` |
 | ambiguous state clause operation (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
 | ambiguous state clause population (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
-
-The floating-type row: no catalog code names a well-formed type that the
-producer does not represent. `unsupported_construct` is the wrong code,
-because the catalog reserves it for a form that the selected profile
-prohibits, and a floating type is not prohibited.
-`unknown_required_feature`/`unsupported-feature` is the nearest code. Its
-meaning is a feature outside the consumer's declared support, and the
-catalog states that a recognized name is not implementation support.
 
 The alias-cycle row uses `definition-cycle`, whose payload is dependency
 edges: the alias chain is those edges. The check stage uses the same code
@@ -990,7 +1025,7 @@ every checker of the language.
 | FR-091-AC-4 | S2 refuses a `ParsedSource` whose CST carries a recovery with cause `RecoveringCst`. It refuses an admissible parse, to which `prepend_diagnostic` has added one diagnostic, with the diagnosed-source cause holding that diagnostic's code. Neither refusal returns a parsed unit. | Test (TC-395) |
 | FR-091-AC-5 | S2 refuses the whole unit with cause `NoDispatchEntry` for an admissible unit holding a valid `function` declaration followed by `invariant Positive using v on M::T at current { true }`. The refusal names the spelling `invariant` and that declaration's span, and S2 returns no form for the `function` declaration. | Test (TC-395) |
 | FR-091-AC-6 | S2 builds a parsed unit with one form for an admissible unit whose only declaration is `enum Color { RED }`, `ordered enum Level { LOW }`, `predicate P using v(x: Boolean): Boolean { x }`, `dimension Length;` or, after `dimension Length;`, `unit m : Length = rational(1, 1);`. None of these refuses with `NoDispatchEntry`. No module under `forms` other than the `Value` family form builder names the `EnumDeclaration`, `EnumMember`, `Predicate`, `DimensionDeclaration` or `UnitDeclaration` CST production. | Test (TC-395) |
-| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: `decimal(1, 2)`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test |
+| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test |
 | FR-091-AC-8 | For each of `function f using v(x: Int[0, 9]): Boolean pure { B }` with body `B` equal to `deref(x)`, `allInstances<M::T>(x)` or `pre(x)`, and `function g using v(x: Int[0, 9]): Boolean pure decreases(pre(x)) { true }`, each in a unit with no admitted domain package, S2 returns a parsed unit that holds `Deref`, `AllInstances` or `Pre` where the construct is written. Check refuses `pre(x)`, in the body and in the measure, with `wrong_snapshot`/`forbidden-pre-read`, the `ProtocolClause` cause, and `deref(x)` with `ill_typed`/`type-mismatch`. The assembler refuses `allInstances<M::T>(x)` with an unresolved-type-name error naming `M::T` (`missing_declaration`/`missing-name`). None of these refusals has code `unsupported_construct`. | Test (TC-396) |
 | FR-091-AC-9 | S2 builds a form for each of the function bodies `not`×8 `a`, `not`×20 `a` and `not`×129 `a`, each admitted by S1 at its default limits, and each form's expression tree is as deep as its body. S2 takes no limit set, and no S2 outcome names a depth. | Test (TC-397) |
 | FR-091-AC-10 | Every `Expression` node in a `Value` form carries the span of the CST node it maps from. For the body `if a then b else c + d`, the `If` node's span covers the whole body, the `Add` node's span covers `c + d`, and the `Name("d")` node's span covers `d`. For `(a + b) * c`, the `Add` node's span covers `a + b`, without the parentheses. | Test (TC-403) |
@@ -1004,7 +1039,7 @@ every checker of the language.
 | FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted over that owner. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) it gives a different key for each of the three. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
 | FR-091-AC-19 | The assembler admits a parameter typed `Float64[nearest-even]`, `Float32[toward-zero]` or `Float64`. Resolving each gives a `ValueType::Float` of the written width and rounding mode `nearest-even`, `toward-zero` and `exact` (the bare spelling). The evaluator rounds a `Float64[mode]` `+` by that mode. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`, and returns no `PackageDeclarations`. | Test (TC-405) |
 | FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
-| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the dimension name shared with a domain package cause `conflicting_declaration`/`duplicate-declaration`, the unresolved unit dimension name cause `missing_declaration`/`missing-name`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph topology cause returns the code and cause of its QSpec FR-142 step, rule or row. | Test (TC-406) |
+| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the dimension name shared with a domain package cause `conflicting_declaration`/`duplicate-declaration`, the unresolved unit dimension name cause `missing_declaration`/`missing-name`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph topology cause returns the code and cause of its QSpec FR-142 step, rule or row. | Test (TC-406) |
 | FR-091-AC-22 | For a unit with one profile selection, alias `v`, and `function f using v(): Boolean pure { true }`, the assembler records `f`'s `using` alias as resolved to that selection. With `function g using w(): Boolean pure { true }` added, it returns one refusal holding an undeclared-alias error, code `missing_declaration`/`missing-selection`, that names `w` and the span of `g`'s `using` field, and no `PackageDeclarations`. A unit that declares two profile selections with alias `v` refuses with a duplicate-alias error, code `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection spans. | Test (TC-412) |
 | FR-091-AC-23 | S1 admits a unit whose function parameter is typed `Float32` or `Float64` with no `[mode]`, and S2 builds that parameter's type form with head `Float32` or `Float64` and no rounding mode. | Test (TC-405) |
 | FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" as u;`, with no library supplied as `test/units`, refuses at stage `intake`, before assembly, with `missing_import`/`missing-selection` naming `test/units` at the import's identity string (FR-099, ADR-015 D-1), and emits no package. | Test (TC-405) |
@@ -1031,8 +1066,12 @@ every checker of the language.
 | FR-091-AC-45 | Base-dimension rule (QSpec FR-142-AC-16). `dimension L; dimension A = L ^ 2; unit m2 : A = rational(1, 1);` refuses with one error at `L`'s turn, `missing_declaration`/`missing-name`, naming `L` and `m2`, the first unit in source order whose dimension has a nonzero exponent of `L`; with `unit m : L = rational(1, 1);` added it assembles. `dimension L; dimension A = L ^ 2;`, with no unit, assembles: a unitless base dimension carried by no unit-bearing dimension, and a derived dimension without a unit, are not refused. `dimension L; dimension N = L / L; unit one : N = rational(1, 1);` assembles, since `N`'s empty map names no base dimension. | Test (TC-483) |
 | FR-091-AC-46 | First defect (QSpec FR-142-AC-15). `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * ghost;` refuses row 1 at `z`, not row 2; `dimension L; unit r : L = rational(1, 1); unit u : L = rational(1, 1) * ghost; unit z : L = rational(0, 1) * r;` refuses row 2 at `u`, the earlier unit; `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1); unit s : L = rational(1, 1) * s;` refuses row 4 (`r`, `q`), not row 6 (`s`'s self-cycle); `dimension L; dimension T; unit t : T = rational(0, 1) * tr; unit tr : T = rational(1, 1); unit l : L = rational(2, 1);` refuses row 5 at `L`'s root `l`, not row 1 at `t`, since `L` takes its turn before `T`; `dimension A = B; dimension B = A; dimension L; unit l : L = rational(2, 1);` refuses step (-1)'s `invalid_package`/`definition-cycle` at `A`, edges `A -> B` and `B -> A`, not row 5 at `l`. | Test (TC-483) |
 | FR-091-AC-47 | Least-unit cycle (QSpec FR-142-AC-15). `dimension L; unit r : L = rational(1, 1); unit y : L = rational(1, 1) * x; unit x : L = rational(1, 1) * y;` refuses row 6, `invalid_package`/`definition-cycle`, with edges `y -> x` then `x -> y`, from `y`, the cycle's least unit by source position, not from `x`, the least by name. | Test (TC-483) |
+| FR-091-AC-48 | S2 builds, for the bodies `float64(bits: 0x3ff0000000000000)`, `float64(bits: 0x8000000000000000)`, `float64(bits: 0x7ff0000000000001)` and `float32(bits: 0x7fc00001)`, one `FloatBits` each holding the width `64`, `64`, `64` and `32` and the bit patterns `0x3ff0000000000000`, `0x8000000000000000`, `0x7ff0000000000001` and `0x7fc00001`, each with the constructor's span, and refuses no unit with `UnrepresentedConstruct`. | Test (TC-1091) |
+| FR-091-AC-49 | `float64(bits: 0x3ff0)`, `float64(bits: 0x3FF0000000000000)`, `float32(bits: 3f800000)`, `float32(bits: 0x3f80000g)`, `float32(bits: 0x3f800000000)` and `float64(0x3ff0000000000000)` refuse `invalid_syntax`/`invalid-token` at the constructor before S2. | Test (TC-1091) |
 | FR-091-AC-55 | Package dimensions and units (QSpec FR-142-AC-16, AC-18, AC-19). With admitted domain packages `P` and `Q` selected by the unit in that lock order, `P` at `/lock/model_selections/0` and `Q` at `/lock/model_selections/1`, `P` declaring the TC-187 `P` dimensions and units and `Q` declaring U11z2's `T` with its unit `s`, each of QSpec TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2, its `P` declarations supplied by `P` and its local declarations in the unit, gives TC-187's result through the assembler. U11r admits a local `cm` that targets `P`'s root `m`. U11s refuses row 6 at `P`'s `L`, retaining `a -> b` and `b -> a`, and `P`'s `m` is not re-checked. U11t refuses row 4 with `P`'s root `m` and the local `m2`. U11u refuses row 1 at `z`. U11y and U11z1 refuse the base-dimension rule at `P`'s `L`, `missing_declaration`/`missing-name`, retaining `L` and `m2`, located at `/lock/model_selections/0` and naming `L`'s FCD identity. U11z2 refuses the base-dimension rule at `P`'s `L` before the later zero scale. FR-142-AC-19's `unit tick : Rate = 1/2 * M::us`, typed by the package dimension `Rate`, is admitted. Dimension-name collisions (QSpec FR-142-AC-19): a unit declaring `dimension Time;` beside `acme/rpc` also declaring a dimension `Time` refuses `conflicting_declaration`/`duplicate-declaration` at the source `dimension Time` span, naming both declarations; two admitted packages that each declare a dimension `Rate`, with no source `Rate`, refuse the same code at the later package's selection row `/lock/model_selections/1`; a source unit `ms` and `acme/rpc`'s unit `ms` both check, as `Quantity<ms>` and `Quantity<M::ms>`. | Test (TC-483) |
 | FR-091-AC-56 | `Bytes("")`, `Bytes("00ff")` and `Bytes("deadbeef")`, and `JsonObject("{}")`, `JsonObject("[]")`, `JsonObject("3")`, `JsonObject("null")` and `JsonObject("{\"a\":1,\"b\":[true,null]}")`, are admitted with the types `Bytes` and `JsonObject`; `Bytes("00FF")`, `Bytes("0")`, `Bytes("0x00")` and `Bytes("00 ff")` refuse `ill_typed`/`type-mismatch` with the cause `MalformedBytesLiteral` naming the text as written and the span of the call, and `JsonObject("{\"b\":1,\"a\":1}")`, `JsonObject("{\"a\": 1}")`, `JsonObject("1.0")`, `JsonObject("{\"a\":1,\"a\":2}")`, `JsonObject("")` and `JsonObject("{")` the same with `MalformedJsonObjectLiteral`. `Bytes(x)` over `x: String`, `Bytes(5)`, `JsonObject(x)` and `Bytes("00", "11")` refuse `ill_typed`/`type-mismatch`; `"00ff"` at a `Bytes` slot refuses the same; a unit declaring `function Bytes using v(x: Integer): Integer pure { x }` makes `Bytes("00")` an `ambiguous_declaration`/`ambiguous-name` naming the declaration and the native constructor; `3 s` and `rational(3, 2) s` are `Duration` values where the unit `s` is typed by a base dimension `Time`. | Test (TC-1231) |
+| FR-091-AC-57 | S2 builds, for the bodies `decimal(125, 2)`, `decimal(-5, 0)`, `decimal(0, 3)` and `decimal(1, 4294967295)`, one `DecimalValue` each holding the coefficient `125`, `-5`, `0` and `1` and the scale `2`, `0`, `3` and `4294967295` exactly as written, each with the constructor's span, reduces none of them, and refuses no unit with `UnrepresentedConstruct`; the exact numbers of `unit cm : Length = decimal(1, 2) * m;` and of a quantity literal magnitude still build their unit and quantity forms, not `DecimalValue`. | Test (TC-1232) |
+| FR-091-AC-58 | `decimal(1)`, `decimal(1, 2, 3)`, `decimal 5`, `decimal(1 2)` and `decimal(1, -2)` refuse `invalid_syntax`/`unexpected-token`; `decimal(+1, 2)`, `decimal(01, 2)`, `decimal(-0, 2)`, `decimal(1.5, 2)` and `decimal(1, 02)` refuse `invalid_syntax`/`invalid-token`, each at the constructor before S2. `function decimal using v(): Boolean pure { true }` refuses `invalid_syntax` at the declaration name, because `decimal` is reserved. | Test (TC-1232) |
 
 ## Dependencies
 
@@ -1103,9 +1142,9 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-1, declarations | `Value` owns the `enum`, `dimension`, `unit` and `predicate` declaration productions. The `enum`, `dimension` and `unit` entries need their key minting inside `check` (FB-13). | QSpec FR-322 classes enum, dimension and unit as `scalar_type` nodes. `predicate` is a function form with a `Boolean` result. | QSpec makes an enum a `union-decl` case rather than a `scalar_type`. |
 | FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence. The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
 | FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; for `composite_type` and `function` nodes QSL keys by its proposed `quire.structural-node/v1` preimage, which carries the owner (FR-092). | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
-| FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (done). The floating-type error (now only for a domain package model field) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
+| FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (done). A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
 | FR-091-OQ-5, integer operators | Resolved: S2 maps `div`, `rem` and `mod` to distinct forms regardless of reachability. Check uses the declaration's resolved `using` selection: absent `quire.value.complete/v1` refuses each at its operator locus; selected complete value admits well-typed forms. The checked package's exactly-one integer-division law governs `div`/`rem`; `mod` stays Euclidean. Their checker and evaluator arms are required by FR-091-AC-39 and QSpec FR-147. `/` has no integer-division meaning; QSpec FR-149 owns exact integer-to-rational promotion only under complete value. | QSpec FR-147 and its shared grammar admit these operators only under the complete-value facet, while QSpec FR-039 preserves the state-only refusal. S2 must not discard the distinction before profile admission. | QSpec changes the facet, operator law or slash rule. |
-| FR-091-OQ-5, other constructs | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed unrepresented constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. Float literals depend on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
+| FR-091-OQ-5, other constructs | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed unrepresented constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `e[i]` depends on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
 | FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, and terms sort by key. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (d) Units are named as types through `Quantity<u>` (QSpec FR-142). Parts of (a) and (c) of this ruling are replaced by FR-091-OQ-13. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (d) the complete-V1 `type-ref` names a quantity type as `Quantity<u>` over a unit (QSpec FR-142-AC-11), and reading any other type name as a unit would invent syntax meaning. A quantity-typed operation parameter is therefore the `Quantity<u>` annotation (FR-185). | QSpec changes or withdraws `Quantity<u>` (FR-142). |
 | FR-091-OQ-13 | Unit-graph topology (lead default, 2026-10-22, not an owner answer). A derived dimension that cancels to no terms is the dimensionless dimension, admitted. The dimension and unit topology, including dimension term resolution, dimension and unit cycles, and package dimensions and units as imported nodes, takes QSpec FR-142's rules, order and causes. | QSpec FR-142 fixes the topology rules, their first-defect order and their causes, and admits `N = L / L` (FR-142-AC-15 to AC-19); following it gives every checker of the language one refusal for one unit graph. | QSpec changes FR-142's topology rules or causes. |
@@ -1124,6 +1163,5 @@ decided; the last column names the fact that reopens it.
   `unsupported_construct` retains "the exact selected profile that prohibits"
   the form. A declaration with no dispatch entry and a construct with no
   `Expression` variant are forms the complete-V1 profile admits and the
-  producer does not represent, which is the reason the floating-type
-  cause is `unknown_required_feature`/`unsupported-feature`. The Catalog
-  codes table keeps `unsupported_construct` for these two causes.
+  producer does not represent. The Catalog codes table keeps
+  `unsupported_construct` for these two causes.
