@@ -62,14 +62,14 @@ items.
   `quire-exact`, `quire-semantic-value` and `quire-eval` are shared leaves in
   their own repositories, outside that workspace, and the `identifier` and
   `re-export` rules never apply inside them (FR-272).
-- `quire_semantic_value::location::Location`, a declaration and a
-  child-index path to an expression, SHALL be named `ExpressionLocation`,
-  and `quire_semantic_value::location::Origin`, the declaration a location
-  belongs to, SHALL be named `ExpressionOwner`: each shares its identifier
-  with a canonical type of `quire_exact::location` (`Location` with members
-  `node`, `occurrence`; `Origin` with members `role`, `ordinal`). The module
-  stays `quire_semantic_value::location`, the path FR-401 and ADR-011 X-11
-  give, and the two renamed items are the evaluation interface's location
+- `quire-semantic-value` SHALL name its `location::Location`, a declaration
+  and a child-index path to an expression, `ExpressionLocation`, and its
+  `location::Origin`, the declaration a location belongs to,
+  `ExpressionOwner`: each shares its identifier with a canonical type of
+  `quire_exact::location` (`Location` with members `node`, `occurrence`;
+  `Origin` with members `role`, `ordinal`). The module stays
+  `quire_semantic_value::location`, the path FR-401 and ADR-011 X-11 give,
+  and the two renamed items are the evaluation interface's location
   vocabulary there: wherever FR-401 or ADR-011 names `Location` or `Origin`
   at that module, the item meant is `ExpressionLocation` or `ExpressionOwner`.
 - `Evaluation`'s canonical definition SHALL be `quire_eval::Evaluation`,
