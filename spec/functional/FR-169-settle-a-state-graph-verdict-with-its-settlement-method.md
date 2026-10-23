@@ -209,6 +209,7 @@ item.
     `ModelState` of the closure state its index names, or at
     `Entry { index }` when the index names none, read in the same pass after
     the entries before it;
+    `Entry { index }` when the index names none;
   - `InitialMissing`, when an initial state is not in `closure`;
   - `SuccessorMissing`, when a successor that `ModelSystem` computes for a
     reached `closure` state is not in `closure`, as FR-338's `check_closure` does;

@@ -5,15 +5,15 @@
 //!
 //! - [`script`] is the canonical printer: [`script::Term`] and
 //!   [`script::Script`].
-//! - [`layout`] declares the state copies: one constant per field of each
+//! - `layout` declares the state copies: one constant per field of each
 //!   universe object, named `s<i>.<object>.<field>`.
-//! - [`expression`] reads a checked clause body as a linear term and the
+//! - `expression` reads a checked clause body as a linear term and the
 //!   condition under which it is defined (ADR-018 UE-1, UE-4, UE-6).
-//! - [`relation`] builds the step relation of one subject between two state
+//! - `relation` builds the step relation of one subject between two state
 //!   copies: the disjuncts of FR-315's transition assertion, operations first
 //!   and the terminal stutter last. A caller encoding a product of several
 //!   subjects takes one component disjunct from this relation per subject.
-//! - [`query`] assembles a script for an item and a [`SmtQueryKind`].
+//! - `query` assembles a script for an item and a [`SmtQueryKind`].
 
 mod expression;
 mod kind;
