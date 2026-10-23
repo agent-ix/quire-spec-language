@@ -119,9 +119,14 @@ checker named beside it returns that alternative:
 | `ProductState(ProductStateRef)` | Product state | FR-338, FR-339 |
 | `HyperProductState(ProductStateKey)` | Hyper product state | FR-163 |
 | `HyperTransitionTuple` | Hyper transition tuple | FR-163 |
-| `CertificateMember` | Certificate member (`components`) | FR-163 |
-| `ModelState(DigestRecord)` | State | FR-169 |
+| `CertificateMember` | Certificate member | FR-163 (`components`), FR-201 (`ranking`, `policy`, `components`), FR-245 (`components`, `divergence`, `bounds`) |
+| `ModelState(DigestRecord)` | State | FR-169; FR-245 (the initial discrete state) |
+| `Entry { index }` | State-graph entry | FR-169 |
 | `SimulationStep { position, edge, verdict }` | Simulation step | FR-149 |
+| `ProbabilisticProductState(ProductKey)` | Probabilistic product state | FR-201 |
+| `ZoneNode { node }` | Zone node | FR-245 |
+| `ZoneEdge { edge }` | Zone edge | FR-245 |
+| `ZoneComponent { component }` | Zone component | FR-245 |
 
 A `QueryPart` is written `unrolling`, `base` or `step`, and a `Step` that
 carries a row (FR-314's refinement certificate, zero-based) as `step/<r>`,
@@ -135,17 +140,14 @@ is FR-314's command number as a `U64String`.
   defect of the checker, not of the certificate.
 - Before it writes a `certificate-rejected` cause, the outcome writer
   (FR-286) SHALL check that FR-331's table lists the rule at the locus
-  form. A pair the table does not list SHALL be QSL's internal fault,
+  form, and that a `ModelState` outside the `quire.simulation.state-key/v1`
+  domain carries `Malformed`. A pair the table does not list SHALL be QSL's internal fault,
   `InternalFault` (`runtime_invariant`, FR-096) with invariant
   `certificate-rejection-pair`, and SHALL NOT be written. No caller input
   carries the pair, so it is never an `invalid_runtime_input` refusal.
 - QSL reads no `certificate-rejected` cause. FR-290's reader returns
   `Unsupported` for a plugin's, whether or not FR-331 lists its pair,
   because no in-core checker binds a plugin proof (FR-331-AC-26).
-- FR-201's and FR-245's rejections are written only at FR-331's
-  probabilistic product state, zone node, zone edge, zone component, State
-  (FR-245's initial discrete state) and certificate member forms, with the
-  rules FR-331 lists there for FR-412 and FR-418.
 
 ### Canonical translation state
 
@@ -784,7 +786,7 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-11 | Package identity. AC-1's certificate carries the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by that of the same unit with the claim's bound edited to `1001` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with its initial product state also removed (AC-2's `InitialMissing` defect) still returns `PackageMismatch`, because no rule is evaluated. A request whose clause root is the edited unit's clause node, which does not resolve in AC-1's recompiled package, with a certificate naming the edited unit's `package_id`, returns `PackageMismatch` and settles `Inconclusive(StaleDependency{requested, recompiled})`, not `Failed`, because the package comparison precedes the clause-root resolution. | Test (TC-1141) |
 | FR-338-AC-12 | Rejection spellings. The outcome writer writes `CertificateRejected{SuccessorMissing, ProductState(s)}` with `rule` `successor-missing` and `at` the product-state form of `s`; `{QueryMismatch, Query{Unrolling}}` with `at` `"unrolling"`; `{ShapeMismatch, Query{Step{row: Some(3)}}}` with `at` `"step/3"`; `{NotRefutation, Query{Step{row: None}}}` with `at` `"step"`; `{ProofStepInvalid, ProofStep{Step{row: Some(4)}, 41}}` with `at` `{"part":"step/4","index":"41"}`; and `{RankMissing, ModelState(d)}` with `at` the state form of `d`. QSpec FR-331's schema admits each written cause. | Test (TC-1197) |
 | FR-338-AC-13 | Unlisted pairs. Writing `CertificateRejected` with `BadState` at `Query{Base}`, `QueryMismatch` at `ProofStep{Unrolling, 0}`, `ProofStepInvalid` at `Query{Step{row: None}}` or `WitnessFails` at `ModelState(d)` each returns `InternalFault` (`runtime_invariant`) with invariant `certificate-rejection-pair` and writes no `certificate-rejected` cause; `NotRefutation` at `Query{Base}`, `NotRefutation` at `ProofStep{Base, 2}` and `Malformed` at `Query{Unrolling}` are written. A plugin result entry whose cause is `certificate-rejected` with `query-mismatch` at `unrolling`, and one with `bad-state` at `base`, each reads `Unsupported` (FR-290). | Test (TC-1197) |
-| FR-338-AC-14 | Checker binding. Every rejection that the rejected vectors of FR-338-AC-2, AC-3 and AC-8, FR-314-AC-2 and AC-4, and FR-169-AC-10 and AC-11 return names a `CertificateLocus` alternative that the Rejection spellings table assigns to the checker that returned it, and a rule FR-331 lists at that locus form. | Test (TC-1197) |
+| FR-338-AC-14 | Checker binding. Every rejection that the rejected vectors of FR-338-AC-2, AC-3 and AC-8, FR-314-AC-2 and AC-4, FR-169-AC-10, AC-11 and AC-14, FR-201-AC-6 and FR-245-AC-7 return names a `CertificateLocus` alternative that the Rejection spellings table assigns to the checker that returned it, and a rule FR-331 lists at that locus form. | Test (TC-1197) |
 
 ## Dependencies
 
