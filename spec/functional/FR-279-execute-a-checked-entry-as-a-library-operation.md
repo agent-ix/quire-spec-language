@@ -44,16 +44,19 @@ with a clause selection.
 ## Outputs
 
 `Result<Evaluation<Value>, CallFailure>`: the `Evaluation` the backend's
-`call` or `evaluate` returns, or `CallFailure::Input`, `CallFailure::Fault`
-or `CallFailure::Cancelled`.
+`call` or `evaluate` returns, or `CallFailure::Input`, `CallFailure::Fault`,
+`CallFailure::Cancelled` or `CallFailure::Unsupported`.
 
 ## Behavior
 
 - The `execute` operation shall prepare the selected entry with the chosen
   execution backend and call it with the arguments, environment and
   accounting limits.
-- If the chosen backend's `prepare` settles the entry `Unsupported`, then
-  `execute` shall return that unsupported outcome as its result.
+- If the chosen backend's `prepare` settles the entry `Unsupported`, either
+  listed in the prepared value's `unsupported()` or inside
+  `PrepareFailure::Unsupported`, then `execute` shall return
+  `CallFailure::Unsupported` with that entry's FR-294 `UnsupportedEntry`,
+  and shall make no call.
 - The `execute` operation shall return the same `Evaluation` as
   `CheckedPackage::call` (for a function) or `CheckedPackage::evaluate` (for
   a clause) when the chosen backend is the interpreter.
@@ -65,6 +68,7 @@ or `CallFailure::Cancelled`.
 | FR-279-AC-1 | `execute` with the interpreter backend over FR-100-AC-4's unit returns, for `lt(5, 3)`, `flag(1)` and `id(4)`, the `Evaluation` `CheckedPackage::call` returns for the same arguments, and for `id(12)` the same `CallFailure::Input`. | Test (TC-760) |
 | FR-279-AC-2 | `execute` with a clause selection over FR-109's ConfigVersion unit returns the `Evaluation` `qsl_replay::spine::run_clause` reports for the same clause and input. | Test (TC-760) |
 | FR-279-AC-3 | For each FR-100-AC-1, AC-4 and AC-6 request, the `outcome` member of FR-100's `spine-run-result/1` document equals the rendering of `execute`'s result for the same source, function, arguments and accounting limits. | Test (TC-760) |
+| FR-279-AC-4 | `execute` with FR-294-AC-5's test backend selecting its second entry returns `CallFailure::Unsupported` with the `UnsupportedEntry` naming that entry's `NodeKey` and its `ExpressionForm` construct, the same value when the backend prepares no selected entry and returns `PrepareFailure::Unsupported`, and no `Evaluation`; the result's FR-286 document has category unsupported, one `unimplemented_capability` diagnostic and exit 21. | Test (TC-760) |
 
 ## Dependencies
 
