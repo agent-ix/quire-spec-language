@@ -128,6 +128,18 @@ order, which the driver's adapter writes as FR-331 results.
   the evidence kind `statistical` and no other, and with the `domains`
   `population` and `integer`, the boundable domains its sampler draws over
   (FR-057 refuses a `bounded` pair without `domains`).
+- EN-1's manifest shall list exactly one (kind, mode) pair,
+  (`temporal-satisfaction`, `bounded`), the reachable-invariant, bounded,
+  liveness and deadlock-freedom items its explicit-state search decides over
+  a finite subject (FR-126); the `domains` `population` and `integer`, the
+  boundable domains the subject's universes and declared ranges bound; the
+  fairness kinds `weak` and `strong`, under which it decides (FR-126,
+  FR-130); no evidence kinds, since it settles no
+  `probabilistic-satisfaction` item; and no `dynamics` member, so it is a
+  candidate for a temporal item that carries no hybrid-dynamics requirement
+  and never for one that carries it (QSpec FR-193 "Candidates"). Its
+  `BackendId` is its own and differs from every other engine's in
+  `Engines::qsl()`.
 - When the driver passes routed items of an FR-331 provider request to
   `qsl_analyze::provider::run`, the provider entry shall run each item on its
   routed engine through `analyze` over the `CheckedPackage` it is given and
@@ -165,6 +177,7 @@ order, which the driver's adapter writes as FR-331 results.
 | FR-280-AC-4 | EN-4's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`probabilistic-satisfaction`, `bounded`) with the evidence-kind set `{statistical}` and the `domains` `{population, integer}`. A registry holding it and a descriptor advertising the same pair with `{exact}` gives a `statistical` probabilistic item the EN-4 `BackendId` alone, and an `exact` item the other alone. | Test (TC-761) |
 | FR-280-AC-5 | `Service` (FR-185-AC-7), whose `emit_checked` refuses `unsupported_construct`/`not-yet-implemented`, is passed to the provider entry as its `CheckedPackage`, with its subject binding and a `RoutedItem` routing the `2 ms` claim of ADR-024 §7.2 over `Service` (the claim of FR-193-AC-1 and FR-193-AC-5) to EN-4 with evidence kind `statistical`, the Okamoto method (FR-189-AC-1), seed 7 and `max_witnesses` 3. The entry returns one record, `measured` with decision `rejected`, equal to the record `analyze` returns for that item over the same checked package, binding and limits; its three sampled witnesses equal `analyze`'s and each replays `Reproduced` through `replay_sampled_witness` over `Service`'s checked subject. No `EmittedPackage` of `Service` exists in the run; `Service`'s `emit_checked` is refused before and after the entry runs. | Test (TC-761) |
 | FR-280-AC-6 | AC-2's request with its items in reverse order returns their records in that reverse order, each equal to AC-2's record for the same item. The same items with a binding whose `universes` name a population the package does not declare return one `declined` record per item, cause `invalid-input`, code `invalid_runtime_input`/`wrong-role-mapping`; with a binding whose `initial` digest is absent from `snapshots`, one `declined` record per item, cause `incomplete-input`, code `unavailable_observation`/`missing-required-artifact`; in both, no engine runs. `qsl_analyze::provider::run`'s signature names no type from a driver, CG or RT crate (FR-280-AC-3's `cargo tree` check holds with the entry built). | Test (TC-761) |
+| FR-280-AC-7 | EN-1's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`temporal-satisfaction`, `bounded`) with the `domains` `{population, integer}`, the fairness kinds `{weak, strong}`, no evidence kinds and no `dynamics`, under a `BackendId` that differs from EN-4's. A registry holding it and a descriptor advertising `temporal-satisfaction` with `dynamics` `["hybrid"]` gives a temporal item that carries no `requirements` the EN-1 `BackendId` alone, and an item carrying `"requirements": ["hybrid-dynamics"]` the other alone; neither settles `ambiguous-backend`. | Test (TC-761) |
 
 ## Dependencies
 
