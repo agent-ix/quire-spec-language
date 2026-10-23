@@ -192,7 +192,7 @@ pub(crate) struct Rule {
     pub(crate) debt_list: &'static [DebtEntry],
 }
 
-/// today's six T-12 rules (ADR-011 §3 FB-05, T-12; ADR-013 O-04, O-05,
+/// today's seven T-12 rules (ADR-011 §3 FB-05, T-12; ADR-013 O-04, O-05,
 /// O-13/QC-21, T-1).
 pub(crate) const RULES: &[Rule] = &[
     Rule {
@@ -394,6 +394,49 @@ pub(crate) const RULES: &[Rule] = &[
         scope_note: Some(
             "scoped to QSL's own tree, where no module is an allowed caller; a backend names \
              its own admitted-package reader in its own run of the check",
+        ),
+        shipped_only: true,
+        debt_list: &[],
+    },
+    Rule {
+        id: "T12-G",
+        description: "only `check`, `library` and `value::definition` of `qsl-semantics` call a \
+                      `quire_checked::construct` constructor (ADR-011 FB-14, FR-400 \"Checking \
+                      authority\" rule 3)",
+        role: Role::Qsl,
+        // Every function of the `construct` module builds a checked term. The
+        // module is compiled only under `quire-checked`'s `construct`
+        // feature, which only `qsl-semantics` enables in its manifest, but
+        // Cargo feature unification turns it on for the whole workspace, so
+        // this rule is what keeps another crate from building one. A path
+        // through the module matches as a `use` leaf, a call or a function
+        // value. `check` and every module under it may build any checked
+        // term; `library` mints `PackageId` and `value::definition` admits
+        // `AdmittedIntegerDivision`.
+        call_patterns: &["quire_checked::construct"],
+        forbidden_patterns: &[],
+        forbidden_modules: &[],
+        allowed_callers: &[
+            AllowedCaller {
+                crate_src: "qsl-semantics/src",
+                module_prefix: "check",
+            },
+            AllowedCaller {
+                crate_src: "qsl-semantics/src",
+                module_prefix: "library",
+            },
+            AllowedCaller {
+                crate_src: "qsl-semantics/src",
+                module_prefix: "value::definition",
+            },
+        ],
+        requires_path: None,
+        pending_reason: "",
+        scope_note: Some(
+            "scoped to QSL's own tree and to the spelling `quire_checked::construct`: a crate \
+             alias (`use quire_checked as qc;`) or a nested use tree \
+             (`use quire_checked::{construct, ..};`) is not matched; the manifest check \
+             (TC-390) is what confines the `construct` feature to `qsl-semantics`",
         ),
         shipped_only: true,
         debt_list: &[],
@@ -2769,6 +2812,81 @@ mod tests {
             .unwrap();
         assert_is_qsl_root(&qsl_root).unwrap();
         let rule = RULES.iter().find(|rule| rule.id == "T12-F").unwrap();
+        let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_029 (T12-G, FR-400-AC-3): a `quire_checked::construct`
+    /// path from `qsl-eval`, `qsl-package` or `qsl-semantics`' `model` fails,
+    /// naming file, line and module; `check`, `library` and
+    /// `value::definition` pass.
+    #[trace("TC-157", "FR-060-AC-2", "FR-400-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_029_construct_outside_the_checker_is_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        let call =
+            "fn f() {\n    let _ = quire_checked::construct::admitted_integer_division(p);\n}\n";
+        write(dir.path(), "qsl-eval/src/run.rs", call);
+        write(dir.path(), "qsl-package/src/emit.rs", call);
+        write(dir.path(), "qsl-semantics/src/model/key.rs", call);
+        write(dir.path(), "qsl-semantics/src/check/deep/node.rs", call);
+        write(dir.path(), "qsl-semantics/src/library/mod.rs", call);
+        write(dir.path(), "qsl-semantics/src/value/definition.rs", call);
+        write(dir.path(), "qsl-semantics/src/value/other.rs", call);
+        write(
+            dir.path(),
+            "qsl-semantics/src/model/test_only.rs",
+            "#[cfg(test)]\nmod tests {\n    fn f() { quire_checked::construct::x(); }\n}\n",
+        );
+        let rule = RULES.iter().find(|rule| rule.id == "T12-G").unwrap();
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        let mut found: Vec<(String, usize, String)> = outcome
+            .violations
+            .iter()
+            .map(|site| {
+                let file = site.file.strip_prefix(dir.path()).unwrap();
+                (file.display().to_string(), site.line, site.module.clone())
+            })
+            .collect();
+        found.sort();
+        assert_eq!(
+            found,
+            vec![
+                ("qsl-eval/src/run.rs".to_owned(), 2, "run".to_owned()),
+                ("qsl-package/src/emit.rs".to_owned(), 2, "emit".to_owned()),
+                (
+                    "qsl-semantics/src/model/key.rs".to_owned(),
+                    2,
+                    "model::key".to_owned()
+                ),
+                (
+                    "qsl-semantics/src/value/other.rs".to_owned(),
+                    2,
+                    "value::other".to_owned()
+                ),
+            ],
+            "{:?}",
+            outcome.violations
+        );
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_030 (T12-G on this repository's own tree,
+    /// FR-400-AC-3): no shipped QSL module outside the allow-list calls a
+    /// `construct` constructor.
+    #[trace("TC-157", "FR-060-AC-2", "FR-400-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_030_construct_live_tree_is_clean() {
+        let qsl_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        assert_is_qsl_root(&qsl_root).unwrap();
+        let rule = RULES.iter().find(|rule| rule.id == "T12-G").unwrap();
         let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);

@@ -139,6 +139,10 @@ struct PackageDependencies {
     build: Vec<String>,
     /// Each normal (and build) dependency with the features it enables.
     shipped_features: Vec<(String, Vec<String>)>,
+    /// The tables (`[dependencies]`, `[dev-dependencies]`,
+    /// `[build-dependencies]`) in which the package enables `quire-checked`'s
+    /// `construct` feature.
+    construct_tables: Vec<&'static str>,
     /// The package's own `default` feature list.
     default_features: Vec<String>,
     /// Every one of the package's own `[features]` entries, `default`
@@ -216,6 +220,20 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
                                 .to_owned(),
                             strings(&dependency["features"]),
                         )
+                    })
+                    .collect(),
+                construct_tables: dependencies
+                    .iter()
+                    .filter(|dependency| dependency["name"].as_str() == Some("quire-checked"))
+                    .filter(|dependency| {
+                        strings(&dependency["features"])
+                            .iter()
+                            .any(|feature| feature == "construct")
+                    })
+                    .map(|dependency| match dependency["kind"].as_str() {
+                        Some("dev") => "[dev-dependencies]",
+                        Some("build") => "[build-dependencies]",
+                        _ => "[dependencies]",
                     })
                     .collect(),
                 default_features: strings(&package["features"]["default"]),
@@ -410,6 +428,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-foundation",
                     "qsl-semantics",
                     "quire-canonical",
+                    "quire-checked",
                     "quire-contract-model",
                     "quire-exact",
                     "quire-semantic-value",
@@ -436,6 +455,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-package",
                     "qsl-semantics",
                     "quire-canonical",
+                    "quire-checked",
                     "quire-eval",
                     "quire-exact",
                     "quire-semantic-value",
@@ -759,6 +779,7 @@ fn a_lower_layer_naming_quire_eval_fails_the_placement_check() {
         dev: Vec::new(),
         build: Vec::new(),
         shipped_features: Vec::new(),
+        construct_tables: Vec::new(),
         default_features: Vec::new(),
         features: Vec::new(),
     };
@@ -785,5 +806,63 @@ fn a_lower_layer_naming_quire_eval_fails_the_placement_check() {
     assert_eq!(
         quire_eval_placement_violations(&fixture),
         ["qsl-semantics names quire-eval in [dependencies], which sits above it"]
+    );
+}
+
+/// Every package that enables `quire-checked`'s `construct` feature, named
+/// with the table, or through one of its own features that forwards to it.
+fn construct_enablers(packages: &[PackageDependencies]) -> Vec<String> {
+    let mut found = Vec::new();
+    for package in packages {
+        for table in &package.construct_tables {
+            found.push(format!("{} in {table}", package.name));
+        }
+        for (feature, values) in &package.features {
+            for value in values {
+                if value.starts_with("quire-checked/") && value.ends_with("construct")
+                    || value.starts_with("quire-checked?/") && value.ends_with("construct")
+                {
+                    found.push(format!("{} through its feature `{feature}`", package.name));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// FR-400-AC-1: `qsl-semantics` is the only crate that enables
+/// `quire-checked`'s `construct` feature, in any table.
+#[trace("FR-400-AC-1", "TC-390")]
+#[test]
+fn only_qsl_semantics_enables_the_construct_feature() {
+    let enablers = construct_enablers(&workspace_dependencies());
+    assert_eq!(enablers, ["qsl-semantics in [dependencies]"]);
+}
+
+/// FR-400-AC-1: a fixture manifest in which `qsl-eval` enables `construct`
+/// fails the check, naming the crate and the table.
+#[trace("FR-400-AC-1", "TC-390")]
+#[test]
+fn a_crate_other_than_qsl_semantics_enabling_construct_is_named() {
+    let package = |name: &str, construct_tables: Vec<&'static str>| PackageDependencies {
+        name: name.to_owned(),
+        normal: Vec::new(),
+        dev: Vec::new(),
+        build: Vec::new(),
+        shipped_features: Vec::new(),
+        construct_tables,
+        default_features: Vec::new(),
+        features: Vec::new(),
+    };
+    let fixture = vec![
+        package("qsl-semantics", vec!["[dependencies]"]),
+        package("qsl-eval", vec!["[dev-dependencies]"]),
+    ];
+    assert_eq!(
+        construct_enablers(&fixture),
+        [
+            "qsl-semantics in [dependencies]",
+            "qsl-eval in [dev-dependencies]"
+        ]
     );
 }
