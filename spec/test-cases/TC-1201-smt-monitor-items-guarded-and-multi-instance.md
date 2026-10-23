@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-315
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-314
+    type: verifies
 ---
 # TC-1201: The SMT encoding reads every TP-2 formula, guarded clauses and several instances through per-instance monitors
 
@@ -17,7 +19,15 @@ instance, with one monitor per instance, the false-extension end letter,
 the past-the-end distinctness form and the reading of satisfiable models
 by rules 4, 4b and 4c.
 
-Scope: FR-315-AC-33 to FR-315-AC-39.
+Scope: FR-315-AC-33 to FR-315-AC-39 and FR-314-AC-8.
+
+S3 and S4 refuse an `on each` clause, guarded or not, `NotEmitted`
+(FR-337, QSL-926), so the test builds the checked package of each `on each`
+and guarded item itself, as FR-126-AC-16 does: a package of the unit that
+carries the clause's `temporal`/`temporal_clause` node in QSpec FR-370's
+shape (activation `kind` `each`, `trigger` the `over` parameter's node and,
+for a guarded item, `guard` the condition's term). The `on origin` and
+unguarded TP-3 items of steps 3, 6 and 7 compile from source.
 
 Steps 2, 3, 5 and 7 read scripts with a `QF_LIA` solver, and read their
 models by FR-315's rules with FR-128's replay. Steps 1, 4 and 6 read the
@@ -34,16 +44,17 @@ printed script.
    then check `InductionStep{depth: 1}`, `InductionBase{depth: 2}` and
    `InductionStep{depth: 2}` for `eventually[0,1] holds(c.value >= 1)`
    `on each`.
-3. Encode and check `Unrolling{depth: 4}` and `Unrolling{depth: 1}` for
+3. Encode and check `Unrolling{depth: 4}` for
    `always[0,3] eventually[0,1] holds(c.value >= 1)` and
    `always[0,3] eventually[0,1] holds(c.value = 3)` `on origin`, read each
    satisfiable model by rule 4b and replay its prefix; then encode
+   `Unrolling{depth: 0}`, `Unrolling{depth: 1}`, `Unrolling{depth: 3}` and
    `InductionBase{depth: 4}` for each.
 4. Encode `Unrolling{depth: 1}` for the guarded
    `always holds(c.value <= 1)` `on each` `when c.value >= 3` under
    infinite-trace, and `Unrolling{depth: 2}` for
    `eventually[0,3] holds(c.value = 3)` `on each`
-   `when 6 mod (2 - c.value) >= 0` under event-position false-extension.
+   `when c.value + 2 = c.value` under event-position false-extension.
 5. With a solver, check `Unrolling{depth: 3}` for the guarded TP-1 item of
    step 4, then, with the condition `c.value = 7`, `InductionStep{depth: 2}`,
    `InductionBase{depth: 3}` and `InductionStep{depth: 3}`; then check step
@@ -56,6 +67,9 @@ printed script.
 7. With a solver, take FR-315-AC-39's two models of step 6's
    `Unrolling{depth: 2}` (by asserting each model's steps), read each by
    rules 4 and 4c, and replay the prefix with its `over_binding`.
+8. Check FR-314-AC-8's `BoundedComplete` bases below the horizon and for a
+   TP-1 item, with and without a certificate, and FR-314-AC-1's accepted
+   bounded certificate.
 
 Tag the tests `#[trace("TC-1201", "FR-315-AC-n")]`.
 
@@ -77,8 +91,8 @@ Tag the tests `#[trace("TC-1201", "FR-315-AC-n")]`.
   `Inductive{depth: 2}`.
 - Step 3: the `>= 1` query at depth 4 unsatisfiable, `BoundedComplete{depth:
   4}`; the `= 3` query at depth 4 read as the prefix `0, 1, 2, 3`,
-  replayed to `refuted`; at depth 1 no outcome; both `InductionBase`
-  requests refused `query-kind`.
+  replayed to `refuted`; the depth 0, 1 and 3 requests and both
+  `InductionBase` requests refused `query-kind`.
 - Step 4: `m0.0`, `m1.0` and no `h<i>`; letter 2's term
   `(and (not C<i>) A<i>)`; the stutter disjunct in each step assertion. The
   false-extension query's condition failures `(and (not h<p>) F)` at
@@ -99,3 +113,7 @@ Tag the tests `#[trace("TC-1201", "FR-315-AC-n")]`.
 - Step 7: the `c.inc`, `d.inc` model fails at position 2 with only
   instance 0 rejecting and is replayed to `refuted` with `over_binding`
   `c`; the `d.inc`, `c.inc` model names `d`.
+- Step 8: each basis below the horizon, and the TP-1 basis, rejected
+  `ShapeMismatch` at `Query { part: Unrolling }` before any encoding and
+  settled `inconclusive`, `CertificateRejected`, with or without a
+  certificate; the accepted certificate still `Verified` (FR-314-AC-8).
