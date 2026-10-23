@@ -170,6 +170,26 @@ fn hybrid_manifest_admission_checks_dynamics_after_fairness_and_evidence() {
         RegistrationCause::InvalidDynamics(DynamicsDefect::MissingBounds("max_solver_time"))
     );
     assert_eq!(
+        defect(
+            Some(DynamicsMember::List(&kinds)),
+            Some(SolverBounds {
+                max_solver_steps: Some(0),
+                max_solver_time: Some(60),
+            })
+        ),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::InvalidBound("max_solver_steps"))
+    );
+    assert_eq!(
+        defect(
+            Some(DynamicsMember::List(&kinds)),
+            Some(SolverBounds {
+                max_solver_steps: Some(1_000_000),
+                max_solver_time: Some(0),
+            })
+        ),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::InvalidBound("max_solver_time"))
+    );
+    assert_eq!(
         admit(
             Some(DynamicsMember::List(&kinds)),
             Some(FairnessKindsMember::List(&[FairnessLabel::Text("other")])),

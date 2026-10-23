@@ -584,6 +584,16 @@ impl BackendDescriptor {
                         self.dynamics_refusal(DynamicsDefect::MissingBounds("max_solver_time"))
                     );
                 }
+                if bounds.max_solver_steps == Some(0) {
+                    return Err(
+                        self.dynamics_refusal(DynamicsDefect::InvalidBound("max_solver_steps"))
+                    );
+                }
+                if bounds.max_solver_time == Some(0) {
+                    return Err(
+                        self.dynamics_refusal(DynamicsDefect::InvalidBound("max_solver_time"))
+                    );
+                }
             }
         }
         self.dynamics = dynamics;
@@ -899,6 +909,8 @@ pub enum DynamicsDefect {
     DuplicateLabel(String),
     /// A hybrid provider omitted this required published bound.
     MissingBounds(&'static str),
+    /// A published hybrid solver bound was zero.
+    InvalidBound(&'static str),
 }
 
 /// Why a registration is refused: the FR-290 registration causes, all
