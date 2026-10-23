@@ -36,3 +36,13 @@ required trait method (`contract.rs:340`). FR-065-CON-2 exists. The build log is
 ## Verdict
 
 Not mergeable until FND-001 is fixed. The new normative rule is correct against the code. The same ADR and ADR-011, though, still describe the stage-participation table the rule says does not exist. The two low findings are wording.
+
+## Dispositions
+
+Round 1, against head 6371a397. Gate `make check-spec-validation` at 6371a397: exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
