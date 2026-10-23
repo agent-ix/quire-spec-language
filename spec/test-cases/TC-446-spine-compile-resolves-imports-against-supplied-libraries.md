@@ -111,9 +111,10 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 - Step 6: `p`'s call node id and the package's `package_id` both differ
   from step 5's.
 - Step 7: the outcome's package bytes are exactly the bytes spine `compile` returns for step 5's
-  unit and library, exit 0; the `0-draft` request, a `libraries` entry
-  with an empty identity, and a `libraries` entry with a `version` member,
-  refuse with `invalid-request`, exit 20, no package bytes.
+  unit and library, exit 0; the `0-draft` request refuses with
+  `unknown_edition` at stage `profile`, and a `libraries` entry with an
+  empty identity and a `libraries` entry with a `version` member refuse
+  with `invalid-request`; each exits 20 with no package bytes.
 
 - Step 8: `stage_limit_exceeded` at stage `intake` at `test/b`'s import of
   `test/c`, node count, bound 2, actual 3, setting `dependency.libraries`,
@@ -130,4 +131,4 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   `CompileRefusal::Dependency`; the lock holds `refinement_internals` for the
   first compile and no member for the absent and `[]` values; the
   `1-draft` request carries both members and the `0-draft` request refuses
-  with `invalid-request`.
+  with `unknown_edition` at stage `profile`.
