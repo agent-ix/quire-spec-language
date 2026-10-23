@@ -1,5 +1,5 @@
 ---
-id: SR-16215
+id: SR-16246
 title: "spec-review of the execute signature, backend choice and supplied backends (quire-spec-language PR 1323)"
 type: SpecReview
 analysis: base
@@ -78,3 +78,20 @@ reverts #1316's FR-294 seam types. FND-003 is a scope-deferral under the
 standing rule. The signature, `SuppliedBackend` and the exit codes are
 sound. The head has since moved to 7875f6ca, which needs a fresh review
 against these findings and against #1316's FR-279-AC-4.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | efcddb17: one design. An unsupplied backend is `CallFailure::Unsupported(UnsupportedEntry { backend, cause: NotSupplied })` (FR-279, FR-296). `BackendNotSupplied` is gone. #1316 (fc63c46b) contains this PR's 7875f6ca, so FR-279-AC-4, FR-285-AC-6, FR-294-AC-5 and FR-296-AC-2..4 have one text in both PRs, and FR-279-AC-5 is gone. |
+| FND-002 | fixed | efcddb17: the head again carries FR-294's seam text. `git merge-tree` of efcddb17 with #1316 fc63c46b is clean. The merged FR-294 keeps `UnsupportedCause`, `PreparedEntries::unsupported` and `PrepareLimitReached`, and has no "holds per-entry" sentence. |
+| FND-003 | fixed | efcddb17: STD-369's whole scope is in this PR: FR-294's `PrepareLimits`, a `PrepareFailure` with no per-entry arm, `UnsupportedEntry`/`UnsupportedCause`, `CallFailure::{Unsupported, Limit}`, ADR-029 EB-1 and TC-778. |
+| FND-004 | fixed | efcddb17: FR-279 Outputs lists `Limit(PrepareLimitReached)` and `Unsupported`. FR-285's Description gives `CallFailure::Unsupported` unsupported and `CallFailure::Limit` incomplete. |
+| FND-005 | fixed | efcddb17: "prepare exactly the selected entry with the chosen execution backend under `limits.prepare`, the one `PrepareLimits` that applies to whichever backend is chosen". |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-006 | medium | `PrepareLimits` is defined only as "the translation work and the generated code size one `prepare` may use". The spec does not say what one compile work unit counts, what `code_bytes` counts, when each charge is made, or whether `&Cancel` is polled at each charge. FR-294-AC-5's test backend charges "one compile work unit per entry", so it does not constrain a real AOT or JIT. Two backends can count differently and both pass. State the counters, the charge points and the cancel poll. The same text in #1316 is SR-16220 FND-008. | spec/functional/FR-294-run-every-execution-backend-behind-one-seam.md:49,120 | missing-requirement |
+| FND-007 | medium | On its own, this head has `CallFailure::Unsupported(UnsupportedEntry)` in the `quire-eval` leaf, whose `backend` is FR-296's `ExecutionBackendChoice`. But only #1316's FR-401 rows place `UnsupportedEntry`, `UnsupportedCause` and `ExecutionBackendChoice` in `quire_eval`. Merged alone, FR-401's "the leaf depends on no QSL crate" contradicts an arm that holds QSL types. Merge #1323 and #1316 together (#1316 contains this head), or carry #1316's FR-401 rows here. | spec/functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md; spec/functional/FR-294-run-every-execution-backend-behind-one-seam.md:51-56 | missing-requirement |
