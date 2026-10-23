@@ -12,7 +12,7 @@ relationships:
 
 Verify the protocol subject's construction and refusals, the thread paths and ordinals, binder removal and the canonical state key.
 
-Scope: FR-205-AC-1 to FR-205-AC-8.
+Scope: FR-205-AC-1 to FR-205-AC-9.
 
 ## Test Procedure
 
@@ -20,7 +20,8 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
 
 1. Build the subject; build variants differing in `over` and in the
    `terminal` member and compare obligation identities; build with an absent
-   protocol name, an unbound `w`, and `k` bound outside the universe.
+   protocol name, a binding supplied for `w`, an unbound `v` in the
+   `role v on M::Cell` variant, and `k` bound outside the universe.
 2. Read the initial key; take `fork(Both)` and read the key; serialize it
    twice; read `observations` in every reachable state; repeat with the
    variant whose post-join node reads `a`, the `sequence { attempt A;
@@ -48,6 +49,9 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
    step `Committed` while the thread rests at its retry point; read the
    `observations` member and the enabled steps of that thread after each
    step. Repeat with the retry relation `l.ok`.
+
+9. Read `w`'s `roles` entry in every state of `Fill`; build FR-205-AC-9's
+   two-alias variant with no role bindings and read both roles' entries.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 
@@ -81,3 +85,6 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
   `cattempt`, after `cend` or after the step of `Committed`. In the `l.ok`
   variant, no attempt record in any state, and one state after the two first
   `cattempt` steps.
+- Step 9: `w`'s entry is `{"type":"model-binding","selection":"<M's
+  identity>"}` in every state; the two-alias variant builds, with entries
+  naming `M`'s and `N`'s identities (FR-205-AC-9).
