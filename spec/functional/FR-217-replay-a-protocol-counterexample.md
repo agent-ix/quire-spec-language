@@ -62,6 +62,10 @@ causes, and the report counts as a refutation only then.
   `over` binding, the fairness set with each constraint's origin, `kind`,
   and for `kind: Deadlock`, `blocked`.
 
+- For a subject with an `on each` protocol, the subject's instance bound
+  `max_live_instances: Option<u64>`, the value the run used, `None` meaning
+  3 (ADR-027 AE-4).
+
 ## Outputs
 
 - An FR-072 replay result on the `ModelTrace` arm, or a typed
@@ -73,6 +77,12 @@ causes, and the report counts as a refutation only then.
   clause and the claim, re-admit the initial state, universes and bindings,
   build `ProtocolSystem` with the subject's memory models, and re-execute
   each step with FR-101 `replay`.
+- The executor SHALL re-execute each `activate` step under the subject's
+  `max_live_instances`, as the run did (FR-209). An `activate` step at a
+  pre-state that already holds that many live instances is not enabled
+  there: the executor SHALL refuse it `invalid_runtime_input`/
+  `invalid-value`, naming the step, as for any step that is not enabled.
+  The executor SHALL NOT otherwise compare the bound with the run's.
 - The executor SHALL read the fairness set, scheduler constraints included,
   from the recompiled clause, and SHALL refuse a payload fairness set that
   differs with `stale_dependency`/`content-mismatch`, naming both sets.
@@ -126,6 +136,7 @@ causes, and the report counts as a refutation only then.
 | FR-217-AC-5 | A counterexample whose prefix holds a `send` step of FR-206-AC-7's `overflow loss head` channel carries that step's `send_record` `{channel, payload, outcome, displaced}`, and no other step carries one; it replays, and the state key and the transition identity hold no send record. Changing the recorded `outcome` refuses `stale_dependency`/`content-mismatch`, naming the step and both records. | Test (TC-662) |
 | FR-217-AC-6 | The same counterexample with the `send` step's `send_record` removed, and with a `send_record` added to an `attempt` step, each refuses `invalid_runtime_input`/`invalid-value` before replay as a wire-shape defect and runs no step. | Test (TC-662) |
 | FR-217-AC-7 | Under a bounded profile, a fair protocol lasso whose loop has one counted step replays to `inconclusive` with cause `NoValue`, and the same lasso made unfair for a scheduler constraint refuses `invalid_runtime_input`/`invalid-value` as unfair. | Test (TC-662) |
+| FR-217-AC-8 | FR-209-AC-6's lasso, which holds one live instance at a time, replays to `reproduced-with-evaluated-witness` with `max_live_instances` 1 and with it unset (3). A hand-built prefix over FR-209-AC-1's protocol holding two `activate(Tick)` steps before any `finish` re-executes with `max_live_instances` 2, and with 1 refuses `invalid_runtime_input`/`invalid-value` at the second `activate`. | Test (TC-1200) |
 
 ## Dependencies
 
