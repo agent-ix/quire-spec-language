@@ -9,7 +9,7 @@
 //! outcome with no terminal record. No record carries an FR-242 truth or an
 //! FR-243 basis: the record has neither.
 
-use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_eval::simulation::model::{ClauseOutcome, ExpansionLimits};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_foundation::{BackendId, RequestIndex};
 use quire_exact::ScalarLimits;
@@ -124,10 +124,6 @@ pub enum UnsettledRefusal {
     /// (ADR-016 EX-8).
     #[error("the subject requires a bound")]
     RequiresBound,
-    /// A claim predicate's read was refused (FR-196's `PredicateRefused`):
-    /// FR-192's map has no row for it.
-    #[error("a claim predicate's read was refused")]
-    PredicateRefused,
     /// The subject did not admit (FR-120): FR-192's map has no row for it,
     /// so the refusal is the caller's to report as FR-106's admission
     /// failure.
@@ -230,7 +226,7 @@ pub fn settle_statistical_refusal(
         StatisticalRefusal::RequiresBound(_) => return Err(UnsettledRefusal::RequiresBound),
         StatisticalRefusal::Admission(_) => return Err(UnsettledRefusal::Admission),
         StatisticalRefusal::Symmetry(_) => return Err(UnsettledRefusal::Symmetry),
-        StatisticalRefusal::PredicateRefused(_) => return Err(UnsettledRefusal::PredicateRefused),
+        StatisticalRefusal::PredicateRefused(outcome) => predicate_refused(outcome),
         StatisticalRefusal::GeneratorMismatch { .. } => {
             request(StatisticalRequestRefusal::GeneratorMismatch)
         }
@@ -254,6 +250,30 @@ pub fn settle_statistical_refusal(
         )),
         StatisticalRefusal::Internal(fault) => StatisticalRecord::failed(fault.catalog_code()),
     })
+}
+
+/// FR-192's `PredicateRefused` rows, settled as EN-5 settles it (FR-203): a
+/// kernel refusal other than `CheckedInvariant`, or a family refusal, is
+/// `failed` with the refusal's own code and cause; an exhausted accounting
+/// counter is `incomplete` naming the counter and its configured bound
+/// (FR-255 Behavior 9); every other outcome is a broken invariant.
+fn predicate_refused(outcome: &ClauseOutcome) -> StatisticalRecord {
+    match outcome {
+        ClauseOutcome::KernelRefused(refusal) => match (refusal.code(), refusal.cause()) {
+            (Some(code), Some(cause)) => StatisticalRecord::failed(CatalogCode::new(code, cause)),
+            _ => StatisticalRecord::failed(BROKEN),
+        },
+        ClauseOutcome::FamilyRefused(code) => StatisticalRecord::failed(*code),
+        ClauseOutcome::Incomplete(incomplete) => {
+            StatisticalRecord::of(TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::of_counter(incomplete.limit_kind),
+                value: incomplete.limit,
+            }))
+        }
+        ClauseOutcome::KernelUndefined(_)
+        | ClauseOutcome::FamilyUndefined(_)
+        | ClauseOutcome::NotBoolean => StatisticalRecord::failed(BROKEN),
+    }
 }
 
 #[cfg(test)]
@@ -616,12 +636,75 @@ mod tests {
             settle_statistical_refusal(&refused),
             Err(UnsettledRefusal::Admission)
         );
-        assert_eq!(
-            settle_statistical_refusal(&StatisticalRefusal::PredicateRefused(
-                qsl_eval::simulation::model::ClauseOutcome::NotBoolean
+    }
+
+    fn predicate(outcome: ClauseOutcome) -> StatisticalRecord {
+        settle_statistical_refusal(&StatisticalRefusal::PredicateRefused(outcome))
+            .expect("a refused predicate read settles a record")
+    }
+
+    /// FR-192-AC-7 (TC-1166): a refused predicate read settles as EN-5
+    /// settles it. A kernel refusal other than `CheckedInvariant` is `failed`
+    /// with its own code and cause; an exhausted counter is `incomplete`
+    /// naming the counter and its bound; every other outcome is a broken
+    /// invariant.
+    #[trace("TC-1166", "FR-192-AC-7")]
+    #[test]
+    fn a_refused_predicate_read_settles_as_en5_does() {
+        use quire_exact::{Incomplete, IntegerInterval, LimitKind, Refusal};
+
+        let refused = predicate(ClauseOutcome::KernelRefused(Refusal::IntegerOutOfDomain {
+            target: Box::new(IntegerInterval::spanning(
+                Integer::from(0_i64),
+                Integer::from(1_i64),
             )),
-            Err(UnsettledRefusal::PredicateRefused)
+        }));
+        assert_eq!(refused.value, TerminalValue::Failed);
+        assert_eq!(
+            refused.diagnostic,
+            Some(CatalogCode::new("integer_out_of_domain", "outside-domain"))
         );
+
+        let family = CatalogCode::new("invalid_runtime_input", "invalid-value");
+        assert_eq!(
+            predicate(ClauseOutcome::FamilyRefused(family)).diagnostic,
+            Some(family)
+        );
+
+        let exhausted = |limit_kind| {
+            predicate(ClauseOutcome::Incomplete(Incomplete {
+                limit_kind,
+                limit: 9,
+                consumed: 9,
+                next_charge: Integer::from(1_i64),
+                charge_point: quire_exact::ChargePoint::TextInputBytes,
+            }))
+        };
+        assert_eq!(
+            exhausted(LimitKind::TextInputBytes).value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::Counter(LimitKind::TextInputBytes),
+                value: 9,
+            })
+        );
+        assert_eq!(
+            exhausted(LimitKind::WorkUnits).value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::EvaluationMeter,
+                value: 9,
+            })
+        );
+
+        for broken in [
+            ClauseOutcome::NotBoolean,
+            ClauseOutcome::KernelRefused(Refusal::CheckedInvariant {
+                cause: quire_exact::CheckedInvariantCause::NativeIntegerCapacityBreach,
+            }),
+        ] {
+            let record = predicate(broken);
+            assert_eq!(record.value, TerminalValue::Failed);
+            assert_eq!(record.diagnostic, Some(BROKEN));
+        }
     }
 
     /// FR-192: a `measured` item writes its result `measured`, its decision

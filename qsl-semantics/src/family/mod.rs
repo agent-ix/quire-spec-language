@@ -68,7 +68,7 @@ pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use outcome::CheckOutcome;
 pub use requirements::{
-    classify_domains, classify_extent, ClaimExtent, ClassifyFailure, Requirements,
+    classify_domains, classify_extent, ClaimEvidence, ClaimExtent, ClassifyFailure, Requirements,
     UnboundedDomains, UnsupportedItem,
 };
 

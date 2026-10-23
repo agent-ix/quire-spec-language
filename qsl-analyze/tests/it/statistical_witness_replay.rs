@@ -461,13 +461,13 @@ fn a_cancelled_replay_is_refused_as_cancelled() {
     );
 }
 
-/// Checks FR-280-AC-5 (TC-761 step 4) for the provider entry: `Service`'s
+/// TC-761 step 4, the part of FR-280-AC-5 that holds without `analyze`: `Service`'s
 /// checked package, which `emit_checked` refuses, is served by EN-4's entry.
 /// The `2 ms` claim (Okamoto, seed 7, `max_witnesses` 3) settles one
 /// `measured`, rejected record naming EN-4 whose three witnesses each replay
 /// `Reproduced`; no `EmittedPackage` exists, and `emit_checked` refuses
 /// before and after. The record is the same on a second run.
-#[trace("TC-761", "FR-280-AC-5")]
+#[trace("TC-761")]
 #[test]
 fn the_provider_entry_serves_a_package_s4_refuses_to_emit() {
     use qsl_analyze::statistical::manifest::BACKEND_ID;
@@ -481,7 +481,13 @@ fn the_provider_entry_serves_a_package_s4_refuses_to_emit() {
         (refusal.code(), refusal.cause())
     };
     let before = refused(&world);
-    assert_eq!(before.1, Some("not-yet-implemented"));
+    assert_eq!(
+        before,
+        (
+            qsl_foundation::Code::UnsupportedConstruct,
+            Some("not-yet-implemented")
+        )
+    );
 
     let serve = || {
         let mut records = serve_items(
@@ -522,4 +528,130 @@ fn the_provider_entry_serves_a_package_s4_refuses_to_emit() {
     }
     assert_eq!(serve(), record);
     assert_eq!(refused(&world), before);
+}
+
+/// The item at `index` deciding `P95` (threshold 2) with `method` under
+/// `limits`.
+fn routed<'a>(
+    world: &'a World,
+    index: usize,
+    method: StatisticalMethod,
+    limits: StatisticalLimits,
+) -> qsl_analyze::statistical::provider::RoutedItem<'a> {
+    qsl_analyze::statistical::provider::RoutedItem {
+        index: qsl_foundation::RequestIndex::new(index),
+        request: StatisticalRequest {
+            subject: world.subject(),
+            claim: world.claim("Two"),
+            method,
+            seed: 7,
+            sampler: sampler(),
+            limits,
+            max_witnesses: 1,
+            symmetry: Vec::new(),
+        },
+    }
+}
+
+/// TC-761 step 2 for the entry's item handling: each item keeps its own
+/// request index and its place in the result, whether it settles `measured`,
+/// stops at a limit, or is a negotiation refusal that settles no record.
+#[trace("TC-761")]
+#[test]
+fn the_provider_entry_keeps_each_items_index_and_settlement() {
+    use qsl_analyze::statistical::provider::serve_items;
+    use qsl_foundation::RequestIndex;
+    use qsl_replay::statistical::{StatisticalLimit, UnsettledRefusal};
+    use qsl_replay::{IncompleteCause, TerminalValue};
+
+    let world = World::new(&prob_world::service(&p95("Two", 2)));
+    let tiny = StatisticalLimits {
+        max_samples: 10,
+        ..StatisticalLimits::default()
+    };
+    let results = serve_items(
+        vec![
+            routed(&world, 7, StatisticalMethod::Okamoto, tiny),
+            routed(
+                &world,
+                3,
+                StatisticalMethod::Regenerative { min_cycles: 2 },
+                StatisticalLimits::default(),
+            ),
+            routed(
+                &world,
+                5,
+                StatisticalMethod::Okamoto,
+                StatisticalLimits::default(),
+            ),
+        ],
+        &Cancel::new(),
+    );
+    assert_eq!(results.len(), 3);
+    let limited = results[0].as_ref().expect("a limit stop settles a record");
+    assert_eq!(limited.request_index(), RequestIndex::new(7));
+    assert_eq!(
+        limited.value(),
+        &TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: qsl_replay::ModelCheckLimit::Statistical(StatisticalLimit::MaxSamples),
+            value: 10,
+        })
+    );
+    assert!(matches!(
+        results[1],
+        Err(UnsettledRefusal::NotStatistical(_))
+    ));
+    let measured = results[2].as_ref().expect("the third item settles");
+    assert_eq!(measured.request_index(), RequestIndex::new(5));
+    assert!(matches!(measured.value(), TerminalValue::Measured(_)));
+}
+
+/// A cancelled handle settles every item `incomplete`, `cancelled`, each at
+/// its own index and in order.
+#[trace("TC-761")]
+#[test]
+fn a_cancelled_run_settles_each_item_cancelled_in_order() {
+    use qsl_analyze::statistical::provider::serve_items;
+    use qsl_foundation::RequestIndex;
+    use qsl_replay::{IncompleteCause, TerminalValue};
+    use quire_exact::CancelCause;
+
+    let world = World::new(&prob_world::service(&p95("Two", 2)));
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    let results = serve_items(
+        vec![
+            routed(
+                &world,
+                4,
+                StatisticalMethod::Okamoto,
+                StatisticalLimits::default(),
+            ),
+            routed(
+                &world,
+                2,
+                StatisticalMethod::Sprt,
+                StatisticalLimits::default(),
+            ),
+        ],
+        &cancel,
+    );
+    let indices: Vec<_> = results
+        .iter()
+        .map(|result| {
+            result
+                .as_ref()
+                .expect("cancellation settles a record")
+                .request_index()
+        })
+        .collect();
+    assert_eq!(indices, [RequestIndex::new(4), RequestIndex::new(2)]);
+    for result in &results {
+        assert_eq!(
+            result.as_ref().expect("settled").value(),
+            &TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Requested
+            })
+        );
+    }
 }

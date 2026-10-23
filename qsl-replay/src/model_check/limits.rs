@@ -3,6 +3,7 @@
 //! run names.
 
 use qsl_eval::simulation::Limits;
+use quire_exact::LimitKind;
 
 use crate::statistical::StatisticalLimit;
 
@@ -110,11 +111,24 @@ pub enum ModelCheckLimit {
     MaxRelationTuples,
     /// An EN-4 budget (FR-191, FR-192).
     Statistical(StatisticalLimit),
+    /// An accounting counter other than the evaluation meter's work units
+    /// that a predicate read exhausted (FR-255 Behavior 9): the counter's own
+    /// name is both the limit and the setting.
+    Counter(LimitKind),
 }
 
 impl ModelCheckLimit {
+    /// The limit an exhausted accounting counter `kind` names: the
+    /// evaluation meter for its work units, otherwise the counter itself.
+    pub fn of_counter(kind: LimitKind) -> Self {
+        match kind {
+            LimitKind::WorkUnits => Self::EvaluationMeter,
+            other => Self::Counter(other),
+        }
+    }
+
     /// The limit's FR-331 spelling.
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::MaxStates => "max-states",
             Self::MaxTransitions => "max-transitions",
@@ -127,11 +141,12 @@ impl ModelCheckLimit {
             Self::MaxWitnessSet => "max-witness-set",
             Self::MaxRelationTuples => "max-relation-tuples",
             Self::Statistical(limit) => limit.as_str(),
+            Self::Counter(kind) => kind.as_str(),
         }
     }
 
     /// The request member that raises this limit, as the request spells it.
-    pub const fn setting(self) -> &'static str {
+    pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
@@ -144,6 +159,7 @@ impl ModelCheckLimit {
             Self::MaxWitnessSet => "max_witness_set",
             Self::MaxRelationTuples => "max_relation_tuples",
             Self::Statistical(limit) => limit.setting(),
+            Self::Counter(kind) => kind.as_str(),
         }
     }
 }
