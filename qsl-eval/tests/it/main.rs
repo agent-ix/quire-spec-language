@@ -42,6 +42,7 @@ mod quantity_literals;
 mod refinement_populations;
 mod relationship_navigation;
 mod relationship_reachability;
+mod smt_query;
 mod source_call;
 mod state_model_family;
 mod supplied_phases;
