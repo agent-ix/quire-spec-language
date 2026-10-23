@@ -37,3 +37,10 @@ Examined, clean:
 Not mergeable: FND-001 (high) block the PR; FND-002 (medium) should be fixed in the same round.
 
 Merge-tree clean against origin/main and every open QSL head.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head 10572ba8. A `StaticAuthority` digest is spelled `sha256-jcs:` followed by 64 lowercase hexadecimal digits. Its preimage is the RFC 8785 (JCS) encoding, as UTF-8 bytes, of the one parsed JSON value of the selected document, model, profile or configuration artifact, parsed and encoded exactly as FR-056's packag |
+| FND-002 | fixed | Round 1, head 10572ba8. A member digest spelled `sha256:<64 hex>` refuses with `Refusal::StaticAuthorityDigest` naming that member and cause `wrong-domain`, even when its hexadecimal digits equal the correct `sha256-jcs` digest; a `sha256-jcs:` digest with 63 digits, 65 digits, uppercase digits or a non-hex digit refuses ` |
