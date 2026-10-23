@@ -1264,8 +1264,8 @@ mod tests {
             })
             .expect("the valid case is reported");
         assert_eq!(*case.3, R);
-        assert_eq!(case.0.parent.identity, "ix://test/layering/typed-refusal");
-        assert_eq!(case.0.child.identity, "ix://test/layering/typed-refusal");
+        assert_eq!(case.0.parent.identity(), "ix://test/layering/typed-refusal");
+        assert_eq!(case.0.child.identity(), "ix://test/layering/typed-refusal");
         assert_eq!(case.0.parent_layer, EDGES[0].parent.identity());
         assert_eq!(case.0.child_layer, EDGES[0].child.identity());
         assert_eq!(case.1.class, "refused");
@@ -1334,10 +1334,10 @@ mod tests {
             })
             .collect();
         assert_eq!(failures.len(), 2);
-        assert!(failures.iter().any(|entry| entry == &&"E5/distinguishing"));
+        assert!(failures.iter().any(|entry| *entry == "E5/distinguishing"));
         assert!(failures
             .iter()
-            .any(|entry| entry == &&"quire.state.graph/v1/witness"));
+            .any(|entry| *entry == "quire.state.graph/v1/witness"));
         assert_eq!(report.exit, 30);
     }
 
