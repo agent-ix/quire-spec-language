@@ -611,20 +611,24 @@ fn forwards_to_test_support(value: &str, workspace_crates: &[&str]) -> bool {
 /// Cargo feature unification would otherwise switch it on in a shipped
 /// build. Measured: a root `default = ["qsl-semantics/test-support"]` fails
 /// this test.
-#[trace("FR-087-AC-1", "TC-243")]
+#[trace("FR-087-AC-1", "TC-243", "FR-400-AC-9")]
 #[test]
 fn no_shipped_dependency_enables_test_support() {
     let packages = workspace_dependencies();
-    let workspace_crates: Vec<&str> = packages
+    // FR-400-AC-9: `quire-checked` is outside the workspace but its
+    // `test-support` fixtures forge checked terms, so it is guarded too.
+    let mut workspace_crates: Vec<&str> = packages
         .iter()
         .map(|package| package.name.as_str())
         .collect();
+    workspace_crates.push("quire-checked");
     assert!(workspace_crates.contains(&"quire-spec-language"));
     // The matcher sees both spellings, including the `?` one Cargo accepts
     // only for an optional dependency, and nothing else.
     for (value, forwards) in [
         ("qsl-semantics/test-support", true),
         ("qsl-semantics?/test-support", true),
+        ("quire-checked/test-support", true),
         ("qsl-semantics/other", false),
         ("serde/test-support", false),
         ("dep:qsl-semantics", false),

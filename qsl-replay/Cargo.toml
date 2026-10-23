@@ -31,9 +31,10 @@ quire-exact = { workspace = true }
 # carries (re-exported at the crate root, so CG, which depends on this crate
 # alone, builds the arm).
 quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+# ADR-011 §6.1 layer C: the checked terms the evaluator reads (FR-400).
+quire-checked = { workspace = true }
 # ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
-quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 # ADR-011 §6.1 layer E: the evaluation interface and result vocabulary (FR-401).
 quire-eval = { workspace = true }
@@ -56,6 +57,10 @@ serde_json = { version = "1.0.151", features = ["raw_value"] }
 serde_path_to_error = "0.1.20"
 
 [dev-dependencies]
+# FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this
+# dev-dependency enables it; the root crate's `no_shipped_dependency_enables_test_support`
+# refuses a normal or build dependency that does.
+quire-checked = { workspace = true, features = ["test-support"] }
 # `qsl-semantics`' test-only fixtures (`check::fixture_source`,
 # `PackageDeclarations`, `CheckMode::Kernel`'s `check_expression`) for
 # `spine::call`'s own tests (TC-452 step 5, FR-100-AC-10): a standalone
@@ -65,7 +70,6 @@ serde_path_to_error = "0.1.20"
 # built (`tests/it/family_outcome_layering.rs`'s
 # `no_shipped_dependency_enables_test_support`, in the root crate, covers
 # every workspace crate), so it never reaches the production lib.
-quire-checked = { workspace = true, features = ["test-support"] }
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # The ordered charge log (`Meter::admitted_charges`) FR-107-AC-3's
 # `reaches` charge-sequence test asserts. A production meter keeps a count

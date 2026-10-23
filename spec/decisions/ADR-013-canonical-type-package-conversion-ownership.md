@@ -166,7 +166,7 @@ it.
 | --- | --- |
 | Owner | QSL `model::key`, intake stage. The domain package assigns the key; QSL never mints, renames or merges one (FR-321-AC-3). |
 | Implementing ticket | #131 (QSL PR #200) lands native references as `ValueTypeRef::Native`; #213 S-2 reworks the key after #131 merges. |
-| Public type | `model::key::DeclarationKey{package, node}`, digest domain `sha256-jcs`. It names declarations of a domain package only. The key has no version member; uniqueness across versions holds because O-01 admits one version per identity. A native type is not a declaration: native type references are `ValueTypeRef::Native(NativeValueType)` (AD-016). |
+| Public type | `quire_checked::key::DeclarationKey{package, node}` (`quire-checked`, ADR-011 layer C; FR-400), digest domain `sha256-jcs`. It names declarations of a domain package only. The key has no version member; uniqueness across versions holds because O-01 admits one version per identity. A native type is not a declaration: native type references are `ValueTypeRef::Native(NativeValueType)` (AD-016). |
 | Serialized authority | `model-effective-declaration.schema.json` `DeclarationKey`; v2 wire strings. |
 | Conversions | FCD IR node identity → `DeclarationKey` (intake). `DeclarationKey` → checked node id by minting the node-identity preimage with `ModelOwner{identity, node}` (O-04, C-02). No reverse computation: a node id reaches its `DeclarationKey` only by lookup in the model correspondence the checker records (O-04), as O-08 does. |
 | Validation and diagnostics | Intake refuses a `DeclarationKey` whose `package` is not a selected domain package. The pseudo-package form `DeclarationKey{package: "quire/native", …}` (ADR-010 OBS-006) is refused; a native reference resolves only as `ValueTypeRef::Native`, and it never shares the key space of a real package. #213 S-2 owns the adverse test for that refusal; #131 is asked to land it with PR #200. |
@@ -174,7 +174,7 @@ it.
 
 `linking::DeclarationKey` (native-v1 `RequirementRef` path) identifies native-v1
 authored declarations and is lane-private (§6). Its canonical counterpart is the
-checked node id (O-04), not `model::key::DeclarationKey`.
+checked node id (O-04), not `quire_checked::key::DeclarationKey`.
 
 #### O-04 Checked node identity (DA-02)
 
@@ -1363,7 +1363,7 @@ Primary-owner items:
 
 | Item | Decision |
 | --- | --- |
-| DA-01 | O-03: `model::key::DeclarationKey` for model declarations; checked node id for QSL-authored ones; `linking::DeclarationKey` lane-private. |
+| DA-01 | O-03: `quire_checked::key::DeclarationKey` for model declarations; checked node id for QSL-authored ones; `linking::DeclarationKey` lane-private. |
 | DA-02 | O-04, O-05: `NodeKey` (checked-semantic-node) and `EffectiveId` (effective-declaration) are distinct identities with no conversion; correspondence is checker-recorded. |
 | DA-03 | O-02: v2 `package_id` minted by QSL; `NativePackageIdentity` lane-private. |
 | DA-04 | O-15, T-1: `CheckedPackage`, defined in layer-4 `package`, canonical for S4; one nominal type per stage output; checker-only construction. |

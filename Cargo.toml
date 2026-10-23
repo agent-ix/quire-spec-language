@@ -104,6 +104,9 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 
 [dev-dependencies]
 serde_json_canonicalizer = "0.3.2"
+# FR-400-AC-9: `quire-checked`'s `test-support` (`DeclarationKey::fixture`, ...). Only this
+# dev-dependency enables it; the root crate's `no_shipped_dependency_enables_test_support`
+# refuses a normal or build dependency that does.
 # `qsl-semantics`' test-only fixtures and views (`ReaderAuthority::fixture`,
 # `DeclarationKey::fixture`, `check::family::fixtures`, ...) for this crate's
 # unit and integration tests. Only this dev-dependency may enable
