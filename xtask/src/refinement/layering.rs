@@ -217,7 +217,7 @@ pub enum EntryResult {
     /// A case's parent/child compile comparison.
     Case {
         /// Exact case identity.
-        name: CaseName,
+        name: Box<CaseName>,
         /// Parent compile.
         parent: SideResult,
         /// Child compile.
@@ -734,12 +734,12 @@ pub fn compare(
                 let child_compile = compile(&child.source);
                 let result = compare_case(parent_compile.class, child_compile.class);
                 results.push(EntryResult::Case {
-                    name: CaseName {
+                    name: Box::new(CaseName {
                         parent: parent.reference,
                         child: child.reference,
                         parent_layer: edge.parent.identity().to_owned(),
                         child_layer: edge.child.identity().to_owned(),
-                    },
+                    }),
                     parent: side_result(parent_compile),
                     child: side_result(child_compile),
                     result,
@@ -1400,10 +1400,8 @@ mod tests {
             })
             .collect();
         assert_eq!(failures.len(), 2);
-        assert!(failures.iter().any(|entry| *entry == "E5/distinguishing"));
-        assert!(failures
-            .iter()
-            .any(|entry| *entry == "quire.state.graph/v1/witness"));
+        assert!(failures.contains(&"E5/distinguishing"));
+        assert!(failures.contains(&"quire.state.graph/v1/witness"));
         assert_eq!(report.exit, 30);
     }
 
