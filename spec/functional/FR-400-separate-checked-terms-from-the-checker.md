@@ -172,7 +172,7 @@ applied recursively to the types its fields hold:
    `FormulaNode::Holds`'s span, `TemporalClaim`'s punctual span,
    `CheckedStateGraphClaim`'s and `CheckedHyperClause`'s spans,
    `CheckedStateClause`'s `DeclarationSpans` and `CheckedHyperClause`'s
-   `match_expression`. The moved record keeps its SV `Location`s.
+   `match_expression`. The moved record keeps its SV `ExpressionLocation`s.
 2. **Plain values from F or layer 2 move to SV.** A plain value type that a
    moved record carries and that `qsl-foundation` or `qsl-forms` defines
    moves down into SV in the same change and leaves no copy or re-export
@@ -274,7 +274,7 @@ SHALL name no `qsl_forms` item. `#[cfg(test)]` code may still build checked term
 ### Source locations
 
 A checked term SHALL carry its source position as the SV
-`quire_semantic_value::location::Location` it carries before the move;
+`quire_semantic_value::location::ExpressionLocation` it carries before the move;
 evaluation, losses, refusals and call-site locations use that value
 unchanged. Resolving a `Location` to a `SourceRegion` SHALL stay a
 checker-side step over the checker-side record, which keeps the spans and
