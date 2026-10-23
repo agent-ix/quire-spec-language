@@ -65,11 +65,11 @@ the printed script.
     FR-315-AC-27's `Tally` with `peek`.
 20. Read the false-extension `Counter` models and the altered base model
     FR-315-AC-28 describes, and replay what they yield.
-21. Encode `Unrolling{depth: 4}` and `InductionStep{depth: 2}` for
-    `always holds(c.value <= 3)` over `Counter` under event-position
-    false-extension.
-22. Encode `Unrolling{depth: 2}` for FR-315-AC-23's TP-3 item under
-    event-position false-extension.
+21. Inside `qsl-eval`, encode FR-315-AC-29's TP-1 and TP-3 items with their
+    profile set to event-position false-extension after S3.
+22. Settle FR-315-AC-30's `Inductive` result whose rebuild meets `Fault`,
+    and the vault's `EncodingRefused` outcome carrying `Fault`, the second
+    also with `HyperProductIdentity::of` returning `Fault`.
 23. Encode FR-315-AC-1's query and read the negated property's disjuncts.
 24. Call the encoding inside `qsl-eval` with a TP-1 item whose checked
     clause has its atom removed, and repeat FR-315-AC-21's requests.
@@ -126,14 +126,13 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
   the altered model's replay refused naming the altered step, settled as
   FR-127 settles that refusal (V-6 `ReplayRefused`); the
   `always[0,5] holds(c.value <= 1)` model at depth 2 gives no outcome.
-- Step 21: `h0` to `h4`, `(not h0)` and the halting steps; at each position
-  the disjuncts `h<p>`, then `(not (<= s<p>.c.value 3))`, then `inc`'s
-  `(and (not h<p>) F)`; no `(or h<p> ...)`; the step case leaves `h0` free
-  and compares no `h<i>` in distinctness.
-- Step 22: `m<i>` before `h<i>`, and every letter atom printed
-  `(and (not h<p>) a)`.
+- Step 21: `SmtEncodingRefusal::Fault` naming the infinite-trace invariant,
+  with no script and no `Refused` code, for both items.
+- Step 22: `SmtProofCheck::Fault` and `failed`, `Failed`, category failed;
+  the hyper outcome `failed`, `Failed`, not V-8; no `ItemIdentity` refusal.
 - Step 23: `h<p>` and then `(not ...)` at positions 0 to 3 only, each
   followed by `inc`'s postcondition failure; no atom-failure or
   precondition-failure disjunct.
-- Step 24: `InternalFault` (`runtime_invariant`) naming the atom invariant,
-  not `item-form`; no AC-21 request returns it.
+- Step 24: `Fault` carrying `InternalFault` (`runtime_invariant`) naming the
+  atom invariant, not `Refused` with `item-form`; no AC-21 request returns
+  it.
