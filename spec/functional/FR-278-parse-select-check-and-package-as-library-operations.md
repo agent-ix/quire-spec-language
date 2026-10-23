@@ -31,13 +31,15 @@ call shape (ADR-029 OP-1):
 
 - `parse` reads source bytes into syntax (S1, S2). It takes the source bytes,
   their `SourceIdentity` and the S1 and S2 limits, and returns
-  `Staged<ParsedSource>`. Tooling reads S1's `LosslessCst` from the
+  `Staged<ParsedSource>`. A package of several source units calls it once
+  per unit (FR-480). Tooling reads S1's `LosslessCst` from the
   `ParsedSource`.
-- `select` admits the domain packages a unit's `model` declarations select
+- `select` admits the domain packages the units' `model` declarations select
   (I1 `model::intake`, FR-056). It takes the domain package documents by
-  digest and the unit's model selections, and returns
+  digest and the model selections of every unit, and returns
   `Staged<AdmittedModels>`.
-- `check` checks and links (S3, S4). It takes the `ParsedSource`, the
+- `check` checks and links (S3, S4). It takes every unit's `ParsedSource`,
+  in request order (FR-480), the
   `AdmittedModels`, the dependency input (ADR-015 D-1, FR-099) and the lock
   evidence (ADR-011 §2.4), and returns `Staged<CheckedPackage>`.
 - `package` emits the checked package (E4). It takes `&CheckedPackage` and
@@ -46,7 +48,7 @@ call shape (ADR-029 OP-1):
   or replay (E9) the package.
 
 The composition `parse`, `select`, `check`, `package` is the spine compile: S1
-to E4 over one source. No single function runs the four; each caller composes
+to E4 over the package's unit list, one source or several (FR-480). No single function runs the four; each caller composes
 them. FR-027's native-compile/1 request for a `1-draft` program is the command
 encoding of this composition.
 
