@@ -67,8 +67,16 @@ stays on the record for the engineer to read, with its replay outcome.
       Unclassified,            // "unclassified": any other method
   }
   pub enum SolverCoverage {
-      Bounded { horizon: ExactRational, jumps: u64 }, // seconds, jump count
+      Bounded {
+          horizon: ExactRational,            // seconds
+          jumps: u64,                        // jump count
+          exhaustive: BTreeSet<BoundDimension>, // the dimensions the solver established complete
+      },
       Inductive,               // every time and every jump count
+  }
+  pub enum BoundDimension {
+      Time,   // "time": no behaviour takes more than `jumps` jumps by `horizon`
+      Jumps,  // "jumps": no behaviour takes one of its first `jumps` jumps after `horizon`
   }
   ```
 
@@ -132,18 +140,22 @@ The FR-331 terminal record of the claim.
   with any outcome included, is not sound.
 - QSL SHALL decide whether a sound `Bounded` result covers the claim by
   QSpec FR-193 "Proof coverage", from the `CheckedHybridClaim`'s clock and
-  horizon (FR-447): under `ModelTime` a horizon `Some(Seconds(r))` is covered
-  when `horizon >= r`; under `ModelSteps` a horizon `Some(Positions(n))` is
-  covered when `jumps >= n`, a position count never converted to seconds;
-  and a horizon `None` is never covered. An `Inductive` result covers every
-  claim.
+  horizon (FR-447). A bounded proof read the states a behaviour reaches by
+  time `horizon` with at most `jumps` jumps, and covers the claim only when
+  those include every state the claim reads, so both bounds count: under
+  `ModelTime` a horizon `Some(Seconds(r))` is covered exactly when
+  `horizon >= r` and `exhaustive` holds `Time`; under `ModelSteps` a horizon
+  `Some(Positions(n))` is covered exactly when `jumps >= n` and either `n`
+  is 0 or `exhaustive` holds `Jumps`, a position count never converted to
+  seconds; and a horizon `None` is never covered. An `Inductive` result
+  covers every claim.
 - The map SHALL be:
 
 | Provider result | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
-| A sound `Bounded{horizon, jumps}` result that covers the claim | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}, certification: Uncertified}` | success |
+| A sound `Bounded{horizon, jumps, exhaustive}` result that covers the claim | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps, exhaustive}, certification: Uncertified}` | success |
 | A sound `Inductive` result | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: InductiveSolver{method}, certification: Uncertified}` | success |
-| A sound `Bounded{horizon, jumps}` result that does not cover the claim | `inconclusive` | `unsettled` | `Inconclusive(InsufficientHorizon{horizon, jumps})`, never `Proved` | inconclusive |
+| A sound `Bounded{horizon, jumps, exhaustive}` result that does not cover the claim | `inconclusive` | `unsettled` | `Inconclusive(InsufficientHorizon{horizon, jumps, exhaustive})`, never `Proved` | inconclusive |
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result that is not sound | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive{trace, replay})`, `trace` the outcome's `Option<HybridTrace>`, `None` for an outcome that carries none, and `replay` its FR-450 static replay outcome, `None` with no trace | inconclusive |
 | `NoInitialState` | `inconclusive` | `unsettled` | `Inconclusive(NoInitialState)`, never `Proved`: a model with no behaviour proves nothing (QSpec FR-193 "Initial states") | inconclusive |
 | `Stopped(max_solver_steps)`, or any deterministic budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
@@ -175,14 +187,15 @@ The FR-331 terminal record of the claim.
   `uncertified`: a solver QSL runs is a native engine with no core
   certificate checker (ADR-018 PC-1, ADR-026 HY-2).
 - A `BoundedSolver` proof SHALL hold for the claim within its horizon and
-  jump bound, and the record SHALL carry both.
+  jump bound, every state the claim reads included, and the record SHALL
+  carry the horizon, the jump bound and `exhaustive`.
 - An `InductiveSolver` proof SHALL hold for the claim at every time and
   after any number of jumps.
 - QSL SHALL check the coverage of every `bounded-solver` proof it reads
   from a result entry, a plugin's `trusted` proof included (FR-290), against
   the claim's `CheckedHybridClaim`, and SHALL settle a proof that does not
-  cover the claim `Inconclusive(InsufficientHorizon{horizon, jumps})` with
-  the entry's own horizon and jumps. Coverage reads the proof's bounds and
+  cover the claim `Inconclusive(InsufficientHorizon{horizon, jumps, exhaustive})` with
+  the entry's own horizon, jumps and `exhaustive`. Coverage reads the proof's bounds and
   the claim, not the method's soundness, so it is not a second soundness
   decision.
 - QSL's result-entry reader SHALL refuse a first-party `uncertified`
@@ -240,12 +253,12 @@ The FR-331 terminal record of the claim.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim's item carries `"requirements": ["hybrid-dynamics"]` and routes to the registered fixture provider, whose descriptor `dynamics` is `["hybrid"]`, and not to EN-6 registered beside it. With no hybrid provider registered, EN-6 alone included, it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
-| FR-250-AC-2 | Fixture results over FR-447's `SlowEnough` (horizon `Seconds(10)`) map as the table states: a δ-complete `Unsat` with `Bounded{horizon: 10, jumps: 3}` settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `max_solver_steps` stop settles `incomplete`, `LimitReached{limit: max_solver_steps, ...}`; a `max_solver_time` stop and a provider `deadline_ms` overrun each settle `incomplete`, `TimedOut`; a frontend deadline settles `incomplete`, `Cancelled{source: deadline}`. No fixture result settles `refuted`. | Test (TC-705) |
+| FR-250-AC-2 | Fixture results over FR-447's `SlowEnough` (horizon `Seconds(10)`) map as the table states: a δ-complete `Unsat` with `Bounded{horizon: 10, jumps: 3, exhaustive: {Time}}` settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3, exhaustive: {Time}}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `max_solver_steps` stop settles `incomplete`, `LimitReached{limit: max_solver_steps, ...}`; a `max_solver_time` stop and a provider `deadline_ms` overrun each settle `incomplete`, `TimedOut`; a frontend deadline settles `incomplete`, `Cancelled{source: deadline}`. No fixture result settles `refuted`. | Test (TC-705) |
 | FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses the fixture provider's published `max_solver_time`, 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled{source: deadline}` raised on a run whose frontend FR-276 deadline fires; a wire `max_solver_time` of 1.5, a zero budget, an unknown `hybrid.limits` member, an empty `hybrid` and a `hybrid` with an empty `limits` are each refused by the hybrid provider before consumption; a request that sets no budget omits both members; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes, a `TimedOut` result of the shorter one being stored by neither. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: max_solver_steps, value: 1000, setting: hybrid.max_solver_steps}`, unchanged and in steps; a request that sets none uses the fixture provider's published `max_solver_steps`, 1,000,000. | Test (TC-705) |
 | FR-250-AC-4 | A fixture `EnclosureMeetsUnsafe` over FR-447's `Braking` carrying a trace that starts in `Moving` and takes transition 0 to `Stopped` settles `inconclusive`, `SolverInconclusive{trace: Some(..), replay: Some(..)}`, the trace equal to the fixture's and `replay` its FR-450 static replay outcome, with no `counterexamples` entry; a `DeltaSat` carrying none settles `SolverInconclusive{trace: None}`; that trace with transition 1, with an enclosure missing `t`, and with a time interval whose lower bound is 3 and upper bound 2, is each refused `invalid_result`/`invalid-value` at the member. Through the plugin reader (FR-290), a `solver-inconclusive` entry carrying that trace in QSpec FR-193's wire form on the `Braking` claim reads `SolverInconclusive{trace: Some(..)}` with the same trace, and the same entry on an FR-468 refinement item is `Malformed` at `/cause/trace`. | Test (TC-705) |
 | FR-250-AC-5 | Over FR-447's `Braking` with `initial { mode Moving when { v = 30 }; }`, whose condition `Moving`'s invariant `v <= 20` excludes, a fixture `NoInitialState` settles `inconclusive`, `NoInitialState`, never `Proved`, with no `counterexamples` entry; through the plugin reader a `no-initial-state` entry on that claim reads the same. | Test (TC-705) |
-| FR-250-AC-6 | Over `SlowEnough`, each with `Bounded{horizon: 10, jumps: 3}` unless stated: `(DeltaComplete, Unsat)` settles `Proved{BoundedSolver{DeltaComplete, 10, 3}, Uncertified}`; `(FlowpipeOutwardRounded, EnclosureDisjoint)` settles `Proved{BoundedSolver{FlowpipeOutwardRounded, 10, 3}, Uncertified}`; `(InductiveEnclosure, EnclosureDisjoint, Inductive)` settles `Proved{InductiveSolver{InductiveEnclosure}, Uncertified}`; `(DeltaComplete, EnclosureDisjoint)`, `(FlowpipeOutwardRounded, Unsat)`, `(InductiveEnclosure, EnclosureDisjoint, Bounded{10, 3})`, `(DeltaComplete, Unsat, Inductive)`, and `FlowpipeUnrounded` and `Unclassified` with `Unsat` and with `EnclosureDisjoint` each settle `inconclusive`, `SolverInconclusive{trace: None}`. Each `Proved` record writes the basis `{"type": "bounded-solver", "method": "delta-complete", "horizon": {"numerator": "10", "denominator": "1"}, "jumps": 3}` or `{"type": "inductive-solver", "method": "inductive-enclosure"}` with its spelling. A first-party `bounded-solver` entry with `method` `flowpipe-unrounded` is refused `invalid_result`/`invalid-value` at `/basis/method`. | Test (TC-705) |
-| FR-250-AC-7 | A sound `(DeltaComplete, Unsat)` result settles: over `SlowEnough` (horizon 10 s) with `horizon` 10 or 21/2 and `jumps` 3, `Proved`; with `horizon` 1, `Inconclusive(InsufficientHorizon{horizon: 1, jumps: 3})`; over the claim `always [0, 10] eventually [0, 5] holds(h.v < 30)` (horizon 15 s) with `horizon` 10, `InsufficientHorizon`; over `Recent` (`ModelSteps`, horizon `Positions(0)`) with `jumps` 0, `Proved`; over `eventually [0, 1] holds(h.v = 0)` under `clock "model-steps"` (horizon `Positions(1)`) with `jumps` 1 and `horizon` 10, `Proved`, and with `jumps` 0 and `horizon` 100, `InsufficientHorizon{horizon: 100, jumps: 0}`; over `Slows` (horizon `None`) and over `always holds(h.v < 30)` with any `Bounded` coverage, `InsufficientHorizon`, and as `(InductiveEnclosure, EnclosureDisjoint, Inductive)`, `Proved{InductiveSolver{..}}`. Through the plugin reader, a plugin's `trusted` `bounded-solver` proof with `horizon` 1 on `SlowEnough` settles `inconclusive`, `InsufficientHorizon{horizon: 1, jumps: 3}`, and with `horizon` 10 `proved`, `trusted`. No `InsufficientHorizon` record carries a trace or a `counterexamples` entry. | Test (TC-705) |
+| FR-250-AC-6 | Over `SlowEnough`, each with `Bounded{horizon: 10, jumps: 3, exhaustive: {Time}}` unless stated: `(DeltaComplete, Unsat)` settles `Proved{BoundedSolver{DeltaComplete, 10, 3, {Time}}, Uncertified}`; `(FlowpipeOutwardRounded, EnclosureDisjoint)` settles `Proved{BoundedSolver{FlowpipeOutwardRounded, 10, 3, {Time}}, Uncertified}`; `(InductiveEnclosure, EnclosureDisjoint, Inductive)` settles `Proved{InductiveSolver{InductiveEnclosure}, Uncertified}`; `(DeltaComplete, EnclosureDisjoint)`, `(FlowpipeOutwardRounded, Unsat)`, `(InductiveEnclosure, EnclosureDisjoint, Bounded{10, 3, {Time}})`, `(DeltaComplete, Unsat, Inductive)`, and `FlowpipeUnrounded` and `Unclassified` with `Unsat` and with `EnclosureDisjoint` each settle `inconclusive`, `SolverInconclusive{trace: None}`. Each `Proved` record writes the basis `{"type": "bounded-solver", "method": "delta-complete", "horizon": {"numerator": "10", "denominator": "1"}, "jumps": 3, "exhaustive": ["time"]}` or `{"type": "inductive-solver", "method": "inductive-enclosure"}` with its spelling. A first-party `bounded-solver` entry with `method` `flowpipe-unrounded` is refused `invalid_result`/`invalid-value` at `/basis/method`. | Test (TC-705) |
+| FR-250-AC-7 | A sound `(DeltaComplete, Unsat)` result settles, over FR-447's `Braking`, whose one jump occurs between times 10 and 20: over `SlowEnough` (horizon 10 s) with `Bounded{horizon: 10, jumps: 1, exhaustive: {Time}}` or `horizon` 21/2, `Proved`; with `horizon` 1, `Inconclusive(InsufficientHorizon{horizon: 1, jumps: 1, exhaustive: {Time}})`; with `Bounded{10, 0, {}}`, `InsufficientHorizon`, a behaviour possibly jumping at time 10; with `Bounded{10, 3, {Jumps}}`, `InsufficientHorizon`; over the claim `always [0, 10] eventually [0, 5] holds(h.v < 30)` (horizon 15 s) with `Bounded{10, 1, {Time}}`, `InsufficientHorizon`; over `Recent` (`ModelSteps`, horizon `Positions(0)`) with `Bounded{1, 0, {}}`, `Proved`; over `eventually [0, 1] holds(h.v = 0)` under `clock "model-steps"` (horizon `Positions(1)`) with `Bounded{20, 1, {Jumps}}`, `Proved`, with `Bounded{10, 1, {}}`, `InsufficientHorizon{horizon: 10, jumps: 1, exhaustive: {}}`, the jump possibly occurring at time 20, and with `Bounded{100, 0, {Jumps, Time}}`, `InsufficientHorizon`; over `Slows` (horizon `None`) and over `always holds(h.v < 30)` with any `Bounded` coverage, `InsufficientHorizon`, and as `(InductiveEnclosure, EnclosureDisjoint, Inductive)`, `Proved{InductiveSolver{..}}`. Through the plugin reader, a plugin's `trusted` `bounded-solver` proof with `horizon` 1, `jumps` 1 and `exhaustive` `["time"]` on `SlowEnough` settles `inconclusive`, `InsufficientHorizon{horizon: 1, jumps: 1, exhaustive: {Time}}`, and with `horizon` 10 `proved`, `trusted`. No `InsufficientHorizon` record carries a trace or a `counterexamples` entry. | Test (TC-705) |
 
 ## Dependencies
 

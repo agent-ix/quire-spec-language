@@ -58,12 +58,14 @@ refuted, with its trap evidence.
 // ProofBasis gains:
 //   ZoneCertified,
 //   ClosedForm { analysis: ClosedFormAnalysis },          // FR-248
-//   BoundedSolver { method: SolverMethod, horizon: ExactRational, jumps: u64 }, // FR-250
+//   BoundedSolver { method: SolverMethod, horizon: ExactRational, jumps: u64,
+//                   exhaustive: BTreeSet<BoundDimension> },                // FR-250
 //   InductiveSolver { method: SolverMethod },                                // FR-250
 // InconclusiveCause gains:
 //   NoAdmittedBehaviour, LassoNotConcretized, CertificateRejected,
 //   SufficientTestFailed, SolverInconclusive { trace: Option<HybridTrace> }, // FR-250
-//   InsufficientHorizon { horizon: ExactRational, jumps: u64 },             // FR-250
+//   InsufficientHorizon { horizon: ExactRational, jumps: u64,
+//                         exhaustive: BTreeSet<BoundDimension> },          // FR-250
 // UnsupportedCause gains: PunctualInterval, StopwatchRequired
 // CounterexampleKind gains: TimeLock
 ```

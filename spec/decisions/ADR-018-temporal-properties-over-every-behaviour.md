@@ -181,7 +181,7 @@ terminal record may carry the `fairness.strong-would-exclude` diagnostic
 (ADR-019 SV-6), which changes no verdict. Amended by ADR-026: `ProofBasis` also has `ZoneCertified` (a zone-engine
 proof whose certificate the checker accepted), `ClosedForm{analysis}` (a
 schedulability analysis whose evidence was recomputed) and
-`BoundedSolver{method, horizon, jumps}` (a sound hybrid solver result within
+`BoundedSolver{method, horizon, jumps, exhaustive}` (a sound hybrid solver result within
 its bounds) and `InductiveSolver{method}` (a sound inductive hybrid
 enclosure), each mapped to success, the first two `Certified` and the hybrid
 two `Uncertified`, from a solver with no core checker (PC-1); a

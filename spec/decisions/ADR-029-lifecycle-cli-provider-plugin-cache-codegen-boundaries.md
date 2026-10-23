@@ -650,7 +650,7 @@ kills the process.
   `Checks{success_checks}` count the plugin did not report. The bases a
   plugin proof can carry are `exhaustive`, `bounded-complete{depth}`,
   `inductive{depth}`, `reduced{reductions}`,
-  `bounded-solver{method, horizon, jumps}` and `inductive-solver{method}`.
+  `bounded-solver{method, horizon, jumps, exhaustive}` and `inductive-solver{method}`.
   Each carries `trusted` and the
   plugin's `BackendId`, whatever certification the same basis carries from
   a first-party engine. ADR-026 HY-2's `Uncertified` on a `BoundedSolver`
