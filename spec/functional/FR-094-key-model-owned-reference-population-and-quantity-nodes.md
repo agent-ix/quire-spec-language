@@ -307,14 +307,19 @@ node. A declared unit `u` and the
 single-term compound unit `u^1` are different `UnitId`s (ADR-013 OQ-B), so
 they have different type nodes.
 
-A function body that divides by a quantity refuses with
+A function body that divides by a quantity literal of nonzero magnitude
+([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md#quantity-literals))
+is admitted: the literal is a nonzero fact for the division. A body that
+divides by any other quantity refuses with
 `undefined_expression`/`unproved-nonzero`: a checked quantity type carries no
-value interval, so no guard proves a quantity divisor nonzero (QSpec FR-146;
-the `Quantity` divide arm of `check::facts`). A checked graph therefore
-holds a compound unit that a product forms, such as `metre^2` (U1), and
-holds no quotient unit. FR-094-AC-6 keys the quotient units U2 to U4 from
-the units `value::quantity::result_unit` forms, which is the forming `check`
-does while it types a quantity division.
+value interval, so no guard proves a divisor that is not a literal nonzero
+(QSpec FR-146; the `Quantity` divide arm of `check::facts`). A checked graph
+therefore holds the compound unit that each product forms, such as `metre^2`
+(U1), and the compound unit that each admitted quotient forms, whose terms are
+the dividend's with the divisor's exponents subtracted. FR-094-AC-6 keys the
+quotient units U2 to U4 from the units `value::quantity::result_unit` forms,
+which is the forming `check` does while it types a quantity division, and
+FR-094-AC-11 keys the quotient of a division by a literal.
 
 Quantity parameters, the existing quantity operations and quantity literals
 use these unit type nodes. A quantity literal in a value expression
@@ -704,6 +709,7 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, a declared unit for which the unit table holds no admitted node (a table built from the graph's units without `UnitTable::declared`), and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
 | FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
 | FR-094-AC-9 | For the unreferenced `billedTo` relationship selected through model alias `M`, `check` emits its `relation`/`relationship` node and records one `generated` occurrence at `M`'s declaration-site/source span, regardless of function or frame reachability; fallback `generated_location` and `UnlocatedOccurrence` are forbidden. | Test (TC-417) |
+| FR-094-AC-11 | With FR-093-AC-36's units, the quotient `a / 3 ms` over `a: Quantity<m>` has one `scalar_type`/`compound_unit` node, with no `declaration` and no `owner`, whose body is an `aggregate` of two terms in ascending root-unit node-key order: `unit` the `m` node with `exponent` the integer literal `1`, and `unit` the `s` node with `exponent` the integer literal `-1`. The quotient `d / 3 ms` over `d: Quantity<ms>` has a `compound_unit` node whose body is `aggregate{[]}`, and `d / 3 s` and `d / rational(-3, 1) ms` have that same node. Neither node is the `m` unit node, and the node of `a / 3 ms` is the node of `a / 0.5 s`. | Test (TC-419) |
 
 A check with two admitted versions of one domain package
 identity refuses as an internal fault.

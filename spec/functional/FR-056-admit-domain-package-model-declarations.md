@@ -221,7 +221,11 @@ bound to `Timestamp` SHALL resolve to that native type; binding it to `Integer`
 does not satisfy an event's `Timestamp` occurrence-field requirement under
 [FR-208](ix://agent-ix/quire-specification/FR-208).
 The compiler SHALL NOT replace `UUID`, `String` or `Timestamp` with a local
-alias or a Boolean stand-in.
+alias or a Boolean stand-in. The compiler SHALL also retain the distinct
+native types `Bytes` and `JsonObject` and the native `Duration`, which QSpec
+[FR-322](ix://agent-ix/quire-specification/FR-322) "Model-owned members"
+resolves to the type `Quantity<s>`; "Native Bytes, JsonObject and Duration"
+below states their payloads, checked types and operations.
 
 ### K2 canonical native String, UUID and Timestamp payloads
 
@@ -281,11 +285,12 @@ of the closed JSON envelope and passes only the decoded canonical-payload
 text to quire-exact; the kernel owns no JSON parser or envelope-member checks.
 
 Kernel admission SHALL return its `ConstructionRefusal` at `Component::Value`
-with one of three distinct typed `ConstructionCause` classes: noncanonical
-UUID payload, noncanonical Timestamp payload, or canonical Timestamp payload
-outside the signed-128 domain. These correspond to `noncanonical-payload`
-for the first two classes and `payload-out-of-domain` for the third in the
-controls below. IR-704 owns the Rust variant spellings. They extend
+with one of five distinct typed `ConstructionCause` classes: noncanonical
+UUID payload, noncanonical Timestamp payload, canonical Timestamp payload
+outside the signed-128 domain, noncanonical Bytes payload, or noncanonical
+JsonObject payload ("Native Bytes, JsonObject and Duration" below). These
+correspond to `noncanonical-payload` for the classes other than the third
+and `payload-out-of-domain` for the third in the controls below. IR-704 owns the Rust variant spellings. They extend
 quire-exact's own construction cause type, not the separate declaration-aware
 construction cause type of quire-semantic-value. A refusal produces no value;
 noncanonical text takes precedence over the range check.
@@ -295,7 +300,7 @@ unknown envelope members to the existing `invalid_runtime_input` causes
 `malformed-json`, `missing-member`, `duplicate-member` or `unknown-member`.
 It SHALL map a non-string payload or wrong native value kind to
 `invalid_runtime_input`/`wrong-value-kind`, and an invalid tag or any of the
-three kernel payload refusals to `invalid_runtime_input`/`invalid-value`.
+five kernel payload refusals to `invalid_runtime_input`/`invalid-value`.
 Every diagnostic retains the actual input path under
 [FR-272](ix://agent-ix/quire-specification/FR-272)'s runtime-input cause row.
 The adapter matches the typed kernel cause exhaustively, as
@@ -401,6 +406,112 @@ The checked package lowers each admitted comparison to the native-scalar
 equality identities of QSpec FR-322, as FR-093 states. QSpec FR-322 and
 FR-149 own the identities, the canonical equality and the refusal causes
 named here; this requirement states only that the unit language admits them.
+
+### Native Bytes, JsonObject and Duration
+
+QSpec [FR-322](ix://agent-ix/quire-specification/FR-322) "Model-owned members"
+resolves the member types `ix://quire/native/Bytes`,
+`ix://quire/native/JsonObject` and `ix://quire/native/Duration`, and QSpec
+[FR-149](ix://agent-ix/quire-specification/FR-149) states their equality. This
+requirement states, for the unit language, their payloads, checked types,
+runtime values and operations.
+
+**Payloads.** `Bytes` and `JsonObject` are native types and value kinds of the
+shared kernel, each distinct from every other native, as `String`, `UUID` and
+`Timestamp` are. A caller supplies the canonical payload and the kernel
+validates it before it constructs a typed value.
+
+| Native | Payload and single accepted text form | Closed wire object |
+| --- | --- | --- |
+| `Bytes` | An octet sequence of any length, the empty sequence included. Its text is the lowercase ASCII hexadecimal digits of the octets in sequence order, two digits per octet, the empty text for the empty sequence. | `{"kind":"bytes","text":"00ff"}` |
+| `JsonObject` | One JSON value of any kind (object, array, string, number, boolean or `null`; the name is the kernel's, the value is not limited to an object). Its text is the RFC 8785 (JCS) serialization of the value, which is the single accepted spelling: the text parses as one JSON value with no repeated member name at any depth, and serializing the parsed value under JCS gives the text again. Members are therefore in UTF-16 code unit order of their names, with no insignificant whitespace, strings and numbers are spelled as ECMAScript spells them, and a number is the shortest spelling of its IEEE binary64 value. | `{"kind":"json_object","text":"{\"a\":1,\"b\":[true,null]}"}` |
+
+Bytes `00FF`, `0`, `0x00`, `00 ff`, whitespace and non-hexadecimal digits are
+noncanonical. A JsonObject text that is not one JSON value, that repeats a
+member name, that has insignificant whitespace (`{"a": 1}`), members out of
+order (`{"b":1,"a":1}`), a number that is not the shortest spelling of its
+binary64 value (`1.0`, `1e2`, `-0`, `9007199254740993`) or a number outside
+the binary64 range is noncanonical; `{}`, `[]`, `3`, `"x"` and `null` are
+canonical. A bare JSON number is not a payload, even for zero. Neither
+payload is normalized, repaired or rounded: the kernel constructor returns its
+`ConstructionRefusal` at `Component::Value` with the cause class
+noncanonical Bytes payload or noncanonical JsonObject payload, builds no
+value, and takes no `CheckedInvariant` fault. The JsonObject text is read by
+the shared reader of FR-261 under the calling stage's input limit, so a
+nesting depth is not a refusal of its own. The closed Bytes and JsonObject
+wire objects have exactly the members `kind` and `text`, and the runtime-input
+adapter above maps their envelope and payload failures as it maps the String
+and UUID objects. The same objects are read wherever FR-070 and FR-106 read
+the String object.
+
+**Equality and keys.** Within one native kind, equality compares the canonical
+payload content, as QSpec FR-149's Bytes and JsonObject rows state: two Bytes
+are equal exactly when they are the same octet sequence, and two JsonObject
+values are equal exactly when their canonical texts are identical, which is
+equality of kind, of member names and values (member order and insertion
+spelling carry no meaning), of array elements by position, of strings by code
+points and of numbers by binary64 value. The type-owned key is the canonical
+payload text compared as unsigned ASCII bytes with a proper prefix first, a
+representation order that authorizes no `<`, `<=`, `>` or `>=`. Bytes and
+JsonObject have distinct type identities, and cross-kind equality, including a
+Bytes against a String or JsonObject of identical-looking text, refuses
+without a Boolean or a coercion. A Bytes value's variable result-size
+accounting is its octet count, and a JsonObject value's is the UTF-8 byte
+count of its canonical text, both through the existing typed-result size path
+with no separate budget.
+
+**Checked types.** A field, parameter or result typed by native `Bytes` has the
+distinct checked value type `Bytes`, and one typed by native `JsonObject` the
+distinct checked value type `JsonObject`; both are first-class value leaves,
+not `Text`, `String` or `Reference`, and each displays under its own name. A
+field, parameter or result typed by native `Duration` has the checked type
+`Quantity<s>`, where `s` is the unit named `s` that the member can see as
+QSpec FR-322 "Model-owned members" resolves it: the unit `s` of the unit of
+compilation or the unit `s` of the selection that declares the member. A
+`Duration` and a `Quantity<s>` therefore have one type, the explicit
+conversion `convert<Quantity<s>>(e)` is how a quantity in another unit of the
+dimension `Time` becomes a Duration, and `Duration` adds no value type, no
+production and no operation of its own. When no unit `s` is visible the member
+refuses `missing_declaration`/`missing-name`, when both declare one it refuses
+`ambiguous_declaration`/`ambiguous-name`, and when `s` is not typed by a base
+dimension named `Time` the use refuses `ill_typed`/`operator-ineligible`, each
+as FR-322 states. A Duration runtime value is a `Quantity<s>` value and takes
+the wire form of a quantity over the unit `s`.
+
+**Operations.** In the unit language `=` and `!=` SHALL admit two operands of
+the same one native type `Bytes` or `JsonObject`, wherever each operand is a
+parameter, a field read, a call result, a `let` binding or a literal, with
+result type `Boolean`; `!=` is the negation of `=`, and equality is reflexive,
+symmetric and transitive. Over `Duration` the operations are the quantity
+operations of FR-094. Two further operations exist on `Bytes` and no operation
+exists on `JsonObject` beyond equality:
+
+| Call | Operands | Result |
+| --- | --- | --- |
+| `length(b)` | one `Bytes` | the octet count of `b`, an `Integer` |
+| `concat(a, b)` | two `Bytes` | the octets of `a` followed by those of `b`, a `Bytes` |
+
+So `length(concat(a, b)) = length(a) + length(b)`, `concat` is associative and
+the empty `Bytes` is its identity. `length` and `concat` resolve like the
+`UUID` and `Timestamp` constructors of FR-091 "Native scalar literals": the
+native operation is a candidate beside the unit's function, predicate and tuple
+declarations of that name, and exactly one candidate is required, so a unit
+that also declares a function `length` makes `length(b)` an
+`ambiguous_declaration`/`ambiguous-name` naming the use, the span of each
+declaration and the native operation without a span. A call of `length` or
+`concat` with an operand that is not a `Bytes`, or with the wrong operand
+count, refuses `ill_typed`/`type-mismatch` at the operand, or at the call for
+the count. `<`, `<=`, `>`, `>=`, `+`, `-`, `*` and `/` over `Bytes` or
+`JsonObject`, `length` or `concat` over a `JsonObject`, and a member access on a
+`JsonObject` refuse `ill_typed`/`operator-ineligible` before any charge; a
+comparison of `Bytes` or `JsonObject` with an operand of another type, among
+them each other, `String`, `Text`, `UUID`, `Integer` and `Quantity`, refuses
+`ill_typed`/`type-mismatch` with no Boolean and no coercion. Structural
+equality over an option, record, tuple, union or collection that holds these
+types compares each leaf by the rules above. The checked package lowers the
+comparisons, `length` and `concat` to the `quire.op.bytes.*` and
+`quire.op.json_object.*` identities of QSpec FR-322, as FR-093 states, and the
+literal forms are FR-091's.
 
 ### K2 admission and composite boundary
 
@@ -874,7 +985,7 @@ subtype distinctions above. Until the shared kernel and value environment
 represent a required type, the assembler's explicit
 `unknown_required_feature`/`unsupported-feature` result remains an unmet
 capability requirement; it does not establish K2 conformance.
-A `Float32` or `Float64` field SHALL refuse with `unknown_required_feature`/`unsupported-feature`; a floating type in a function signature or body is admitted (FR-091-OQ-4), and admitting the field is QSL-285.
+A `Float32` or `Float64` field SHALL assemble to a field of `ValueType::Float` of its width with the strict `exact` rounding mode, as a floating type in a function signature or body does (FR-091-OQ-4); a snapshot or invocation supplies its value as the Float object of FR-106.
 
 If a unit's `model` declaration spells a `sha256:` digest, then spine intake
 SHALL refuse it with `invalid_model_binding` at the declaration: that slot
@@ -914,7 +1025,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-17 | The canonical native controls below admit exactly the stated UUID and Timestamp payloads, retain their distinct native identities and refuse the stated alternatives without normalization. K2's `Instant` resolves to `Timestamp`; changing that binding to `Integer` gives TC-235 M04 run 5's `invalid_model_binding`/`malformed-declaration` at `OrderPlaced`'s `TypeDefinition.occurrenceField`, rather than an admitted substitute. | Test |
 | FR-056-AC-18 | TC-235 M17 run 1 retains `TaxedMoney`'s inherited `amount_minor`, `currency` and invariant `NonNegative`, its own `tax_minor`, and conformance to `Money`: its stated value is admitted at `Order/total` and wherever a parameter or result names `Money`, yet is unequal to the stated `Money` value because their most-specific types differ. M17 runs 2 and 3 retain the exact wrong-meaning and specialization-cycle refusals, including the cycle list, rather than object-reference or Boolean substitutes. | Test |
 | FR-056-AC-19 | Offering K2 bytes that the actual Semantic IR reader refuses retains every reader diagnostic and exposes no declaration, effective view or `normalize.record` charge. No downstream native binding repairs a reader refusal. An intake diagnostic on the same member as a retained reader diagnostic is subsumed by it. Once the reader contract admits those inputs, K2's version `1`, unused `population` construct, Timestamp binding and all TC-235 vectors remain unchanged; native payload admission alone does not establish their declaration counts, refusals, normalization or runtime results. | Test |
-| FR-056-AC-20 | A selected domain package with an object field typed `ix://quire/native/Float32` or `ix://quire/native/Float64` has no assembled field type and refuses at the unit's `model` declaration with `unknown_required_feature`/`unsupported-feature`; it yields no `PackageDeclarations`. The refusal does not assign a rounding mode. A function parameter of either floating type remains admitted under FR-091-OQ-4. | Test |
+| FR-056-AC-20 | A selected domain package with an object field typed `ix://quire/native/Float32` or `ix://quire/native/Float64` assembles to a field of `ValueType::Float` of that width with rounding mode `exact` and yields `PackageDeclarations`, and a `Set<Float64>` field or a `Float32` field of a record value type assembles the same way. A function parameter of either floating type is admitted under FR-091-OQ-4. | Test |
 | FR-056-AC-21 | An admitted package containing record value type `Address { street: Text[0, 64; nfc] }`, object field `Account.address: Address` and a record subtype `PostalAddress` retains one `record` export per record, all effective fields and invariants, and subtype conformance. The type environment gives `Account.address` the record value type, an optional `Address` field `Option<Address>`, and an ordered non-unique `[0, 3]` field `Sequence<Address>[0, 3]`, never `Reference<Address>`; an operation parameter or result naming `Address` has the same value type. | Test |
 | FR-056-AC-22 | A record value type with an identity field or an operation refuses with FR-208's named cause before assembly; an object or record field whose `typeRef` names an event type, state machine, process, persistence interface or namespace refuses `invalid_model_binding`/`malformed-declaration` at intake. A valid finite recursive record field, such as `Node { next?: Node }`, retains its record type and optional edge in the type environment; it is not refused solely because the declaration graph is recursive. | Test |
 | FR-056-AC-23 | K2's native String value retains any Unicode scalar sequence exactly, including empty, ASCII, multibyte and UUID-looking text; equality is exact-sequence equality, its key is UTF-8 byte order, and Text normalization does not apply. The closed String object accepts exactly `kind: string` and `text`; an extra member and a lone surrogate refuse, and the typed result wire round trip preserves each value and its UTF-8 byte contribution to result sizing. Existing Text, UUID and Timestamp kind encodings remain unchanged. String gains no arithmetic, concatenation or general relational operator; its unit-language `=` and `!=` are FR-056-AC-35's. | Test |
@@ -936,6 +1047,10 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-39 | A Text slot admits the retained sequence whose profile length is in `[min, max]` by every surface: over `Title` (`Text[1, 8; nfc]`), a snapshot value, a replayed call argument and a `Witness` entry holding U+0065 U+0301 eight times (eight retained scalars) admit; the same holding nine, or an empty text, refuse by the surface's own code (`invalid-value` for a snapshot value; `WrongValueKind` for a replayed argument, `Input` assignment or `Witness` entry) before any value, call or clause runs; under `binary-utf8` the length is bytes. A String in a Text slot and a Text in a String slot refuse as FR-106 states. Depends on the validator applicability change of the Text paragraph. | Test (TC-1044) |
 | FR-056-AC-40 | Over `function s using v(x: String): Boolean pure { x = "abc" }`, `x` = `abc` gives `true`, and `ABC`, `abc ` and the empty String give `false`. `"a" = "a"` and `"\u00e9" = "é"` are `true`; `"\u00e9" = "e\u0301"` and `"A" = "a"` are `false`. Over `u: UUID`, `u = UUID("00112233-4455-6677-8899-aabbccddeeff")` is `true` for that value and `u != UUID("00112233-4455-6677-8899-aabbccddeefe")` is `true`. Over `t: Timestamp`, `t = Timestamp(5)` is `true` for `5` and `false` for `6`; `Timestamp(0) = Timestamp(-0)` is `true`, `Timestamp(0) = Timestamp(1)` is `false`, and `Timestamp(-170141183460469231731687303715884105728) = Timestamp(170141183460469231731687303715884105727)` is `false`. A literal compares in a call argument, a `let` binding and a field-read comparison (`x.label = "a"`) by the same rules. The String functions `s` and its `!=` counterpart replay through the real spine (FR-098) with the evaluated value and settlement of the Boolean in the `abc`, `ABC` and empty-text rows; the other rows check and evaluate without replay. | Test (TC-1052) |
 | FR-056-AC-41 | A literal never changes type to fit its slot. `x = "abc"` over `x: Text[0, 8; nfc]`, `u = "00112233-4455-6677-8899-aabbccddeeff"` over `u: UUID`, `x = UUID("00112233-4455-6677-8899-aabbccddeeff")` over `x: String`, `t = 5` over `t: Timestamp`, `n = Timestamp(5)` over `n: Integer`, and `r = "abc"` over `r: Reference<T>` each refuse `ill_typed`/`type-mismatch` at the comparison; the bodies `5` of a function whose result is `Timestamp`, `UUID("00112233-4455-6677-8899-aabbccddeeff")` of one whose result is `String` and `"abc"` of one whose result is `Text[0, 8; nfc]` refuse the same way at the literal. `"abc" < "abd"`, `UUID("00112233-4455-6677-8899-aabbccddeeff") <= UUID("00112233-4455-6677-8899-aabbccddeefe")` and `Timestamp(1) > Timestamp(2)` each refuse `ill_typed`/`operator-ineligible`. | Test (TC-1052) |
+| FR-056-AC-46 | `Bytes` payloads `""`, `00`, `00ff` and `deadbeef` are admitted, and `00FF`, `0`, `0x00`, `00 ff`, ` 00`, `gg` and a JSON number `0` each refuse with the noncanonical Bytes cause, no value and no `CheckedInvariant` fault. `JsonObject` payloads `{}`, `[]`, `3`, `"x"`, `null` and `{"a":1,"b":[true,null]}` are admitted, and `{"b":1,"a":1}`, `{"a": 1}`, `{"a":1.0}`, `{"a":1e2}`, `{"a":-0}`, `{"a":9007199254740993}`, `{"a":1e999}`, `{"a":1,"a":2}`, `""` and `{` each refuse with the noncanonical JsonObject cause. A JsonObject payload of 100000 nested arrays (`[[[...]]]`) within the stage's input byte limit is admitted, and one past that limit refuses with that limit's outcome (FR-255), never by a stack overflow. | Test (TC-1231) |
+| FR-056-AC-47 | A runtime input `{"kind":"bytes","text":"00ff"}` for a `Bytes` parameter and `{"kind":"json_object","text":"{\"a\":1}"}` for a `JsonObject` parameter are admitted; the Bytes object with text `00FF` and the JsonObject object with text `{"a": 1}` refuse `invalid_runtime_input`/`invalid-value` at the input path, an object with `kind` `bytes` for a `JsonObject` parameter, a `String` object for a `Bytes` parameter and a Bytes object for a `String` parameter refuse `wrong-value-kind`, and an object with a member beyond `kind` and `text`, a missing `text` or a non-string `text` refuses with the envelope cause of the String object. | Test (TC-1231) |
+| FR-056-AC-48 | A function over `a: Bytes`, `b: Bytes` with the bodies `a = b`, `a != b`, `length(a)` and `concat(a, b)`, and over `x: JsonObject`, `y: JsonObject` with the bodies `x = y` and `x != y`, checks with the result types `Boolean`, `Boolean`, `Integer`, `Bytes`, `Boolean` and `Boolean`. Evaluation: `00ff` = `00ff` is `true`, `00ff` = `00fe`, `00ff` = `00ff00` and `""` = `00` are `false`, `length` of `""` is `0` and of `deadbeef` is `4`, `concat(00ff, 10)` is `00ff10`, `concat("", a)` is `a`; the JsonObject payloads `{"a":1,"b":[true,null]}` and `{"a":1,"b":[true,null]}` are equal and `{"a":1,"b":[true,null]}` against `{"a":1,"b":[null,true]}`, `{"a":2,"b":[true,null]}` and `{"a":1}` are unequal. The same comparisons over record fields, call results and `let` bindings give the same results. | Test (TC-1231) |
+| FR-056-AC-49 | `a = x` over `a: Bytes`, `x: JsonObject`, `a = s` over `s: String`, `x = t` over `t: Text[0, 8; nfc]`, `a = n` over `n: Integer` and `a = u` over `u: UUID` each refuse `ill_typed`/`type-mismatch`; `a < b`, `a + b` over `Bytes`, `x <= y` over `JsonObject`, `length(x)` and `concat(x, y)` over `JsonObject` each refuse `ill_typed`/`operator-ineligible`; `length(s)` over `String`, `concat(a, s)` and `length(a, a)` refuse `ill_typed`/`type-mismatch`; a unit that also declares `function length using v(b: Bytes): Integer pure { 0 }` refuses the call `length(b)` as `ambiguous_declaration`/`ambiguous-name`. A `Duration` parameter beside a unit declaring `dimension Time; unit s : Time = rational(1, 1);` has the type `Quantity<s>`, `d = rational(3, 2) s` over `d: Duration` checks, and the same `Duration` with no unit `s`, with two units `s`, and with `unit s` typed by a dimension other than `Time` refuse `missing_declaration`/`missing-name`, `ambiguous_declaration`/`ambiguous-name` and `ill_typed`/`operator-ineligible` respectively. | Test (TC-1231) |
 | FR-056-AC-42 | A domain package whose operation parameter has `typeRef` `ix://quire/unit/ms` is admitted by intake with the `typeRef` unresolved; the assembler resolves it to the unit `ms` of a compiling unit that declares `ms`, and refuses it `missing_declaration`/`missing-name` naming `Operation.params[0].typeRef` when the unit declares no `ms`. A `typeRef` of the form `ix://quire/unit/<name>` on a field and on a result behave the same. | Test (TC-147) |
 | FR-056-AC-44 | A domain package whose operation parameter, operation result and alias `target` have `typeRef` `ix://quire/native/Clock`, whose field `Call.s` is typed by that alias, whose field `Call.w` is a clock with presence `optional`, whose record value type `Timer` holds a clock field `x`, whose sequence `items`, map `values` and field `Call.q` (multiplicity `{0, 3, true, false}`) are `Clock` is admitted by intake with no declaration built for any clock; `Call.w` is `Option<Clock>` and `Call.q`, the sequence and the map are clock collections. A `reference` `target` of `Clock` refuses intake with FR-154's `malformed-declaration`. | Test (TC-147) |
 | FR-056-AC-45 | A domain package whose alias `target`, sequence `items` and map `values` have `typeRef` `ix://quire/unit/ms` is admitted with each `typeRef` unresolved; the assembler resolves each to the unit `ms` of a compiling unit that declares `ms`, reading `Quantity<ms>`, `Sequence<Quantity<ms>>` and `Map<Text, Quantity<ms>>`, and refuses each `missing_declaration`/`missing-name` naming `TypeDefinition.target`, `TypeDefinition.items` and `TypeDefinition.values` when the unit declares no `ms`. | Test (TC-147) |
