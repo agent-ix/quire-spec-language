@@ -69,3 +69,11 @@ Round 1, by the reviewer, at 509e057d6 (fix commit 03d0e5172).
 | FND-001 | fixed | 03d0e5172. The FR-280-AC-5 tag is dropped (now `#[trace("TC-761")]`, with the doc naming the part that holds without `analyze`), and the refusal is asserted as `(Code::UnsupportedConstruct, Some("not-yet-implemented"))`. The analyze-equality and evidence-kind clauses of AC-5 remain open under QSL-596. |
 | FND-002 | fixed | 03d0e5172. `the_provider_entry_keeps_each_items_index_and_settlement` serves indices 7, 3 and 5 out of order: `max_samples` 10 gives `incomplete` `limit-reached{MaxSamples, 10}`, Regenerative gives `Err(NotStatistical)`, and the third gives `measured`. `a_cancelled_run_settles_each_item_cancelled_in_order` checks `Incomplete(Cancelled{Requested})` at 4 and 2, in order. A mis-indexed, reordered or refusal-swallowing `serve_items` now fails. |
 | FND-003 | fixed | 03d0e5172. `Requirements` carries `ClaimEvidence`; `CheckedProbabilisticClaim::requirements` records `exact` when `exact_only` and `statistical` otherwise; `items_with_evidence` with `EvidenceSelection::{Record, One, Both}` writes the items per FR-075 (both kinds at indices `n + j`, record indices unchanged, no kind on other capabilities); `candidates_of` routes by `candidates_for_evidence`. `the_request_builder_names_the_evidence_kind_of_each_probabilistic_item` checks the FR-075-AC-18 results. The S3-record half is new FND-004. |
+
+## Dispositions (round 2)
+
+Round 2, by the reviewer, at 325723f6e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 325723f6e. `each_probabilistic_claim_records_its_evidence_kind` is now `#[trace("TC-1163")]`, and its doc says "Checks TC-1163 step 1", so the matrix no longer counts FR-195-AC-6. FR-195-AC-6 stays open until S3 writes the probabilistic requirement record (QSL-570 follow-up, spec question first). |

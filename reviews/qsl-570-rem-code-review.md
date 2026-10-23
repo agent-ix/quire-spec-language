@@ -54,3 +54,20 @@ Round 1, by the reviewer, at 509e057d6 (fix commit 03d0e5172).
 | --- | --- | --- |
 | FND-001 | fixed | 03d0e5172. `settle_statistical_refusal` settles `PredicateRefused` through `predicate_refused` by FR-192 rows 114-116: a kernel refusal with code and cause gives `failed` with that code (only `CheckedInvariant` has none, so it gives `BROKEN`); a family refusal gives `failed` with its code; `Incomplete` gives `incomplete` `limit-reached` with the configured bound; `NotBoolean` and the undefined outcomes give `BROKEN`. `UnsettledRefusal::PredicateRefused` is deleted, and the FR-192-AC-7 test is added. The counter-naming part is wrong; see new FND-003. |
 | FND-002 | fixed | 03d0e5172. The module doc now says that no `analyze` exists (FR-281, QSL-596), and that `analyze` must settle through `serve_request` so the two stay one path. |
+
+## New findings (disposition pass 2)
+
+Reviewed at 325723f6e.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-192 contradicts itself about the evaluation-meter setting, and the code now follows only one side. FR-192-AC-1 and TC-627 step 1 say a `Stopped` by an expansion naming `EvaluationMeter` settles with "setting `meter`". FR-192 row 105 says that setting is "the exhausted accounting counter's name for the evaluation meter". FR-255 says "The evaluation meter an engine reads is the call's accounting limits, whose setting names are the accounting table's", and no FR-255 table has a `meter` setting. 325723f6e (`EvaluationMeter.setting()` = `work_units`, following this reviewer's round-1 FND-003) matches row 105 and FR-255, but now contradicts AC-1's text, and its TC-627 test asserts `work_units`. Every engine that stops at `ModelCheckLimit::EvaluationMeter` now reports setting `work_units`; no other test or schema in the repo asserts `meter`. Keep the code: `meter` is a setting the settings operation refuses. Fix the spec instead: a spec-only STD change of FR-192-AC-1 and TC-627 to `work_units`. This does not block the code merge. | spec/functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md:105,146; spec/test-cases/TC-627-statistical-results-settle-as-measured.md:31; qsl-replay/src/model_check/limits.rs:144 |
+
+## Dispositions (round 2)
+
+Round 2, by the reviewer, at 325723f6e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 325723f6e. `of_counter` is deleted. `predicate_refused` settles `LimitReached{Counter(incomplete.limit_kind), incomplete.limit}` for every counter, `work_units` included, so the limit and setting are the counter's own name (FR-255 Behavior 9). `EvaluationMeter.setting()` is `work_units`; the spec conflict this exposes is FND-005. The FR-192-AC-7 test asserts `Counter(LimitKind::WorkUnits)`. |
+| FND-004 | fixed | 325723f6e. The `statistical` fallback is gone. A probabilistic record with no evidence kind now gets `evidence: None` and `CandidateSet::none` (no backend), and no second-kind item under `Both`, so an exact-only claim is no longer routed to EN-4. It is not prevented at the type level (`Requirements::new` can still build such a record) and has no test. Judged acceptable: no S3 path builds such a record, and the arm only guards a broken invariant. The type-level fix belongs with the S3 probabilistic-record work (SR-12361 FND-004), where the probabilistic `Requirements` constructor should take the evidence kind. |
