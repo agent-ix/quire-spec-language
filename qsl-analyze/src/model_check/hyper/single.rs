@@ -739,7 +739,7 @@ impl<'a> Run<'_, 'a> {
         let halt = match halt {
             ProductHalt::Expansion { stop, .. } => expansion_stop(&stop, self.budgets)?,
             ProductHalt::Meter(counter) => stopped(
-                ModelCheckLimit::EvaluationMeter { counter: counter },
+                ModelCheckLimit::EvaluationMeter { counter },
                 qsl_replay::meter_bound(&self.request.meter, counter),
             ),
             ProductHalt::Cancelled(source) => Halt {

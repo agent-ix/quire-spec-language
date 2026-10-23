@@ -469,7 +469,7 @@ impl Run<'_, '_> {
     /// checker found it wrong).
     fn meter_stop(&self, counter: LimitKind) -> Halt {
         stopped(
-            ModelCheckLimit::EvaluationMeter { counter: counter },
+            ModelCheckLimit::EvaluationMeter { counter },
             crate::meter_bound(&self.concrete.meter(), counter),
         )
     }

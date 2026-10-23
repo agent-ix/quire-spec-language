@@ -684,10 +684,7 @@ fn a_denied_letter_or_guard_charge_stops_with_the_accounting_setting() {
         };
         assert_eq!(cause, IncompleteCause::ResourceExhausted);
         let reached = limit.expect("the denied meter counter is named");
-        assert_eq!(
-            reached.limit,
-            ModelCheckLimit::EvaluationMeter { counter: counter }
-        );
+        assert_eq!(reached.limit, ModelCheckLimit::EvaluationMeter { counter });
         assert_eq!(reached.value, 0);
         assert_eq!(reached.limit.setting(), setting);
     }

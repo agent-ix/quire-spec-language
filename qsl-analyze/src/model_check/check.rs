@@ -2416,7 +2416,7 @@ impl<S: SubjectSystem> Run<'_, S> {
     fn expansion_stop(&self, stop: ExpansionStop) -> Halt {
         match stop.limit {
             Some(ExpansionLimit::EvaluationMeter(counter)) => Self::stopped(
-                ModelCheckLimit::EvaluationMeter { counter: counter },
+                ModelCheckLimit::EvaluationMeter { counter },
                 qsl_replay::meter_bound(&self.meter, counter),
             )
             .into(),
