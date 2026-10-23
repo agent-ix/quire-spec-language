@@ -22,7 +22,7 @@ Fixtures: ADR-021 §7.3's subject; a constraint whose body is undefined at one s
 
 1. Run with the undefined-at-one-state constraint, with an absent constraint name, with a constraint false at the initial state, and with no universe for `counters`.
 2. Compare the obligation and request identities of the constrained and unconstrained requests; read the method; repeat TC-580 step 1.
-3. Run `SB` with `Zero` under `sc` and under `tso`; read `ProtocolSystem`'s `offered_reductions`; run `SB` with an absent constraint name.
+3. Run `SB` with `Zero` under `sc`, under `tso` and under `ra`; read `ProtocolSystem`'s `offered_reductions`; run `SB` with an absent constraint name.
 
 Tag the tests `#[trace("TC-581", "FR-158-AC-n")]`.
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-581", "FR-158-AC-n")]`.
 
 - Step 1: the item returns `Violated` with cause `UndefinedEvaluation` and a counterexample ending at that state, which replays, and that state is not a boundary state; `invalid_runtime_input`/`invalid-value` naming the constraint with no state expanded; one stored state; `RequiresBound`.
 - Step 2: equal obligation identities and different request identities, so neither result settles the other; `Low` in the method; equal outcomes and boundary counts.
-- Step 3: under `sc`, 3 stored states and `ConstraintReached{boundary_states: 2}`; under `tso`, `Violated` with counterexample `Sx`, `Sy`, `Lx`, `Ly`; the constraint offered; `invalid_runtime_input`/`invalid-value` naming the absent constraint with no state expanded.
+- Step 3: under `sc`, 3 stored states and `ConstraintReached{boundary_states: 2}`; under `tso`, `Violated` with counterexample `Sx`, `Sy`, `Lx`, `Ly`; under `ra`, 3 stored states and `ConstraintReached{boundary_states: 2}` with no counterexample; the constraint offered; `invalid_runtime_input`/`invalid-value` naming the absent constraint with no state expanded.
