@@ -1,6 +1,6 @@
 ---
 id: TC-017
-title: "Native CLI OS argument boundary"
+title: "Source intake at a non-UTF-8 path"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-010
@@ -9,13 +9,13 @@ relationships:
 
 ## Description
 
-Native CLI OS argument boundary. Type: E2E; priority P1. Traces: FR-010-AC-3, FR-010-AC-6, FR-010-AC-7.
+Source intake at a non-UTF-8 path. Type: integration; priority P1. Traces: FR-010-AC-6, FR-010-AC-7.
 
 ## Test Procedure
 
-On Unix invoke the real compiler with byte FF in each command/label position, then parse unchanged valid source from a temporary non-UTF-8 path. Verify labels/digest and missing-file behavior.
+On Unix, read unchanged valid source from a temporary non-UTF-8 path through FR-001's source intake and call the `parse` operation over it. Verify labels/digest and missing-file behavior.
 
 ## Expected Results
 
-Invalid command/label encoding returns exit 20, invalid or refused input, without panic; valid OS paths reach actual I/O and parsing, preserving exact source labels and digest.
+Valid OS paths reach actual I/O and parsing, preserving exact source labels and digest; a missing path refuses with exit code 20 and no outcome document.
 

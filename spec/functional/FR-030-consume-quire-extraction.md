@@ -5,10 +5,6 @@ type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-004
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-011
-    type: references
-  - target: ix://agent-ix/quire-spec-language/FR-022
-    type: references
   - target: ix://agent-ix/quire-spec-language/FR-109
     type: references
 ---
@@ -88,15 +84,13 @@ repositories, schemas, CLI/wire adoption and broader integration.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-030-AC-1 | Actual Quire extraction of an indented CRLF clause with Unicode surroundings reaches spine compilation and the clause runner's healthy, violating and refused outcomes with exact original and body identity. | Test (TC-108) |
-| FR-030-AC-2 | After a successful and after a failed spine compile, the retained ClausesOutcome keeps Quire's original availability, complete clause population and diagnostics; an unchecked tag alone does not pass the S1 parser. | Test (TC-108) |
+| FR-030-AC-2 | A successful extraction yields an ExtractedSource whose ClausesOutcome equals Quire's actual output unchanged: its availability, its complete clause population, its diagnostics and, for a clause tagged with an unchecked language, Quire's unchecked-language advisory. After a successful and after a failed spine compile of the body, the retained ClausesOutcome is still that one; an unchecked tag alone does not pass the S1 parser. | Test (TC-108) |
 | FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package; each foreign context field retains its distinct typed preflight cause before extraction. | Test (TC-108) |
 | FR-030-AC-4 | Verified original/body coordinates remain exact at body EOF and with trailing layout; invalid body identity and out-of-range mapping requests refuse. | Test (TC-108) |
 | FR-030-AC-5 | Original byte/line and spine limits return incomplete, with successful fresh retry; a build without `qsl-replay`'s `quire-extraction` calls no Quire extraction. | Test (TC-108) |
 
 ## Dependencies
 
-- [FR-011](FR-011-integrate-opaque-extraction.md): actual extraction integration.
-- [FR-022](FR-022-compile-mapped-native-clauses.md): source-mapped compile of one clause body.
 - [FR-109](FR-109-run-a-state-clause-through-the-spine.md) and
   [FR-031](FR-031-run-extracted-native-source.md): the spine clause runner that
   compiles and runs the extracted body.

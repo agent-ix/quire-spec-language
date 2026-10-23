@@ -5,8 +5,6 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-030
     type: verifies
-  - target: ix://agent-ix/quire-spec-language/FR-011
-    type: verifies
 ---
 ## Description
 
@@ -19,7 +17,11 @@ with immutable licensed Markdown, spine compile and the spine clause runner
 
 Compile selected indented CRLF and LF bodies with Unicode surroundings. Execute
 healthy/violating/refused input cases. Compare retained extraction metadata with
-the actual producer output. Exercise malformed/unsupported native bodies,
+the actual producer output: extract a document whose population holds the
+selected clause, a second clause and a clause tagged with an unchecked
+language, and compare the ExtractedSource's ClausesOutcome with the
+ClausesOutcome `quire-rs` returns for the same bytes and context, before and
+after a successful and a failed spine compile of the body (FR-030-AC-2). Exercise malformed/unsupported native bodies,
 foreign/stale selections, unavailable extraction, EOF mapping and exhausted limits.
 
 ## Expected Results
@@ -28,6 +30,10 @@ Each foreign source identity, path and package must return its own typed preflig
 without an extraction outcome. Both the default build and the build with
 `qsl-replay`'s `quire-extraction` run locally; the default build calls no
 Quire extraction.
+
+The ExtractedSource's ClausesOutcome equals Quire's actual result: the same
+availability, complete clause population, diagnostics and unchecked-language
+advisory; it is unchanged after either successful or failed spine compilation.
 
 The original clause remains identifiable through actual extraction, compilation
 and execution. All failed prerequisites retain their stage's data without a

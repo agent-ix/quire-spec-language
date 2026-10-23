@@ -1,47 +1,50 @@
 ---
 id: TC-430
-title: "Native run and compile requests and their outputs carry the two source labels"
+title: "Run requests and their outputs carry the two source labels"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-026
     type: verifies
-  - target: ix://agent-ix/quire-spec-language/FR-027
-    type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-031
     type: verifies
 ---
-# TC-430: Native run and compile requests and their outputs carry the two source labels
+# TC-430: Run requests and their outputs carry the two source labels
 
 ## Description
 
-Verify that the native-v1 request wire requires both FR-001 labels, that
-native-run-result/1 and native-linked-package/1 render them with the source
-digest and no other identity member, and that a request missing a label
-refuses as malformed. This catches a label defaulted by the lane. It also verifies that an
-extraction body record names a document identity plus a content digest.
+Verify that the native-run/1 request wire requires both FR-001 labels on a
+`1-draft` program source, that `spine-run-result/1` renders them with the
+source digest and no other identity member, and that a request missing a
+label refuses as malformed. This catches a label defaulted by the command.
+It also verifies that the clause-run request accepts `program.extraction`
+only in the `quire-extraction` build and refuses extraction on a function call.
 
-Scope: FR-026-AC-6, FR-027-AC-4, FR-031-AC-5.
+Scope: FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 and FR-031-AC-6.
 
 ## Test Procedure
 
-1. Run a native-run/1 request whose program source, model source and
-   snapshot selection each name `authority` `agent-ix` and their own
-   `identity`.
+1. Run a native-run/1 request selecting `tests/fixtures/spine-compile.native`
+   whose program source, model source and snapshot selection each name
+   `authority` `agent-ix` and their own `identity`.
 2. Run it again without the program source's `authority`, then without the
    snapshot selection's `identity`, then with a blank `authority`.
-3. Compile a native-compile/1 request with the same two labels, and
-   validate the package bytes against the native-linked-package/1 schema.
+3. Compile a native-compile/1 request with the same source labels and validate
+   the package bytes against the native-linked-package/1 schema.
 4. Compile it again without `identity`.
 5. Through the command built with `--features qsl-replay/quire-extraction`,
-   run a `1-draft` clause-run request whose `extraction` body record names
-   `authority` `agent-ix`, `identity` `b`, `document` `B` and, as `digest`,
-   the raw-artifact digest of the extracted body's bytes. Then run it without
-   the body's `authority`, without its `digest`, and with a `digest` of other
-   bytes. Run the first request through the command built with no features.
+   run a `1-draft` FR-312 clause-run request whose program selects an original
+   Markdown document and whose extraction body record names `authority`
+   `agent-ix`, `identity` `b`, `document` `B` and the raw-artifact digest of
+   the extracted body's bytes. Then run it without the body's `authority`,
+   without its `digest`, and with a digest of other bytes. Run the valid request
+   through the command built with no features.
+6. Run an ordinary `1-draft` function-call request carrying `program.extraction`
+   through the command built with no features and with
+   `--features qsl-replay/quire-extraction`.
 
-Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
-`#[trace("TC-430", "FR-027-AC-4")]`, and step 5
-`#[trace("TC-430", "FR-031-AC-5")]`.
+Tag steps 1 and 2 `#[trace("TC-430", "FR-026-AC-6")]`, steps 3 and 4
+`#[trace("TC-430", "FR-027-AC-4")]`, step 5 `#[trace("TC-430", "FR-031-AC-5")]`, and step 6
+`#[trace("TC-430", "FR-031-AC-6")]`.
 
 ## Expected Results
 
@@ -50,15 +53,20 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
 - Step 2: the first two refuse at the request stage with `invalid-request`,
   exit 20; the blank label refuses with `invalid_source_identity`, cause
   `blank-label`, `label` `authority`.
-- Step 5: the first runs, and its `/2` document's `extraction` member
-  renders the native identity (`agent-ix`, `b`, digest) and the formal
-  identity (`B`, digest); the second and third refuse with
-  `invalid-request`, exit 20; the fourth refuses
-  `stale_dependency`/`content-mismatch`, naming both digests; the build with
-  no features refuses `invalid-request` at stage `request`, naming
-  `extraction`, exit 20, with empty stdout.
-- Step 3: the package `source` names the two labels and the source digest,
-  and the schema accepts it.
+- Step 3: the package `source` names the two labels and source digest, and the
+  schema accepts it.
 - Step 4: `invalid-request`, exit 20.
+- Step 5: the valid feature-enabled clause run produces the FR-267 `/2`
+  document with the extraction member rendering the native identity
+  (`agent-ix`, `b`, digest) and formal identity (`B`, digest); missing
+  authority or digest refuses `invalid-request`, and a wrong digest refuses
+  `stale_dependency`/`content-mismatch`, naming both digests. The no-feature
+  build refuses `invalid-request` at stage `request`, naming `extraction`,
+  exit 20, with empty stdout.
+- Step 6: the no-feature call request refuses `invalid-request` naming
+  `extraction`; the feature-enabled call request refuses
+  `extraction-requires-run`; neither reads source or model files.
 
-Step 2's blank-label refusal renders a byte-0 span in the run output: the native `Diagnostic`'s retained debt (FR-001, "Where an S0 refusal is located"), not this requirement's behaviour.
+Step 2's blank-label refusal renders a byte-0 span in the run output: the
+native `Diagnostic`'s retained debt (FR-001, "Where an S0 refusal is located"),
+not this requirement's behaviour.
