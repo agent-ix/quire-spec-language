@@ -460,3 +460,66 @@ fn a_cancelled_replay_is_refused_as_cancelled() {
         CatalogCode::new("cancelled", "caller-cancelled")
     );
 }
+
+/// Checks FR-280-AC-5 (TC-761 step 4) for the provider entry: `Service`'s
+/// checked package, which `emit_checked` refuses, is served by EN-4's entry.
+/// The `2 ms` claim (Okamoto, seed 7, `max_witnesses` 3) settles one
+/// `measured`, rejected record naming EN-4 whose three witnesses each replay
+/// `Reproduced`; no `EmittedPackage` exists, and `emit_checked` refuses
+/// before and after. The record is the same on a second run.
+#[trace("TC-761", "FR-280-AC-5")]
+#[test]
+fn the_provider_entry_serves_a_package_s4_refuses_to_emit() {
+    use qsl_analyze::statistical::manifest::BACKEND_ID;
+    use qsl_analyze::statistical::provider::{serve_items, RoutedItem};
+    use qsl_foundation::RequestIndex;
+    use qsl_replay::TerminalValue;
+
+    let world = World::new(&prob_world::service(&p95("Two", 2)));
+    let refused = |world: &World| {
+        let refusal = qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
+        (refusal.code(), refusal.cause())
+    };
+    let before = refused(&world);
+    assert_eq!(before.1, Some("not-yet-implemented"));
+
+    let serve = || {
+        let mut records = serve_items(
+            vec![RoutedItem {
+                index: RequestIndex::new(0),
+                request: StatisticalRequest {
+                    subject: world.subject(),
+                    claim: world.claim("Two"),
+                    method: StatisticalMethod::Okamoto,
+                    seed: 7,
+                    sampler: sampler(),
+                    limits: StatisticalLimits::default(),
+                    max_witnesses: 3,
+                    symmetry: Vec::new(),
+                },
+            }],
+            &Cancel::new(),
+        );
+        assert_eq!(records.len(), 1);
+        records.remove(0).expect("the item settles a record")
+    };
+    let record = serve();
+    assert_eq!(record.request_index(), RequestIndex::new(0));
+    assert_eq!(record.backend().map(|id| id.as_str()), Some(BACKEND_ID));
+    let TerminalValue::Measured(verdict) = record.value() else {
+        panic!("expected measured, got {:?}", record.value());
+    };
+    assert_eq!(
+        verdict.decision,
+        qsl_replay::statistical::Decision::Rejected
+    );
+    assert_eq!(verdict.witnesses.len(), 3);
+    for witness in &verdict.witnesses {
+        assert_eq!(
+            replay(&world, "Two", &verdict.provenance, witness),
+            Ok(SampledWitnessReplay::Reproduced)
+        );
+    }
+    assert_eq!(serve(), record);
+    assert_eq!(refused(&world), before);
+}
