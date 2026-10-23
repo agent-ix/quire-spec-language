@@ -334,7 +334,8 @@ these names through the same operand grammar as the stage settings
    limit at its default from the table, and a call with each accounting
    counter at its default from the accounting table.
 8. **The settings operation sets every accounting budget by name.** Given
-   an operand `<counter>=<value>` whose name is in the accounting table,
+   an operand `accounting.<counter>=<value>` whose setting name is in the
+   accounting table,
    the settings operation SHALL return the call's accounting limits with
    that counter at `<value>` and every counter no operand names at its
    default. The grammar, value, duplicate and unknown-name rules are

@@ -1,6 +1,6 @@
 ---
 id: TC-921
-title: "Accounting budgets are settable by counter name and a reached budget names its setting"
+title: "Accounting budgets are settable by setting name and a reached budget names its setting"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-255
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
     type: verifies
 ---
-# TC-921: Accounting budgets are settable by counter name and a reached budget names its setting
+# TC-921: Accounting budgets are settable by setting name and a reached budget names its setting
 
 ## Description
 
