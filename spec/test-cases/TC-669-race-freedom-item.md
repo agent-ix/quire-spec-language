@@ -33,7 +33,8 @@ Use ADR-025 §10's message-passing shape.
    and with the flag passed by a `send` and `receive`; read each verdict.
 7. Under `ra` and under `tso`, run thread `a` loading `x` non-atomically then
    storing `x := 1` with `release`, and thread `b` running `fetch_add(1)` on
-   `x` with `ordering acquire`, then `relaxed`.
+   `x` with the precondition `x.v = 1`, so it reads only `a`'s store, with
+   `ordering acquire`, then `relaxed`.
 
 Tag the tests `#[trace("TC-669", "FR-224-AC-n")]`.
 
@@ -52,6 +53,7 @@ Tag the tests `#[trace("TC-669", "FR-224-AC-n")]`.
 - Step 6: the `race-summaries`, element, `race-memory` and queue-entry race
   maps of FR-224-AC-6, equal to QSpec FR-438-AC-7's; `proved` for the
   `release`/`acquire` and channel variants, `refuted` on `data` for `relaxed`.
-- Step 7: `proved` with the `acquire` RMW under both models; `refuted` with
+- Step 7: `proved` with the `acquire` RMW under both models; `refuted`, the
+  RMW against `a`'s load being the only race, with
   `Race{location: x}`, `earlier` `a`'s load and `later` the RMW, with the
   `relaxed` RMW.

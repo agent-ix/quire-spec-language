@@ -67,13 +67,25 @@ hand-checked QSpec values. FND-001 needs the same RMW ordering fix as QSpec
 FR-438. FND-002 needs one clause each in FR-222 and FR-221. Merge after
 QSpec #396, with both halves fixed together.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-005 | high | [soundness] FR-224-AC-7 and TC-669 step 7 copy QSpec FR-438-AC-8 and inherit its defect (SR-16215 FND-004). The vector is racy, so `proved` is wrong under `acquire` too. `b`'s `fetch_add` is enabled from the initial state, so it can read `x`'s initial value instead of `a`'s store. On the path `a` loads `x`, then `b`'s RMW reads the initial value, the RMW's write and `a`'s non-atomic load are unordered: nothing synchronises `a` with `b`. That is a real C11 data race, and the summary reports it at the RMW (`a`'s read Boolean in `cur_b` is false; there is no join, because the initial message carries no release from `a`). On the path where the RMW runs first and `a` then loads, the race completes at `a`'s load. Both races are at depth 2, so the `acquire` variant settles `refuted`, not `proved`. In the `relaxed` variant, which of the two depth-2 races is canonical (and so which access is `earlier`) depends on the canonical breadth-first order, and the vector does not fix it. Fix: make the RMW unable to read the initial value. Give it the precondition `x = 1`, which FR-435-AC-5 makes enabled only when it reads 1. The only remaining path is then load, release store, RMW reading that store: `acquire` is `proved` through the new join, and `relaxed` is `refuted` with `earlier` `a`'s load and `later` the RMW, uniquely. | spec/functional/FR-224-derive-the-race-freedom-item-for-non-atomic-locations.md:129; spec/test-cases/TC-669-race-freedom-item.md:34-36 | wrong-requirement |
+
 ## Dispositions
 
-Round 1. `make check-spec-validation` exits 0 with `QSPEC_DIR` set to the QSpec head (quire-specification#396), and origin/main is an ancestor of the head.
+Round 1, at head 7dc7e45d (fix diff checked against the original review head).
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | ADR-025 DR-3 and FR-224's `Ra` bullet now say that an RMW whose read part is `acquire` or `seq_cst` decides its write part only after joining the race map it reads into `cur`. QSpec FR-438 says the same. New FR-224-AC-7 and TC-669 step 7 cover both models: the `acquire` RMW is `proved` and the `relaxed` RMW is `refuted` with `earlier` `a`'s load. The QSpec side is FR-438-AC-8 and DR-13. |
-| FND-002 | fixed | FR-222 now serializes the view each in-flight `send` carries as the queue entry's `view` member, whether the subject races or not. FR-221 adds the queue entry's `race` member. FR-224-AC-5 and TC-669 step 5 gain the `ra` channel variant. |
-| FND-003 | fixed | FR-224's `Tso` list now includes the RMW rule: it reads as a load and writes as a store, its written map joins the read one, and it decides its write part as `Ra` does. |
-| FND-004 | fixed | MS-5 now costs the race summary per carrier: a race map of `N(1 + T)` Booleans for each view, message view, buffered store, memory value, thread summary and in-flight `send`, plus the per-location last-write and last-read record. |
+| FND-001 | fixed | fixed; after: An RMW whose read part is `acquire` or `seq_cst` SHALL decide its write part only after joining the race map of the message it reads into `cur`. |
+| FND-002 | fixed | fixed; after: - `Ra` SHALL serialize its component, FR-223's graph and FR-224's race summary as the state key's memory member (FR-229), with each view's race Booleans as the view's `race` member (QSpec FR-438), and SHALL serialize the view each in-flight `send` carries as its queue entry's `view` member (QSpec FR… |
+| FND-003 | fixed | fixed; after: an RMW reads as such a load and writes as such a store, its written value's map also joining the one it read, and decides its write part as `Ra` does; |
+| FND-004 | fixed | fixed; after: \| MS-5 \| **State-space cost.** Under `tso`, a thread `b` that may store to `s_b` shared locations over value domains of size at most `d` has at most `Σ_{k=0}^{B} (s_b · d)^k` buffer contents with bound `B` (MB-2). Under `ra`, a location has at most `M` live messages (MB-2), each with a value and a… |
+
+Round 2 (author).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | The RMW now has the precondition `x.v = 1`, so it is enabled only when it reads `a`'s store (QSpec FR-435-AC-5) and no path reads the initial value. With `acquire` the item is `proved` under both models. With `relaxed`, the RMW against `a`'s load is the only race, with `earlier` set to `a`'s load and `later` set to the RMW. QSpec FR-438-AC-8 and DR-13 and QSL FR-224-AC-7 and TC-669 step 7 all say the same. |
