@@ -23,7 +23,7 @@ FR-170-AC-7.
 
 ## Test Procedure
 
-Fixture: ADR-022 §7.1's subject and `possible 2 / (2 - c.versionNumber) = 2`
+Fixture: ADR-022 §7.1's subject and `possible 2 div (2 - c.versionNumber) = 2`
 for `c = a`.
 
 1. Run the item through EN-1.
@@ -32,7 +32,7 @@ for `c = a`.
    and the same cause.
 3. Settle the outcome with step 2's first replay result.
 4. Run `always possible PDiv using v over (c: Config::ConfigVersion) from
-   (c.versionNumber >= 1) { 2 / (2 - c.versionNumber) = 2 }` for `c = a`;
+   (c.versionNumber >= 1) { 2 div (2 - c.versionNumber) = 2 }` for `c = a`;
    replay its `Undefined` evidence, then the same evidence with
    `where.predicate` naming the `from` predicate `c.versionNumber >= 1`
    and the same cause.
