@@ -472,9 +472,16 @@ The owner ruled on the five questions the draft left open, on 2026-10-01, and on
   bottom components during sampling (Younes, Clarke and Zuliani). Not
   adopted: every event and measure has a finite window (PF-8), so one sample
   decides it without graph analysis.
-- **Clopper–Pearson exact binomial intervals.** Tighter than Okamoto at the
-  same coverage. Deferred: it needs the incomplete beta function under ST-9's
-  exact arithmetic.
+- **Clopper–Pearson exact binomial intervals** as a fourth method. Not
+  adopted. At Okamoto's `N` its interval is narrower when `p̂` is near 0 or 1,
+  so fewer runs end undecided. SPRT (ST-5) already gives that gain under the
+  same `α'`, `β'` and `ι`: it decides with far fewer samples when the true
+  probability is away from `θ` (§7). Okamoto stays the method whose `N` and
+  interval width are functions of the claim alone (ST-4, ST-8). Its sample
+  count is known before the first draw. A Clopper–Pearson interval is not:
+  its width depends on the counts, and each of its ends is the root of a
+  degree-`N` binomial tail, which ST-9 would have to bound by a further
+  rational root search.
 - **Batch means for long-run fractions.** Rejected in favour of regeneration,
   whose cycles are independent by the Markov property; batch means relies on
   batch length to approximate independence.
