@@ -39,9 +39,35 @@ category:
 
 | FR-462 settlement | QSL terminal record | O-16 category | Exit (FR-285) |
 | --- | --- | --- | --- |
-| `failed` with a tool-failure cause (crash, non-zero exit, malformed or non-canonical frame, foreign protocol identity, frame or total byte limit, unrouted item, unadvertised kind, missing record) | `failed`, with a typed `ToolFailure` cause naming the event, and the limit and its value for a byte limit | internal failure | 30 |
+| `failed` with cause `tool-failure{defect}`, one of the fourteen `defect` values of FR-462's failure table | `failed`, with the typed `ToolFailure` cause whose variant is that `defect` | internal failure | 30 |
 | `incomplete` with cause `timed-out` | `incomplete`, cause `TimedOut` (ADR-014 B-5) | incomplete | 22 |
 | `incomplete` with cause cancelled | `incomplete`, cause cancelled (FR-276) | incomplete | 22 |
+
+`ToolFailure` has exactly one variant per row of QSpec FR-462's failure
+table, and no variant carries a payload:
+
+| `ToolFailure` | FR-462 `defect` |
+| --- | --- |
+| `Crash` | `crash` |
+| `NonzeroExit` | `nonzero-exit` |
+| `MalformedFrame` | `malformed-frame` |
+| `NoncanonicalFrame` | `noncanonical-frame` |
+| `FrameLength` | `frame-length` |
+| `TotalBytes` | `total-bytes` |
+| `UnknownProtocol` | `unknown-protocol` |
+| `UnknownFrameKind` | `unknown-frame-kind` |
+| `EnvelopeMember` | `envelope-member` |
+| `UnknownRequestId` | `unknown-request-id` |
+| `MalformedBody` | `malformed-body` |
+| `UnroutedItem` | `unrouted-item` |
+| `UnadvertisedKind` | `unadvertised-kind` |
+| `MissingTerminalRecord` | `missing-terminal-record` |
+
+A `failed` record with a `ToolFailure` cause serializes as QSpec FR-331's
+cause `tool-failure{defect}`, `defect` the row's spelling. QSpec FR-462 and
+FR-331 give the cause no limit or value member, so a `frame-length` or
+`total-bytes` record names neither; the limit the host applied is the
+caller's own setting (QSpec FR-305).
 
 ## Inputs
 
@@ -56,8 +82,11 @@ also holds the records of items routed to other providers.
 ## Behavior
 
 - QSL shall represent each FR-462 tool-failure settlement as a `failed`
-  terminal record whose typed `ToolFailure` cause names the event, and, for a
-  frame or total byte limit, the limit and its value.
+  terminal record whose typed `ToolFailure` cause is the variant of its
+  `defect`.
+- QSL shall serialize a `ToolFailure` cause as FR-331's
+  `tool-failure{defect}` with the `defect` spelling of its variant, and
+  with no other member.
 - A `failed` record with a `ToolFailure` cause shall have the O-16 category
   internal failure.
 - An `incomplete` record with cause `TimedOut` or cancelled shall have the
@@ -70,7 +99,7 @@ also holds the records of items routed to other providers.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-291-AC-1 | For each of the eight FR-462 tool-failure events, a `failed` record built with the `ToolFailure` cause for that event serializes (FR-286) with category internal failure and the event named, and FR-285 maps it to exit 30; the frame-limit record also names the limit and its value. | Test (TC-775) |
+| FR-291-AC-1 | For each of the fourteen `ToolFailure` variants, a `failed` record built with it serializes (FR-286) with category internal failure and the cause `{"type": "tool-failure", "defect": D}`, FR-331's `FailedCause` spelling, `D` the variant's FR-462 `defect`, with no other cause member, and FR-285 maps it to exit 30; the `frame-length` and `total-bytes` records carry no limit or value member. Reading each serialized record back gives the variant it was built with. | Test (TC-775) |
 | FR-291-AC-2 | An `incomplete` record with cause `TimedOut` and one with cause cancelled each serialize with category incomplete, and FR-285 maps each to exit 22. | Test (TC-775) |
 | FR-291-AC-3 | An outcome of two items, one a plugin item's `failed` record and one a compile-time provider's `proved` record, holds the second record with bytes equal to that record in a one-item outcome, and FR-285 maps the outcome to exit 30. | Test (TC-775) |
 
