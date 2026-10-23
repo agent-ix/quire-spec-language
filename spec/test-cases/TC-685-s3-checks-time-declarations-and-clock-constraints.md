@@ -45,6 +45,7 @@ For each input in steps 1 to 5, read its S2 forms before the S3 check. Assert th
 23. Check the place references, `ref` and `deref` terms, resets through a reference, comparisons and state keys of FR-230-AC-24.
 24. Check the clock constraints of FR-230-AC-25 under `time dense`, `time tick` and an untimed unit.
 25. Check the unit constraints and the unit `reference` target of FR-230-AC-26.
+26. Emit and read back the checked-package timed-model graph for FR-230-AC-29 to FR-230-AC-32; mutate one source, place path/guard, reset, guard, invariant, urgency and bound independently; then exercise missing, dangling, duplicate, noncanonical and ill-typed timed nodes.
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -75,3 +76,4 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 23: the four guarded convex parts, the data write of `ref(self.x)`, `clock-write` at the reset outside the frame, the data comparison, `unproved-presence` without and no refusal with `present(self.r)`, equal state keys for equal data and different keys for different `r`, and slot `0` kept across a reorder.
 - Step 24: the `x <= 3` invariants on the typed places, the bound on every clock, `time-invariant-shape` for `min`, `malformed-declaration` for the other keywords and operands, and `clock-without-dense-time` under `time tick` and untimed units.
 - Step 25: `5 ms` checks, `11 ms` refuses `ill_typed`/`type-mismatch`, and `malformed-declaration` for `minLength` and for the unit `reference` target.
+- Step 26: the root and each typed timed child node are present, linked and included in identity; each individual semantic mutation changes its node key and package identity while occurrence reordering does not; read-back reconstructs the same model and package identity; the adverse mutations refuse with the exact code, cause, locus and first-node ordering FR-230-AC-31 specifies; the S4 path has no `TimedModelNotEmitted` refusal.
