@@ -41,7 +41,7 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    `max_automaton_states` 50 and with the default; a subject whose
    contract conjunction is refused, with no clause false and none
    undefined (a dispatch-family fixture whose `family_steps` or
-   `ancestor_steps` ceiling refuses a dispatched call; not built); `always holds(true)` over the `Counter` subject with `pre CanInc
+   `ancestor_steps` ceiling refuses a dispatched call); `always holds(true)` over the `Counter` subject with `pre CanInc
    { 6 mod (2 - self.value) >= 0 }` from value 2; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
 8. The TP-4 claim with no granularity over the example unit with initial

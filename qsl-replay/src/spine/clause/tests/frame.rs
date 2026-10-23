@@ -172,7 +172,7 @@ fn a_frame_respecting_invocation_succeeds() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
@@ -229,7 +229,7 @@ fn a_change_outside_the_frame_is_a_violation_with_its_witness() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!(report.disposition.truth(), Some(false));
     assert_eq!(report.disposition.category().exit_code(), 10);
@@ -493,7 +493,7 @@ fn a_link_finding_routes_to_a_violation_with_exit_ten() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!(report.disposition.truth(), Some(false));
     assert_eq!(report.disposition.category().exit_code(), 10);
@@ -759,7 +759,7 @@ fn a_disagreeing_declared_delta_refuses_at_evaluate() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Refusal
+        quire_semantic_value::catalog::Category::Refusal
     );
     assert_eq!(report.disposition.category().exit_code(), 20);
 }
@@ -904,7 +904,7 @@ fn an_absent_pre_snapshot_is_incomplete_not_a_violation() {
     );
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
 }
 

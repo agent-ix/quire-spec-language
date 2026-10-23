@@ -20,7 +20,6 @@ use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
     ExpansionStop, Limits, Location, SymmetryClass, SymmetryGroup, TransitionSystem,
 };
-use qsl_foundation::diagnostic::Category;
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
@@ -30,6 +29,7 @@ use qsl_replay::{
 };
 use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::por_world::{self, gate, gate_state, gate_with, ring, ring_state, Fixture, Guard};

@@ -12,10 +12,8 @@ use qsl_eval::value::{
     RuntimeValuePath, ValueInvariantEvaluation, ValueInvariantOutcome, ValuePathStep,
     ValuePathSubject,
 };
-use qsl_foundation::diagnostic::CatalogCode;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::admit_unit;
 use qsl_semantics::model::key::DeclarationKey;
@@ -27,9 +25,11 @@ use qsl_semantics::model::observation::{
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
 use qsl_semantics::model::type_invariant::ClauseRole;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     ChargePoint, FieldValue, InjectedDenial, Meter, Outcome, Timestamp, Uuid, Value as QuireValue,
 };
+use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -1382,7 +1382,7 @@ fn a_process_invariant_has_one_result_for_each_run() {
     assert!(
         matches!(
             unknown,
-            Err(qsl_eval::value::CallFailure::Input(
+            Err(quire_eval::CallFailure::Input(
                 quire_semantic_value::call::InputRefusal::UnknownClause(_)
             ))
         ),

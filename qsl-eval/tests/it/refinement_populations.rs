@@ -6,18 +6,19 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{evaluate_refinement_row, Evaluation};
-use qsl_foundation::diagnostic::UndefinedReason;
+use qsl_eval::value::evaluate_refinement_row;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedRefinement;
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead, ReadLog};
 use qsl_semantics::model::observation::{declared_type_universe_for, DocumentRef};
 use qsl_semantics::model::state::{ModelState, StateModel, StateObject};
+use quire_eval::Evaluation;
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{
     ChargePoint, Integer, Meter, ObjectId, ObjectReference, Outcome, ScalarLimits, Value,
 };
+use quire_semantic_value::catalog::UndefinedReason;
 
 #[path = "../../../tests/support/ring_queue.rs"]
 mod ring_queue;
