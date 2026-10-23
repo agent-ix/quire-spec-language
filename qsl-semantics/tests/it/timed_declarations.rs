@@ -239,6 +239,19 @@ fn affine_time_unit_cannot_be_a_model_time_source() {
 
 #[trace("TC-685")]
 #[test]
+fn duplicate_source_time_dimensions_refuse_at_assembly() {
+    let body = "dimension Time;\ndimension Time;\nunit s : Time = rational(1, 1);\ntime Config dense unit s;\n";
+    let refusal = admit_and_assemble_with_profiles(
+        &document(),
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        body,
+    )
+    .expect_err("S2 assembly rejects a duplicate source dimension");
+    assert!(refusal.errors.iter().any(|error| matches!(&error.cause, AssemblyCause::DuplicateQuantityName { name, spans } if name == "Time" && spans.len() == 2) && error.cause.catalog_code().to_string() == "ambiguous_declaration/ambiguous-name"), "{refusal:?}");
+}
+
+#[trace("TC-685")]
+#[test]
 fn time_source_names_an_admitted_model() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Missing dense unit ms;\n";
     let declarations = admit_and_assemble_with_profiles(
