@@ -624,7 +624,7 @@ fn assert_no_consumption(meter: &Meter) {
 /// consumption), and begins the session already admitted, so the meter's
 /// cancelled handle is observed at the first charge as the located incomplete
 /// result and never as `CallFailure::Cancelled`.
-#[trace("FR-401-AC-9")]
+#[trace("FR-401-AC-9", "FR-401-AC-10", "TC-1191")]
 #[test]
 fn call_supplied_polls_the_callers_handle_and_the_meters_at_the_first_charge() {
     use qsl_eval::value::CheckedPackageEvaluation as _;
@@ -655,7 +655,9 @@ fn call_supplied_polls_the_callers_handle_and_the_meters_at_the_first_charge() {
 
     for cause in [CancelCause::Requested, CancelCause::Deadline] {
         let handle = cancelled(cause);
-        let (result, meter) = run_over(Cancel::new(), Some(handle.clone()));
+        let caller = Cancel::new();
+        let (result, meter) = run_over(caller.clone(), Some(handle.clone()));
+        assert_eq!(caller.tripped(), None, "the caller's handle is not tripped");
         let evaluation = result.expect("an evaluation, not Cancelled");
         assert!(matches!(
             &evaluation.outcome,
@@ -678,11 +680,6 @@ fn call_supplied_polls_the_callers_handle_and_the_meters_at_the_first_charge() {
     }
 }
 
-/// FR-262-AC-12 runs 2, 3 and 4 are not asserted here: a handle cannot trip at
-/// the supplied-value run's poll point (`Cancel`'s observer fires on meter
-/// charges only), and `quire-eval`'s contract-admission Begin takes no
-/// caller-supplied run; both await a draco ruling.
-///
 /// FR-262-AC-12 for `Begin` of a call and of a checked expression through the
 /// adapter: the meter's cancelled handle ends it with the handle's cause and
 /// no consumption; an uncancelled handle, or none, gives a session.
@@ -822,4 +819,69 @@ fn a_registered_body_for_f_runs_for_the_root_and_the_requesting_body() {
         2,
         "one function.call per application"
     );
+}
+
+/// FR-262-AC-12 run 2: the meter's handle trips with `Deadline` at an
+/// admission poll point inside the supplied-value run (here the tenth, within
+/// the second argument), so `Begin` of the call and of the checked expression
+/// each return `Cancelled(Deadline)` with no session and zero consumption.
+#[trace("FR-262-AC-12", "TC-1191")]
+#[test]
+fn begin_observes_a_handle_that_trips_during_admission() {
+    use std::sync::Mutex;
+
+    use quire_semantic_value::checking::CheckMode;
+
+    const TRIP_AT: usize = 10;
+    let package = package(vec![two_arguments()]);
+    let objects = ObjectEnvironment::default();
+    let key = identity(&package, "g");
+    let expression = package
+        .graph()
+        .check_expression(
+            vec![("x".to_owned(), range(0, 9)), ("y".to_owned(), range(0, 9))],
+            &Expression::boolean(true),
+            None,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let tripping = || {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let token: Arc<Mutex<Option<Cancel>>> = Arc::new(Mutex::new(None));
+        let (observed, held) = (Arc::clone(&polls), Arc::clone(&token));
+        let cancel = Cancel::observing(move || {
+            if observed.fetch_add(1, Ordering::SeqCst) + 1 == TRIP_AT {
+                held.lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .cancel(CancelCause::Deadline);
+            }
+        });
+        *token.lock().unwrap() = Some(cancel.clone());
+        (cancel, polls)
+    };
+
+    let mut registry = Registry::new(Closure::new(&package));
+    let (cancel, polls) = tripping();
+    let mut meter = Meter::new(UNLIMITED).with_cancel(cancel);
+    let refused = registry.begin_call(key, vec![int(3), int(4)], &objects, &mut meter);
+    assert!(matches!(
+        refused,
+        Err(CallFailure::Cancelled(CancelCause::Deadline))
+    ));
+    assert!(polls.load(Ordering::SeqCst) >= TRIP_AT);
+    assert_no_consumption(&meter);
+
+    let (cancel, polls) = tripping();
+    let mut meter = Meter::new(UNLIMITED).with_cancel(cancel);
+    let refused =
+        registry.begin_expression(&expression, vec![int(3), int(4)], &objects, &mut meter);
+    assert!(matches!(
+        refused,
+        Err(CallFailure::Cancelled(CancelCause::Deadline))
+    ));
+    assert!(polls.load(Ordering::SeqCst) >= TRIP_AT);
+    assert_no_consumption(&meter);
 }

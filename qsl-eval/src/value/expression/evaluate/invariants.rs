@@ -1354,7 +1354,14 @@ fn real_required_reference_and_sequence_edges_have_the_uncharged_valid_prefix() 
 }
 
 #[test]
-#[trace("TC-918", "FR-096-AC-19", "FR-090-AC-17", "FR-401-AC-9")]
+#[trace(
+    "TC-918",
+    "FR-096-AC-19",
+    "FR-090-AC-17",
+    "FR-401-AC-9",
+    "FR-401-AC-10",
+    "TC-1191"
+)]
 fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged() {
     use super::super::{CheckedPackageEvaluation, QualifiedName};
     use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
@@ -1521,6 +1528,37 @@ fn received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchan
                         );
                         assert_eq!(cancel.tripped(), Some(cause));
                         assert!(stopped.admitted_charges().is_empty());
+
+                        // FR-401-AC-10: `call_supplied` under a run over a
+                        // different, uncancelled handle gives the same located
+                        // incomplete result, and leaves the run's handle alone.
+                        let caller = quire_exact::Cancel::new();
+                        let mut run = qsl_semantics::value::supplied::SuppliedRun::new(
+                            qsl_semantics::value::supplied::SuppliedLimits::default(),
+                            caller.clone(),
+                        )
+                        .unwrap();
+                        let meter_handle = quire_exact::Cancel::new();
+                        meter_handle.cancel(cause);
+                        let mut supplied =
+                            Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
+                                .with_cancel(meter_handle.clone());
+                        let outcome = package
+                            .call_supplied(
+                                &QualifiedName::unqualified("Compare").unwrap(),
+                                vec![Value::Reference(reference())],
+                                &objects,
+                                &mut supplied,
+                                &mut run,
+                            )
+                            .unwrap();
+                        assert!(
+                            matches!(outcome.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(record))
+                            if record.charge_point == ChargePoint::FunctionCall)
+                        );
+                        assert!(supplied.admitted_charges().is_empty());
+                        assert_eq!(meter_handle.tripped(), Some(cause));
+                        assert_eq!(caller.tripped(), None);
                     }
                 }
             } else {
