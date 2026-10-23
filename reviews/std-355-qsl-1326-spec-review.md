@@ -46,3 +46,10 @@ Examined, clean:
 Not mergeable: FND-001 (high) block the PR.
 
 Conflicts with open heads: #1303 (10 files) and #1313 (FR-100, TC-450); clean against origin/main. #1303 lists #1326 before it in its merge order.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head c4b6f50b. An invalid invocation of `parse`, `format`, `run` or `compile` (an unknown option, a missing or extra operand, a malformed option value) exits 20 with no panic, and the same verb run over a valid invocation after it runs normally. |
+| FND-002 | fixed | Round 1, head c4b6f50b. FR-028-AC-1 no longer carries "in process"; make check-spec-validation exit 0 with 26 warning lines, the same as every other head, none in FR-028. |
