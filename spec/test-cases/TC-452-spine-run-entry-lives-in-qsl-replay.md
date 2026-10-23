@@ -30,7 +30,7 @@ Scope: FR-100-AC-7 to FR-100-AC-9, and FR-100-AC-12.
 3. Run the `tools/arch-lint` API-surface check over `qsl_replay`: every
    public item of `qsl_replay::spine`, and every `qsl_replay` re-export, is
    scanned for a `qsl_eval` path. Then run it over a probe that adds
-   `pub use qsl_eval::value::Evaluation;` to `qsl_replay`.
+   `pub use qsl_eval::value::QualifiedName;` to `qsl_replay`.
 4. Compile the fixture unit `F` below through the FR-278 composition
    as the program source (its bytes are exactly these three lines, each
    ended by one LF, 136 bytes in all):

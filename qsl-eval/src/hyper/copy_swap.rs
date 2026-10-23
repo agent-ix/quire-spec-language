@@ -24,9 +24,10 @@
 
 use std::collections::BTreeSet;
 
-use qsl_foundation::{IdentityLimits, InternalFault};
+use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{CopyGenerator, CopyGroup, FormulaNodeId};
 use qsl_semantics::model::key::DeclarationKey;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::automaton::AutomatonError;
 use crate::hyper::product::{Halt, HyperKey, HyperProduct, HyperState, Property};

@@ -243,7 +243,7 @@ pub enum IncompleteStage {
     /// phase, the parameter, the actual event, the counter, its configured
     /// value, the successful spend and the denied amount (FR-277). No exact
     /// evaluation ran and no charge point is named.
-    Admission(Box<qsl_semantics::value::supplied::SuppliedStop>),
+    Admission(Box<quire_semantic_value::supplied_stop::SuppliedStop>),
     /// QSL's exact evaluation reached a limit: QSL's counter, its configured
     /// value and the count reached.
     ExactEvaluation(Box<Incomplete>),

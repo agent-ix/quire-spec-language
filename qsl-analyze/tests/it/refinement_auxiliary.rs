@@ -8,7 +8,6 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_refinement, RefinementCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::operation_identity_text;
-use qsl_foundation::diagnostic::{UndefinedReason, UndefinedRecord};
 use qsl_replay::{
     check_simulation_certificate, open_systems, replay_refinement_trace, settle_refinement_safety,
     CounterexampleKind, InconclusiveCause, MappingRowRef, MappingSite, ModelCheckLimits,
@@ -18,6 +17,7 @@ use qsl_replay::{
     Undetermined,
 };
 use quire_exact::{Cancel, Undefined};
+use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 
 use crate::refinement_aux::{
     coin_refines, coin_refines_extended, int, register_history, Unit, World, INV, LAST, PARITY,

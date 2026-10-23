@@ -12,9 +12,9 @@ use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ClauseOutcome, NotMarkov};
 use qsl_eval::simulation::{ExpansionStop, RequiresBound, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::InternalFault;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Integer, Rational};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::proof_result::SymmetryRefusal;
 use crate::UndefinedEvaluation;
