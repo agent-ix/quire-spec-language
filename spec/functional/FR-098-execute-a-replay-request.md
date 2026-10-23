@@ -27,6 +27,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-016
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: depends_on
 ---
 # FR-098: Execute a replay request through the layer-6 replay facade
 
@@ -528,6 +530,19 @@ occurrence only on the path its guards select (left-to-right short circuit
 and the selected conditional branch, FR-016), so every observed evaluation is
 one under which the record's path condition holds.
 
+The executor SHALL tell the selected call's own evaluation from a nested
+one by the call depth S6a reports with the outcome (FR-100
+`Evaluation.frame_depth`): an evaluation stopping at the claim site
+`Location` is observed only when its `frame_depth` is 0, the selected call's
+own frame. A `Location` names a place in a body and no frame, so in a
+recursive function the same `Location` is reached at every depth; the depth,
+with the `Location`, decides whether a stop belongs to the selected call. An
+undefined stop at the claim site with `frame_depth` 1 or more is a nested
+call's stop: it is no observation, the call completes no value, and the
+replay settles `inconclusive` with cause `NoValue`. A recursive function's
+application claim is therefore reproduced exactly when the selected call's
+own evaluation of the site fails, as for a function that is not recursive.
+
 - When an observed evaluation of the application step is undefined at its
   operands (a division by zero, as in FR-141-AC-7), the claim fails there.
   The claim's Boolean is `false`, the replayed category is `violation`, and
@@ -607,6 +622,7 @@ predicate claim (ADR-031 SW-7).
 | FR-098-AC-24 | Over `function b using v(t: Sequence<Int[0, 9]>[0, 3]): Boolean pure { forall(v in t: 10 mod v > 0) }` and `function u using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { 10 mod x }`: `b` at its `10 mod v` record's occurrence with `t = [3, 0]` settles `reproduced-without-witness`, the second evaluation of the binder body being undefined, and with `t = [3]` settles `inconclusive` with cause `Verdicts`; the same `b` request with an assignment naming `v`'s binder node refuses `UnknownParameter`. `u` at its `10 mod x` record's occurrence with only `x = 0` assigned binds `y` to `0` and settles `reproduced-without-witness`; with only `y = 1` assigned it refuses `UnboundParameter` naming `x`, an extent root. | Test (TC-444) |
 | FR-098-AC-25 | Over AC-22's unit with `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }` added, each of these refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming the request's occurrence key and the selected function, before any call and with no charge: `p` with the occurrence of `r`'s `10 mod x` record (a record `r` owns); `p` with `r`'s `declaration` occurrence; `inc` with the `expression` occurrence of the narrow that wraps its `x + 1` (no record); and `p` with an occurrence key whose node is 64 `1` hex digits (no node of the package). `r` at its `declaration` occurrence refuses `NotAPredicate`, and `r` at its `10 mod x` record's occurrence with `x = 12` refuses `WrongValueKind` naming position 0. | Test (TC-444) |
 | FR-098-AC-26 | Refusal order: AC-25's request of `p` with `r`'s occurrence refuses `PackageIdMismatch` when its `package_id` is stale and `UnknownFunction` when its `function` names no declaration, rather than `ClaimOccurrence`; with an assignment naming a node that is no parameter of `p` added, it still refuses `ClaimOccurrence`, not `UnknownParameter`; AC-21's `frame_operation` request refuses at its target before the recompile and reads no occurrence key. | Test (TC-444) |
+| FR-098-AC-27 | Over `function d using v(n: Int[0, 9]): Integer pure decreases(n) { if n = 0 then 0 else d(n - 1) + 10 mod (n - 1) }`, each request at the occurrence of its `10 mod (n - 1)` record, from an `Input` assignment: `n = 1` settles `reproduced-without-witness` with value `false`, the selected call's own evaluation of the site being undefined (`frame_depth` 0) after `d(0)` completes `0`; `n = 2` and `n = 3` settle `inconclusive` with cause `NoValue`, the call stopping undefined at the same `Location` inside a nested call (`frame_depth` 1 for `n = 2`, 2 for `n = 3`), which is no observation; `n = 0` evaluates the site on no path and settles `inconclusive` with cause `Verdicts` and value `true`. Calling `d` through S6a directly, the `Evaluation` of `d(1)` is undefined at that `Location` with `frame_depth` 0 and that of `d(3)` with `frame_depth` 2. | Test (TC-444) |
 
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
@@ -633,6 +649,9 @@ QSpec FR-142's `Quantity<u>`, S1's `Quantity<qualified-name>` production and FR-
   records, their owner and result bound, which the application claim reads;
   [FR-016](FR-016-check-native-clauses.md): the short-circuit and
   conditional evaluation order that keeps an observation on its path.
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md): S6a's
+  `Evaluation` with its `location` and `frame_depth`, which tell the
+  selected call's own evaluation of a claim site from a nested call's.
 - [FR-072](FR-072-implement-typed-replay-result.md): the result and its
   settlement.
 - [FR-027](FR-027-export-compiled-native-package.md): the spine compile.

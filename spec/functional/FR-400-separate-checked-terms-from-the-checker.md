@@ -236,10 +236,18 @@ module, called from `check`.
 A method of a moved type that mints a kernel identity or names a layer-3
 type does not move: only `check` calls the `NodeKey` constructor and only
 `model` calls the `EffectiveId` and `PopulationId` constructors (ADR-011
-§6.1, FR-060 T12-B to T12-D). `DeclarationKey::identity`, which mints an
-`EffectiveId`, and `DeclarationKey::validate_derivation`, which returns
-`model::refusal::ModelRefusalCause`, become `model` functions over the moved
-`DeclarationKey`.
+§6.1, FR-060 T12-B to T12-D). `DeclarationKey` moves as a value with no
+method that mints or encodes an identity. The effective-declaration preimage,
+`model::key::EffectiveDeclarationPreimage` with its derivation facts (`Fact`,
+`RuleRef`), is read by no evaluator or simulation path and stays in
+`model::key`, so its two identity-side methods stay with it as `model`
+methods: `EffectiveDeclarationPreimage::identity`, which mints the
+preimage's `EffectiveId`, and
+`EffectiveDeclarationPreimage::validate_derivation`, which returns
+`model::refusal::ModelRefusalCause`. The preimage form of a
+`DeclarationKey` that those preimages encode (its `$defs.DeclarationKey` view, `{package, node, digest_domain}`)
+is a `model` function over the moved `DeclarationKey`, not a
+`quire-checked` method.
 
 ### Runtime model-admission dependencies
 
@@ -340,6 +348,7 @@ move MAY land in steps, in this order: expression terms; clause records;
 | FR-400-AC-7 | With no edit to any expected value, `qsl-eval`'s suite, the FR-262 tests and the QSL conformance run over the QSpec checked-package fixtures (`cargo test -p qsl-package --lib checked_v2` with `QSPEC_DIR` set) pass, and every package the emitter writes for those fixtures is byte-identical to its bytes before the move, so its `package_id`, node identities and recorded source locations are unchanged. | Test |
 | FR-400-AC-8 | Before the first move step, a golden file recorded from `origin/main` and kept in `qsl-semantics/tests/` holds, for a fixture unit with a function, a dispatch table, a `model` selection, a state clause and a protocol: every node's `Location`, every `NodeKey` and `DeclarationKey`, every model-correspondence entry, the `SourceRegion` each `Location` resolves to, and the code, cause and locus of the FR-096 refusal record of a refusing evaluation of that unit. After each move step, the same test reproduces the golden file byte for byte. | Test |
 | FR-400-AC-9 | `quire-checked` builds for `thumbv7em-none-eabi` with default features off, and its manifest forbids unsafe code; no normal or build dependency in QSL enables its `test-support` feature. | Test |
+| FR-400-AC-10 | After the move, `qsl_semantics::model::key::EffectiveDeclarationPreimage::identity` and `qsl_semantics::model::key::EffectiveDeclarationPreimage::validate_derivation` resolve from another crate, and return the results they return before the move: `identity` gives each QSpec TC-195 effective-declaration preimage vector its stated identity; `validate_derivation` refuses TC-195's `unsorted-derivation` mutation with `UnsortedDerivation` naming the position and its ordinal, refuses a preimage whose facts at positions 0 and 1 carry the same `rule` and equal `inputs` with `DuplicatePath{earlier: 0, later: 1}`, and accepts the unmutated vectors. `quire_checked` exposes no `EffectiveDeclarationPreimage`, `Fact` or `RuleRef`, `quire-checked`'s `DeclarationKey` has no `identity` or `validate_derivation` method (a call to either fails to compile), and no `quire-checked` item names `ModelRefusalCause`. | Test |
 
 ## Dependencies
 
