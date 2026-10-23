@@ -645,7 +645,7 @@ mod tests {
 
     /// A `hybrid`-tagged projection node (QSpec FR-481, FR-322-AC-13) passes
     /// the node tag check.
-    #[trace("QSpec-FR-481-AC-1", "FR-447-AC-13")]
+    #[trace("QSpec-FR-322-AC-13", "FR-447-AC-13")]
     #[test]
     fn a_hybrid_tagged_node_passes_the_node_tag_check() {
         let mut preimage: Value =

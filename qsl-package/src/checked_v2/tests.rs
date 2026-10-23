@@ -1779,6 +1779,51 @@ fn conformance_hybrid_nodes_are_admitted_and_a_swapped_model_body_is_refused() {
     }
 }
 
+/// FR-447-AC-13 (QSpec FR-481 check 5): with `Tank`'s two variables both
+/// classed `clock`, the model is re-keyed and QSL's I2 read refuses it
+/// `invalid_package`/`invalid-value` at the first variable's class literal,
+/// because `x`'s rate is the variable `y`, not the literal `1` a `clock`
+/// takes. Skipped when `QSPEC_DIR` is unset.
+#[trace("TC-1187", "FR-447-AC-13")]
+#[test]
+fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let mut candidate = read_fixture(&directory.join("positive-all-families.json"));
+    let model = candidate["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|node| node["semantic_form"] == "hybrid_model")
+        .expect("the Tank model node");
+    let variables = candidate["semantic_graph"]["nodes"][model]["body"]["members"][0]["value"]
+        ["members"]
+        .as_array_mut()
+        .expect("variables");
+    for variable in variables {
+        variable["members"][1]["value"]["value"] = json!("clock");
+    }
+    rekey_stale(&mut candidate);
+    candidate["package_id"]["digest"] = json!(derived_package_id(&candidate).hex());
+    match read_fixture_wire(&candidate) {
+        (_, Read::Refused(V2ReadRefusal::Envelope { refusal, .. })) => {
+            assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
+            assert_eq!(
+                refusal.cause,
+                Some(CheckedPackageRefusalCause::InvalidValue)
+            );
+            let path = refusal.path.as_ref().expect("a locus").to_string();
+            assert!(
+                path.ends_with("/body/members/0/value/members/0/members/1/value/value"),
+                "{path}"
+            );
+        }
+        (_, other) => panic!("every variable clocked: expected invalid_package, got {other:?}"),
+    }
+}
+
 /// FR-322-AC-100: each `adverse.json` `shipped_projection_cases` entry is
 /// `positive-all-families.json` with an `identity_projection` member added to
 /// its `identity_preimage`, as the occurrence-free graph or as `[]`. QSL's I2
