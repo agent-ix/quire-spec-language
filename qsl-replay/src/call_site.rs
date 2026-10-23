@@ -827,6 +827,7 @@ mod tests {
         bytes: &[u8],
         package_id: DigestRecord,
         function: QualifiedName,
+        declaration: qsl_foundation::source::provenance::OccurrenceKey,
         assignments: Vec<CanonicalAssignment>,
     ) -> ReplayRequestWire {
         let source_digest_record = DigestRecord::mint(
@@ -848,7 +849,7 @@ mod tests {
                 source_digest_record.hex(),
             )],
             dependencies: Vec::new(),
-            replay_target: crate::RequestTargetWire::function(function, crate::target::test_key()),
+            replay_target: crate::RequestTargetWire::function(function, declaration),
             source: ReplaySource::Input(assignments),
             obligation_identity: [0; 32],
             backend: "kani-backend-1".to_owned(),
@@ -885,6 +886,7 @@ mod tests {
             bytes,
             site.package_id,
             name("p"),
+            site.site.declaration.clone(),
             vec![CanonicalAssignment {
                 parameter: *node_id,
                 value: crate::witness::WitnessValue::Integer(3),

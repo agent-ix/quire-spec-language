@@ -108,8 +108,11 @@ can bound a domain nested inside a state field's type as it bounds the field.
   `site`, whose type the selection decides:
   - for a `QualifiedName`, a `FunctionSite`: `function` (`WireNodeId`,
     the function declaration's `function` node, FR-092), `declaration`
-    (`OccurrenceKey`, that node's `declaration` occurrence) and
-    `parameters`, `Vec<(Identifier, WireNodeId)>`, in declared order;
+    (`OccurrenceKey`, that node's `declaration` occurrence),
+    `parameters`, `Vec<(Identifier, WireNodeId)>`, in declared order, and
+    `value_parity` (`Option<ValueParitySite>`, the function-value parity
+    preimage and the obligation identity QSL mints from it, `Some` exactly
+    for a function whose declared result is not `Boolean`, FR-484);
   - for an `OperationName`, an `OperationSite`: `frame_operation`
     (`FrameOperation`: `object`, the declaring object's `QualifiedName`,
     and `operation`, the operation's `Identifier`), `anchor` and `frame`
@@ -148,6 +151,10 @@ can bound a domain nested inside a state field's type as it bounds the field.
   (function node id, `declaration`, 0): the subject node id and occurrence
   key of the function's ADR-013 O-09 function-contract obligation
   identity, which CG computes and never derives itself.
+- For a function selection, `call_site` SHALL return the resolved
+  function's `value_parity` as FR-484 states: the function-value parity
+  obligation identity QSL mints, which a value-parity claim producer
+  carries and never derives itself.
 - For a function selection, `call_site` SHALL pair each of the resolved
   function's declared parameters, in declared order, with its own node id,
   derived the same way `replay`'s own executor derives it (FR-098), so the

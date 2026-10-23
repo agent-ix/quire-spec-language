@@ -801,10 +801,69 @@ pub(crate) fn compose(
     let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
+    record_declarations(&checked.package, &emitted.package().package_id().hex());
     Ok(ComposedUnit {
         emitted: emitted.package().clone(),
         source: checked.source,
         package: checked.package,
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The `declaration` occurrence of each function of each composed
+    /// package, by `package_id` hex and function name: the key a `function`
+    /// replay request carries for the predicate claim (FR-098).
+    static DECLARATIONS: std::cell::RefCell<BTreeMap<(String, String), qsl_foundation::source::provenance::OccurrenceKey>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+/// Remember the `declaration` occurrence of each function of `package`.
+#[cfg(test)]
+fn record_declarations(package: &pkg::CheckedPackage, package_id: &str) {
+    use qsl_foundation::digest::WireNodeId;
+    use qsl_foundation::source::provenance::OccurrenceKey;
+    use quire_exact::{Origin, Role};
+    let graph = package.graph();
+    for state in (0..).map_while(|index| graph.function_state(index)) {
+        if let Some(callable) = graph.callable(state.name) {
+            let key = OccurrenceKey::new(
+                WireNodeId::from_digest(*callable.identity.as_bytes()),
+                Origin::new(Role::new("declaration"), 0),
+            );
+            DECLARATIONS.with(|declarations| {
+                declarations
+                    .borrow_mut()
+                    .insert((package_id.to_owned(), state.name.to_owned()), key);
+            });
+        }
+    }
+}
+
+/// Whether a package with this `package_id` hex was [`compose`]d on this
+/// thread.
+#[cfg(test)]
+pub(crate) fn composed_here(package_id: &str) -> bool {
+    DECLARATIONS.with(|declarations| {
+        declarations
+            .borrow()
+            .keys()
+            .any(|(composed, _)| composed == package_id)
+    })
+}
+
+/// The `declaration` occurrence of `function` in a package [`compose`]d on
+/// this thread, by its `package_id` hex.
+#[cfg(test)]
+pub(crate) fn composed_declaration(
+    package_id: &str,
+    function: &str,
+) -> Option<qsl_foundation::source::provenance::OccurrenceKey> {
+    DECLARATIONS.with(|declarations| {
+        declarations
+            .borrow()
+            .get(&(package_id.to_owned(), function.to_owned()))
+            .cloned()
     })
 }
 
