@@ -62,3 +62,5 @@ Not mergeable. FND-001 (high) blocks the PR, together with its QSpec counterpart
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
