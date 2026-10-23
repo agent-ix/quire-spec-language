@@ -89,8 +89,8 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
   outside `[0, 3]`), `G`'s precondition failure over copy `i`, and `C`'s
   postcondition failure over copy `i` and the 16 candidates; `B` contributes
   no failure term; every term is linear.
-- Step 5: pairwise distinctness of copies 0 to 2; for the TP-3 item, `m0`
-  to `m2` with the monitor steps.
+- Step 5: pairwise distinctness of copies 0 to 2; for the TP-3 item, `m0.0`
+  to `m2.0` with the monitor steps.
 - Step 6: the scripts FR-315-AC-6 lists, byte-equal across the two encodings; the `any` row `SmtEncodingRefusal`; the abstract-operation row's script with the abstract precondition, frame and postcondition over `map(s0)`, `map(s1)` negated; the `bump` row `SmtEncodingRefusal` naming the row and the argument; the out-of-fragment row `SmtEncodingRefusal` naming it, no script.
 - Step 7: each step assertion has the `bump` disjunct and then the stutter,
   the stutter holding the two field equalities and no other conjunct.
