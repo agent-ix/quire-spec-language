@@ -83,9 +83,11 @@ no record.
 
 ### A check location resolves to a region of the unit it was read from
 
-One set of package declarations holds the declarations of one source unit.
-They SHALL be checked under that unit's `RawSourceRef` (FR-001), and their
-source owner is that reference's `SourceOwner{authority, identity}`.
+One set of package declarations holds the declarations of every source unit
+of one package (FR-480). Each declaration SHALL be checked under its own
+unit's `RawSourceRef` (FR-001), its source owner is that reference's
+`SourceOwner{authority, identity}`, and every location and span it gives
+names that unit's source.
 
 A `quire_semantic_value::location::Location` names a declaration origin and a child-index path. The
 path SHALL be a parent chain shared with the location it was taken from, so
