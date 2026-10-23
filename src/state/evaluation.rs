@@ -909,6 +909,9 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             .get(owner as usize)
             .and_then(|declaration| declaration.bindings.get(index as usize))
             .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(handle.clone())))?;
+        if let Some(refusal) = static_authority_digest_refusal(&offered.static_selection) {
+            return Err(Stop::Refused(refusal));
+        }
         if !valid_identity(&offered.static_selection.document_identity)
             || !valid_identity(&offered.static_selection.model_identity)
             || !valid_identity(&offered.static_selection.profile_identity)
@@ -2464,6 +2467,38 @@ fn declaration_root_type(declaration: &w::Declaration, handle: &w::Handle) -> Re
         })
         .map(|root| root.value_type)
         .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))
+}
+
+#[ix_trace_rs::string_edge]
+fn static_authority_digest_refusal(authority: &StaticAuthority) -> Option<Refusal> {
+    let members = [
+        (StaticAuthorityMember::Document, &authority.document_digest),
+        (StaticAuthorityMember::Model, &authority.model_digest),
+        (StaticAuthorityMember::Profile, &authority.profile_digest),
+        (
+            StaticAuthorityMember::Configuration,
+            &authority.configuration_digest,
+        ),
+    ];
+    for (member, digest) in members {
+        let Some(hex) = digest.0.strip_prefix("sha256-jcs:") else {
+            return Some(Refusal::StaticAuthorityDigest {
+                member,
+                cause: StaticAuthorityDigestCause::WrongDomain,
+            });
+        };
+        if hex.len() != 64
+            || !hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Some(Refusal::StaticAuthorityDigest {
+                member,
+                cause: StaticAuthorityDigestCause::Malformed,
+            });
+        }
+    }
+    None
 }
 
 fn valid_observation_digest(value: &ObservationDigest) -> bool {

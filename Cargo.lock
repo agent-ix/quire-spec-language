@@ -1718,6 +1718,7 @@ dependencies = [
  "quire-semantic-value",
  "serde",
  "serde_json",
+ "serde_json_canonicalizer",
  "sha2",
  "syn 2.0.119",
  "tempfile",
