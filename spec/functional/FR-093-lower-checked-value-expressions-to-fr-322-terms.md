@@ -317,6 +317,28 @@ nevertheless reaches it refuses `ill_typed`/`operator-ineligible` at the
 comparison, and no node is built.
 No text-profile lock evidence is needed to lower these identities.
 
+**Native Bytes and JsonObject.** An `Equality` whose operands are both
+`ValueType::Bytes` or both `ValueType::JsonObject` lowers to
+`quire.op.bytes.eq`/`.ne` or `quire.op.json_object.eq`/`.ne` (QSpec FR-322 and
+its FR-322-AC-103): a `binary` expression with result type `boolean`,
+arguments `[ref(l), ref(r)]`, and no law, mode, member or leaves. `length(b)`
+lowers to `quire.op.bytes.length` with result type the builtin `Integer` node
+and arguments `[ref(b)]`, and `concat(a, b)` to `quire.op.bytes.concat` with
+result type the `bytes` type node and arguments `[ref(a), ref(b)]`, each with
+no law, mode, member or leaves. `Bytes("...")` and `JsonObject("...")` lower to
+one `value`/`literal` node whose `semantic_type` and body `type` are the
+`bytes` or `json_object` type node, with `value_kind` `bytes` or `json_object`
+and `value` the canonical text as JSON, shared by equal values within one unit.
+A field, parameter or result typed `Bytes` or `JsonObject` has that type node
+(QSpec FR-322-AC-102). A `Duration` lowers as the `Quantity<s>` it is: its
+type is the `scalar_type`/`unit` node of `s`, its literals are quantity
+literals and its comparisons, conversions and arithmetic are the quantity
+identities above, with no node of its own. `check` refuses unlike operand types
+and the ordering and arithmetic operators before lowering (FR-056), so lowering
+sees only same-type pairs; a pair that nevertheless reaches it refuses
+`ill_typed`/`operator-ineligible` at the comparison, and no node is built. No
+text-profile lock evidence is needed to lower these identities.
+
 A checked quantity type, `ValueType::Quantity(UnitId)`, has an exact
 rational magnitude and no numeric domain, so the rounding mode it pins is
 `exact`. FR-322 takes a `rounding` mode from the types
@@ -947,6 +969,7 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
 | FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. In one unit beside `h`, `function h2 using v(): Boolean pure { f(0.5 ms) }` and `function h3 using v(): Boolean pure { f(rational(2, 4) ms) }` lower their arguments to one shared literal node of value `"1/2"`, and `function h4 using v(): Boolean pure { f(3 ms) }` references `h`'s `3 ms` node; `function n using v(): Boolean pure { f(rational(-3, 1) ms) }` lowers a literal of value `"-3"`; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
 | FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
+| FR-093-AC-38 | `function b1 using v(a: Bytes, b: Bytes): Boolean pure { a = b }`, its `!=`, and the same over `JsonObject` lower to one `expression` node whose operation is `quire.op.bytes.eq`, `.ne`, `quire.op.json_object.eq` or `.ne`, result type `boolean`, arguments `[ref(a's node), ref(b's node)]`, and no law, mode, member or leaves, with no text-profile definition in the lock evidence. `function l1 using v(a: Bytes): Integer pure { length(a) }` lowers to `quire.op.bytes.length` over `[ref(a's node)]` with result type the `Integer` node, and `function c1 using v(a: Bytes, b: Bytes): Bytes pure { concat(a, b) }` to `quire.op.bytes.concat` over `[ref(a), ref(b)]` with result type the `bytes` node. `function k1 using v(): Bytes pure { Bytes("00ff") }` and `function j1 using v(): JsonObject pure { JsonObject("{\"a\":1}") }` lower to one `value`/`literal` node each of `value_kind` `bytes` with `value` `"00ff"` and `json_object` with `value` `"{\"a\":1}"`, and two `Bytes("00ff")` in one unit share one node. IR's v2 reader admits each package. | Test (TC-1231) |
 
 ## Dependencies
 

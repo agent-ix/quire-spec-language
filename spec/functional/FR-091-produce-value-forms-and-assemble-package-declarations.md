@@ -310,7 +310,7 @@ The `Value` production maps each CST expression construct to one
 | unary `-e` | `Negate` |
 | `e.f` | `Field` |
 | `present(e)`, `value(e)` | `Present`, `Value` |
-| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")` and `Timestamp(n)` are such calls, and check resolves them ("Native scalar literals") |
+| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")`, `Timestamp(n)`, `Bytes("...")` and `JsonObject("...")` are such calls, and check resolves them ("Native scalar literals") |
 | record value `R { f: e, g: null }` | `Record`; a field whose whole value is `null` is `FieldInitializer::Null` |
 | `sequence[..]`, `set[..]`, `bag[..]`, `orderedSet[..]` | `Collection` with kind `Sequence`, `Set`, `Bag`, `OrderedSet` |
 | `map`, `collect` `(x in c: e)` | `Query` with `BinderQuery::Map` |
@@ -763,17 +763,20 @@ or refuse a literal that this rule admits.
 ### Native scalar literals
 
 The unit language writes a constant of each native value type `String`,
-`UUID` and `Timestamp` with one literal form. The forms are the only way to
+`UUID`, `Timestamp`, `Bytes` and `JsonObject` with one literal form. The forms are the only way to
 write such a constant, and each has exactly one checked type. They add no
 production, no token and no reserved word: the quoted text token is already
-read by the lexer, and `UUID("...")` and `Timestamp(n)` are ordinary calls
-that the shared complete-V1 grammar already parses.
+read by the lexer, and `UUID("...")`, `Timestamp(n)`, `Bytes("...")` and
+`JsonObject("...")` are ordinary calls that the shared complete-V1 grammar
+already parses.
 
 | Literal | Syntax | Checked type | Value |
 |---|---|---|---|
 | `"..."` | the quoted text token | `String` | the decoded Unicode scalar sequence |
 | `UUID("...")` | a call of the name `UUID` with one quoted text argument | `UUID` | the 128-bit payload of the canonical text |
 | `Timestamp(n)` | a call of the name `Timestamp` with one integer argument | `Timestamp` | the signed 128-bit nanosecond count `n` on the POSIX epoch scale |
+| `Bytes("...")` | a call of the name `Bytes` with one quoted text argument | `Bytes` | the octet sequence of the canonical hexadecimal text |
+| `JsonObject("...")` | a call of the name `JsonObject` with one quoted text argument | `JsonObject` | the JSON value of the canonical RFC 8785 text |
 
 **String.** The quoted text token is the JSON-compatible quoted text the
 lexer already reads: the escapes `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`,
@@ -815,33 +818,56 @@ folded `i128::MIN` literal and is admitted. A leading-zero integer such as
 `007` is refused by the lexer as `invalid_syntax`/`invalid-token` before any
 form exists. An `Integer`-typed expression never converts to a `Timestamp`.
 
-**Name resolution.** `UUID` and `Timestamp` in a call position resolve with the native
+**Bytes.** `Bytes("...")` takes one argument, which must be a quoted text
+literal (not a `String`-typed expression). Its decoded text must be the
+canonical Bytes text of FR-056's "Native Bytes, JsonObject and Duration":
+lowercase hexadecimal digits, two per octet, the empty text for the empty
+sequence. `Bytes("")` and `Bytes("00ff")` are admitted; `Bytes("00FF")`,
+`Bytes("0")`, `Bytes("0x00")` and `Bytes("00 ff")` are malformed. Check admits
+the text through the same K2 admission FR-056 applies to a runtime input and
+refuses a malformed text with the typed cause `MalformedBytesLiteral`, naming
+the argument text as written and the span of the call, code
+`ill_typed`/`type-mismatch`. Two `Bytes("00ff")` in one unit are one value.
+
+**JsonObject.** `JsonObject("...")` takes one argument, which must be a quoted
+text literal. Its decoded text must be the canonical RFC 8785 text of one JSON
+value as FR-056 states (`JsonObject("{\"a\":1}")`, `JsonObject("[]")`,
+`JsonObject("null")` are admitted; `JsonObject("{\"a\": 1}")`,
+`JsonObject("{\"b\":1,\"a\":1}")`, `JsonObject("1.0")` and `JsonObject("")`
+are malformed). Check admits the text through the same K2 admission and refuses
+a malformed text with the typed cause `MalformedJsonObjectLiteral`, naming the
+argument text as written and the span of the call, code
+`ill_typed`/`type-mismatch`. A `Duration` has no literal form of its own: a
+quantity literal over the unit `s` (`3 s`, `rational(3, 2) s`) is a Duration.
+
+**Name resolution.** `UUID`, `Timestamp`, `Bytes` and `JsonObject` in a call position resolve with the native
 literal constructor of that spelling as a candidate beside the unit's function,
 predicate and tuple declarations of that name, and exactly one candidate is
 required. This is new behavior: a call otherwise resolves a declared function
 before a type, and a call headed by a native type refuses
 `ill_typed`/`operator-ineligible`; the literal constructors are the only calls
 that take the native type name. A unit that also
-declares a function, predicate or tuple `UUID` (or `Timestamp`) makes the call
+declares a function, predicate or tuple `UUID` (or `Timestamp`, `Bytes`, `JsonObject`) makes the call
 an ambiguous name, `ambiguous_declaration`/`ambiguous-name`, naming the use,
 the span of each declaration and the native constructor as a candidate without
-a span, as the ambiguous type-name rule above does. A qualified spelling such
+a span, as the ambiguous type-name rule above does. The native operations `length(b)` and `concat(a, b)` of FR-056's "Native Bytes, JsonObject and Duration" resolve by the same rule and the same ambiguity refusal. A qualified spelling such
 as `M::UUID("...")` names no native constructor and resolves as any qualified
 call does, refusing `missing_declaration`/`missing-name` when it names
 nothing. A call whose argument is not the form above (`UUID(x)`, `UUID(5)`,
-`Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`), or that has no argument
+`Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`, `Bytes(x)`, `Bytes(5)`,
+`JsonObject(x)`), or that has no argument
 or two, refuses `ill_typed`/`type-mismatch` at the argument, or at the call
 when the argument count is not one, naming the expected argument form. The `UUID` and
 `Timestamp` type names are the predeclared type names above and are unaffected.
 
-The three literals have no operator of their own. They take part in `=` and
-`!=` under FR-056, as arguments, `let` bindings, record field values,
+The five literals have no operator of their own. They take part in `=` and
+`!=` under FR-056, and a `Bytes` literal in `length` and `concat`, as arguments, `let` bindings, record field values,
 conditional branches, collection elements and bodies, wherever a value of the
 literal's type is accepted. A literal at a slot of another type, including
 `"abc"` at a `Text[0, 8; nfc]` slot, `"00112233-4455-6677-8899-aabbccddeeff"`
-at a `UUID` slot and the integer `5` at a `Timestamp` slot, refuses
+at a `UUID` slot, `"00ff"` at a `Bytes` slot and the integer `5` at a `Timestamp` slot, refuses
 `ill_typed`/`type-mismatch` at the literal as every typed mismatch does, with
-no coercion. FR-093 lowers the three literals.
+no coercion. FR-093 lowers the five literals.
 
 ### Catalog codes
 
@@ -961,6 +987,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-42 | `"\ud800"` and `"\q"` refuse `invalid_syntax`/`invalid-escape`, and an unterminated literal, a literal holding a raw line feed and `Timestamp(007)` refuse `invalid_syntax`/`invalid-token`, each at the offending token with no form. `UUID(x)` over a `String` parameter, `UUID(5)`, `Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`, `Timestamp()` and `Timestamp(1, 2)` each refuse `ill_typed`/`type-mismatch` at the argument (at the call for `Timestamp()` and `Timestamp(1, 2)`). `function UUID using v(): Boolean pure { true }` beside a use `UUID("00112233-4455-6677-8899-aabbccddeeff")` refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the declaration's span and the native constructor with no span; `M::UUID("00112233-4455-6677-8899-aabbccddeeff")` over an alias `M` that declares no `UUID` refuses `missing_declaration`/`missing-name`. A parameter or field named `timestamp` or `uuid` stays valid. | Test (TC-1052) |
 | FR-091-AC-43 | Check refuses `UUID("00112233-4455-6677-8899-AABBCCDDEEFF")`, `UUID("00112233445566778899aabbccddeeff")`, `UUID("{00112233-4455-6677-8899-aabbccddeeff}")`, `UUID("urn:uuid:00112233-4455-6677-8899-aabbccddeeff")`, `UUID("00112233-4455-6677-8899-aabbccddeef")`, `UUID("00112233-4455-6677-8899-aabbccddeefg")` and `UUID("")` with `MalformedUuidLiteral`, code `ill_typed`/`type-mismatch`, naming the argument as written and the call's span. It refuses `Timestamp(170141183460469231731687303715884105728)` and `Timestamp(-170141183460469231731687303715884105729)` with `IntegerOutsideI128`, site `literal`, limit `i128::MAX` in both cases (the second names the positive literal 170141183460469231731687303715884105729, as FR-091-AC-38 states), code `ill_typed`/`type-mismatch`; `Timestamp(170141183460469231731687303715884105727)` checks. A refused literal reaches no keying, lowering or IR. | Test (TC-1052) |
 | FR-091-AC-44 | In a unit declaring `dimension Time;`, `unit s : Time = rational(1, 1);` and `unit ms : Time = rational(1, 1000) * s;`, S1 parses `d: Quantity<ms>` as a `Quantity` type form over the qualified name `ms`, and the assembler resolves it to the type of the unit node `ms`, introducing no declaration; `d: Quantity<Time>` (a dimension) and `d: Quantity<nothing>` each refuse with an unresolved-name error naming the name (`missing_declaration`/`missing-name`), and `f(3 s)` where `f` takes `d: Quantity<ms>` refuses `ill_typed`/`type-mismatch` at the argument. A unit declaring a unit `ms` and a record `ms` checks, the type position meaning the record and `Quantity<ms>` the unit; two units named `ms` declared in one unit of compilation refuse at the two declarations, each named, `ambiguous_declaration`/`ambiguous-name` (the duplicate dimension or unit name rule); and a declaration named `Quantity` refuses `invalid_syntax` (QSpec FR-142-AC-13). | Test (TC-483) |
+| FR-091-AC-56 | `Bytes("")`, `Bytes("00ff")` and `Bytes("deadbeef")`, and `JsonObject("{}")`, `JsonObject("[]")`, `JsonObject("3")`, `JsonObject("null")` and `JsonObject("{\"a\":1,\"b\":[true,null]}")`, are admitted with the types `Bytes` and `JsonObject`; `Bytes("00FF")`, `Bytes("0")`, `Bytes("0x00")` and `Bytes("00 ff")` refuse `ill_typed`/`type-mismatch` with the cause `MalformedBytesLiteral` naming the text as written and the span of the call, and `JsonObject("{\"b\":1,\"a\":1}")`, `JsonObject("{\"a\": 1}")`, `JsonObject("1.0")`, `JsonObject("{\"a\":1,\"a\":2}")`, `JsonObject("")` and `JsonObject("{")` the same with `MalformedJsonObjectLiteral`. `Bytes(x)` over `x: String`, `Bytes(5)`, `JsonObject(x)` and `Bytes("00", "11")` refuse `ill_typed`/`type-mismatch`; `"00ff"` at a `Bytes` slot refuses the same; a unit declaring `function Bytes using v(x: Integer): Integer pure { x }` makes `Bytes("00")` an `ambiguous_declaration`/`ambiguous-name` naming the declaration and the native constructor; `3 s` and `rational(3, 2) s` are `Duration` values where the unit `s` is typed by a base dimension `Time`. | Test (TC-1231) |
 
 ## Dependencies
 

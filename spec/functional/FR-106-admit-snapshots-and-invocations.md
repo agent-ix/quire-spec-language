@@ -211,10 +211,12 @@ Snapshot, format `quire.state.snapshot/v1`:
   `{"sequence": [<value>, ...]}`, `{"set": [<value>, ...]}`,
   `{"bag": [<value>, ...]}`, `{"ordered-set": [<value>, ...]}`, the record
   form below, the variant form of
-  FR-360 and the five payload object forms below, `{"kind": "string",
+  FR-360 and the seven payload object forms below, `{"kind": "string",
   "text": "<any Unicode scalar sequence>"}`, `{"kind": "uuid", "text":
   "<canonical UUID>"}`, `{"kind": "timestamp", "nanoseconds":
-  "<canonical decimal>"}`, `{"kind": "text", "text": "<any Unicode scalar
+  "<canonical decimal>"}`, `{"kind": "bytes", "text": "<canonical
+  lowercase hexadecimal>"}`, `{"kind": "json_object", "text": "<canonical
+  JCS text>"}`, `{"kind": "text", "text": "<any Unicode scalar
   sequence>"}` and `{"kind": "decimal", "coefficient": "<integer>",
   "scale": "<scale>"}`.
 
@@ -280,8 +282,16 @@ The record carries no object key, population or identity, and an object
 FR-208 by most-specific type and every effective field; JSON member order
 does not affect the typed value or the `sha256-jcs` digest.
 
-A **native payload value** is a String, a UUID or a Timestamp, the closed wire
-objects of FR-056's K2 canonical native payloads. They take that requirement's
+A **native payload value** is a String, a UUID, a Timestamp, a Bytes or a
+JsonObject, the closed wire objects of FR-056's K2 canonical native payloads
+and "Native Bytes, JsonObject and Duration". The Bytes object is
+`{"kind": "bytes", "text": "00ff"}` and the JsonObject object is
+`{"kind": "json_object", "text": "{\"a\":1}"}`, each with exactly the members
+`kind` and `text`, the text being the canonical payload of FR-056 and no other
+spelling; a noncanonical text refuses `invalid_runtime_input`/`invalid-value`
+at the value, and a Bytes or JsonObject object in a field of another native
+type, and the reverse, refuses `wrong-value-kind`. A Duration field holds the
+quantity form over the unit `s`. They take that requirement's
 spelling unchanged: the String object is `{"kind": "string", "text":
 "ready"}`, whose `text` is any Unicode scalar sequence, the empty one
 included; the UUID object is `{"kind": "uuid", "text":
@@ -291,7 +301,7 @@ Timestamp object is `{"kind": "timestamp", "nanoseconds": "0"}`, whose
 `nanoseconds` is a signed count on FR-056's POSIX-epoch scale in the
 signed-128 domain, spelled `0`, or an optional `-` then a nonzero digit and
 more digits. A value object with a `kind` member is a payload object (the
-three native payload objects above and the Text and Decimal objects below); every other
+native payload objects above and the Text and Decimal objects below); every other
 value is a single-tag object. A UUID object has exactly
 the members `kind` and `text`, a String object exactly `kind` and `text`, a
 Text object exactly `kind` and `text`, and a Timestamp object exactly `kind`
@@ -1009,6 +1019,7 @@ required; check 10 settles it.
 | FR-106-AC-52 | Over TC-1171's fixture, an invocation whose post `ids` holds the pre members in another order, or whose post `counts` holds the same multiset reordered, is no change and admits without a grant; one whose post `counts` drops one `2`, or whose post `order` is `1, 3`, is a change and refuses `frame_violation`/`unauthorized-change` naming the object and the field when the frame does not grant it. Under `PostStateRange::Witness`, a post `counts` `{"bag": [{"integer":"1"}, {"integer":"10"}, {"integer":"2"}]}` admits and reports one `OutOfRange` with index 1, the supplied array index. With `observation.values` set to the exact count of a document whose last value in walk order is an element of `order`, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`. | Test (TC-1171) |
 | FR-106-AC-53 | Over TC-1171's decimal fixture (TC-1171's `Tagged` also declaring `price: Decimal[0, 10000; 2, 2]`, `rates: Set<Decimal[0, 10000; 2, 2]>[0, 3]`, `tallies: Bag<Decimal[0, 10000; 2, 2]>[0, 3]`, `steps: OrderedSet<Decimal[0, 10000; 2, 2]>[0, 2]`, `opts: Set<Option<Decimal[0, 10000; 2, 2]>>[0, 2]` and `runs: Bag<Sequence<Decimal[0, 10000; 2, 2]>[0, 2]>[0, 2]`, with `z1` and `a1` holding `price` `{"kind":"decimal","coefficient":"0","scale":"0"}` and the empty value of each collection), a current snapshot whose `t1` holds `price` `{"kind":"decimal","coefficient":"150","scale":"2"}`, `rates` `{"set": [{"kind":"decimal","coefficient":"2","scale":"0"}, {"kind":"decimal","coefficient":"150","scale":"2"}]}`, `tallies` `{"bag": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"15","scale":"1"}]}`, `steps` `{"ordered-set": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"1","scale":"0"}]}`, `opts` `{"set": [{"present": {"kind":"decimal","coefficient":"150","scale":"2"}}, {"absent": {}}]}` and `runs` `{"bag": [{"sequence": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"100","scale":"2"}]}]}` admits: `price` keeps coefficient `150` and scale `2`; `rates` is written `[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"2","kind":"decimal","scale":"0"}]`, normalized and ordered by those bytes; `tallies` has the one member `{"coefficient":"15","kind":"decimal","scale":"1"}` with multiplicity 2 and is written `[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"15","kind":"decimal","scale":"1"}]`; `opts` is written `[{"absent":{}},{"present":{"coefficient":"15","kind":"decimal","scale":"1"}}]`; `runs` is written `[{"sequence":[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"1","kind":"decimal","scale":"0"}]}]`, the Decimals inside the bag's sequence element normalized and in the sequence's order; `steps` keeps the order `1.50, 1` with coefficient `150` and scale `2` for its first element. `price` `{"kind":"decimal","coefficient":"1000","scale":"3"}` (`1.000`) admits, a member of `Decimal[0, 10000; 2, 2]` by value. A `retag` invocation whose post `price` is `{"kind":"decimal","coefficient":"15","scale":"1"}` is no change and admits without a grant; one whose post `price` is `{"kind":"decimal","coefficient":"151","scale":"2"}` refuses `frame_violation`/`unauthorized-change` naming `t1` and `price`. | Test (TC-1171) |
 | FR-106-AC-54 | Over TC-1171's decimal fixture, each refuses `invalid_runtime_input` with the cause and path given and nothing is admitted: `rates` `{"set": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"15","scale":"1"}]}` and `steps` holding the same two elements, `duplicate-member` at element 1 naming element 0; `price` `{"kind":"decimal","coefficient":"1","scale":"3"}` (`0.001`, scale above `smax`) and `{"kind":"decimal","coefficient":"10001","scale":"2"}` (`100.01`, coefficient above `hi`) and a `rates` element `{"kind":"decimal","coefficient":"-1","scale":"0"}`, `invalid-value` naming `Decimal[0, 10000; 2, 2]`; `price` with `coefficient` `"01"` or `"-0"`, or with `scale` `"-1"`, `"01"` or `"4294967296"`, `invalid-value` naming that member; `scale` given as the JSON number `2`, `wrong-value-kind` naming `scale`; `scale` removed, `missing-member` naming `scale`; an added member `unit`, `unknown-member` naming `unit`; `kind` `"Decimal"`, `invalid-value` naming `kind`; `price` written `{"integer": "1"}` and a Decimal object as an element of `order`, `wrong-value-kind`. Under `PostStateRange::Witness`, a `retag` post `price` `{"kind":"decimal","coefficient":"10001","scale":"2"}` still refuses `invalid-value` and reports no `OutOfRange`. | Test (TC-1171) |
+| FR-106-AC-61 | A snapshot whose object type has fields `blob: Bytes`, `doc: JsonObject` and `span: Duration` (the unit of compilation declaring `dimension Time; unit s : Time = rational(1, 1);`) admits `blob` `{"kind":"bytes","text":"00ff"}`, `doc` `{"kind":"json_object","text":"{\"a\":1}"}` and `span` as the quantity form of `3/2` over `s`, and two snapshots differing only in JSON member order of the enclosing document have one digest. `blob` `00FF`, `doc` `{"a": 1}` refuse `invalid_runtime_input`/`invalid-value`; the Bytes object in `doc`, the JsonObject object in `blob` and a String object in either refuse `wrong-value-kind`; an object with an extra member or a non-string `text` refuses as the String object does. | Test (TC-1231) |
 
 
 ## Dependencies
