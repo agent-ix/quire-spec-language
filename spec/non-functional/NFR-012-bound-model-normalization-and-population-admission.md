@@ -8,8 +8,6 @@ relationships:
     type: constrains
   - target: ix://agent-ix/quire-spec-language/FR-084
     type: constrains
-  - target: ix://agent-ix/quire-spec-language/NFR-007
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/NFR-011
     type: depends_on
 ---
@@ -89,10 +87,11 @@ per-charge record, so its memory does not grow with the work it bounds.
 
 ## Default derivation
 
-- **Declaration records and population members, 100000.** NFR-007's
-  default package-entry ceiling. Each declaration record and each population
-  member is at least one entry of the package or population document it is
-  read from.
+- **Declaration records and population members, 100000.** Each
+  declaration record and each population member is at least one entry of the
+  domain package or population document it is read from, so the ceiling
+  admits a document of 100000 entries. The fact and declaration defaults
+  below derive from it.
 - **Derivation facts, 1600000.** Sixteen facts per record at the record
   ceiling. A type's derivation holds one qualify fact and one inherit fact per
   direct parent; a member's holds one qualify fact when its type declares it,
@@ -105,8 +104,8 @@ per-charge record, so its memory does not grow with the work it bounds.
   ceiling does not bind before the fact ceiling. A dispatch candidate pairs
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
-- **Hashed bytes, 268435456.** Sixteen times NFR-007's default package byte
-  ceiling. With about 903 bytes per effective type and 608 per direct edge
+- **Hashed bytes, 268435456.** Sixteen times NFR-011's preimage-byte
+  default (16777216). With about 903 bytes per effective type and 608 per direct edge
   (keys of 83 to 87 bytes), it admits a single-inheritance chain up to the
   100000 record ceiling (99999 edges, 151633328 bytes) and about 426000 direct
   edges over 10001 types. A chain whose every type declares one field has
@@ -160,7 +159,5 @@ TC-434 covers the defaults and the bound on work:
   charges normalization under `ModelNormalizationLimitsV1`.
 - [FR-084](../functional/FR-084-admit-closed-populations-and-resolve-lookup.md)
   charges admission under `PopulationAdmissionLimitsV1`.
-- [NFR-007](NFR-007-bound-native-packages.md) sets the package ceilings the
-  record, member and byte defaults derive from.
 - [NFR-011](NFR-011-bound-value-checking-work.md) sets the work ceiling the
   work defaults reuse.

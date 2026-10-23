@@ -147,11 +147,10 @@ identity gives every source-owned declaration a different key.
   ([FR-010](FR-010-report-native-outcomes.md)). `parse` reads native-v1
   source and `format` complete-V1 source, under the same two-label grammar.
 - A native-v1 request supplies them in each source's wire identity: the
-  run, compile and lower requests
+  run and compile requests
   ([FR-026](FR-026-run-standalone-native-workflow.md),
-  [FR-027](FR-027-export-compiled-native-package.md)) and the extraction
-  body record ([FR-031](FR-031-run-extracted-native-source.md)), which share
-  one identity definition.
+  [FR-027](FR-027-export-compiled-native-package.md)), which share one
+  identity definition.
 - A library caller supplies them in the source identity it passes to the
   source reader and to S1's `parse`.
 - A supplied library's source carries its own two labels in the

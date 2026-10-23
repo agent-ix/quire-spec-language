@@ -14,7 +14,7 @@ Verify FR-272's identifier, re-export and copy rules, its exclusions, a
 backend-workspace run and its reporting, over fixture workspaces and the QSL
 workspace.
 
-Scope: FR-272-AC-1 to FR-272-AC-4.
+Scope: FR-272-AC-1 to FR-272-AC-5.
 
 ## Test Procedure
 
@@ -39,6 +39,14 @@ Scope: FR-272-AC-1 to FR-272-AC-4.
    `qsl-replay` holds `pub use quire_exact::Value;`. Then run the gate over
    the QSL workspace and read the `quire-contract-model` findings.
 4. Plant two namesakes in W in one run; run over a fixture with none.
+5. Fixture `cargo metadata` in which `quire-eval` and `quire-checked`
+   resolve from a git source outside `graph::classify`'s ecosystem
+   repositories: `quire-eval` tags `pub struct Evaluation`; a workspace
+   member holds `struct Evaluation`; another ecosystem package holds a
+   `struct Evaluation` with the tagged one's field names; `quire-eval` holds a
+   second `Evaluation`; `quire-checked` holds a struct matching a canonical
+   type the workspace tags. Then the same fixture with neither crate
+   resolved.
 
 Tag the tests `#[trace("TC-747", "FR-272-AC-n")]`.
 
@@ -57,3 +65,8 @@ Tag the tests `#[trace("TC-747", "FR-272-AC-n")]`.
   no `copy` finding.
 - Step 4: two findings, each with both locations and its rule, and a
   non-zero exit; then exit 0.
+- Step 5: `Evaluation` is in the canonical set; an `identifier` finding for
+  the workspace member's `Evaluation` naming both locations; a `copy`
+  finding for the other ecosystem package's; none for `quire-eval`'s second
+  `Evaluation`; a `copy` finding for `quire-checked`'s struct. Without the
+  two crates resolved, no finding names either.

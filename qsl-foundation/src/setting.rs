@@ -127,8 +127,8 @@ impl core::fmt::Display for Setting {
 }
 
 /// The ten accounting budgets of a call (`quire.value.accounting/v1`
-/// counters), each named by its bare counter name (FR-255's accounting
-/// table). They are settings but not stage limits: a reached budget settles
+/// counters), each named `accounting.<counter>` (FR-255's accounting
+/// table, Behavior 9). They are settings but not stage limits: a reached budget settles
 /// `Incomplete`, so they have no [`LimitKind`] and are not [`Setting`]s,
 /// which keeps every `stage_limit_exceeded` producer total over its kind.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -170,9 +170,28 @@ impl AccountingSetting {
         Self::ResultUnits,
     ];
 
-    /// The counter's bare name, such as `work_units`.
+    /// The setting name, `accounting.<counter>`, such as `accounting.work_units`.
     #[must_use]
     pub const fn name(self) -> &'static str {
+        match self {
+            Self::IntegerBits => "accounting.integer_bits",
+            Self::DecimalDigits => "accounting.decimal_digits",
+            Self::ScaleExpansion => "accounting.scale_expansion",
+            Self::TextInputBytes => "accounting.text_input_bytes",
+            Self::TextScalars => "accounting.text_scalars",
+            Self::NormalizedScalars => "accounting.normalized_scalars",
+            Self::UnitEdges => "accounting.unit_edges",
+            Self::ValueOccurrences => "accounting.value_occurrences",
+            Self::WorkUnits => "accounting.work_units",
+            Self::ResultUnits => "accounting.result_units",
+        }
+    }
+
+    /// The counter's bare `quire.value.accounting/v1` member name, such as
+    /// `work_units`: the key a call's `accounting` object uses, which is no
+    /// setting name.
+    #[must_use]
+    pub const fn counter(self) -> &'static str {
         match self {
             Self::IntegerBits => "integer_bits",
             Self::DecimalDigits => "decimal_digits",
@@ -185,6 +204,15 @@ impl AccountingSetting {
             Self::WorkUnits => "work_units",
             Self::ResultUnits => "result_units",
         }
+    }
+
+    /// The setting of the counter whose member name is `counter`, or `None`.
+    #[must_use]
+    pub fn from_counter(counter: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|setting| setting.counter() == counter)
     }
 }
 
@@ -321,18 +349,24 @@ mod tests {
 
     #[ix_trace_rs::trace("FR-255-AC-3")]
     #[test]
-    fn accounting_names_are_bare_counters_in_neither_stage_table_nor_a_stage_name() {
+    fn accounting_names_are_prefixed_counters_in_neither_stage_table_nor_bare() {
         for counter in AccountingSetting::ALL {
+            let bare = counter
+                .name()
+                .strip_prefix("accounting.")
+                .expect("an accounting setting is `accounting.<counter>`");
             assert_eq!(Setting::from_name(counter.name()), None, "{counter}");
             assert_eq!(
                 SettingName::from_name(counter.name()),
                 Some(SettingName::Accounting(counter))
             );
-            assert!(!counter.name().contains('.'));
+            assert_eq!(SettingName::from_name(bare), None, "bare counter {bare}");
+            assert_eq!(counter.counter(), bare);
+            assert_eq!(AccountingSetting::from_counter(bare), Some(counter));
         }
         assert!(Setting::ALL
             .iter()
-            .all(|setting| setting.name().contains('.')));
+            .all(|setting| !setting.name().starts_with("accounting.")));
     }
 
     #[test]

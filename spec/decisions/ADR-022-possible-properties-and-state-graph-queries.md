@@ -311,8 +311,8 @@ instance settles once exploration has checked all 9 nodes; the walk may be
 longer than the explored witness; with `witness_samples` 0 the source is
 `Explored`. The verdict is `proved` either way.
 
-**Well-definedness (RU-5).** The target `2 / (2 - c.versionNumber) = 2` for
-`c = a` holds at `(1, 0)`, and a sampled walk from `(0, 0)` finds that
+**Well-definedness (RU-5).** The target `2 div (2 - c.versionNumber) = 2` for
+`c = a`, under the subject's integer-division law, holds at `(1, 0)`, and a sampled walk from `(0, 0)` finds that
 witness. Exploration still runs and reaches `(2, 0)`, where the division has
 no value, so the item settles `refuted`, cause `UndefinedEvaluation` at
 `(2, 0)` (GV-7), not `proved`. `ReachesTwo` under `max_states` 2 gets its
