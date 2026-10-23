@@ -182,6 +182,24 @@ where `Quantity<u>` is required only through `convert<Quantity<u>>(…)`
 (QSpec FR-142), which lowers by the `ConvertScalar` rows to
 `quire.op.quantity.convert` with mode `rounding` = `exact`.
 
+**Dimension equivalence.** A dimension equivalence the unit declares
+(`dimension A ~ B;`, FR-091) puts the units of the two dimensions in one
+equivalence class, and `check` applies QSpec FR-142 "Dimension equivalence"
+"Effect" to every quantity operand. `convert<Quantity<u>>(e)` is admitted when
+the dimension nodes of `e`'s unit and of `u` are equal or in one class, lowers
+as any conversion does, and charges the class graph's edges as FR-142 states;
+its value is the exact one. Addition, subtraction, equality and ordering still
+require the identical unit, so a quantity of one unit of a class and a quantity
+of another unit of that class refuse `ill_typed`/`type-mismatch` at the
+operation or the argument, as `1 m` and `100 cm` do, and meet only through
+`convert`. A product, quotient or integer power takes each operand in the
+canonical root of its class, so the unit of `d / e` over `d: Quantity<s>` and
+`e: Quantity<sec>` of two equivalent dimensions is the dimensionless unit, and
+the product of `s` and `sec` has the compound unit of the class root squared,
+the one the product of `s` and `s` has. A conversion between units of two
+dimension nodes that no equivalence relates, directly or through a class,
+refuses `ill_typed` as before.
+
 **Division by a literal.** `check` SHALL admit a quotient `e / n u` whose
 divisor is a quantity literal of nonzero reduced magnitude, and SHALL record
 that literal as a nonzero fact that discharges the division's nonzero
@@ -1092,6 +1110,8 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-40 | `decimal(15, 1) = decimal(15, 1)` and `let x = decimal(15, 1) in x` refuse `ill_typed`/`ambiguous-literal` at the constructor; `decimal(15, 1)` at an `Int[0, 10]`, a `Rational[0, 10; 1, 10]`, a `Float64[nearest-even]`, a `Boolean` and a `Quantity<ms>` position refuses `ill_typed`/`type-mismatch` at the constructor; at `Decimal[0, 1000; 0, 2; nearest-even]`, `decimal(1001, 0)`, `decimal(-1, 0)` and `decimal(1, 3)` refuse `ill_typed`/`type-mismatch`, and at `Decimal[0, 1000; 1, 2; nearest-even]`, `decimal(5, 0)` refuses the same. A constructor whose coefficient exceeds the rational-bits ceiling refuses `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`. | Test (TC-1232) |
 | FR-093-AC-41 | With `x: Decimal[0, 10000; 0, 2; nearest-even]` holding the decimal of coefficient 600 and scale 2, `x / decimal(4, 0)` checks without `unproved-nonzero`, lowers to one `quire.op.decimal.div` with mode `rounding` `nearest-even` over `[ref(x), ref(literal)]` and evaluates to coefficient 150 and scale 2; `x / decimal(0, 0)`, `x / decimal(0, 2)` and `x / y` for a parameter `y` of the same type each refuse `undefined_expression`/`unproved-nonzero` at the divisor. | Test (TC-1232) |
 | FR-093-AC-42 | With `i: Int[0, 10]` and `e: Decimal[0, 1000; 0, 2; nearest-even]` holding coefficient 125 and scale 2: `convert<Decimal[0, 1000; 0, 2; nearest-even]>(i)` lowers to `quire.op.numeric.convert`, `convert<Rational[0, 1000; 1, 100]>(e)` evaluates to the rational `5/4` through `quire.op.numeric.convert`, `convert<Decimal[0, 1000; 0, 1; nearest-even]>(e)` lowers to `quire.op.numeric.convert_rounding` with mode `nearest-even` and evaluates to coefficient 12 and scale 1, and `convert<Float64[nearest-even]>(e)` lowers to `quire.op.ieee.from_exact` (FR-397); `convert<Decimal[0, 1000; 0, 2; nearest-even]>(f)` over a `Float64[nearest-even]` parameter `f` refuses `ill_typed`/`type-mismatch`. | Test (TC-1232) |
+| FR-093-AC-43 | With FR-091-AC-44's units (`Time`, `s`, `ms`), `dimension Period;`, `unit sec : Period = rational(1, 1);`, `unit msec : Period = rational(1, 1000) * sec;` and `dimension Period ~ Time;`, each of these checks and lowers: `function c1 using v(d: Quantity<s>): Boolean pure { convert<Quantity<sec>>(d) = 3 sec }`, a `quire.op.quantity.convert` node with mode `rounding` = `exact` over `d` then `quire.op.quantity.eq` over it and the `3 sec` literal at the `sec` node; `function c2 using v(d: Quantity<s>): Boolean pure { convert<Quantity<msec>>(d) = 3000 msec }`; and `function c3 using v(e: Quantity<msec>): Boolean pure { convert<Quantity<s>>(e) = rational(3, 2) s }`. IR's v2 reader admits each package, and evaluating the lowered bodies gives: `c1` true for `d` = `3 s` and false for `d` = `4 s`; `c2` true for `d` = `3 s`; `c3` true for `e` = `1500 msec`. With `dimension Length;` and `unit m : Length = rational(1, 1);` beside them, `function c4 using v(d: Quantity<s>): Boolean pure { convert<Quantity<m>>(d) = 3 m }` refuses `ill_typed` at the conversion, and in the same units without `dimension Period ~ Time;` `c1` refuses `ill_typed` at the conversion. | Test (TC-483) |
+| FR-093-AC-44 | Under AC-43's units, each of these refuses `ill_typed`/`type-mismatch` at the operation and emits no node: `function a1 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d + p = d + p }`, `function a2 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d = p }`, `function a3 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d < p }` and, with `function f using v(d: Quantity<s>): Boolean pure { true }`, `function a4 using v(): Boolean pure { f(3 sec) }`. Each of these checks and lowers: `function a5 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { convert<Quantity<s>>(p) + d = 6 s }`, true for `d` = `3 s` and `p` = `3 sec`; `function a6 using v(): Boolean pure { f(convert<Quantity<s>>(3 sec)) }`; `function a7 using v(d: Quantity<s>): Boolean pure { d / 3 sec = d / 3 s }`, two `quire.op.quantity.div` nodes whose `result_type` is the one dimensionless compound-unit node, true for `d` = `6 s`; and `function a8 using v(d: Quantity<s>, p: Quantity<sec>): Boolean pure { d * p = d * d }`, whose two products have one compound-unit node over the class root unit squared, true for `d` = `2 s` and `p` = `2 sec`. | Test (TC-483) |
 
 ## Dependencies
 

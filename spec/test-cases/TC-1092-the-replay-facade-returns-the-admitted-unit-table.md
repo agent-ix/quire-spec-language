@@ -12,7 +12,7 @@ relationships:
 
 Verify `qsl_replay::compile_admitted`'s context lists the admitted dimensions
 and declared units, finds them by wire node id, returns each unit's kernel id
-and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-5.
+and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-7.
 
 ## Test Procedure
 
@@ -33,6 +33,10 @@ and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-5.
    dimension's parts; convert 2 km to mm and 0 C to K.
 6. Replay a `Quantity<m>` parameter with a witness naming the admitted id of
    `m`, then of `km`.
+7. Compile FR-398-AC-6's unit with and without `dimension Period ~ Time;`;
+   list `dimension_equivalences`, call `converts_to` and `convert_quantity`
+   from `s` to `sec`, and look the equivalence node's id up as a unit and as a
+   dimension.
 
 ## Expected Results
 
@@ -50,3 +54,6 @@ and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-5.
 5. The derived dimension lists its parts and exponents; 2 km is 2,000,000 mm
    and 0 C is 5463/20 K.
 6. The `m` witness reproduces on both arms; the `km` witness refuses.
+7. One equivalence entry equal to the spine's node; `converts_to` is true and
+   3 `s` is 3 `sec` with the equivalence, false and a refusal without it; the
+   equivalence id refuses `WrongKind` in both lookups.
