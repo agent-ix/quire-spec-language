@@ -567,7 +567,7 @@ fn call_site_refuses_a_non_owner_and_an_ambiguous_operation() {
 /// resolves back to the same frame for a process and a state machine alike.
 /// A target naming `ExpressLifecycle`, which only inherits `place`, is
 /// refused as an object that is not the declaring object.
-#[trace("TC-1162", "FR-115-AC-6", "FR-121-AC-25", "FR-121-AC-26")]
+#[trace("TC-514", "FR-115-AC-6")]
 #[test]
 fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
     use crate::execute::frame::resolve_target;
@@ -618,7 +618,7 @@ fn a_call_site_frame_operation_resolves_as_a_replay_frame_target() {
 /// `Config::OrderLifecycle.placed` name fields of a process and a state
 /// machine, and refuse `UnknownField`, as they did before processes and state
 /// machines became operation owners.
-#[trace("TC-1162", "FR-121-AC-18")]
+#[trace("TC-516", "FR-121-AC-18")]
 #[test]
 fn a_field_of_a_process_or_state_machine_is_not_selectable() {
     let document = owners_document(false);
