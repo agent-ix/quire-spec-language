@@ -41,7 +41,7 @@ Fixture: the `Counter` unit, the closed trace and the prefix with `c.value`
 3. Evaluate FR-329-AC-6's clause over the lasso.
 4. Run FR-330-AC-5's request from source.
 5. Replay FR-331-AC-4's two packets.
-6. Evaluate each clause of FR-327-AC-7 over the closed trace, and the two
+6. Evaluate each clause of FR-327-AC-7, in its order, over the closed trace, and the two
    clauses over the one-position trace with `c.value` 2.
 7. Run FR-330-AC-8's request from source.
 
@@ -60,7 +60,9 @@ Tag the tests `#[trace("TC-847", "<AC id>")]`.
   `undefined`; `Completed(false)` at 1; `Completed(false)` at 2;
   `UndefinedEvaluation{where: 1, cause: division-by-zero}`;
   `UndefinedEvaluation` at 2; `InsufficientData{where: 0, count: 1,
-  min_count: 2}`; `InsufficientData` at 0 for the `on origin` clause; over
+  min_count: 2}`; `InsufficientData` at 0 for the `on origin` clause;
+  `InsufficientData{where: 0, count: 1, min_count: 2}`, not `Completed(false)`,
+  for the clause whose false `holds` atom shares position 0 with the short `B`; over
   the one-position trace, `UndefinedEvaluation` at 0 for both orders.
 - Step 7: stage `evaluate`, `undefined`, exit 10, position 2, `count` 0,
   `min_count` 1, no `truth`, no counterexample.
