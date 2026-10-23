@@ -78,3 +78,21 @@ brought into the branch.
 | FND-003 | fixed 86590fbe4 | qsl-eval/src/lib.rs has one `compile_fail,E0432` doctest for each of the nine original old paths, plus a positive doctest of the new paths. The amended AC-3 entry is FND-007. |
 | FND-004 | fixed 86590fbe4 | `a_lower_layer_naming_quire_eval_fails_the_placement_check` asserts that the fixture fails with "qsl-semantics names quire-eval in [dependencies], which sits above it", naming both crate and table. |
 | FND-005 | fixed 86590fbe4 | `a_normal_edge_to_the_quire_eval_leaf_is_clean` (tools/arch-lint/metadata.rs), traced FR-401-AC-7 and TC-156. |
+
+## New findings (disposition pass 2)
+
+Round 2 was reviewed at a05545fba3c2b25301496b1d3ba1c1e138591b33, against
+STD-339 (62d5f232a).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | Two of FR-401-AC-9's named vectors are not bound to it. `received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged` (the TC-918 `Compare` run in invariants.rs) and `empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_prefixes` (the population query, with its n-th-poll prefixes) both assert the AC-9 behaviour and pass. Neither is traced `FR-401-AC-9`: only the equality_matrix vector and the new `call_supplied` test are. Add the tag to both. | qsl-eval/src/value/expression/evaluate/invariants.rs:1357; qsl-eval/tests/it/model_reference_queries.rs:4020 |
+
+## Dispositions (round 2)
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed 76a6c0986 | `the_adapter_validates_a_population_request_by_its_declared_maximum` (traced FR-262-AC-11 and FR-089-AC-5) asserts `Ok` for `Population<5>` with a maximum-5 binding, `NotAdmitted` under `Population<6>`, and `NotAdmitted` for an unresolved id. The `Storage` mapping cannot be reached from QSL, because the kernel reservation hook is private. It is covered by quire-eval's toy test. |
+| FND-007 | fixed 76a6c0986 | qsl-replay/src/lib.rs has a `compile_fail,E0432` doctest of `use qsl_replay::Category;`, and the re-export is gone. |
+| FND-008 | still-open | FR-262-AC-12 is now tested by `begin_of_a_call_and_of_an_expression_observes_the_meters_handle`, but only for run 1, the meter's handle cancelled before Begin (with both causes), plus the uncancelled and no-handle sessions. Run 2 (the meter's handle tripping at the first poll point for the second argument) is untested. Runs 3 and 4 and the last sentence of the AC describe a caller-supplied run over a different handle. `quire-eval`'s Begin with contract admission takes no run, so those runs cannot be expressed. That needs a spec ruling (draco). FR-401-AC-8 as amended still binds the std reference evaluator ("the runs over `f(3)` and over the requesting body hold as stated"). No test shows the factory invoked once per application, `f`'s interpreted body uncharged, or a requesting body resumed with the host body's `7`, and no test is tagged AC-8. |
+| FND-009 | fixed 76a6c0986 | `begin_observes_the_meters_cancelled_handle` is retagged `#[trace("FR-262-AC-12")]`. |

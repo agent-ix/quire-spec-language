@@ -141,3 +141,16 @@ STD-335 (ac178fd85), which amends FR-262 and FR-401.
 | FND-005 | fixed f239768f6 | Cargo.lock pins `quire-eval?branch=main#2b2f41d2`, the merged main commit. |
 | FND-006 | fixed d726f6d26 | `a_session_over_the_adapter_charges_one_call_for_a_chargeless_body` asserts `work == 1` for both meters. |
 | FND-007 | fixed d726f6d26 | `declaring` deduplicates with a `BTreeSet`, and `PackageTask` is now `pub struct PackageTask<X>(Frame<X>)` with a private `Frame`. |
+
+## Dispositions (round 2)
+
+Round 2 was reviewed at a05545fba3c2b25301496b1d3ba1c1e138591b33. The fix
+commits are 76a6c0986 and 646acab35. The governing text is STD-339
+(62d5f232a, #1290, merged into the branch), which amends FR-262-AC-12 and
+FR-401 Behaviour 4, AC-8 and AC-9.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 76a6c0986 | qsl-replay no longer re-exports `Category`. Its crate doc carries a positive doctest of `quire_semantic_value::catalog::Category` and a `compile_fail,E0432` doctest of `use qsl_replay::Category;`. CG's origin/main still imports `qsl_replay::Category` in three files, so CG's adaptation must land before CG's next lock update. That is a cross-repo merge condition, not a defect in this PR. |
+| FND-003 | rejected | STD-339 makes this the specified behaviour. FR-401 Behaviour 4 now says that for the std reference evaluator, a source application inside interpreted code runs the callee's interpreted body. Only the steppable evaluator must dispatch from every call site. The adapter's module doc states exactly that. The std-evaluator half of AC-8 is SR-12355 FND-008. |
+| FND-008 | rejected | STD-339 scopes FR-262-AC-12 to `quire-eval`'s Begin with contract admission. The pre-admitted Begin that `call`, `evaluate` and `call_supplied` use is FR-401-AC-9: it polls nothing at Begin, and a cancelled meter handle gives the first charge's located incomplete result. The code (`Cancel::new()` run, `pre_admitted` closure, `call_supplied` under the caller's run) matches that, and the existing `Ok(Incomplete)` assertions stand. |
