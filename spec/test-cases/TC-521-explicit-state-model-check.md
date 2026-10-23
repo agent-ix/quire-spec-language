@@ -60,6 +60,9 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
     then when `c.versionNumber = 7` with no fairness, then with the
     condition undefined at version 1; over `Counter`, `always eventually
     holds(c.value = 0)` `on each` when `c.value = 3` and when `c.value = 7`.
+    Replay the weak no-granularity lasso and the `Counter` stutter lasso by
+    FR-128, then replay the first with the condition's letters reading
+    false at every position.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
@@ -106,4 +109,6 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   three-step `upd(b)` loop, length 4; `Holds{Exhaustive}`; `Violated`,
   `kind: UndefinedEvaluation` naming the activation at position 1;
   `Violated` with the prefix to value 3 and the terminal stutter loop;
-  `Holds{Exhaustive}`.
+  `Holds{Exhaustive}`. Both lassos replay to
+  `reproduced-with-evaluated-witness`; with the condition false everywhere
+  the replay settles `inconclusive`, `ReplayParity`.

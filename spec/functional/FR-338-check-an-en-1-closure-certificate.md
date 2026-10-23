@@ -401,7 +401,7 @@ uses the `guarded-buchi` alternative ("Guarded TP-4 clause" below).
   content identity covers the guard term, so the root binds the condition,
   and the activation member `"each-when"` selects the guarded reading. A key
   carries neither the condition nor any reading of it.
-- At every model position the monitor reads, the translation SHALL read
+- At every activation position the monitor reads, the translation SHALL read
   the condition through FR-125's letter seam for the item's binding, as part
   of that position's letter and before the clause's atoms. An infinite-trace
   terminal stutter position reads it on the real last model state's letter,
@@ -410,11 +410,15 @@ uses the `guarded-buchi` alternative ("Guarded TP-4 clause" below).
   the selection rule of "Guarded TP-4 clause" below); where it reads
   false the position adds none. Prior live debt and past memory advance in
   both cases.
-- A guarded activation SHALL start only at a model position, as an unguarded
-  `on each` activation does. A terminal false-extension position is not a
-  model position: it reads no condition and adds no activation, whatever the
-  guard term, a constant `true` guard included; it only advances the debt
-  already live.
+- A guarded activation SHALL start only at an activation position: a
+  position of the trace the clause reads other than a terminal
+  false-extension position. A model position is an activation position, and
+  so is every infinite-trace terminal stutter position, which reads the
+  condition and the atoms on the real last model state's letter with the
+  past memory advanced to that stutter position. A terminal false-extension
+  position is not an activation position: it reads no condition and adds no
+  activation, whatever the guard term, a constant `true` guard included; it
+  only advances the debt already live.
 - The condition's truth SHALL NOT be a state member. It is a function of the
   position's model state and the binding, so a product state's successors
   are fixed by its model state, its automaton state and that reading, and
@@ -435,7 +439,8 @@ uses the `guarded-buchi` alternative ("Guarded TP-4 clause" below).
   safety state.
 - In the protocol non-progress construction below, a `waiting`
   configuration of a guarded clause SHALL choose as the start of its
-  negated-root activation only a model position whose condition reads true.
+  negated-root activation only an activation position whose condition reads
+  true.
 
 The checker SHALL rebuild this guarded automaton from the recompiled
 clause and SHALL re-read the condition at every reached product state
@@ -473,7 +478,8 @@ this requirement states for an atom of the letter.
 
 A TP-4 clause whose `on each` activation has a `when` condition SHALL use
 a generalized Büchi automaton for the negation that selects one violating
-activation: the clause is violated exactly when, from some model position
+activation: the clause is violated exactly when, from some activation
+position (a model position or an infinite-trace stutter position, above)
 whose condition reads true, the formula is false. Its state is
 `["guarded-buchi", phase, branch]`:
 
@@ -534,8 +540,10 @@ product state); one that pairs a waiting key with an obligation is refused
 `BadState` by the locus rule above. A TP-4 automaton has no rejecting state,
 so for an empty certificate the locus key is the waiting configuration
 before position 0, `K_C(["guarded-buchi","waiting",[[],P,[],A]])` with `P`
-the origin past memory of the complete-history rule and `A` its derived
-membership: like the rejecting key of the safety and bounded forms, it is
+the origin past memory of the complete-history rule, with position 0's
+letter not applied, and `A` its derived membership; when the condition is
+undefined there for several bindings, `C` is the context of the first
+binding in FR-125's canonical instance order: like the rejecting key of the safety and bounded forms, it is
 derived from the context alone, without reading the undefined letter.
 FR-339 checks the components over these states.
 
@@ -816,8 +824,8 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve, with a certificate whose `package_id` equals the recompiled one, is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
 | FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]`, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has two instances, and each instance's `context` is `[root, profile, "infinite", [[N, ["instance", T, "a"]]]]` with `N` the `over` parameter's NodeId and `T` the JSON string of `P1`'s, respectively `P2`'s, declaration identity text; the two contexts' octets differ exactly in `T`, and a certificate state carrying `P1`'s context is not admitted under `P2`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", T, "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the four-element `["instance", T, "a", O]` with `O` the JSON string of `Counter`'s declaration identity text; and `["instance", T, {"type":"text","value":"a"}]`. Over a subject with population `P1` of `Counter`, universe `["a"]`, and two initial states, one holding a `Counter` under key `a` and one holding a `Fast` (a subtype of `Counter`) under key `a`, the instance's context octets are equal in both. | Test (TC-1164) |
 | FR-338-AC-10 | Fixture: the `Counter` subject (no `terminal` declaration) and a checked package of its unit that carries the guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation aggregate `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's Boolean guard term), built by the test because S4 refuses an `on each` clause `NotEmitted` (FR-337, QSL-926); the same package supplies the engine's clause and stands as the request's recompiled package, and each `when` condition is read by the test's own letters as in FR-126-AC-16. `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value = 7` returns `Holds` whose certificate holds values 0 to 3, each with activation `"each-when"` and state body `["safety",[[[],[],[],[]]]]`, and `check_closure` accepts it, so FR-127 settles `proved`. `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with the condition `c.value >= 2` returns `Holds` whose certificate `check_closure` accepts, its value-0 and value-1 states having body `["bounded",["each"],[[[],[],[],[]]]]` and its value-2 state body `["bounded",["each"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; that certificate with the value-2 state's body replaced by `["bounded",["each"],[[[],[],[],[]]]]` (the condition misread as false) is rejected `SuccessorMissing` at the value-2 product state with the deadline body; the same certificate with the misread value-2 state added beside the deadline one is accepted; the accepted certificate with every key's activation replaced by `"each"` is rejected `ShapeMismatch` at the least refused `ProductStateRef` (AC-8's order). With the condition false at values 0 and 1 and undefined at value 2, the certificate holding exactly the value-0 and value-1 states, each with activation `"each-when"` and body `["bounded",["each"],[[[],[],[],[]]]]`, is rejected `BadState` at the value-1 product state, whose expansion reads the undefined condition at value 2. | Test (TC-525) |
-| FR-338-AC-11 | Over FR-339-AC-5's fixture, the guarded TP-4 clause's keys have exactly the stated `guarded-buchi` waiting and active state bodies under activation `"each-when"`. Each of these is refused `ShapeMismatch` at `ProductState`: an active key rewritten as `["buchi", branch]`; a waiting key whose `branch` carries the obligation `[[],"negative"]`; a `guarded-buchi` key under the same clause's context with activation `"infinite"`; the phase `"selected"`. | Test (TC-525) |
 | FR-338-AC-11 | Package identity. AC-1's certificate carries the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by that of the same unit with the claim's bound edited to `1001` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with its initial product state also removed (AC-2's `InitialMissing` defect) still returns `PackageMismatch`, because no rule is evaluated. A request whose clause root is the edited unit's clause node, which does not resolve in AC-1's recompiled package, with a certificate naming the edited unit's `package_id`, returns `PackageMismatch` and settles `Inconclusive(StaleDependency{requested, recompiled})`, not `Failed`, because the package comparison precedes the clause-root resolution. | Test (TC-1141) |
+| FR-338-AC-15 | Over FR-339-AC-5's fixture (the clause `eventually holds(c.versionNumber = 2)` `on each` with the condition `c.versionNumber = 1`, activation `"each-when"`), binding `a`'s waiting state at `(0,0)` has body `["guarded-buchi","waiting",[[],[],[],[]]]` and its active state at `(1,0)` has body `["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]`. Each of these is refused `ShapeMismatch` at `ProductState`: that active key rewritten as `["buchi",[[[[],"negative"]],[],[],[]]]`; that waiting key with `branch` `[[[[],"negative"]],[],[],[]]` under phase `"waiting"`; a `guarded-buchi` key under the same clause's context with activation `"infinite"`; the phase `"selected"`. With the condition undefined at version 0, the empty certificate is rejected `BadState` at `ProductState` with the initial model state `(0,0)` and binding `a`'s key `K_C(["guarded-buchi","waiting",[[],[],[],[]]])`, the waiting configuration before position 0's letter is read (binding `a`, the first in canonical instance order); and FR-339-AC-5's accepted certificate under that condition is rejected `BadState` at binding `a`'s waiting state at `(0,0)`, the least certificate state carrying that model state. | Test (TC-525) |
 
 ## Dependencies
 

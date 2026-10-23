@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-338
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-124
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-125
@@ -145,6 +147,17 @@ member of its own.
   naming the first failing constraint (FR-131), whose catalog code is
   `invalid_runtime_input`/`invalid-value` (ADR-014 A-4). It SHALL then evaluate the formula over the replayed trace
   by FR-125 under the `over` binding.
+  - For a clause whose `on each` activation has a `when` condition, the
+    executor SHALL read the condition through FR-125's letter seam at every
+    activation position of the replayed trace (every position other than a
+    terminal false-extension position, an infinite-trace stutter position
+    included; FR-338 "Guarded `on each` activation"), and the evaluated
+    value SHALL be `false` exactly when the formula is false from some
+    activation position whose condition reads true. A position whose
+    condition reads false contributes nothing, so a lasso on which the
+    condition reads true at no position evaluates `true`. A condition
+    undefined at a replayed position follows the undefined-letter rules
+    below.
   - `false` SHALL settle `reproduced-with-evaluated-witness`.
   - `true`, or no value, SHALL settle `inconclusive`, `ReplayParity` or
     `NoValue` (FR-072).
