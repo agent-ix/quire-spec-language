@@ -1,16 +1,16 @@
 ---
 id: TC-450
-title: "CLI run routes a program by its declared edition and calls a 1-draft function"
+title: "`command` run routes a program by its declared edition and calls a 1-draft function"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
     type: verifies
 ---
-# TC-450: CLI run routes a program by its declared edition and calls a 1-draft function
+# TC-450: `command` run routes a program by its declared edition and calls a 1-draft function
 
 ## Description
 
-Verify that CLI `run` reads the program source's declared edition once and
+Verify that `command`'s `run`, called in process, reads the program source's declared edition once and
 sends each source down exactly one runner: `1-draft` through
 `qsl_replay::spine::run`, `0-draft` through native run. This catches a
 `1-draft` source run natively, a `0-draft` result that changes, an unknown
@@ -26,7 +26,7 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
    same source with the FR-278 composition under the same labels, and
    take the SHA-256 digest of the request file's bytes.
 2. Run the `0-draft` standalone requests of TC-103 and TC-104
-   (`tests/it/standalone.rs`) and compare stdout and exit status with the
+   (`tests/it/standalone.rs`) and compare the result document and exit code with the
    results those tests assert.
 3. Run the `1-draft` fixture relabelled `edition "7-draft"`.
 4. Run the `1-draft` fixture request once with each of `selection`,
@@ -51,16 +51,15 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 
 ## Expected Results
 
-- Step 1: exit 0 and empty stderr; stdout is one newline-terminated document
+- Step 1: exit 0 and no refusal envelope; the result document is one document
   whose `format` is `spine-run-result/1`, whose `package_id` equals the compiled
   package's, whose `source` names the request's two labels, source digest
   and authored path, whose `function` is `seven`, and whose `outcome` is
   `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`.
-- Step 2: stdout and exit status equal the TC-103 and TC-104 assertions.
-- Step 3: `unknown_edition`, stage `profile`, exit 20, empty stdout; the
+- Step 2: the result document and exit code equal the TC-103 and TC-104 assertions.
+- Step 3: `unknown_edition`, stage `profile`, exit 20, no result document; the
   `message` names the program file and `7-draft`.
 - Step 4: each request refuses `invalid-request` at stage `request`, exit 20,
-  empty stdout, and no model file is read.
-- Step 5: each refuses `invalid-request` at stage `request`, exit 20, empty
-  stdout.
+  no result document, and no model file is read.
+- Step 5: each refuses `invalid-request` at stage `request`, exit 20, no result document.
 - Step 6: exit 0 and a `completed` outcome.
