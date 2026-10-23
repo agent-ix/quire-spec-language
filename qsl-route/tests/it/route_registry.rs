@@ -112,7 +112,7 @@ fn hybrid_and_discrete_items_route_to_their_advertised_dynamics() {
     }
 }
 
-/// Trace: FR-075-AC-20, TC-193.
+/// Trace: FR-075-AC-20, FR-250-AC-3, TC-193, TC-705.
 #[test]
 fn hybrid_manifest_admission_checks_dynamics_after_fairness_and_evidence() {
     let admit = |dynamics, fairness, bounds| {
