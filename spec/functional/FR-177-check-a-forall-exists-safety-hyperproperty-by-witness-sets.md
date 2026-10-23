@@ -146,6 +146,14 @@ partner has failed.
 - At one position and rank the first in FR-101's breadth-first discovery
   order of product states SHALL win, and within a state the first finding its
   expansion recorded.
+- At one joint position of one tuple of paths, the undefined evaluations
+  SHALL rank in this order, which FR-183 replays: `μ_U` and then `μ_E`
+  over the joint step that enters the position; the body's letter there,
+  its atoms in clause-node order; then each universal component's contract
+  conjunctions there, the components in quantifier order and each
+  component's in the order its expansion records them. An existential
+  member's undefined contract conjunction is not among them: it leaves the
+  member's steps unknown, as above.
 - Across instances the earlier in FR-125's canonical order SHALL win a tie.
 - A later finding SHALL NOT replace an earlier one: an undefined evaluation
   at a position after an empty `X` with a fair universal cycle returns the

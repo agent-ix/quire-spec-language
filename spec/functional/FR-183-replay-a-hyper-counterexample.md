@@ -151,18 +151,22 @@ pub fn check_match_witness(
   universal and existential, as QSpec FR-400 states. The executor SHALL
   re-execute each path through its alias's `ModelSystem` with FR-128's
   step refusals, then evaluate `μ_U`, `μ_E`, the body's letters and each
-  component's contract conjunctions at the joint positions up to
+  universal component's contract conjunctions at the joint positions up to
   `trace_position` (ADR-018 UE-5, UE-6, ADR-023 HV-8).
 - The executor SHALL read the joint positions in increasing order and, at
   one joint position `p`, the expressions in the order EN-1 reads them
-  (FR-176 "Product"):
+  (FR-176 "Product" for HP-2, FR-177 "Ranking findings" for HP-3):
   1. for `p` past 0, `μ_U` over the joint step that enters `p`, then
      `μ_E` over that step;
   2. the body's letter at `p`, its atoms in clause-node order (ADR-018
      UE-2);
-  3. the contract conjunctions of each component's FR-120 expansion at
-     `p`, the components in quantifier order and, within one component,
-     the conjunctions in the order its expansion records them.
+  3. the contract conjunctions of each universal component's FR-120
+     expansion at `p`, the components in quantifier order and, within one
+     component, the conjunctions in the order its expansion records them.
+     Every component of an HP-2 clause is universal. An existential
+     member's undefined contract conjunction is no undefined evaluation:
+     FR-177 settles it `Undecided(UndecidedSuccessor)`, so the replay does
+     not read it as a locus.
 
   The first expression in this order that evaluates undefined is the
   replay's undefined evaluation; the expressions after it are not read.
@@ -276,9 +280,10 @@ pub fn check_match_witness(
 | FR-183-AC-6 | FR-177-AC-5's `Undefined` counterexample, whose traces include the existential variable's path to the state where `μ_E` has no value, replays to `reproduced-with-evaluated-witness`; with the existential trace removed the reader refuses it as `invalid_runtime_input`/`invalid-value` before replay. | Test (TC-602) |
 | FR-183-AC-7 | FR-178-AC-9's `Undefined` counterexample, whose paths each hold a skipped `mix` and a visible `step(0)`, is refused with `unsupported_construct`/`not-yet-implemented` and settles no result; it is not replayed as a lockstep counterexample. | Test (TC-608) |
 | FR-183-AC-8 | Over ADR-023 §8's secure vault and `NonInterference` at instance `v`, the matched witness, with `a` and `b` each from initial `(0, 0)` taking `step(0)` twice and `loop_entry` 0, is `Accepted` without evaluating the body. The unmatched witness, with `a` the same and `b` from `(0, 0)` taking `step(1)` then `step(0)` and `loop_entry` 0, re-executes, since each loop closes, and is `Refused` with `invalid_runtime_input`/`invalid-value` at joint step 1, where `μ_U` is false. A witness whose `instance` binds `v` to a key outside the `vaults` universe is `Refused` with `invalid_runtime_input`/`invalid-value` before any trace is re-executed. Checking either witness twice gives equal results. | Test (TC-608) |
-| FR-183-AC-9 | `μ_U` before the letter. Over ADR-023 §8's leaky vault, `NonInterference` with FR-176-AC-4's added `match` conjunct and the body `always holds(1 / (1 + v.l @ a - v.l @ b) = 1)`, a hand-built `Undefined` envelope with `a` from `(0, 0)` and `b` from `(1, 0)`, one joint step `(step(0), step(0))` and `trace_position` 1, at which the conjunct and the letter both have no value, replays to `reproduced-with-evaluated-witness` when its locus is the `match` conjunct with cause `division-by-zero`; the same envelope with its locus changed to the body atom settles `inconclusive`, `Verdicts`. | Test (TC-608) |
-| FR-183-AC-10 | The letter before a contract conjunction. Over the leaky vault with the added `pre G using v on V::Vault::step { 1 / (1 - self.l) = 1 }` and the AC-9 body, under the §8.1 `match`, the hand-built `Undefined` envelope of AC-9's paths, at whose position 1 the letter and `b`'s `G` both have no value, replays to `reproduced-with-evaluated-witness` when its locus is the body atom; with its locus changed to `G` with `b`'s `step` transition it settles `inconclusive`, `Verdicts`. | Test (TC-608) |
+| FR-183-AC-9 | `μ_U` before the letter. Over ADR-023 §8's leaky vault, `NonInterference` with FR-176-AC-4's added `match` conjunct and the body `always holds(1 mod (1 + v.l @ a - v.l @ b) = 0)`, a hand-built `Undefined` envelope with `a` from `(0, 0)` and `b` from `(1, 0)`, one joint step `(step(0), step(0))` and `trace_position` 1, at which the conjunct and the letter both have no value, replays to `reproduced-with-evaluated-witness` when its locus is the `match` conjunct with cause `division-by-zero`; the same envelope with its locus changed to the body atom settles `inconclusive`, `Verdicts`. | Test (TC-608) |
+| FR-183-AC-10 | The letter before a contract conjunction. Over the leaky vault with the added `pre G using v on V::Vault::step { 1 mod (1 - self.l) = 0 }` and the AC-9 body, under the §8.1 `match`, the hand-built `Undefined` envelope of AC-9's paths, at whose position 1 the letter and `b`'s `G` both have no value, replays to `reproduced-with-evaluated-witness` when its locus is the body atom; with its locus changed to `G` with `b`'s `step` transition it settles `inconclusive`, `Verdicts`. | Test (TC-608) |
 | FR-183-AC-11 | Contract conjunctions in quantifier order. Over the secure vault with AC-10's `G` and `NonInterference`'s body, a hand-built `Undefined` envelope with `a` and `b` from `(0, 0)`, one joint step `(step(1), step(1))` and `trace_position` 1, at which the letter holds and `G` has no value on both components, replays to `reproduced-with-evaluated-witness` when its locus is `G` with `a`'s transition and only `a` named; with `b`'s transition and only `b` named it settles `inconclusive`, `Verdicts`. | Test (TC-608) |
+| FR-183-AC-12 | `μ_U` before `μ_E`. Over the secure vault, `Opaque` with FR-176-AC-4's conjunct added to its `match`, which reads `a` alone and so is a `μ_U` conjunct, and FR-177-AC-5's conjunct, which reads `b` and so is a `μ_E` conjunct: a hand-built `Undefined` envelope with `a` and `b` from `(0, 0)`, each taking `step(0)`, and `trace_position` 1, at which both conjuncts have no value, settles `inconclusive`, `Verdicts` when its locus is the `μ_E` conjunct, since `μ_U` over the same joint step is read first. The envelope whose `b` path ends at `(0, 0)` before the step, as FR-177 shapes an undefined `μ_U`, with its locus the `μ_U` conjunct and cause `division-by-zero`, replays to `reproduced-with-evaluated-witness`. | Test (TC-602) |
 
 ## Dependencies
 

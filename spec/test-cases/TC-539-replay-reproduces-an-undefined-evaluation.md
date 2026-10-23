@@ -29,10 +29,10 @@ source in the byte provision and universe `{c}` in the request.
 4. Replay TC-537 step 4's deadlock-freedom counterexample (`terminal when
    6 / (3 - c.value) = 0`, prefix to value 3).
 5. Replay that prefix with `kind: Deadlock`.
-6. Replay FR-126-AC-6's empty-prefix counterexample over the `Counter`
-   subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from value 2.
-   Not built: replay refuses it as `AuthoredUndefined`; its reproduction is
-   Remaining work: QSL-898.
+6. Replay FR-126-AC-6's empty-prefix counterexample of `always holds(true)`
+   over the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }`
+   from value 2, with the `CanInc` locus, then with the clause's atom as
+   locus.
 7. Add FR-128-AC-7's `pre CanInc { 6 mod (3 - self.value) >= 0 }` to
    step 4's subject and replay the prefix to value 3 with `where.locus`
    naming `CanInc`, then with it naming the `terminal when` predicate.
@@ -48,9 +48,9 @@ Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
   `UndefinedEvaluation{where: position 3, cause: division-by-zero}`.
 - Step 5: `reproduced-with-evaluated-witness`, value
   `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`.
-- Step 6: refused `unsupported_construct`/`not-yet-implemented`; the
-  reproduction (`reproduced-with-evaluated-witness`, value `Undefined` with
-  cause `DivisionByZero` at position 0) is Remaining work: QSL-898.
+- Step 6: `reproduced-with-evaluated-witness`, `trace_position` 0, value
+  `UndefinedEvaluation{where: position 0, locus: CanInc, cause:
+  division-by-zero}`; then `inconclusive`, `ReplayParity`.
 - Step 7: `reproduced-with-evaluated-witness`, `trace_position` 3, with
   the `CanInc` locus; `inconclusive`, `ReplayParity` with the predicate
   locus.

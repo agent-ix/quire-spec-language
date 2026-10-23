@@ -32,4 +32,4 @@ Tag the tests `#[trace("TC-601", "FR-176-AC-n")]`.
 - Step 2: `Violated`; `Undecided(VacuousMatch)`.
 - Step 3: `Holds` and `Violated` with a `step(1)` loop; `a`'s stutter pairs only with `b`'s stutter.
 - Step 4: `Stopped(ResourceExhausted, MaxStates)` before the product; `Violated` with an `Undefined` counterexample (QSpec FR-400), a path for `a` and for `b` ending at the first joint step whose `a` step is `step(0)`, cause `division-by-zero`; byte-equal counterexamples.
-- Step 5: an `Undefined` counterexample at `trace_position` 0 whose locus is the body atom, which replays to `reproduced-with-evaluated-witness`; then one whose locus is `G`, naming one component whose `h` is 1.
+- Step 5: an `Undefined` counterexample at `trace_position` 0 whose locus is the body atom, which replays to `reproduced-with-evaluated-witness`; then one at the same tuple whose locus is `G` with `b`'s transition, naming `b` only.
