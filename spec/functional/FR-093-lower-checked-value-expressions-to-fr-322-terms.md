@@ -74,7 +74,9 @@ Nodes are content-addressed: two checked expressions that lower to the same
 body, type and form are one node. Each source occurrence of a node is its own
 occurrence entry, keyed (node id, role, ordinal) (ADR-013 O-07). Ordinals per
 (node id, role) follow insertion order: the order `check` records them in, not
-a sort by region. Each binder's own site is recorded before that binder's
+a sort by region. In a package of several source units the units' occurrences
+follow FR-480's canonical unit order, an earlier unit's first, and insertion
+order applies within each unit. Each binder's own site is recorded before that binder's
 reads, even when its region starts at the same byte as its first read.
 Content-addressing means two binders can share one parameter node: when they
 do, the node's occurrences follow one sequence in lowering order, so a later
