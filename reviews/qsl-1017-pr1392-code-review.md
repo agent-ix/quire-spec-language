@@ -53,3 +53,4 @@ boundary.
 | FND-002 | fixed | S2 records the full clock member span; the hybrid checker uses it, and the clock refusal test expects `clock "wall"`. |
 | FND-003 | fixed | Replay now says `in a hybrid model or temporal claim`, with a test for the claim case. |
 | FND-004 | still-open | The existing S2 test still expects a FormsRefusal for an ordinary temporal indexed read; the changed `formula_form(..., true)` admits it. The test has not been updated to the new S2/S3 contract. |
+| FND-004 | fixed | `an_indexed_read_in_a_temporal_clause_is_preserved_at_s2` now checks that the temporal form holds the indexed read, while the existing ordinary-clause S3 test checks `unsupported_construct`/`expression-form`. The S2 test is traced to FR-325, the owner of temporal form construction. |
