@@ -48,7 +48,7 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
   `temporal_clause` node, routed to the in-process fixture, which reads
   `Braking` from the checked package; with only the process fixture, routed
   to it, which receives the v2 bytes and reads `Braking` and `SlowEnough`
-  from their QSpec FR-478 nodes; `unsupported`,
+  from their QSpec FR-481 nodes; `unsupported`,
   `unsupported-requested-capability` with none; different checked package
   identities.
 - Step 5: the package is emitted and admitted, holding FR-447-AC-5's
