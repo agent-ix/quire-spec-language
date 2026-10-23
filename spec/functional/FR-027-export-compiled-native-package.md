@@ -38,8 +38,6 @@ request is the command encoding of the `parse`, `select`, `check` and
 `package` operations composed (FR-278). Every exit status this requirement
 states is FR-285's exit code of the outcome's ADR-013 O-16 category.
 
-The code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.
-
 ## Inputs
 
 A closed format/request JSON envelope. The request contains only models,
@@ -129,8 +127,9 @@ The compiler command shall finish package construction before writing its bytes.
 If a static stage fails, then the compiler command shall return its existing
 typed failure without a successful artifact.
 
-Library source files count toward `dependent_bytes`. Each unit of an array
-`program` counts as a program source.
+Each library source file SHALL count toward `dependent_bytes` by its size,
+with the model and program sources; no limit counts library files. Each unit
+of an array `program` counts as a program source.
 
 ## Acceptance Criteria
 
@@ -148,6 +147,7 @@ Library source files count toward `dependent_bytes`. Each unit of an array
 | FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes the FR-278 composition returns over the same source and dependency input, exit 0. A `0-draft` request carrying a library refuses with `invalid-request`, exit 20, empty stdout; so does a `1-draft` request with a library of an empty identity, or with a library object that has any member besides `identity`, `source` and `refinement_internals`, a `version` for one. | Test (TC-446) |
 | FR-027-AC-12 | A `1-draft` request carrying `refinement_internals` at its top level and on a library object hands those values to spine `compile` unchanged, and writes exactly the bytes the FR-278 composition returns over the same source, dependency input and refinement internals input, exit 0; a request with the member absent supplies the empty list. A `0-draft` request carrying `refinement_internals`, at its top level or on a library object, refuses with `invalid-request`, exit 20, empty stdout. | Test (TC-446) |
 | FR-027-AC-11 | For FR-027-AC-5's, AC-9's and AC-10's requests, the bytes the command writes equal the `package` output of `parse`, `select`, `check` and `package` composed over the same source, domain packages and libraries; for FR-027-AC-8's sources, the refusing operation's stage and cause code equal the command's, and its FR-285 exit code equals the command's exit status. | Test (TC-785) |
+| FR-027-AC-13 | A `1-draft` request whose program source and selected models total less than `dependent_bytes`, and whose one `libraries` source makes the total of all dependent files one byte over it, refuses at intake naming `dependent_bytes` and its configured value, with no package bytes; the same request with `dependent_bytes` raised to that total returns the package bytes FR-027-AC-10 states, exit 0. A `1-draft` request whose program imports 65 libraries, each supplied as its own small `libraries` source file, with every dependent file totalling less than `dependent_bytes`, compiles at the default limits, exit 0: no intake limit counts its files. | Test (TC-105) |
 | FR-027-AC-14 | Through `command`, a `1-draft` request whose `program` is an array of FR-480-AC-1's units `U1` and `U2` writes exactly the bytes the FR-278 composition returns over that unit list, exit 0, and the same request with the array reversed writes the same bytes. An array whose second unit declares `edition "0-draft"` refuses `unknown_edition` at that unit's edition literal, naming its file, with no package bytes and before FR-480's header agreement is checked; an empty array refuses `invalid-request`; and an array whose two units exceed `dependent_bytes` together, though each fits alone, refuses at intake naming `dependent_bytes`. | Test (TC-1210) |
 
 ## Dependencies
