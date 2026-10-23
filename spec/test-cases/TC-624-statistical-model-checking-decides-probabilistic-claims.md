@@ -1,18 +1,18 @@
 ---
 id: TC-624
-title: "EN-4 decides probabilistic claims with Okamoto and SPRT, with Bonferroni, symmetry and activation"
+title: "EN-4 decides probabilistic claims with Okamoto, SPRT and Clopper–Pearson, with Bonferroni, symmetry and activation"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-189
     type: verifies
 ---
-# TC-624: EN-4 decides probabilistic claims with Okamoto and SPRT, with Bonferroni, symmetry and activation
+# TC-624: EN-4 decides probabilistic claims with Okamoto, SPRT and Clopper–Pearson, with Bonferroni, symmetry and activation
 
 ## Description
 
-Verify EN-4's Okamoto and SPRT decisions on `P95`, the exact sample counts and thresholds, Bonferroni and symmetry, activation, and the stops and refusals.
+Verify EN-4's Okamoto and SPRT decisions on `P95`, its Clopper–Pearson decisions and interval on the `N = 231` stub, the exact sample counts and thresholds, Bonferroni and symmetry, activation, and the stops and refusals.
 
-Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7 to FR-189-AC-12, FR-189-AC-13 to FR-189-AC-15.
+Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7 to FR-189-AC-12, FR-189-AC-13 to FR-189-AC-16.
 
 ## Test Procedure
 
@@ -32,6 +32,7 @@ Fixtures: the `Undef` model and its two-initial-state variant (FR-189-AC-8), `Be
 11. Give a mean-of-fraction claim event samples from a stub: 3 holding of 4 (FR-189-AC-13).
 12. Run a two-test regenerative request and a two-test Okamoto request, each at `max_draws` `u64::MAX` (FR-189-AC-14).
 13. Give a quantile claim samples from a stub that ends the test at exactly 4 counted samples: 1, 3, 2, 5 at `q = 1/2`; 1, 3, 2 and a censored sample at `q = 9/10` and at `q = 1/2`; the same 1, 3, 2, 5 as `1 ms`, `3 ms`, `2 ms`, `5 ms` of a `Quantity<ms>` `M` against the threshold `3 ms` at `q = 1/2`; a quantile test whose stub returns no counted sample; the `P95` test (FR-189-AC-15).
+14. Give a `probability >= 9/10` claim (`α = β = 1/100`, `ι = 1/10`) `k` holding samples of 231 from a stub, at `k` = 231, 219, 218, 197, 196 and 184, under `ClopperPearson` and under `Okamoto`; read the interval at 219; request `ClopperPearson` for a mean-of-fraction claim and for a long-run fraction claim (FR-189-AC-16).
 
 Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 
@@ -50,3 +51,4 @@ Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 - Step 11: estimate `3/4`, no refusal.
 - Step 12: the regenerative request runs; the Okamoto request is refused `TraceIndexRange`.
 - Step 13: `quantile` `Value(2)`; `Censored`; `Value(2)`; `Value(2)` (the magnitude in `ms`); absent for the no-sample test; absent for the `P95` test.
+- Step 14: under `ClopperPearson`, Accepted at 231 and 219, Undecided (`IndifferenceRegion`) at 218 and 197, Rejected at 196 and 184; under `Okamoto`, Accepted only at 231 and Rejected only at 184; at 219 the reported lower end is at most the exact lower end `0.90351472792271070929…` (exact ends truncated after 20 digits) and within `2^-64` of it, and the reported upper end is at least the exact upper end `0.97621175445884490995…` and within `2^-64` of it, with basis `ClopperPearson` and coverage `FiniteSample`; both fraction requests refuse `NotStatistical` with no sample drawn.
