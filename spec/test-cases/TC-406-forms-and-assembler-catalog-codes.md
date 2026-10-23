@@ -44,11 +44,17 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   `ambiguous_declaration`/`ambiguous-name`, and the nominal-admission-fault
   cause `runtime_invariant`/`established-invariant-broken`.
 - The duplicate dimension or unit name cause returns
-  `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit
-  name cause `missing_declaration`/`missing-name`, the dimension or unit
-  cycle cause `invalid_package`/`definition-cycle`, the zero-denominator
+  `ambiguous_declaration`/`ambiguous-name`, the dimension name shared with a
+  domain package cause `conflicting_declaration`/`duplicate-declaration`, the
+  unresolved unit dimension
+  name cause `missing_declaration`/`missing-name`, the zero-denominator
   cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale
-  limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology
-  cause returns the STD-112 cause once QSpec publishes it.
+  limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph
+  topology cause returns its QSpec FR-142 step, rule or row code:
+  `missing_declaration`/`missing-name` for an unknown term, the
+  base-dimension rule and row 2; `invalid_package`/`definition-cycle` for
+  a dimension cycle and row 6; `invalid_package`/`invalid-value` for rows 1
+  and 5; `invalid_package`/`incompatible-definition` for row 3; and
+  `invalid_package`/`conflicting-definition` for row 4.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
