@@ -35,7 +35,7 @@ Tag the tests `#[trace("TC-783", "<AC id>")]`.
 - Step 2: a table of parameter names and values; numbered positions with the loop start marked; `proved` with `trusted` beside it; FR-073's bounded descriptor.
 - Step 3: one node per retained state and one edge per retained transition; the package-view request refuses naming the view and the form.
 - Step 4: every JSON byte string equals the one produced with the standard renderer.
-- Step 5: each DOT request returns `StageFailure::Refused(RenderCause::UnsupportedForm { view, form: dot })` naming its view kind, with no bytes, catalog code `invalid_quire_context`, category refusal and exit 20; text and JSON succeed.
+- Step 5: each DOT request returns `StageFailure::Refused(RenderCause::UnsupportedForm { view, form: dot })` naming its view kind, with no bytes, catalog code `invalid_quire_context`, cause `unsupported-render-form` with `view` and `form` `dot`, category refusal and exit 20; text and JSON succeed.
 - Step 6: `src/inv.qsl:<line>:<column>` with FR-001's coordinates; for the `é` source the column is the zero-based byte offset within the line, not that offset plus one; the three fallback runs print the digest and byte offsets with no path, line or column.
 - Step 7: the lasso has exactly nodes 0 to 3 and edges 0→1, 1→2, 2→3, 3→2, with the deciding node marked; the finite trace has exactly edges 0→1 and 1→2.
 - Step 8: one below gives `StageFailure::Limit(LimitExceeded)` with kind `input-bytes-exceeded`, the bound, the would-be count and setting `render.output_bytes`, no bytes, exit 22; exactly the length gives the default-limit bytes.

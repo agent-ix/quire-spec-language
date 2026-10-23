@@ -29,6 +29,8 @@ relationships:
     type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-300"
     type: depends_on
+  - target: "ix://agent-ix/quire-specification/FR-272"
+    type: depends_on
 ---
 # FR-298: Render outcomes and views as JSON, text and DOT from typed values only
 
@@ -96,7 +98,10 @@ DOT requested for the package, node, outcome or counterexample view refuses
 `StageFailure::Refused(RenderCause::UnsupportedForm { view, form })`,
 naming the view kind and the form `dot`. Its catalog code is QSpec FR-271's
 `invalid_quire_context` (a lifecycle request that supplied an incompatible
-context), its O-16 category is refusal and it exits 20 (FR-285). A
+context) with QSpec FR-272's cause `unsupported-render-form`, whose payload
+keys `view` and `form` carry the view kind (`package`, `node`, `outcome`,
+`counterexample`, `trace` or `state-graph`) and the form. Its O-16 category
+is refusal and it exits 20 (FR-285). A
 form the view has is never refused this way.
 
 ## Inputs
@@ -122,7 +127,8 @@ returns no bytes and no partial bytes.
 - No logic stage shall take a rendered form as input.
 - If `dot` is requested for a view other than state graph or trace, then
   `render` shall refuse `RenderCause::UnsupportedForm` naming the view and
-  the form, with catalog code `invalid_quire_context` and category refusal.
+  the form, with catalog code `invalid_quire_context`, cause
+  `unsupported-render-form` and category refusal.
 - The `render` operation shall look up each diagnostic region's source
   digest in `RenderSources` and take the path, line and column from the
   `Source` it finds.
@@ -153,7 +159,7 @@ returns no bytes and no partial bytes.
 | FR-298-AC-2 | The text rendering of FR-281-AC-2's counterexample is a table with one row per parameter name and value; FR-283-AC-2's lasso renders as numbered positions with the loop start marked; FR-290-AC-1's plugin, `analyze` and Kani records show `proved` with `trusted`, `certified` and `certified` beside it, and FR-281-AC-4's record with `uncertified`; a 1 MiB text value renders as FR-073's bounded descriptor. | Test (TC-783) |
 | FR-298-AC-3 | The DOT rendering of an FR-120 state-graph view has one node per retained state and one edge per retained transition, and `dot` for the package view refuses naming the view and the form. | Test (TC-783) |
 | FR-298-AC-4 | With the text renderer swapped for a test renderer that uppercases every line, the JSON bytes of every AC-1 to AC-3 outcome and view are unchanged. | Test (TC-783) |
-| FR-298-AC-5 | `dot` requested for the package view, the node view of `seven`, FR-286-AC-2's outcome view and FR-281-AC-2's counterexample view each returns `StageFailure::Refused(RenderCause::UnsupportedForm { view, form: dot })` naming that view kind, no bytes, catalog code `invalid_quire_context`, category refusal and exit 20; `text` and `json` for the same four views and `dot` for the state-graph and trace views are not refused. | Test (TC-783) |
+| FR-298-AC-5 | `dot` requested for the package view, the node view of `seven`, FR-286-AC-2's outcome view and FR-281-AC-2's counterexample view each returns `StageFailure::Refused(RenderCause::UnsupportedForm { view, form: dot })` naming that view kind, no bytes, catalog code `invalid_quire_context` with cause `unsupported-render-form`, `view` that view kind and `form` `dot`, category refusal and exit 20; `text` and `json` for the same four views and `dot` for the state-graph and trace views are not refused. | Test (TC-783) |
 | FR-298-AC-6 | FR-286-AC-2's refusal rendered as text with a `RenderSources` holding its `Source` admitted under path `src/inv.qsl` prints `src/inv.qsl:` followed by FR-001's line and scalar column of the region's first byte. An `ill_typed` refusal over a source whose region's line holds `é` (two UTF-8 bytes) before the region prints column `b`, where `b` is the region's zero-based byte offset within its line: FR-001's one-based scalar column, not the byte-based `b + 1`. FR-286-AC-2's refusal with an empty `RenderSources`, with a `RenderSources` holding only another source, and with its region's end moved one byte past the provided source's length, prints the region's source digest and byte offsets each time, and no path, line or column. | Test (TC-783) |
 | FR-298-AC-7 | The DOT rendering of FR-283-AC-2's lasso (prefix positions 0 and 1, loop positions 2 and 3), parsed as DOT, has exactly four nodes labelled 0 to 3, the edges 0→1, 1→2, 2→3 and 3→2 and no other, and marks the deciding position's node; FR-283-AC-1's three-position finite trace has exactly the edges 0→1 and 1→2 and no edge out of position 2. | Test (TC-783) |
 | FR-298-AC-8 | Rendering AC-7's lasso as DOT with `render.output_bytes` set to one below the byte length of its default-limit DOT output returns `StageFailure::Limit(LimitExceeded)` with kind `input-bytes-exceeded`, that bound, the count the refused charge would have reached and setting `render.output_bytes`, no bytes, and exit 22; at exactly that byte length it returns the default-limit bytes. | Test (TC-783) |
@@ -168,7 +174,7 @@ returns no bytes and no partial bytes.
 - [FR-095](FR-095-occurrence-keyed-source-map-and-locus.md): a region names its source by digest.
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md), [FR-276](FR-276-cancel-a-lifecycle-operation.md) and [FR-277](FR-277-bound-every-lifecycle-operation-by-caller-limits.md): `render.output_bytes` and cancellation.
 - [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md): exit codes.
-- QSpec FR-271: `invalid_quire_context`; QSpec FR-461: the output-byte setting name.
+- QSpec FR-271 and FR-272: `invalid_quire_context` and its cause `unsupported-render-form`; QSpec FR-461: the output-byte setting name.
 - [FR-073](FR-073-implement-redacted-safe-diagnostic-rendering.md): bounded descriptors.
 - [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md): the outcome document.
 - [FR-297](FR-297-inspect-packages-outcomes-and-traces-as-typed-views.md): the views.
