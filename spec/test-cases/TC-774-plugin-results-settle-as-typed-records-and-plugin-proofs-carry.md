@@ -12,7 +12,7 @@ relationships:
 
 Verify how a process provider's FR-331 result becomes a QSL terminal record.
 
-Scope: FR-290-AC-1 to FR-290-AC-16.
+Scope: FR-290-AC-1 to FR-290-AC-17.
 
 ## Test Procedure
 
@@ -27,7 +27,8 @@ Scope: FR-290-AC-1 to FR-290-AC-16.
 9. Encode FR-290-AC-13's two `process-provider` preimages and digest them.
 10. Build a context with `s1.tokens` 200000, `library.definitions` 9000 and accounting `work_units` 5000 and read the request's `stage_limits` and `accounting_limits`; call `request` with each refused input of FR-290-AC-14 and settle each refusal.
 11. Add FR-290-AC-15's `r` to step 8's unit; build, replay and settle the requests for `r`'s `10 mod x` application item with `x = 0`, `x = 3` and `x = 12`, and for `p`'s `x > 3` application item with `x = 0`. Compile FR-290-AC-15's operation-`body` unit and call `request` for its `+` item.
-12. Settle an SMT-route `proved` result whose FR-314 check verifies its certificate and one with no certificate, each alone and each with a `cross-check-absent{tool}` warning; serialize each record (FR-286).
+12. Settle FR-314-AC-1's certified SMT `proved` result and the same result with no certificate, each with Z3 verdict `Proved`, then `Refuted`, then with no cross-check and a `cross-check-absent{tool}` warning; settle a reproduced counterexample with Z3 verdict `Proved`; serialize each record (FR-286) and read it back.
+13. Settle FR-314-AC-1's accepted certificate, the same proof with no certificate, with one step's rule replaced by `hole`, and FR-314-AC-2's depth-2 query certificate.
 
 Tag the tests `#[trace("TC-774", "<AC id>")]`.
 
@@ -44,4 +45,5 @@ Tag the tests `#[trace("TC-774", "<AC id>")]`.
 - Step 9: the encodings and digests FR-290-AC-13 gives; the step 8 request carries its item's identity.
 - Step 10: `s1.tokens` 200000 and `library.definitions` 9000 with every other carried stage setting at its bound, and `work_units` 5000; the refusals of FR-290-AC-14 in its order, `NotReplayable` settling `inconclusive` and each other `failed` naming the plugin.
 - Step 11: `x = 0` settles `refuted` naming the plugin, its request carrying the item's occurrence key and `process-provider` identity; `x = 3` and `p`'s application item settle `inconclusive` with `replay-parity`; `x = 12` settles `inconclusive` with `replay-refused` and `invalid_runtime_input`. The operation-`body` item is refused `NotReplayable` and settles `inconclusive` with `replay-refused` and `unknown_required_feature`.
-- Step 12: `proved`, `certified` and `proved`, `uncertified`, unchanged by the warning, which the record keeps; no serialized record holds a member naming Z3 or a cross-check.
+- Step 12: certified: `proved`, `certified` with `cross_check` verdict `Proved`, then `Refuted`; uncertified: `proved`, `uncertified` with verdict `Proved`, then `inconclusive` `CrossCheckDisagreement { primary: Proved, cross_check: Refuted }`; with the warning, cvc5's settlement with no `cross_check` and the warning kept; the counterexample: `inconclusive` `CrossCheckDisagreement { primary: Refuted, cross_check: Proved }`; each record reads back equal.
+- Step 13: `proved`, `certified`; `proved`, `uncertified` twice; `inconclusive`, `CertificateRejected { QueryMismatch, Unrolling }`; each `proved` record has one certification and the SMT `BackendId`.
