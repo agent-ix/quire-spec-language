@@ -136,13 +136,31 @@ entry or empty corpus, all passed to FR-344's report.
   parent side, naming the parent layer, and `admitted` on the child side,
   and `regression` naming the edge otherwise.
 
-### Compile seam
+### Comparison core and compile seam
 
-The gate's comparison core SHALL take the compile function, the backend
-registry snapshot and an optional negotiation function as parameters.
-`xtask refinement layering` passes the FR-278 composition and QSL's
-registry snapshot, and no negotiation function.
-A test substitutes a wrapper that returns a chosen result for a named unit,
+- The gate's comparison core SHALL be the public function
+  `xtask::refinement::layering::compare` of the `xtask` package's library
+  target. It takes the corpus directory, the compile function (a unit's
+  source, packages, dependency input and limits to its FR-278 result), the
+  backend registry snapshot (`qsl_route::Registry`) and an optional
+  negotiation function, and returns FR-344's report value: every case,
+  layer, edge and tool-failure result and the verdict. It SHALL write
+  nothing to the process streams.
+- The negotiation function SHALL take one `WitnessRequest`, a public type of
+  the same module holding the candidate (`qsl_route::Candidate`) whose
+  backend it names, the layer's `witness_request` kind and extent and the
+  witness entry's compiled clause, and return that request's
+  `qsl_route::Disposition`.
+- The module SHALL expose `REAL_CORPUS`, the path of
+  `tests/fixtures/refinement/layering/` in the source tree the `xtask`
+  package is built from, so a dependent built from a QSL revision reads that
+  revision's corpus.
+- The `xtask` package SHALL take no dependency, in any table, on a
+  quire-contract-codegen crate (FR-280-AC-3).
+- `xtask refinement layering` SHALL pass `compare` the FR-278 composition
+  and QSL's registry snapshot, and no negotiation function, then render the
+  report and exit by FR-344.
+- A test substitutes a wrapper that returns a chosen result for a named unit,
 a test registry and a test negotiation function that settles each request
 by a chosen disposition per backend; the wrapper and the test negotiation
 function live only in the test module of the gate's crate
@@ -174,6 +192,7 @@ hook.
 | FR-345-AC-7 | On each of E1 to E5, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
 | FR-345-AC-9 | `make refinement-layering` runs the gate over `tests/fixtures/refinement/layering/` with no negotiation function and passes, every layer's witness unit admitting with a non-empty candidate set in QSL's registry snapshot; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |
+| FR-345-AC-10 | A test of the root package, which reaches `xtask` only through its dev dependency, calls `xtask::refinement::layering::compare` over `REAL_CORPUS` with the FR-278 composition, QSL's registry snapshot and a negotiation function defined in that test that settles every request `supported`, and gets verdict success with every layer, case and edge result as `make refinement-layering` reports them and every layer's witness item requested once per candidate; the same call with no negotiation function makes no call to a negotiation function and returns the report `make refinement-layering` writes; no byte reaches stdout or stderr from either call; and `cargo tree -p xtask -e normal,build,dev` lists no quire-contract-codegen crate. | Test (TC-868) |
 
 ## Dependencies
 
@@ -189,8 +208,10 @@ hook.
 
 ## Overlap
 
-quire-integration runs the negotiation half of the gate: it calls the
-comparison core over QSL's `tests/fixtures/refinement/layering/` corpus with
+quire-integration runs the negotiation half of the gate. It takes QSL's
+`xtask` package as a dev dependency, from the same QSL source as its other
+QSL dependencies, and its test calls `xtask::refinement::layering::compare`
+over `REAL_CORPUS` with
 the FR-278 composition, the real backend registry and quire-contract-codegen's
 `negotiate_*` as the negotiation function, and fails unless every layer's
 witness item settles `supported` under at least one candidate. That run

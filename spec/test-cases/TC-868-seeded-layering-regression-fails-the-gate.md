@@ -16,7 +16,7 @@ Each `case` and `distinguishing` entry is two units, byte-equal except for
 the identity string of one header `profile` declaration, and both are
 compiled by the running build.
 
-Scope: FR-345-AC-4 to FR-345-AC-9.
+Scope: FR-345-AC-4 to FR-345-AC-10.
 
 ## Test Procedure
 
@@ -64,6 +64,12 @@ quire-contract-codegen's `negotiate_*`.
 7. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`,
    which passes no negotiation function, then over a copy with one
    `witness` entry removed.
+8. From a test of the root package (a dev dependent of `xtask`), call
+   `xtask::refinement::layering::compare` over `REAL_CORPUS` with the
+   FR-278 composition, QSL's registry snapshot and a negotiation function
+   defined in that test that settles every request `supported`, capturing
+   the process streams; then again with no negotiation function. Run
+   `cargo tree -p xtask -e normal,build,dev`.
 
 Each expected result is a literal in the test. Tag the test
 `#[trace("TC-868", "FR-345-AC-n")]` over the criteria each step backs.
@@ -102,3 +108,8 @@ Each expected result is a literal in the test. Tag the test
 - Step 7: the make target passes over the real corpus, every layer holding
   with a non-empty candidate set in QSL's registry snapshot, and the gate
   run over the copy exits non-zero.
+- Step 8: the first call has verdict success, every layer, case and edge
+  result equal to step 7's real-corpus run, each witness item requested
+  once per candidate; the second makes no negotiation call and returns
+  step 7's report; neither writes to the streams; the tree lists no
+  quire-contract-codegen crate.
