@@ -55,6 +55,9 @@ happens-before computation, so a summary bug cannot produce a false race.
   models, whose steps carry memory components, and whose `kind` is
   `Formula`, `Deadlock`, `Race{location, earlier, later}` or
   `UndefinedEvaluation{where, cause}`.
+- The subject's memory bounds: `max_store_buffer: Option<u64>` and
+  `max_messages: Option<u64>`, the values the run used, each `None`
+  meaning 4 (FR-225).
 
 ## Outputs
 
@@ -66,6 +69,13 @@ happens-before computation, so a summary bug cannot produce a false race.
 - The executor SHALL build the protocol system with the envelope's resolved
   models and re-execute each step by FR-217: an attempt through the FR-120
   rule over the thread observation, a memory step by its model.
+- The executor SHALL build each `Tso` component under the subject's
+  `max_store_buffer` and each `Ra` component under its `max_messages`, as
+  the run built them (FR-225). A store step that the bound cuts at its
+  pre-state is not enabled there: the executor SHALL refuse it
+  `invalid_runtime_input`/`invalid-value`, naming the step, as FR-217
+  refuses a step that is not enabled. The executor SHALL NOT otherwise
+  compare the bounds with the run's.
 - When a step names a message or slot depth that does not exist at its
   pre-state, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
@@ -94,6 +104,7 @@ happens-before computation, so a summary bug cannot produce a false race.
 | FR-227-AC-2 | `SB`'s `ra` counterexample names `Lx`'s message by depth 1 and replays to `reproduced-with-evaluated-witness`. Changing that depth to 2 refuses `invalid_runtime_input`/`invalid-value`; changing a carried message view refuses `stale_dependency`/`content-mismatch`. | Test (TC-672) |
 | FR-227-AC-3 | FR-224-AC-2's race counterexample under `ra` replays to `reproduced-with-evaluated-witness`. An envelope whose `earlier` names the flag store, which is not an access to `data`, settles `inconclusive`, `ReplayParity`; so does the AC-1 shape of FR-224, whose `data` load runs only after its flag load read 1, with a `release`/`acquire` flag and a forged race on `data`. | Test (TC-672) |
 | FR-227-AC-4 | The lasso of FR-228-AC-2, in which `w`'s buffer stays `[x := 1]` through `r`'s repeated load of `x`, refuses `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s constraint. | Test (TC-672) |
+| FR-227-AC-5 | `SB`'s `tso` counterexample replays to `reproduced-with-evaluated-witness` with `max_store_buffer` unset and with 1, since no buffer holds more than one store. `SB`'s `ra` counterexample replays to `reproduced-with-evaluated-witness` with `max_messages` unset (4); with `max_messages` 1 it refuses `invalid_runtime_input`/`invalid-value` at its first store, which would add a second message to its location. | Test (TC-1198) |
 
 ## Dependencies
 
