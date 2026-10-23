@@ -27,8 +27,8 @@
 //! the caller passes the systems of an already-checked package.
 
 use qsl_eval::simulation::model::ModelFinding;
-use qsl_foundation::diagnostic::Category;
 use qsl_semantics::model::state::ModelState;
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::fairness::FairnessKind;
 use quire_semantic_value::model_transition::ModelTransition;
 

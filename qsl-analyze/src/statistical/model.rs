@@ -30,7 +30,6 @@ use qsl_eval::simulation::{
 };
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::{CatalogCode, InternalFault};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::{
     ClaimForm, Confidence, MeasureValue, StatisticalLimits, StatisticalMethod, StatisticalOutcome,
@@ -47,6 +46,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
+use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 use super::claim::{reduce_quantile, Bound, Comparison, MeasureEvent, QuantileComparison};
 use super::{
