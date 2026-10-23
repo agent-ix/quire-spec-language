@@ -985,7 +985,13 @@ The counterexample packet and the #231 envelope carry, for deterministic replay:
 - the occurrence key of the failing node (O-07, QC-8);
 - the `package_id` of the package the harness was generated from, and the
   digest of every `RawSourceRef` in its lock;
-- the semantic profile selections from the v2 lock;
+- the semantic profile selections of the proving run (QSL FR-071's closed
+  known set, role `replay.semantic_profile_selections`). They are not the
+  v2 lock's `profile_selections` rows: each lock row is a clause-profile
+  law (a role and a `DefinitionRef`), a member of the package-id preimage
+  that the packet binds through `package_id`, and no packet member copies
+  it. A packet with no proving run (a function-value parity claim, QSL
+  FR-484) carries the empty list;
 - the proof bounds and declared domains;
 - the `backend` member (O-19);
 - the trace position, where the family has one;
