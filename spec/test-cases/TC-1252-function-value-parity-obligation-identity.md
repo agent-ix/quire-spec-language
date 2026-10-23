@@ -29,7 +29,9 @@ Scope: FR-484-AC-1 to FR-484-AC-10.
   `function add using v(x: Int[0, 9], y: Int[0, 9]): Integer pure { x + y }`
   and `function small using v(x: Int[0, 9]): Boolean pure { x < 3 }`.
 - The unit `U'`: `U` with `function grow using v(n: Integer): Integer pure
-  { n + 1 }` added, whose parameter has no finite bound.
+  { n + 1 }` and `function wide using v(m: Int[0, 2199023255552]): Integer
+  pure { m + 1 }` added: `grow`'s parameter has no finite bound, and
+  `wide`'s upper bound is 2^41.
 
 ## Test Procedure
 
@@ -44,7 +46,7 @@ Scope: FR-484-AC-1 to FR-484-AC-10.
 | VP-07 | VP-05's request with `add`'s `declaration` occurrence; with the `expression` occurrence of `inc`'s `x + 1`; with (`inc`'s node, `declaration`, 1); the first with a stale `package_id`; the request retargeted to `small` | `ClaimOccurrence` naming the key and `inc`, no call and no charge, for the first three; `PackageIdMismatch`; `NotAValueFunction` | FR-484-AC-7 |
 | VP-08 | Two VP-05 claims differing only in `content_identity`, replayed to `Agrees`, `Diverged`, `RefusedInput` (`x` = 12) and an `Obligation` refusal; a `content_identity` naming no artifact; two claims differing only in the occurrence key | Each report carries its own content identity; the claims are unequal; no refusal for the unmatched identity; the occurrence-only claims are unequal | FR-484-AC-8 |
 | VP-09 | Over `U'`, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each member filled as FR-484 "The input-arm packet" names, `backend` `generator-under-test`; reconstruct, serialize and read back; build the request from the admitted envelope and replay `grow` against 42 and `inc` against 5 | Both reconstruct with `declared_domains` `[]`, `trace_position` none, `clause_node` the function node and the `declaration` occurrence; every member round-trips; `Agrees` for `grow`, `Diverged` for `inc` | FR-484-AC-9 |
-| VP-10 | VP-09's `grow` request at `n` = 2^40 with B 4096, B 40 and B omitted, each against generated 2^40 + 1; two `grow` claims differing only in A, then only in H | `Agrees`; `RefusedInput` with a `claim()` differing only in B; a `claim()` equal to the B 4096 one; the A-only and H-only pairs unequal | FR-484-AC-10 |
+| VP-10 | `wide` at `m` = 2^40 with B 4096, B 40 and B omitted, each against generated 1099511627777; `grow` at `n` = 2^40 with B 40 against 1099511627777; two `wide` claims differing only in A, then only in H | `Agrees`; `PreCallIncomplete` (`Incomplete(ResourceExhausted)`) with the limit cause on `supplied.numeric_magnitude_bits`, limit 40, nothing compared, and a `claim()` differing only in B; a `claim()` equal to the B 4096 one; `Agrees` for `grow`; the A-only and H-only pairs unequal | FR-484-AC-10 |
 
 ## Expected Results
 

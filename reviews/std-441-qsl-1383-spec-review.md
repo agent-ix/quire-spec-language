@@ -74,3 +74,32 @@ Gates:
 | FND-005 | still-open | New finding of this round: the unqualified FR-331 reference. |
 
 Round 1 verdict: Not mergeable. FND-004 (medium) and FND-005 (low) are open. FND-001 to FND-003 are fixed.
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-006 | high | FR-484-AC-10 and TC-1252 VP-10 expect `grow(n: Integer)` at n = 2^40 under B 40 to settle `RefusedInput`, and the new rationale says B "bounds the bit length of every supplied `Integer`", so an unbounded parameter's binding "is admitted under one B and refused under a smaller one". Both are wrong. First, QSpec FR-323 rule 5 applies B to the operands of a value-in-domain comparison (`value`, `lower`, `upper`), and an unbounded `Integer` has no such comparison: QSV `admit_supplied_bounded_numeric` (quire-semantic-value f118e458, src/declaration/membership.rs:415-422) checks B only for `ValueType::Int(interval)` and `Rational(domain)` and returns `Ok(None)` for `ValueType::Integer`, and qsl-replay argument.rs:670-674 admits a root `Integer` unchecked. So B 40 admits 2^40 and the vector Agrees. Second, when B is exceeded, FR-277 makes it a stop with the `limit` cause for `supplied.numeric_magnitude_bits`, not an input refusal: `replay_value_parity` maps a limit stop to `PreCallIncomplete` and settles `Incomplete(ResourceExhausted)` (value_parity.rs:163-169, 115-119). Fix: run the B vector on a bounded parameter (for example `Int[0, 2^41]` at 2^40), expect `Incomplete` with the `supplied.numeric_magnitude_bits` limit cause, and restate the rationale as FR-323's value-in-domain operands. Binding A, H and B into `claim()` stays correct. | spec/functional/FR-484-identify-a-function-value-parity-claim-and-retain-its-replay-inputs.md:126-129, 290; spec/test-cases/TC-1252-function-value-parity-obligation-identity.md VP-10 | wrong-requirement |
+
+### Dispositions, round 2
+
+Fix head 6e53c998 (fix commit 2afd13e8 plus a merge of main; the FR-447 and TC-1187 changes come from main's d97d5704). QSpec #422 head 528a73ed is a merge of main only; main is now an ancestor.
+
+Checked:
+- The ceilings and their defaults (A and H 16777216, B 4096) match QSpec FR-323 and QSL FR-277-AC-7.
+- An omitted B and a stated 4096 give one claim, and claims differing only in A or only in H are unequal (FR-277 and FR-323 rule 2).
+- FR-357's function claim identity now lists the effective `limits.supplied` ceilings, consistent with FR-484.
+- The state and object environments are fixed by the form (a `pure` call reads neither).
+- "QSpec FR-331" is fixed.
+
+Gates:
+- QSL `make check-spec-validation` exits 0 with both QSPEC_DIRs (19 pre-existing warnings).
+- QSpec at 528a73ed: `quire validate` gives 86 failure lines, and cargo passes 24 + 136.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | See after_excerpt in the Linear dispositions comment. |
+| FND-005 | fixed | See after_excerpt in the Linear dispositions comment. |
+| FND-006 | still-open | New finding of this round: the B vector uses an unbounded `Integer`, which B does not cover, and expects `RefusedInput` where FR-277 gives a `limit` stop that settles `Incomplete`. |
+
+Round 2 verdict: Not mergeable. FND-006 (high) is open; FND-001 to FND-005 are fixed.
