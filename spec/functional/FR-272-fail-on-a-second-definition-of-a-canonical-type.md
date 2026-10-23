@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-059
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-401
+    type: depends_on
 ---
 # FR-272: Fail on a second definition or copy of a canonical type
 
@@ -31,9 +33,9 @@ waits on IR.
   every target of every workspace member (for example `tools/arch-lint`'s
   `[[bin]] path = "main.rs"`), and every resolved package that FR-059's shared
   `graph::classify` assigns to an ecosystem repository, read from its manifest
-  directory, and the shared leaf crates `quire-exact` and
-  `quire-semantic-value`, each as its own ecosystem repository wherever it is
-  sourced from.
+  directory, and the shared leaf crates `quire-exact`,
+  `quire-semantic-value`, `quire-checked` and `quire-eval`, each as its own
+  ecosystem repository wherever it is sourced from.
 - The shipped source of those directories (test code excluded, as
   `definition_scan` excludes it).
 
@@ -72,11 +74,19 @@ waits on IR.
   names of a trait), then the gate SHALL report a `copy` finding. The
   comparison ignores documentation, attributes, visibility and the paths of
   member types.
-- The gate SHALL scan `quire-exact` and `quire-semantic-value`, which live in
+- The gate SHALL scan the shared leaves `quire-exact`,
+  `quire-semantic-value`, `quire-checked` and `quire-eval` (the last two from
+  the repository `agent-ix/quire-eval`, FR-400 and FR-401), which live in
   their own repositories, as ecosystem dependencies in every run, QSL's
-  included, so the `copy` rule holds them against the running workspace's code
-  and the `identifier` and `re-export` rules never apply inside them; their
-  own one-definition checks belong to their repositories.
+  included, whenever the running workspace's `cargo metadata` resolves them,
+  so their tags enter the canonical set, the `copy` rule holds them against
+  the running workspace's code, and the `identifier` and `re-export` rules
+  never apply inside them; their own one-definition checks belong to their
+  repositories. A shared leaf the workspace does not resolve is not scanned
+  and is no finding.
+- A canonical type tagged in a shared leaf is canonical in every run that
+  scans that leaf: `quire_eval::Evaluation`'s tag makes an `Evaluation`
+  namesake in a QSL workspace member an `identifier` finding.
 - The gate SHALL take the scanned directories from `cargo metadata` and
   FR-059's `graph::classify`, so the same subcommand run in a backend's
   workspace takes QSL's tagged crates as ecosystem dependencies and applies
@@ -91,6 +101,7 @@ waits on IR.
 | FR-272-AC-2 | Over a fixture `cargo metadata` whose ecosystem package E sits beside K: an `enum ComparisonOperator` in E whose variants match K's tagged one in name and order gives a `copy` finding, and still does with E's docs, derives, visibility and member type paths changed; with one variant renamed (`LessEqual` for `LessOrEqual`), with two variants swapped, or as a `struct` with those field names, it gives none. A package outside the ecosystem holding the same copy gives none. | Test (TC-747) |
 | FR-272-AC-3 | Backend run: a fixture backend workspace that depends on K as an ecosystem package and defines its own `pub enum Value` with K's variant names gives a `copy` finding in the backend's run, and its `pub use qsl_replay::Value as Kernel` through QSL's facade gives none. Over the QSL workspace, `quire-contract-model`'s `ValueType` gives no `copy` finding, because its members differ from the tagged kernel `ValueType`. | Test (TC-747) |
 | FR-272-AC-4 | Two planted namesakes give two findings in one run, each naming both locations and its rule, and the gate exits non-zero; a fixture with no namesake, re-export or copy exits 0. | Test (TC-747) |
+| FR-272-AC-5 | Over a fixture `cargo metadata` in which `quire-eval` and `quire-checked` resolve from a git source outside the ecosystem repositories FR-059's `graph::classify` names: `quire-eval` tagging `pub struct Evaluation` puts `Evaluation` in the canonical set, a `struct Evaluation` in a workspace member gives an `identifier` finding naming both locations, a `struct Evaluation` with the same field names in another ecosystem package gives a `copy` finding, and a second `Evaluation` inside `quire-eval` itself gives none; a struct in `quire-checked` matching a canonical type tagged in the workspace by name and member names gives a `copy` finding; with neither crate resolved, the run scans neither and reports no finding for them. | Test (TC-747) |
 
 ## Dependencies
 
@@ -100,7 +111,10 @@ waits on IR.
   the canonical set), [FR-273](FR-273-resolve-each-canonical-type-namesake.md)
   (the namesakes the gate reports on main),
   [FR-059](FR-059-check-backend-dependency-direction.md) (ecosystem
-  classification, `graph::classify`).
+  classification, `graph::classify`),
+  [FR-400](FR-400-separate-checked-terms-from-the-checker.md) and
+  [FR-401](FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md)
+  (the `quire-checked` and `quire-eval` shared leaves).
 
 ## References
 
