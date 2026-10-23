@@ -27,6 +27,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-125
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-158
+    type: depends_on
 ---
 # FR-128: Replay a model counterexample through ModelSystem
 
@@ -170,6 +172,28 @@ member of its own.
     another expression than `where.locus`, or a different cause SHALL
     settle
     `inconclusive`, `ReplayParity`.
+- When the payload's `kind` is `UndefinedEvaluation{where, cause}` and
+  `where.locus` names a state constraint (in process
+  `UndefinedLocus::Constraint`, by the constraint clause's declared name; on
+  the wire QSpec FR-364's `where.locus`, naming that clause's
+  `state`/`state_clause` node of clause `constraint` and its `claim`
+  occurrence), the executor SHALL read the constraint from the locus and
+  never from the request, so the replay request selects no reduction:
+  - it SHALL resolve the locus in the recompiled package, and refuse
+    `stale_dependency`/`content-mismatch`, naming the locus, when the
+    recompiled package has no `constraint` clause there;
+  - it SHALL re-execute the prefix and evaluate the constraint at every
+    replayed state in order by FR-158's truth rule, and check no fairness
+    and no formula;
+  - when the first replayed state where the constraint is `Undefined` is the
+    last one, at `where.position`, with an undefined cause equal to `cause`,
+    and the constraint holds at every earlier replayed state, then the
+    executor SHALL settle `reproduced-with-evaluated-witness` with the
+    `UndefinedEvaluation` as the arm's value;
+  - a constraint that is defined at the last state, `Undefined` at an earlier
+    state, or false at an earlier state (a boundary state, which the engine
+    never expands), or a different cause, SHALL settle `inconclusive`,
+    `ReplayParity`.
 - For `kind: Deadlock` the executor SHALL enumerate the transition
   identities enabled at the last replayed state through `ModelSystem`, and
   evaluate the `terminal when` predicate declared for the state model
@@ -196,6 +220,7 @@ member of its own.
 | FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `ReplayParity`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`content-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
 | FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: position 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `ReplayParity`, and so does the payload with `where.locus` naming another expression of the clause. | Test (TC-539) |
 | FR-128-AC-6 | FR-126-AC-9's deadlock-freedom counterexample under `terminal when 6 / (3 - c.value) = 0`, the prefix to value 3 with `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 3: the letter at the terminal state 3 holds the undefined `P`. The same prefix with `kind: Deadlock` also settles `reproduced-with-evaluated-witness` with value `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`, and the item settles `refuted`. Over the `Counter` subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from value 2, FR-126-AC-6's empty-prefix counterexample at value 2 with `kind: UndefinedEvaluation{cause: DivisionByZero}` is refused `unsupported_construct`/`not-yet-implemented` (`AuthoredUndefined`), since replay of an authored clause's undefined evaluation is not built; its reproduction through the undefined `pre CanInc` is Remaining work: QSL-898. | Test (TC-539) |
+| FR-128-AC-7 | Over ADR-021 §7.3's subject (FR-158) with `constraint Odd using v on M::Counter at current { 6 mod (2 - self.v) >= 0 }` selected and the claim `always holds(x.v <= 3)`, the run's `Violated` counterexample with cause `UndefinedEvaluation`, ending at the first reached state with a counter at 2, replays through a request that selects no reduction to `reproduced-with-evaluated-witness` with the `UndefinedEvaluation{where, cause: division-by-zero}` value, `where.locus` naming `Odd`. The same payload with its last step removed, and with `cause` changed to another reason, each settle `inconclusive`, `ReplayParity`. The payload in an envelope over a unit where `Odd` is declared `invariant` instead, with that unit's own `package_id`, refuses `stale_dependency`/`content-mismatch` naming the locus. | Test (TC-539) |
 
 ## Dependencies
 

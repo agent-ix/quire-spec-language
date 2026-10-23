@@ -234,8 +234,9 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 ### Requirements
 
 - The `requirements` hook SHALL return one `Requirements` with capability kind
-  `operation-contract` for each clause, keyed by its `claim` occurrence
-  (ADR-012 §13.5).
+  `operation-contract` for each clause other than a state constraint, keyed
+  by its `claim` occurrence (ADR-012 §13.5). A state constraint is a method
+  parameter of a model-check request and gets no record (FR-158).
 - The hook SHALL return one `operation-contract` record for each frame of an
   operation that a `pre` or `post` clause or a protocol attempt (FR-114) of
   the unit names, keyed by one

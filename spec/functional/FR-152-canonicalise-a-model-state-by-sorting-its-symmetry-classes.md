@@ -78,10 +78,22 @@ It has `compose`, `inverse` and `identity`.
 - **Duplicates.** Two orbit members whose objects have equal sort keys but
   whose references point differently MAY canonicalise to different forms;
   the engine SHALL store both, with no further search.
-- **Cost.** Per class of `n` keys the canonicaliser SHALL do `O(n log n)`
-  comparisons of sort keys and one re-encoding of the state. It SHALL charge
-  each comparison and the re-encoding to the run's meter, so reaching the
-  meter stops the run (V-7).
+- **Cost.** Per class of `n` keys the canonicaliser SHALL make at most
+  `n * ceil(log2 n)` comparisons of sort keys, and per canonicalisation under
+  a non-empty group one re-encoding of the state. It SHALL charge one
+  `work_units` to the run's meter for each comparison and for the
+  re-encoding, each charge made ahead of the work it pays for.
+  With an empty group it makes no comparison and no re-encoding and charges
+  nothing.
+- **The run's meter.** A model-check run SHALL hold one
+  `quire.value.accounting/v1` meter from its start to its end, whose
+  `work_units` limit is the subject's evaluation meter budget (FR-120) and
+  which every charge of the run adds to; it is distinct from the fresh meter
+  each clause evaluation is given (FR-120). FR-153, FR-158 and FR-161 charge
+  this same meter. When it denies a charge, the engine SHALL stop the run
+  with `Stopped{cause: ResourceExhausted, limit: Some({EvaluationMeter,
+  value})}`, `value` the budget (V-7, FR-126), and it SHALL check
+  cancellation at each charge (FR-126).
 - **Determinism.** The canonical form and the permutation SHALL be functions
   of the state and the group.
 
@@ -93,6 +105,7 @@ It has `compose`, `inverse` and `identity`.
 | FR-152-AC-2 | Exploring ADR-021 §7.1's subject under `[[a, b, c]]` stores 10 model states, one per multiset of three versions; under the stabiliser of `a` it stores 18. Every stored state is the canonical form of some reachable state, and `π(s)` equals the stored form for the returned `π`. | Test (TC-569) |
 | FR-152-AC-3 | Duplicates: over a type with `v: Int[0, 1]` and `link: Option<Reference<T>>`, universe `{a, b, c}`, one class, the states `{a: (0, ->b), b: (0, ->a), c: (0, none)}` and `{a: (0, none), b: (0, ->c), c: (0, ->b)}` lie in one orbit; the canonicaliser returns a member of that orbit for each, with its permutation, and the run stores at most two states for the orbit and never fewer than one. | Test (TC-569) |
 | FR-152-AC-4 | `canonical` called twice on the same state and group returns byte-equal state keys and equal permutations; with an empty group it returns the state and the identity. | Test (TC-569) |
+| FR-152-AC-5 | Under ADR-021 §7.1's class `[b, c]`, canonicalising `(0,1,0)` charges exactly 2 `work_units` to the run's meter (one comparison and one re-encoding); with an empty group it charges nothing; under `[a, b, c]`, canonicalising `(2,0,1)` charges at least 3 and at most 4. The §7.1 run under `[[b, c]]` with an evaluation meter budget of 1 returns `Stopped{cause: ResourceExhausted, limit: Some({EvaluationMeter, 1})}` before expanding any state, since the initial state's canonicalisation needs 2; with the default budget the same run completes. | Test (TC-569) |
 
 ## Dependencies
 

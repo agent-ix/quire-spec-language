@@ -15,7 +15,7 @@ counterexample by evaluating the replayed letters and finding the first
 undefined one at `where` with the recorded cause, and that any other
 position or a missing position is a disagreement.
 
-Scope: FR-128-AC-5, FR-128-AC-6.
+Scope: FR-128-AC-5, FR-128-AC-6, FR-128-AC-7.
 
 ## Test Procedure
 
@@ -33,6 +33,12 @@ source in the byte provision and universe `{c}` in the request.
    subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from value 2.
    Not built: replay refuses it as `AuthoredUndefined`; its reproduction is
    Remaining work: QSL-898.
+7. Run FR-128-AC-7's constrained claim over ADR-021 §7.3's subject with
+   `constraint Odd`, and replay its counterexample through a request that
+   selects no reduction; then with its last step removed; then with `cause`
+   changed; then in an envelope over the unit declaring `Odd` as an
+   `invariant`, with that unit's `package_id`.
+
 
 Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 
@@ -48,3 +54,7 @@ Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 - Step 6: refused `unsupported_construct`/`not-yet-implemented`; the
   reproduction (`reproduced-with-evaluated-witness`, value `Undefined` with
   cause `DivisionByZero` at position 0) is Remaining work: QSL-898.
+- Step 7: `reproduced-with-evaluated-witness` with the
+  `UndefinedEvaluation{where, cause: division-by-zero}` value and
+  `where.locus` naming `Odd`; `inconclusive`, `ReplayParity`, twice; refused
+  `stale_dependency`/`content-mismatch` naming the locus.
