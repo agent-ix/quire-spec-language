@@ -51,3 +51,15 @@ Gate at 4bd6cfdd: `QSPEC_DIR=/Users/peter/dev/quire-specification make check-spe
 ## Verdict
 
 Not mergeable. FND-001 (scope-deferral of point 7) and FND-002 (EN-4 and EN-5 settle the same expansion stop with different `limit` values, contradicting QSpec FR-461) block the PR. FND-003 and FND-004 should be fixed in the same round, and FND-005 is a wording fix. Points 1, 2, 3 and 5 and the routing, manifest and engine-refusal coverage in point 6 are correct and testable. Before merge, the author must also merge origin/main (#1387) into the branch so main is an ancestor again.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | QSV #63 (head 39fb412f) adds TC-926, which verifies FR-126-AC-1 to AC-5. Those rows now read `Test (TC-926)`, AC-1 states `Category::ALL`'s eight values in order, and TC-925's exclusion points at TC-926. IR-989 is the ticket for retagging the tests. |
+| FND-002 | fixed | At 7dec747e, FR-192's row, FR-192-AC-1 and TC-627 write `limit` as the exhausted counter's name (`work_units`, `value_occurrences`) or `max_candidates`, the same record FR-203 writes. |
+| FND-003 | fixed | At 7dec747e, FR-400-AC-10 uses TC-195's real `unsorted-derivation` mutation and an explicit duplicate preimage, whose result is `DuplicatePath{earlier: 0, later: 1}`. That matches `ModelRefusalCause`. |
+| FND-004 | fixed | At 7dec747e, the FR-281 RequiresBound row, FR-281-AC-11 and TC-763 steps 6 and 7 use QSpec FR-272's closed `unbounded-extent` payload (kind, candidate, advertised modes) and no root. |
+| FND-005 | fixed | At 7dec747e, FR-281-AC-11 and TC-763 step 6 are one request of six cases plus a separate seventh request for the incomplete admission. |
+
+Disposition pass 1 at 7dec747e: main 40077eaa is now an ancestor. `QSPEC_DIR=/Users/peter/dev/quire-specification make check-spec-validation` exits 0 with 0 error lines, and the only warnings on touched files are the FR-400 line 36 warnings that were already there. This pass found no new defects.
