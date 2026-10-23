@@ -61,7 +61,7 @@ to build the harnesses and requests `replay` and `replay_frame` later
 execute. For the same reason `qsl_replay` re-exports, at its root, the
 types a caller constructs a `call_site` input from or matches a refusal
 on: `DependencyInput`, `SuppliedLibrary`, `DependencyInputRefusal`,
-`SourceHolder`, `OperationName`, `FieldName` and `PopulationName`, and the kernel `Origin`
+`SourceHolder`, `OperationName`, `FieldName`, `FieldStep` and `PopulationName`, and the kernel `Origin`
 and `Role` that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
 re-exports the types a caller builds a `DeclaredDomain` from: `ProofBound`,
 `DomainKey`, `FiniteBound`, `FiniteBoundKind`, `EmptyFiniteBound`, and the
@@ -75,10 +75,10 @@ its declared name, rather than returning node ids alone, is required by
 ADR-013 O-25: a consumer joins a witness row or an argument to its
 declaration by declared identity, never by position.
 
-A field selection
-returns the field's own key `[ordinal]` only; nested keys
-`[ordinal, ...child path]` into the field's type are remaining work under
-QSL-345.
+A field selection names a position in the field's value: the field
+itself, or a position inside its type reached by `FieldStep`s, and returns
+that position's ADR-012 §15.4 key `[ordinal, ...child path]`, so a caller
+can bound a domain nested inside a state field's type as it bounds the field.
 
 ## Inputs
 
@@ -94,7 +94,8 @@ QSL-345.
   identifiers, the owner `T` an object type, a process or a state machine
   of `M`'s domain package, or a `ClauseName` naming a state clause by its declared
   `Identifier`, or a `FieldName` naming a state field `M::T.f` as model
-  alias, object type and field identifiers, or a `PopulationName` naming a
+  alias, object type and field identifiers, with a list of `FieldStep`s into
+  the field's type (empty for the field's own value), or a `PopulationName` naming a
   population `M::P` as model alias and population artifact id. The
   selection types are exactly the five implementors of the sealed trait
   `CallSiteSelection`.
@@ -237,6 +238,41 @@ QSL-345.
   UTF-8 byte order. A selection whose alias, object type or field does not
   resolve SHALL refuse `CallSiteRefusal::UnknownField`, pairing the
   `FieldName` with the compiled package's own `package_id` (FR-088-AC-6).
+- A `FieldStep` SHALL be one of `Element`, `Payload`, `Field(Identifier)`,
+  `Position(u32)` and `Member(Identifier, u32)`. A `FieldName` with steps
+  SHALL be built by `FieldName::nested(alias, object_type, field, steps)`;
+  `FieldName::new` builds one with no steps.
+- For a field selection with steps, `call_site` SHALL resolve the field as
+  for a field selection with none, then walk the steps in order from the
+  field's declared value type, and SHALL return `DomainKey::Node` on the same
+  `model`/`object_type` node with the path `[ordinal, i1, ..., in]`, where
+  each `ik` is the child index ADR-014 §4's extent walk gives the position
+  that step reaches:
+  - `Element` on a collection type: its element, index 0;
+  - `Payload` on an optional type: its payload, index 0;
+  - `Field(f)` on a record type: field `f`, at its index among the record's
+    fields in declaration order;
+  - `Position(p)` on a tuple type: position `p`, at index `p`;
+  - `Member(v, p)` on a union type: position `p` of member `v`, at the index
+    of that position in the concatenation of every member's positions, the
+    members in declaration order.
+  The walk SHALL resolve each record, tuple and union declaration through the
+  compiled package's type environment, the one the extent walk reads, so a
+  nested key equals the key that walk gives the same position.
+- If a step does not apply to the type it reaches (`Element` on a type that
+  is not a collection, `Payload` on a type that is not optional, `Field`
+  naming no field of the record, `Position` past the tuple's last position,
+  `Member` naming no member of the union or a position past that member's
+  last, or any step on a scalar, enum, quantity or reference type), then
+  `call_site` SHALL refuse `CallSiteRefusal::UnknownField`, pairing the
+  `FieldName` with the compiled package's own `package_id`.
+- If a step reaches a record, tuple or union declaration that an earlier
+  step of the same selection already entered, then that position is the
+  declaration's recursive domain, keyed by ADR-014 §4 at the path where the
+  declaration was first entered. When it is the last step, `call_site` SHALL
+  return that key. When steps follow it, `call_site` SHALL refuse
+  `CallSiteRefusal::UnknownField`, because no position below a re-entry has a
+  key of its own.
 - For a population selection, `call_site` SHALL resolve the model alias
   to its domain package and the population among its population
   declarations by artifact id, and SHALL return the population's ADR-012
@@ -324,6 +360,8 @@ QSL-345.
 | FR-121-AC-24 | Over FR-103-AC-10's domain package (`Sub.size` declares `redefines` `ConfigVersion/size`) and a unit with a postcondition on each of `Config::ConfigVersion::size` and `Config::Sub::size`, the `Config::Sub::size` selection's `frame_operation` is `{Config::Sub, size}`, not `{Config::ConfigVersion, size}`, and its `frame` differs from the `Config::ConfigVersion::size` selection's, whose `frame_operation` is `{Config::ConfigVersion, size}`. | Test (TC-516) |
 | FR-121-AC-25 | Over FR-104-AC-10's package (process `Flow` declaring `go`) and its unit with `P`, `Q` and `I`, the `Config::Flow::go` selection returns an `OperationSite` whose `frame_operation` is `{Config::Flow, go}`, whose `anchor` and `frame` are FR-105-AC-8's `operation_anchor` (context the `Flow` `model`/`process` node) and `frame` nodes, whose `frame_occurrence` is that frame's `generated` occurrence, and whose `clauses` are exactly `P` then `Q`. A `Config::Flow::stop` selection, naming no operation of `Flow`, refuses `CallSiteRefusal::UnknownOperation` (code `missing_declaration`). | Test (TC-1162) |
 | FR-121-AC-26 | Over TC-1045's package (TC-1040's state machine `OrderLifecycle` declaring `place`, and `ExpressLifecycle` specializing it) and TC-1040's unit, the `M::OrderLifecycle::place` selection returns an `OperationSite` whose `frame_operation` is `{M::OrderLifecycle, place}`, whose `anchor` is the `operation_anchor` node whose `context` is the `OrderLifecycle` `model`/`state_machine` node (not a `model`/`object_type` node), whose `frame` is that operation's `frame` node and `frame_occurrence` its `generated` occurrence, and whose `clauses` are exactly `PlaceRequires` then `FlagsPlaced`. The `M::ExpressLifecycle::place` selection, an inherited operation, returns `frame_operation` `{M::OrderLifecycle, place}` with the same `anchor`, `frame` and `frame_occurrence`. A domain package whose `OrderLifecycle` declares `place` that no clause or attempt of the unit names refuses `CallSiteRefusal::UnknownOperation`. | Test (TC-1162) |
+| FR-121-AC-28 | For the ConfigVersion domain package plus a record value type `Span` declaring `lo: Integer` then `hi: Int[0, 9]` and an object type `Box` whose fields are `span: Span`, `tags`, an unbounded collection of `Integer`, and `note`, an optional `Span`, a field selection of `Config::Box` returns `DomainKey::Node` on `Box`'s `object_type` node with paths: `[1]` for `span` with no steps; `[1, 0]` for `span` with `[Field(lo)]` and `[1, 1]` with `[Field(hi)]`; `[2]` for `tags` and `[2, 0]` with `[Element]`; `[0, 0, 1]` for `note` with `[Payload, Field(hi)]`. `FieldName::new` and `FieldName::nested` with no steps give equal keys. `span` with `[Field(mid)]`, `[Element]` or `[Field(lo), Element]`, `tags` with `[Payload]` and `note` with `[Field(lo)]` each refuse `CallSiteRefusal::UnknownField` (code `missing_declaration`), pairing the `FieldName` with the package. | Test (TC-516) |
+| FR-121-AC-29 | For a domain package whose record `Node` declares `value: Integer` then `next`, an optional `Node`, and whose object type `List` declares one field `head: Node`, `Config::List.head` with `[Field(next), Payload]` reaches `Node` again and returns path `[0]`, where `Node` was first entered: the `Recursive` domain key ADR-014 §4's extent walk gives `Node` under `head`, equal to `head`'s key with no steps. `[Field(value)]` returns `[0, 0]`, and `[Field(next), Payload, Field(value)]` refuses `CallSiteRefusal::UnknownField`. With a union `Shape` declaring member `Circle(r: Integer)` then `Rect(w: Integer, h: Int[0, 9])`, and an object type `Figure` whose one field is `shape: Shape`, `Config::Figure.shape` with `[Member(Rect, 1)]` returns `[0, 2]` and with `[Member(Circle, 1)]` refuses `CallSiteRefusal::UnknownField`. | Test (TC-516) |
 | FR-121-AC-27 | An operation selection whose owner names a record value type, an event type, an enum, a persistence interface or a population of the package refuses `CallSiteRefusal::NotAnOperationOwner` (code `invalid_model_binding`, message leading with `invalid_model_binding/malformed-declaration`); over a package where `C` specializes `A` and `B`, each declaring `touch` with a clause of the unit on each, the `M::C::touch` selection refuses `CallSiteRefusal::AmbiguousOperation` (code `ambiguous_declaration`, message leading with `ambiguous_declaration/ambiguous-name`), although `C` has no frame for `touch`; each pairs the `OperationName` with the compiled package's own `package_id` and maps by `TerminalValue::from_call_site_refusal` to `Declined` with `InvalidInput` and its code. | Test (TC-1162) |
 
 ## Dependencies

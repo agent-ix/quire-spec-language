@@ -31,7 +31,7 @@ It returns the compiled package's bytes its `package_id` names, builds a
 field under its declaring type's node by its name ordinal, apart from any
 population key, and keys a named population as the requirement records do.
 
-Scope: FR-121-AC-1 to FR-121-AC-24.
+Scope: FR-121-AC-1 to FR-121-AC-24, FR-121-AC-28 and FR-121-AC-29.
 
 ## Test Procedure
 
@@ -125,6 +125,17 @@ Scope: FR-121-AC-1 to FR-121-AC-24.
 24. Over FR-103-AC-10's domain package (`Sub.size` redefines
     `ConfigVersion/size`) and a unit with a postcondition on each of
     `Config::ConfigVersion::size` and `Config::Sub::size`, select both.
+25. Add FR-121-AC-28's `Span` record and `Box` object type to the step 3
+    domain package. Select `Config::Box.span`, `tags` and `note` with the
+    steps FR-121-AC-28 lists, including the refused ones, and select `span`
+    through both `FieldName::new` and `FieldName::nested` with no steps.
+26. Build FR-121-AC-29's domain package with the recursive `Node` record,
+    the `List` object type, the `Shape` union and the `Figure` object type.
+    Select `Config::List.head` with no steps, `[Field(value)]`,
+    `[Field(next), Payload]` and `[Field(next), Payload, Field(value)]`, and
+    compare the re-entry key with the `Recursive` key of the extent walk over
+    `head`'s type. Select `Config::Figure.shape` with `[Member(Rect, 1)]` and
+    `[Member(Circle, 1)]`.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -203,3 +214,10 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 - Step 24: `Config::Sub::size`'s `frame_operation` is `{Config::Sub, size}`
   and `Config::ConfigVersion::size`'s is `{Config::ConfigVersion, size}`,
   at different `frame` nodes (FR-121-AC-24).
+- Step 25: the paths are FR-121-AC-28's, all on `Box`'s `object_type` node;
+  the two no-step selections give equal keys; each refused selection refuses
+  `CallSiteRefusal::UnknownField` paired with the package.
+- Step 26: no steps and the re-entry both give `[0]`, the walk's `Recursive`
+  key for `Node`; `[Field(value)]` gives `[0, 0]`; the path past the re-entry
+  refuses `CallSiteRefusal::UnknownField`; `Member(Rect, 1)` gives `[0, 2]`,
+  and `Member(Circle, 1)` refuses `CallSiteRefusal::UnknownField`.
