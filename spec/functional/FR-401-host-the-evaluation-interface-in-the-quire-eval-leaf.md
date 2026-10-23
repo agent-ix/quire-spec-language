@@ -111,7 +111,7 @@ them needs no facade.
 | `Cancel`, `CancelCause` | K, `quire_exact` | none |
 | `Value`, `ValueType`, `Outcome`, `NodeKey` | K, `quire_exact` | none |
 | `InputRefusal` | SV, `quire_semantic_value::call` | none |
-| `Location`, `ValueLoss`, `LocatedLoss` | SV, `quire_semantic_value::{location, loss}` | none |
+| `ExpressionLocation`, `ExpressionOwner`, `ValueLoss`, `LocatedLoss` | SV, `quire_semantic_value::{location, loss}` | none |
 | `EnvironmentFailure` (`CallFailure::Storage`'s payload) | SV, `quire_semantic_value::declaration` | none |
 | `ObjectClosure` | SV, `quire_semantic_value::object_closure` | none |
 | `Category`, `CatalogCode`, `CatalogCoded`, `UndefinedCoded`, `UndefinedRecord`, `UndefinedReason`, `InternalFault` | SV, `quire_semantic_value::catalog` | S0, from `qsl_foundation::diagnostic` |
@@ -141,7 +141,7 @@ type, or is called from a crate, that does not:
   become a `qsl-foundation` function over a `&dyn CatalogCoded` and a
   locus, returning the same record.
 - `Evaluation::refusal_record` SHALL become a free function in `qsl-eval`
-  over the evaluation and a region resolver, a function from `Location` to
+  over the evaluation and a region resolver, a function from `ExpressionLocation` to
   an optional `SourceRegion`, returning the same FR-096 record, as FR-400's
   Source locations states. Its callers pass the checker-side record's
   resolver, so `qsl-eval` names no checker-side type.

@@ -63,13 +63,15 @@ items.
   their own repositories, outside that workspace, and the `identifier` and
   `re-export` rules never apply inside them (FR-272).
 - `quire_semantic_value::location::Location`, a declaration and a
-  child-index path to an expression, and
-  `quire_semantic_value::location::Origin`, the declaration a location
-  belongs to, SHALL keep their names: they are the evaluation interface's
-  location vocabulary at the path FR-401 and ADR-011 X-11 give, and they
-  differ in item kind or member names from `quire_exact::location::Location`
-  (`node`, `occurrence`) and `quire_exact::location::Origin` (`role`,
-  `ordinal`), so FR-272's `copy` rule reports neither.
+  child-index path to an expression, SHALL be named `ExpressionLocation`,
+  and `quire_semantic_value::location::Origin`, the declaration a location
+  belongs to, SHALL be named `ExpressionOwner`: each shares its identifier
+  with a canonical type of `quire_exact::location` (`Location` with members
+  `node`, `occurrence`; `Origin` with members `role`, `ordinal`). The module
+  stays `quire_semantic_value::location`, the path FR-401 and ADR-011 X-11
+  give, and the two renamed items are the evaluation interface's location
+  vocabulary there: wherever FR-401 or ADR-011 names `Location` or `Origin`
+  at that module, the item meant is `ExpressionLocation` or `ExpressionOwner`.
 - `Evaluation`'s canonical definition SHALL be `quire_eval::Evaluation`,
   where FR-401 slice S0 and ADR-011 X-14 move it; FR-405 deletes the module
   `qsl-eval/src/value/expression/evaluate.rs` that defined it in QSL.
@@ -145,6 +147,8 @@ FR-273-AC-n.
 | 46 | `quire_exact::location::Origin` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Origin`, the owner crate's public path |
 | 47 | `quire_exact::integer::Integer` (O-13) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Integer`, the owner crate's public path |
 | 48 | `qsl_semantics::model::key::DeclarationKey` (O-03) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_semantics::model::key::DeclarationKey` |
+| 49 | `quire_exact::location::Location` (O-12) | `quire_semantic_value::location::Location` | a declaration and a child-index path to an expression | rename `ExpressionLocation` |
+| 50 | `quire_exact::location::Origin` (an occurrence key within a node, O-07) | `quire_semantic_value::location::Origin` | the declaration a location belongs to | rename `ExpressionOwner` |
 
 ## Acceptance Criteria
 
@@ -198,7 +202,9 @@ FR-273-AC-n.
 | FR-273-AC-46 | The `pub use` of `Origin` in `qsl-replay/src/lib.rs` names `quire_exact::Origin` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
 | FR-273-AC-47 | The `pub use` of `Integer` in `qsl-replay/src/lib.rs` names `quire_exact::Integer` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
 | FR-273-AC-48 | The `pub use` of `DeclarationKey` in `qsl-replay/src/lib.rs` names `qsl_semantics::model::key::DeclarationKey` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
-| FR-273-AC-49 | `quire_semantic_value::location::Location` and `quire_semantic_value::location::Origin` keep their names and paths, the canonical-types gate run over the QSL workspace reports no `copy` finding for either, and FR-401's `Location` resolves at `quire_semantic_value::location::Location`. | Test (TC-748) |
+| FR-273-AC-49 | The item that was `quire_semantic_value::location::Location` is named `ExpressionLocation` in its definition and every use, and the canonical-types gate over the QSL workspace reports no `identifier` finding for `Location` at it. | Test (TC-748) |
+| FR-273-AC-50 | The item that was `quire_semantic_value::location::Origin` is named `ExpressionOwner` in its definition and every use, and the canonical-types gate over the QSL workspace reports no `identifier` finding for `Origin` at it. | Test (TC-748) |
+| FR-273-AC-51 | FR-401's interface type that locates an expression resolves at `quire_semantic_value::location::ExpressionLocation`, the owner of an `ExpressionLocation` at `quire_semantic_value::location::ExpressionOwner`, and neither `quire_semantic_value::location::Location` nor `quire_semantic_value::location::Origin` resolves. | Test (TC-748) |
 
 ## Dependencies
 
