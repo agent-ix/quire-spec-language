@@ -96,3 +96,21 @@ STD-339 (62d5f232a).
 | FND-007 | fixed 76a6c0986 | qsl-replay/src/lib.rs has a `compile_fail,E0432` doctest of `use qsl_replay::Category;`, and the re-export is gone. |
 | FND-008 | still-open | FR-262-AC-12 is now tested by `begin_of_a_call_and_of_an_expression_observes_the_meters_handle`, but only for run 1, the meter's handle cancelled before Begin (with both causes), plus the uncancelled and no-handle sessions. Run 2 (the meter's handle tripping at the first poll point for the second argument) is untested. Runs 3 and 4 and the last sentence of the AC describe a caller-supplied run over a different handle. `quire-eval`'s Begin with contract admission takes no run, so those runs cannot be expressed. That needs a spec ruling (draco). FR-401-AC-8 as amended still binds the std reference evaluator ("the runs over `f(3)` and over the requesting body hold as stated"). No test shows the factory invoked once per application, `f`'s interpreted body uncharged, or a requesting body resumed with the host body's `7`, and no test is tagged AC-8. |
 | FND-009 | fixed 76a6c0986 | `begin_observes_the_meters_cancelled_handle` is retagged `#[trace("FR-262-AC-12")]`. |
+
+## New findings (disposition pass 3)
+
+Round 3 was reviewed at 551a919e8db696feaea6748bb5a84cccea67e488. The fix
+commit is 2ad3aec61. The governing text is STD-339's follow-up (04cee5579,
+#1292, merged into the branch). It cuts FR-262-AC-12 to two runs and adds
+FR-401-AC-10 and TC-1191.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | FR-401-AC-10, new in #1292, has no test bound to it. `call_supplied_polls_the_callers_handle_and_the_meters_at_the_first_charge` asserts most of the `g` package half, but it is traced `FR-401-AC-9`. It never asserts that the caller run's handle is not tripped, because the run's `Cancel` is moved in and dropped. It does not cover the TC-918 `Compare` package that the AC names. Fix: retag it `FR-401-AC-10` and `TC-1191`, keep the run's handle so it can assert `tripped() == None`, and add the `Compare` package run. | qsl-eval/tests/it/reference_adapter.rs:622-679 |
+
+## Dispositions (round 3)
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | still-open | Two parts are resolved. The FR-401-AC-8 std half is fixed in 2ad3aec61 by `a_registered_body_for_f_runs_for_the_root_and_the_requesting_body`. It asserts 7 for `f(3)` and for the requester, the factory begun once, and one or two admitted charges. #1292 dropped the caller-supplied-run variants of AC-12. One part stays open: AC-12's second run, the meter's handle tripping with `Deadline` at the supplied-value run's first poll point for the second argument, still has no test. The test comment says such a handle "cannot trip at the supplied-value run's poll point (`Cancel`'s observer fires on meter charges only)". That is not so. `Cancel::poll` calls the observer at every poll, and quire-semantic-value's `check_cancel` and quire-exact's membership `poll` call `cancel.poll()`. A local probe at this head shows it: an observing handle on the meter saw 18 polls during Begin admission of `g(3, 4)`, and cancelling at poll 10 made `begin_call` return `CallFailure::Cancelled(Deadline)` with zero work. Add that run. Also update the comment, which still says runs 3 and 4 await a draco ruling. |
+| FND-010 | fixed 2ad3aec61 | `received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged` and `empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_prefixes` now carry `FR-401-AC-9`. |
