@@ -125,7 +125,8 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
-        | DeclarationForm::StateGraphClaim(_) => panic!("a state clause form, not {form:?}"),
+        | DeclarationForm::StateGraphClaim(_)
+        | DeclarationForm::Hybrid(_) => panic!("a state clause form, not {form:?}"),
     }
 }
 
@@ -157,7 +158,8 @@ fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
-        | DeclarationForm::StateGraphClaim(_) => panic!("an operation body form, not {form:?}"),
+        | DeclarationForm::StateGraphClaim(_)
+        | DeclarationForm::Hybrid(_) => panic!("an operation body form, not {form:?}"),
     }
 }
 
@@ -189,7 +191,8 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
-        | DeclarationForm::StateGraphClaim(_) => panic!("a protocol form, not {form:?}"),
+        | DeclarationForm::StateGraphClaim(_)
+        | DeclarationForm::Hybrid(_) => panic!("a protocol form, not {form:?}"),
     }
 }
 
