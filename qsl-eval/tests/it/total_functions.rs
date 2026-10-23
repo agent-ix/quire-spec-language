@@ -3,7 +3,7 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::selection::ProfileSelection;
 use qsl_package::CheckedPackage;
@@ -11,9 +11,11 @@ use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingStage, MeasureObligation,
     Obligation, PackageDeclarations, ProvedInterval, StageLimitCause,
 };
-use qsl_semantics::family::{FamilyKind, FamilyOutcome};
+use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
+use quire_eval::Evaluation;
+use quire_eval::FamilyOutcome;
 use quire_exact::EffectiveId;
 use quire_exact::FloatType;
 use quire_exact::NodeKey;

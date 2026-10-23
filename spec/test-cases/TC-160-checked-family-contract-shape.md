@@ -25,7 +25,8 @@ stop (not the form's depth or the host's available stack), that the S4 v2 emitte
 all-or-nothing over the nodes a node names, and that every evaluation hook reads only checked input.
 The `Relation` half of FR-062-AC-6 (no `Relation` hook and no `Relation`
 S6a input) is verified by TC-385.
-Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13, and
+Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9, FR-062-AC-13 and
+FR-062-AC-15, and
 FR-057-AC-10's value-function row.
 
 ## Test Procedure
@@ -106,6 +107,10 @@ FR-057-AC-10's value-function row.
     where the inner narrow references the scalar application and the outer
     narrow references the inner narrow. Give each narrow a distinct,
     independently specified occurrence key.
+13. Read `RequirementRecord::extent_roots()` for each record FR-062-AC-15
+    names: RR-3, RR-7, RR-8, RR-11 and RR-14, the `u` unit
+    `10 mod x` over `x, y: Int[0, 9]`, step 10's `size` unit, and a state
+    clause's `operation-contract` record.
 
 ## Expected Results
 
@@ -179,3 +184,8 @@ FR-057-AC-10's value-function row.
   narrow key. The outer narrow is excluded because it references the inner
   node rather than the scalar application. The expected key is fixed before
   keying, not derived by reusing the production selection logic.
+- Step 13: each set is the one FR-062-AC-15 states: RR-3 `{x, y}` with a
+  `Bounded` extent; RR-7 `{x}`; RR-8 empty; RR-11's `integer.le` `{n}`;
+  RR-14 `{v}` for both records; `u`'s `mod` `{x}`; the `size` unit's `>`
+  `{v}` and `+` `{s}`; the `operation-contract` record empty. Each root is
+  the `WireNodeId` of its parameter or binder node.

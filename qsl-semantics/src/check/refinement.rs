@@ -45,11 +45,12 @@ use qsl_forms::{
     StepSourceForm, StepTargetForm,
 };
 use qsl_foundation::selection::ProfileSelection;
-use qsl_foundation::{Code, InternalFault, Span};
+use qsl_foundation::{Code, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IllTypedCause, Integer,
     IntegerInterval, NodeKey, Presence, ValueType,
 };
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,

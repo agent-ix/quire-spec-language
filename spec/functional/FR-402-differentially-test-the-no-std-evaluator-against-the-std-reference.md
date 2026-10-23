@@ -232,7 +232,9 @@ payload for it, as stated.
   `CallFailure` variant in snake case and these payload members: `input`
   carries `code` and `cause`, the `InputRefusal`'s catalog code and cause
   strings; `fault` carries `stage` and `invariant`, the `InternalFault`'s;
-  `storage` carries `parameter`; `cancelled`, `supplied` and
+  `storage` carries `parameter`; `unsupported` carries `backend` and
+  `cause`, the `UnsupportedEntry`'s members, which neither compared
+  evaluator returns (FR-401); `cancelled`, `supplied` and
   `unsupported_helper` carry no payload member. `cancelled` is only a
   pre-charge Begin failure. A charge that a cancelled handle denies is
   recorded as the evaluation it returns, the `incomplete` outcome at that
