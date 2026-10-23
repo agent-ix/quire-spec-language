@@ -7,8 +7,8 @@
 //! `S² = Σ (Y_k − Â·L_k)² / (n − 1)` follows from them after each cycle
 //! without revisiting the cycles.
 
-use qsl_foundation::InternalFault;
 use quire_exact::{Integer, Rational};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::bounds::{int, quotient, sqrt};
 

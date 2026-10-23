@@ -19,9 +19,7 @@ use sha2::{Digest, Sha256};
 use super::{read_checked_package_v2, read_v2, Read, V2ReadLimits, V2ReadRefusal};
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{
-    CatalogCode, CatalogCoded, Category, Code, LimitExceeded, LimitKind, Locus,
-};
+use qsl_foundation::diagnostic::{Code, LimitExceeded, LimitKind, Locus};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Setting;
@@ -32,6 +30,7 @@ use qsl_semantics::library::{
     RefusalClass,
 };
 use quire_exact::{Origin, Role};
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 const SOURCE_DOMAIN: &str = "quire.source.bytes/v1";

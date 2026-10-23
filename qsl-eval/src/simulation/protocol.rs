@@ -41,12 +41,13 @@ mod tso;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{Code, InternalFault};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMember};
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
 use quire_exact::{Meter, ObjectReference, Value, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::fairness::{Constraint, Identity};
 use crate::model_subject::{ModelInstance, ProtocolSubject};

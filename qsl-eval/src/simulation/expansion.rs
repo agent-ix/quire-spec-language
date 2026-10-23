@@ -2,9 +2,10 @@
 //! What one expansion of one state returns, and the findings the engine
 //! records from it (FR-101).
 
-use qsl_foundation::diagnostic::{category_of, Category};
+use qsl_foundation::diagnostic::category_of;
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::CatalogCode;
+use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::Category;
 
 /// One expanded state's successors and findings, as a `TransitionSystem`
 /// returns them. The engine orders `successors` itself (FR-101-AC-1) and
