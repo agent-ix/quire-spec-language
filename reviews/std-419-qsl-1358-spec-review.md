@@ -38,3 +38,11 @@ Merge status: Conflicts with origin/main d0a756b2b in TC-521 step 6 only (conten
 ## Verdict
 
 **Mergeable after it merges main** (one content conflict in TC-521 step 6, where main dropped "not built" from the fixture line and the PR rewrites the same lines; take the PR's text). One low finding. Gate `QSPEC_DIR=<QSpec main> make check-spec-validation`: exit 0, 19 warnings (baseline), none on touched files. No new ids. STD-419's FR-128 half (no `AuthoredUndefined` refusal, positive and negative `CanInc` ACs, TC-539) is on main through #1342 (FR-128-AC-6 and AC-7, TC-539 steps 6 and 7), and `AuthoredUndefined` appears nowhere in main's FR-128, TC-539 or TC-521, so the PR's narrower scope leaves nothing missing.
+
+## Dispositions
+
+| FND | Round | Outcome | Reason |
+| --- | --- | --- | --- |
+| FND-001 | 1 | fixed | Fixed in head f16169a6; the fix agrees with the finding and the vectors were derived by hand. |
+
+Round 1 verdict: Finding fixed, no new defect; mergeable (merge-tree clean; gate exit 0).
