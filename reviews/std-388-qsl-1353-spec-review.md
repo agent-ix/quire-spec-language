@@ -39,3 +39,11 @@ Merge status: Conflicts with origin/main d0a756b2b only in FR-168 (adjacent line
 ## Verdict
 
 **Not mergeable yet**: one trivial conflict with main (FR-168-AC-13, which sits beside the AC-12 line main already carries), a hard dependency on #1352 and QSpec #406 (merge after both), and one medium finding. Gate `QSPEC_DIR=<QSpec #406 head> make check-spec-validation`: exit 0, 19 warnings (baseline), none on touched files. No new ids.
+
+## Dispositions
+
+| FND | Round | Outcome | Reason |
+| --- | --- | --- | --- |
+| FND-001 | 1 | fixed | Fixed in head 52d6cb9c; the fix agrees with the finding and the vectors were derived by hand. |
+
+Round 1 verdict: Finding fixed, no new defect; mergeable after #1352 and QSpec #406 (merge-tree clean; gate exit 0).
