@@ -36,7 +36,9 @@ Scope: FR-100-AC-1 to FR-100-AC-3.
    with `call` removed; then with a `call.accounting` member `work_units` of
    `18446744073709551616`, `-1`, `1.5` and `null`, with an `accounting`
    member `depth`, with an `accounting` of `5`, and with a top-level
-   a legacy `work_units` member directly in `call`.
+   a legacy `work_units` member directly in `call`. Run the program
+   `extraction` request twice more: through the command built with no
+   features and through the command built with `--all-features`.
 5. Run a `0-draft` standalone request with a `call` added; then with a
    `libraries` entry added.
 6. Run a `1-draft` program that imports `test/geometry` and declares
@@ -60,7 +62,8 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 - Step 3: `unknown_edition`, stage `profile`, exit 20, empty stdout; the
   `message` names the program file and `7-draft`.
 - Step 4: each request refuses `invalid-request` at stage `request`, exit 20,
-  empty stdout, and no model file is read.
+  empty stdout, and no model file is read; the `extraction` request refuses
+  so in both builds.
 - Step 5: each refuses `invalid-request` at stage `request`, exit 20, empty
   stdout.
 - Step 6: exit 0 and a `completed` outcome.
