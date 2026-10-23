@@ -114,7 +114,8 @@ that no trace exists.
   (ADR-022 RU-5).
 - `Witnessed` SHALL carry the product-closure certificate of the explored
   product (FR-163); the item SHALL settle `proved` only after its witnesses
-  replay and the certificate check accepts (FR-182, ADR-023 HX-7).
+  replay and the certificate check accepts (FR-169's `settle_existential`,
+  ADR-023 HX-7).
 - If a letter of the body evaluates `Undefined` at a reachable product
   state, the engine SHALL return `Undefined` with FR-126's canonical
   breadth-first path to the first such product state, `where` naming that
