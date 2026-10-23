@@ -33,27 +33,64 @@ with a clause selection.
 
 ## Inputs
 
+```rust
+pub fn execute(
+    package: &CheckedPackage,
+    request: &ExecuteRequest,
+    backends: &SuppliedBackends<'_>,
+    limits: &ExecuteLimits,
+    cancel: &Cancel,
+) -> Result<Evaluation<Value>, CallFailure>;
+
+pub struct ExecuteRequest {
+    pub selection: ExecuteSelection,
+    pub environment: ObjectEnvironment,
+    pub backend: ExecutionBackendChoice,
+}
+
+pub enum ExecuteSelection {
+    Function { name: QualifiedName, arguments: Arguments },
+    Clause { clause: ClauseSelection, input: ClauseInput },
+}
+
+pub struct ExecuteLimits {
+    pub accounting: ScalarLimits,
+    pub prepare: PrepareLimits,
+}
+```
+
 - `&CheckedPackage`.
 - The selection: a function's `QualifiedName` with its `Arguments`, or a
   `ClauseSelection` with its `ClauseInput`.
 - The `ObjectEnvironment`.
-- The accounting limits (`ScalarLimits`).
-- The execution backend the caller chose (FR-296).
+- The execution backend the caller chose, `ExecutionBackendChoice`, and the
+  backends the caller supplies, `SuppliedBackends` (FR-296).
+- The limits: the accounting limits (`ScalarLimits`) and the
+  `PrepareLimits` (FR-294). `ExecuteLimits::default()` is both defaults.
 - `&Cancel`.
 
 ## Outputs
 
 `Result<Evaluation<Value>, CallFailure>`: the `Evaluation` the backend's
-`call` or `evaluate` returns, or `CallFailure::Input`, `CallFailure::Fault`
-or `CallFailure::Cancelled`.
+`call` or `evaluate` returns, or a `CallFailure`: `Input`, `Fault` or
+`Cancelled` from the call or from `prepare`; `Limit` when `prepare` reaches
+a `PrepareLimits` bound; `Unsupported` with the `UnsupportedEntry` when the
+chosen backend is not supplied or did not prepare the entry.
 
 ## Behavior
 
-- The `execute` operation shall prepare the selected entry with the chosen
-  execution backend and call it with the arguments, environment and
+- The `execute` operation shall prepare exactly the selected entry with the
+  chosen execution backend and call it with the arguments, environment and
   accounting limits.
-- If the chosen backend's `prepare` settles the entry `Unsupported`, then
-  `execute` shall return that unsupported outcome as its result.
+- If the chosen backend is not supplied, then `execute` shall return
+  `CallFailure::Unsupported(UnsupportedEntry { backend, cause: NotSupplied
+  })` naming the chosen backend, without calling any backend's `prepare`.
+- If the chosen backend's `prepare` lists the entry `unsupported`, then
+  `execute` shall return `CallFailure::Unsupported` with that entry's
+  `UnsupportedEntry`.
+- If `prepare` returns `PrepareFailure::Limit`, `Cancelled` or `Fault`, then
+  `execute` shall return `CallFailure::Limit`, `Cancelled` or `Fault` with
+  the same payload.
 - The `execute` operation shall return the same `Evaluation` as
   `CheckedPackage::call` (for a function) or `CheckedPackage::evaluate` (for
   a clause) when the chosen backend is the interpreter.
@@ -65,6 +102,7 @@ or `CallFailure::Cancelled`.
 | FR-279-AC-1 | `execute` with the interpreter backend over FR-100-AC-4's unit returns, for `lt(5, 3)`, `flag(1)` and `id(4)`, the `Evaluation` `CheckedPackage::call` returns for the same arguments, and for `id(12)` the same `CallFailure::Input`. | Test (TC-760) |
 | FR-279-AC-2 | `execute` with a clause selection over FR-109's ConfigVersion unit returns the `Evaluation` `qsl_replay::spine::run_clause` reports for the same clause and input. | Test (TC-760) |
 | FR-279-AC-3 | For each FR-100-AC-1, AC-4 and AC-6 request, the `outcome` member of FR-100's `spine-run-result/1` document equals the rendering of `execute`'s result for the same source, function, arguments and accounting limits. | Test (TC-760) |
+| FR-279-AC-4 | `execute` choosing a supplied test backend standing in for `aot` whose `prepare` returns `PrepareFailure::Limit` naming `prepare.code_bytes` returns `CallFailure::Limit` with the same `LimitExceeded`; with one whose `prepare` returns `PrepareFailure::Fault`, `CallFailure::Fault` with the same `InternalFault`. | Test (TC-760) |
 
 ## Dependencies
 
