@@ -10,18 +10,20 @@ use std::sync::{Arc, OnceLock};
 
 use ix_trace_rs::trace;
 use qsl_cst::Limits as SourceLimits;
-use qsl_eval::value::{CallFailure, QualifiedName};
+use qsl_eval::value::QualifiedName;
 use qsl_foundation::diagnostic::{
-    Category, LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
+    LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
 };
 use qsl_foundation::{Code, Setting, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
-use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::supplied::SuppliedLimits;
+use quire_eval::CallFailure;
+use quire_eval::FamilyOutcome;
 use quire_exact::{Cancel, CancelCause, Integer, Outcome, Value};
+use quire_semantic_value::catalog::Category;
 use quire_semantic_value::checking::CheckingLimits;
 
 use super::{
@@ -132,7 +134,7 @@ fn call_seven(
     checked: &CheckedUnit,
     accounting: quire_exact::ScalarLimits,
     cancel: &Cancel,
-) -> Result<qsl_eval::value::Evaluation, CallFailure> {
+) -> Result<quire_eval::Evaluation, CallFailure> {
     let function = seven();
     execute(
         checked,
@@ -1786,14 +1788,14 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
     );
     assert_eq!(
         fault.catalog_code(),
-        qsl_foundation::diagnostic::CatalogCode::new(
+        quire_semantic_value::catalog::CatalogCode::new(
             "runtime_invariant",
             "established-invariant-broken"
         )
     );
     assert_eq!(
         fault.category(),
-        qsl_foundation::diagnostic::Category::InternalFailure
+        quire_semantic_value::catalog::Category::InternalFailure
     );
 }
 

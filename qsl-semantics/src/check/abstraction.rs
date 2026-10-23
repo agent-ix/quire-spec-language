@@ -24,8 +24,9 @@ use std::collections::BTreeSet;
 use ix_trace_rs::string_edge;
 use qsl_forms::{AbstractionBindingForm, NameForm};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::{Code, InternalFault, Span};
+use qsl_foundation::{Code, Span};
 use quire_exact::{Identifier, NodeKey};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::lowering::{

@@ -416,8 +416,7 @@ impl ModelSystem<'_> {
         let evaluation =
             evaluate_reward(self.package, reward, arguments, &mut Meter::new(self.meter))
                 .map_err(|_| stop(BROKEN))?;
-        if let qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(value)) =
-            &evaluation.outcome
+        if let quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(value)) = &evaluation.outcome
         {
             return Ok(value.clone());
         }

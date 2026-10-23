@@ -104,7 +104,8 @@ The command shall verify selected source and runtime digests before consumption.
 The command shall use the existing source frontend, admission, parser, linker,
 checker, package constructor and runtime execute APIs.
 The command shall count every dependent file toward `dependent_bytes` by its
-size, whatever its role (model, program, library, snapshot, invocation or
+size, whatever its role (model, program (each unit of an array `program`
+counting separately), library, snapshot, invocation or
 package), and shall apply no limit on the number of files.
 The command shall preserve refused and incomplete stage outcomes without truth.
 The command shall begin each invocation with fresh budgets.

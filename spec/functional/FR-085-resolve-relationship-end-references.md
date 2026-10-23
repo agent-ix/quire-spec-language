@@ -103,14 +103,11 @@ as a Connection is
   AD-006's model-view decision keeps relationships in the checked model
   view. `qsl-semantics/src/model/systems.rs::classify`'s relationship-classification loop
   is the only place a plain object-to-object relationship's ends
-  are resolved today, and it does not yet implement this requirement's
-  `missing_declaration`/`missing-name` cause: for a relationship where one
-  end resolves to a declared object type and the other end resolves to
-  neither a declared object type nor a declared endpoint, it reports both
-  ends `UnknownEndpoint`/`dangling_reference`, including the legitimately
-  resolving end, rather than refusing only the missing end with this
-  requirement's cause. FR-085-AC-1 does not ship today. Remaining work:
-  #120.
+  are resolved. For a relationship where one end resolves to a declared
+  object type and the other end resolves to neither a declared object type
+  nor a declared endpoint, `classify` shall refuse only the missing end with
+  this requirement's `missing_declaration`/`missing-name` cause and shall
+  not report the legitimately resolving end (FR-085-AC-1).
 - **Downstream:** relationship end resolution feeds the object-reference
   fields the evaluator later dereferences; this requirement does not itself
   perform reachability or dereference evaluation, which is

@@ -38,9 +38,9 @@
 use std::cell::{Ref, RefCell};
 use std::collections::BTreeSet;
 
-use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedFormula, OperationKey, TemporalProfile};
 use quire_exact::{Cancel, ScalarLimits};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{translate_body, AutomatonError, Monitor, PropertyAutomaton, StateId};
