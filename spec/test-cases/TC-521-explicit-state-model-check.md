@@ -40,8 +40,11 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
 6. The `eventually[0,100]` formula over `Restless` with
    `max_automaton_states` 50 and with the default; a subject whose
    contract conjunction is refused, with no clause false and none
-   undefined (a dispatch-family fixture whose `family_steps` or
-   `ancestor_steps` ceiling refuses a dispatched call); `always holds(true)` over the `Counter` subject with `pre CanInc
+   undefined (FR-126-AC-6's test `TransitionSystem` over the `Counter`
+   subject, whose initial state and expansions of values 0, 2 and 3 are the
+   `Counter` subject's own and whose expansion of value 1, reached by `inc`
+   from 0, records `ContractUndetermined` for `inc` with one `Refused`
+   evaluation); `always holds(true)` over the `Counter` subject with `pre CanInc
    { 6 mod (2 - self.value) >= 0 }` from value 2; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
 8. The TP-4 claim with no granularity over the example unit with initial
@@ -88,7 +91,7 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 6: `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an
   automaton-state count of 50 and no counterexample, then `Violated` with
   at least 101 consecutive unhealthy positions;
-  `Undecided(UndecidedSuccessor)` (not built: Remaining work: QSL-898); `Violated` with the empty prefix at
+  `Undecided(UndecidedSuccessor)`; `Violated` with the empty prefix at
   value 2, `kind: UndefinedEvaluation`, cause `DivisionByZero`, at position 0;
   `RequiresBound` with no state explored.
 - Step 7: equal outcomes and byte-equal counterexamples.
