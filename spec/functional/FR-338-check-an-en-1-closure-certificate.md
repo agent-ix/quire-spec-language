@@ -104,19 +104,61 @@ state-graph certificate and FR-127's `StaleDependency` carry.
 encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
 every order in which the states are materialized.
 
-QSpec FR-331 carries `certificate-rejected{rule, at}` with `rule` and `at` as
-non-empty texts and catalogues no finer spelling. Of the loci in this family
-only FR-314's `QueryPart` has a text spelling (below); FR-149 writes
-`SimulationStep` as a JSON object, and `ProductState`, FR-314's `ProofStep`
-index form, FR-163's `HyperProductState` and FR-169's `ModelState` have no
-catalogued `at` spelling, which STD-238 asks QSpec FR-331 to catalog. This
-requirement carries an `AutomatonStateKey` as the bytes of its canonical
-encoding.
+This requirement carries an `AutomatonStateKey` as the bytes of its
+canonical encoding.
 
 FR-163 additionally owns the labelled-transition-tuple and missing-member
 loci of its hyper checker; those failures are not all product-state failures.
 
-A `QueryPart` is spelled on the wire as the text `unrolling`, `base` or `step`; a `Step` that carries a row (FR-314's refinement certificate, zero-based) is spelled `step/<row>` with the row in decimal, so `step/3` names the fourth step row and `step` alone names the step query of an `Inductive` proof. FR-331's `certificate-rejected` `at` is a non-empty text and defines no finer spelling, so this is QSL's convention for the part. QSpec Linear STD-238 asks FR-331 to catalog the `rule` and `at` spellings, `step/<row>` and the command-number form of `ProofStep` included.
+### Rejection spellings
+
+QSpec FR-331 carries a `CertificateRejection` as `certificate-rejected{rule,
+at}`, and its Certification table owns every spelling: each locus form, its
+`at` spelling, and the rules admitted at that form. QSL SHALL write a
+rejection with exactly those spellings and SHALL add none of its own. A
+`CertificateRule` variant is written as FR-331's kebab-case rule name, so
+`InitialMissing` is `initial-missing` and `ProofStepInvalid` is
+`proof-step-invalid`.
+
+Each `CertificateLocus` alternative is one FR-331 locus form, and only the
+checker named beside it returns that alternative:
+
+| `CertificateLocus` | FR-331 locus form | Checker |
+| --- | --- | --- |
+| `Query { part }` | Query part | FR-314 |
+| `ProofStep { part, index }` | Proof step | FR-314 |
+| `ProductState(ProductStateRef)` | Product state | FR-338, FR-339 |
+| `HyperProductState(ProductStateKey)` | Hyper product state | FR-163 |
+| `HyperTransitionTuple` | Hyper transition tuple | FR-163 |
+| `CertificateMember` | Certificate member | FR-163 (`components`), FR-201 (`ranking`, `policy`, `components`), FR-245 (`components`, `divergence`, `bounds`) |
+| `ModelState(DigestRecord)` | State | FR-169; FR-245 (the initial discrete state) |
+| `Entry { index }` | State-graph entry | FR-169 |
+| `SimulationStep { position, edge, verdict }` | Simulation step | FR-149 |
+| `ProbabilisticProductState(ProductKey)` | Probabilistic product state | FR-201 |
+| `ZoneNode { node }` | Zone node | FR-245 |
+| `ZoneEdge { edge }` | Zone edge | FR-245 |
+| `ZoneComponent { component }` | Zone component | FR-245 |
+
+A `QueryPart` is written `unrolling`, `base` or `step`, and a `Step` that
+carries a row (FR-314's refinement certificate, zero-based) as `step/<r>`,
+`r` the row's `U64String`, so `step/3` names the fourth step row and `step`
+alone names the step query of an `Inductive` proof. A `ProofStep`'s `index`
+is FR-314's command number as a `U64String`.
+
+- Every checker that returns a `CertificateRejection` SHALL name a rule that
+  FR-331's table lists at the locus form it names, at a locus form the
+  table above assigns to that checker. A rejection outside that set is a
+  defect of the checker, not of the certificate.
+- Before it writes a `certificate-rejected` cause, the outcome writer
+  (FR-286) SHALL check that FR-331's table lists the rule at the locus
+  form, and that a `ModelState` outside the `quire.simulation.state-key/v1`
+  domain carries `Malformed`. A pair the table does not list SHALL be QSL's internal fault,
+  `InternalFault` (`runtime_invariant`, FR-096) with invariant
+  `certificate-rejection-pair`, and SHALL NOT be written. No caller input
+  carries the pair, so it is never an `invalid_runtime_input` refusal.
+- QSL reads no `certificate-rejected` cause. FR-290's reader returns
+  `Unsupported` for a plugin's, whether or not FR-331 lists its pair,
+  because no in-core checker binds a plugin proof (FR-331-AC-26).
 
 ### Canonical translation state
 
@@ -882,8 +924,11 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 | FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve, with a certificate whose `package_id` equals the recompiled one, is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
 | FR-338-AC-9 | Over a subject with populations `P1` and `P2` of `Counter`, each with the universe `["a"]` and `a` admitted, the claim `always holds(c.value <= 1000)` with `over (c: Counter)` has one instance, whose `context` is `[root, profile, "infinite", [[N, ["instance", "a"]]]]` with `N` the `over` parameter's NodeId; renaming `P1` or `P2` leaves the context's octets unchanged. Over populations `P1` with universe `["a"]` and `P2` with universe `["b"]`, the two instances' contexts differ exactly in the key, and a certificate state carrying `a`'s context is not admitted under `b`'s instance (a foreign context, AC-5). Each of these replacements of `["instance", "a"]` in a product state's key refuses `ShapeMismatch` at `ProductState`: FR-181's `{"type":"reference",...}` value of the key's object; the three-element `["instance", T, "a"]` with `T` the JSON string of `P1`'s declaration identity text; and `["instance", {"type":"text","value":"a"}]`. The context carries no type: over two subjects with population `P1` of `Counter` and universe `["a"]`, one whose initial state holds a `Counter` under `a` and one whose initial state holds a `Fast` (a subtype of `Counter`) under `a`, the instance's context octets are equal. | Test (TC-1164) |
 | FR-338-AC-10 | Fixture: the `Counter` subject (no `terminal` declaration) and a checked package of its unit that carries the guarded clause's `temporal`/`temporal_clause` node in QSpec FR-370's shape (activation aggregate `kind` `each`, `trigger` the `over` parameter's node, `guard` the clause's Boolean guard term), built by the test because S4 refuses an `on each` clause `NotEmitted` (FR-337, QSL-926); the same package supplies the engine's clause and stands as the request's recompiled package, and each `when` condition is read by the test's own letters as in FR-126-AC-16. `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value = 7` returns `Holds` whose certificate holds values 0 to 3, each with activation `"each-when"` and state body `["safety",[[[],[],[],[]]]]`, and `check_closure` accepts it, so FR-127 settles `proved`. `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with the condition `c.value >= 2` returns `Holds` whose certificate `check_closure` accepts, its value-0 and value-1 states having body `["bounded",["each"],[[[],[],[],[]]]]` and its value-2 state body `["bounded",["each"],[[[],[],[[[],"positive","deadline","1"]],[]]]]`; that certificate with the value-2 state's body replaced by `["bounded",["each"],[[[],[],[],[]]]]` (the condition misread as false) is rejected `SuccessorMissing` at the value-2 product state with the deadline body; the same certificate with the misread value-2 state added beside the deadline one is accepted; the accepted certificate with every key's activation replaced by `"each"` is rejected `ShapeMismatch` at the least refused `ProductStateRef` (AC-8's order). With the condition false at values 0 and 1 and undefined at value 2, the certificate holding exactly the value-0 and value-1 states, each with activation `"each-when"` and body `["bounded",["each"],[[[],[],[],[]]]]`, is rejected `BadState` at the value-1 product state, whose expansion reads the undefined condition at value 2. | Test (TC-525) |
-| FR-338-AC-16 | Over FR-339-AC-5's fixture (the clause `eventually holds(c.versionNumber = 2)` `on each` with the condition `c.versionNumber = 1`, activation `"each-when"`), binding `a`'s waiting state at `(0,0)` has body `["guarded-buchi","waiting",[[],[],[],[]]]` and its active state at `(1,0)` has body `["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]`. Each of these is refused `ShapeMismatch` at `ProductState`: that active key rewritten as `["buchi",[[[[],"negative"]],[],[],[]]]`; that waiting key with `branch` `[[[[],"negative"]],[],[],[]]` under phase `"waiting"`; a `guarded-buchi` key under the same clause's context with activation `"infinite"`; the phase `"selected"`. With the condition undefined at version 0, the empty certificate is rejected `BadState` at `ProductState` with the initial model state `(0,0)` and binding `a`'s key `K_C(["guarded-buchi","waiting",[[],[],[],[]]])`, the waiting configuration before position 0's letter is read (binding `a`, the first in canonical instance order); and FR-339-AC-5's accepted certificate under that condition is rejected `BadState` at binding `a`'s waiting state at `(0,0)`, the least certificate state carrying that model state. | Test (TC-525) |
 | FR-338-AC-11 | Package identity. AC-1's certificate carries the `package_id` of the package EN-1 explored, equal to the recompiled one, and is accepted. The same certificate with its `package_id` replaced by that of the same unit with the claim's bound edited to `1001` returns `PackageMismatch{certificate, recompiled}` naming both identities, and settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `CertificateRejected` and never `proved`. That stale certificate with its initial product state also removed (AC-2's `InitialMissing` defect) still returns `PackageMismatch`, because no rule is evaluated. A request whose clause root is the edited unit's clause node, which does not resolve in AC-1's recompiled package, with a certificate naming the edited unit's `package_id`, returns `PackageMismatch` and settles `Inconclusive(StaleDependency{requested, recompiled})`, not `Failed`, because the package comparison precedes the clause-root resolution. | Test (TC-1141) |
+| FR-338-AC-12 | Rejection spellings. The outcome writer writes `CertificateRejected{SuccessorMissing, ProductState(s)}` with `rule` `successor-missing` and `at` the product-state form of `s`; `{QueryMismatch, Query{Unrolling}}` with `at` `"unrolling"`; `{ShapeMismatch, Query{Step{row: Some(3)}}}` with `at` `"step/3"`; `{NotRefutation, Query{Step{row: None}}}` with `at` `"step"`; `{ProofStepInvalid, ProofStep{Step{row: Some(4)}, 41}}` with `at` `{"part":"step/4","index":"41"}`; and `{RankMissing, ModelState(d)}` with `at` the state form of `d`. QSpec FR-331's schema admits each written cause. | Test (TC-1197) |
+| FR-338-AC-13 | Unlisted pairs. Writing `CertificateRejected` with `BadState` at `Query{Base}`, `QueryMismatch` at `ProofStep{Unrolling, 0}`, `ProofStepInvalid` at `Query{Step{row: None}}` or `WitnessFails` at `ModelState(d)` each returns `InternalFault` (`runtime_invariant`) with invariant `certificate-rejection-pair` and writes no `certificate-rejected` cause; `NotRefutation` at `Query{Base}`, `NotRefutation` at `ProofStep{Base, 2}` and `Malformed` at `Query{Unrolling}` are written. A plugin result entry whose cause is `certificate-rejected` with `query-mismatch` at `unrolling`, and one with `bad-state` at `base`, each reads `Unsupported` (FR-290). | Test (TC-1197) |
+| FR-338-AC-14 | Checker binding. Every rejection that the rejected vectors of FR-338-AC-2, AC-3 and AC-8, FR-314-AC-2 and AC-4, FR-169-AC-10, AC-11 and AC-14, FR-201-AC-6 and FR-245-AC-7 return names a `CertificateLocus` alternative that the Rejection spellings table assigns to the checker that returned it, and a rule FR-331 lists at that locus form. | Test (TC-1197) |
+| FR-338-AC-16 | Over FR-339-AC-5's fixture (the clause `eventually holds(c.versionNumber = 2)` `on each` with the condition `c.versionNumber = 1`, activation `"each-when"`), binding `a`'s waiting state at `(0,0)` has body `["guarded-buchi","waiting",[[],[],[],[]]]` and its active state at `(1,0)` has body `["guarded-buchi","active",[[[[],"negative"]],[],[],[]]]`. Each of these is refused `ShapeMismatch` at `ProductState`: that active key rewritten as `["buchi",[[[[],"negative"]],[],[],[]]]`; that waiting key with `branch` `[[[[],"negative"]],[],[],[]]` under phase `"waiting"`; a `guarded-buchi` key under the same clause's context with activation `"infinite"`; the phase `"selected"`. With the condition undefined at version 0, the empty certificate is rejected `BadState` at `ProductState` with the initial model state `(0,0)` and binding `a`'s key `K_C(["guarded-buchi","waiting",[[],[],[],[]]])`, the waiting configuration before position 0's letter is read (binding `a`, the first in canonical instance order); and FR-339-AC-5's accepted certificate under that condition is rejected `BadState` at binding `a`'s waiting state at `(0,0)`, the least certificate state carrying that model state. | Test (TC-525) |
 | FR-338-AC-21 | Memory bounds. Over FR-225-AC-2's `tso` program with `always holds(x.v <= 1)`, the run with `max_store_buffer` 3 settles V-1 with a certificate; the request carrying `max_store_buffer` 3 is accepted, and the same certificate under a request carrying 2 is rejected `SuccessorMissing` at the shallowest bound-limited product state, the one whose storing branch has buffered its stores to `x` and `y` while the loading branch has taken no step, with no refusal. The same program under `ra`, run with `max_messages` unset, settles V-1, and its certificate is accepted under a request with `max_messages` unset (4) and rejected `SuccessorMissing` at the initial product state under a request with 1, where the first store would add a second message. | Test (TC-1230) |
 | FR-338-AC-22 | Instance bound. Over FR-209-AC-2's protocol with guard `{false}`, which has no `activate` step, the run settles V-1 with a certificate, and the certificate is accepted under a request with `max_live_instances` unset (3) and under one with 1. Over FR-209-AC-1's protocol (guard `{true}`), a certificate holding every product state the run with `max_live_instances` 2 explored, offered for `always holds(k.v <= 1)` under a request carrying 2, is rejected `SuccessorMissing` at the shallowest instance-limited product state, the one after two `activate(Tick)` steps with both instances at their start and `k.v` 0, with no refusal. | Test (TC-1230) |
 
