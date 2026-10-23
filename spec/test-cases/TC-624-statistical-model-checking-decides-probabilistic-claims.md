@@ -1,16 +1,16 @@
 ---
 id: TC-624
-title: "EN-4 decides probabilistic claims with Okamoto and SPRT, with Bonferroni, symmetry and activation"
+title: "EN-4 decides probabilistic claims with Okamoto, SPRT and Clopper–Pearson, with Bonferroni, symmetry and activation"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-189
     type: verifies
 ---
-# TC-624: EN-4 decides probabilistic claims with Okamoto and SPRT, with Bonferroni, symmetry and activation
+# TC-624: EN-4 decides probabilistic claims with Okamoto, SPRT and Clopper–Pearson, with Bonferroni, symmetry and activation
 
 ## Description
 
-Verify EN-4's Okamoto and SPRT decisions on `P95`, the exact sample counts and thresholds, Bonferroni and symmetry, activation, and the stops and refusals.
+Verify EN-4's Okamoto and SPRT decisions on `P95`, its Clopper–Pearson decisions and interval on the `N = 231` stub, the exact sample counts and thresholds, Bonferroni and symmetry, activation, and the stops and refusals.
 
 Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7 to FR-189-AC-12, FR-189-AC-13 to FR-189-AC-16.
 
@@ -51,4 +51,4 @@ Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 - Step 11: estimate `3/4`, no refusal.
 - Step 12: the regenerative request runs; the Okamoto request is refused `TraceIndexRange`.
 - Step 13: `quantile` `Value(2)`; `Censored`; `Value(2)`; `Value(2)` (the magnitude in `ms`); absent for the no-sample test; absent for the `P95` test.
-- Step 14: under `ClopperPearson`, Accepted at 231 and 219, Undecided (`IndifferenceRegion`) at 218 and 197, Rejected at 196 and 184; under `Okamoto`, Accepted only at 231 and Rejected only at 184; at 219 the interval contains `[0.9035147279, 0.9762117545]` within `2^-64` at each end, with basis `ClopperPearson` and coverage `FiniteSample`; both fraction requests refuse `NotStatistical` with no sample drawn.
+- Step 14: under `ClopperPearson`, Accepted at 231 and 219, Undecided (`IndifferenceRegion`) at 218 and 197, Rejected at 196 and 184; under `Okamoto`, Accepted only at 231 and Rejected only at 184; at 219 the reported lower end is at most the exact lower end `0.90351472792271070929…` and within `2^-64` of it, and the reported upper end is at least the exact upper end `0.97621175445884490996…` and within `2^-64` of it, with basis `ClopperPearson` and coverage `FiniteSample`; both fraction requests refuse `NotStatistical` with no sample drawn.
