@@ -15,11 +15,11 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-255
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-120
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-290
     type: references
   - target: ix://agent-ix/quire-specification/FR-193
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-146
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: depends_on
@@ -34,10 +34,10 @@ When QSL reads a hybrid trace, whether a plugin provider's or its own
 solver's, it SHALL replay that trace against the claim's checked hybrid model
 (FR-447) by QSpec FR-193 "Trace replay" before it settles the item. Static
 replay checks each trace in exact rational interval arithmetic within the
-trace's tolerance, using the caller's accounting meter, and records its
-outcome on the `inconclusive` record. Exact replay decides a point trace
-through modes with polynomial flows exactly, within that meter. A trace it
-reproduces settles the item
+trace's tolerance, using the caller's `HybridReplayMeter`, and records its
+outcome on the `inconclusive` record. Exact replay decides every eligible
+point trace through modes with polynomial flows exactly when its work fits the
+caller's meter. A trace it reproduces settles the item
 `refuted` with the trace as its counterexample. If the meter is exhausted,
 replay settles the item `incomplete` with the exhausted counter and its
 accounting setting, without a verdict or counterexample. This is ADR-026 HY-2's
@@ -62,8 +62,8 @@ counterexample.
   "Solver result on the wire"), read through the plugin reader (FR-290) or
   returned by an in-process provider.
 - The item's `CheckedHybridClaim` and its `CheckedHybridModel` (FR-447).
-- The caller's accounting limits (FR-255), including the `work_units` meter
-  used by both replay functions.
+- The caller's FR-255 `accounting.work_units` bound, held by the
+  `HybridReplayMeter` used by both replay functions.
 
 ## Outputs
 
@@ -80,7 +80,11 @@ pub enum ExactReplay {
 }
 pub enum HybridReplayRefusal {
     // Also carries the existing trace and package admission refusals.
-    ResourceExhausted { counter: AccountingCounter },
+    ResourceExhausted { counter: WorkUnits },
+}
+pub struct HybridReplayMeter {
+    pub work_units: u64, // caller's configured bound
+    pub consumed: u64,   // successfully charged work units
 }
 pub enum ExactCheck { Initial, Dwell, Jump, Loop, Claim } // QSpec FR-193 exact checks 1 to 5
 pub struct HybridCounterexample {
@@ -89,9 +93,9 @@ pub struct HybridCounterexample {
 }
 ```
 
-`static_replay(graph, claim, trace, meter: &mut EvaluationMeter) ->
+`static_replay(graph, claim, trace, meter: &mut HybridReplayMeter) ->
 Result<StaticReplay, HybridReplayRefusal>` and
-`exact_replay(graph, claim, trace, meter: &mut EvaluationMeter) ->
+`exact_replay(graph, claim, trace, meter: &mut HybridReplayMeter) ->
 Result<ExactReplay, HybridReplayRefusal>` take the caller's meter. The
 `InconclusiveCause::SolverInconclusive { trace: Option<HybridTrace>, replay:
 Option<StaticReplay> }` carries static outcomes, and a reproduced trace
@@ -119,17 +123,20 @@ item's `Counterexample`.
   intervals, each comparison widened by `delta` (0 when `None`), and SHALL
   return `Consistent` or `Inconsistent` at the first failing check in trace
   order, with the member's pointer. `static_replay` and `exact_replay` take
-  the caller's `EvaluationMeter` and return a `HybridReplayRefusal` if the
+  the caller's `HybridReplayMeter` and return a `HybridReplayRefusal` if the
   meter denies a charge.
 - The interval evaluator SHALL be stack-safe: it SHALL evaluate nested terms
   and recursive calls iteratively or with an explicit stack, with no recursion
   depth limit. Neither replay function nor a helper it invokes SHALL impose a
-  fixed evaluation or iteration cap. Each static interval evaluation step,
-  exact replay work step, and lasso repetition needed to reach a finite
-  interval SHALL charge the caller's `work_units` counter, as SHALL each
-  definite recursive call expansion during static evaluation. If the next
-  charge would exceed its configured bound, replay SHALL return
-  `HybridReplayRefusal::ResourceExhausted { counter }`.
+  fixed evaluation or iteration cap. One work unit is one static interval
+  evaluation step, including each definite recursive call expansion, or one
+  exact replay work step. Each exact replay `ClaimSegment` materialization is
+  a work step, including segments created by expanding a lasso repetition to
+  reach a finite interval. Before each charge, if `consumed` equals the
+  configured `work_units` bound, replay SHALL return
+  `HybridReplayRefusal::ResourceExhausted { counter: WorkUnits }`; otherwise,
+  it SHALL increment `consumed` by one. The bound is FR-255's
+  `accounting.work_units` setting.
 - Interval evaluation SHALL take every `HybridTerm` form: `Variable` over
   the state's interval, `Constant` as a point, `Arithmetic` and `Negate` by
   exact interval arithmetic, a division whose divisor interval contains 0 as
@@ -201,13 +208,13 @@ item's `Counterexample`.
   `solver-inconclusive` or as `refuted`.
 - A `NotReproduced` or `NotExact` trace from a `solver-inconclusive` cause
   SHALL leave the item `inconclusive`, `SolverInconclusive{trace, replay}`.
-- A `HybridReplayRefusal::ResourceExhausted { counter }` from either replay
+- A `HybridReplayRefusal::ResourceExhausted { counter: WorkUnits }` from either replay
   function SHALL settle the item
   `incomplete`, `Incomplete(LimitReached{limit, value, setting})`, whether
   the trace came from a `solver-inconclusive` cause or a provider's `refuted`
-  entry. `limit` SHALL be the exhausted accounting counter's name, `value`
-  its configured bound, and `setting` its FR-255 setting name
-  (`accounting.<counter>`); the caller can raise the bound through that
+  entry. `limit` SHALL be `work_units`, `value` the meter's configured
+  `work_units` bound, and `setting` `accounting.work_units`; the caller can
+  raise the bound through that
   setting. The item SHALL carry no counterexample and no verdict.
 - A provider's `refuted` entry whose trace gives `NotReproduced` or
   `NotExact` SHALL settle the item `inconclusive`, `ReplayParity` (QSpec
@@ -224,17 +231,17 @@ item's `Counterexample`.
 | FR-450-AC-4 | With `Moving`'s flow `v' = -v`, the AC-2 trace gives `NotExact` and is replayed statically only, settling `inconclusive`; with `Moving`'s flows `v' = -a` and `a' = -1 / 10` it is replayed exactly, with `a(t) = 2 - t / 10` and `v(t) = 20 - 2t + t^2 / 20`, and gives `NotReproduced` at check `Dwell` because `v(10) = 5`; with a flow `v' = drag(v)` over a recursive `drag`, it gives `NotExact`. | Test (TC-1221) |
 | FR-450-AC-5 | The AC-2 trace against `always [0, 12] holds(1 / (h.v - 5) != 0)`, true up to the undefined instant, replays `Reproduced` with kind `UndefinedEvaluation`, naming the instant at time 15/2 in `Moving`, where `v = 5`, and the division's locus, and settles `refuted` with cause `UndefinedEvaluation{where, cause}`; against `always [0, 12] holds(1 / (h.v - 5) < 100)`, false from time 1499/200 before that instant, it replays `Reproduced` with kind `Formula`, the decisive instant 1499/200; against a claim whose atom calls a recursive function it gives `NotExact`; static replay of a guard calling a recursive function whose measure interval is undecided terminates with that call's result range. | Test (TC-1221) |
 | FR-450-AC-6 | Over `Bounce`, `hybrid Bounce using p { mode Up invariant { x >= 0 and x <= 1 } flow { x' = 1; } transition to Down when { x = 1 } reset { true }; mode Down invariant { x >= 0 and x <= 1 } flow { x' = -1; } transition to Up when { x = 0 } reset { true }; }`, whose initial states are `Up` with `x` in `[0, 1]` at time 0, against `eventually always holds(h.x < 1)` under the infinite-trace profile, the point trace from `(Up, x = 0)` through `Down` at time 1 back to `(Up, x = 0)` at time 2 with `loop_to` 0 reproduces as a periodic behaviour, also with `fair Up;`; the same trace with `loop_to` 1, whose last state `(Up, x = 0)` is not the `Down` state it names, gives `NotReproduced` at check `Loop`; the same trace whose last state has `x = 1/2` gives `NotReproduced` at check `Jump`, the reset `true` keeping `x = 0`; and a `loop_to` 2, naming the last state, is refused `invalid_result`/`invalid-value` at `/loop`. | Test (TC-1221) |
-| FR-450-AC-7 | Over `Bounce` and its `Up`/`Down` point lasso from FR-450-AC-6 with `loop_to` 0, a provider's `refuted` trace against `eventually [999999, 1000000] holds(h.x = 2)` exhausts `work_units` at a configured bound of 1 while exact replay evaluates the finite interval and settles `incomplete`, `LimitReached{limit: work_units, value: 1, setting: accounting.work_units}`, with no verdict or `counterexamples` entry; with `work_units` set to `u64::MAX`, the same trace gives `Reproduced` with kind `Formula` and settles `refuted` with that trace as its one counterexample. | Test (TC-1221) |
-| FR-450-AC-8 | In a `Bounce` variant whose `Up` transition guard is `descend(20000) and x = 1`, where `descend` is a recursive Boolean function with a `decreases(n)` measure, parameter `n: Rational[0, 20000; 1, 1]`, and body `if n = 0 then true else descend(n - 1)`, static replay of the `Up`-to-`Down` point trace evaluates the recursive call on an explicit stack: with `work_units` 100 it returns `HybridReplayRefusal::ResourceExhausted{counter: work_units}` while evaluating the guard and settles `incomplete`, `LimitReached{limit: work_units, value: 100, setting: accounting.work_units}`, with no verdict or counterexample; with `work_units` `u64::MAX` it returns `Consistent` without stack overflow. | Test (TC-1221) |
+| FR-450-AC-7 | Over `Bounce` and its `Up`/`Down` point lasso from FR-450-AC-6 with `loop_to` 0, a provider's `refuted` trace against `eventually [999999, 1000000] holds(h.x = 2)` needs at least 500,000 `ClaimSegment`s to evaluate the finite interval because the lasso repeats every 2 seconds and replay reaches the 1,000,000-second upper bound; with `work_units` 100,000, the meter cannot cover all required segment charges and exhausts deterministically before deciding the formula, so replay returns `HybridReplayRefusal::ResourceExhausted{counter: WorkUnits}` and settles `incomplete`, `LimitReached{limit: work_units, value: 100000, setting: accounting.work_units}`, with no verdict or `counterexamples` entry. | Test (TC-1221) |
+| FR-450-AC-8 | In a `Bounce` variant whose `Up` transition guard is `descend(20000) and x = 1`, where `descend` is a recursive Boolean function with a `decreases(n)` measure, parameter `n: Int[0, 20000]`, and body `if n = 0 then true else descend(n - 1)`, static replay of the `Up`-to-`Down` point trace evaluates the recursive call on an explicit stack: `n` is an admitted nonnegative integer measure (QSpec FR-146), and `descend(20000)` takes 20,000 recursive edges and 20,001 function calls; with `work_units` 100, the 100-unit meter cannot cover the required recursive call expansions and exhausts while evaluating the guard, so replay returns `HybridReplayRefusal::ResourceExhausted{counter: WorkUnits}` and settles `incomplete`, `LimitReached{limit: work_units, value: 100, setting: accounting.work_units}`, with no verdict or counterexample; with `work_units` `u64::MAX` it returns `Consistent` without stack overflow. | Test (TC-1221) |
 
 ## Dependencies
 
 - QSpec FR-193 "Hybrid trace" and "Trace replay" (the trace shape and the
   replay rules); QSpec FR-331 (the `HybridCounterexample`); QSpec FR-364
   (`reproduced-with-evaluated-witness` and `replay-parity`).
+- QSpec FR-146 (recursive function measures).
 - ADR-026 HY-2; ADR-013 O-16.
-- FR-120 (the evaluation meter) and FR-255 (accounting limits and their
-  setting names).
+- FR-255 (accounting limits and the `accounting.work_units` setting).
 - [FR-447](FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md)
   (the checked hybrid model and claim),
   [FR-250](FR-250-map-a-hybrid-solver-result-to-a-verdict.md) (the verdict
