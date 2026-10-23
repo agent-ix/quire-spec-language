@@ -25,6 +25,21 @@
 //! directly; IR names no QSL type. O-11's `QualifiedName` is still `identity`'s own minimal
 //! version, with the shape ADR-013 specifies; `identity` names the ticket
 //! that absorbs it.
+//!
+//! # Former paths (FR-401-AC-3)
+//!
+//! The ADR-013 O-16 `Category` a `Verdict` carries is
+//! `quire_semantic_value::catalog::Category`. This crate no longer re-exports
+//! it:
+//!
+//! ```
+//! use quire_semantic_value::catalog::Category;
+//! # let _ = Category::Success;
+//! ```
+//!
+//! ```compile_fail,E0432
+//! use qsl_replay::Category;
+//! ```
 
 #![forbid(unsafe_code)]
 
@@ -122,7 +137,7 @@ pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,
 };
-pub use limits::{AccountingLimits, CallerLimits};
+pub use limits::{AccountingLimits, CallerLimits, PrepareLimits, RenderLimits};
 pub use model_check::counterexample::{
     deadlock_freedom_clause, undefined_finding, ClaimPredicate, CounterexampleKind, Lasso,
     MappingSite, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
@@ -203,7 +218,7 @@ pub use proof_result::{
     StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
     TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
 };
-pub use qsl_foundation::{BackendId, Code, InternalFault, RequestIndex};
+pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
 // The inputs `call_site` takes and the typed operation name it and FR-115
 // select by. They are defined in `spine` because the spine compile reads
@@ -234,9 +249,6 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
-// The ADR-013 O-16 category a `Verdict` and each arm result carry, re-exported
-// so CG names `Category::Success` and `Category::Violation` through this crate.
-pub use qsl_foundation::diagnostic::Category;
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // FR-395: the types of `run`'s signature and result that the root did not

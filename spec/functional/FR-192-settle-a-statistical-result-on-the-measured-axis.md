@@ -124,8 +124,8 @@ pub enum Coverage { FiniteSample, Asymptotic }
 - `estimate` SHALL be absent when the least favourable test has none, and otherwise `p̂` for a probability bound, `Pr(M <= c | activated)`
   for `quantile q of M <= c`, `Pr(M < c | activated)` for `quantile q of M >= c`, the sample mean for a mean of a fraction, and
   the ratio estimate for a long-run fraction; for several tests it is the
-  least favourable test's (FR-189). `interval` SHALL be present for Okamoto and the
-  regenerative method and absent for SPRT. `coverage` SHALL be
+  least favourable test's (FR-189). `interval` SHALL be present for Okamoto, Clopper–Pearson and
+  the regenerative method and absent for SPRT. `coverage` SHALL be
   `Asymptotic` for the regenerative method and `FiniteSample` otherwise.
 - `quantile` SHALL be the least favourable test's `quantile` (FR-189): the
   empirical nearest-rank quantile of a quantile claim's counted samples, or

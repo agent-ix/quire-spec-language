@@ -18,15 +18,15 @@ use qsl_analyze::model_check::{check_model, ModelCheckRequest};
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     compile_package, deadlock_freedom_clause, replay_model_trace, settle_model_check,
     CertificateRequest, CounterexampleKind, DependencyInput, DigestDomain, DigestRecord,
-    DisagreementCause, Execution, IncompleteCause, InconclusiveCause, InternalFault,
-    ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
+    DisagreementCause, Execution, IncompleteCause, InconclusiveCause, ModelCheckItem,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
     ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue,
     QualifiedName, ReachedLimit, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplaySource,
     ResultLabel, RunStats, SettlementBasis, StateEnvironment, TemporalCounterexample,
@@ -35,6 +35,8 @@ use qsl_replay::{
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, Identifier, Origin, Role};
+use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::counter::{
     document, document_digest, package, subject, unit_text, universe, Documents, Letters, CONTRACT,

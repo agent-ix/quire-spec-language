@@ -4,8 +4,8 @@
 //! no form for with its locus (each variant is one code of FR-315's table,
 //! and [`Refusal::code`] spells it), and an internal fault (FR-096).
 
-use qsl_foundation::InternalFault;
 use qsl_semantics::model::observation::AdmissionFailure;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::automaton::AutomatonError;
 use crate::simulation::NotSimulated;

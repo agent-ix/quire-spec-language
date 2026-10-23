@@ -22,9 +22,9 @@ use qsl_eval::automaton::{
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::NotSimulated;
-use qsl_foundation::InternalFault;
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::{Cancel, Value, ValueType};
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 

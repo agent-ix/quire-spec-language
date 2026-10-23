@@ -18,8 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
-use qsl_semantics::family::FamilyOutcome;
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -27,6 +26,8 @@ use qsl_semantics::model::observation::{
     AdmittedObservations, ClauseSelection, ClauseSelectionInput, DocumentRef, Observation,
     ObservationLimits, Provisions, SelectedAnchor, SelectedObject,
 };
+use quire_eval::CallFailure;
+use quire_eval::FamilyOutcome;
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, NodeKey, ObjectId,
     ObjectReference, Outcome, UniverseId, Value,
@@ -437,7 +438,7 @@ fn no_cycle_observations(
     }
 }
 
-fn boolean_outcome(evaluation: qsl_eval::value::Evaluation) -> bool {
+fn boolean_outcome(evaluation: quire_eval::Evaluation) -> bool {
     match evaluation.outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(value))) => value,
         other => panic!("expected a completed Boolean outcome, got {other:?}"),
@@ -842,7 +843,7 @@ fn run_clause_evaluates_a_clause_selection() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
     assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.disposition.category().exit_code(), 0);
@@ -901,7 +902,7 @@ fn run_clause_reports_a_violation_over_a_cyclic_chain() {
     }
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!(report.disposition.truth(), Some(false));
     assert_eq!(report.disposition.category().exit_code(), 10);
@@ -2190,7 +2191,7 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
     }
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
     assert_eq!(report.disposition.category().exit_code(), 22);
 }
@@ -2224,7 +2225,7 @@ fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
     }
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
     assert_eq!(report.disposition.truth(), None);
     assert_eq!(report.disposition.category().exit_code(), 22);
@@ -2254,7 +2255,7 @@ fn run_clause_evaluates_the_same_identity_family() {
     assert!(!boolean_disposition(&report.disposition), "root != child");
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
 
     // a = b = child -- same object, success.
@@ -2275,7 +2276,7 @@ fn run_clause_evaluates_the_same_identity_family() {
     assert!(boolean_disposition(&report.disposition), "child = child");
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
 
     // b names `ghost`, no admitted object -- admit refusal, wrong-role-mapping.
@@ -2330,7 +2331,7 @@ fn run_clause_evaluates_the_same_identity_family() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Refusal
+        quire_semantic_value::catalog::Category::Refusal
     );
 
     // `n(a: Config::ConfigVersion): Integer`, selected the same way, is not
@@ -2415,7 +2416,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     let compiled = compiled();
     let sources = std::slice::from_ref(&compiled.source);
 
-    let checked_invariant_evaluation = qsl_eval::value::Evaluation {
+    let checked_invariant_evaluation = quire_eval::Evaluation {
         outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Refused(
             quire_exact::Refusal::CheckedInvariant {
                 cause: quire_exact::CheckedInvariantCause::EqualityOperandSourceNotAdmitted,
@@ -2443,7 +2444,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     assert_eq!(disposition.stage(), ClauseRunStage::Evaluate);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::InternalFailure
+        quire_semantic_value::catalog::Category::InternalFailure
     );
     assert_eq!(disposition.truth(), None);
     assert_eq!(disposition.category().exit_code(), 30);
@@ -2476,7 +2477,8 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // `package.evaluate_clause` against that fixture is still the
     // deliberate choice this test makes (disclosed above), not one forced
     // by a compile-time gap any more.
-    let call_failure_fault = qsl_foundation::diagnostic::InternalFault::new("call", "fault-kind");
+    let call_failure_fault =
+        quire_semantic_value::catalog::InternalFault::new("call", "fault-kind");
     let disposition_from_call_failure = ClauseDisposition::EvaluateFault(call_failure_fault);
     assert_eq!(
         disposition_from_call_failure.stage(),
@@ -2484,7 +2486,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     );
     assert_eq!(
         disposition_from_call_failure.category(),
-        qsl_foundation::diagnostic::Category::InternalFailure
+        quire_semantic_value::catalog::Category::InternalFailure
     );
     assert_eq!(disposition_from_call_failure.truth(), None);
     assert_eq!(disposition_from_call_failure.category().exit_code(), 30);
@@ -2495,7 +2497,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
 /// more of the general (non-internal-failure) kinds `convert_outcome`
 /// maps -- `Completed(true)`, `Completed(false)`, a kernel `Undefined`
 /// and a kernel `Incomplete` -- each built as a real
-/// `qsl_eval::value::Evaluation`, run through `super::super::
+/// `quire_eval::Evaluation`, run through `super::super::
 /// call::convert_outcome` itself (never a hand-copied expected
 /// `CallOutcome`), and only then checked against
 /// `ClauseDisposition::category`/`exit_code`'s own mapping (FR-301's exit
@@ -2507,7 +2509,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let sources = std::slice::from_ref(&compiled.source);
     let graph = compiled.package.graph();
 
-    let evaluation = |outcome| qsl_eval::value::Evaluation {
+    let evaluation = |outcome| quire_eval::Evaluation {
         outcome,
         location: None,
         losses: Vec::new(),
@@ -2525,7 +2527,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Success
+        quire_semantic_value::catalog::Category::Success
     );
     assert_eq!(disposition.truth(), Some(true));
     assert_eq!(disposition.category().exit_code(), 0);
@@ -2542,7 +2544,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Violation
+        quire_semantic_value::catalog::Category::Violation
     );
     assert_eq!(disposition.truth(), Some(false));
     assert_eq!(disposition.category().exit_code(), 10);
@@ -2559,7 +2561,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Undefined
+        quire_semantic_value::catalog::Category::Undefined
     );
     assert_eq!(disposition.truth(), None);
     assert_eq!(disposition.category().exit_code(), 10);
@@ -2582,7 +2584,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     let disposition = ClauseDisposition::Evaluate(mapped);
     assert_eq!(
         disposition.category(),
-        qsl_foundation::diagnostic::Category::Incomplete
+        quire_semantic_value::catalog::Category::Incomplete
     );
     assert_eq!(disposition.truth(), None);
     assert_eq!(disposition.category().exit_code(), 22);
@@ -3363,7 +3365,7 @@ fn tc466_step3_reaches_target_true_self_a_target_a_over_the_loop() {
 /// Evaluates TC-466 step 3(a)'s `ReachesTarget` (`self` `a`, `target` `c`,
 /// over the chain) through real FR-106 admission, charging `meter` instead
 /// of a fresh one -- the seam sub-case (e) needs.
-fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evaluation {
+fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> quire_eval::Evaluation {
     let documents = probe_documents(&config_version_step3_chain_objects(), "a", "c");
     let (unit, packages) = config_version_step3_unit_and_packages();
     let compiled = compose(
@@ -3726,7 +3728,7 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
     assert_eq!(
         report.disposition.category(),
-        qsl_foundation::diagnostic::Category::Refusal
+        quire_semantic_value::catalog::Category::Refusal
     );
     assert_eq!(report.disposition.truth(), None);
     assert_eq!(

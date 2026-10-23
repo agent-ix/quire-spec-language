@@ -14,12 +14,12 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, Provisions};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::{
     charges, check_envelope_target, domain_packages, one_source, recompile, wire_id, wrong_target,
@@ -37,7 +37,7 @@ use crate::spine::{
 use crate::target::{ReplayEntry, ReplayTarget, TargetMember};
 use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
 use crate::WitnessEnvelope;
-use qsl_foundation::diagnostic::Category;
+use quire_semantic_value::catalog::Category;
 
 /// FR-116's `stale_dependency`/`content-mismatch`: one payload identity
 /// that is not the recompiled package's, or one envelope identity that is
