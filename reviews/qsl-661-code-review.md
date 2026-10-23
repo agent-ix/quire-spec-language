@@ -107,3 +107,35 @@ The z3 probes were re-run on that head. Probe P5 is a `Counter` that gains `id: 
 | FND-013 | still-open | Found in this pass. |
 | FND-014 | still-open | Found in this pass. |
 | FND-015 | still-open | Found in this pass. |
+
+### Disposition pass 2
+
+Disposition pass 2 reviewed head `15aefe760`, which carries fix commit `f3668797c`. The z3 probes
+were re-run on it:
+
+- P1: `Unrolling{3..5}` and `InductionBase{3..5}` are all sat.
+- P2: `always[0,5] holds(c.value <= 2)` at depth 5 is sat, `always[0,4] holds(c.value <= 3)` at
+  depth 4 is sat, and `always[0,3] holds(c.value <= 3)` at depth 3 is unsat. `eventually[0,3]`
+  at depth 3 is unsat, and `eventually[0,3]` at depth 2 refuses `query-kind`. `eventually[0,2]`
+  at depth 2 is sat. `eventually[0,5]` at depths 5 and 7 is unsat. `eventually[0,4]` over a
+  counter that stops at 2 is sat at depth 4.
+- P5 (`id: Integer`): infinite-trace `Unrolling{1}` and `InductionBase{1}` are sat. The
+  false-extension query and the deadlock query both refuse `field-domain` at `c.id`.
+- Results (`pick(): Level`, post `self.value = result`): infinite base 1 is sat, step 1 is
+  unsat, false-extension `always[0,2] holds(c.value <= 3)` is unsat, and `always[0,2] holds(c.value <= 2)` is sat.
+- `InductionStep{2^20-1}` refuses `too-large` `script-bytes` before it builds the pairs.
+  `Unrolling{2^20-1}` writes a 257 MB script without hanging.
+
+The printed bytes now follow FR-315: `(= h<i+1> (or h<i> T))`, field equality with the later
+copy first, optional equality `(and (= P P') (or (not P) (= V V')))`, distinctness as
+`(not (and ..))`, and no folding beyond the condition constants. `cargo clippy -p qsl-eval -p qsl-replay -p qsl-analyze --all-targets -D warnings` is clean, and the smt tests pass.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | f3668797c. A `HashSet` dedupe by printed text, the byte count kept while disjuncts are pushed, and `check_pairs` before the step case builds its pairs. Probed: the 2^20-1 step case refuses at once. |
+| FND-006 | fixed | f3668797c. `eventually[0,3]` at `Unrolling{2}` refuses `query-kind`. |
+| FND-011 | fixed | f3668797c. `writes` no longer requires a finite domain. P5 is sat at depth 1. |
+| FND-012 | fixed | f3668797c. `candidates` refuses `field-domain` for a written field with no finite domain. P5's false-extension and deadlock queries refuse at `c.id`. |
+| FND-013 | fixed | f3668797c. The instance check refuses `instance-type`, there is no `internal-fault` code, and an oversize domain counts toward `applications`. |
+| FND-014 | fixed | f3668797c. The result disjunction is read in FR-120 result order, and later results fail only where earlier ones are rejected (AC-24, AC-27). The results probe is consistent. |
+| FND-015 | fixed | f3668797c. Points (a) to (e) all conform; the AC-15, AC-17, AC-22 and AC-25 byte tests pass. |

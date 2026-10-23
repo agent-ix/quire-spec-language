@@ -59,3 +59,13 @@ Disposition pass 1 reviewed head `784202027` against FR-315 as STD-338 (#1289) s
 | FND-003 | fixed | 4e7651d6e. The misapplied AC-3 and AC-1 tags were removed from the test file. The printer unit tests keep AC-1 and AC-3 tags for canonical printing, which is acceptable. |
 | FND-004 | still-open | Found in this pass. |
 | FND-005 | still-open | Found in this pass. |
+
+### Disposition pass 2
+
+Disposition pass 2 reviewed head `15aefe760` (fix commit `f3668797c`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f3668797c. `a_partial_construct_contributes_its_definedness_failure_at_every_position` is tagged FR-315-AC-4 and is built over `Tally`. |
+| FND-004 | fixed | f3668797c. AC-15 to AC-25 and AC-27 now have tagged tests. AC-26 and AC-28 are Analysis ACs about how CG's backend reads a model, which CG owns, not this crate. |
+| FND-005 | fixed | f3668797c. `assert_unsat` checks that every Int constant is ranged inside the search values before it trusts an unsat. The remaining direct `!sat` uses are over `Int[0,3]` fixtures. |
