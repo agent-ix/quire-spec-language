@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1173 step 9, the root-path half of FR-404-AC-9, which is not tagged: the
-//! request here is refused `NotACallItem` (a member's request is refused
-//! `NotReplayable` until QSL-980) and FR-060's T12-A rule is unmet (see
-//! QSL-1006). A consumer runs a call, builds a request and
-//! settles its refusal through the `qsl_replay` root alone. This file names
+//! TC-1173 step 9, the root-path half of FR-404-AC-9, which is not tagged: a
+//! consumer runs a call, builds the member's request (FR-404-AC-2), and
+//! settles a refused one (an index that is no member's) through the
+//! `qsl_replay` root alone. The parameter node of the call is not reachable
+//! from the root, so the built request is not replayed here (FR-060's T12-A
+//! rule is unmet, see QSL-1006). This file names
 //! no `qsl_replay::spine`, `qsl_semantics`, `qsl_foundation` or `quire_exact`
 //! item, so it stops compiling if the facade needs one. The six
 //! non-constructible cases are `compile_fail` doctests on `CallReplayContext`.
@@ -61,7 +62,6 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
     assert_eq!(context.package_id(), package_id);
     assert_eq!(requirements.members().len(), 1);
     let plugin = BackendId::new("acme");
-    let index = RequestIndex::new(99);
     let node = WireNodeId::from_digest([7; 32]);
     let bounds = [ProofBound::new(
         DomainKey::Node { node, path: vec![] },
@@ -73,6 +73,23 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
         parameter: node,
         value: WitnessValue::Integer(9),
     }];
+    let member = &requirements.members()[0];
+    let request: ReplayRequestWire = context
+        .request(
+            package_id,
+            member.request_index(),
+            &bounds,
+            &plugin,
+            assignments.clone(),
+        )
+        .expect("a member is an application item");
+    assert_eq!(request.package_id.1, package_id.hex());
+    assert_eq!(
+        request.replay_target.occurrence_key.as_ref(),
+        Some(member.occurrence())
+    );
+
+    let index = RequestIndex::new(99);
     let built: Result<ReplayRequestWire, PluginReplayRefusal> =
         context.request(package_id, index, &bounds, &plugin, assignments);
     let refusal = built.err().expect("no such item");

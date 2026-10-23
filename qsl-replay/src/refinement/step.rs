@@ -22,11 +22,11 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedRefinement, CheckedRow, StepClass, StepRow, StepTarget};
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::state::ModelState;
 use quire_exact::{ObjectReference, Value};
+use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::model_check::counterexample::{
@@ -904,7 +904,7 @@ fn mapping_verdict(
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_foundation::CatalogCode;
+    use quire_semantic_value::catalog::CatalogCode;
 
     use super::*;
 

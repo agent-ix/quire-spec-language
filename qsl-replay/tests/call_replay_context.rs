@@ -7,21 +7,20 @@
 //! `qsl_replay::spine`.
 //!
 //! Every member of a run is a `value-validity` application record, which
-//! `PluginReplayContext::request` does not replay until QSL-980 (FR-098
-//! application claims); so these tests compare the context with the oracle
-//! over each member, whatever that answer is, and the in-crate tests in
-//! `call_replay_context.rs` build a request through the context.
+//! `PluginReplayContext::request` builds a request for and `replay` decides
+//! as the application claim at the member's occurrence (FR-098-AC-22).
 
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
-    compile_package, run_with_replay_context, run_with_requirements, BackendId, Call, CallArgument,
-    CallOutcome, CallerLimits, DependencyInput, DomainKey, DomainKind, FiniteBound, Integer,
-    ObjectEnvironment, PluginReplayContext, PluginReplayRefusal, ProofBound, ReplayLimits,
-    RequestIndex, RunRefusal, RunWithReplayContext, SourceIdentity, SpineLimits, SuppliedLimits,
-    TerminalValue, Value, WireNodeId,
+    compile_package, replay, run_with_replay_context, run_with_requirements, BackendId, Call,
+    CallArgument, CallOutcome, CallerLimits, CanonicalAssignment, DependencyInput, DomainKey,
+    DomainKind, FiniteBound, InconclusiveCause, Integer, ObjectEnvironment, PluginReplayContext,
+    PluginReplayRefusal, ProofBound, ReplayLimits, ReplayRequestWire, RequestIndex, RunRefusal,
+    RunWithReplayContext, SourceIdentity, SpineLimits, SuppliedLimits, TerminalRecord,
+    TerminalValue, Value, WireNodeId, WitnessValue,
 };
 use quire_exact::Cancel;
 
@@ -194,57 +193,188 @@ fn the_entry_returns_what_run_with_requirements_returns() {
     assert_eq!(compiled.package_id().hex(), result.package_id().hex());
 }
 
-/// For each member of a completed, undefined and incomplete call, the
-/// context's answer is the oracle's. Every such answer is `NotReplayable`
-/// today, since a member is an application record; the `Ok` arm is not
-/// reached. FR-404-AC-2 and AC-3 (replay completes `10`, settles `refuted`)
-/// are met only when application claims replay (QSL-980), so this test
-/// carries neither tag and `Ok` is compared field by field for then.
-#[test]
-fn a_member_request_equals_the_oracles_whatever_the_outcome() {
-    let source = unit("");
-    let oracle = oracle(&source, CallerLimits::default());
-    let runs = [
-        run_q(&source),
-        run(
-            &source,
-            &call("r", integer(0), 1_000_000),
-            CallerLimits::default(),
-            &Cancel::new(),
-        )
-        .expect("runs"),
-        run(
-            &source,
-            &call("q", integer(3), 0),
-            CallerLimits::default(),
-            &Cancel::new(),
-        )
-        .expect("runs"),
-    ];
-    assert!(matches!(runs[1].outcome(), CallOutcome::Undefined { .. }));
-    assert!(matches!(runs[2].outcome(), CallOutcome::Incomplete(_)));
-    for result in &runs {
-        let members = result.requirements().members();
-        assert_eq!(members.len(), 1, "{:?}", result.outcome());
-        let member = &members[0];
-        let ours = result.context().request(
+/// The node of `function`'s first parameter in `source`, read through a
+/// separate compile.
+fn parameter(source: &str, function: &str) -> WireNodeId {
+    let identity = identity();
+    let limits = CallerLimits::default().spine;
+    let cancel = Cancel::new();
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &identity,
+            path: "unit.native",
+            bytes: source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("parses")
+    .into_value();
+    let models = spine::select(&parsed, &BTreeMap::new(), limits.model, &cancel)
+        .expect("selects")
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &spine::LockEvidence::default(),
+        limits,
+        &cancel,
+    )
+    .expect("checks")
+    .into_value();
+    let graph = checked.package().graph();
+    let identity = graph.callable(function).expect("declared").identity;
+    let parameter = graph
+        .semantic_graph()
+        .node(identity)
+        .and_then(|node| node.function_parameters())
+        .expect("a function node")[0];
+    WireNodeId::from_digest(*parameter.as_bytes())
+}
+
+fn assign(parameter: WireNodeId, x: i128) -> Vec<CanonicalAssignment> {
+    vec![CanonicalAssignment {
+        parameter,
+        value: WitnessValue::Integer(x),
+    }]
+}
+
+/// The context's request for the run's one member and the oracle's for the
+/// member's occurrence key, equal member by member.
+fn member_request(
+    source: &str,
+    result: &RunWithReplayContext,
+    function: &str,
+    x: i128,
+) -> ReplayRequestWire {
+    let oracle = oracle(source, CallerLimits::default());
+    let member = &result.requirements().members()[0];
+    let parameter = parameter(source, function);
+    let bounds = [bound_at(parameter)];
+    let ours = result
+        .context()
+        .request(
             result.package_id(),
             member.request_index(),
-            &[bound()],
+            &bounds,
             &plugin(),
-            Vec::new(),
-        );
-        let theirs = oracle.request(member.occurrence(), &[bound()], &plugin(), Vec::new());
-        match (ours, theirs) {
-            (Ok(ours), Ok(theirs)) => {
-                assert_eq!(ours.package_id, theirs.package_id);
-                assert_eq!(ours.obligation_identity, theirs.obligation_identity);
-                assert_eq!(ours.replay_target, theirs.replay_target);
-            }
-            (Err(ours), Err(theirs)) => assert_eq!(ours, theirs),
-            (ours, theirs) => panic!("disagree: {:?} vs {:?}", ours.err(), theirs.err()),
-        }
+            assign(parameter, x),
+        )
+        .expect("a member is an application item");
+    let theirs = oracle
+        .request(
+            member.occurrence(),
+            &bounds,
+            &plugin(),
+            assign(parameter, x),
+        )
+        .expect("the oracle builds it too");
+    assert_eq!(ours.package_id, theirs.package_id);
+    assert_eq!(ours.obligation_identity, theirs.obligation_identity);
+    assert_eq!(ours.replay_target, theirs.replay_target);
+    assert_eq!(ours.source_digests, theirs.source_digests);
+    assert_eq!(ours.dependencies, theirs.dependencies);
+    assert_eq!(ours.backend, theirs.backend);
+    assert_eq!(ours.stage_limits, theirs.stage_limits);
+    assert_eq!(ours.accounting_limits, theirs.accounting_limits);
+    assert_eq!(ours.byte_provision, theirs.byte_provision);
+    assert_eq!(ours.declared_domains.len(), theirs.declared_domains.len());
+    for (a, b) in ours.declared_domains.iter().zip(&theirs.declared_domains) {
+        assert_eq!(format!("{a:?}"), format!("{b:?}"));
     }
+    assert_eq!(ours.source, theirs.source);
+    assert_eq!(ours.profile_selections, theirs.profile_selections);
+    assert_eq!(ours.state_environment, theirs.state_environment);
+    assert_eq!(ours.supplied_limits, theirs.supplied_limits);
+    assert_eq!(ours.object_environment, theirs.object_environment);
+    assert_eq!(ours.package_id.1, result.package_id().hex());
+    assert_eq!(
+        ours.replay_target
+            .members
+            .function
+            .as_ref()
+            .map(ToString::to_string),
+        Some(function.to_owned())
+    );
+    assert_eq!(
+        ours.replay_target.occurrence_key.as_ref(),
+        Some(member.occurrence())
+    );
+    ours
+}
+
+fn settle(wire: ReplayRequestWire) -> TerminalRecord {
+    let replayed = replay(wire, ReplayLimits::default());
+    TerminalRecord::from_plugin_counterexample(RequestIndex::new(0), plugin(), &replayed)
+}
+
+/// FR-404-AC-2: `q`'s member builds the oracle's request, and its replay
+/// decides the application claim at the member: `x + 1` completes at
+/// `x = 9`, so the item settles `inconclusive` with `replay-parity`, naming
+/// `acme`. (The completed `10` is the call's value, not the claim's: the
+/// replay result carries the claim's Boolean, FR-098.)
+#[trace("TC-1173", "FR-404-AC-2")]
+#[test]
+fn a_completed_members_request_settles_replay_parity() {
+    let source = unit("");
+    let result = run_q(&source);
+    let record = settle(member_request(&source, &result, "q", 9));
+    assert!(matches!(
+        record.value(),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
+    assert_eq!(record.backend(), Some(&plugin()));
+}
+
+/// FR-404-AC-3: `r` at `x = 0` returns `undefined`, and its member's request
+/// replays to the application undefined, which refutes the item; `q` under
+/// no work budget returns `incomplete` and builds AC-2's request.
+#[trace("TC-1173", "FR-404-AC-3")]
+#[test]
+fn an_undefined_calls_member_refutes_and_an_incomplete_calls_request_is_unchanged() {
+    let source = unit("");
+    let undefined = run(
+        &source,
+        &call("r", integer(0), 1_000_000),
+        CallerLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("runs");
+    assert!(matches!(undefined.outcome(), CallOutcome::Undefined { .. }));
+    let record = settle(member_request(&source, &undefined, "r", 0));
+    assert_eq!(record.value(), &TerminalValue::Refuted);
+    assert_eq!(record.backend(), Some(&plugin()));
+    let r_x = member_request(&source, &undefined, "r", 3);
+    assert!(matches!(
+        settle(r_x).value(),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
+
+    let incomplete = run(
+        &source,
+        &call("q", integer(3), 0),
+        CallerLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("runs");
+    assert!(matches!(incomplete.outcome(), CallOutcome::Incomplete(_)));
+    let completed = run_q(&source);
+    let expected = member_request(&source, &completed, "q", 9);
+    let built = member_request(&source, &incomplete, "q", 9);
+    assert_eq!(built.package_id, expected.package_id);
+    assert_eq!(built.obligation_identity, expected.obligation_identity);
+    assert_eq!(built.replay_target, expected.replay_target);
+    assert_eq!(built.byte_provision, expected.byte_provision);
+}
+
+fn bound_at(node: WireNodeId) -> ProofBound {
+    ProofBound::new(
+        DomainKey::Node { node, path: vec![] },
+        Some(DomainKind::Integer),
+        FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64)).unwrap(),
+    )
+    .unwrap()
 }
 
 /// FR-404-AC-4: an index that is no member's refuses `NotACallItem` and
@@ -283,12 +413,20 @@ fn an_index_that_is_no_members_is_not_a_call_item() {
     }
 }
 
-/// Two packages holding `q` have different ids and equal member
-/// keys; one run's context refuses the other's pairing key.
+/// FR-404-AC-5: two packages holding `q` have different ids and equal member
+/// keys; one run's context refuses the other's pairing key, and each
+/// context's request for its own member carries its own package and source.
+#[trace("TC-1173", "FR-404-AC-5")]
 #[test]
 fn another_runs_package_is_a_foreign_run() {
-    let first = run_q(&unit(""));
-    let second = run_q(&unit(S));
+    let (first_source, second_source) = (unit(""), unit(S));
+    let first = run_q(&first_source);
+    let second = run_q(&second_source);
+    let own_first = member_request(&first_source, &first, "q", 9);
+    let own_second = member_request(&second_source, &second, "q", 9);
+    assert_eq!(own_first.package_id.1, first.package_id().hex());
+    assert_eq!(own_second.package_id.1, second.package_id().hex());
+    assert_ne!(own_first.source_digests, own_second.source_digests);
     assert_ne!(first.package_id(), second.package_id());
     assert_eq!(
         first.requirements().members()[0].occurrence(),
@@ -315,10 +453,11 @@ fn another_runs_package_is_a_foreign_run() {
     assert_eq!(record.backend(), Some(&plugin()));
 }
 
-/// `CallerLimits.spine` bounds the run: `s1.tokens` of 1 refuses at the S1
-/// token limit while `run_with_requirements` over the same inputs under
-/// `SpineLimits::default()` completes. (The request's `stage_limits` are
-/// asserted in the in-crate tests.)
+/// FR-404-AC-6: `CallerLimits.spine` bounds the run: `s1.tokens` of 1
+/// refuses at the S1 token limit while `run_with_requirements` over the same
+/// inputs under `SpineLimits::default()` completes, and the roomy limits
+/// reach the member's request.
+#[trace("TC-1173", "FR-404-AC-6")]
 #[test]
 fn only_the_spine_limits_bound_the_run() {
     let source = unit("");
@@ -344,13 +483,33 @@ fn only_the_spine_limits_bound_the_run() {
         &Cancel::new(),
     )
     .expect("the same inputs under the default SpineLimits complete");
-    let roomy =
-        CallerLimits::from_operands(["s1.tokens=200000", "library.definitions=9000"]).unwrap();
-    run(&source, &call, roomy, &Cancel::new()).expect("completes");
+    let roomy = CallerLimits::from_operands([
+        "s1.tokens=200000",
+        "library.definitions=9000",
+        "work_units=5000",
+    ])
+    .unwrap();
+    let result = run(&source, &call, roomy, &Cancel::new()).expect("completes");
+    let member = &result.requirements().members()[0];
+    let parameter = parameter(&source, "q");
+    let wire = result
+        .context()
+        .request(
+            result.package_id(),
+            member.request_index(),
+            &[bound_at(parameter)],
+            &plugin(),
+            assign(parameter, 9),
+        )
+        .expect("a member request");
+    assert_eq!(wire.stage_limits["s1.tokens"], 200_000);
+    assert_eq!(wire.stage_limits["library.definitions"], 9000);
+    assert_eq!(wire.accounting_limits.work_units, 5000);
 }
 
-/// The refusal order is `ForeignRun`, `NotACallItem`, then
-/// FR-290's, whatever the proof bounds.
+/// FR-404-AC-7: the refusal order is `ForeignRun`, `NotACallItem`, then
+/// FR-290's (`DuplicateBoundKey`), with two proof bounds at one key.
+#[trace("TC-1173", "FR-404-AC-7")]
 #[test]
 fn foreign_run_comes_before_not_a_call_item() {
     let first = run_q(&unit(""));
@@ -379,6 +538,13 @@ fn foreign_run_comes_before_not_a_call_item() {
     assert!(matches!(
         refusal(first.package_id(), r_index),
         PluginReplayRefusal::NotACallItem { .. }
+    ));
+    assert!(matches!(
+        first
+            .context()
+            .request(first.package_id(), q_index, &twice, &plugin(), Vec::new())
+            .err(),
+        Some(PluginReplayRefusal::DuplicateBoundKey { .. })
     ));
     // A foreign package is refused before the index is looked at.
     assert!(matches!(

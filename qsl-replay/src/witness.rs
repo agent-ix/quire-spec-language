@@ -170,6 +170,18 @@ impl Witness {
     /// [`DecodeRefusal::Malformed`] when an entry's text is not a value of
     /// the binding's type. No refusal leaves a partial result.
     pub fn decode(&self, bindings: &[WitnessBinding]) -> Result<Vec<WitnessValue>, DecodeRefusal> {
+        self.decode_optional(bindings, |_| false)
+            .map(|values| values.into_iter().flatten().collect())
+    }
+
+    /// [`Self::decode`] where a binding for which `optional` holds may have
+    /// no entry: its slot is `None` rather than [`DecodeRefusal::Missing`]
+    /// (FR-098 "unread parameters"). Every other refusal is `decode`'s.
+    pub(crate) fn decode_optional(
+        &self,
+        bindings: &[WitnessBinding],
+        optional: impl Fn(&WitnessBinding) -> bool,
+    ) -> Result<Vec<Option<WitnessValue>>, DecodeRefusal> {
         let entries = self
             .raw_bindings()
             .into_iter()
@@ -202,15 +214,20 @@ impl Witness {
             .zip(&names)
             .map(|(binding, name)| {
                 let mut matching = entries.iter().filter(|(entry, _)| entry == name);
-                let (_, text) = matching
-                    .next()
-                    .ok_or(DecodeRefusal::Missing(binding.parameter))?;
+                let Some((_, text)) = matching.next() else {
+                    return if optional(binding) {
+                        Ok(None)
+                    } else {
+                        Err(DecodeRefusal::Missing(binding.parameter))
+                    };
+                };
                 if matching.next().is_some() {
                     return Err(DecodeRefusal::Duplicate(binding.parameter));
                 }
                 binding
                     .value_type
                     .read(text)
+                    .map(Some)
                     .map_err(|fault| DecodeRefusal::Malformed {
                         parameter: binding.parameter,
                         value_type: binding.value_type,
