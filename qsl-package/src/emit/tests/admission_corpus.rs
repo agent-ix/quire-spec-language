@@ -476,7 +476,8 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     const NO_RECORD_FORM: &str =
         "lowering's record_form maps only object types, systems interfaces, record value types and variant types to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
-    const NO_TIMED_EMIT: &str = "QSL reads checked timed-model nodes but does not emit them";
+    const NO_TIMED_EMIT: &str =
+        "FR-393 rejects timed declarations before a timed CheckedGraph node can reach the emitter";
     &[
         (
             K::CompositeType(CompositeTypeForm::Alias),

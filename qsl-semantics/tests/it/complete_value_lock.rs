@@ -10,7 +10,7 @@ use std::path::Path;
 
 use ix_trace_rs::trace;
 use qsl_semantics::value::{
-    CatalogRole, DefinitionLock, HeaderLayer, LayerForm, ModelRole, Trigger,
+    CatalogRole, DefinitionLock, HeaderLayer, LayerForm, ModelRole, TemporalRole, Trigger,
 };
 use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
@@ -206,6 +206,45 @@ fn conformance_catalog_matches_qspec_complete_model_lock() {
     );
 }
 
+/// The complete-temporal lock's qualification rows and unconditional
+/// selection match the QSpec checkout named by `QSPEC_DIR`.
+#[trace("FR-361-AC-15", "TC-1017")]
+#[test]
+fn conformance_catalog_matches_qspec_complete_temporal_lock() {
+    let Some(document) = qspec_document("complete-temporal-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["role"].as_str().unwrap(),
+                row["definition"]["authority"].as_str().unwrap(),
+                row["definition"]["identity"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    let lock = lock();
+    let catalog: Vec<(&str, &str, &str)> = lock
+        .temporal_catalog()
+        .iter()
+        .map(|entry| (entry.role.as_str(), entry.authority, entry.identity))
+        .collect();
+    assert_eq!(catalog, rows);
+    let selection = &document["package_selection"];
+    let always: Vec<&str> = TemporalRole::ALL.iter().map(|role| role.as_str()).collect();
+    assert_eq!(always, strings(&selection["always"]));
+    assert!(selection["conditional"].as_array().unwrap().is_empty());
+    assert!(selection["exactly_one"].as_array().unwrap().is_empty());
+    assert_eq!(
+        TemporalRole::Root.identity(),
+        HeaderLayer::TemporalComplete.identity()
+    );
+}
+
 /// The vector's selected roles: the always roles less any omitted, then its
 /// additional roles.
 fn vector_roles<'a>(vectors: &'a Value, vector: &'a Value) -> Vec<&'a str> {
@@ -293,9 +332,11 @@ fn layer(identity: &str) -> HeaderLayer {
 #[trace("TC-490", "FR-110-AC-7")]
 #[test]
 fn the_requires_closure_of_each_layer_is_computed() {
-    use HeaderLayer::{ModelComplete, StateCore, StateGraph, StateQueries, ValueComplete};
+    use HeaderLayer::{
+        ModelComplete, StateCore, StateGraph, StateQueries, TemporalComplete, ValueComplete,
+    };
     let lock = lock();
-    let expected: [(HeaderLayer, &[HeaderLayer]); 5] = [
+    let expected: [(HeaderLayer, &[HeaderLayer]); 6] = [
         (StateCore, &[StateCore]),
         (StateQueries, &[StateCore, StateQueries]),
         (StateGraph, &[StateCore, StateQueries, StateGraph]),
@@ -308,6 +349,17 @@ fn the_requires_closure_of_each_layer_is_computed() {
                 StateGraph,
                 ValueComplete,
                 ModelComplete,
+            ],
+        ),
+        (
+            TemporalComplete,
+            &[
+                StateCore,
+                StateQueries,
+                StateGraph,
+                ValueComplete,
+                ModelComplete,
+                TemporalComplete,
             ],
         ),
     ];

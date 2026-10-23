@@ -1859,6 +1859,9 @@ pub enum CheckCause {
     /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
     /// for the same reason as `ProtocolAnchor` above.
     StateGraph(Box<StateGraphCause>),
+    /// FR-447: S3 refused a `hybrid` declaration. Boxed for the same reason
+    /// as `ProtocolAnchor` above.
+    Hybrid(Box<super::hybrid::HybridCause>),
     /// FR-381, FR-218: S3 refused a protocol's role, activation, capture or
     /// compensation template. Boxed for the same reason as `ProtocolAnchor`
     /// above.
@@ -2222,6 +2225,7 @@ impl CheckCause {
             Self::Temporal(cause) => cause.code(),
             Self::Hyper(cause) => cause.code(),
             Self::StateGraph(cause) => cause.code(),
+            Self::Hybrid(cause) => cause.code(),
             Self::ProtocolObligation(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
@@ -2304,6 +2308,7 @@ impl CheckCause {
             Self::Temporal(cause) => Some(cause.tag()),
             Self::Hyper(cause) => Some(cause.tag()),
             Self::StateGraph(cause) => cause.tag(),
+            Self::Hybrid(cause) => Some(cause.tag()),
             Self::ProtocolObligation(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
