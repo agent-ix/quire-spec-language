@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35, FR-091-AC-44, FR-093-AC-33, FR-093-AC-34.
+Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-55, FR-093-AC-33, FR-093-AC-34.
 
 ## Test Procedure
 
@@ -38,8 +38,10 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `unit c : Length = decimal(1, 5) * m;`, and again with `decimal(1, 4)`.
 2. Assemble `dimension Length;`, `unit m : Length = rational(1, 1);` and
    `function f using v(x: m): Boolean pure { true }`.
-3. Assemble FR-091-AC-34's unit.
-4. Assemble each of FR-091-AC-35's five units.
+3. Assemble FR-091-AC-34's unit, then the unit with the second
+   `dimension Mass;`, `unit a` and `unit d` removed.
+4. Assemble each of FR-091-AC-35's units, the five refused and the two
+   that declare `N = L / L`.
 5. Assemble FR-091-AC-44's unit with `function f using v(d: Quantity<ms>): Boolean pure { true }`, then with `d: Quantity<Time>`, then with `d: Quantity<nothing>`. Then check the first unit with a further `function g using v(): Boolean pure { f(3 s) }`. Check the first unit with a further `function h using v(): Boolean pure { f(3 ms) }`, and lower it. Assemble a unit declaring a unit `ms` and a record `ms`, a unit declaring two units named `ms` (refused `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named), and a unit declaring `record Quantity`.
 6. Check and lower the first unit of step 5 with each further body of
    FR-093-AC-33 (`h2`, `h3`, `h4` beside `h`, `n`, `k` and `c`, whose
@@ -48,6 +50,8 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `f(3 Time)`, `f(rational(1, 0) ms)`, `f(rational(1, 0) ghost)`, `e`,
    `g2`, `m` and `q`), and with `f(rational(1, 100000) ms)` under a rational-bits
    ceiling of `16`.
+7. Assemble each unit of FR-091-AC-45, AC-46 and AC-47.
+8. With admitted domain packages `P` and `Q` selected in that lock order, assemble TC-187's U11r, U11s, U11t, U11u, U11y, U11z1 and U11z2 and FR-142-AC-19's `tick` unit; then FR-091-AC-55's dimension-name collisions (FR-091-AC-55).
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -62,12 +66,12 @@ Tag the tests with the AC ids they back and `TC-483`.
   `5` and its span; `decimal(1, 4)` assembles.
 - Step 2: an unresolved-type-name error naming `m`.
 - Step 3: one refusal holding exactly the duplicate-name error (`Mass`), the
-  unresolved-name error (`Width`), the two cycle errors (`P`/`Q`, `b`/`c`)
-  and the zero-denominator error, each with the code FR-091-AC-34 names,
-  and no `PackageDeclarations`.
-- Step 4: each unit refuses with exactly one unit-graph topology error naming the
-  declarations it concerns, and no `PackageDeclarations`. Its catalog code
-  is the STD-112 cause.
+  unresolved-name error (`Ghost`) and the zero-denominator error, each with
+  the code FR-091-AC-34 names, and no `PackageDeclarations`; then exactly
+  one topology error, row 6 at `Length` with edges `b -> c`, `c -> b`.
+- Step 4: each refused unit refuses with exactly one topology error carrying
+  its QSpec FR-142 row's code and cause and naming what the row retains, and
+  no `PackageDeclarations`; the two `N = L / L` units assemble.
 - Step 5: the first assembles with the type of `d` the node of `ms` and no new declaration; the second and third each refuse the unresolved name (`missing_declaration`/`missing-name`) at assembly; the check of `g` refuses `ill_typed`/`type-mismatch` at the argument `3 s`, raised by check, not by the assembler; the check of `h` admits it and lowers `3 ms` to one `value`/`literal` node of `value_kind` `quantity`, value `"3"`, whose `semantic_type` and `type` are the `ms` unit node, referenced by the call's argument (FR-093-AC-33); the record-and-unit unit assembles, the two-unit unit refuses `ambiguous_declaration`/`ambiguous-name` at the two declarations, naming each, and `record Quantity` refuses `invalid_syntax`.
 - Step 6: `h2`'s and `h3`'s arguments share one literal node of value
   `"1/2"`; `h4`'s `3 ms` is `h`'s node; `n` lowers a literal of value `"-3"`; `k` lowers `quire.op.quantity.eq`
@@ -83,3 +87,9 @@ Tag the tests with the AC ids they back and `TC-483`.
   negation, and
   `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`
   and `16`.
+- Step 7: each refused unit refuses with exactly the one error its AC
+  names, the first defect in FR-142's order; each admitted unit assembles.
+- Step 8: each vector's TC-187 result, with `P`'s node refusals located at
+  `/lock/model_selections/0`; `tick` admitted; the collisions refuse
+  `conflicting_declaration`/`duplicate-declaration` at the source span and
+  at `/lock/model_selections/1`; the two `ms` units check.

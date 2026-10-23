@@ -89,9 +89,6 @@ classification is never mistakable for one.
 
 The emission half of the bridge — the TL formula, valuation request and
 correspondence record under
-`ix://agent-ix/quire-specification/FR-095` — is not exercised here and remains
-blocked on `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL
-capability, recorded as remaining work on compiler
-[#38](https://github.com/agent-ix/quire-spec-language/issues/38). A supported
+`ix://agent-ix/quire-specification/FR-095` — is not exercised here. A supported
 classification is a statement about the table, not evidence that any mapping was
 performed.
