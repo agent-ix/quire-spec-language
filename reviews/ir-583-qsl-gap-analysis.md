@@ -55,3 +55,26 @@ ticket if RT's edge belongs to a later slice.
 | FND-003 | medium | FR-401-AC-3 is proven only for definitions. The test shows that no QSL crate defines the three family types. It never shows that the nine old paths "each fail to compile from another crate". A `pub use` at any old path would pass the definition scan. I checked by hand that none exists at this head, but nothing stops one from coming back. A `compile_fail` proof is feasible: one `compile_fail` doctest per old path (`use qsl_eval::value::Evaluation;`, `use qsl_foundation::InternalFault;`, and so on), in a crate that depends on qsl-eval, qsl-semantics and qsl-foundation. One doctest per path stops one failure masking another. Pair them with a positive test that `use`s the new paths. | tests/it/family_outcome_layering.rs:49-74 |
 | FND-004 | medium | FR-401-AC-2's negative half is missing. The AC requires that "a fixture manifest in which `qsl-semantics` depends on `quire-eval` fails the check, naming the crate and the table". The test reads only the real workspace metadata, so the check is never shown to fail. Its message names the crate but not the table. Fix: run the same predicate over a fixture dependency set with `qsl-semantics` → `quire-eval`, and assert that the failure names both the crate and the table. | tests/it/family_outcome_layering.rs:696-740 |
 | FND-005 | low | FR-401-AC-7 is untagged: no test shows that FR-059's direction check reports RT's normal edge to `quire-eval` as clean, with no FB-11 cycle. If S0 owns it, add the fixture test. Otherwise record which slice does. | spec/functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md (AC-7) |
+
+## New findings (disposition pass 1)
+
+Round 1 was reviewed at f239768f617ad00b6e77a04e76ce2fcb5ac69faa, against
+FR-262 and FR-401 as amended by STD-335 (ac178fd85), which merge 854ea3b26
+brought into the branch.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The adapter's own `admit_request` has two branches no test reaches: the `Population` branch (unresolved id, wrong declared maximum, matching maximum) and the `Storage` mapping. The adapter test says these "are quire-eval's toy closure tests". The toy tests cover the scheduler, not this adapter code. | qsl-eval/src/value/expression/closure.rs:197-233; qsl-eval/tests/it/reference_adapter.rs:436-484 |
+| FND-007 | medium | FR-401-AC-3 as amended requires `qsl_replay::Category` to fail to compile from another crate. It compiles, because of the re-export in SR-12354 FND-001, and the `compile_fail` doctest list in qsl-eval/src/lib.rs does not include it. | qsl-eval/src/lib.rs:18-71; qsl-replay/src/lib.rs:236 |
+| FND-008 | medium | Two criteria added by STD-335 have no test. FR-401-AC-8 (host-body dispatch from an interpreted call site through the adapter) has none, and its implementation is SR-12354 FND-003. FR-262-AC-12 (Begin polling the meter's handle and a caller-supplied run's handle, over `call`/`evaluate` and over Begin) has none, and its implementation is SR-12354 FND-008. | spec/functional/FR-401-host-the-evaluation-interface-in-the-quire-eval-leaf.md (AC-8); spec/functional/FR-262-evaluate-values-and-calls-at-any-depth.md (AC-12) |
+| FND-009 | low | `begin_observes_the_meters_cancelled_handle` is traced to FR-262-AC-10, but it checks the Begin rule that AC-12 states, not AC-10's charge-time cancellation. Retag it `FR-262-AC-12`. | qsl-eval/tests/it/reference_adapter.rs:410-434 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed d726f6d26 | `registration_is_decided_from_the_packages_admitted_signature`, traced FR-401-AC-5, asserts `f` `Accepted`, the range-only `Int[0, 10]` `SignatureMismatch`, dependency `g` `Accepted` through `link_with`, a not-callable-by-name function `CallableNotAdmitted`, and an unknown key `CallableNotAdmitted`. |
+| FND-002 | fixed d726f6d26 | Adapter tests are now traced to FR-262-AC-4, AC-6, AC-7 and AC-11 (unknown key, two arguments, `f(10)`, and `f(9)` applied with one charge). The residual branches are FND-006. |
+| FND-003 | fixed 86590fbe4 | qsl-eval/src/lib.rs has one `compile_fail,E0432` doctest for each of the nine original old paths, plus a positive doctest of the new paths. The amended AC-3 entry is FND-007. |
+| FND-004 | fixed 86590fbe4 | `a_lower_layer_naming_quire_eval_fails_the_placement_check` asserts that the fixture fails with "qsl-semantics names quire-eval in [dependencies], which sits above it", naming both crate and table. |
+| FND-005 | fixed 86590fbe4 | `a_normal_edge_to_the_quire_eval_leaf_is_clean` (tools/arch-lint/metadata.rs), traced FR-401-AC-7 and TC-156. |

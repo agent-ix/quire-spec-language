@@ -119,3 +119,25 @@ meter's. The new code path is the adapter's `admit` (FND-004).
 3. **Begin's supplied-value cancel handle (FND-004).** This is the same
    point as SR-12352's: state that Begin's supplied-value run polls the
    meter's installed handle.
+
+## New findings (disposition pass 1)
+
+Round 1 was reviewed at f239768f617ad00b6e77a04e76ce2fcb5ac69faa. The fix
+commits are d726f6d26, 86590fbe4 and f239768f6. Merge 854ea3b26 brought in
+STD-335 (ac178fd85), which amends FR-262 and FR-401.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | FR-262 as amended by STD-335 says Begin's own supplied-value run polls the meter's installed handle. When a caller passes its own run, admission polls both handles. AC-12 tests all of this through Begin. The adapter's `admit` now does this, but the public entries do not. `CheckedPackageEvaluation::call` and `evaluate` still build their run over `Cancel::new()` and drive a `pre_admitted` closure, so the meter's handle is never polled at Begin. `call_supplied` polls only the caller's run handle. As a result, AC-12's run with a cancelled meter handle, and its run with a different handle on the meter, return a session instead of `Cancelled`. The amendment also conflicts with existing code. `received_equality_source_cause_crosses_actual_public_call_and_evaluate_unchanged` asserts `Ok(Incomplete)` through the public `call` for a meter that is already cancelled, and FR-401-AC-4 forbids editing that expected value. Draco must reconcile AC-12 with AC-4 before this can be fixed. | qsl-eval/src/value/expression/mod.rs:908-984; qsl-eval/src/value/expression/evaluate/invariants.rs:1500-1525 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | still-open | 86590fbe4 restored `pub use quire_semantic_value::catalog::Category;` in qsl-replay, so CG no longer breaks. But FR-401 as amended by STD-335, merged into this branch, now forbids exactly that re-export. Its former paths include `qsl_replay::Category`, it says no QSL crate re-exports a moved type at a new path either, and CG names `quire_semantic_value::catalog::Category`. FR-401-AC-3 now requires `qsl_replay::Category` to fail to compile. The re-export is a compatibility shim the spec forbids. To fix: delete it, and land a CG PR that names the SV path. |
+| FND-002 | fixed d726f6d26 | `admit_request` maps `types.admits(..)` `Err` to `RequestRefusal::Storage { parameter, failure }` with the parameter index. |
+| FND-003 | still-open | Draco has ruled. STD-335 (ac178fd85, merged into this branch) says a call site whose identity has a registered host body dispatches to it everywhere, and "the reference adapter follows the same rule; it has no exception" (FR-401-AC-8). The adapter still runs interpreted call sites in `Machine`. Its doc now says "that gap is carried by a code ticket", but names no ticket, and AC-8 has no test. |
+| FND-004 | fixed d726f6d26 | `PackageClosure::admit` builds its run over `meter.cancel().cloned().unwrap_or_default()`. The public entries are FND-008. |
+| FND-005 | fixed f239768f6 | Cargo.lock pins `quire-eval?branch=main#2b2f41d2`, the merged main commit. |
+| FND-006 | fixed d726f6d26 | `a_session_over_the_adapter_charges_one_call_for_a_chargeless_body` asserts `work == 1` for both meters. |
+| FND-007 | fixed d726f6d26 | `declaring` deduplicates with a `BTreeSet`, and `PackageTask` is now `pub struct PackageTask<X>(Frame<X>)` with a private `Frame`. |
