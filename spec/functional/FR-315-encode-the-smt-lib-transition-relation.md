@@ -176,8 +176,10 @@ internal-failure category, never `inconclusive` or `unsupported`:
   this way.
 - **HP-2.** FR-182's `settle_hyper_smt` settles an `EncodingRefused`
   outcome carrying `Fault` this way. When `HyperProductIdentity::of(item)`
-  returns `Fault`, it writes that `failed` record and does not refuse
-  `ItemIdentity`, because a fault is no evidence about the item's identity.
+  returns `Fault`, the outcome CG sends carries `product: Err` (Outcome
+  handoff), and `settle_hyper_smt` writes that `failed` record and does not
+  refuse `ItemIdentity`, because a fault is no evidence about the item's
+  identity.
 
 ## Behavior
 
@@ -848,7 +850,14 @@ impl HyperProductIdentity {
   EN-3's and EN-2's alike, to QSL as FR-182's `HyperSmtOutcome`, whose
   `product` is the `product` of the `HyperQuery` values it answers, or
   `HyperProductIdentity::of` over the same request when
-  `encode_hyper_query` refused. The base and step queries of one induction
+  `encode_hyper_query` refused. `product` is
+  `Result<HyperProductIdentity, InternalFault>`. When
+  `HyperProductIdentity::of` over the request returns
+  `SmtEncodingRefusal::Fault(f)` (and therefore `encode_hyper_query` does
+  too, in its first four checks), CG has no identity to send. It SHALL then
+  return `result: EncodingRefused { refusal: SmtEncodingRefusal::Fault(f) }`
+  with `product: Err(f)`, and FR-182 settles it `failed`. In every other case
+  `product` is `Ok`. The base and step queries of one induction
   result SHALL carry equal identities and equal depths. `settle_hyper_smt`
   settles an outcome only for the item and instance its identity names.
 
@@ -885,7 +894,7 @@ impl HyperProductIdentity {
 | FR-315-AC-27 | Over FR-315-AC-4's `Tally` with an added operation `peek(): Boolean` (empty frame, postcondition `post P { result = (self.tally < 3 and self.next = self.tally + 1) }`), `bump` unchanged, the postcondition failure of `peek` at copy `i` is printed over its one candidate as `(or U1 (and (not A1) U2))`: `U1` and `A1` read with `result` `false` (first in FR-120's result order), `U2` with `true`. `peek`'s disjunct has the postcondition part `(or A1 A2)`. | Test (TC-900) |
 | FR-315-AC-28 | Over FR-315-AC-1's `Counter` under event-position false-extension, a model of `Unrolling{depth: 5}` for `always[0,5] holds(c.value <= 3)` has live copies `0` to `3` and `h4`, `h5` true; CG reads it as the prefix `0, 1, 2, 3` ending at the terminal state 3, which FR-128 replays to `refuted`. A model of `Unrolling{depth: 2}` for `eventually[0,2] holds(c.value = 3)` gives the prefix `0, 1, 2`. Over the AC-26 base model for `always holds(c.value <= 1)` with a prefix step altered so that it is not enabled at its pre-state, replay refuses naming that step, and CG settles it as FR-127's table settles that refusal, V-6 `ReplayRefused` (FR-127-AC-3), not `InductionNotClosed`. A model of `Unrolling{depth: 2}` for `always[0,5] holds(c.value <= 1)` fails at the live, non-terminal position 2, below the horizon 5, so it is no CX-1 counterexample and the query gives no outcome at depth 2. | Analysis (TC-900) |
 | FR-315-AC-29 | Inside `qsl-eval`, `encode_smt_query` called with FR-315-AC-2's TP-1 item `always holds(c.value <= 3)` whose checked clause has had its profile set to event-position false-extension after S3, and with FR-315-AC-23's TP-3 item altered the same way, returns `SmtEncodingRefusal::Fault` carrying `InternalFault` (`runtime_invariant`, `established-invariant-broken`) naming the invariant that a TP-1, TP-3 or deadlock-freedom item binds infinite-trace, with no script and no `Refused` code. No well-formed request carries such an item. | Test (TC-900) |
-| FR-315-AC-30 | Settlement of a fault: an SMT `Inductive{depth: 1}` result for FR-315-AC-2's item whose FR-314 rebuild of the base query meets `SmtEncodingRefusal::Fault` gives `SmtProofCheck::Fault`, and FR-127 settles it `failed`, basis `unavailable`, `TerminalValue::Failed`, category failed. Over ADR-023 §8's secure vault, `settle_hyper_smt` for `NonInterference` at instance `v` with an `EncodingRefused` outcome carrying `Fault` settles `failed`, `Failed`, not V-8. With `HyperProductIdentity::of` returning `Fault`, it writes that `failed` record and refuses no `ItemIdentity`. | Test (TC-900) |
+| FR-315-AC-30 | Settlement of a fault: an SMT `Inductive{depth: 1}` result for FR-315-AC-2's item whose FR-314 rebuild of the base query meets `SmtEncodingRefusal::Fault` gives `SmtProofCheck::Fault`, and FR-127 settles it `failed`, basis `unavailable`, `TerminalValue::Failed`, category failed. Over ADR-023 §8's secure vault, `settle_hyper_smt` for `NonInterference` at instance `v` with an `EncodingRefused` outcome carrying `Fault` from a later check of `encode_hyper_query`, whose `product` is `Ok` and equal to the item's identity, settles `failed`, `Failed`, not V-8. Inside `qsl-eval`, with the request's checked clause altered after S3 so that `HyperProductIdentity::of` returns `Fault(f)`, CG's outcome is `EncodingRefused { refusal: Fault(f) }` with `product: Err(f)`, and `settle_hyper_smt` over that item writes a `failed`, `Failed` record and refuses no `ItemIdentity`. The same `Err` outcome settled for an item whose `of` returns an identity is refused `ProductMismatch` naming `clause`. | Test (TC-900) |
 | FR-315-AC-31 | FR-315-AC-1's `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` has, at each position `p` in `0..=3`, the violation disjuncts `h<p>` and then `(not (<= s<p>.c.value 3))`, followed by `inc`'s postcondition failure `(and (not h<p>) F)`, and no disjunct for a position past 3. `inc` has that failure term because `Inc`'s right side `pre(self.value) + 1` is an integer sum compared by `=` with the `Int[0, 3]` field `self.value`, so FR-104's equality typing (TC-1084) coerces it into `Int[0, 3]`, a range coercion with a definedness condition. The query has no atom-failure disjunct, because `c.value <= 3` holds no partial construct, and no precondition-failure disjunct, because `CanInc` (`self.value < 3`) holds none. | Test (TC-900) |
 | FR-315-AC-32 | `SmtEncodingRefusal` has exactly the two arms `Refused { code, locus }`, its code one of the closed refusal set, and `Fault(InternalFault)`. No refusal code names a broken invariant. None of FR-315-AC-21's requests returns `Fault`. Inside `qsl-eval`, an encoding called with a TP-1 item whose checked clause has had its one atom removed after S3, which no well-formed request carries, returns `Fault` naming the atom invariant, not `Refused` with `item-form`. | Test (TC-900) |
 

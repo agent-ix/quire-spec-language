@@ -119,7 +119,8 @@ pub enum SmtMethod {
 
 pub struct HyperSmtOutcome {
     pub result: HyperSmtResult,
-    pub product: HyperProductIdentity, // the `product` of the queries it answers
+    pub product: Result<HyperProductIdentity, InternalFault>, // the `product` of the queries it answers;
+                                       // `Err` only when FR-315's `of` faulted (FR-315 "Outcome handoff")
 }
 
 pub fn settle_hyper_smt(
@@ -202,14 +203,21 @@ FR-243 basis, O-16 category and method.
   When `of` refuses with a `Refused` code, it SHALL write no record and
   refuse `HyperSettleRefusal::ItemIdentity` carrying that refusal. When `of`
   returns `SmtEncodingRefusal::Fault`, it SHALL write a `failed` record,
-  `TerminalValue::Failed`, as for `BackendFault`, and refuse nothing. When the two
-  identities differ, the outcome is no evidence for the item: it SHALL
+  `TerminalValue::Failed`, as for `BackendFault`, and refuse nothing,
+  whatever `outcome.product` holds: `of` is deterministic, so CG's own call
+  faulted too and its outcome is `EncodingRefused` carrying `Fault` with
+  `product: Err` (FR-315 "Outcome handoff"). When `of` returns an identity
+  and `outcome.product` is `Err`, the outcome is no evidence for the item:
+  it SHALL write no record and refuse `HyperSettleRefusal::ProductMismatch`
+  naming `clause`. When the two identities differ, the outcome is no evidence for the item: it SHALL
   write no record and refuse `HyperSettleRefusal::ProductMismatch`, naming
   the first member that differs in the order `clause`, `subjects`,
   `instance`.
 - `settle_hyper_smt` SHALL check a supplied `witness` itself, by FR-183's
   "Match witness" rules, over the item's own clause and the `ModelSystem`
-  of each of the item's subjects, under `outcome.product.instance()`, and
+  of each of the item's subjects, under the instance of `outcome.product`,
+  which is `Ok` and equal to the item's identity once the check above has
+  passed, and
   bounded by `replay_limits`. The resulting `MatchWitnessCheck` is the one
   the rules below read. A witness checked over any other clause, subjects
   or instance is never an input, so the check is bound to the identity
@@ -224,7 +232,7 @@ FR-243 basis, O-16 category and method.
   - `Inductive{depth}` by the rules below;
   - `InductionNotClosed{depth}` as V-6 `InductionNotClosed{depth}`;
   - `Violated` only through QSL's own replay. When `counterexample.instance`
-    differs from `outcome.product.instance()`, `settle_hyper_smt` SHALL
+    differs from the instance of `outcome.product`, `settle_hyper_smt` SHALL
     write no record and refuse `ProductMismatch` naming `instance`.
     Otherwise it SHALL replay the counterexample itself, by FR-183's
     `Lockstep` or `Undefined` rules for its kind, over the item's own clause

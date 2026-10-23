@@ -68,8 +68,9 @@ the printed script.
 21. Inside `qsl-eval`, encode FR-315-AC-29's TP-1 and TP-3 items with their
     profile set to event-position false-extension after S3.
 22. Settle FR-315-AC-30's `Inductive` result whose rebuild meets `Fault`,
-    and the vault's `EncodingRefused` outcome carrying `Fault`, the second
-    also with `HyperProductIdentity::of` returning `Fault`.
+    the vault's `EncodingRefused` outcome carrying `Fault` with an `Ok`
+    product, the `Err`-product outcome built when `HyperProductIdentity::of`
+    faults, and that outcome against an item whose `of` gives an identity.
 23. Encode FR-315-AC-1's query and read the negated property's disjuncts.
 24. Call the encoding inside `qsl-eval` with a TP-1 item whose checked
     clause has its atom removed, and repeat FR-315-AC-21's requests.
@@ -129,7 +130,9 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 - Step 21: `SmtEncodingRefusal::Fault` naming the infinite-trace invariant,
   with no script and no `Refused` code, for both items.
 - Step 22: `SmtProofCheck::Fault` and `failed`, `Failed`, category failed;
-  the hyper outcome `failed`, `Failed`, not V-8; no `ItemIdentity` refusal.
+  the `Ok`-product hyper outcome `failed`, `Failed`, not V-8; the
+  `Err`-product outcome `failed`, `Failed`, with no `ItemIdentity` refusal;
+  against the other item, `ProductMismatch` naming `clause`.
 - Step 23: `h<p>` and then `(not ...)` at positions 0 to 3 only, each
   followed by `inc`'s postcondition failure; no atom-failure or
   precondition-failure disjunct.

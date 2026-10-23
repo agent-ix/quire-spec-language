@@ -94,3 +94,17 @@ fixes `always[0,u]`'s closed-boundary reading.
 FND-002 leaves the internal fault without a settlement row. Fix FND-001 and
 FND-002 in this PR; FND-003 may be deferred. For #1287: do not encode a TP-1
 or TP-3 item under false-extension; treat it as an internal fault.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | When `HyperProductIdentity::of` faults, CG cannot hand any outcome to QSL, so the HP-2 fault rule never runs. FR-182's `HyperSmtOutcome.product` is a required `HyperProductIdentity`. FR-315's Outcome handoff makes it the queries' `product`, or `HyperProductIdentity::of` over the same request when `encode_hyper_query` refused. `of` is deterministic, so whenever `settle_hyper_smt`'s own `of(item)` returns `Fault`, CG's `of` returned `Fault` too. CG then has no product to put in an outcome. The new rule in FR-182, "when `of` returns `SmtEncodingRefusal::Fault` it SHALL write a `failed` record", and FR-315-AC-30's vector can therefore not be reached through `settle_hyper_smt`. The same holds for an `encode_hyper_query` fault raised in its first four (identity) checks. Fix: let the outcome carry no product for a fault, for example `product: Result<HyperProductIdentity, InternalFault>`, or add a settlement entry that takes the item and the fault. State in Outcome handoff what CG returns in that case. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:177-180, :847-853; spec/functional/FR-182-settle-a-hyper-verdict.md:120-123, :199-206 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The TP-1/TP-3/Induction false-extension encodings and the widening of rule 4b are removed, and `h<i>` and `(not h0)` are for TP-2 only. The invariant "a TP-1, TP-3 or deadlock-freedom item binds infinite-trace" is added, citing FR-123, ADR-014 TR-3 and ADR-018 §1. AC-29 is now a `Fault` vector, and the owner question is withdrawn. |
+| FND-002 | fixed | `SmtEncodingRefusal` now has the two arms `Refused{code, locus}` and `Fault(InternalFault)` for every call. A fault settles `failed`/`Failed`. FR-314 gains `SmtProofCheck::Fault`, FR-127 gains a row for it, and FR-182 gains rows for `EncodingRefused`(`Fault`) and for `of` returning `Fault`. These rows agree with FR-127's replay `InternalFault` row and FR-182's `BackendFault` row. The HP-2 case where `of` faults has no outcome, which raises FND-004. |
+| FND-003 | fixed | AC-31 now grounds `inc`'s failure term: `pre(self.value) + 1` compared by `=` with an `Int[0, 3]` field is coerced by FR-104's equality typing (TC-1084). |
