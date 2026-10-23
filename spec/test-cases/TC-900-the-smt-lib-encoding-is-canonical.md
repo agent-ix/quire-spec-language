@@ -13,10 +13,10 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-27.
+Scope: FR-315-AC-1 to FR-315-AC-6 and FR-315-AC-15 to FR-315-AC-28.
 
-Steps 8, 10 and 18 read scripts with a `QF_LIA` solver, step 18 with
-replay as well; every other step reads
+Steps 8, 10, 18 and 20 read scripts with a `QF_LIA` solver, steps 18 and
+20 with replay as well; every other step reads
 the printed script.
 
 ## Test Procedure
@@ -63,6 +63,8 @@ the printed script.
     of Reading a satisfiable model, and replay what they yield.
 19. Encode `Unrolling{depth: 1}` for `always holds(t.tally < 3)` over
     FR-315-AC-27's `Tally` with `peek`.
+20. Read the false-extension `Counter` models and the altered base model
+    FR-315-AC-28 describes, and replay what they yield.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -112,3 +114,6 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
   `InductionNotClosed{depth}`.
 - Step 19: `peek`'s postcondition failure `(or U1 (and (not A1) U2))` and
   postcondition part `(or A1 A2)`, results `false` then `true`.
+- Step 20: the prefixes `0, 1, 2, 3` (replayed to `refuted`) and `0, 1, 2`;
+  the altered model's replay refused naming the altered step, settled V-6
+  `ReplayRefused`.
