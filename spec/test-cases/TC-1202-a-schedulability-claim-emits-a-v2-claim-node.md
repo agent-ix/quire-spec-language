@@ -50,7 +50,6 @@ Tag the tests `#[trace("TC-1202", "FR-454-AC-n")]`.
   `jitter 0 ms` variants keep `CtlFp`'s node id; the doubled claim is one
   node with ordinals 0 and 1.
 - Step 3: the claim and its task set; `clause-root-unresolved` for each bad
-  triple and for the other lookups; `Failed` with no `check_closed_form`
-  call; `stale_dependency`/`content-mismatch` naming both node ids.
+  triple and for the other lookups; `Failed` with no evidence checked; `stale_dependency`/`content-mismatch` naming both obligation identities.
 - Step 4: `invalid_package`/`invalid-value`; `invalid_semantic_graph` at
   `tasks`; `invalid_timed_model`/`invalid-task-set` at `a`'s aggregate.
