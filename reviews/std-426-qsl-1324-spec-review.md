@@ -52,3 +52,11 @@ the same two deletions. One of the two PRs is redundant.
 ## Verdict
 
 Mergeable. The record-domain rule, the retire-predicate scope and both deferral removals are complete and match the code paths they name. The one low finding can be fixed in place. Before merge: merge origin/main, which merges clean, and close #1368 (STD-434) or rebase it, since it duplicates this PR's FR-209 and FR-216 deletions and conflicts in FR-209.
+
+## Dispositions
+
+Round 1, against head 861ec646. Gate `make check-spec-validation` at 861ec646: exit 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
