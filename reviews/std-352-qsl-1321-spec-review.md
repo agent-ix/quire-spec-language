@@ -42,3 +42,9 @@ Examined, clean:
 Mergeable after FND-001 (medium) are fixed or dispositioned by the lead.
 
 Conflicts with origin/main: FR-027 (2 hunks). Conflicts with open heads: #1303 (4 conflicts). Clean against #1326, which carries the same TC-105 text.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head 373a99e6. Each library source file SHALL count toward `dependent_bytes` by its size, with the model and program sources; no limit counts library files. Each unit of an array `program` counts as a program source. ## Acceptance Criteria \| ID \| Criteria \| Verification \| \| --- \| --- \| --- \| \| FR-027-AC-1 \| CLI ou |
