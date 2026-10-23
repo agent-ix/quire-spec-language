@@ -1631,7 +1631,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=ir-588-s4-eval#f9d27bc07306f50cb472af99b43589bc895c7608"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#a92145c386e8fec2fd0decf8435cfcd636cdbfe3"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1686,7 +1686,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv#60b05d42975156500578db377c26aa2d63938a74"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#472e609f6ec608d1b5093ba70955ae29d2704389"
 dependencies = [
  "quire-canonical",
  "quire-exact",
