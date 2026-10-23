@@ -81,9 +81,9 @@ append-after-the-same-row conflicts; resolve by union in id order.
 
 ## Dispositions
 
-| FND | outcome | reason |
+| FND | Outcome | Reason |
 | --- | --- | --- |
-| FND-001 | fixed | The TC is renumbered TC-1250, free on main and on every open PR head. #1349 keeps TC-1202. Every citation in FR-315, FR-314, FR-182 and FR-255 now names TC-1250. |
-| FND-002 | fixed | The carrying types now exist. FR-126's `ModelCheckRequest` gains `smt_encoding: SmtEncodingLimits` and `smt_run: SmtRunLimits`. FR-338's `CertificateRequest` inputs gain `smt_encoding`, the run's values, and FR-314 reads `CertificateRequest.smt_encoding`. FR-315's refinement queries carry no size measure, so `check_refinement_smt_proof` reads no encoding limit and `RefinementCertificateRequest` needs no member. New FR-315-AC-42 (TC-1250 step 6). |
-| FND-003 | fixed | Lead ruling (lead default, not an owner answer; Peter may veto). FR-315 states that the `smt_encoding.*` values are part of the request identity and the cache key, and that a result is reused only for equal values. On a provider request they travel as QSpec FR-368's `temporal.smt_encoding` member (closed schema, `PositiveCount` members), added in QSpec #411. The run limits travel as `temporal.limits.max_solver_steps` and `max_solver_time`. |
-| FND-004 | fixed | FR-314 "Encoding limits" now states the refused-rebuild rule: a `too-large` rebuild under the recorded limits is rejected `QueryMismatch` at that part and settles `inconclusive`, `CertificateRejected`. This matches #1312. FR-314-AC-7 names that outcome. |
+| FND-001 | fixed | Fix commit c1d50e255 (head 82166cff). The TC is now TC-1250, which is free on main and on every open head; TC-1202 remains only in review files. |
+| FND-002 | fixed | FR-126 `ModelCheckRequest` gains `smt_encoding` and `smt_run`, and FR-338 `CertificateRequest` gains `smt_encoding`. FR-314 reads `CertificateRequest.smt_encoding`. `check_refinement_smt_proof` reads none, which is consistent with FR-315's refinement refusal set, which has no `too-large`. New AC-42. |
+| FND-003 | fixed | FR-315 puts the `smt_encoding.*` values in the request identity and cache key, carried on the wire as QSpec FR-368 `temporal.smt_encoding` (#411 f3960d5d). AC-42 tests that 7 and 8 differ and that the time budget does not. |
+| FND-004 | fixed | A `too-large` rebuild is rejected `QueryMismatch` at its part and settles `inconclusive` `CertificateRejected`. AC-7 names it, which is consistent with #1312. |
