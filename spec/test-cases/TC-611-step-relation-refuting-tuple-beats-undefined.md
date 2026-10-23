@@ -18,7 +18,7 @@ Scope: FR-179-AC-5, FR-182-AC-6.
 
 ## Test Procedure
 
-Fixture: the `Cell` model of FR-179-AC-4 and the relation `R2` (`1 / (1 - x.k) > y.k`).
+Fixture: the `Cell` model of FR-179-AC-4 and the relation `R2` (`3 mod (2 - 2 * x.k) > y.k`).
 
 1. Run `R2` through EN-1.
 2. Replay its counterexample and settle the outcome.
