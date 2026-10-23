@@ -1269,6 +1269,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::DependencyIdentityMismatch { .. }
         | ReplayRefusal::PackageIdMismatch { .. }
         | ReplayRefusal::UnknownFunction { .. }
+        | ReplayRefusal::ClaimOccurrence { .. }
         | ReplayRefusal::UnknownOperation { .. }
         | ReplayRefusal::WrongReplayTarget { .. }
         | ReplayRefusal::TargetMismatch { .. }

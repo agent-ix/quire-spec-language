@@ -6,11 +6,13 @@
 
 use std::collections::BTreeMap;
 
+use ix_trace_rs::trace;
 use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_replay::spine::default_accounting;
 use qsl_replay::{
-    run_with_replay_context, Call, CallArgument, CallerLimits, DependencyInput, Integer,
-    ObjectEnvironment, PluginReplayRefusal, TerminalValue, Value,
+    replay, run_with_replay_context, Call, CallArgument, CallerLimits, CanonicalAssignment,
+    DependencyInput, InconclusiveCause, Integer, ObjectEnvironment, ReplayLimits, TerminalRecord,
+    TerminalValue, Value, WitnessValue,
 };
 use qsl_route::request::items_from_requirements;
 use qsl_route::Registry;
@@ -24,12 +26,12 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     function q using v(x: Int[0, 9]): Integer pure { x + 1 }\n";
 
 /// A member's request, built from the item `items_from_requirements` writes
-/// at the member's index and that item's real proof bounds, is refused
-/// `NotReplayable` and settles `inconclusive`: a member is an application
-/// record, which `PluginReplayContext::request` does not replay until
-/// QSL-980. The replayed arms of FR-404-AC-2 and AC-3 are not asserted here.
+/// at the member's index and that item's real proof bounds, is an application
+/// item: it builds, replays the application claim and settles
+/// `inconclusive` with `replay-parity` (`x + 1` completes at `x = 9`).
+#[trace("TC-1173", "FR-404-AC-2")]
 #[test]
-fn a_members_item_bounds_refuse_not_replayable_until_application_claims() {
+fn a_members_item_bounds_build_a_request_that_replays() {
     let call = Call {
         function: "q".to_owned(),
         arguments: vec![CallArgument {
@@ -77,23 +79,40 @@ fn a_members_item_bounds_refuse_not_replayable_until_application_claims() {
     let item = &items[member.request_index().get()];
     assert_eq!(item.occurrence(), member.occurrence());
     let plugin = BackendId::new("acme");
-    let refusal = result
+    let callable = graph.callable("q").expect("declared");
+    let parameter = graph
+        .semantic_graph()
+        .node(callable.identity)
+        .and_then(|node| node.function_parameters())
+        .expect("a function node")[0];
+    let node = qsl_foundation::digest::WireNodeId::from_digest(*parameter.as_bytes());
+    let assignments = vec![CanonicalAssignment {
+        parameter: node,
+        value: WitnessValue::Integer(9),
+    }];
+    let wire = result
         .context()
         .request(
             result.package_id(),
             member.request_index(),
             item.proof_bounds(),
             &plugin,
-            Vec::new(),
+            assignments,
         )
-        .err()
-        .expect("an application item is not replayable yet");
+        .expect("an application item builds a request");
     assert_eq!(
-        refusal,
-        PluginReplayRefusal::NotReplayable {
-            key: member.occurrence().clone()
-        }
+        wire.replay_target.occurrence_key.as_ref(),
+        Some(member.occurrence())
     );
-    let record = refusal.record(member.request_index(), plugin);
-    assert!(matches!(record.value(), TerminalValue::Inconclusive(_)));
+    let replayed = replay(wire, ReplayLimits::default());
+    let record = TerminalRecord::from_plugin_counterexample(
+        member.request_index(),
+        plugin.clone(),
+        &replayed,
+    );
+    assert!(matches!(
+        record.value(),
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
+    assert_eq!(record.backend(), Some(&plugin));
 }
