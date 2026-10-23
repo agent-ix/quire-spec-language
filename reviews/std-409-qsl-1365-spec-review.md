@@ -81,3 +81,45 @@ are real gaps. Everything else, including every other hand-derived vector,
 the reset and pre-jump rules, the interval conversions, the horizon rule and
 the S4 emission of the restored forms, is correct and consistent with QSpec
 #415. No scope deferral was found.
+
+## New findings (disposition pass 1)
+
+Re-checked at bd8474e1, which merges #1364 (41697826) and origin/main;
+origin/main is an ancestor. `make check-spec-validation` with QSPEC_DIR at
+QSpec 073c4fc6 exits 0, with no finding on a touched file. The conformance
+run is recorded in the Linear comment.
+
+Hand derivations of the corrected vectors:
+
+- FR-450-AC-5: `1 / (h.v - 5) != 0` is true wherever it is defined, so the
+  decisive instant is `15/2`, where `v = 5`, and the kind is
+  `UndefinedEvaluation`. For `< 100`, `15 - 2t = 1/100` at `t = 1499/200`,
+  where `1 / (1/100) = 100` is not below 100, so the decisive instant is
+  `1499/200` and the kind is `Formula`. Correct.
+- FR-450-AC-6: with `loop_to` 0, the last state `(Up, 0)` equals the start
+  and the total dwell is 2, so it reproduces. `eventually always x < 1` is
+  false on the periodic behaviour, since `x = 1` at every odd time. With
+  `loop_to` 1, the jumps replay but `Up` is not `Down`, so the trace fails
+  `Loop`. With `x = 1/2`, reset `true` keeps 0, so it fails `Jump`.
+  `loop_to` 2 names the last state and is refused. Correct.
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-007 | medium | FR-447 now refuses an operator with no interval under `quire.temporal.timed/v1`, which QSpec admits. Its per-profile list gives `timed/v1` "every rational bound, either end open or closed, and `[q, *]`", gives "an operator with no interval" only under infinite-trace, and says "A bound, end, `*` or missing interval the profile does not admit SHALL refuse … at the operator's span". So `always holds(h.v < 30)` under `timed/v1` is refused. QSpec FR-370's profile table admits `null` under `timed/v1`, and QSpec FR-193 reads a claim with no interval "where the profile admits an unbounded operator". Fix: add "and an operator with no interval" to the `timed/v1` entry, with a vector in FR-447-AC-11 or AC-15. | spec/functional/FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md:420-444 | wrong-requirement |
+| FND-008 | low | FR-450-AC-6's `Bounce` gives no invariants. The grammar's `hybrid-mode` requires an `invariant` block, and the initial set (the first mode's invariant at time 0) and static and exact check 2 depend on it, so the AC's outcomes cannot be checked from its text. Fix: write `Bounce` in full, for example `Up` with `invariant { x >= 0 and x <= 1 }` and `Down` likewise. | spec/functional/FR-450-replay-a-hybrid-trace-against-the-checked-hybrid-model.md (FR-450-AC-6) | wrong-requirement |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-450-AC-6 and TC-1221 step 6 expect `Jump` for the `x = 1/2` trace, add `loop_to` 1 as the `Loop` case, and refuse `loop_to` 2. The hand derivation agrees. |
+| FND-002 | fixed | FR-450 decides by QSpec's decisive instant. AC-5 has `!= 0` giving `UndefinedEvaluation` at `15/2` and `< 100` giving `Formula` at `1499/200`, both hand-checked. |
+| FND-003 | fixed | #1364 is merged in. Its ACs are FR-447-AC-13..15, the restored ones are AC-6..12, and every AC id appears once. The profile pin is gone and the interval form follows the profile. The I2 read-back covers every restored form (rule text and FR-447-AC-16). |
+| FND-004 | fixed | FR-250 adds the provider outcome `NoInitialState` and its row `Inconclusive(NoInitialState)`, never `Proved`. FR-250-AC-5 and TC-705 step 5 use `initial { mode Moving when { v = 30 }; }`. |
+| FND-005 | fixed | Interval evaluation of a recursive call whose measure or base case is undecided takes the result type's whole range, so static replay terminates. FR-450-AC-5 has the vector. |
+| FND-006 | fixed | The use case writes `Braking2` in full, with the reset `{ v = 0 and a >= 1 }`. AC-12 requires node equality with QSpec's `restored_nodes` up to the source map. |
+| FND-007 | still-open | New in this pass. |
+| FND-008 | still-open | New in this pass. |
+
+Verdict after disposition pass 1: FND-001 to FND-006 are fixed. Not
+mergeable until FND-007 is fixed (FND-008 is low).

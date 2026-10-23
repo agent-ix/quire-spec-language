@@ -41,7 +41,8 @@ claim from the package bytes it receives.
    emitted law.
 8. Check and emit `SlowEnough` under a `timed/v1` profile alias and read the
    bytes with QSpec's v2 reader; check `always [0, *] holds(h.v < 30)` under
-   `timed/v1` and `always holds(h.v < 30)` under the event-position profile.
+   `timed/v1`, and `always holds(h.v < 30)` under `timed/v1` and under the
+   event-position profile.
 
 Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 
@@ -71,6 +72,6 @@ Tag the tests `#[trace("TC-1187", "FR-447-AC-n")]`.
 - Step 8: the interval `[0, 10]` with closed ends and horizon 10, emitted in
     the timed form with the `timed/v1` law and admitted; `always [0, *]`
   under `timed/v1` admitted with `upper: None`, emitted with `upper` `null`;
-  `always holds(h.v < 30)` under the event-position profile refused
+  `always holds(h.v < 30)` under `timed/v1` admitted with horizon `None`, and under the event-position profile refused
   `unsupported_construct`/`expression-form` at the operator's span, naming
   the profile, as FR-447-AC-15 states.
