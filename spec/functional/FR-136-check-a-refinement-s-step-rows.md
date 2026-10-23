@@ -174,9 +174,14 @@ protocol is never selected by the absence of rows.
   refusals, SHALL NOT report coverage refusals for classes drawn from it,
   and SHALL produce no `CheckedRefinement` for the refinement.
 - S3 SHALL NOT make a refinement over a model subject wait for protocols.
-- When the unit's check stops before its protocol clauses are checked,
-  because a refusal elsewhere in the unit or an S3 stage that refuses the
-  unit ends the check first, S3 SHALL still report, for every refinement the
+- The unit's check stops before its protocol clauses are checked when a
+  declaration of the unit that is not a refinement is refused first (a
+  function body, a state clause, a repeated protocol reference), or when an
+  S3 stage that refuses the whole unit, such as model conformance, runs
+  first. A refinement's own refusals SHALL NOT stop the unit before its
+  protocol clauses are checked.
+- When the unit's check stops before its protocol clauses are checked, S3
+  SHALL still report, for every refinement the
   unit declares, the refusals of every check that needs no clause of the
   unit: its header, except resolving an abstract protocol header that names
   a protocol declared in the unit; its population, object, fairness and
@@ -184,8 +189,8 @@ protocol is never selected by the absence of rows.
   step rows and the selection of its concrete protocol (above). S3 SHALL NOT
   resolve such an abstract protocol header and SHALL NOT check coverage over
   a protocol subject, and SHALL report no refusal for either. These
-  refusals SHALL follow the refusals that stopped the unit, with the
-  refinements in source order and each refinement's refusals in the order
+  refusals SHALL follow the refusals that stopped the unit, with every
+  refinement of the unit, whatever its subjects, in source order and each refinement's refusals in the order
   its checks run, and the unit SHALL be refused with them.
 
 Coverage draws its classes from the selected clause's nodes, templates,
@@ -270,7 +275,7 @@ subject until the checked clause is available meets the same rule.
 | FR-136-AC-8 | A protocol clause that fails its own checks, named by a refinement's rows, reports the clause's refusals and no coverage refusal for a class drawn from it, and gives no `CheckedRefinement` for the refinement; a refusal of a row not drawn from the clause is still reported. The same clause checked cleanly gives FR-136-AC-4's coverage refusals when a row is missing, whatever the declaration order of the clause and the refinement in the source. | Test (TC-541) |
 | FR-136-AC-9 | With rows naming `P`, `Q` and `R` in that order, `P` is selected and two `conflicting-binding` refusals are reported, at `Q`'s first row and at `R`'s, each naming that row and `P`'s first row. A protocol clause declared in a package other than the declaring one is not a clause for the rows and refuses `missing_declaration`/`missing-name` at its segment. | Test (TC-541) |
 | FR-136-AC-10 | Over FR-136-AC-7's protocol, the source-resolved memory model of its outermost `parallel` is `tso`, so a `memory flush` row is required and a `memory nope` row refuses `missing_declaration`/`missing-name` at `nope`. With a protocol whose `parallel` is under `sc` and a `memory flush` row, S3 refuses at `flush`. A check request that selects `tso` for the `sc` protocol, with no `flush` row, is refused when admitted with `missing_declaration`/`missing-name` naming `flush`; a request that selects `sc` for the `tso` protocol admits and leaves the `flush` row unused. With two outermost `parallel` nodes, one `sc` and one `tso`, one `memory flush` row covers the kind for both. | Test (TC-541) |
-| FR-136-AC-11 | In a build whose support set holds `protocol-abstract-side`, a unit declaring, in this source order, an invariant over a concrete object type whose body is a non-Boolean field read, `CasTwice` (FR-147) with its `population` row removed, and FR-136-AC-6's refinement over `Run` with a further row naming a second protocol clause `Other` and no `fork`, `join` or `finish` row, is refused with exactly, in order: the invariant's `ill_typed`/`non-boolean-root`; `CasTwice`'s `missing_declaration`/`missing-name` naming `Spec::counters`; and the `Run` refinement's `invalid_model_binding`/`conflicting-binding` at `Other`'s first row. No refusal names `Twice`'s header or a coverage class, and no `CheckedRefinement` is produced. With the invariant and the `Other` row removed, the unit reports `CasTwice`'s `missing-name` and FR-136-AC-4's `missing-name` naming the `fork` node. | Test (TC-541) |
+| FR-136-AC-11 | In a build whose support set holds `protocol-abstract-side`, a unit declaring, in this source order, an invariant over a concrete object type whose body is a non-Boolean field read, `CasTwice` (FR-147) with its `population` row written twice, and FR-136-AC-6's refinement over `Run` with a further row naming a second protocol clause `Other` and no `fork`, `join` or `finish` row, is refused with exactly, in order: the invariant's `ill_typed`/`non-boolean-root`; `CasTwice`'s `invalid_model_binding`/`conflicting-binding` naming both `population` rows (FR-135-AC-2); and the `Run` refinement's `invalid_model_binding`/`conflicting-binding` at `Other`'s first row. No refusal names `Twice`'s header or a coverage class, and no `CheckedRefinement` is produced. With the invariant and the `Other` row removed, `CasTwice`'s refusal does not stop the unit, and the unit reports `CasTwice`'s `conflicting-binding` and FR-136-AC-4's `missing-name` naming the `fork` node. | Test (TC-541) |
 
 ## Dependencies
 

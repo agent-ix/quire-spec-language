@@ -49,7 +49,7 @@ protocol subject over a model with operations `incA` and `incB`.
     outermost `parallel` and one `flush` row.
 11. In a build that holds `protocol-abstract-side`, check a unit declaring,
     in this order, an invariant over a concrete object type whose body is a
-    non-Boolean field read, `CasTwice` without its `population` row, and
+    non-Boolean field read, `CasTwice` with its `population` row written twice, and
     step 6's `Run` refinement with a row naming `Other` and no control-node
     rows; then check it with the invariant and the `Other` row removed.
 
@@ -88,8 +88,9 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
   `missing-name` naming `flush` when admitted; the request selecting `sc`
   admits with the row unused; one row covers both `parallel` nodes.
 - Step 11: exactly three refusals, in order: `ill_typed`/`non-boolean-root`
-  at the invariant, `missing_declaration`/`missing-name` naming
-  `Spec::counters`, and `invalid_model_binding`/`conflicting-binding` at
+  at the invariant, `invalid_model_binding`/`conflicting-binding` naming
+  both `population` rows, and `invalid_model_binding`/`conflicting-binding` at
   `Other`'s first row; none for `Twice`'s header or for coverage, and no
   `CheckedRefinement`. Without the invariant and the `Other` row: the
-  `Spec::counters` refusal and `missing-name` naming the `fork` node.
+  `population` `conflicting-binding` and `missing-name` naming the `fork`
+  node.
