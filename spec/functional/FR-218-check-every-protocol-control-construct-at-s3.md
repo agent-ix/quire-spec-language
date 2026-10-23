@@ -27,6 +27,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-228
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-146
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-065
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-051
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-054
@@ -169,6 +173,52 @@ reaches S4 (FR-383).
   record, an event type or a variant type with the same refusal at the type
   name. S3 SHALL NOT compare a `send` or `receive` binder, or a FIFO binder,
   with a refused `carries` type.
+
+### Predicate joins
+
+`join predicate(f) [l1, ..., ln]` settles when the function `f`, applied to
+the dispositions of the joined branches, is true (QSpec FR-171, FR-228). The
+function sees the joined labels only, which are the branch dispositions the
+join captures explicitly (QSpec shared grammar), and a branch the join does
+not list is not an argument.
+
+- S3 SHALL resolve `f` once, in the unit's own declaration scope, as a call's
+  name resolves (FR-065). `f` is an unqualified name, so it names a function
+  the unit declares. A name that resolves to no declaration of the unit SHALL
+  refuse with `missing_declaration`/`missing-name` at the name, retaining
+  `node` (the `parallel`) and `name`. A name that resolves to a declaration
+  that is not a `function`, such as a `predicate`, a clause, a type or a
+  protocol, SHALL refuse with `ill_typed`/`operator-ineligible` at the name,
+  naming the resolved kind, as QSpec FR-146 refuses a call to a declaration
+  that is not a checked pure function.
+- The joined labels, each counted once, are taken in ascending order of their
+  UTF-8 bytes, which is the order S4 writes the `joined` labels (FR-383).
+  The function SHALL have one parameter for each of those labels, the `k`-th
+  parameter receiving the disposition of the `k`-th label, and SHALL have the
+  result type `Boolean`. Each parameter SHALL have the type `Boolean`: the
+  argument is `true` when that branch thread is `completed` and `false` when
+  it is `running`. No third value is needed, because a branch thread is
+  `cancelled` only together with the thread that owns the join, and a
+  `cancelled` thread takes no step (FR-206), so no join step ever reads a
+  `cancelled` branch. S3 SHALL refuse a function whose parameter count
+  differs from the number of distinct joined labels, a parameter whose type
+  is not `Boolean`, or a result type that is not `Boolean`, with
+  `ill_typed`/`type-mismatch` at the name, retaining `node`, `function`,
+  `expected` (the required parameter types and result type) and `actual` (the
+  function's declared ones).
+- A function that reaches this check is an admitted function: QSpec FR-146
+  establishes its purity, its total definedness and the termination of every
+  call cycle it reaches when its own declaration is checked, and its body
+  reads its parameters and constants only, never model state, a binder or a
+  capture. The join therefore adds no purity or totality check of its own and
+  no refusal for one. A unit whose function is impure, partial or has an
+  unproved decrease refuses at that function's declaration by FR-146's
+  rules, whatever join names it.
+- S3 SHALL record the checked policy as `Predicate{function}`, `function`
+  the typed node key (`quire.checked-semantic-node/v1`) of the resolved
+  function's `function` node (FR-092), bound once and never looked up again
+  by name (FR-088). Two joins that name one function hold one key. The
+  joined labels stay recorded as for every other policy.
 
 ### Role on a model alias
 
@@ -466,6 +516,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-28 | `role w each M::Worker from workers max 2 lifetime workflow` checks when `workers` is a population of `M::Worker` and the checked role holds that population; with `from absent` it refuses `missing_declaration`/`missing-name` at `absent`, and with `from jobs`, a population of `M::Job`, it refuses `ill_typed`/`type-mismatch` at `jobs`, each retaining `role` and `population`. | Test (TC-663) |
 | FR-218-AC-29 | In a protocol with channels `from w to c` and `from c to w`, the checked clause holds the owner `w` for the `send` on the first and `c` for its `receive`, and `c` for the `send` and `w` for the `receive` on the second; a lifetime `scope` role `w` with its `Work` nodes inside `sequence S` and a `send` from `w` after `S` has the region that holds `S` and the `send`, which is `S`'s parent control and not `S`. | Test (TC-663) |
 | FR-218-AC-30 | Over three visible Boolean facts `a`, `b`, `c`: a two-case `choice` with guards `a and b and c` and `not (a and b and c)` checks, and its unit's measured `s3.work_units` spend exceeds that of the same unit with guards `a and a and a` and `not (a and a and a)` (one distinct atom, two valuations, the same guard nodes) by exactly 6, so the proof charges one unit per valuation and the atom comparison charges nothing beyond the node charges. A `choice` of the same shape over 24 distinct atoms (`2^24` valuations) stops under the default `s3.work_units` (16777216) with a `CheckRefusal`/`stage_limit_exceeded`, cause `work-budget-exceeded`, at the choice's span, naming bound 16777216 and setting `s3.work_units`, and no `unproved-exhaustiveness`; it checks with `s3.work_units` set to 33554432 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation. Guards `a and b and c` and `not a`, over the three atoms `a`, `b`, `c`, leave a valuation uncovered and refuse `unproved-exhaustiveness` with `failed` `[missing-arm]`. | Test (TC-1172) |
+| FR-218-AC-31 | Over branches `a`, `b` and `c`, with `function f using v(x: Boolean, y: Boolean): Boolean pure { x and y }` declared in the unit, `join predicate(f) [a, c]` and `join predicate(f) [c, a, c]` each check to `Predicate{function}` holding `f`'s node key and the joined labels `a` and `c`, and a second join naming `f` holds the same key. `join predicate(g) [a, c]` with no `g` declared refuses `missing_declaration`/`missing-name` at `g`, retaining node and name; `g` declared as a `predicate` refuses `ill_typed`/`operator-ineligible` at `g`, naming the kind. `join predicate(f) [a, b, c]` (three labels, two parameters), a function `h(x: Boolean, y: Int[0, 1]): Boolean` joined on `[a, c]`, and a function `k(x: Boolean, y: Boolean): Int[0, 1]` joined on `[a, c]` each refuse `ill_typed`/`type-mismatch` at the name, retaining node, function, expected and actual. A unit whose joined function is `function r using v(x: Boolean, y: Boolean): Boolean pure { r(x, y) }`, which calls itself with no `decreases` measure, refuses `undefined_expression`/`unproved-decrease` (failed obligation `missing-measure`) at `r`'s declaration and gives no refusal at the join. Each refusal produces no package. | Test (TC-1065) |
 
 ## Dependencies
 
@@ -479,7 +530,8 @@ one protocol declared in the same unit. It carries no package selector.
   FR-383 (the emission of the checked clause), FR-086 (relationship kinds), FR-088 (type identity).
 - QSpec owns the grammar and contracts of every construct, and the catalog
   spellings of its refusals: QSpec FR-051, FR-052, FR-053, FR-054, FR-170,
-  FR-171, FR-172, FR-228.
+  FR-171, FR-172, FR-228. A predicate join's function is admitted by QSpec
+  FR-146 and resolved as FR-065 resolves a call.
   The protocol reference's resolution rules follow QSpec FR-322-AC-66, and
   its production and meaning are QSpec FR-463's.
 
