@@ -41,3 +41,9 @@ Examined, clean:
 Not mergeable: FND-001 (high) block the PR.
 
 Conflicts with open head #1374 (STD-421): FR-345 and TC-868. Clean against origin/main.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head b40c200e. Over the real backend registry, with quire-contract-codegen's `negotiate_*` as the negotiation function, `compare` over `REAL_CORPUS` gives each of the five layers a `holds` witness result: its witness unit admits and its witness item, requested once per candidate by backend name, settles `supported |
