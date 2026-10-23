@@ -10,10 +10,10 @@ relationships:
 
 ## Description
 
-Verify that CLI `run` of a `1-draft` program joins each argument to its
+Verify that `command`'s `run`, called in process, of a `1-draft` program joins each argument to its
 parameter by declared name, converts it by FR-098's canonical integer rule,
 renders the S6a outcome in `spine-run-result/1`, and refuses each pre-call
-case on stderr with its stage, code, `details` and FR-301 exit status.
+case in its refusal envelope with its stage, code, `details` and FR-301 exit status.
 
 Scope: FR-100-AC-4 to FR-100-AC-6.
 
@@ -55,18 +55,17 @@ still a function whose declared result is a record, still refusing
   `{"kind": "boolean", "value": true}` and
   `{"kind": "integer", "decimal": "4"}`.
 - Step 2: each refuses `invalid_runtime_input` at stage `call`, exit 20,
-  empty stdout, `details` `{"position": 0}`; `flag(2)` and `px(1)` refuse
+  no result document, `details` `{"position": 0}`; `flag(2)` and `px(1)` refuse
   before the call and `id(12)` at S6a admission.
 - Step 3: each refuses `invalid_runtime_input` at stage `call`, exit 20,
-  empty stdout, `details` `{"parameter": "y"}`, `{"parameter": "x"}` and
+  no result document, `details` `{"parameter": "y"}`, `{"parameter": "x"}` and
   `{"parameter": "x"}` in turn.
-- Step 4: each refuses `invalid-request` at stage `request`, exit 20, empty
-  stdout.
+- Step 4: each refuses `invalid-request` at stage `request`, exit 20, no result document.
 - Step 5: each name refuses `missing_declaration` at stage `call`, exit 20,
-  empty stdout, `details` `{"function": <that string>}`; `corner` refuses
-  `unsupported_construct` at stage `call`, exit 21, empty stdout,
+  no result document, `details` `{"function": <that string>}`; `corner` refuses
+  `unsupported_construct` at stage `call`, exit 21, no result document,
   `details` `{"function": "corner"}`, before any call.
 - Step 6: the syntax error refuses `invalid_syntax` at stage `source`; `inv`
   refuses `ill_typed` at stage `check` (integer `/` with no `Rational`
-  expected type); each exits 20 with empty stdout.
+  expected type); each has exit code 20 and no result document.
 - Step 7: outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22.

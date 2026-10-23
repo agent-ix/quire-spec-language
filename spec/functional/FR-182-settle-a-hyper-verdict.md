@@ -39,7 +39,8 @@ member (ADR-023 HV-1 to HV-8). `InconclusiveCause` gains `MatchUndetermined`
 and `VacuousMatch`. An item whose claim evaluates undefined on a tuple
 settles `refuted` with cause `UndefinedEvaluation{where, cause}` naming the
 tuple (ADR-018 UE-1, UE-2). HP-5 items settle by the possible family's map
-(FR-181). Settlement is `qsl-replay`'s (ADR-029 CB-2): an EN-1 `proved`
+through FR-169's `settle_existential` (FR-181), not through
+`settle_hyper_check`. Settlement is `qsl-replay`'s (ADR-029 CB-2): an EN-1 `proved`
 settles only after the product-closure certificate checker (FR-163)
 accepts its certificate, and a proof whose method has no certificate
 checker settles `proved` labelled `Uncertified` (ADR-023 HV-1, HX-7).
@@ -160,7 +161,7 @@ FR-243 basis, O-16 category and method.
 | V-4 | `Violated`, or SMT `Violated` with a `Lockstep` counterexample, whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated`, or SMT `Violated` (method `k-induction` from a satisfiable base, or `smt-unrolling`), with an `Undefined` counterexample (QSpec FR-400) whose replay reproduces the undefined value at `trace_position` (FR-183) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}`; SMT `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
-| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `NoInstance` (an item with zero instances, FR-125), `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected{rule, at}`, ADR-018 PC-2); SMT `InductionNotClosed{depth}`; SMT `Unknown{depth}` (`InductionNotClosed{depth}`); SMT `EncodingRefused` with `match-conjunct` (`MatchUndetermined`); SMT `k`-inductive for HP-2 with a non-empty `μ_U` and no `Accepted` `MatchWitnessCheck` for the outcome's instance (`VacuousMatch`); `Violated` or SMT `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `NoInstance` (an item with zero instances, FR-125), `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected{rule, at}`, ADR-018 PC-2); `Holds` whose certificate check is `PackageMismatch{certificate, recompiled}` (`StaleDependency{requested, recompiled}`, `requested` the certificate's `package_id`, FR-282); SMT `InductionNotClosed{depth}`; SMT `Unknown{depth}` (`InductionNotClosed{depth}`); SMT `EncodingRefused` with `match-conjunct` (`MatchUndetermined`); SMT `k`-inductive for HP-2 with a non-empty `μ_U` and no `Accepted` `MatchWitnessCheck` for the outcome's instance (`VacuousMatch`); `Violated` or SMT `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | `Stopped(ResourceExhausted, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184); SMT `LimitStopped{limit}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
 | V-7 | `Stopped(Cancelled, None)`; SMT `Cancelled{source}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` (FR-127) | incomplete |
 | — | SMT `BackendFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
@@ -182,7 +183,7 @@ FR-243 basis, O-16 category and method.
   counterexample whose universal lasso has at most `k` joint steps; for
   HP-6, no counterexample of at most `k` moves; for HP-1, no counterexample
   whose executions all leave states at depth below `k`.
-- A V-7 record SHALL name its limit, its value and the request member that
+- A V-7 record SHALL name its limit, its value and the request setting that
   raises it.
 - Every record, whatever its verdict, SHALL state the value of each
   model-check limit the run used, FR-126's and FR-184's, with whether the
@@ -345,6 +346,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-14 | Over ADR-023 §8's secure vault, `settle_hyper_smt` for the `NonInterference` item at instance `v`, each outcome carrying that item's identity, settles: `LimitStopped{limit: ReachedLimit{limit: SmtMaxSolverSteps, value: 1000}, method: KInduction}` as `failed`, execution `resource-incomplete`, `Incomplete(LimitReached{limit: max_solver_steps, value: 1000, setting: smt.max_solver_steps})`; `LimitStopped{limit: ReachedLimit{limit: SmtMaxSolverTime, value: 5}, method: SmtUnrolling}` as `Incomplete(LimitReached{max_solver_time, 5, smt.max_solver_time})`, never `TimedOut`; neither is ever `InductionNotClosed` or `LimitNotApplicable`. A `LimitStopped` whose `ReachedLimit` names `SmtMaxConstants` writes no record and refuses `LimitNotApplicable`. FR-315-AC-40's `EncodingRefused` with `too-large` for `constants` under `encoding.max_constants` 7 settles `Incomplete(LimitReached{max_constants, 7, smt_encoding.max_constants})`, not `unsupported`. | Test (TC-1250) |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 | FR-182-AC-9 | ADR-023 §1's `NonInterference` over an empty `Vault` universe settles `inconclusive`, `NoInstance`, basis `unsettled`, before any state is explored, never `Proved` or `Refuted`; ADR-023 §1's `SavesPower` `(d: S::Device, e: N::Device)` with one empty universe and the other non-empty settles the same way, so the product is read over both parameters; the same clause over a population with no universe is `RequiresBound`, not `NoInstance`. | Test (TC-607) |
+| FR-182-AC-13 | §8.1's secure `NonInterference` `Holds` outcome whose certificate check is `PackageMismatch{certificate, recompiled}` (FR-163-AC-8) settles `inconclusive`, `unsettled`, `Inconclusive(StaleDependency{requested, recompiled})` with `requested` the certificate's `package_id`, never `proved`. | Test (TC-1198) |
 
 ## Dependencies
 

@@ -19,21 +19,23 @@ Scope: FR-010-AC-11.
 
 ## Test Procedure
 
-1. Run `parse agent-ix specs/a.quire <file>` over an admissible file.
-2. Run `parse agent-ix specs/a.quire` with no file, and
-   `parse agent-ix specs/a.quire <file> extra`.
-3. Run `parse agent-ix "" <missing-file>`.
-4. Run `format agent-ix specs/a.quire <file>` over admissible
-   complete-V1 source, then again with one extra operand.
+Call each operation in process, capturing the process streams.
+
+1. Call the `parse` operation with authority `agent-ix` and identity
+   `specs/a.quire` over an admissible file.
+2. Call source intake with authority `agent-ix`, an empty identity and a
+   missing path.
+3. Call `format` with authority `agent-ix` and identity `specs/a.quire`
+   over admissible complete-V1 source.
 
 Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
 
 ## Expected Results
 
-- Step 1: exit 0; the result's source reads authority `agent-ix`, identity
+- Step 1: exit code 0; the result's source reads authority `agent-ix`, identity
   `specs/a.quire` and the file's `quire.source.bytes/v1` digest, and no
   other member.
-- Step 2: both exit 20.
-- Step 3: exit 20 with `invalid_source_identity`, cause `blank-label`,
+- Step 2: exit code 20 with `invalid_source_identity`, cause `blank-label`,
   `label` `identity`, not a file error.
-- Step 4: exit 0, then exit 20.
+- Step 3: the formatted source, exit code 0.
+- No step writes a byte to stdout or stderr.
