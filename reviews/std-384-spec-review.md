@@ -81,6 +81,14 @@ Re-checked at 5ff99f20 (fix commit 411029e1; origin/main is an ancestor;
 | --- | --- | --- | --- | --- |
 | FND-006 | high | The FR-027 amendment copies open #1303's FR-027 (STD-343, stacked on #1326 STD-355 and #1321 STD-352) and adds this PR's array rule. It brings in three other tickets' changes without the rest of their PRs. It deletes `0-draft` compilation ("Every other declared edition, `0-draft` included, ... `command` refuses it with `unknown_edition`"). It removes FR-027-AC-1, AC-4 and AC-6, retitles the FR, and drops FR-019 and FR-020. It moves stream behaviour to the driver and adds AC-13. Merged alone, this head leaves dangling and contradicting references. TC-430's scope still lists FR-027-AC-4. TC-435 still traces FR-027-AC-6 (step 3, a `0-draft` compile). Main's `tests/it/compile_command.rs` still traces FR-027-AC-1, AC-4 and AC-6 over `0-draft` programs that the command compiles. The head also conflicts textually with #1303, #1326 and #1321. Fix: amend FR-027 from main's text with only this PR's change: the array `program`, the per-unit digest and edition rule, the unit-list `dependent_bytes` rule and AC-14. State the `0-draft` case against main's behaviour (a unit list is `1-draft` only, so a `0-draft` unit in an array refuses). Otherwise stack this PR on #1303 once it merges. | spec/functional/FR-027-export-compiled-native-package.md:1-140; spec/test-cases/TC-430-native-requests-and-outputs-carry-the-four-source-labels.md:23,42; spec/test-cases/TC-435-cli-compile-routes-a-program-by-its-declared-edition.md:46 | wrong-requirement |
 
+## New findings (disposition pass 2)
+
+Re-checked at 2e715ed1 (fix commit e507f3bc).
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-007 | medium | One input gets two refusal codes. FR-027-AC-14 says an array whose second unit declares `edition "0-draft"` beside a `1-draft` first unit refuses `unknown_edition` at that unit's edition literal. FR-480-AC-4 (TC-1210 step 4) says a unit whose header declares `0-draft` beside a `1-draft` unit refuses `invalid_package`/`conflicting-definition` at the later unit's header, naming both headers. Neither AC says which entry point it goes through: the command, whose edition check runs before any compile, or the spine `compile` and FR-278 operations, which apply FR-480's header agreement. An implementer can't tell which code a `[1-draft, 0-draft]` unit list returns. Fix: state that FR-027's per-unit edition check runs before FR-480's header agreement, and that FR-480-AC-4 goes through spine `compile` (no command edition check). Or give FR-480-AC-4 a header mismatch that is not an edition, such as differing profile selections, and keep the `0-draft` case in FR-027-AC-14 alone. | spec/functional/FR-027-export-compiled-native-package.md:113-120,149; spec/functional/FR-480-compile-and-link-a-package-from-several-source-units.md:217 | wrong-requirement |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -91,6 +99,10 @@ Re-checked at 5ff99f20 (fix commit 411029e1; origin/main is an ancestor;
 | FND-004 | fixed | A dependency-input library whose source has a unit's (authority, identity) refuses `invalid_package`/`conflicting-definition` before any parse, naming the unit and the library entry. AC-2 and TC-1210 step 2 carry the vector. |
 | FND-005 | fixed | ADR-033's process language is removed and replaced by the FR-151 and FR-322 rationale. AC-1 says "again in both link orders" for the second placement. |
 | FND-006 | still-open | New in this pass. It needs a fix round. |
+| FND-006 | fixed | FR-027 is now main's text plus only the unit-list paragraph, the per-unit digest and edition rule, the array `dependent_bytes` sentence and AC-14. `0-draft` compilation and FR-027-AC-1, AC-4 and AC-6 are unchanged, so TC-430, TC-435 and `tests/it/compile_command.rs` resolve. FR-027-AC-14 does not collide with #1303's or #1321's AC-13. |
+| FND-007 | still-open | New in this pass. It needs a fix round. |
 
 Verdict after disposition pass 1: FND-001 to FND-005 are fixed. Not mergeable
 until FND-006 is fixed.
+
+Verdict after disposition pass 2: FND-001 to FND-006 are fixed, `make check-spec-validation` exits 0 at 2e715ed1, and the head merges cleanly with origin/main 28a76640. Not mergeable until FND-007 is fixed.
