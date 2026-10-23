@@ -76,3 +76,4 @@ Round 1, against head 1ec2395c. Gate `make check-spec-validation` with QSPEC_DIR
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
+| FND-005 | fixed | - |
