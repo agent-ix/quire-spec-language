@@ -140,6 +140,7 @@ both branches of an `if`.
 | `Literal` of a String, UUID or Timestamp value (`"abc"`, `UUID("...")`, `Timestamp(n)`, as check resolves the two calls) | `value` / `literal`; `semantic_type` the node of the native `string`, `uuid` or `timestamp` scalar type; body `literal{type, value_kind, value}` with `value_kind` `string`, `uuid` or `timestamp` and `value` spelled as FR-092 fixes |
 | `Literal` of a quantity value (`3 ms`) | `value` / `literal`; `semantic_type` its unit's `scalar_type`/`unit` node; body `literal{type, value_kind, value}` with `value_kind` `quantity` and `value` the canonical magnitude ("Quantity literals") |
 | `FloatBits{width, bits}` (`float32(bits: 0x3f800000)`, `float64(bits: ..)`; [FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)) | `value` / `literal`; `semantic_type` the node of its checked float type; body `literal{type, value_kind, value}` with `value_kind` `float32_bits` or `float64_bits` and `value` the bits as 8 or 16 lowercase hexadecimal digits without a prefix; an operand position holds a reference to the node |
+| `DecimalValue{coefficient, scale}` (`decimal(125, 2)`; "Decimal constructors") | `value` / `literal`; `semantic_type` the node of its checked decimal type; body `literal{type, value_kind, value}` with `type` that same node, `value_kind` `decimal` and `value` spelled as FR-092 fixes; an operand position holds a reference to the node |
 | `Literal` of an enum member (`E::m`) | the enum member's QSpec `value` / `enum_value` node (FR-092 rule 1) |
 | `Record{declaration, slots}` (`R { f: e, g: null }`) | `value` / `record_value`; `semantic_type` the record's node; body `aggregate` of one binding per slot in declaration order: `f` = `reference(e)` for a present slot, and `f` = `literal{type: the field's Option node, value_kind: "none", value: null}` for a `null` slot and for an omitted optional slot, which denote one value |
 | `Tuple{declaration, arguments}` (`Q(a, b)`) | `value` / `tuple_value`; `semantic_type` the tuple's node; body `aggregate{[reference(a), reference(b)]}` |
@@ -243,6 +244,72 @@ ceiling, zero-denominator or unit-name refusal is located at the whole literal.
 
 A magnitude is always an exact rational, so no quantity literal is refused
 for its magnitude's kind.
+
+### Decimal constructors
+
+A `decimal(c, s)` constructor (FR-091 "Decimal constructor") denotes the exact
+rational `c / 10^s` and keeps its coefficient `c` and scale `s` as written
+(QSpec FR-140, FR-148). It is a value of a `Decimal[lo, hi; smin, smax; mode]`
+type that it takes whole from its position: no coefficient range, scale,
+rounding mode or target scale is inferred from the spelling.
+
+**Expected type.** The constructor takes exactly its unique expected type, which
+is, in this order of position:
+
+- the declared type of a parameter of the call that holds it, of a record field
+  it initializes, of the function result it forms, of the element of the
+  collection type that its constructor is expected to produce; a `let` binds an
+  expression of its own type and gives its value no expected type;
+- for an operand of `+`, `-`, `*` or `/` and of unary `-`, the static type of
+  the other operand when that operand is not itself a decimal constructor, and
+  otherwise the expected type of the whole application; for an operand of a
+  comparison `=`, `!=`, `<`, `<=`, `>` or `>=`, the static type of the other
+  operand when that is not a decimal constructor, and otherwise none;
+- the target of a `convert<Decimal[..]>(decimal(c, s))`, whose operand is the
+  constructor typed as that target (no conversion node is built).
+
+**Typing.**
+- The checker SHALL type the constructor as its expected type, with the
+  expected type's own range, scale range and rounding mode.
+- The checker SHALL refuse a constructor with no expected type, such as
+  `decimal(15, 1) = decimal(15, 1)` or an unannotated `let` right side, as
+  `ill_typed`/`ambiguous-literal` at the constructor.
+- The checker SHALL refuse a constructor whose expected type is not a
+  `Decimal[..]` type (an `Int[..]`, `Rational[..]`, `Float32`/`Float64`,
+  `Boolean`, `Text` or quantity position) as `ill_typed`/`type-mismatch` at
+  the constructor: a literal never changes type to fit its slot.
+- The checker SHALL refuse a constructor whose coefficient lies outside the
+  expected type's coefficient bounds `[lo, hi]`, or whose scale lies outside
+  its scale bounds `[smin, smax]`, as `ill_typed`/`type-mismatch` at the
+  constructor, naming the bound.
+- The checker SHALL measure a constructor's written coefficient and scale
+  against the rational-bits ceiling that NFR-011 applies to a quantity
+  literal, and refuse one past it `stage_limit_exceeded`/`rational-bits-exceeded`.
+
+**Definedness.** A `Decimal[..]` divisor satisfies the nonzero obligation of
+QSpec FR-146 only as a constructor with `c != 0`.
+- The checker SHALL accept `x / decimal(c, s)` for `c != 0` without the
+  `unproved-nonzero` refusal, and record no fact about any path.
+- The checker SHALL refuse a `/` whose divisor is `decimal(0, s)`, or any
+  decimal expression that is not a constructor with `c != 0`, as
+  `undefined_expression`/`unproved-nonzero` at the divisor.
+
+**Lowering.** The constructor lowers to one `value`/`literal` node (the row in
+"Non-application nodes"), so `decimal(125, 2)` at `Decimal[0, 1000; 0, 2;
+nearest-even]` has `value` `"1.25"` and `type` that decimal node. Two
+constructors with one type, coefficient and scale are one node; `decimal(10, 1)`
+and `decimal(100, 2)` are two. An operand position holds a reference to the
+node, and `x / decimal(4, 0)` lowers to `quire.op.decimal.div` with mode
+`rounding` the type's mode and arguments `[ref(x), ref(literal)]` (the
+`Decimal{operator, target}` row).
+
+**Evaluation.** The evaluator SHALL evaluate the node to the decimal whose
+coefficient is `c` and whose scale is `s`. Conversions to and from `Decimal[..]`
+are the `ConvertDecimal` rows: `convert<Rational[..]>(d)` of a decimal is
+exact, `convert<Decimal[..]>(i)` of an integer is exact when the range fits,
+and a conversion to a smaller scale is a scale reduction that rounds under the
+target's mode (QSpec FR-140, FR-149). A float reaches a decimal only through
+`Rational[..]` (FR-397).
 
 ### Application nodes
 
@@ -961,6 +1028,10 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-32 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, `if convert<Integer>(x) != 2 then 0 else x`, `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` and `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` each check, as the same guards over `x` itself do: the guarded branch reads `x` within the interval the comparison states, `=`, `!=` and the orderings alike. | Test (TC-415) |
 | FR-093-AC-33 | With FR-091-AC-44's units (`dimension Time;`, `unit s : Time = rational(1, 1);`, `unit ms : Time = rational(1, 1000) * s;`) and `function f using v(d: Quantity<ms>): Boolean pure { true }`, the body of `function h using v(): Boolean pure { f(3 ms) }` lowers the argument `3 ms` to one `value`/`literal` node whose `semantic_type` and body `type` are the `ms` unit node, with `value_kind` `quantity` and `value` `"3"`, and the call's argument references that node. In one unit beside `h`, `function h2 using v(): Boolean pure { f(0.5 ms) }` and `function h3 using v(): Boolean pure { f(rational(2, 4) ms) }` lower their arguments to one shared literal node of value `"1/2"`, and `function h4 using v(): Boolean pure { f(3 ms) }` references `h`'s `3 ms` node; `function n using v(): Boolean pure { f(rational(-3, 1) ms) }` lowers a literal of value `"-3"`; `function k using v(d: Quantity<s>): Boolean pure { d = rational(1, 1000) s }` lowers `quire.op.quantity.eq` with arguments `[ref(d's node), ref(the literal's node)]`, the literal of value `"1/1000"` at the `s` node; and `function c using v(d: Quantity<ms>): Boolean pure { convert<Quantity<s>>(d) = 3 s }` lowers `quire.op.quantity.convert` (mode `rounding` = `exact`) over `d`, then `quire.op.quantity.eq` over the convert node and the `3 s` literal. No literal of `value_kind` `rational` is emitted for any of them, and IR's v2 reader admits each package. | Test (TC-483) |
 | FR-093-AC-34 | Under AC-33's units and `f`, each of these refuses and emits no literal node: `f(3 s)`, `ill_typed`/`type-mismatch` at the argument; `function e using v(d: Quantity<ms>): Boolean pure { d < 3 s }`, `ill_typed`/`type-mismatch` at the comparison; `function g2 using v(x: Integer): Boolean pure { x = 3 ms }`, `ill_typed`/`type-mismatch` at the comparison; `function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }`, `ill_typed`/`operator-ineligible` at the negation; `f(rational(1, 0) ghost)`, `undefined_expression`/`unproved-nonzero`, not `missing-name`; `f(3 ghost)` and `f(3 Time)`, `missing_declaration`/`missing-name` naming `ghost` and `Time`; `f(rational(1, 0) ms)`, `undefined_expression`/`unproved-nonzero`; `function q using v(d: Quantity<ms>, e: Quantity<ms>): Boolean pure { d / 3 ms = e / 3 ms }`, `undefined_expression`/`unproved-nonzero` at a division, because a quantity divisor is never proved nonzero (FR-094); and, with the rational-bits ceiling set to `16`, `f(rational(1, 100000) ms)`, `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits` and `16`. | Test (TC-483) |
+| FR-093-AC-39 | Under `Decimal[0, 1000; 0, 2; nearest-even]`, `function add using v(a: Decimal[0, 1000; 0, 2; nearest-even]): Decimal[0, 1000; 0, 2; nearest-even] pure { a + decimal(125, 2) }` checks, types the constructor at the parameter's type node, and lowers to one `value`/`literal` node of `value_kind` `decimal` and `value` `"1.25"` and one `quire.op.decimal.add` with mode `rounding` `nearest-even` over `[ref(a), ref(literal)]`. The constructors `decimal(5, 2)`, `decimal(10, 0)`, `decimal(0, 2)` and `decimal(-5, 1)` in the same position have values `"0.05"`, `"10"`, `"0.00"` and `"-0.5"`; `decimal(10, 1)` and `decimal(100, 2)` are two nodes and two equal `decimal(125, 2)` are one. `function k using v(): Decimal[0, 1000; 2, 2; nearest-even] pure { decimal(125, 2) }` checks and evaluates to the decimal of coefficient 125 and scale 2; `function z using v(a: Decimal[0, 1000; 0, 2; nearest-even]): Decimal[0, 1000; 0, 2; nearest-even] pure { decimal(3, 0) * a }` takes its type from `a`; `convert<Decimal[0, 1000; 2, 2; nearest-even]>(decimal(125, 2))` is the constructor and builds no conversion node. | Test (TC-1232) |
+| FR-093-AC-40 | `decimal(15, 1) = decimal(15, 1)` and `let x = decimal(15, 1) in x` refuse `ill_typed`/`ambiguous-literal` at the constructor; `decimal(15, 1)` at an `Int[0, 10]`, a `Rational[0, 10; 1, 10]`, a `Float64[nearest-even]`, a `Boolean` and a `Quantity<ms>` position refuses `ill_typed`/`type-mismatch` at the constructor; at `Decimal[0, 1000; 0, 2; nearest-even]`, `decimal(1001, 0)`, `decimal(-1, 0)` and `decimal(1, 3)` refuse `ill_typed`/`type-mismatch`, and at `Decimal[0, 1000; 1, 2; nearest-even]`, `decimal(5, 0)` refuses the same. A constructor whose coefficient exceeds the rational-bits ceiling refuses `stage_limit_exceeded`/`rational-bits-exceeded` naming `s3.rational_bits`. | Test (TC-1232) |
+| FR-093-AC-41 | With `x: Decimal[0, 10000; 0, 2; nearest-even]` holding the decimal of coefficient 600 and scale 2, `x / decimal(4, 0)` checks without `unproved-nonzero`, lowers to one `quire.op.decimal.div` with mode `rounding` `nearest-even` over `[ref(x), ref(literal)]` and evaluates to coefficient 150 and scale 2; `x / decimal(0, 0)`, `x / decimal(0, 2)` and `x / y` for a parameter `y` of the same type each refuse `undefined_expression`/`unproved-nonzero` at the divisor. | Test (TC-1232) |
+| FR-093-AC-42 | With `i: Int[0, 10]` and `e: Decimal[0, 1000; 0, 2; nearest-even]` holding coefficient 125 and scale 2: `convert<Decimal[0, 1000; 0, 2; nearest-even]>(i)` lowers to `quire.op.numeric.convert`, `convert<Rational[0, 1000; 1, 100]>(e)` evaluates to the rational `5/4` through `quire.op.numeric.convert`, `convert<Decimal[0, 1000; 0, 1; nearest-even]>(e)` lowers to `quire.op.numeric.convert_rounding` with mode `nearest-even` and evaluates to coefficient 12 and scale 1, and `convert<Float64[nearest-even]>(e)` lowers to `quire.op.ieee.from_exact` (FR-397); `convert<Decimal[0, 1000; 0, 2; nearest-even]>(f)` over a `Float64[nearest-even]` parameter `f` refuses `ill_typed`/`type-mismatch`. | Test (TC-1232) |
 
 ## Dependencies
 
