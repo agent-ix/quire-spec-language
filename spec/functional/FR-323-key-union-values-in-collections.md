@@ -68,9 +68,10 @@ FR-144-AC-6; ADR-012 §16.4 S3 collection element types row).
 - The kernel SHALL treat two such union values as the same member exactly when
   their members and payloads are the same member under QSpec FR-144's
   collection membership relation, a float being compared by its bits.
-- The checker SHALL admit `=` and `!=` over such a union, and the kernel SHALL
-  compare the float payloads by FR-148 numericEqual (QSpec FR-149), so equality
-  does not follow the bit-level membership relation above.
+- The checker SHALL admit `=` and `!=` over such a union.
+- The kernel SHALL compare the float payloads of such a union under `=` and
+  `!=` by FR-148 numericEqual (QSpec FR-149), so equality does not follow the
+  bit-level membership relation above.
 
 ## Acceptance Criteria
 

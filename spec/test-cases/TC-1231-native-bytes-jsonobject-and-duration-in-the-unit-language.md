@@ -24,7 +24,7 @@ ordering and arithmetic, and the lowering of each admitted form.
 
 ## Test Procedure
 
-1. Admit each payload vector P1 to P22 through the kernel constructor and
+1. Admit each payload vector P1 to P24 through the kernel constructor and
    again as a runtime-input wire object.
 2. Check and evaluate the functions `eqb using v(a: Bytes, b: Bytes): Boolean
    pure { a = b }`, its `!=` counterpart `neb`, `lenb using v(a: Bytes):
@@ -35,7 +35,7 @@ ordering and arithmetic, and the lowering of each admitted form.
 4. Check the literal vectors L1 to L12.
 5. With the unit declaring `dimension Time; unit s : Time = rational(1, 1);
    unit ms : Time = rational(1, 1000) * s;` check the Duration vectors D1 to
-   D8.
+   D10.
 6. Lower the admitted functions and the literal bodies and inspect the nodes.
 7. Admit a snapshot whose object type has `blob: Bytes`, `doc: JsonObject` and
    `span: Duration` with the values of the S vectors.
@@ -64,6 +64,8 @@ ordering and arithmetic, and the lowering of each admitted form.
 | P20 | wire `{"kind":"json_object","text":"{\"a\":1}"}` for a `JsonObject` input | admitted |
 | P21 | wire Bytes object into a `JsonObject` input, a String object into a `Bytes` input, a Bytes object into a `String` input | `wrong-value-kind` |
 | P22 | wire Bytes object with an extra member, a missing `text`, a non-string `text`, an unknown `kind` | the String object's envelope causes |
+| P23 | the type-owned key of Bytes `00`, `00ff` and `0100` | ordered `00`, `00ff`, `0100` (octets bytewise, proper prefix first) |
+| P24 | the type-owned key of JsonObject `{"a":1}` and `{"é":1}` | `{"a":1}` first, by the UTF-8 bytes of the JCS text |
 
 | Vector | Function | Operands | Expected |
 | --- | --- | --- | --- |
@@ -132,6 +134,8 @@ ordering and arithmetic, and the lowering of each admitted form.
 | D6 | a selected package and the unit both declare `s` | `ambiguous_declaration`/`ambiguous-name` |
 | D7 | `unit s : Length = rational(1, 1)` with no dimension `Time` | `ill_typed`/`operator-ineligible` |
 | D8 | `d < e`, `d + e` over two Durations | admitted as the quantity ordering and addition of FR-094 |
+| D9 | `unit s : Time = rational(2, 1)` (scale other than 1) | `ill_typed`/`operator-ineligible` |
+| D10 | a `Duration` field of an admitted package declaring its own base dimension `Time` and root unit `s` of scale 1, with the unit of compilation declaring no `s` | the type `Quantity<s>` over that package's `s` |
 
 | Vector | Snapshot field | Expected |
 | --- | --- | --- |
