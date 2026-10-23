@@ -50,7 +50,10 @@ For a `1-draft` program, the successful outcome's package artifact is exactly th
 source, with no command wrapper or extra newline; exit code 0. A `1-draft`
 program's `program` carries no `clauses` key at all -- any presence,
 including an empty array, refuses with `invalid-request` (FR-027-AC-7),
-consistent with FR-100's `1-draft` request. Each model a `1-draft` request
+consistent with FR-100's `1-draft` request. A compile request whose
+`program` carries an `extraction` member refuses `extraction-requires-run`
+at stage `request`, exit 20, before it reads a dependent file, in every
+build (FR-031). Each model a `1-draft` request
 selects is a domain package
 document in format `semantic-ir/2.0.0`, read and handed
 to spine `compile` as FR-056's package input; the program's `model`

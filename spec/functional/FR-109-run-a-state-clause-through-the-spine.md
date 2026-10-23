@@ -47,7 +47,8 @@ selected as a claim to work around the Value-call boundary.
 A `ClauseRunRequest`:
 
 - the unit's source bytes and its four FR-001 labels, or an I3 extracted
-  source (ADR-011 I3, `qsl-source`, feature `quire-extraction`) with its
+  source (ADR-011 I3, `qsl-source`, under `qsl-replay`'s feature
+  `quire-extraction`; the root crate has no such feature) with its
   original document identity;
 - FR-056's package input (domain packages by canonical package identity) and
   FR-099's dependency input;

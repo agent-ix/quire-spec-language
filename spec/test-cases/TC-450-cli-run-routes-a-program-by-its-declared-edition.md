@@ -62,7 +62,8 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
   `invalid_syntax` at stage `source`, exit 20, no result document.
 - Step 3: `unknown_edition`, stage `profile`, exit 20, no result document; the
   `message` names the program file and `7-draft`.
-- Step 4: each request refuses `invalid-request` at stage `request`, exit 20,
-  no result document, and no model file is read; the `extraction` request refuses
-  so in both builds.
+- Step 4: each ordinary function-run request refuses `invalid-request` at
+  stage `request`, exit 20, no result document, and no model file is read.
+  The `extraction` request refuses `invalid-request` naming `extraction` in the
+  no-feature build, and `extraction-requires-run` in the feature-enabled build.
 - Step 5: exit 0 and a `completed` outcome.
