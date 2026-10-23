@@ -145,8 +145,7 @@ Requests are built from the unit's spine compile, as in TC-444.
     parameter of the Integer interval `[0, 2^4096 - 1]` (both endpoints at most
     4096 bits) given the 4096-bit value `2^4096 - 1`, then the 4097-bit value
     `2^4096` (zero is one bit). Replay once with B omitted and once with B stated 4096, then
-    with 4095. Type-link operands are a norm pending the IR follow-up and are
-    not exercised.
+    with 4095. Type-link operands are not exercised.
 
 Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
 `#[trace("TC-906", "FR-098-AC-9")]` and
