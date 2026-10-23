@@ -161,6 +161,18 @@ into a float. Model float fields are refused at intake (FR-091).
     sequence compares by `numericEqual`, so `+0` equals `-0` and a value that
     holds a NaN is unequal to every value including itself. A float read out
     of a structure (`r.x`, `value(o)`) is compared as a float.
+  - `=` and `!=` over a set, bag or ordered set whose element type reaches a
+    float also lower to `quire.op.structural.eq` and `.ne`, with the float leaf
+    at the path `["inner"]` (QSpec FR-322's leaf walk), the law `ieee_profile`
+    and mode `null`. Two rules apply together. Set members match by bit
+    identity: the collections are compared by QSpec FR-144's membership
+    relation, which matches a float member by `bitIdentical`, so `set[qnan]`
+    equals `set[qnan]`, `set[+0]` is unequal to `set[-0]`, and two NaNs of
+    different payload are different members. Leaves compare by
+    `numericEqual`: a float leaf of an option, record, tuple, union payload or
+    sequence, and a float read out of a collection, compares by
+    `numericEqual` as above. A sequence is not a set, so a sequence holding a
+    NaN stays unequal to itself.
   - `numericEqual`, `totalOrder` and `bitIdentical` are also written as calls
     (Intrinsics), so a source chooses the relation by spelling the call.
 - **Intrinsics.** The reserved intrinsic identities
@@ -273,6 +285,7 @@ into a float. Model float fields are refused at intake (FR-091).
 | FR-397-AC-20 | A state clause holding `float64(bits: 0x7ff8000000000000) != float64(bits: 0x7ff8000000000000)` evaluates to `Completed(true)`, one holding `quire::value::ieee::sqrt` under `Float64[exact]` of a constant that is not a perfect square, compared to a constant, evaluates to the kernel `Refused` `ieee_not_exact` outcome, and the clause set containing it has outcome `Undecided`. | Test (TC-1091) |
 | FR-397-AC-21 | `function neg using v(a: Float64[nearest-even]): Float64[nearest-even] pure { -a }` lowers to one `quire.op.ieee.float64.negate` node with the law `ieee_profile`, no mode and the node `Float64[nearest-even]` as its type, and the package selects the `ieee_profile` row; the same over `Float32[toward-zero]` gives `quire.op.ieee.float32.negate`. `-float64(bits: 0x3ff0000000000000)` over a `Float64[nearest-even]` result is `0xbff0000000000000` with the constructor typed `Float64[nearest-even]`; `-float64(bits: 0x0000000000000000)` is `0x8000000000000000`, `-float64(bits: 0x8000000000000000)` is `0x0000000000000000`, `-float64(bits: 0x7ff0000000000001)` is `0xfff0000000000001` with no flag, `-float64(bits: 0xfff8000000000005)` is `0x7ff8000000000005` and `-float32(bits: 0x7f800000)` is `0xff800000`; the same under `Float64[exact]` gives the same bits and no refusal, and `-(-float64(bits: 0x7ff0000000000001))` is `0x7ff0000000000001`. `-a` where a `Float64[toward-zero]` is expected over a `Float64[nearest-even]` parameter refuses `ill_typed`/`type-mismatch`. A state clause holding `-float64(bits: 0x7ff8000000000000) != -float64(bits: 0x7ff8000000000000)` evaluates to `Completed(true)`. | Test (TC-1091) |
 | FR-397-AC-22 | Over `record R { x: Float64[nearest-even]; y: Integer }`, `Option<Float64[nearest-even]>`, `union U { V(Float64[nearest-even]), N }`, `Sequence<Float64[nearest-even]>[0, 2]` and a tuple `(Float32[exact], Integer)`, `=` lowers to one `quire.op.structural.eq` node and `!=` to `quire.op.structural.ne`, each with leaves `operand:0` listing the float leaf with the law `ieee_profile` and mode `null` at the path QSpec FR-322 gives (`["field:x"]`, `["inner"]`, `["member:V", "position:0"]`, `["inner"]` and `["position:0"]`), and the package selects the `ieee_profile` row. With `p0` `0x0000000000000000`, `n0` `0x8000000000000000`, `one` `0x3ff0000000000000`, `qnan` `0x7ff8000000000000` and `qnan2` `0x7ff8000000000001`: `R { x: p0, y: 1 } = R { x: n0, y: 1 }` is true, `R { x: qnan, y: 1 } = R { x: qnan, y: 1 }` is false and its `!=` is true, `R { x: p0, y: 1 } = R { x: p0, y: 2 }` is false, `U::V(p0) = U::V(n0)` is true, `U::V(p0) = U::N` is false, the present `qnan` against itself is false, `sequence[p0, one] = sequence[n0, one]` is true, `sequence[qnan] = sequence[qnan]` is false, and the tuple of `Float32` `0x80000000` and `1` equals the tuple of `Float32` `0x00000000` and `1`. A record holding a float and a text field lists both leaves in field order. | Test (TC-1091) |
+| FR-397-AC-23 | Over `Set<Float64[nearest-even]>[0, 2]` parameters, `=` lowers to one `quire.op.structural.eq` node and `!=` to `quire.op.structural.ne`, each with leaves `operand:0` listing the float leaf at the path `["inner"]` with the law `ieee_profile` and mode `null`, and the package selects the `ieee_profile` row. Set members match by bit identity and leaves compare by `numericEqual`: with `p0`, `n0`, `qnan` and `qnan2` of FR-397-AC-22, `set[qnan] = set[qnan]` is true, `set[p0] = set[n0]` is false and its `!=` is true, `set[p0, n0] = set[n0, p0]` is true, and `set[qnan] = set[qnan2]` is false; over `Bag<Float64[nearest-even]>[0, 2]`, `bag[qnan] = bag[qnan]` is true and `bag[p0] = bag[n0]` is false; `sequence[qnan] = sequence[qnan]` over `Sequence<Float64[nearest-even]>[0, 2]` stays false. | Test (TC-1091) |
 
 ## Dependencies
 
