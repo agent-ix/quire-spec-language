@@ -72,3 +72,10 @@ How each gap and choice the coder recorded was judged:
 | FND-004 | deferred | Spec gap left for draco (FR-281/FR-290: ambiguous route and records for refusals). The code's choice stands until the spec rules. |
 | FND-005 | deferred | Spec gap left for draco (cause vocabulary). c09ac17f0 marks the cause provisional in its doc comment. |
 | FND-006 | deferred | Spec gap left for draco (EN-1 manifest content in FR-280). The coder's choice is consistent with EN-1's code. |
+
+### Round 2 (8c4fdf57e)
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | 8c4fdf57e. The EN-4 test is tagged `TC-761`, `FR-280-AC-5` only. FR-280-AC-2 for EN-1 (no provider entry) is recorded open in the test doc and in the QSL-596 comment of 2026-10-23T06:12Z. |
+| FND-007 | deferred | The no-checker `uncertified` half of FR-281-AC-4 (TC-763 step 2) is recorded open in the test header and on QSL-596. No layer-A engine reports a proof without a core checker yet, and `analyze` accepts no engine-supplied proof. |

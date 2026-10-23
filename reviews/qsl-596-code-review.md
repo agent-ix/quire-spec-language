@@ -55,3 +55,10 @@ Checked and correct:
 | FND-001 | still-open | `settled` is deleted and `unrouted` only builds `unsupported`. But `ModelCheckRecord::to_terminal` is public over a struct whose fields are all public, so any crate can write `ModelCheckRecord { value: Refuted, counterexample: Some(<made up>), .. }` and get a `refuted` `TerminalRecord` with no `ReplayResult`. That is weaker than `TerminalRecord::new`, which requires one. Fix: mark `ModelCheckRecord` `#[non_exhaustive]`, so only qsl-replay's settlement builds one (no crate outside qsl-replay builds one by literal; checked by grep), or keep a private field. |
 | FND-002 | fixed | c09ac17f0 |
 | FND-003 | fixed | c09ac17f0 |
+
+### Round 2 (8c4fdf57e)
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8c4fdf57e. `ModelCheckRecord` is `#[non_exhaustive]`, so only qsl-replay's settlement maps build one, and `to_terminal` refuses a `refuted` value with no counterexample. Residual, not this PR's regression: the public fields can still be mutated on a real record, and main's public `TerminalRecord::proved` already mints `certified` with no evidence. |
+| FND-004 | fixed | 8c4fdf57e. The PR body changelog now lists the round-1 API (`unadapted`, `unrouted`, `to_terminal`, `RefutedWithoutCounterexample`, `#[non_exhaustive]`), and the removed items are gone. |
