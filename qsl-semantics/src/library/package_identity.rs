@@ -286,7 +286,7 @@ fn wire_node_id(value: NodeRef<'_>) -> Option<WireNodeId> {
 }
 
 /// The node tags of the V2 semantic graph.
-const NODE_TAGS: [&str; 14] = [
+const NODE_TAGS: [&str; 15] = [
     "scalar_type",
     "composite_type",
     "bounded_domain",
@@ -301,6 +301,7 @@ const NODE_TAGS: [&str; 14] = [
     "claim",
     "correspondence",
     "extension",
+    "hybrid",
 ];
 
 /// The node tags `projected_node` admits, for a dependent crate's test that
@@ -640,6 +641,17 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// A `hybrid`-tagged projection node (QSpec FR-481, FR-322-AC-13) passes
+    /// the node tag check.
+    #[trace("QSpec-FR-481-AC-1", "FR-447-AC-13")]
+    #[test]
+    fn a_hybrid_tagged_node_passes_the_node_tag_check() {
+        let mut preimage: Value =
+            serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
+        preimage["identity_projection"][0]["node_tag"] = Value::from("hybrid");
+        assert!(project_declarations(&serde_json::to_vec(&preimage).unwrap()).is_ok());
     }
 
     /// The canonicity check is the `quire-canonical`
