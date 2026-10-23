@@ -21,7 +21,7 @@ pub mod layering;
 pub mod report;
 pub mod versioning;
 
-const USAGE: &str = "usage: cargo xtask refinement versioning <corpus>\n       cargo xtask refinement layering <corpus>";
+const USAGE: &str = "usage: cargo xtask refinement versioning <corpus>";
 
 /// `cargo xtask refinement versioning <corpus>`: run the gate and return its
 /// report with the exit code of its verdict (FR-344).
@@ -38,14 +38,6 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
                 .to_json()
                 .map_err(|source| Error::RefinementReport { source })?;
             (stdout, report.verdict.exit_code())
-        }
-        Some("layering") => {
-            let registry = layering::RegistrySnapshotBuilder::new().build();
-            let report = layering::compare(path, layering::compile_unit, &registry, None);
-            let stdout = report
-                .to_json()
-                .map_err(|source| Error::RefinementReport { source })?;
-            (stdout, report.exit)
         }
         _ => return Err(Error::Usage(USAGE)),
     };

@@ -1096,8 +1096,8 @@ mod tests {
         assert_eq!(candidates.candidates()[0].id().as_str(), "backend-a");
     }
 
-    /// FR-345-AC-6/9: without a negotiation function, an admitted witness
-    /// with an actual candidate stays unresolved and is never called held.
+    /// With a caller-supplied candidate, an admitted witness stays unresolved
+    /// when the caller has not supplied a negotiation function.
     #[trace("TC-868")]
     #[test]
     fn an_admitted_witness_with_candidates_is_unresolved_without_negotiation() {

@@ -23,7 +23,6 @@ const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-ed
                      cargo xtask test-suites <lane> [<cargo test args>]\n       \
                      cargo xtask conformance-input\n       cargo xtask conformance\n       \
                      cargo xtask ci\n       cargo xtask refinement versioning <corpus>\n       \
-                     cargo xtask refinement layering <corpus>\n       \
                      cargo xtask canonical-types [<workspace>]";
 
 #[ix_trace_rs::string_edge]
