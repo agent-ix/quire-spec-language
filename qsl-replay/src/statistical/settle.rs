@@ -280,6 +280,7 @@ fn predicate_refused(outcome: &ClauseOutcome) -> StatisticalRecord {
 mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::selection::DefinitionRef;
+    use qsl_foundation::AccountingSetting;
     use quire_exact::{CancelCause, Integer, Rational};
     use quire_semantic_value::catalog::InternalFault;
 
@@ -459,7 +460,10 @@ mod tests {
         assert_eq!(json["cause"]["kind"], "limit-reached");
         assert_eq!(json["cause"]["limit"], "evaluation-meter");
         assert_eq!(json["cause"]["value"], 4_096);
-        assert_eq!(json["cause"]["setting"], "work_units");
+        assert_eq!(
+            json["cause"]["setting"],
+            AccountingSetting::WorkUnits.name()
+        );
         assert_eq!(
             expansion(Some(ExpansionLimit::MaxCandidates), exhausted).value,
             incomplete(ModelCheckLimit::MaxCandidates, 512)
@@ -680,19 +684,29 @@ mod tests {
                 charge_point: quire_exact::ChargePoint::TextInputBytes,
             }))
         };
+        let exhausted_text = exhausted(LimitKind::TextInputBytes);
         assert_eq!(
-            exhausted(LimitKind::TextInputBytes).value,
+            exhausted_text.value,
             TerminalValue::Incomplete(IncompleteCause::LimitReached {
                 limit: ModelCheckLimit::Counter(LimitKind::TextInputBytes),
                 value: 9,
             })
         );
         assert_eq!(
-            exhausted(LimitKind::WorkUnits).value,
+            wire(exhausted_text)["cause"]["setting"],
+            AccountingSetting::TextInputBytes.name()
+        );
+        let exhausted_work = exhausted(LimitKind::WorkUnits);
+        assert_eq!(
+            exhausted_work.value,
             TerminalValue::Incomplete(IncompleteCause::LimitReached {
                 limit: ModelCheckLimit::Counter(LimitKind::WorkUnits),
                 value: 9,
             })
+        );
+        assert_eq!(
+            wire(exhausted_work)["cause"]["setting"],
+            AccountingSetting::WorkUnits.name()
         );
 
         for broken in [

@@ -3,8 +3,10 @@
 //! run names.
 
 use qsl_eval::simulation::Limits;
+use qsl_foundation::AccountingSetting;
 use quire_exact::LimitKind;
 
+use crate::limits::AccountingLimits;
 use crate::statistical::StatisticalLimit;
 
 /// FR-126's published default for `max_automaton_states`: 2^20.
@@ -111,8 +113,7 @@ pub enum ModelCheckLimit {
     MaxRelationTuples,
     /// An EN-4 budget (FR-191, FR-192).
     Statistical(StatisticalLimit),
-    /// An accounting counter a predicate read exhausted (FR-255 Behavior 9): the counter's own
-    /// name is both the limit and the setting.
+    /// An accounting counter a predicate read exhausted (FR-255 Behavior 9).
     Counter(LimitKind),
 }
 
@@ -135,13 +136,13 @@ impl ModelCheckLimit {
         }
     }
 
-    /// The request member that raises this limit, as the request spells it.
+    /// The request member or FR-255 accounting setting name that raises this limit.
     pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
-            Self::EvaluationMeter => "work_units",
+            Self::EvaluationMeter => AccountingSetting::WorkUnits.name(),
             Self::MaxCandidates => "max_candidates",
             Self::SolverSteps => "max_solver_steps",
             Self::WitnessSamples => "witness_samples",
@@ -149,7 +150,7 @@ impl ModelCheckLimit {
             Self::MaxWitnessSet => "max_witness_set",
             Self::MaxRelationTuples => "max_relation_tuples",
             Self::Statistical(limit) => limit.setting(),
-            Self::Counter(kind) => kind.as_str(),
+            Self::Counter(kind) => AccountingLimits::setting_of(kind).name(),
         }
     }
 }
