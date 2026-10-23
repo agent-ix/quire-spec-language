@@ -54,3 +54,10 @@ Measured:
 | --- | --- | --- | --- |
 | FND-001 | low | PR changelog lists `IdentityEncodeError::PositionOrder` as "New", but `IdentityEncodeError` is not `#[non_exhaustive]`, so the added variant breaks any exhaustive `match` downstream; it belongs under BREAKING | qsl-replay/src/execute/parity_identity.rs:22 |
 | FND-002 | low | The function's `declaration` occurrence `(node, "declaration", 0)` is spelled again in `check_identity`, beside `function_claim` (execute.rs:1334) and `call_site` (call_site.rs:594); one shared constructor would keep the mint and check sites from drifting | qsl-replay/src/execute/value_parity.rs:192 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | PR body (not a commit): the changelog now lists `IdentityEncodeError` gaining `PositionOrder` under BREAKING, since the enum is not `non_exhaustive` |
+| FND-002 | fixed | 1adffb125 |

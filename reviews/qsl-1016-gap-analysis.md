@@ -73,3 +73,30 @@ one low.
   `parity_request` / `minted_identity`. They pass.
 - Semantic review (intent to test to code): performed for FR-484 as part of the reviewer brief.
 - Plan completion: not assessed
+
+## New findings (disposition pass 1)
+
+Reviewed at `1adffb12578105879d525d7df60e49edb58a66af`. The new `lock_profile_selections` helper
+reads each lock row as `{"profile", "value"}`. The emitted v2 lock writes its `profile_selections`
+rows as `{"role", "definition": {"authority", "identity"}}`, one per temporal-profile or
+protocol-profile law (qsl-package/src/emit.rs:776-795, asserted at
+qsl-package/src/emit/tests/temporal_clause.rs:197). `ReplayRequest::decode` admits a request
+profile selection only when its `profile` is `quire.profile.v1` (`KNOWN_SEMANTIC_PROFILES`,
+qsl-replay/src/request.rs:423, checked at :848). The lock's role-keyed rows cannot be carried
+into the request under any `ProfileSelection { profile, value }` mapping without that check
+refusing `UnknownSemanticProfile`. The replay itself never compares the request's profile
+selections with the recompiled lock. TC-1252's unit has no temporal or protocol clause, so its
+lock list is empty and the helper never reads a row.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | FR-484 "Retained claim inputs" says the request's profile selections are the v2 lock's `profile_selections`; those rows are role-keyed clause profiles (`{role, definition}`), while the request admits only `quire.profile.v1` semantic-profile selections, so a value-parity claim over any package with a temporal or protocol clause cannot be built by FR-484's rule without refusing `UnknownSemanticProfile` (spec contradiction; needs a ruling on what the request's selections are) | spec/functional/FR-484-identify-a-function-value-parity-claim-and-retain-its-replay-inputs.md:104 |
+| FND-005 | medium | `lock_profile_selections` reads lock rows by guessed keys `profile`/`value` that the emitted lock does not have; it passes only because TC-1252's lock is empty, and would panic on the first real row, so AC-9's "profile_selections = the lock's" is still not exercised | qsl-replay/src/execute/tests/value_parity_identity.rs:501 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1adffb125 |
+| FND-002 | fixed | 1adffb125 |
+| FND-003 | fixed | 1adffb125 |
