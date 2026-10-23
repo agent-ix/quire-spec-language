@@ -72,18 +72,36 @@ rather than from an `inconclusive` verdict after a long request (US-019).
      step), because FR-145 admits no other proof of order independence;
   2. a conversion of a reference to a value of another type, including to
      text;
-  3. a reference literal that names a key.
+  3. a reference literal that names a key;
+  4. a `convert` of a `Set` or `Bag` whose element type contains such a
+     reference to a `Sequence` or an ordered set, because FR-145 orders the
+     result by ascending canonical key, which for references is identity
+     order, so every later traversal of the result depends on identity.
   An ordering comparison over references is already ill-typed (the S3
   ordering arm) and keeps its existing refusal.
+- `count`, `sum`, `exists`, `forall`, `filter`, `map` into a `Set` or `Bag`,
+  `contains` and `size` are order-independent: the checker SHALL check them as
+  it does without the annotation, and a `convert` of such a `Set` to a `Bag`
+  is not form 4.
+- The forms are refused in the clause kinds of Inputs: operation
+  preconditions and postconditions, invariants, temporal clause atoms,
+  `terminal when` predicates, state constraints and refinement rows (QSpec
+  FR-381 "Scope of the check"). A form written outside them, such as in a
+  function body, SHALL be checked by the rules that apply without the
+  annotation.
 - QSpec FR-145 refuses a `fold` or `reduce` over a `Set` or `Bag` whose step is
   outside its catalog, `ill_typed`/`operator-ineligible`, in every unit.
-- When the source of such a fold or reduce contains a reference into an
-  annotated population, the checker SHALL report it as form 1
-  (`identity-observing-form`); otherwise the checker SHALL report FR-145's
-  `operator-ineligible`. The split is per fold, from its source type, since a
-  unit may read an annotated and an unannotated population.
+- When a clause of those kinds holds such a fold or reduce and the fold's
+  source contains a reference into an annotated population, the checker SHALL
+  report it as form 1 (`identity-observing-form`) and SHALL NOT also report
+  FR-145's `operator-ineligible` for it. Otherwise, including such a fold in a
+  function body, the checker SHALL report FR-145's `operator-ineligible`. The
+  split is per fold, from its source type, since a unit may read an annotated
+  and an unannotated population (QSpec FR-381 "Precedence over FR-145").
 - The checker SHALL check a `fold` or `reduce` whose step is in the catalog as
-  FR-145 does, annotated population or not; it is not form 1.
+  FR-145 does, annotated population or not; it is not form 1. A `fold` whose
+  step is outside the catalog, over a `Bag` converted from such a `Set`, is
+  form 1, because its source still contains the reference.
 - The identity-observing cause names the population the operator should
   unannotate or restructure, which is why it takes precedence.
 - Each refusal SHALL be `ill_typed`/`identity-observing-form` at the span of
@@ -108,6 +126,9 @@ rather than from an `inconclusive` verdict after a long request (US-019).
 | FR-150-AC-2 | Adding field `peers: Set<Reference<ConfigVersion>>` and a post clause that chooses the new parent with `fold` over `self.peers` refuses `ill_typed`/`identity-observing-form` at the `fold` node's span, naming `fold` and `config_history`; no checked package is produced. The same unit without the annotation refuses `ill_typed`/`operator-ineligible` at the `fold` (FR-145: a step that chooses an element is not commutative and associative). A `fold<Tally>(acc, p in self.peers: acc + 1, identity: 0)` counting the peers, with `type Tally = Integer;`, checks in both units (`Integer` is a keyword and cannot stand as the fold's type name). | Test (TC-565) |
 | FR-150-AC-3 | Over the annotated unit, an invariant comparing `self` to a reference literal naming key `a` refuses at the literal; a temporal atom converting `c` to text refuses at the conversion; a `terminal when` predicate with a `reduce` over a `Bag` of `ConfigVersion` references refuses at the `reduce`; a state constraint with a `fold` over such a set refuses at the `fold`, each with a step outside FR-145's catalog (it chooses an element). A unit with two refused forms reports both, in source order. | Test (TC-566) |
 | FR-150-AC-4 | Over the annotated unit, an invariant `forall p in config_history: p.parent = self implies p != self` and an atom `holds(c.parent = a.parent)` check, and `fold<Tally>(acc, x in s: acc + 1, identity: 0)` over a `Set<Int[0, 3]>` field `s`, with `type Tally = Integer;`, checks: neither reads the population by an identity-observing form. | Test (TC-566) |
+| FR-150-AC-5 | `convert<Sequence<Reference<ConfigVersion>>[0, 8]>(self.peers)` and `convert<OrderedSet<Reference<ConfigVersion>>[0, 8]>(self.peers)`, each read in a post clause of the annotated unit with `peers: Set<Reference<ConfigVersion>>`, refuse `ill_typed`/`identity-observing-form` at the `convert` node, naming `convert` and `config_history`, the `Sequence` conversion folded with a step that chooses an element included. `convert<Bag<Reference<ConfigVersion>>[0, 8]>(self.peers)` not folded checks, and a `fold` of it with a step that chooses an element refuses `ill_typed`/`identity-observing-form` at the `fold` node with no `operator-ineligible`. The same `convert` to a `Sequence` in the unannotated unit checks. | Test (TC-565) |
+| FR-150-AC-6 | The cause is decided per fold: in a unit that reads `config_history` (annotated) and a second population `drafts` of type `Draft` (not annotated), with fields `peers: Set<Reference<ConfigVersion>>` and `drafts: Set<Reference<Draft>>`, a post clause whose `fold` over `self.peers` chooses an element refuses `ill_typed`/`identity-observing-form` naming `config_history`, and one whose `fold` over `self.drafts` chooses an element refuses `ill_typed`/`operator-ineligible`, each at its own `fold` node and each reported once, in source order. | Test (TC-566) |
+| FR-150-AC-7 | Over the annotated unit, a function `pick(s: Set<Reference<ConfigVersion>>): Reference<ConfigVersion>` whose body folds `s` with a step that chooses an element refuses `ill_typed`/`operator-ineligible` at that `fold` and gives no `identity-observing-form`; `count`, `exists`, `forall`, `contains` and `size` over `self.peers`, and `filter` and `map` of it into a `Set`, in a post clause, check. | Test (TC-566) |
 
 ## Dependencies
 
@@ -122,13 +143,8 @@ rather than from an `inconclusive` verdict after a long request (US-019).
   identity-observing forms as normative semantics and the diagnostic code
   and cause (ADR-021 QS-3).
 
-## Remaining work
-
-- QSpec FR-381 still states that the same forms over an unannotated population
-  are admitted, which FR-145 contradicts; QSpec Linear STD-244 settles it and
-  the precedence above stands until then.
-
 ## References
 
-- QSpec half: QSpec FR-381 (Linear STD-134; ADR-021 §9 QS-3). Owning ticket: Linear
-  QSL-368.
+- QSpec half: QSpec FR-381 (Linear STD-134 and STD-244; ADR-021 §9 QS-3): its
+  breaking forms, "Scope of the check" and "Precedence over FR-145". Owning
+  ticket: Linear QSL-368.
