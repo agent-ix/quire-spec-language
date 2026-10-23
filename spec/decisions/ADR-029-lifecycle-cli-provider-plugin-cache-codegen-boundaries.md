@@ -706,24 +706,29 @@ and `generate` artifacts. Parsing, checking, packaging, execution and
 monitoring are cheap and deterministic and run every time.
 
 **CA-2 Key.** The key is one canonical content identity: a digest in a
-QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of:
+QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of QSpec
+FR-306's closed object `{operation, package_id, request, backend, manifest,
+target}`, and no other member:
 
-- the operation (`prove`, `analyze` or `generate`);
-- the subject's `package_id`. Its FR-322 preimage binds the source digests,
+- `operation`: `prove`, `analyze` or `generate`;
+- `package_id`: the subject's identity. Its FR-322 preimage binds the source digests,
   profiles, model selections and each dependency's `package_id`;
-- the canonical request: the items by occurrence key, the claims, the
+- `request`: the canonical request, the items by occurrence key, the claims, the
   domains and bounds, the options that affect a result, and every
   deterministic budget that can move a result to `incomplete` (work units,
   state and transition budgets);
-- the provider's `BackendId`, the identity string alone, and the provider
-  manifest's content identity, the `ManifestDigest` that layer R computes over
-  the canonical bytes of the provider's complete QSpec FR-331 descriptor, in
-  its domain, as the `manifest` member. A change to any descriptor member
-  changes the key. The tool version is the descriptor's `tool.version`
-  member: a provider whose backend runs an external tool carries
-  `tool: {name, version}`, so a tool-only upgrade changes the
-  `ManifestDigest` and the key and leaves the `BackendId` unchanged;
-- for `generate`, the generation target and its options.
+- `backend`: the provider's `BackendId`, the identity string alone;
+- `manifest`: the provider manifest's content identity, the `ManifestDigest`
+  that layer R computes over the canonical bytes of the provider's complete
+  QSpec FR-331 descriptor, as a `quire.tool-manifest.jcs/v1` digest record. A
+  change to any descriptor member changes the key. The tool version is the
+  descriptor's `tool.version`: every descriptor carries `tool` (QSpec FR-331
+  "Backend tool"), `{name, version}` for a backend that fronts an external
+  tool and `producer` for a pure in-process engine, and the provider queries
+  the version from the executable at each invocation, so a tool-only upgrade
+  changes the `ManifestDigest` and the key and leaves the `BackendId`
+  unchanged;
+- `target`: for `generate` only, the generation target and its options.
 
 Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's
 `max_solver_time`), application version strings and the execution backend that

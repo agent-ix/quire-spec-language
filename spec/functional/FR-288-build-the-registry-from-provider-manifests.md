@@ -60,6 +60,10 @@ FR-331 provider manifests.
   manifests alike.
 - The conversion shall take the descriptor's `BackendId` from the
   manifest's backend identity, verbatim.
+- The conversion shall set the descriptor's `ManifestDigest` to the QSpec
+  FR-331 `ManifestDigest` of the manifest's descriptor: SHA-256 in the QSpec
+  FR-201 domain `quire.tool-manifest.jcs/v1` over the RFC 8785 bytes of that
+  complete descriptor, `tool` included.
 - Layer R and layer 6 shall name a backend by the one `qsl-foundation`
   `BackendId` type.
 - Layer R shall give every `BackendDescriptor` a `ProviderOrigin`, `Linked` or
