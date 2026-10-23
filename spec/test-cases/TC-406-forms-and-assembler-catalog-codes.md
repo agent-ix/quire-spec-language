@@ -43,17 +43,17 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   `ambiguous_declaration`/`ambiguous-name`, and the nominal-admission-fault
   cause `runtime_invariant`/`established-invariant-broken`.
 - The duplicate dimension or unit name cause returns
-  `ambiguous_declaration`/`ambiguous-name`, the dimension name shared with a
-  domain package cause `conflicting_declaration`/`duplicate-declaration`, the
-  unresolved unit dimension
+  `ambiguous_declaration`/`ambiguous-name`, the unresolved unit dimension
   name cause `missing_declaration`/`missing-name`, the zero-denominator
   cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale
   limit `stage_limit_exceeded`/`work-budget-exceeded`. Each unit-graph
   topology cause returns its QSpec FR-142 step, rule or row code:
-  `missing_declaration`/`missing-name` for an unknown term, the
-  base-dimension rule and row 2; `invalid_package`/`definition-cycle` for
-  a dimension cycle and row 6; `invalid_package`/`invalid-value` for rows 1
-  and 5; `invalid_package`/`incompatible-definition` for row 3; and
-  `invalid_package`/`conflicting-definition` for row 4.
+  `missing_declaration`/`missing-name` for an unknown term, an unresolved
+  dimension-equivalence name, the base-dimension rule and row 2;
+  `invalid_package`/`definition-cycle` for a dimension cycle, an equivalence
+  of one node and row 6; `invalid_package`/`invalid-value` for rows 1 and 5;
+  `invalid_package`/`incompatible-definition` for an equivalence whose maps
+  differ and row 3; and `invalid_package`/`conflicting-definition` for a
+  repeated equivalence pair and row 4.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.

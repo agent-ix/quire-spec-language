@@ -53,12 +53,16 @@ hashes or builds a key.
 - The context lists every declared unit the check admitted, each with the id
   of its node, its kernel `UnitId`, its qualified name, its dimension's node
   id and its `QuantityUnit`, ascending by node id (`units`).
+- The context lists every dimension equivalence the unit declares, each with
+  the id of its node and the ids of its two dimension nodes, ascending by node
+  id (`dimension_equivalences`).
 - `unit_declaration` and `dimension_declaration` return the admitted entry or
   a typed refusal.
 - `unit_table` returns the package's kernel unit table: each admitted unit by
   its kernel id.
 - A unit's `converts_to` answers whether a quantity of it converts to another
-  admitted unit, the kernel relation (same normalized dimension).
+  admitted unit, the kernel relation (same normalized dimension, or dimension
+  nodes in one equivalence class of the unit's declared equivalences).
 
 ## Behavior
 
@@ -105,6 +109,12 @@ hashes or builds a key.
   not parse; `Quantity<d::kg>` and `Quantity<kg>` are unresolved type names),
   so `Foreign` fires only for an id read from the dependency's own emitted
   package, and no quantity operand of one package has a unit of another.
+- A unit of a dimension that a declared equivalence relates carries a
+  `QuantityUnit` whose canonical root is the class root and whose exact path
+  includes the class graph's identification edge, so `convert_quantity` from a
+  unit of one dimension of a class to a unit of another converts exactly. A
+  dimension equivalence's node id looks up as `WrongKind` in `unit_declaration`
+  and `dimension_declaration` and is listed only in `dimension_equivalences`.
 - A derived dimension lists its base dimensions with their exponents
   (`AdmittedDimension::terms`), each a listed dimension; a base dimension has
   none.
@@ -120,6 +130,8 @@ hashes or builds a key.
 | FR-398-AC-3 | `unit_declaration` and `dimension_declaration` refuse `Unknown` for an id no package admitted; `WrongKind` for the unit's dimension, enum and record (unit lookup), for a unit (dimension lookup) and, for an unused declared unit, to the record, tuple, union and dimension lookups, which still find it by `unit_declaration` (the enum lookups say `Unknown`), with a dimension no unit names unlisted; and `Foreign` naming the library's `package_id` for a library unit and dimension imported directly or through an intermediate library, while every own unit is found. `composite_declaration` refuses a unit id `WrongKind`. | Test (TC-1092) |
 | FR-398-AC-4 | FR-394-AC-1 to FR-394-AC-5 and FR-396-AC-1 to FR-396-AC-9 still hold. | Test (TC-1089, TC-1090) |
 | FR-398-AC-5 | A replay witness whose quantity names the admitted `UnitId` of `m` replays on both arms at a `Quantity<m>` parameter, and one naming the admitted id of `km` refuses. | Test (TC-1092) |
+| FR-398-AC-6 | Over a unit declaring `dimension Time;`, `dimension Period;`, `unit s : Time = rational(1, 1);`, `unit sec : Period = rational(1, 1);` and `dimension Period ~ Time;`, the context's `dimension_equivalences` holds one entry equal to the spine's checked `dimension_equivalence` node (its id and its two dimension ids); `s` and `sec` convert to each other through `converts_to` and `convert_quantity` (3 `s` is 3 `sec`), and without the equivalence `converts_to` answers false and the conversion refuses. | Test (TC-1092) |
+| FR-398-AC-7 | The equivalence node's id looked up through `unit_declaration` and through `dimension_declaration` refuses `WrongKind`, and the id of a dimension looked up as an equivalence is absent from `dimension_equivalences`. | Test (TC-1092) |
 
 ## Dependencies
 
