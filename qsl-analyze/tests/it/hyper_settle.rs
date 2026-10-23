@@ -14,16 +14,16 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::Category;
 use qsl_replay::{
     settle_hyper_check, BoundCovers, Code, DisagreementCause, Execution, HyperCounterexample,
     HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause, HyperSettleRefusal,
-    IncompleteCause, InconclusiveCause, InternalFault, LimitOrigin, ModelCheckLimit,
-    ModelCheckLimits, ModelTraceSettlement, ReachedLimit, ReductionKind, ReplayRefusal,
-    ResultLabel, RunStats, SettlementBasis, TerminalValue, Truth, UnavailabilityCause,
-    UndecidedCause, EXPLICIT_STATE,
+    IncompleteCause, InconclusiveCause, LimitOrigin, ModelCheckLimit, ModelCheckLimits,
+    ModelTraceSettlement, ReachedLimit, ReductionKind, ReplayRefusal, ResultLabel, RunStats,
+    SettlementBasis, TerminalValue, Truth, UnavailabilityCause, UndecidedCause, EXPLICIT_STATE,
 };
 use quire_exact::{Cancel, Undefined};
+use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::InternalFault;
 
 use crate::hyper::refuted;
 use crate::hyper_projected::{aligned, IDLE, MID_OPERATION};
