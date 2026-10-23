@@ -14,42 +14,43 @@
 //! Settlement is the engine's own layer-6 map, never `analyze`'s opinion of
 //! an engine's evidence: EN-1's results settle through `settle_model_check`
 //! (its certificate checker and counterexample replay), EN-4's through
-//! [`crate::statistical::provider::serve_request`], the same call the FR-280
-//! provider entry makes, so `analyze` and the entry write one record for one
-//! item. The item adapters ([`model_item`], [`statistical_item`]) are the
-//! only constructors of an engine's work, so no caller can hand `analyze` a
-//! pre-built verdict, a checker of its own choosing or a replay outcome. An
-//! engine with no adapter has no way to report a proof or a counterexample
-//! until its checker and replay exist in the core (EN-5: QSL-574..576).
+//! `check_statistical` and FR-192's map, the two calls the FR-280 provider
+//! entry makes, so `analyze` and the entry write one record for one item. The
+//! item adapters ([`model_item`], [`statistical_item`]) are the only
+//! constructors of an engine's work, so no caller can hand `analyze` a
+//! pre-built verdict, a checker or a replay outcome.
 //!
-//! A cancelled [`Cancel`] settles every item not yet run `incomplete`, with
-//! the cancellation cause kept. An item an engine refuses with no FR-331
-//! record (EN-1's refusals, FR-192's unsettled refusals) is reported as
-//! [`Unsettled`], never given a made-up verdict.
+//! `analyze` does not negotiate and reads no manifest to route: the caller
+//! settles each item's [`Disposition`] (CG's `negotiate_*`) and `analyze` runs
+//! a `Supported` item on that one candidate and settles any other disposition
+//! as it is, without running an engine. Every item has a record, so no
+//! refusal ends the request: an engine refusal that its settlement map gives
+//! no terminal record is settled by the FR-281 "Engine refusals" table.
+//!
+//! A cancelled [`Cancel`] settles every item that would run `incomplete`,
+//! with the cancellation cause kept.
 
 mod items;
 
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::StatisticalRecord;
-use qsl_replay::statistical::UnsettledRefusal;
 use qsl_replay::CounterexampleKind;
 use qsl_replay::{
-    IncompleteCause, ModelCheckRecord, OutcomeItem, TerminalRecord, TerminalValue,
-    UnavailabilityCause, UndefinedEvaluation,
+    DeclineCode, IncompleteCause, ModelCheckRecord, OutcomeItem, ProofRefusalCause, TerminalRecord,
+    TerminalValue, UndefinedEvaluation,
 };
-use qsl_route::{
-    BackendDescriptor, CandidateOutcome, ItemEvidence, ManifestDigest, ProviderOrigin,
-    RegistrationRefusal, Registry,
-};
+use qsl_route::routing::Disposition;
+use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
 use qsl_semantics::check::Capability;
 use quire_exact::Cancel;
+use quire_semantic_value::catalog::CatalogCode;
 
 pub use items::{model_item, statistical_item, ModelItem};
 
 use crate::{model_check, statistical};
 
-/// One layer-A engine as `analyze` routes to it: its backend identity and
-/// the descriptor FR-288 converts its manifest into.
+/// One layer-A engine as `analyze` runs it: its backend identity and the
+/// descriptor FR-288 converts its manifest into.
 #[derive(Clone, Debug)]
 pub struct Engine {
     descriptor: BackendDescriptor,
@@ -84,22 +85,151 @@ impl Engine {
     pub fn id(&self) -> &BackendId {
         self.descriptor.id()
     }
+
+    /// The modes the engine's manifest advertises for `kind`.
+    fn modes(&self, kind: Capability) -> Vec<Mode> {
+        self.descriptor
+            .advertises()
+            .filter_map(|(advertised, mode)| (advertised == kind).then_some(mode))
+            .collect()
+    }
 }
 
 /// A linked engine publishes its manifest as data of its own module and has
-/// no separate manifest bytes to digest; the registry needs a digest only to
-/// tell two registrations of one identity apart.
-fn linked_digest() -> ManifestDigest {
-    ManifestDigest::from_digest([0; 32])
+/// no separate manifest bytes to digest.
+fn linked_digest() -> qsl_route::ManifestDigest {
+    qsl_route::ManifestDigest::from_digest([0; 32])
 }
 
-/// The layer-A engines `analyze` has an item adapter for: EN-1 and EN-4.
-///
-/// # Errors
-///
-/// Only if the registry's admission rules refuse an engine's own manifest.
-pub fn layer_a_engines() -> Result<Vec<Engine>, RegistrationRefusal> {
-    Ok(vec![Engine::model_check()?, Engine::statistical()?])
+/// `Engines::with` was given an engine whose `BackendId` the set holds
+/// (FR-281): `invalid_capability`/`duplicate-backend`.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("duplicate-backend: the set already holds {backend:?}")]
+pub struct DuplicateEngine {
+    /// The `BackendId` the set holds.
+    pub backend: BackendId,
+}
+
+impl DuplicateEngine {
+    /// The refusal's catalog code.
+    pub const fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("invalid_capability", "duplicate-backend")
+    }
+}
+
+/// The engines `analyze` may run, at most one per `BackendId`, so a
+/// candidate names at most one engine (FR-281).
+#[derive(Clone, Debug, Default)]
+pub struct Engines {
+    engines: Vec<Engine>,
+}
+
+impl Engines {
+    /// The layer-A engines `analyze` has an item adapter for: EN-1 and EN-4.
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse an engine's own
+    /// manifest.
+    pub fn qsl() -> Result<Self, RegistrationRefusal> {
+        Ok(Self {
+            engines: vec![Engine::model_check()?, Engine::statistical()?],
+        })
+    }
+
+    /// Add `engine`.
+    ///
+    /// # Errors
+    ///
+    /// [`DuplicateEngine`] when the set holds an engine of that `BackendId`;
+    /// the set is unchanged.
+    pub fn with(&mut self, engine: Engine) -> Result<(), DuplicateEngine> {
+        if self.get(engine.id()).is_some() {
+            return Err(DuplicateEngine {
+                backend: engine.id().clone(),
+            });
+        }
+        self.engines.push(engine);
+        Ok(())
+    }
+
+    fn get(&self, backend: &BackendId) -> Option<&Engine> {
+        self.engines.iter().find(|engine| engine.id() == backend)
+    }
+}
+
+/// What a diagnostic's FR-272 payload names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Payload {
+    /// The diagnostic carries no payload.
+    None,
+    /// The item's claim kind.
+    Kind(Capability),
+    /// A backend: the unknown candidate.
+    Backend(BackendId),
+    /// A `Supported` candidate whose manifest does not advertise the item's
+    /// kind and mode.
+    Inconsistent {
+        /// The candidate.
+        candidate: BackendId,
+        /// The item's kind.
+        kind: Capability,
+        /// The item's mode.
+        mode: Mode,
+    },
+    /// An unbounded extent (QSpec FR-272): the kind, the candidate and the
+    /// modes its manifest advertises for that kind.
+    Unbounded {
+        /// The item's kind.
+        kind: Capability,
+        /// The engine that refused the unbounded extent.
+        candidate: BackendId,
+        /// The modes its manifest advertises for the kind.
+        modes: Vec<Mode>,
+    },
+}
+
+/// The FR-272 diagnostic of a record settled by a disposition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Diagnostic {
+    /// The code and cause.
+    pub code: CatalogCode,
+    /// The payload.
+    pub payload: Payload,
+}
+
+impl Diagnostic {
+    /// A diagnostic with no payload.
+    pub fn new(code: CatalogCode) -> Self {
+        Self {
+            code,
+            payload: Payload::None,
+        }
+    }
+}
+
+/// A disposition other than `supported`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DispositionKind {
+    /// `requires-bound`.
+    RequiresBound,
+    /// `unsupported`.
+    Unsupported,
+    /// `invalid-request`.
+    InvalidRequest,
+}
+
+/// A record settled by a disposition (QSpec FR-331 `settled_by`
+/// `disposition`): no result, the disposition and its diagnostic.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Disposed {
+    /// The disposition.
+    pub kind: DispositionKind,
+    /// The engine that refused the item, when one ran; none for an item that
+    /// ran no engine.
+    pub backend: Option<BackendId>,
+    /// The disposition's diagnostic.
+    pub diagnostic: Option<Diagnostic>,
 }
 
 /// What an engine reports for one item. Only the crate's item adapters
@@ -109,60 +239,89 @@ pub(crate) enum EngineReport {
     Model(Box<ModelCheckRecord>),
     /// EN-4's record, settled by FR-192's map.
     Statistical(Box<StatisticalRecord>),
-    /// The engine refused the item, and no layer-6 map gives the refusal a
-    /// terminal record.
-    Refused(Unsettled),
+    /// The engine refused the item, and its settlement map gives the refusal
+    /// no terminal record.
+    Refused(Refusal),
 }
 
-/// A refusal that has no FR-331 terminal record.
-#[derive(Debug)]
-pub enum Unsettled {
-    /// EN-1 explored nothing.
-    Model(Box<model_check::ModelCheckRefusal>),
-    /// A refusal FR-192's map gives no terminal record.
-    Statistical(UnsettledRefusal),
+/// The FR-281 "Engine refusals" table's rows.
+pub(crate) enum Refusal {
+    /// `declined`, with the refusal's cause and code.
+    Declined(ProofRefusalCause, DeclineCode),
+    /// An unbounded extent: `unsupported` with `unbounded-extent`.
+    RequiresBound,
+    /// EN-4 `NotStatistical`: `invalid-request` with `not-statistical`.
+    NotStatistical,
+    /// `unsupported` with the refusal's own diagnostic.
+    Unsupported(CatalogCode),
+    /// `failed` with the refusal's diagnostic.
+    Failed(CatalogCode),
 }
 
 /// The work an engine runs for one item.
 type Work<'a> = Box<dyn FnOnce(&Cancel) -> EngineReport + 'a>;
 
-/// One item to analyze: its request index, its claim and the work an engine
-/// runs for it, when the claim kind has an item adapter.
+/// One item to analyze: its request index, its claim, its settled
+/// disposition and the work an engine runs for it, when the claim kind has an
+/// item adapter.
 pub struct AnalyzeItem<'a> {
     index: RequestIndex,
     kind: Capability,
-    evidence: ItemEvidence,
+    mode: Mode,
+    disposition: Disposition,
+    diagnostic: Option<Diagnostic>,
     work: Option<Work<'a>>,
 }
 
 impl<'a> AnalyzeItem<'a> {
-    /// An item of claim kind `kind` and probabilistic evidence `evidence`
-    /// (ignored for a kind that is not probabilistic) whose engine runs
-    /// `work`.
+    /// An item of claim kind `kind` and mode `mode` that `backend` runs as
+    /// `work`: `Supported(backend)` unless [`Self::disposed`] says otherwise.
     pub(crate) fn new(
         index: RequestIndex,
         kind: Capability,
-        evidence: ItemEvidence,
+        mode: Mode,
+        backend: &str,
         work: impl FnOnce(&Cancel) -> EngineReport + 'a,
     ) -> Self {
         Self {
             index,
             kind,
-            evidence,
+            mode,
+            disposition: Disposition::Supported(Candidate::new(BackendId::new(backend))),
+            diagnostic: None,
             work: Some(Box::new(work)),
         }
     }
 
-    /// An item of claim kind `kind` that no item adapter builds: it settles
-    /// `unsupported`, naming the kind, even when an engine advertises it,
-    /// since there is no work to hand the engine.
+    /// An item of claim kind `kind` that no item adapter builds: no engine
+    /// is given work for it, so it settles `unsupported` with
+    /// `unsupported-requested-capability`, naming the kind.
     pub fn unadapted(index: RequestIndex, kind: Capability) -> Self {
         Self {
             index,
             kind,
-            evidence: ItemEvidence::Absent,
+            mode: Mode::Bounded,
+            disposition: Disposition::Unsupported,
+            diagnostic: Some(unsupported_kind(kind)),
             work: None,
         }
+    }
+
+    /// This item with the disposition the caller's negotiation settled it
+    /// (FR-281 "Negotiated items") and, for `Unsupported` and
+    /// `InvalidRequest`, its diagnostic.
+    #[must_use]
+    pub fn disposed(mut self, disposition: Disposition, diagnostic: Option<Diagnostic>) -> Self {
+        self.disposition = disposition;
+        self.diagnostic = diagnostic;
+        self
+    }
+}
+
+fn unsupported_kind(kind: Capability) -> Diagnostic {
+    Diagnostic {
+        code: CatalogCode::new("unsupported_projection", "unsupported-requested-capability"),
+        payload: Payload::Kind(kind),
     }
 }
 
@@ -171,20 +330,38 @@ impl<'a> AnalyzeItem<'a> {
 pub struct AnalyzeRecord {
     /// The item's request index.
     pub request_index: RequestIndex,
-    /// The item's FR-331 terminal record, or the refusal that has none.
-    pub result: Result<TerminalRecord, Unsettled>,
+    /// The item's settlement.
+    pub settlement: Settlement,
     /// EN-1's full record, carrying the counterexample of a `refuted` item.
     pub model_check: Option<Box<ModelCheckRecord>>,
 }
 
+/// How an item settled.
+#[derive(Debug)]
+pub enum Settlement {
+    /// An FR-331 terminal record.
+    Terminal(Box<TerminalRecord>),
+    /// A record settled by a disposition.
+    Disposed(Disposed),
+}
+
 impl AnalyzeRecord {
+    /// The terminal record, when the item settled one.
+    pub fn terminal(&self) -> Option<&TerminalRecord> {
+        match &self.settlement {
+            Settlement::Terminal(terminal) => Some(terminal.as_ref()),
+            Settlement::Disposed(_) => None,
+        }
+    }
+
     /// The outcome item (FR-286) this record writes. An item refuted by a
     /// claim evaluation undefined at a state is `refuted`, category
     /// violation, with cause `undefined-evaluation` naming that state and
     /// the undefined reason, and never the `undefined` label (FR-281).
-    /// `None` for an item with no terminal record.
+    /// `None` for a record settled by a disposition, which the driver writes
+    /// from its own disposition and diagnostic.
     pub fn outcome_item(&self) -> Option<OutcomeItem> {
-        let terminal = self.result.as_ref().ok()?;
+        let terminal = self.terminal()?;
         let undefined = self
             .model_check
             .as_ref()
@@ -214,127 +391,161 @@ fn undefined_item(index: RequestIndex, evaluation: &UndefinedEvaluation) -> Outc
     )
 }
 
-/// Why `analyze` ran no item.
-#[derive(Debug, thiserror::Error)]
-pub enum AnalyzeRefusal {
-    /// The engines' manifests do not register as one registry.
-    #[error("the engines' manifests do not register: {0:?}")]
-    Registration(Vec<RegistrationRefusal>),
-    /// The manifests give an item more than one candidate. FR-290 settles
-    /// an item `supported` only with exactly one, and routing never chooses.
-    #[error("item {index:?} has more than one candidate engine: {candidates:?}")]
-    Ambiguous {
-        /// The item.
-        index: RequestIndex,
-        /// Its candidate engines, in FR-290's order.
-        candidates: Vec<BackendId>,
-    },
-}
-
-/// FR-281: run `items` on the engines `engines` route them to and settle each
-/// as one record, in request order.
-///
-/// # Errors
-///
-/// [`AnalyzeRefusal`] when the engines' manifests do not register as one
-/// registry, or route an item to more than one engine; no item has run then.
+/// FR-281: run `items` on `engines` and settle each as one record, in
+/// request order. Every item has a record: an item settled by a disposition
+/// other than `supported` runs no engine, and an item whose `Supported`
+/// candidate `engines` does not hold, or holds without advertising the
+/// item's kind and mode, settles `invalid-request`.
 pub fn analyze(
-    engines: &[Engine],
+    engines: &Engines,
     items: Vec<AnalyzeItem<'_>>,
     cancel: &Cancel,
-) -> Result<Vec<AnalyzeRecord>, AnalyzeRefusal> {
-    let mut registry = Registry::new();
-    let mut refusals = Vec::new();
-    for engine in engines {
-        if let Err(refused) = registry.register(engine.descriptor.clone()) {
-            refusals.extend(refused);
-        }
-    }
-    if !refusals.is_empty() {
-        return Err(AnalyzeRefusal::Registration(refusals));
-    }
-    let mut routed = Vec::with_capacity(items.len());
-    for item in items {
-        let candidates = match registry.candidates_for_evidence(item.kind, &item.evidence, None) {
-            CandidateOutcome::Candidates(set) => set
-                .candidates()
-                .iter()
-                .map(|candidate| candidate.id().clone())
-                .collect::<Vec<_>>(),
-            CandidateOutcome::UnknownBackend(_) => Vec::new(),
-        };
-        match <[BackendId; 1]>::try_from(candidates) {
-            Ok([backend]) => routed.push((item, Some(backend))),
-            Err(candidates) if candidates.is_empty() => routed.push((item, None)),
-            Err(candidates) => {
-                return Err(AnalyzeRefusal::Ambiguous {
-                    index: item.index,
-                    candidates,
-                })
-            }
-        }
-    }
-    Ok(routed
+) -> Vec<AnalyzeRecord> {
+    items
         .into_iter()
-        .map(|(item, backend)| run(item, backend, cancel))
-        .collect())
+        .map(|item| run(engines, item, cancel))
+        .collect()
 }
 
-/// Run one routed item: `unsupported` when no engine took it, `incomplete`
-/// when the handle is already cancelled, the engine's settlement otherwise.
-fn run(item: AnalyzeItem<'_>, backend: Option<BackendId>, cancel: &Cancel) -> AnalyzeRecord {
+fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeRecord {
     let AnalyzeItem {
-        index, kind, work, ..
+        index,
+        kind,
+        mode,
+        disposition,
+        diagnostic,
+        work,
     } = item;
-    let record = |terminal| AnalyzeRecord {
+    let record = |settlement| AnalyzeRecord {
         request_index: index,
-        result: Ok(terminal),
+        settlement,
         model_check: None,
     };
-    let (Some(backend), Some(work)) = (backend, work) else {
-        return record(TerminalRecord::unrouted(
-            index,
-            UnavailabilityCause::ClaimKind { kind },
-        ));
+    let disposed = |kind, diagnostic| {
+        record(Settlement::Disposed(Disposed {
+            kind,
+            backend: None,
+            diagnostic,
+        }))
+    };
+    let candidate = match disposition {
+        Disposition::Supported(candidate) => candidate,
+        Disposition::RequiresBound => return disposed(DispositionKind::RequiresBound, diagnostic),
+        Disposition::Unsupported => return disposed(DispositionKind::Unsupported, diagnostic),
+        Disposition::InvalidRequest => {
+            return disposed(DispositionKind::InvalidRequest, diagnostic)
+        }
+    };
+    let backend = candidate.id().clone();
+    let Some(engine) = engines.get(&backend) else {
+        return disposed(
+            DispositionKind::InvalidRequest,
+            Some(Diagnostic {
+                code: CatalogCode::new("invalid_capability", "unknown-backend"),
+                payload: Payload::Backend(backend),
+            }),
+        );
+    };
+    if !engine.modes(kind).contains(&mode) {
+        return disposed(
+            DispositionKind::InvalidRequest,
+            Some(Diagnostic {
+                code: CatalogCode::new("invalid_capability", "inconsistent-candidates"),
+                payload: Payload::Inconsistent {
+                    candidate: backend,
+                    kind,
+                    mode,
+                },
+            }),
+        );
+    }
+    let Some(work) = work else {
+        return disposed(DispositionKind::Unsupported, Some(unsupported_kind(kind)));
     };
     if let Some(source) = cancel.cause() {
-        return record(TerminalRecord::incomplete(
+        return record(terminal(TerminalRecord::incomplete(
             index,
             backend,
             IncompleteCause::Cancelled { source },
-        ));
+        )));
     }
-    settle(index, backend, work(cancel))
+    settle(index, kind, engine, work(cancel))
 }
 
-fn settle(index: RequestIndex, backend: BackendId, report: EngineReport) -> AnalyzeRecord {
+fn terminal(record: TerminalRecord) -> Settlement {
+    Settlement::Terminal(Box::new(record))
+}
+
+fn settle(
+    index: RequestIndex,
+    kind: Capability,
+    engine: &Engine,
+    report: EngineReport,
+) -> AnalyzeRecord {
+    let backend = engine.id().clone();
+    let record = |settlement, model_check| AnalyzeRecord {
+        request_index: index,
+        settlement,
+        model_check,
+    };
+    let disposed = |kind, diagnostic: Diagnostic, backend| {
+        record(
+            Settlement::Disposed(Disposed {
+                kind,
+                backend: Some(backend),
+                diagnostic: Some(diagnostic),
+            }),
+            None,
+        )
+    };
     match report {
-        EngineReport::Model(record) => AnalyzeRecord {
-            request_index: index,
+        EngineReport::Model(model) => record(
             // A refuted value without its reproduced counterexample is an
             // engine fault, never a verdict.
-            result: Ok(record
-                .to_terminal(index, backend.clone())
-                .unwrap_or_else(|_| TerminalRecord::failed(index, backend))),
-            model_check: Some(record),
-        },
-        EngineReport::Statistical(record) => AnalyzeRecord {
-            request_index: index,
-            result: Ok(record.into_terminal(index, backend)),
-            model_check: None,
-        },
-        EngineReport::Refused(refusal) => AnalyzeRecord {
-            request_index: index,
-            result: Err(refusal),
-            model_check: None,
-        },
+            terminal(
+                model
+                    .to_terminal(index, backend.clone())
+                    .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
+            ),
+            Some(model),
+        ),
+        EngineReport::Statistical(statistical) => {
+            record(terminal(statistical.into_terminal(index, backend)), None)
+        }
+        EngineReport::Refused(Refusal::Declined(cause, code)) => record(
+            terminal(TerminalRecord::declined(index, backend, cause, code)),
+            None,
+        ),
+        EngineReport::Refused(Refusal::Failed(code)) => record(
+            terminal(TerminalRecord::failed_with(index, backend, code)),
+            None,
+        ),
+        EngineReport::Refused(Refusal::Unsupported(code)) => {
+            disposed(DispositionKind::Unsupported, Diagnostic::new(code), backend)
+        }
+        EngineReport::Refused(Refusal::NotStatistical) => disposed(
+            DispositionKind::InvalidRequest,
+            Diagnostic::new(CatalogCode::new("invalid_capability", "not-statistical")),
+            backend,
+        ),
+        EngineReport::Refused(Refusal::RequiresBound) => {
+            let diagnostic = Diagnostic {
+                code: CatalogCode::new("unsupported_projection", "unbounded-extent"),
+                payload: Payload::Unbounded {
+                    kind,
+                    candidate: backend.clone(),
+                    modes: engine.modes(kind),
+                },
+            };
+            disposed(DispositionKind::Unsupported, diagnostic, backend)
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use qsl_foundation::bound::DomainKind;
-    use qsl_route::{descriptor_from_manifest, Candidate, Mode};
+    use qsl_route::{descriptor_from_manifest, ManifestDigest};
 
     use super::*;
 
@@ -353,44 +564,205 @@ mod tests {
         )
     }
 
-    /// Two engines advertising one claim kind give an item two candidates,
-    /// which routing never chooses between: `analyze` refuses before
-    /// running it.
-    #[test]
-    fn two_engines_for_one_kind_are_refused_not_chosen_between() {
-        let engines = [
-            engine("test-a", Capability::OperationContract),
-            engine("test-b", Capability::OperationContract),
-        ];
-        let items = vec![AnalyzeItem::new(
+    fn item<'a>(
+        backend: &str,
+        kind: Capability,
+        ran: &'a std::cell::Cell<bool>,
+    ) -> AnalyzeItem<'a> {
+        AnalyzeItem::new(
             RequestIndex::new(0),
-            Capability::OperationContract,
-            ItemEvidence::Absent,
-            |_| panic!("an ambiguous item runs nothing"),
-        )];
-        let refusal = analyze(&engines, items, &Cancel::new()).expect_err("an ambiguous route");
-        assert!(
-            matches!(&refusal, AnalyzeRefusal::Ambiguous { candidates, .. } if candidates.len() == 2),
-            "{refusal:?}"
-        );
+            kind,
+            Mode::Bounded,
+            backend,
+            move |_| {
+                ran.set(true);
+                EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                    "runtime_invariant",
+                    "established-invariant-broken",
+                )))
+            },
+        )
     }
 
-    /// An item an engine advertises but no adapter builds settles
-    /// `unsupported`, naming the kind, and runs nothing.
+    fn disposed(records: &[AnalyzeRecord]) -> &Disposed {
+        match &records[0].settlement {
+            Settlement::Disposed(disposed) => disposed,
+            Settlement::Terminal(terminal) => panic!("expected a disposition: {terminal:?}"),
+        }
+    }
+
+    /// FR-281-AC-10: a second engine of one `BackendId` is refused as
+    /// `duplicate-backend` and the set still runs the first.
     #[test]
-    fn an_unadapted_item_settles_unsupported_even_when_an_engine_advertises_it() {
-        let engines = [engine("test-a", Capability::OperationContract)];
-        let items = vec![AnalyzeItem::unadapted(
+    fn a_duplicate_backend_is_refused_and_the_set_is_unchanged() {
+        let mut engines = Engines::default();
+        engines
+            .with(engine("test-a", Capability::OperationContract))
+            .expect("first");
+        let refusal = engines
+            .with(engine("test-a", Capability::ValueValidity))
+            .expect_err("a duplicate");
+        assert_eq!(refusal.backend, BackendId::new("test-a"));
+        assert_eq!(refusal.catalog_code().cause(), "duplicate-backend");
+        let ran = std::cell::Cell::new(false);
+        let records = analyze(
+            &engines,
+            vec![item("test-a", Capability::OperationContract, &ran)],
+            &Cancel::new(),
+        );
+        assert!(ran.get());
+        assert!(records[0].terminal().is_some());
+    }
+
+    /// FR-281-AC-10: a `Supported` candidate that does not advertise the
+    /// item's kind and mode settles `inconsistent-candidates` and does not
+    /// run; one the set does not hold settles `unknown-backend`.
+    #[test]
+    fn an_inconsistent_or_unknown_candidate_settles_invalid_request_and_runs_nothing() {
+        let mut engines = Engines::default();
+        engines
+            .with(engine("test-a", Capability::ValueValidity))
+            .expect("first");
+        let ran = std::cell::Cell::new(false);
+        let records = analyze(
+            &engines,
+            vec![item("test-a", Capability::TemporalSatisfaction, &ran)],
+            &Cancel::new(),
+        );
+        let settled = disposed(&records);
+        assert_eq!(settled.kind, DispositionKind::InvalidRequest);
+        let diagnostic = settled.diagnostic.as_ref().expect("a diagnostic");
+        assert_eq!(diagnostic.code.cause(), "inconsistent-candidates");
+        assert_eq!(
+            diagnostic.payload,
+            Payload::Inconsistent {
+                candidate: BackendId::new("test-a"),
+                kind: Capability::TemporalSatisfaction,
+                mode: Mode::Bounded,
+            }
+        );
+        let records = analyze(
+            &engines,
+            vec![item("test-c", Capability::ValueValidity, &ran)],
+            &Cancel::new(),
+        );
+        let diagnostic = disposed(&records).diagnostic.clone().expect("a diagnostic");
+        assert_eq!(diagnostic.code.cause(), "unknown-backend");
+        assert_eq!(
+            diagnostic.payload,
+            Payload::Backend(BackendId::new("test-c"))
+        );
+        assert!(!ran.get());
+    }
+
+    /// FR-281-AC-8: an item settled `InvalidRequest` (an ambiguous route, for
+    /// one) keeps its caller-given diagnostic and runs no engine; its
+    /// neighbours still settle.
+    #[test]
+    fn a_disposition_settles_its_item_alone_and_runs_nothing() {
+        let mut engines = Engines::default();
+        engines
+            .with(engine("test-a", Capability::ValueValidity))
+            .expect("first");
+        let ran = std::cell::Cell::new(false);
+        let ambiguous =
+            Diagnostic::new(CatalogCode::new("invalid_capability", "ambiguous-backend"));
+        let records = analyze(
+            &engines,
+            vec![
+                item("test-a", Capability::ValueValidity, &ran)
+                    .disposed(Disposition::InvalidRequest, Some(ambiguous.clone())),
+                item("test-a", Capability::ValueValidity, &ran),
+            ],
+            &Cancel::new(),
+        );
+        let settled = disposed(&records);
+        assert_eq!(settled.kind, DispositionKind::InvalidRequest);
+        assert_eq!(settled.diagnostic.as_ref(), Some(&ambiguous));
+        assert!(records[1].terminal().is_some());
+    }
+
+    fn refusing<'a>(refusal: impl Fn() -> Refusal + 'a) -> AnalyzeItem<'a> {
+        AnalyzeItem::new(
             RequestIndex::new(0),
             Capability::OperationContract,
-        )];
-        let records = analyze(&engines, items, &Cancel::new()).expect("registers");
-        let terminal = records[0].result.as_ref().expect("a record");
+            Mode::Bounded,
+            "test-a",
+            move |_| EngineReport::Refused(refusal()),
+        )
+    }
+
+    /// FR-281-AC-11: each engine refusal row settles its record naming the
+    /// engine; an unbounded extent carries QSpec FR-272's payload (kind,
+    /// candidate, advertised modes).
+    #[test]
+    fn engine_refusals_settle_by_the_refusal_table() {
+        let mut engines = Engines::default();
+        engines
+            .with(engine("test-a", Capability::OperationContract))
+            .expect("first");
+        let run =
+            |refusal: fn() -> Refusal| analyze(&engines, vec![refusing(refusal)], &Cancel::new());
+
+        let records = run(|| Refusal::RequiresBound);
+        let settled = disposed(&records);
+        assert_eq!(settled.kind, DispositionKind::Unsupported);
+        assert_eq!(settled.backend, Some(BackendId::new("test-a")));
+        let diagnostic = settled.diagnostic.as_ref().expect("a diagnostic");
         assert_eq!(
-            terminal.value(),
-            &TerminalValue::Unsupported(UnavailabilityCause::ClaimKind {
-                kind: Capability::OperationContract
-            })
+            diagnostic.code.to_string(),
+            "unsupported_projection/unbounded-extent"
         );
+        assert_eq!(
+            diagnostic.payload,
+            Payload::Unbounded {
+                kind: Capability::OperationContract,
+                candidate: BackendId::new("test-a"),
+                modes: vec![Mode::Bounded],
+            }
+        );
+
+        let records = run(|| Refusal::NotStatistical);
+        assert_eq!(disposed(&records).kind, DispositionKind::InvalidRequest);
+        assert_eq!(
+            disposed(&records)
+                .diagnostic
+                .as_ref()
+                .map(|d| d.code.to_string()),
+            Some("invalid_capability/not-statistical".to_owned())
+        );
+
+        let records = run(|| {
+            Refusal::Unsupported(CatalogCode::new(
+                "unsupported_construct",
+                "not-yet-implemented",
+            ))
+        });
+        assert_eq!(disposed(&records).kind, DispositionKind::Unsupported);
+
+        let records = run(|| {
+            Refusal::Declined(
+                ProofRefusalCause::IncompleteInput,
+                DeclineCode::Qsl(qsl_foundation::Code::UnavailableObservation),
+            )
+        });
+        assert!(matches!(
+            records[0].terminal().map(TerminalRecord::value),
+            Some(TerminalValue::Declined {
+                cause: ProofRefusalCause::IncompleteInput,
+                ..
+            })
+        ));
+
+        let wrong = CatalogCode::new("invalid_runtime_input", "wrong-value-kind");
+        let records = analyze(
+            &engines,
+            vec![refusing(move || Refusal::Failed(wrong))],
+            &Cancel::new(),
+        );
+        let terminal = records[0].terminal().expect("a terminal record");
+        assert_eq!(terminal.value(), &TerminalValue::Failed);
+        assert_eq!(terminal.diagnostic(), Some(wrong));
+        assert_eq!(terminal.backend(), Some(&BackendId::new("test-a")));
     }
 }

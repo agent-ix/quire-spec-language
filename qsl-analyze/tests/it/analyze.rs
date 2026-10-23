@@ -24,21 +24,24 @@
 //! result that reproduces the undefined value is.
 
 use ix_trace_rs::trace;
-use qsl_analyze::analyze::{analyze, layer_a_engines, model_item, AnalyzeItem, Engine};
+use qsl_analyze::analyze::{
+    analyze, model_item, AnalyzeItem, DispositionKind, Engine, Engines, Payload, Settlement,
+};
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{
     settle_model_check, CertificateRule, Certification, CounterexampleKind, IncompleteCause,
     InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
     ModelTraceSettlement, ModelTraceValue, ProofBasis, RunStats, TemporalCounterexample,
-    TerminalValue, UnavailabilityCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    TerminalValue, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_route::{ManifestDigest, Mode, ProviderOrigin};
 use qsl_semantics::check::Capability;
 use quire_exact::{Cancel, CancelCause, Undefined};
+use quire_semantic_value::catalog::Category;
 
 use crate::closure_certificate::world;
 use crate::counter::{CONTRACT, UNLIMITED};
@@ -48,8 +51,12 @@ fn index(at: usize) -> RequestIndex {
     RequestIndex::new(at)
 }
 
-fn en1() -> Engine {
-    Engine::model_check().expect("EN-1's own manifest is admitted")
+fn en1() -> Engines {
+    let mut engines = Engines::default();
+    engines
+        .with(Engine::model_check().expect("EN-1's own manifest is admitted"))
+        .expect("one engine");
+    engines
 }
 
 fn only(
@@ -61,8 +68,7 @@ fn only(
 
 fn value(record: &qsl_analyze::analyze::AnalyzeRecord) -> TerminalValue {
     record
-        .result
-        .as_ref()
+        .terminal()
         .expect("a terminal record")
         .value()
         .clone()
@@ -76,16 +82,13 @@ fn value(record: &qsl_analyze::analyze::AnalyzeRecord) -> TerminalValue {
 #[test]
 fn a_broken_item_settles_refuted_and_its_counterexample_replays() {
     let case = case(CONTRACT, &[0]);
-    let record = only(
-        analyze(
-            &[en1()],
-            vec![model_item(index(0), case.model_item())],
-            &Cancel::new(),
-        )
-        .expect("the engines register"),
-    );
+    let record = only(analyze(
+        &en1(),
+        vec![model_item(index(0), case.model_item())],
+        &Cancel::new(),
+    ));
     assert_eq!(value(&record), TerminalValue::Refuted);
-    let terminal = record.result.as_ref().expect("a terminal record");
+    let terminal = record.terminal().expect("a terminal record");
     assert_eq!(terminal.backend().map(BackendId::as_str), Some("en-1"));
     assert_eq!(terminal.value().category(), Category::Violation);
     let counterexample = record
@@ -119,7 +122,7 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let broken = case(CONTRACT, &[0]);
     let records = analyze(
-        &layer_a_engines().expect("the layer-A manifests register"),
+        &Engines::qsl().expect("the layer-A manifests register"),
         vec![
             AnalyzeItem::unadapted(index(0), Capability::Monitorability),
             model_item(
@@ -131,17 +134,24 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
             model_item(index(2), broken.model_item()),
         ],
         &Cancel::new(),
-    )
-    .expect("the engines register");
+    );
     assert_eq!(
         records.iter().map(|r| r.request_index).collect::<Vec<_>>(),
         [index(0), index(1), index(2)]
     );
+    let Settlement::Disposed(unsupported) = &records[0].settlement else {
+        panic!("expected a disposition: {:?}", records[0].settlement);
+    };
+    assert_eq!(unsupported.kind, DispositionKind::Unsupported);
+    assert_eq!(unsupported.backend, None);
+    let diagnostic = unsupported.diagnostic.as_ref().expect("a diagnostic");
     assert_eq!(
-        value(&records[0]),
-        TerminalValue::Unsupported(UnavailabilityCause::ClaimKind {
-            kind: Capability::Monitorability
-        })
+        diagnostic.code.to_string(),
+        "unsupported_projection/unsupported-requested-capability"
+    );
+    assert_eq!(
+        diagnostic.payload,
+        Payload::Kind(Capability::Monitorability)
     );
     assert_eq!(
         value(&records[1]),
@@ -151,10 +161,6 @@ fn three_items_give_three_records_the_first_unsupported_naming_its_kind() {
         }
     );
     assert_eq!(value(&records[2]), TerminalValue::Refuted);
-    let item = serde_json::to_value(records[0].outcome_item().expect("an item")).expect("writes");
-    assert_eq!(item["result"], "unsupported");
-    assert_eq!(item["cause"]["kind"], "unsupported-claim-kind");
-    assert_eq!(item["cause"]["claim_kind"], "monitorability");
 }
 
 /// FR-281-AC-4 (TC-763 steps 1 and 2), over EN-1: the invariant item proves
@@ -167,7 +173,11 @@ fn a_rejected_certificate_is_inconclusive_and_an_accepted_one_certified() {
     let world = world(CONTRACT, &[("c", 0)]);
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let run = |item| {
-        only(analyze(&[en1()], vec![model_item(index(0), item)], &Cancel::new()).expect("ok"))
+        only(analyze(
+            &en1(),
+            vec![model_item(index(0), item)],
+            &Cancel::new(),
+        ))
     };
     let accepted = run(
         invariant.model_item(&world, ModelCheckLimits::default(), |_| {
@@ -219,9 +229,11 @@ fn a_counterexample_settles_refuted_only_when_replay_reproduces_it() {
             alter(&mut payload);
             replay(&case, payload)
         });
-        value(&only(
-            analyze(&[en1()], vec![model_item(index(0), item)], &Cancel::new()).expect("registers"),
-        ))
+        value(&only(analyze(
+            &en1(),
+            vec![model_item(index(0), item)],
+            &Cancel::new(),
+        )))
     };
 
     assert!(matches!(
@@ -256,17 +268,14 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
         },
         ..ModelCheckLimits::default()
     };
-    let record = only(
-        analyze(
-            &[en1()],
-            vec![model_item(
-                index(0),
-                invariant.model_item(&world, limits, |_| panic!("nothing to replay")),
-            )],
-            &Cancel::new(),
-        )
-        .expect("registers"),
-    );
+    let record = only(analyze(
+        &en1(),
+        vec![model_item(
+            index(0),
+            invariant.model_item(&world, limits, |_| panic!("nothing to replay")),
+        )],
+        &Cancel::new(),
+    ));
     assert_eq!(
         value(&record),
         TerminalValue::Incomplete(IncompleteCause::LimitReached {
@@ -278,7 +287,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
     let records = analyze(
-        &[en1()],
+        &en1(),
         vec![model_item(
             index(0),
             invariant.model_item(&world, ModelCheckLimits::default(), |_| {
@@ -286,8 +295,7 @@ fn a_state_budget_of_one_and_a_cancelled_handle_settle_incomplete() {
             }),
         )],
         &cancel,
-    )
-    .expect("registers");
+    );
     assert_eq!(
         value(&records[0]),
         TerminalValue::Incomplete(IncompleteCause::Cancelled {
@@ -352,9 +360,11 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
         };
         Ok(result)
     });
-    let mut record = only(
-        analyze(&[en1()], vec![model_item(index(0), item)], &Cancel::new()).expect("registers"),
-    );
+    let mut record = only(analyze(
+        &en1(),
+        vec![model_item(index(0), item)],
+        &Cancel::new(),
+    ));
     assert_eq!(value(&record), TerminalValue::Refuted);
     record
         .model_check
@@ -394,7 +404,6 @@ fn en1_advertises_exactly_the_temporal_satisfaction_pair() {
         descriptor.advertises().collect::<Vec<_>>(),
         [(Capability::TemporalSatisfaction, Mode::Bounded)]
     );
-    assert_eq!(layer_a_engines().expect("they register").len(), 2);
 }
 
 fn service_request<'w>(
@@ -440,15 +449,13 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     let world = World::new(&prob_world::service(claim));
     qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
 
-    let analyzed = only(
-        analyze(
-            &layer_a_engines().expect("they register"),
-            vec![statistical_item(index(0), service_request(&world))],
-            &Cancel::new(),
-        )
-        .expect("registers"),
-    )
-    .result
+    let analyzed = only(analyze(
+        &Engines::qsl().expect("they register"),
+        vec![statistical_item(index(0), service_request(&world))],
+        &Cancel::new(),
+    ))
+    .terminal()
+    .cloned()
     .expect("the item settles a record");
     let served = serve_items(
         vec![qsl_analyze::statistical::provider::RoutedItem {

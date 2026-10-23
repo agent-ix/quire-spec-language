@@ -249,10 +249,6 @@ pub struct ItemCause {
     /// (FR-192).
     #[serde(skip_serializing_if = "Option::is_none")]
     refusal: Option<&'static str>,
-    /// An `unsupported-claim-kind` cause's claim kind, by its FR-290 wire
-    /// spelling (FR-281).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    claim_kind: Option<&'static str>,
     /// A `total-above-draw-range` cause's scaled total, as a decimal string
     /// (FR-189-AC-7).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -334,7 +330,6 @@ impl ItemCause {
             generator: None,
             sources: None,
             refusal: None,
-            claim_kind: None,
             total: None,
             bound: None,
             states: None,
@@ -549,9 +544,6 @@ impl OutcomeItem {
                 match cause {
                     UnavailabilityCause::StatisticalRequest(refusal) => {
                         item.refusal = Some(refusal.as_str());
-                    }
-                    UnavailabilityCause::ClaimKind { kind } => {
-                        item.claim_kind = Some(kind.to_wire());
                     }
                     UnavailabilityCause::TotalAboveDrawRange { total } => {
                         item.total = Some(total.to_string());

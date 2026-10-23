@@ -447,18 +447,6 @@ pub enum UnavailabilityCause {
         /// The punctual interval's span.
         span: qsl_foundation::Span,
     },
-    /// FR-281: no layer-A engine advertises the item's claim kind, so
-    /// `analyze` routes it to none. Wire cause `unsupported-claim-kind`,
-    /// naming the claim kind.
-    ///
-    /// Pending spec: FR-281 asks for a typed cause that names the claim kind,
-    /// but FR-286 and the QSpec FR-331 cause vocabulary define no spelling
-    /// for it. The cause and its `claim_kind` outcome member are provisional
-    /// until the spec names them.
-    ClaimKind {
-        /// The claim kind no engine advertises.
-        kind: qsl_semantics::check::Capability,
-    },
 }
 
 /// FR-235 V-8: an item the request writer disposed `Unsupported` settles
@@ -523,7 +511,6 @@ impl UnavailabilityCause {
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
             Self::PunctualInterval { .. } => "punctual-interval",
-            Self::ClaimKind { .. } => "unsupported-claim-kind",
         }
     }
 
@@ -537,8 +524,7 @@ impl UnavailabilityCause {
             | Self::TotalAboveDrawRange { .. }
             | Self::ConfidenceBeyondPrecision
             | Self::WeakAccessShape { .. }
-            | Self::PunctualInterval { .. }
-            | Self::ClaimKind { .. } => None,
+            | Self::PunctualInterval { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
@@ -1195,10 +1181,13 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Failed)
     }
 
-    /// FR-281: the `unsupported` record of an item no engine took, so it has
-    /// no producing backend. It carries no evidence-bearing value.
-    pub fn unrouted(request_index: RequestIndex, cause: UnavailabilityCause) -> Self {
-        Self::from_value(request_index, TerminalValue::Unsupported(cause))
+    /// FR-281: a `failed` record carrying the refusal's FR-272 diagnostic.
+    pub fn failed_with(
+        request_index: RequestIndex,
+        backend: BackendId,
+        diagnostic: CatalogCode,
+    ) -> Self {
+        Self::failed(request_index, backend).with_diagnostic(Some(diagnostic))
     }
 
     pub(crate) fn with_backend(
