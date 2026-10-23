@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-093-AC-21 and AC-22 (TC-416 steps 12 and 13): the v2 emission writes each
-//! structural node's `owner` onto the node and its `identity_projection`
-//! entry, exactly where the node's `quire.structural-node/v1` preimage carries
-//! one. Each key is recomputed from the wire node alone, and every package is
+//! structural node's `owner` onto the node, exactly where the node's
+//! `quire.structural-node/v1` preimage carries one. Each key is recomputed from the wire node alone, and every package is
 //! read back through IR's v2 reader.
 
 use qsl_semantics::check::{
@@ -61,7 +60,7 @@ fn rebuilt_label(group: &[&Value]) -> String {
 }
 
 /// Every owner check of FR-093-AC-21 over one emitted package: each node's
-/// and projection entry's `owner` equals the owner of the checked node's
+/// `owner` equals the owner of the checked node's
 /// preimage (none for a nominal node), follows FR-322's presence rule, each
 /// key and each group label recomputes from the wire alone, and `read` admits
 /// the package. Returns the wire.
@@ -81,12 +80,14 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
         })
         .collect();
     let wire = wire(emission);
-    let projection = wire["identity_preimage"]["identity_projection"]
-        .as_array()
-        .unwrap();
+    assert!(
+        wire["identity_preimage"]
+            .get("identity_projection")
+            .is_none(),
+        "the wire preimage carries no identity_projection (FR-322)"
+    );
     let written = nodes(&wire);
-    assert_eq!(projection.len(), written.len());
-    for (node, projected) in written.iter().zip(projection) {
+    for node in written {
         let id = node["node_id"]["digest"].as_str().unwrap();
         assert_eq!(
             node.get("owner").cloned(),
@@ -95,7 +96,6 @@ fn assert_owners(package: &CheckedPackage, emission: &Emission, read: impl Fn(&E
             node["node_tag"],
             node["semantic_form"]
         );
-        assert_eq!(projected.get("owner"), node.get("owner"), "{id} projection");
         assert_eq!(
             node.get("owner").and_then(|owner| owner["kind"].as_str()),
             required_kind(node),
