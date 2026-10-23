@@ -496,21 +496,11 @@ fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
     assert_ne!(one.claim(), other.claim());
 }
 
-/// The `profile_selections` of the v2 lock of `call_site`'s package bytes,
-/// in the lock's order.
-fn lock_profile_selections(package: &[u8]) -> Vec<ProfileSelection> {
+/// The lock of `call_site`'s package bytes selects no profile for this unit.
+/// The request carries an empty list (pending FR-484 profile-selection ruling).
+fn assert_lock_selects_no_profile(package: &[u8]) {
     let wire: serde_json::Value = serde_json::from_slice(package).expect("package JSON");
-    wire["lock"]["profile_selections"]
-        .as_array()
-        .expect("the lock lists its profile selections")
-        .iter()
-        .map(|row| {
-            ProfileSelection::new(
-                row["profile"].as_str().expect("profile").to_owned(),
-                row["value"].as_str().expect("value").to_owned(),
-            )
-        })
-        .collect()
+    assert_eq!(wire["lock"]["profile_selections"], serde_json::json!([]));
 }
 
 /// FR-484-AC-9: the input-arm packet filled from `call_site` reconstructs,
@@ -523,6 +513,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         [("grow", 41, 42, "agrees"), ("inc", 3, 5, "diverged")]
     {
         let located = site(&source, function);
+        assert_lock_selects_no_profile(&located.package);
         let wire = retained_request(&source, function, value);
         let identity = *located
             .site
@@ -541,7 +532,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
                 located.package_id.hex(),
             )),
             source_digests: Some(wire.source_digests.clone()),
-            profile_selections: Some(lock_profile_selections(&located.package)),
+            profile_selections: Some(Vec::<ProfileSelection>::new()),
             run_limits: Some(wire.accounting_limits),
             declared_domains: Some(Vec::new()),
             backend: Some("generator-under-test".to_owned()),
