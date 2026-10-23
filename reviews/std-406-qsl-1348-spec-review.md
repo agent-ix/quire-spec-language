@@ -35,3 +35,11 @@ Examined, clean:
 Mergeable: no defect that blocks the PR.
 
 Conflicts with main: none (clean merge-tree; clean with open #1303 on plan.md). Mergeable with the low finding recorded.
+
+## Dispositions (round 1)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix 209dceee. plan.md now derives the counts as the 83-row central credit (18/36/29, 16/38/29, 52/31, 83) less V1-TOOL-009. Checked: the allocation table has 82 `V1-*` rows, 18+36+28 = 16+38+28 = 52+30 = 82, and the TC-228 trace tags in `qsl-semantics` name this repository's own TC-228 (FR-084), so the removed row had no evidence in any layer. |
+
+Round 1 verdict at 209dceee: Mergeable: the finding is fixed, no new defect. Gate: `make check-spec-validation` with QSpec origin/main: exit 0, 19 warnings; merge-tree with main is clean.
