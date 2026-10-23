@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-55, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37.
+Scope: FR-091-AC-32 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-55, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-45.
 
 ## Test Procedure
 
@@ -56,7 +56,10 @@ alias is `v`. The owner is authority `a`, identity `u`.
    FR-091-AC-44's. Check and lower each of its bodies `p1` to `p6`, pass each
    checked package to IR's v2 reader, and evaluate each lowered body with the
    operand values AC-36 lists. Check each of FR-093-AC-37's bodies `z1` to
-   `z9` in the same units.
+   `z10` in the same units. Declare FR-093-AC-45's temperature units, check
+   and lower its bodies `n1` to `n6`, pass each package to IR's v2 reader and
+   evaluate each lowered body with the operand values AC-45 lists, then check
+   `n7`.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -105,5 +108,9 @@ Tag the tests with the AC ids they back and `TC-483`.
   AC-36 states; IR's v2 reader admits each package; the evaluations return the
   verdicts AC-36 lists. `z1`, `z2` and `z3` each refuse
   `undefined_expression`/`unproved-nonzero` at the first division, `z4` at the
-  literal, `z5` to `z8` at the first division, and `z9`
-  `ill_typed`/`operator-ineligible` at the negation; none emits a node.
+  literal, `z5` to `z10` at the first division; none emits a node. `n1` to
+  `n6` check and lower as AC-45 states (`n1` and `n2` to the same nodes, `n3`
+  and `n4` to a `quire.op.quantity.div` over the negate node of the `3 ms`
+  literal, `n5` to two nested negate nodes), IR's v2 reader admits each
+  package, and the evaluations return the verdicts AC-45 lists; `n7` refuses
+  `ill_typed`/`operator-ineligible` at the negation and emits no node.
