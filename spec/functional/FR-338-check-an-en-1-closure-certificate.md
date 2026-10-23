@@ -649,11 +649,11 @@ new canonical original/auxiliary structural automaton state once. Reuse by
 partition/component checking does not reset these counters or charge the
 same fact twice. Before an allocation/charge that would exceed a configured
 limit, stop at its actual consumed value, using the corresponding existing
-MaxStates/MaxTransitions/MaxAutomatonStates and request setting. Atom and
+MaxStates/MaxTransitions/MaxAutomatonStates and FR-255 setting name. Atom and
 enabledness evaluation use the subject's existing FR-120 evaluation meter
 and candidate limits, preserving their actual limit/value/setting on a stop.
 The core checks the same Cancel handle at each charge (FR-276), and records
-the actual request settings used. Exhaustion returns the closed typed
+the actual FR-255 setting names used. Exhaustion returns the closed typed
 `Stopped(IncompleteCause::LimitReached{limit,value,setting})`; cancellation
 returns `Stopped(IncompleteCause::Cancelled{source})`, with its actual
 Requested/Deadline source. These are the existing FR-127 stop payloads,
@@ -764,7 +764,7 @@ different materialization orders SHALL produce identical full octets.
 - `Rejected(CertificateRejection{rule, at})` naming an actual failed
   certificate rule and its product state locus.
 - `Stopped(IncompleteCause)` carrying exactly the existing resource limit,
-  actual charged value and request setting, or cancellation source, before
+  actual charged value and FR-255 setting name, or cancellation source, before
   completion. A stop is neither acceptance nor bad-certificate rejection;
   FR-127 settles it `Incomplete` with those same fields.
 - `PackageMismatch{certificate, recompiled}` naming the certificate's and
