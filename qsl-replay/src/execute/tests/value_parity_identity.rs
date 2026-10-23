@@ -497,7 +497,9 @@ fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
 }
 
 /// The lock of `call_site`'s package bytes selects no profile for this unit.
-/// The request carries an empty list (pending FR-484 profile-selection ruling).
+/// The request still carries an empty list: STD-443 fixes a value-parity
+/// claim's `profile_selections` empty (FR-484), and lock rows bind through
+/// `package_id` alone.
 fn assert_lock_selects_no_profile(package: &[u8]) {
     let wire: serde_json::Value = serde_json::from_slice(package).expect("package JSON");
     assert_eq!(wire["lock"]["profile_selections"], serde_json::json!([]));
@@ -505,7 +507,7 @@ fn assert_lock_selects_no_profile(package: &[u8]) {
 
 /// FR-484-AC-9: the input-arm packet filled from `call_site` reconstructs,
 /// round-trips, and the request built from the admitted envelope replays.
-#[trace("TC-1252", "FR-484-AC-9")]
+#[trace("TC-1252", "FR-484-AC-9", "FR-484-AC-11")]
 #[test]
 fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
     let source = unit();
@@ -515,6 +517,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         let located = site(&source, function);
         assert_lock_selects_no_profile(&located.package);
         let wire = retained_request(&source, function, value);
+        assert!(wire.profile_selections.is_empty());
         let identity = *located
             .site
             .value_parity
