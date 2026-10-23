@@ -58,17 +58,21 @@ Start from a domain package whose object type `Note` declares a field
    Compare their same-kind canonical keys. Try UUID against Timestamp and
    each against `Int`, retaining the typed refusal and no Boolean.
 8. Build FR-056-AC-43's package: `Note` with `memo` (`Text`), `ratio`
-   (`Rational`), `amount` (`Decimal`), `amounts` (`Decimal`, `[0, 3]`) and
-   `scale(by: Rational): Integer`, every `typeRef` under
-   `ix://quire/native/`. Compile a unit selecting it with no clause naming
-   these members. Then, one at a time, add the invariants `self.memo =
-   self.memo`, `self.ratio = self.ratio`, `self.amount = self.amount`,
-   `self.amounts = self.amounts` and one comparing a call of `scale` with
-   argument `rational(1, 2)` to `1`. Then add an operation `touch()` with
-   `modifies memo` and no other clause.
-9. Over step 8's admitted unit, admit an FR-106 snapshot whose `Note` object
-   omits `memo`, then one that supplies `{"kind": "text", "text": "a"}` for
-   `memo`.
+   (`Rational`), `amount` (`Decimal`), `amounts` (`Decimal`, `[0, 3]`),
+   `count` (`Integer`), `scale(by: Rational): Integer` and `peek(): Text`,
+   every `typeRef` under `ix://quire/native/`. Compile a unit selecting it
+   with no clause naming these members. Then, one at a time, add the
+   invariants `self.memo = self.memo`, `self.ratio = self.ratio`,
+   `self.amount = self.amount` and `self.amounts = self.amounts`, an
+   invariant comparing a call of `scale` with argument `self.count` to `1`,
+   an invariant comparing a call of `peek()` to itself, and an operation
+   `touch()` with `modifies memo` and postcondition `self.memo =
+   pre(self.memo)`; then `touch()` with `modifies memo` and no postcondition.
+9. Over step 8's admitted unit with an invariant over `count`, admit an
+   FR-106 snapshot whose `Note` object supplies `count` and omits the four
+   bare-native fields, then the same snapshot supplying `{"kind": "text",
+   "text": "a"}` for `memo`. Admit an invocation of `scale` supplying `by`,
+   one omitting `by`, and an invocation of `peek` with a non-null `result`.
 
 ## Expected Results
 
@@ -94,13 +98,20 @@ Start from a domain package whose object type `Note` declares a field
   unsigned ASCII bytewise with a proper prefix first; it grants no ordering
   operator. Payload/codec success alone is no claim that K2 was admitted.
 - Step 8: the unit with no such clause is admitted with no refusal at intake,
-  at the members or at the `model` declaration. Each added invariant refuses
-  `ill_typed`/`operator-ineligible` at its application, naming `Note` and
-  `Field.typeRef` (the call: `Operation.params[0].typeRef`). `touch()` is
-  admitted.
-- Step 9: both snapshots refuse `ill_typed`/`operator-ineligible` at
-  `fields.memo` naming `Note` and `memo`; the supplied Text value is not read,
-  and no `missing-member` refusal is reported.
+  at the members or at the `model` declaration. Each field invariant refuses
+  `ill_typed`/`operator-ineligible` at its projection, naming `Note` and
+  `Field.typeRef`; the `scale` call refuses at the call naming `scale` and
+  `Operation.params[0].typeRef`, with no refusal for `self.count`; the `peek`
+  call refuses at the call naming `peek` and `Operation.returns.typeRef`; the
+  `touch()` postcondition refuses at the post-state projection naming `Note`
+  and `Field.typeRef`; `touch()` with no postcondition is admitted.
+- Step 9: the snapshot omitting the bare-native fields is admitted, with no
+  `missing-member`, and the `count` invariant is checked against it; the
+  snapshot supplying `memo` refuses `ill_typed`/`operator-ineligible` at
+  `fields.memo` with the value unread; the `scale` invocation supplying `by`
+  refuses the same at `parameters.by` naming `scale`; omitting `by` refuses
+  `invalid_runtime_input`/`missing-member`; the `peek` invocation refuses at
+  `result` naming `peek` and `Operation.returns.typeRef`.
 
 ### Step 6 adapter vectors
 

@@ -815,18 +815,30 @@ does an undeclared native name.
 Whether such a member can be used is decided where it is used. Every
 application that resolves to it SHALL refuse `ill_typed`/`operator-ineligible`
 at that application, in the clause or function body that holds it, naming the
-member's declaring node and its typed member path (`Field.typeRef`,
-`Operation.params[i].typeRef` or `Operation.returns.typeRef`): a `field`
-projection of the field in any clause, including a post-state read, and a call
-of an operation whose parameter or result is such a member. A unit whose
-clauses make no such application is admitted with the member present and
-raises nothing for it. A `modifies` entry that names such a field is not an
-application and raises nothing. Snapshot and invocation admission (FR-106)
-reads no value into such a member: an object whose type declares such a field,
-and an operation parameter or result that is one, SHALL refuse
-`ill_typed`/`operator-ineligible` at the field's or argument's value path,
-naming the member, before its value is read and before the missing- and
-unknown-member checks. In particular an FR-106 Decimal or Text value never
+node that declares the member and its typed member path: the owning type's
+node and `Field.typeRef` for a field, the operation's node and
+`Operation.params[i].typeRef` or `Operation.returns.typeRef` for a parameter
+or a result (as QSpec FR-154 names them). The applications are a `field`
+projection of the field in any clause, including a post-state read in a
+postcondition, and a call of an operation whose parameter or result is such a
+member. A call refuses when its operation resolves, before any argument is
+checked against a parameter; an argument is typed on its own first, as every
+call argument is. A unit whose clauses make no such application is admitted
+with the member present and raises nothing for it. A `modifies` entry that
+names such a field is not an application and raises nothing.
+
+Snapshot and invocation admission (FR-106) reads no value into such a member
+and requires none. An object of a snapshot may omit a field that is such a
+member, whatever its presence and multiplicity: admission reports no
+`missing-member` for it and admits the object, which the unit's clauses can
+then check, since none of them reads the field. A value supplied for such a
+field, for such a parameter in an invocation's `parameters`, or as a non-null
+`result` of an operation whose result is such a member, is a use: admission
+SHALL refuse it `ill_typed`/`operator-ineligible` at its value path
+(`populations[i].objects[j].fields.<name>`, `parameters.<name>` or `result`),
+naming the member as above, before the value is read. An invocation that
+omits such a parameter refuses `invalid_runtime_input`/`missing-member` as for
+any other parameter. In particular an FR-106 Decimal or Text value never
 fills a member typed by bare `ix://quire/native/Decimal` or
 `ix://quire/native/Text`: the slots those values fill are a Text value type
 of the package and a QSL source `Decimal` or `Decimal[lo, hi; smin, smax;
@@ -949,7 +961,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-40 | Over `function s using v(x: String): Boolean pure { x = "abc" }`, `x` = `abc` gives `true`, and `ABC`, `abc ` and the empty String give `false`. `"a" = "a"` and `"\u00e9" = "é"` are `true`; `"\u00e9" = "e\u0301"` and `"A" = "a"` are `false`. Over `u: UUID`, `u = UUID("00112233-4455-6677-8899-aabbccddeeff")` is `true` for that value and `u != UUID("00112233-4455-6677-8899-aabbccddeefe")` is `true`. Over `t: Timestamp`, `t = Timestamp(5)` is `true` for `5` and `false` for `6`; `Timestamp(0) = Timestamp(-0)` is `true`, `Timestamp(0) = Timestamp(1)` is `false`, and `Timestamp(-170141183460469231731687303715884105728) = Timestamp(170141183460469231731687303715884105727)` is `false`. A literal compares in a call argument, a `let` binding and a field-read comparison (`x.label = "a"`) by the same rules. The String functions `s` and its `!=` counterpart replay through the real spine (FR-098) with the evaluated value and settlement of the Boolean in the `abc`, `ABC` and empty-text rows; the other rows check and evaluate without replay. | Test (TC-1052) |
 | FR-056-AC-41 | A literal never changes type to fit its slot. `x = "abc"` over `x: Text[0, 8; nfc]`, `u = "00112233-4455-6677-8899-aabbccddeeff"` over `u: UUID`, `x = UUID("00112233-4455-6677-8899-aabbccddeeff")` over `x: String`, `t = 5` over `t: Timestamp`, `n = Timestamp(5)` over `n: Integer`, and `r = "abc"` over `r: Reference<T>` each refuse `ill_typed`/`type-mismatch` at the comparison; the bodies `5` of a function whose result is `Timestamp`, `UUID("00112233-4455-6677-8899-aabbccddeeff")` of one whose result is `String` and `"abc"` of one whose result is `Text[0, 8; nfc]` refuse the same way at the literal. `"abc" < "abd"`, `UUID("00112233-4455-6677-8899-aabbccddeeff") <= UUID("00112233-4455-6677-8899-aabbccddeefe")` and `Timestamp(1) > Timestamp(2)` each refuse `ill_typed`/`operator-ineligible`. | Test (TC-1052) |
 | FR-056-AC-42 | A domain package whose operation parameter has `typeRef` `ix://quire/unit/ms` is admitted by intake with the `typeRef` unresolved; the assembler resolves it to the unit `ms` of a compiling unit that declares `ms`, and refuses it `missing_declaration`/`missing-name` naming `Operation.params[0].typeRef` when the unit declares no `ms`. A `typeRef` of the form `ix://quire/unit/<name>` on a field and on a result behave the same. | Test (TC-147) |
-| FR-056-AC-43 | A domain package whose object type `Note` declares fields `memo` typed `ix://quire/native/Text`, `ratio` typed `ix://quire/native/Rational` and `amount` typed `ix://quire/native/Decimal`, a field `amounts` typed `ix://quire/native/Decimal` with multiplicity `[0, 3]`, and an operation `scale(by)` whose parameter `by` is typed `ix://quire/native/Rational` and whose result is typed `ix://quire/native/Integer`, is admitted by intake and by the assembler with no refusal, and a unit selecting it whose clauses name none of these members is admitted. Adding the invariant `self.memo = self.memo`, then `self.ratio = self.ratio`, then `self.amount = self.amount`, then `self.amounts = self.amounts`, then an invariant comparing a call of `scale` with argument `rational(1, 2)` to `1`, each refuses `ill_typed`/`operator-ineligible` at that application naming `Note` and `Field.typeRef` (or `Operation.params[0].typeRef` for the call); an operation `touch()` with `modifies memo` and no application of `memo` is admitted. An FR-106 snapshot of a `Note` object refuses `ill_typed`/`operator-ineligible` at `fields.memo`, also when `memo` is absent from the object, and supplying `{"kind": "text", "text": "a"}` for `memo` refuses the same with the value unread. | Test (TC-897) |
+| FR-056-AC-43 | A domain package whose object type `Note` declares fields `memo` typed `ix://quire/native/Text`, `ratio` typed `ix://quire/native/Rational`, `amount` typed `ix://quire/native/Decimal`, `amounts` typed `ix://quire/native/Decimal` with multiplicity `[0, 3]` and `count` typed `ix://quire/native/Integer`, an operation `scale(by)` whose parameter `by` is typed `ix://quire/native/Rational` and whose result is typed `ix://quire/native/Integer`, and an operation `peek()` whose result is typed `ix://quire/native/Text`, is admitted by intake and by the assembler with no refusal, and a unit selecting it whose clauses name none of these members is admitted. Adding, one at a time: the invariants `self.memo = self.memo`, `self.ratio = self.ratio`, `self.amount = self.amount` and `self.amounts = self.amounts` each refuse `ill_typed`/`operator-ineligible` at the projection naming `Note` and `Field.typeRef`; an invariant comparing a call of `scale` with argument `self.count` to `1` refuses the same at the call naming `scale` and `Operation.params[0].typeRef`, with no refusal for the argument; an invariant comparing a call of `peek()` to itself refuses at the call naming `peek` and `Operation.returns.typeRef`; an operation `touch()` with `modifies memo` and the postcondition `self.memo = pre(self.memo)` refuses at the post-state projection `self.memo` naming `Note` and `Field.typeRef`, while `touch()` with `modifies memo` and no postcondition is admitted. Over the admitted unit, an FR-106 snapshot whose `Note` object supplies `count` and omits `memo`, `ratio`, `amount` and `amounts` is admitted and an invariant over `count` is checked against it; the same snapshot supplying `{"kind": "text", "text": "a"}` for `memo` refuses `ill_typed`/`operator-ineligible` at `fields.memo` naming `Note` and `Field.typeRef`, the value unread. An invocation of `scale` supplying `by` refuses the same at `parameters.by` naming `scale` and `Operation.params[0].typeRef`, one omitting `by` refuses `invalid_runtime_input`/`missing-member`, and an invocation of `peek` with a non-null `result` refuses `ill_typed`/`operator-ineligible` at `result` naming `peek` and `Operation.returns.typeRef`. | Test (TC-897) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148) |
 
 ### FR-056-AC-17
