@@ -37,14 +37,14 @@ use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
 use crate::simulation::key;
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::CatalogCode;
+use quire_semantic_value::catalog::CatalogCode;
 
 /// The most values a result domain may hold and still be put in canonical
 /// order; a larger one stops the expansion.
 const RESULT_ORDER_LIMIT: u128 = 1 << 16;
 
 /// The identity limit every canonical text of a step is written under.
-fn text_limits() -> CanonicalLimits {
+pub(super) fn text_limits() -> CanonicalLimits {
     CanonicalLimits::new(identity_limits().input_bytes)
 }
 

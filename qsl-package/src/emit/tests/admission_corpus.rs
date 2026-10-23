@@ -704,6 +704,17 @@ fn every_emitted_node_family_is_admitted_at_its_package_id() {
             .or_default()
             .push("not emitted: QSL writes no extension node yet (QSL-978)".to_owned());
     }
+    // IR does not export `HybridForm` either; QSL lowers no hybrid
+    // declaration to a node until QSL-900.
+    for kind in all
+        .iter()
+        .filter(|kind| matches!(kind, CheckedNodeKind::Hybrid(_)))
+    {
+        classified
+            .entry(*kind)
+            .or_default()
+            .push("not emitted: QSL lowers no hybrid declaration yet (QSL-900)".to_owned());
+    }
     let unclassified: Vec<_> = all
         .iter()
         .filter(|kind| !classified.contains_key(kind))

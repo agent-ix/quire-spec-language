@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_replay::{
     settle_state_graph, CertificateLocus, CertificateRule, Certification, DisagreementCause,
@@ -27,6 +27,7 @@ use qsl_replay::{
 };
 use qsl_semantics::library::PackageId;
 use quire_exact::{Cancel, CancelCause};
+use quire_semantic_value::catalog::Category;
 
 use crate::counter::UNLIMITED;
 use crate::graph_world::{

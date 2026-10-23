@@ -128,7 +128,7 @@ pub struct SeamLocation {
 /// FR-090-AC-4 (TC-385): the S6a seam's `match` over
 /// `qsl-eval`'s `value::expression::s6a::S6aFamilyKind` (`evaluate_declaration`), its
 /// `S6aFamilyKind::family` mapping to `FamilyKind`, and the one
-/// `match` over `crate::family::FamilyOutcome` (`ValueFunctionFamily::
+/// `match` over `quire_eval::FamilyOutcome` (`ValueFunctionFamily::
 /// evaluate`, which passes the evaluator's `FamilyOutcome` back as an
 /// `EvalOutcome`). Each enum carries a `#[cfg(seam_probe)]` variant.
 ///

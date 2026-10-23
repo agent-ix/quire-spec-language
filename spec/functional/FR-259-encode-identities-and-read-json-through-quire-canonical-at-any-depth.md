@@ -27,8 +27,8 @@ states how QSL's identities, digests and reads use `quire-canonical`.
 ## Capabilities QSL relies on
 
 `quire-canonical` is a separate repository and specifies its own crate.
-QSL relies on these capabilities, which are a `quire-canonical` follow-up
-(ADR-030 D-8 O-6):
+QSL relies on these capabilities, which `quire-canonical` specifies and
+delivers (ADR-030 D-8 O-6):
 
 - canonical encoding bounded by bytes only, whose byte error is distinct
   from every malformed-input error;
@@ -98,7 +98,7 @@ QSL relies on these capabilities, which are a `quire-canonical` follow-up
 ## Overlap
 
 The capabilities listed above, and the removal of the crate's depth limit,
-are `quire-canonical`'s requirements, a `quire-canonical` follow-up
+are `quire-canonical`'s requirements
 (ADR-030 D-8 O-6, ruling RU-2). This requirement's tests exercise QSL's
 behaviour over them.
 
