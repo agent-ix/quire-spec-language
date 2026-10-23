@@ -30,7 +30,7 @@ quire-exact = { workspace = true }
 # `DeclineCode::Std001`: the STD-001 registry code type a `declined` result
 # carries (re-exported at the crate root, so CG, which depends on this crate
 # alone, builds the arm).
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "b56d43e6c3dbefc6d6433ced2a7e94a64f607a7a" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", rev = "dccc1a9026031a317f45880f26e9a2954adab4c1" }
 # ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
 quire-semantic-value = { workspace = true }
