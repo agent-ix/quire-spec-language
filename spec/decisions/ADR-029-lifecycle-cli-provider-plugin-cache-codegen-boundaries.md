@@ -717,9 +717,12 @@ QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of:
   state and transition budgets);
 - the provider's `BackendId`, the identity string alone, and the provider
   manifest's content identity, the `ManifestDigest` that layer R computes over
-  the FR-331 manifest's canonical bytes, in its domain, as the `manifest`
-  member. A change to any manifest member, the tool version included,
-  changes the key;
+  the canonical bytes of the provider's complete QSpec FR-331 descriptor, in
+  its domain, as the `manifest` member. A change to any descriptor member
+  changes the key. The tool version is the descriptor's `tool.version`
+  member: a provider whose backend runs an external tool carries
+  `tool: {name, version}`, so a tool-only upgrade changes the
+  `ManifestDigest` and the key and leaves the `BackendId` unchanged;
 - for `generate`, the generation target and its options.
 
 Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's
