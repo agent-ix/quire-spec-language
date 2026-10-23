@@ -42,7 +42,9 @@ specifies how QSL executes and compares them.
 
 One outcome for each executed vector: `passed`, `failed`, `unsupported`,
 `incomplete` or `tool-failure`, each holding the vector id, its capability
-id and, unless `passed`, the expected and actual typed result. `incomplete`
+id and, unless `passed`, the expected and actual typed result. A `passed`
+outcome holds the output bytes its entry point returned (Determinism).
+These bytes are a runner output, not part of the FR-352 report. `incomplete`
 and `tool-failure` are QSpec FR-311 `unexecuted` results, kept apart so the
 report names why the vector did not run to a result.
 
@@ -121,6 +123,31 @@ The runner SHALL give the same outcome for each vector on every run over
 the same corpus with the same QSL build and limits. It reads no clock,
 environment variable or search path to decide an outcome.
 
+The runner SHALL execute the selected vectors one after another on the
+calling thread; it starts no thread and runs no two vectors concurrently.
+Thread count is therefore not a runner input. Each vector's outcome, and
+for a `passed` vector the bytes its subject's entry point returned, SHALL be
+the same whatever number of other threads the calling process runs, so
+state shared between vectors or between threads cannot change a result.
+
+For a `passed` vector the compared output bytes are:
+
+| Entry point | Output bytes |
+| --- | --- |
+| `compile` | the encoded checked package |
+| `run`, `replay` | the [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md) outcome document |
+| `format` | the formatted text |
+
+Vector ids are ordered bytewise on their id strings, as FR-075 orders
+`BackendId`s. This is also the ascending vector-id order of the FR-352
+report.
+
+The determinism sample of the published QSpec corpus is chosen by rule,
+not by a recorded list. Within each capability of the default scope, for
+each vector class, it takes the smallest id among the vectors of that class
+that the runner executes, that is, those whose own applicability names a QSL
+consumer type. A class with no such vector contributes none.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -130,6 +157,8 @@ environment variable or search path to decide an outcome.
 | FR-350-AC-3 | A vector that expects a success, which QSL answers with `unknown_required_feature`/`unknown-feature`, is `unsupported`, holding that pair; the same answer to a vector that expects that pair is `passed`. A vector that expects a success, run with an evaluation budget of zero, is `incomplete`, retaining its budget kind, bound, actual count and the subject's setting or request field that raises it, and with the default budget is `passed`. A boundary vector that expects the zero-budget limit refusal, run with a budget of zero, is `passed`. A vector expecting `ill_typed`/`type-mismatch` that QSL answers with `unknown_required_feature` is `unsupported`. A positive compile vector checked under `--limit s3.nodes=0` is `incomplete` naming `s3.nodes`; raising that setting to fit yields `passed`, with actual typed results equal to direct public calls under the same effective limits. | Test |
 | FR-350-AC-4 | A vector naming a source file absent from the corpus is `tool-failure` holding the I/O error, and the vectors before and after it in the corpus keep the outcomes they have when it is removed. | Test |
 | FR-350-AC-5 | Two runs over the same fixture corpus with the same build and limits give equal per-vector outcomes. Two identical successful vectors, each requiring the full configured budget, both pass in either corpus order. The corpus and its named input bytes are unchanged after execution, including its recorded results and coverage. | Test |
+| FR-350-AC-6 | One test starts four child `cargo test` processes over the determinism sample of the published QSpec corpus. Two run with `RUST_TEST_THREADS=1`. Two run with `RUST_TEST_THREADS=2`, and in each of those a second test runs the runner over the same sample at the same time, both starting at one barrier. Each child writes its FR-352 JSON report, and the output bytes of each `passed` outcome, to its own output directory. The parent finds the four reports byte-equal, and for each vector `passed` in all four children, finds its four output byte strings byte-equal. | Test |
+| FR-350-AC-7 | The runner's source starts no thread, uses no thread pool or async executor, and calls each vector's entry point only after the previous vector has settled. | Inspection |
 
 ## Dependencies
 
