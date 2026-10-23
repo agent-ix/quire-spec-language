@@ -145,11 +145,6 @@ is never mistaken for a proof over every instance count.
 | FR-209-AC-6 | Over the same protocol, `always eventually holds(k.v = 0)` with `max_live_instances` 1 settles V-4 with a lasso whose loop holds `activate(Tick)`, `attempt(set)` and the instance's `finish` and passes through the instance-limited state after `activate`, where `activate` is enabled and not taken; the lasso replays and is not rejected as unfair. | Test (TC-654) |
 | FR-209-AC-7 | FR-209-AC-1's protocol with its body `repeat R by p visible() while { true } attempt Done on set` (no `max`, the shared grammar's `repetition` with `p` the protocol's role) and `always eventually holds(k.v = 0)`, with `max_live_instances` 1, settles V-4 with a lasso whose loop is the `attempt(set)` self-loop at the instance-limited state after `activate(Tick)`, where `activate` is enabled at every loop state and never taken; the lasso is fair and replays. A checker that counts `activate` in a fairness class rejects that loop and settles V-6 instead, so this AC fails for it. | Test (TC-654) |
 
-Remaining work: QSL-968. A record-typed trigger `T` refuses
-`UnenumerableRecord` in the protocol program, so the tests of these ACs use the
-`Int` range trigger `Level` until it lands; the ACs themselves are written
-over the record type `Tick` and are unchanged.
-
 ## Dependencies
 
 - ADR-027 §2.2 ST-13, §2.2a AE-1 to AE-4, §3.2 PD-5; ADR-014 B-5 (run
