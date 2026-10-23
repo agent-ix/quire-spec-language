@@ -1287,6 +1287,8 @@ impl<'c> Mapping<'c> {
             | Production::MatchBlock
             | Production::StepLabel
             | Production::HybridDeclaration
+            | Production::HybridInitial
+            | Production::InitialEntry
             | Production::HybridMode
             | Production::Equation
             | Production::SynthesisDeclaration
@@ -1959,6 +1961,8 @@ impl<'c> Mapping<'c> {
             | Production::HyperPostfix
             | Production::HyperPrimary
             | Production::HybridDeclaration
+            | Production::HybridInitial
+            | Production::InitialEntry
             | Production::HybridMode
             | Production::Equation
             | Production::SynthesisDeclaration

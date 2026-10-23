@@ -346,7 +346,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::TimedNotChecked { .. }
         | CheckCause::Temporal(_)
         | CheckCause::Hyper(_)
-        | CheckCause::StateGraph(_) => None,
+        | CheckCause::StateGraph(_)
+        | CheckCause::Hybrid(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,
     }
