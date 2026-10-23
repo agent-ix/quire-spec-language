@@ -14,18 +14,22 @@ Verify the abstract protocol side: resolution of the protocol, node targets,
 the refinement's internal list (its shape, spellings, resolution, locus and refusal), the
 `refinement` requirement record and the unsupported liveness half.
 
-Scope: FR-147-AC-1 to FR-147-AC-14. Builds: **built** is a build whose
+Scope: FR-147-AC-1 to FR-147-AC-16. Builds: **built** is a build whose
 support set holds `protocol-abstract-side` and `refinement-internal-list`;
-**unbuilt** omits them; **any** is either. Steps 1 to 4, 9 and 14 run against
+**unbuilt** omits them; **any** is either. Steps 1 to 4, 9, 14 and 15 run against
 built, step 13 against built, steps 7 and 11 against unbuilt, steps 5, 6, 8 and 10 against any, and
-step 12 against a build that holds `refinement-internal-list`. A producer that
+step 12 against a build that holds `refinement-internal-list`, and step
+16 against a build that holds `protocol-abstract-side`. A producer that
 has built a feature is checked by that feature's own criteria. The
 `CasRefinesCounter` node-row vector of step 2 runs against any.
 
 ## Test Procedure
 
 Fixtures: `Twice`, `CasTwice`, `Full` and `Rich` (FR-147); `CasRefinesCounter`
-(ADR-020 §8).
+(ADR-020 §8); `Spec` and `Twice` supplied as a dependency package and
+declared nowhere in the unit (FR-147-AC-15); a dependency package importing
+`Spec` and `Other` with a protocol `OnOther` over `Other` only, and a local
+protocol `OnImpl` over `Impl` only (FR-147-AC-16).
 
 1. Check `CasTwice`, and with `commitA -> node Spec::Twice::a1(self)`.
 2. Check each refusal variant of FR-147-AC-2.
@@ -57,6 +61,15 @@ Fixtures: `Twice`, `CasTwice`, `Full` and `Rich` (FR-147); `CasRefinesCounter`
     and with `Twice` refused by its own checks.
 14. Check `CasTwice` with each step row of FR-147-AC-14 in place of
     `commitA -> node Spec::Twice::a1(self)`.
+
+15. With `Twice` supplied by the dependency package, check `CasTwice`, the
+    row `commitA -> node Spec::Twice::a1(self)`, the row
+    `-> node Spec::Twice::a1(true)`, and the headers `abstract Spec::Thrice`
+    and `abstract Spec::Counter`; compare its `refinement` record's
+    obligation identity with step 1's.
+16. Check `abstract Spec::OnOther` over the dependency, `abstract
+    Spec::OnImpl` over the local protocol, and `CasTwice` over a dependency
+    whose `Twice` fails its own checks.
 
 Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 
@@ -110,3 +123,12 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   and `actual` 3 and 2, and `a1(true)` refuses `ill_typed`/`type-mismatch` at
   the argument retaining `expected` the reference type of `Spec::Counter` and
   `actual` `Boolean`.
+- Step 15: `AbstractSide::Protocol` with `dependency` the dependency's
+  `package_id` and `clause` the key its checked graph holds for `Twice`,
+  `abstract_internal = [Twice::Done]`; the node row checks naming `a1`;
+  `ill_typed`/`type-mismatch` at `true`; `missing_declaration`/`missing-name`
+  at `Thrice` and at `Counter`; one `refinement` record whose obligation
+  identity names the dependency's `package_id` and differs from step 1's.
+- Step 16: `invalid_model_binding`/`malformed-declaration` at `OnOther` and
+  at `OnImpl`, each with no `CheckedRefinement`; `CompileRefusal::Dependency`
+  and no S3 result for the unit.

@@ -59,12 +59,18 @@ rows at compile time and requests one protocol refinement claim.
   spellings are described in "The refinement's internal list". An absent
   value is the empty list.
 - The abstract model's checked protocol clause and its step classes
-  (ADR-027 ST-1 to ST-15).
+  (ADR-027 ST-1 to ST-15). When the abstract alias names a dependency's model
+  (FR-135), the clause is one of that dependency's checked protocol clauses:
+  S3 receives the dependency's `CheckedGraph` and `CheckedPackage`, which the
+  S4 source resolution compiled from source before the unit (ADR-015 D-1,
+  D-5).
 
 ## Outputs
 
 - `CheckedRefinement` with `abstract_side: AbstractSide::Protocol{alias,
-  clause: NodeKey}` and `abstract_internal: Vec<AbstractStepClass>`, the
+  clause: NodeKey, dependency: Option<PackageId>}`, where `dependency` is
+  `None` for a clause of the declaring package and the dependency's
+  `package_id` for a dependency's clause, and `abstract_internal: Vec<AbstractStepClass>`, the
   resolved classes in ascending UTF-8 byte order of their alias-free
   spellings. The refinement's node carries them as those alias-free
   spellings, and carries no `abstract_internal` entry for an empty list
@@ -79,25 +85,41 @@ rows at compile time and requests one protocol refinement claim.
 ### Abstract side
 
 - When the abstract side names `<A>::<protocol>`, the checker SHALL resolve
-  it to a checked protocol clause of the abstract model, refusing
-  `missing_declaration`/`missing-name` when none matches.
+  `<A>` as FR-135 resolves an abstract alias, to a model of the declaring
+  unit or of a dependency package, and SHALL resolve `<protocol>` among the
+  protocol clauses of the **abstract subject package**, the package that
+  holds that model (QSpec FR-375 "Protocol subject"): the declaring package
+  when `<A>` is local, and the dependency's package when `<A>` names a
+  dependency's model. The name is looked up among protocol clauses only, so
+  a type or population of the same spelling never matches. A name that is
+  no protocol clause of that package SHALL refuse
+  `missing_declaration`/`missing-name` at `<protocol>`.
+- For a dependency's clause, S3 SHALL find the clause's `NodeKey` among the
+  keys of the dependency's `CheckedGraph` by lookup, never by minting one
+  (ADR-015 D-5; ADR-013 O-04), and SHALL read the clause's step classes,
+  nodes, binder records, channels, templates, roles and memory model from
+  that graph. `CheckedRefinement::abstract_side` then carries the
+  dependency's `package_id` as `dependency`.
+- A clause is selectable only when it acts on the aliased abstract model:
+  a clause whose roles act only on another model, whether a dependency's
+  clause in a package that imports several models or a clause of the
+  declaring package when the unit imports both models itself, SHALL refuse
+  `invalid_model_binding`/`malformed-declaration` at `<protocol>` (QSpec
+  FR-375).
 - S3 SHALL resolve `<A>::<protocol>` against the checked clause: it SHALL
   check an abstract protocol declared in the declaring package before it
   resolves the header of the refinement that names it, the order FR-136
-  "Order of the checks" states. A dependency's clause is already checked.
-- When the abstract clause was refused, S3 SHALL report the clause's own
-  refusals and SHALL give no `CheckedRefinement` and no
-  `missing_declaration`/`missing-name` for the clause name.
+  "Order of the checks" states. A dependency's clause is checked by the
+  dependency's own compile before the unit's S3 runs; a dependency whose
+  compile refuses gives `CompileRefusal::Dependency` (ADR-015 D-1), and the
+  unit reaches no S3.
+- When the abstract clause of the declaring package was refused, S3 SHALL
+  report the clause's own refusals and SHALL give no `CheckedRefinement` and
+  no `missing_declaration`/`missing-name` for the clause name.
 - Population and object rows SHALL be checked by FR-135 against the
   abstract model's state; the protocol's state SHALL take no row, and a row
   naming a protocol binder, queue or node as a field SHALL refuse
   `invalid_model_binding`/`malformed-declaration`.
-
-Remaining work: a protocol clause of a dependency package as the abstract
-side. S3 resolves `<A>::<protocol>` among the protocol clauses of the unit,
-which is all the clauses its inputs hold; a dependency's checked clauses are
-not an input yet, so a name only such a clause declares refuses
-`missing_declaration`/`missing-name`.
 
 ### Step rows and observations
 
@@ -110,7 +132,9 @@ not an input yet, so a name only such a clause declares refuses
   abstract protocol, refusing `missing_declaration`/`missing-name`
   otherwise.
 - The expressions of a node right side SHALL be typed against the node's
-  binder record, whose fields per node kind are QSpec FR-432's.
+  binder record, whose fields per node kind are QSpec FR-432's; for a
+  dependency's clause the binder record and its field types are the ones the
+  dependency's `CheckedGraph` holds.
 - An argument list whose length differs from the field count SHALL refuse
   `ill_typed`/`operator-ineligible` at the node, retaining `expected`, the
   field count, and `actual`, the written count.
@@ -244,7 +268,10 @@ under `abstract Spec::Twice` in a build omitting both features gives two.
   `refinement` for the declaration, in place of FR-144's
   `temporal-satisfaction` record, binding the refinement node, the
   concrete subject and the abstract protocol subject in its obligation
-  identity.
+  identity. For a dependency's clause the abstract protocol subject is the
+  dependency's `package_id` with the clause's `NodeKey`, so the same
+  refinement over a local clause and over a dependency's clause gives
+  different obligation identities.
 - Negotiation SHALL route it by its kind (FR-075); the explicit-state
   engine's provider manifest SHALL advertise `refinement` for a protocol
   abstract side.
@@ -291,6 +318,8 @@ declares an `await` node (the `timeout` class) and a compensation template
 | FR-147-AC-12 | In a build that holds `refinement-internal-list`, a non-empty list for `CasRefinesCounter` (model side) refuses `invalid_model_binding`/`malformed-declaration` at (the unit's value, `/0`), with no `CheckedRefinement` and no `not-yet-implemented`; an empty list does not refuse. | Test (TC-552) |
 | FR-147-AC-13 | In a build that holds `protocol-abstract-side`, `CasTwice` checks to the same `CheckedRefinement` whether `protocol Twice` is declared before or after the refinement in the unit's source. With `Twice` refused by its own checks, the unit reports `Twice`'s refusals and no `missing-name` for the clause name and no `CheckedRefinement` for `CasTwice`. | Test (TC-552) |
 | FR-147-AC-14 | In a build that holds `protocol-abstract-side`, over `Twice`, whose attempt `a1` applies `Spec::Counter::inc` (no parameter and no result, so its binder record is the receiver alone), the rows `-> node Spec::Twice::a1(self)`, `-> node Spec::Twice::a1(_)` and `-> node Spec::Twice::a1` are admitted; `-> node Spec::Twice::a1(self, 1, 2)` and `-> node Spec::Twice::a1(self, _)` each refuse `ill_typed`/`operator-ineligible` at the node retaining `expected` 1 and `actual` 3 and 2; `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument retaining `expected` the reference type of `Spec::Counter` and `actual` `Boolean`. | Test (TC-552) |
+| FR-147-AC-15 | In a build that holds `protocol-abstract-side` and `refinement-internal-list`, with `Spec` and `Twice` supplied as a dependency package (FR-135-AC-1's dependency form) and declared nowhere in the unit, `CasTwice` checks with `AbstractSide::Protocol` whose `dependency` is that package's `package_id` and whose `clause` is the key of `Twice` the dependency's `CheckedGraph` holds, with `abstract_internal = [Twice::Done]`; the row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`, and `-> node Spec::Twice::a1(true)` refuses `ill_typed`/`type-mismatch` at the argument as in AC-14. It writes one `refinement` record whose obligation identity names the dependency's `package_id`, and differs from the record of the same refinement over the local `Twice` of AC-1. `abstract Spec::Thrice` and `abstract Spec::Counter` (a type of the dependency) each refuse `missing_declaration`/`missing-name` at the name after `::`. | Test (TC-552) |
+| FR-147-AC-16 | In a build that holds `protocol-abstract-side`, a dependency package that imports the models `Spec` and `Other` and declares a protocol `OnOther` whose roles act only on `Other` refuses `abstract Spec::OnOther` `invalid_model_binding`/`malformed-declaration` at `OnOther`, with no `CheckedRefinement`; with `Spec` local, a protocol `OnImpl` of the declaring package whose roles act only on the concrete model `Impl` refuses `abstract Spec::OnImpl` the same way, at `OnImpl`. A dependency whose `Twice` fails its own checks gives `CompileRefusal::Dependency` and no S3 result for the unit. | Test (TC-552) |
 
 ## Dependencies
 
@@ -301,6 +330,9 @@ declares an `await` node (the `timeout` class) and a compensation template
   [FR-136](FR-136-check-a-refinement-s-step-rows.md),
   [FR-144](FR-144-request-and-settle-a-refinement-item.md).
 - FR-148 decides the steps of such a refinement.
+- [ADR-015](../decisions/ADR-015-compile-and-replay-against-dependencies.md)
+  D-1 and D-5 (the dependency's checked graph and package, and lookup of its
+  node keys).
 
 ## References
 
