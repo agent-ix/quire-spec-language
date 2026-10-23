@@ -267,8 +267,8 @@ can bound a domain nested inside a state field's type as it bounds the field.
   last, or any step on a scalar, enum, quantity or reference type), then
   `call_site` SHALL refuse `CallSiteRefusal::UnknownField`, pairing the
   `FieldName` with the compiled package's own `package_id`.
-- If a step reaches a record, tuple or union declaration that an earlier
-  step of the same selection already entered, then that position is the
+- If a step reaches a record, tuple or union declaration that the field's
+  own type or an earlier step of the same selection already entered, then that position is the
   declaration's recursive domain, keyed by ADR-014 §4 at the path where the
   declaration was first entered. When it is the last step, `call_site` SHALL
   return that key. When steps follow it, `call_site` SHALL refuse
