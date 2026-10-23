@@ -96,8 +96,8 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     `emit_checked` it. That unit's source text holds each clause's text, so
     each clause function's `generated` occurrence is placed at a region of
     it; an `UnlocatedOccurrence` refusal fails the step. For every emitted node, read its `owner` and
-    its `identity_projection` entry's `owner`, and compare them with the
-    owner of the node's preimage; recompute each structural key and each
+    compare it with the owner of the node's preimage; confirm the wire
+    `identity_preimage` carries no `identity_projection`; recompute each structural key and each
     group label from the wire node alone with a test-side key function that
     calls no `qsl-package` function, and read each package with IR's v2
     reader (FR-093-AC-21).

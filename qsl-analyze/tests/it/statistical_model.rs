@@ -10,7 +10,6 @@ use qsl_analyze::statistical::{check_statistical, StatisticalRequest, DEFAULT_MA
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::model::TransitionId;
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::statistical::{
@@ -22,6 +21,7 @@ use qsl_replay::SymmetryRefusal;
 use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
 use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational, Value};
+use quire_semantic_value::catalog::UndefinedReason;
 use serde_json::json;
 
 use crate::prob_world::{self, World};

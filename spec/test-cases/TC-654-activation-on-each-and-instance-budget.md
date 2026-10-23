@@ -12,7 +12,7 @@ relationships:
 
 Verify per-trigger activation, instance ordinals and removal, the instance bound's default, its V-6 cause and precedence, and its statement in every terminal record.
 
-Scope: FR-209-AC-1 to FR-209-AC-7.
+Scope: FR-209-AC-1 to FR-209-AC-8.
 
 ## Test Procedure
 
@@ -30,6 +30,9 @@ Scope: FR-209-AC-1 to FR-209-AC-7.
 7. Check FR-209-AC-7's `repeat R by p visible() while { true } attempt Done on set` protocol with
    `always eventually holds(k.v = 0)` and `max_live_instances` 1, and replay
    its lasso.
+8. With FR-209-AC-8's `record Tick { n: Int[0, 2]; up: Boolean; }` trigger
+   and guard `x.n > 0`, list the initial state's `activate` steps; run the
+   `n: Integer` variant; check the `lookup` guard variant.
 
 Tag the tests `#[trace("TC-654", "FR-209-AC-n")]`.
 
@@ -52,3 +55,7 @@ Tag the tests `#[trace("TC-654", "FR-209-AC-n")]`.
 - Step 7: V-4 with a lasso whose loop is the `attempt(set)` self-loop at the
   instance-limited state, `activate` enabled and never taken on the loop;
   the replay reproduces it; not V-6.
+- Step 8: four `activate(Tick)` steps for the four records with `n > 0`, no
+  refusal when the system is built; `RequiresBound` naming `x`, `Tick` and
+  `n` before exploring; `ill_typed`/`operator-ineligible` at the `lookup`
+  naming `protocol-activation`.

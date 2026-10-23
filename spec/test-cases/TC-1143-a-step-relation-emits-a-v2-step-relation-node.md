@@ -27,8 +27,8 @@ postcondition and a declared invariant.
 2. Remove `x`'s precondition from its `preconditions` aggregate in step 1's
    bound node; separately apply each of QSpec TC-962's mutations RN-07 to
    RN-12 and RN-14. After each edit set `dependencies` to the body's
-   targets, recompute the node key, rewrite the `identity_projection` entry
-   and recompute the `package_id`, and feed the package to the I2 reader.
+   targets, recompute the node key and the
+   `package_id`, and feed the package to the I2 reader.
 
 Tag the tests `#[trace("TC-1143", "FR-180-AC-4")]`.
 

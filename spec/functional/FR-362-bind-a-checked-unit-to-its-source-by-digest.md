@@ -22,7 +22,7 @@ Status: Proposed. It becomes Accepted on merge. It states ADR-033 Option A+D.
 
 ## Description
 
-QSL SHALL read one source text once, with one grammar, and from that single
+QSL SHALL read each source text once, with one grammar, and from that single
 parse produce both the `CheckedGraph` and the `TypeReport`. A checked unit SHALL
 bind a graph, a type report and a selected formal source only when the
 `quire.source.bytes/v1` digest of each is the same digest.
@@ -99,6 +99,12 @@ bind a graph, a type report and a selected formal source only when the
    identity binds the whole `RawSourceRef` (authority, identity and digest);
    the encoding of a row's identity belongs to the FR that owns the inventory
    rows.
+11. **Several source units.** A package of several source units (FR-480) has
+    one checked unit per source unit. Each binds its own `Source`, the type
+    report of its own parse and its own formal source by the one digest this
+    requirement compares. The shared graph lists every unit's `RawSourceRef`
+    in `lock.sources`, and each checked unit's graph reference is its own
+    entry there. Each type report covers one unit by construction.
 
 ## Acceptance Criteria
 

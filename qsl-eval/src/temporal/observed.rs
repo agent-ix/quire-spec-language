@@ -9,18 +9,19 @@
 //! object bound; a lasso position past the represented ones reads the
 //! environment its wrapped index names.
 
-use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
-use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
+use quire_semantic_value::catalog::InternalFault;
 
 use super::{
     evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
     TemporalRefusal, TemporalTrace, UndefinedCause,
 };
-use crate::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
+use crate::value::CheckedPackageEvaluation;
+use quire_eval::{CallFailure, Evaluation};
 
 /// Why a `holds` condition stopped the run without a reading, kept whole so
 /// the caller reports it as FR-109 reports the same S6a result of a state
