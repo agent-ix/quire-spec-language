@@ -75,6 +75,10 @@ Scope: FR-315-AC-12 to FR-315-AC-14, FR-182-AC-11, FR-182-AC-12, FR-336-AC-6.
    KInduction}`; `Cancelled{source: Requested, method:
    KInduction}`; and
    `EncodingRefused` with `match-conjunct`, `hyper-body` and `query-kind`.
+   Then settle at depth 1: a stop under the backend's own wall-clock limit
+   (`TimedOut`); `LimitStopped` naming `MaxStates`; an internal resource
+   stop no request limit names (`Unknown`); a solver crash and an
+   unparseable solver response (`BackendFault`).
    Repeat each with the identity for instance `w`.
 
 Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
@@ -118,3 +122,7 @@ Tag the tests `#[trace("TC-1190", "FR-315-AC-n")]`,
   `MatchUndetermined`; `unsupported`, `unsupported-requested-capability`;
   no record and `QueryKind`. Every repeat with the instance-`w` identity
   writes no record and refuses `ProductMismatch` naming `instance`.
+  These settle `failed`, `Incomplete(TimedOut)`; no record and
+  `LimitNotApplicable`; `inconclusive`, `InductionNotClosed{depth: 1}`; and
+  `failed`, `Failed` for both faults. Only the internal resource stop
+  settles `InductionNotClosed`.
