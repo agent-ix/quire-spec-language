@@ -17,10 +17,11 @@ use crate::error::{Error, Result};
 use crate::Outcome;
 
 pub mod compare;
+pub mod layering;
 pub mod report;
 pub mod versioning;
 
-const USAGE: &str = "usage: cargo xtask refinement versioning <corpus>";
+const USAGE: &str = "usage: cargo xtask refinement versioning <corpus>\n       cargo xtask refinement layering <corpus>";
 
 /// `cargo xtask refinement versioning <corpus>`: run the gate and return its
 /// report with the exit code of its verdict (FR-344).
@@ -29,15 +30,24 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
     let [gate, corpus] = operands else {
         return Err(Error::Usage(USAGE));
     };
-    if gate.to_str() != Some("versioning") {
-        return Err(Error::Usage(USAGE));
-    }
-    let report = versioning::run(Path::new(corpus), workspace_root);
-    let stdout = report
-        .to_json()
-        .map_err(|source| Error::RefinementReport { source })?;
-    Ok(Outcome {
-        stdout,
-        code: report.verdict.exit_code(),
-    })
+    let path = Path::new(corpus);
+    let (stdout, code) = match gate.to_str() {
+        Some("versioning") => {
+            let report = versioning::run(path, workspace_root);
+            let stdout = report
+                .to_json()
+                .map_err(|source| Error::RefinementReport { source })?;
+            (stdout, report.verdict.exit_code())
+        }
+        Some("layering") => {
+            let registry = layering::RegistrySnapshotBuilder::new().build();
+            let report = layering::compare(path, layering::compile_unit, &registry, None);
+            let stdout = report
+                .to_json()
+                .map_err(|source| Error::RefinementReport { source })?;
+            (stdout, report.exit)
+        }
+        _ => return Err(Error::Usage(USAGE)),
+    };
+    Ok(Outcome { stdout, code })
 }

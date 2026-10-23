@@ -14,6 +14,7 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # FR-340: the refinement gate runs cases through `qsl_replay::spine::run_clause`
 # and reads its inputs as FR-106 observation documents.
 qsl-foundation = { path = "../qsl-foundation" }
+qsl-route = { path = "../qsl-route" }
 qsl-replay = { path = "../qsl-replay" }
 qsl-semantics = { path = "../qsl-semantics" }
 # FR-064: `xtask string-edge` calls the one standalone scanner with QSL's roots.
