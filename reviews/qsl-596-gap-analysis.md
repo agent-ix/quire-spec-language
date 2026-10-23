@@ -62,6 +62,15 @@ How each gap and choice the coder recorded was judged:
 | --- | --- | --- | --- |
 | FND-007 | medium | Deleting `EngineReport::Proof` left FR-281's no-checker rule with no code and no test. That rule says an engine with no core checker settles `proved`, `uncertified`, naming the engine. It is FR-281-AC-4's second half and TC-763 step 2. The AC-4 test is still tagged `FR-281-AC-4` but covers only the rejected-certificate half. That is a fair state while no layer-A engine lacks a core checker, but it must be recorded. Either note AC-4's `uncertified` half as open on QSL-596 and in the test header (as AC-2 and AC-7 are), or restore it through a `cfg(test)` engine per TC-763. FR-281-AC-5's "parameter the function lacks" is now an altered state key (`stale_dependency`), a fair EN-1 adaptation; say so in the test doc. | qsl-analyze/tests/it/analyze.rs:152-197; qsl-analyze/src/analyze.rs:105-115 |
 
+## New findings (disposition pass 3)
+
+Delta 877c0f924..4a190547d against the STD-444 amendments: FR-280 Behavior 4 and AC-7; FR-281 "Engine refusals", AC-10 and AC-11; TC-761 to TC-763. Focused tests: lib `analyze::tests` 4 passed; it `analyze::` 8 passed.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The refusal-table test injects `Refusal::*` rows straight into `settle`. `model_refusal` and `statistical_refusal`, the classification that FR-281-AC-11 is about, have no test, which is why SR-12366 FND-005, FND-006 and FND-007 pass. The `declined` assertion matches only the cause (`..`), not the diagnostic. There is no `Admission(Refused)` `invalid-input` case and no Symmetry case. Fix: test each classifier arm through `model_item`/`statistical_item`, or call the classifiers directly, and assert each record's full diagnostic. | qsl-analyze/src/analyze.rs:699-767 |
+| FND-009 | low | The FR-281-AC-8, AC-10 and AC-11 tests are unit tests that name those ACs only in doc comments, with no `#[trace]`. The PR body's open list does not mention FR-281-AC-11's EN-1 `Integer` `unbounded-extent` end-to-end case, or the test-engine parts of AC-8 and AC-11, which wait on the unbuilt `Engine` trait. Fix: tag what is covered (AC-10), and record the open AC-8 and AC-11 remainder in the test header and the PR body. | qsl-analyze/src/analyze.rs:546-767; PR #1362 body |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -79,3 +88,11 @@ How each gap and choice the coder recorded was judged:
 | --- | --- | --- |
 | FND-002 | fixed | 8c4fdf57e. The EN-4 test is tagged `TC-761`, `FR-280-AC-5` only. FR-280-AC-2 for EN-1 (no provider entry) is recorded open in the test doc and in the QSL-596 comment of 2026-10-23T06:12Z. |
 | FND-007 | deferred | The no-checker `uncertified` half of FR-281-AC-4 (TC-763 step 2) is recorded open in the test header and on QSL-596. No layer-A engine reports a proof without a core checker yet, and `analyze` accepts no engine-supplied proof. |
+
+### Round 3 (4a190547d)
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 4a190547d. The STD-444 amendment (#1389) defines both cases, and the code follows it. Each item settles its own record: an ambiguous route reaches `analyze` as an `invalid-request` disposition, and engine refusals settle by FR-281's table. |
+| FND-005 | fixed | 4a190547d. Per amended FR-281, `ClaimKind` and `claim_kind` are removed. An unadapted item settles by its `unsupported` disposition, with `unsupported_projection`/`unsupported-requested-capability` and the kind in the payload. |
+| FND-006 | fixed | 4a190547d. Amended FR-280 Behavior 4 (#1389) specifies EN-1's manifest. The manifest is unchanged and matches it. |
