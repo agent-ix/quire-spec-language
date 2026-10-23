@@ -26,7 +26,7 @@ owners. The compiler evaluates no TL artifact.
 Expected truths come from the authored source and the profile definitions,
 never from either evaluator's output.
 
-Scope: FR-045-AC-7 to FR-045-AC-12.
+Scope: FR-045-AC-7 to FR-045-AC-14.
 
 ## Test Procedure
 
@@ -62,6 +62,14 @@ Scope: FR-045-AC-7 to FR-045-AC-12.
    projection or join. Run every limit exactly at its value and one past it
    (FR-045-AC-12).
 
+7. Encode FR-045-AC-13's correspondence record with `quire-canonical`,
+   digest it, change its interval to `[[0, 2]]` and digest again, and read
+   the record back from reordered and from whitespace-padded bytes
+   (FR-045-AC-13).
+8. Join a refused TL result beside unequal premises, and an unsupported
+   native result beside an incomplete TL result. Run each `TlLimits` limit
+   at its default and one past it (FR-045-AC-14).
+
 Tag the tests `#[trace("TC-1240", "FR-045-AC-n")]`.
 
 ## Expected Results
@@ -76,7 +84,7 @@ Tag the tests `#[trace("TC-1240", "FR-045-AC-n")]`.
   - With the execution-origin boundary, the past declaration emits
     `tl-syntax.formula/v2` with a position history.
   - With the history-cutoff boundary it yields `incomplete`, cause
-    `history-not-origin-complete`.
+    `missing-history`.
 - Step 3:
   - Each axis mutation changes the correspondence reference and names that
     axis.
@@ -96,3 +104,12 @@ Tag the tests `#[trace("TC-1240", "FR-045-AC-n")]`.
 - Step 6: each malformed or over-limit input gives one deterministic
   non-admitted decision with no partial artifact. Each limit reached exactly
   is admitted. No TL evaluator is invoked by the compiler.
+- Step 7: 860 bytes with SHA-256
+  `848ccf3418350f00e1252d5050c5fbbc995d29bac807905d239d0f93edf168e0`; with
+  `[[0, 2]]`,
+  `fde423e1ad82e45a46622ed8daaa81f86df504512db1a7bb2d6467b3aed29e1e`. Both
+  noncanonical byte sequences refuse.
+- Step 8: `refused` with causes `refused` then `mismatch`; `unsupported` with
+  causes `unsupported` then `incomplete`. Each limit admits at its default,
+  and one past it stops with `limit-reached` naming the limit, its value and
+  its `temporal.correspondence.*` setting.
