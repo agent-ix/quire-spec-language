@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-121
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-071
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-201
@@ -101,7 +103,7 @@ derives none of them.
 | Input | Taken from | Carried as |
 | --- | --- | --- |
 | The proved package reference: `package_id`, the source digests, one `dependencies` entry per dependency selection, and the byte provision | The compiled package the generated code was generated from (`CallSite.package_id`, and the `RawSourceRef` of every source and supplied library it was compiled from) | The FR-071 request's package members |
-| The semantic profile selections | The `profile_selections` of the v2 lock of `CallSite.package`, in the lock's order (the empty list when the lock records none) | The request's profile selections |
+| The semantic profile selections | Fixed by the form: the empty list | The request's `profile_selections` (FR-071) |
 | The `function` replay target | The `QualifiedName` the producer passed to `call_site` | The request's `replay.function` (QSpec FR-323) |
 | The occurrence key | `FunctionSite.declaration` | The request's `replay.occurrence_key` |
 | The obligation identity | `FunctionSite.value_parity.obligation_identity` | The request's `obligation_identity` |
@@ -122,6 +124,28 @@ checks the bindings against that signature, and no proving run drew or
 declared a finite bound. A parameter whose declared type has no finite
 bound, such as an unbounded `Integer`, therefore needs no `ProofBound`, and
 a bounded one gets none either, so one rule covers every parameter type.
+
+The request's `profile_selections` are FR-071 semantic profile selections:
+`ProfileSelection { profile, value }` entries of the proving run, filling
+the role `replay.semantic_profile_selections` and each drawn from FR-071's
+closed known set. A value-parity claim has no proving run, so no semantic
+profile selection is in effect for it, and the form fixes the list empty
+for every package. They are not the rows of the v2 lock's
+`profile_selections` (QSpec FR-322). Each lock row is a clause-profile law,
+`{"definition": {"authority", "identity"}, "role"}` with `role`
+`temporal_profile` or `protocol_profile`, that the package's temporal or
+protocol clauses select. A lock row is no semantic profile selection under
+any mapping: FR-071's decode refuses every profile outside its closed set
+`unknown_profile`/`unsupported-selection`. The lock's rows are members of
+the package-id preimage (QSpec FR-322 `identity_preimage`), so they are
+already bound into the claim through `package_id`, which the replay
+recomputes from the sources it recompiles. Changing a lock row changes the
+`package_id` (QSpec FR-322-AC-14), and a request retaining the old
+`package_id` refuses `PackageIdMismatch`. No producer reads, maps or copies
+a lock row into the request or the packet, and QSL defines no accessor for
+one: a package whose lock selects temporal or protocol profiles gives its
+value-parity claims the same empty list as a package whose lock selects
+none.
 
 The supplied-value ceilings are retained because they decide whether the
 replay reaches the call: A and H bound admission and conversion work, and B
@@ -160,7 +184,7 @@ and nothing else:
 | `replay_target` | `function`, the `QualifiedName` passed to `call_site`, and no other target member |
 | `package_id` | `CallSite.package_id` |
 | `source_digests` | The `RawSourceRef` of every source the package was compiled from, as the request's package reference names them |
-| `profile_selections` | The lock's `profile_selections`, as in the table above |
+| `profile_selections` | The empty list, as in the table above, whatever rows the lock's `profile_selections` holds |
 | `run_limits` | The request's accounting limits (`ScalarLimitsV1`): there is no proving run, and these are the limits QSL's exact evaluation runs under. The supplied-value ceilings are not a packet member; they travel in the request's `limits.supplied` only |
 | `declared_domains` | The empty list |
 | `backend` | The generator identity |
@@ -180,9 +204,10 @@ effective accounting limits, the effective supplied-value ceilings (A, H
 and B), the generated outcome and the generated-content identity, and
 nothing else. The other retained inputs
 enter the claim through these members: the source digests, the
-dependencies, the byte provision and the profile selections through
+dependencies, the byte provision and the lock's clause-profile rows through
 `package_id`, which the replay checks against the package it recompiles
-from them; the stage limits through the effective accounting limits; the
+from them; the semantic profile selections are fixed empty by the form,
+and the replay refuses a request carrying any (Behavior); the stage limits through the effective accounting limits; the
 proof bounds and declared domains and the empty state and object
 environments are fixed by the form, and no environment is read by the
 call, so neither can change an outcome. The generator
@@ -236,6 +261,17 @@ are equal, whatever their results read.
   order is the declared parameter order, and an argument whose `position`
   is not its index in the list refuses `IdentityEncodeError` with the
   cause `PositionOrder`, naming the index and the position.
+- `replay_value_parity` SHALL, after FR-357's replay-target check and
+  before the recompile, refuse a request whose `profile_selections` is not
+  the empty list with `ReplayRefusal::UnusedProfileSelections`
+  (`invalid_runtime_input`/`unknown-member`), holding the request's
+  selections in request order. It SHALL refuse so whatever the package and
+  the bindings are, read no byte-provision entry and make no call and no
+  charge. The refusal's display text SHALL be exactly
+  ``invalid_runtime_input/unknown-member: `profile_selections` is supplied
+  for a function-value parity claim, which has no proving run`` on one
+  line. It settles `Inconclusive(ReplayRefused(invalid_runtime_input))` with
+  the claim identity carried unchanged.
 - When `replay_value_parity` replays a claim, it SHALL, after FR-357's
   recompile, `package_id`, replay-target, `UnknownFunction` and
   `NotAValueFunction` checks and before the argument join, compare the
@@ -282,6 +318,9 @@ are equal, whatever their results read.
   `WitnessPacket<NoPayload>`, it SHALL fill each packet member with the
   value "The input-arm packet" names, and SHALL NOT choose, default or
   derive any member itself.
+- A producer SHALL fill the request's and the packet's
+  `profile_selections` with the empty list, and SHALL NOT read the v2
+  lock's `profile_selections` to build either.
 
 ## Acceptance Criteria
 
@@ -295,8 +334,10 @@ are equal, whatever their results read.
 | FR-484-AC-6 | AC-5's request with `obligation_identity` replaced by `add`'s identity, by the all-zero identity, or by an identity minted over `inc`'s preimage with `type` changed to 64 `4` digits refuses `ScalarIdentity` (`stale_dependency`/`content-mismatch`) with cause `Obligation` naming the claimed and the recomputed digest, after the occurrence check and before the argument join (an assignment naming `add`'s `y` added still refuses `Obligation`, not `UnknownParameter`), and settles `Inconclusive(ReplayRefused(stale_dependency))` with the claim identity carried. | Test (TC-1252) |
 | FR-484-AC-7 | AC-5's request with the occurrence key replaced by `add`'s `declaration` occurrence, by the `expression` occurrence of `inc`'s `x + 1` application, or by (`inc`'s node, `declaration`, 1) refuses `ClaimOccurrence` (`missing_declaration`/`missing-name`) naming that key and `inc`, before any call and with no charge; with `package_id` stale it refuses `PackageIdMismatch` instead, and for `small` it refuses `NotAValueFunction` instead. | Test (TC-1252) |
 | FR-484-AC-8 | Two `inc` claims that differ only in the generated-content identity carry their own identity unchanged on `Agrees`, `Diverged`, `RefusedInput` and an identity refusal, and their `claim()` values are unequal; a content identity that matches no artifact is not refused. Claims that differ only in the occurrence key are likewise unequal. | Test (TC-1252) |
-| FR-484-AC-9 | Over AC-4's unit with `function grow using v(n: Integer): Integer pure { n + 1 }` added, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each filled by "The input-arm packet" from `call_site` (`clause_node` = `FunctionSite.function`, `occurrence_key` = `FunctionSite.declaration`, `obligation_identity` = `value_parity.obligation_identity`, `profile_selections` = the lock's, `run_limits` = the request's accounting limits, `declared_domains` = `[]`, `backend` = the driver's generator identity, `generator-under-test` in the test, `trace_position` = none, `source` = `Input`), reconstructs through `WitnessEnvelope::reconstruct`; every member round-trips exactly; the request built from the admitted envelope replays `grow` against generated 42 to `Agrees` and `inc` against 5 to `Diverged`. | Test (TC-1252) |
+| FR-484-AC-9 | Over AC-4's unit with `function grow using v(n: Integer): Integer pure { n + 1 }` added, the `WitnessPacket<NoPayload>` for `inc` at `x` = 3 and for `grow` at `n` = 41, each filled by "The input-arm packet" from `call_site` (`clause_node` = `FunctionSite.function`, `occurrence_key` = `FunctionSite.declaration`, `obligation_identity` = `value_parity.obligation_identity`, `profile_selections` = `[]`, `run_limits` = the request's accounting limits, `declared_domains` = `[]`, `backend` = the driver's generator identity, `generator-under-test` in the test, `trace_position` = none, `source` = `Input`), reconstructs through `WitnessEnvelope::reconstruct`; every member round-trips exactly; the request built from the admitted envelope replays `grow` against generated 42 to `Agrees` and `inc` against 5 to `Diverged`. | Test (TC-1252) |
 | FR-484-AC-10 | Over AC-9's unit with `function wide using v(m: Int[0, 2199023255552]): Integer pure { m + 1 }` added (the upper bound is 2^41), the request for `wide` at `m` = 2^40 (1099511627776, a 41-bit value), retained with B 4096, replays against generated 1099511627777 to `Agrees`; the same request with B 40 settles `PreCallIncomplete`, which is `Incomplete(ResourceExhausted)`, with the limit cause naming `supplied.numeric_magnitude_bits` and limit 40, and no outcome compared, and its `claim()` differs from the first only in B; the same request with B omitted has a `claim()` equal to the first; AC-9's `grow` request at `n` = 2^40 with B 40 is admitted (an unbounded `Integer` has no value-in-domain comparison) and replays against 1099511627777 to `Agrees`; and two `wide` claims differing only in A or only in H are unequal. | Test (TC-1252) |
+| FR-484-AC-11 | Over the unit `UC` (TC-1252: the ConfigVersion model, the temporal profile `quire.temporal.infinite-trace/v1` and the protocol profile `quire.protocol.finite-global/v1` selected, the temporal clause `ReachesTwo`, the protocol `Flow` and `inc`), the emitted lock's `profile_selections` holds exactly the two rows whose RFC 8785 texts are `{"definition":{"authority":"agent-ix","identity":"quire.temporal.infinite-trace/v1"},"role":"temporal_profile"}` and `{"definition":{"authority":"agent-ix","identity":"quire.protocol.finite-global/v1"},"role":"protocol_profile"}`; the `WitnessPacket<NoPayload>` for `inc` at `x` = 3, filled by "The input-arm packet", has `profile_selections` `[]`, reconstructs through `WitnessEnvelope::reconstruct`, and the request built from the admitted envelope decodes (no `UnknownSemanticProfile`) and replays against generated 4 to `Agrees` and against 5 to `Diverged`, each `claim()` holding the `package_id` of `UC`; the same request for `inc` over AC-4's unit, whose lock `profile_selections` is `[]`, carries the same `profile_selections` `[]`. | Test (TC-1252) |
+| FR-484-AC-12 | AC-5's request for `inc` with `profile_selections` `[ProfileSelection { profile: "quire.profile.v1", value: "x" }]` decodes, and `replay_value_parity` refuses it `UnusedProfileSelections` (`invalid_runtime_input`/`unknown-member`) holding that one selection, with the display text ``invalid_runtime_input/unknown-member: `profile_selections` is supplied for a function-value parity claim, which has no proving run``, before the recompile, with no call and no charge, and settles `Inconclusive(ReplayRefused(invalid_runtime_input))` with the claim identity carried unchanged; it refuses so with the generated outcome 4 and 5 alike, with `obligation_identity` replaced by the all-zero identity (no `Obligation` refusal is reached), and with a stale `package_id` (no `PackageIdMismatch` is reached); a request whose selection names `quire.profile.unknown/v1` refuses at decode `UnknownSemanticProfile` (FR-071-AC-10) and never reaches the entry; and the request carrying either lock row of AC-11 mapped to a `ProfileSelection` (`profile` the row's definition identity, `value` its role) refuses at decode `UnknownSemanticProfile`. | Test (TC-1252) |
 
 ## Dependencies
 
@@ -309,6 +350,8 @@ are equal, whatever their results read.
   the `FunctionSite` that carries the minted identity.
 - [FR-098](FR-098-execute-a-replay-request.md): the recompile, selection,
   `ClaimOccurrence` refusal and S6a admission the entry reuses.
+- [FR-071](FR-071-implement-typed-replay-request.md): the request's
+  semantic profile selections and their closed known set.
 - QSpec FR-201: the `quire.ir-proof.obligation-identity/v1` domain.
 - QSpec FR-322: the `function` node, `value`/`parameter` nodes and their
   `semantic_type`.
