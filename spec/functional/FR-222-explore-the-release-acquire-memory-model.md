@@ -66,7 +66,10 @@ readers may disagree on the order of independent writes.
   by its depth from the mo-last message in the step's transition identity.
 - `Ra` SHALL serialize its component, FR-223's graph and FR-224's race
   summary as the state key's memory member (FR-229), with each view's race
-  Booleans as the view's `race` member (QSpec FR-438).
+  Booleans as the view's `race` member (QSpec FR-438), and SHALL serialize
+  the view each in-flight `send` carries as its queue entry's `view` member
+  (QSpec FR-425, FR-437), whether or not the subject has a non-atomic
+  location.
 
 ## Acceptance Criteria
 

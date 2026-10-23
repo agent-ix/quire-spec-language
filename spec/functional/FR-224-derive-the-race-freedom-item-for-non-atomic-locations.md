@@ -79,7 +79,9 @@ accesses that race, while every other claim keeps its own verdict.
   location's write Boolean, for a write, or the accessing thread's read
   Boolean, for a read, true in the accessing thread's `cur` and `acq` views
   and false in every other view, and only then apply QSpec FR-437's access
-  rule.
+  rule. An RMW whose read part is `acquire` or `seq_cst` SHALL decide its
+  write part only after joining the race map of the message it reads into
+  `cur`.
 - `Ra` SHALL copy the Booleans with a view assigned from another view (a
   message view or a release view from `cur`, a branch's views at entry, the
   view a `send` carries), and SHALL or them where views join.
@@ -90,7 +92,9 @@ accesses that race, while every other claim keeps its own verdict.
   `release` or `seq_cst` store's element takes `cur`'s map and sets `rel` for
   its location to it, a `relaxed` or non-atomic store's takes `rel`'s; a load
   joins the map it reads into `acq`, and an `acquire` or `seq_cst` load also
-  into `cur`; `flush` moves the element's map to the memory value; fences,
+  into `cur`; an RMW reads as such a load and writes as such a store, its
+  written value's map also joining the one it read, and decides its write
+  part as `Ra` does; `flush` moves the element's map to the memory value; fences,
   fork, join, `send` and `receive` assign and join summaries as `Ra` does
   views.
 
@@ -120,8 +124,9 @@ accesses that race, while every other claim keeps its own verdict.
 | FR-224-AC-2 | The same shape with `relaxed` flag accesses settles the item `refuted` under `ra` with kind `Race{location: data, earlier, later}`, `earlier` the position of `data := 1` and `later` the position of `r2 := data`; under `tso` it settles `refuted` with the same kind and location. | Test (TC-669) |
 | FR-224-AC-3 | `SB`, whose shared accesses are all atomic, under `tso` carries no `RaceFreedom` item; the AC-1 shape under `sc` carries none. Two items over one subject give one `RaceFreedom` item, whose identity differs between the `tso` and `ra` requests and from every authored item's. | Test (TC-669) |
 | FR-224-AC-4 | In the AC-2 shape under `ra`, the authored claim `always holds(not (r1 = 1 and r2 = 0))` settles `refuted` with a counterexample of kind `Formula`, the same verdict as with `data` atomic and `relaxed`. | Test (TC-669) |
-| FR-224-AC-5 | In the AC-1 shape under `ra`, the state after the writer's `data := 1` holds the race-summary entry for `data` with value `{"last_write":{"thread":<writer>,"atomic":false},"last_reads":{}}`, and every view's `race` member maps `data` to `{"write":true,"reads":{}}` in the writer's `cur` and `acq` views and to `{"write":false,"reads":{}}` in every other view. The flag message the writer then stores has a view whose `race` member maps `data` to `"write":true` with a `release` store and `"write":false` with a `relaxed` one. An `acquire` load of that `release` message leaves the reader's `cur` mapping `data` to `"write":true`. `SB`, whose accesses are all atomic, has no race-summary entry and no view `race` member. Each value equals QSpec FR-438-AC-6's. | Test (TC-669) |
+| FR-224-AC-5 | In the AC-1 shape under `ra`, the state after the writer's `data := 1` holds the race-summary entry for `data` with value `{"last_write":{"thread":<writer>,"atomic":false},"last_reads":{}}`, and every view's `race` member maps `data` to `{"write":true,"reads":{}}` in the writer's `cur` and `acq` views and to `{"write":false,"reads":{}}` in every other view. The flag message the writer then stores has a view whose `race` member maps `data` to `"write":true` with a `release` store and `"write":false` with a `relaxed` one. An `acquire` load of that `release` message leaves the reader's `cur` mapping `data` to `"write":true`. With the flag passed instead by a `send` and `receive`, the queue entry's `view` member is the writer's `cur` view with `data` at `"write":true`, and the item settles `proved`. `SB`, whose accesses are all atomic, has no race-summary entry and no view `race` member. Each value equals QSpec FR-438-AC-6's. | Test (TC-669) |
 | FR-224-AC-6 | In the AC-1 shape under `tso`, the state after the writer's `data := 1` holds the `data` race-summary entry of FR-224-AC-5, the writer's `race-summaries` entry mapping `data` to `"write":true` in `cur` and `acq` and `"write":false` in `rel` for `flag`, and the buffered `data` element's `race` member mapping it to `"write":false`. The buffered `flag` element, and after `flush` the `race-memory` entry for `flag`, map `data` to `"write":true` with a `release` store and `"write":false` with a `relaxed` one. The `RaceFreedom` item settles `proved` with the `release` store and `acquire` load, and with the flag passed by a `send` and `receive`, and `refuted` with the `relaxed` flag (FR-224-AC-2's `tso` half). Each value equals QSpec FR-438-AC-7's. | Test (TC-669) |
+| FR-224-AC-7 | A protocol whose thread `a` loads `x` non-atomically and then stores `x := 1` with `release`, and whose thread `b` runs `fetch_add(1)` on `x` with `ordering acquire`, settles its `RaceFreedom` item `proved` under `ra` and under `tso`; with the RMW `ordering relaxed` it settles `refuted` with `Race{location: x, earlier, later}`, `earlier` `a`'s load and `later` the RMW. Each verdict equals QSpec FR-438-AC-8's. | Test (TC-669) |
 
 ## Dependencies
 
