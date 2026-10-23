@@ -134,6 +134,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-6 | `Violated` whose replay refuses with `ReplayRefusal::PackageIdMismatch{requested, recompiled}` (ADR-013 O-26), the request's `package_id` and the recompiled one | `inconclusive` | `unsettled` | `Inconclusive(StaleDependency{requested, recompiled})`, written `stale-dependency{requested, recompiled}` | inconclusive |
 | V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
 | — | `Violated` whose replay refuses with `InternalFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
+| — | An SMT result whose `check_smt_proof` or `check_refinement_smt_proof` returns `SmtProofCheck::Fault` (FR-314, FR-315 "Internal faults") | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | V-7 | `Stopped{cause: ResourceExhausted, limit: Some(ReachedLimit{limit, value})}`, a limit reached | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` | incomplete |
 | V-7 | `Stopped{cause: Cancelled, limit: None}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` | incomplete |
 

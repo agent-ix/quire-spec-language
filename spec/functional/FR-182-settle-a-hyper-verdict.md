@@ -119,7 +119,8 @@ pub enum SmtMethod {
 
 pub struct HyperSmtOutcome {
     pub result: HyperSmtResult,
-    pub product: HyperProductIdentity, // the `product` of the queries it answers
+    pub product: Result<HyperProductIdentity, InternalFault>, // the `product` of the queries it answers;
+                                       // `Err` only when FR-315's `of` faulted (FR-315 "Outcome handoff")
 }
 
 pub fn settle_hyper_smt(
@@ -163,6 +164,7 @@ FR-243 basis, O-16 category and method.
 | V-7 | `Stopped(ResourceExhausted, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184); SMT `LimitStopped{limit}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
 | V-7 | `Stopped(Cancelled, None)`; SMT `Cancelled{source}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` (FR-127) | incomplete |
 | — | SMT `BackendFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
+| — | SMT `EncodingRefused` carrying `SmtEncodingRefusal::Fault`, or `HyperProductIdentity::of(item)` returning `Fault` (FR-315 "Internal faults") | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | V-7 | SMT `TimedOut` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)`, written `timed-out` (FR-293, QSpec FR-331) | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace; SMT `EncodingRefused` with `hyper-body`, a field sort or an out-of-fragment construct | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
 
@@ -198,15 +200,24 @@ FR-243 basis, O-16 category and method.
 - When `settle_hyper_smt` reads an outcome, it SHALL first, ahead of
   choosing any row, compute the item's identity as
   `HyperProductIdentity::of(item)` and compare it with `outcome.product`.
-  When `of` refuses, it SHALL write no record and refuse
-  `HyperSettleRefusal::ItemIdentity` carrying that refusal. When the two
-  identities differ, the outcome is no evidence for the item: it SHALL
+  When `of` refuses with a `Refused` code, it SHALL write no record and
+  refuse `HyperSettleRefusal::ItemIdentity` carrying that refusal. When `of`
+  returns `SmtEncodingRefusal::Fault`, it SHALL write a `failed` record,
+  `TerminalValue::Failed`, as for `BackendFault`, and refuse nothing,
+  whatever `outcome.product` holds: `of` is deterministic, so CG's own call
+  faulted too and its outcome is `EncodingRefused` carrying `Fault` with
+  `product: Err` (FR-315 "Outcome handoff"). When `of` returns an identity
+  and `outcome.product` is `Err`, the outcome is no evidence for the item:
+  it SHALL write no record and refuse `HyperSettleRefusal::ProductMismatch`
+  naming `clause`. When the two identities differ, the outcome is no evidence for the item: it SHALL
   write no record and refuse `HyperSettleRefusal::ProductMismatch`, naming
   the first member that differs in the order `clause`, `subjects`,
   `instance`.
 - `settle_hyper_smt` SHALL check a supplied `witness` itself, by FR-183's
   "Match witness" rules, over the item's own clause and the `ModelSystem`
-  of each of the item's subjects, under `outcome.product.instance()`, and
+  of each of the item's subjects, under the instance of `outcome.product`,
+  which is `Ok` and equal to the item's identity once the check above has
+  passed, and
   bounded by `replay_limits`. The resulting `MatchWitnessCheck` is the one
   the rules below read. A witness checked over any other clause, subjects
   or instance is never an input, so the check is bound to the identity
@@ -221,7 +232,7 @@ FR-243 basis, O-16 category and method.
   - `Inductive{depth}` by the rules below;
   - `InductionNotClosed{depth}` as V-6 `InductionNotClosed{depth}`;
   - `Violated` only through QSL's own replay. When `counterexample.instance`
-    differs from `outcome.product.instance()`, `settle_hyper_smt` SHALL
+    differs from the instance of `outcome.product`, `settle_hyper_smt` SHALL
     write no record and refuse `ProductMismatch` naming `instance`.
     Otherwise it SHALL replay the counterexample itself, by FR-183's
     `Lockstep` or `Undefined` rules for its kind, over the item's own clause
@@ -279,7 +290,8 @@ FR-243 basis, O-16 category and method.
     `Failed`, the ADR-013 O-16 internal-failure category, as FR-127 settles
     an internal fault;
   - `Cancelled{source}` as V-7 `Incomplete(Cancelled{source})`;
-  - `EncodingRefused`: `match-conjunct` as V-6 `MatchUndetermined`;
+  - `EncodingRefused`: `Fault` as `failed`, `Failed`, as for `BackendFault`;
+    `match-conjunct` as V-6 `MatchUndetermined`;
     `hyper-body`, a field sort or an out-of-fragment construct as V-8
     `Unsupported(unsupported-requested-capability)`; `query-kind` writes no
     record and refuses `HyperSettleRefusal::QueryKind`. The other refusal

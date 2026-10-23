@@ -24,6 +24,7 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source::{Source, SourceLabel};
 use qsl_foundation::{BackendId, Code, RequestIndex, Setting, SettingLimits};
+use qsl_semantics::library::PackageId;
 use quire_exact::{Identifier, Origin, Role, ScalarLimits, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
@@ -316,6 +317,24 @@ pub enum PluginReplayRefusal {
         /// The repeated key, in its display form.
         key: String,
     },
+    /// The request names a `package_id` other than the run's (FR-404). A node's
+    /// occurrence key carries no package, so only the pairing key tells two
+    /// runs that hold the same function apart.
+    #[error("stale_dependency/content-mismatch: the request names package {} but the run is package {}", received.hex(), run.hex())]
+    ForeignRun {
+        /// The `package_id` the request named.
+        received: PackageId,
+        /// The run's `package_id`.
+        run: PackageId,
+    },
+    /// The request index is no member of the run's call: a record of the
+    /// package that belongs to another function, or an index past the
+    /// package's records (FR-404).
+    #[error("missing_declaration/missing-name: request index {} is no item of the call", request_index.get())]
+    NotACallItem {
+        /// The request index.
+        request_index: RequestIndex,
+    },
     /// An invariant of the checked package failed: consistent inputs never
     /// reach it. The item settles `failed`.
     #[error("runtime_invariant: plugin replay request: {0:?}")]
@@ -331,6 +350,8 @@ impl PluginReplayRefusal {
             Self::NotReplayable { .. } => (Code::UnknownRequiredFeature, "unsupported-feature"),
             Self::UnresolvedDependency { .. } => (Code::MissingImport, "missing-selection"),
             Self::DuplicateBoundKey { .. } => (Code::InvalidRuntimeInput, "duplicate-member"),
+            Self::ForeignRun { .. } => (Code::StaleDependency, "content-mismatch"),
+            Self::NotACallItem { .. } => (Code::MissingDeclaration, "missing-name"),
             Self::Fault(_) => (Code::RuntimeInvariant, "established-invariant-broken"),
         };
         OutcomeDiagnostic::new(
@@ -358,6 +379,8 @@ impl PluginReplayRefusal {
             Self::UnknownOccurrence { .. }
             | Self::UnresolvedDependency { .. }
             | Self::DuplicateBoundKey { .. }
+            | Self::ForeignRun { .. }
+            | Self::NotACallItem { .. }
             | Self::Fault(_) => TerminalRecord::failed(request_index, plugin),
         }
     }

@@ -45,6 +45,7 @@
 
 mod admitted;
 mod bounds;
+mod call_replay_context;
 mod call_requirements;
 mod call_site;
 mod compile;
@@ -81,6 +82,7 @@ pub use admitted::{
     AdmittedRefusal, AdmittedResource, AdmittedUnionMember, AdmittedUnit,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
+pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};
 pub use call_requirements::{
     run_with_requirements, CallRequirement, CallRequirements, RunWithRequirements,
 };
@@ -215,7 +217,7 @@ pub use proof_result::{
     StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
     TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
 };
-pub use qsl_foundation::{Code, RequestIndex};
+pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
 // The inputs `call_site` takes and the typed operation name it and FR-115
 // select by. They are defined in `spine` because the spine compile reads
