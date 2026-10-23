@@ -20,10 +20,11 @@ Scope: FR-447-AC-1 to FR-447-AC-5, FR-447-AC-13 to FR-447-AC-15 and FR-447-AC-17
 ## Test Procedure
 
 Fixtures: the `Braking` declaration and the `SlowEnough` claim of FR-447's
-use case; a `MovingFair` claim over `Braking` with `fair Moving`; an in-process
-fixture hybrid provider; a process fixture hybrid provider advertising the
-same kind and requirement, which reads the model and claims from the package
-bytes it receives.
+use case; `MovingFair`, defined as `temporal MovingFair using p over (h:
+Braking) clock "model-time" on origin { fair Moving; always [0, 10] true }`;
+an in-process fixture hybrid provider; a process fixture hybrid provider
+advertising the same kind and requirement, which reads the model and claims
+from the package bytes it receives.
 
 1. Build and check `Braking`; read its `HybridForm` and `CheckedHybridModel`.
 2. Check each mutation FR-447-AC-2 lists, one at a time.
