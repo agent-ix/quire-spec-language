@@ -107,7 +107,7 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    HeaderLayer, Member, ModelEntry, NodeOwner,
+    HeaderLayer, Member, ModelEntry, NodeOwner, TemporalEntry,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
@@ -884,8 +884,9 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
 /// the catalog's edition; then the header-selected layers and every layer
 /// their `requires` closure names, in the lock's row order, and no layer
 /// that requires a selected layer; then the qualification-catalog rows
-/// QSpec FR-001 selects for those layers; then each law definition the
-/// bodies name that is not already selected.
+/// QSpec FR-001 selects for those layers; then the complete-model and
+/// complete-temporal lock rows when their layers are selected; then each law
+/// definition the bodies name that is not already selected.
 ///
 /// A unit whose header selects no layer selects the `always` rows: the
 /// lock's `without_layer` rows are for a unit that selects layers none of
@@ -922,6 +923,13 @@ fn catalog_selections(
             closure
                 .contains(&HeaderLayer::ModelComplete)
                 .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .into_iter()
+                .flatten(),
+        )
+        .chain(
+            closure
+                .contains(&HeaderLayer::TemporalComplete)
+                .then(|| lock.temporal_catalog().iter().map(TemporalEntry::reference))
                 .into_iter()
                 .flatten(),
         )
