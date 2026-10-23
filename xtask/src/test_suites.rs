@@ -230,11 +230,6 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         reason: NO_DOC_EXAMPLE,
     },
     EmptySuite {
-        source: "qsl-eval/src/lib.rs",
-        kind: SuiteKind::Doctests,
-        reason: NO_DOC_EXAMPLE,
-    },
-    EmptySuite {
         source: "qsl-foundation/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,

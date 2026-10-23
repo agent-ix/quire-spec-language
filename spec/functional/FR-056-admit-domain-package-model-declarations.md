@@ -793,19 +793,60 @@ kernel's `text_length_out_of_domain`/`outside-domain` (FR-100). A state clause
 compares two Text values under the profile of their declared type and builds
 none. A String never enters a Text slot and a Text never enters a String slot.
 
-A member whose `typeRef` is `ix://quire/native/Text` itself carries no bounds
-or profile, which QSpec's `Text[min, max; profile]` requires, so intake SHALL
-refuse it with `unsupported_construct`/`declaration-form` at the member,
-naming `profile`. This row depends on the semantic-IR validator's native
-vocabulary naming `Text`: at a validator whose native set has no `Text`, the
-validator refuses the reference first, as `invalid_model_binding`/
-`malformed-declaration` at the member, as it does an undeclared native name.
+A field, operation parameter or operation result whose `typeRef` is
+`ix://quire/native/Text`, `ix://quire/native/Rational` or
+`ix://quire/native/Decimal` names a native that exists, and a `typeRef`
+carries no parameters (QSpec FR-154). Intake SHALL admit it as it admits any
+other native name, and neither intake nor the assembler raises a refusal for
+it at the member or at the unit's `model` declaration. Such a member has no
+checked type: its declared type is outside QSpec FR-322 "Model-owned members"
+step 4's declared-type table, because `Text` needs the bounds and profile of
+`Text[min, max; profile]`, which only a Text value type of the package
+supplies, and `Rational` and `Decimal` need the bounds their QSL type forms
+carry, which no `typeRef` and no semantic-IR constraint carries. This holds at
+every multiplicity: a collection-valued field over one of these natives has no
+element type and so no collection type, and an `optional` presence gives no
+`Option` type. Admitting these three `typeRef`s depends on the semantic-IR
+validator's native vocabulary naming `Text`, `Rational` and `Decimal` (QSpec
+FR-208 "Field types"); a validator whose native set lacks one refuses it
+first, as `invalid_model_binding`/`malformed-declaration` at the member, as it
+does an undeclared native name.
+
+Whether such a member can be used is decided where it is used. Every
+application that resolves to it SHALL refuse `ill_typed`/`operator-ineligible`
+at that application, in the clause or function body that holds it, naming the
+node that declares the member and its typed member path: the owning type's
+node and `Field.typeRef` for a field, the operation's node and
+`Operation.params[i].typeRef` or `Operation.returns.typeRef` for a parameter
+or a result (as QSpec FR-154 names them). The applications are a `field`
+projection of the field in any clause, including a post-state read in a
+postcondition, and a call of an operation whose parameter or result is such a
+member. A call refuses when its operation resolves, before any argument is
+checked against a parameter; an argument is typed on its own first, as every
+call argument is. A unit whose clauses make no such application is admitted
+with the member present and raises nothing for it. A `modifies` entry that
+names such a field is not an application and raises nothing.
+
+Snapshot and invocation admission (FR-106) reads no value into such a member
+and requires none. An object of a snapshot may omit a field that is such a
+member, whatever its presence and multiplicity: admission reports no
+`missing-member` for it and admits the object, which the unit's clauses can
+then check, since none of them reads the field. A value supplied for such a
+field, for such a parameter in an invocation's `parameters`, or as a non-null
+`result` of an operation whose result is such a member, is a use: admission
+SHALL refuse it `ill_typed`/`operator-ineligible` at its value path
+(`populations[i].objects[j].fields.<name>`, `parameters.<name>` or `result`),
+naming the member as above, before the value is read. An invocation that
+omits such a parameter refuses `invalid_runtime_input`/`missing-member` as for
+any other parameter. In particular an FR-106 Decimal or Text value never
+fills a member typed by bare `ix://quire/native/Decimal` or
+`ix://quire/native/Text`: the slots those values fill are a Text value type
+of the package and a QSL source `Decimal` or `Decimal[lo, hi; smin, smax;
+mode]` type (FR-106 "Decimal value").
+
 If a `typeRef` names an undeclared native name, then intake SHALL refuse it with
 `invalid_model_binding`/`malformed-declaration` at the member, naming the
-`typeRef`. If it names `Rational` or `Decimal`, whose required `dmin` and
-`dmax` the semantic-IR constraint vocabulary cannot carry, then intake SHALL
-refuse it with `unsupported_construct`/`declaration-form` at the member,
-naming the parameter.
+`typeRef`.
 
 Semantic IR numeric value sites SHALL use the encoding of filament-core-data
 [FR-144](ix://agent-ix/filament-core-data/FR-144)'s Canonical spellings and
@@ -844,7 +885,9 @@ filament-core-data FR-144 is distinct from its integer IR value-site encoding.
 
 If an admitted package declares a record the type environment does not
 represent (a systems part, port or allocation, or a
-field whose value type or multiplicity has no kernel type), then the
+field whose value type or multiplicity has no kernel type, other than a member
+typed by bare `Text`, `Rational` or `Decimal`, which the paragraph on those
+natives above governs), then the
 assembler SHALL refuse it with
 `unknown_required_feature`/`unsupported-feature` at the `model` declaration.
 The assembler SHALL declare each operation of an object type, with its
@@ -886,7 +929,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-145, TC-147) |
 | FR-056-AC-9 | A `1-draft` unit selecting a domain package by its `sha256-jcs` digest assembles with each of the package's object types declared as `M::<artifact id>` with its declared supertypes and fields, a subtype conforming to its declared supertype, and checks with functions over `M::T` and `Reference<M::T>`; inherited field access checks (`deref(g).code` over a `Gadget` whose supertype `Widget` declares `code`), and `deref(g).nope` and `g = r` over an unrelated `Rock` refuse `ill_typed` at check. A `model` declaration with no admitted package refuses at the assembler as `missing_import`. `Reference<M::Nope>` refuses at the assembler as `missing_declaration` at `M::Nope`; with no package supplied the declaration refuses at intake as `missing_import`, and a `sha256:` digest refuses at intake as `invalid_model_binding`, each at the `model` declaration. Past the I2 read, a package holding the field access resolves the model member through the lock-selected domain package (IR-285, QSpec STD-100) and returns Verified exporting `code`; one holding `g = w` over conforming references returns Verified exporting `same`, admitted by IR-285's QVC checked-operation catalog (STD-101/102) for `quire.op.reference.eq`; TC-442 verifies both. | Test |
 | FR-056-AC-10 | A field's multiplicity `[1, 1]` gives its declared value type outright; any other multiplicity gives the `ordered`/`unique`-selected collection (`Set`, `Bag`, `Sequence` or `OrderedSet`) bounded by it, unbounded only at a lower bound of `0`, and an unbounded upper bound with a lower bound above `0` has no kernel type (QSpec FR-322's "Model-owned members" step 4). The field's own declared `presence` -- never a multiplicity lower bound of `0` -- decides whether it is optional (QSpec's `model-complete.md` Presence row): `required`/`optional` map to the assembled declaration's own presence one to one, and any other value refuses `invalid_model_binding`/`malformed-declaration` at intake, naming the offending value. | Test |
-| FR-056-AC-11 | A domain package whose field `label` is typed by a Text value type `Label` (the form of FR-056-AC-37) with bounds `0` and `64` and profile `nfc` is admitted, and `label`'s value type is `Text[0, 64; nfc]`; each of the other five QSpec FR-141 profiles is admitted the same way. Bounds satisfy `0 <= min <= max`: with `Label`'s bounds `65` and `64`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming the bounds; with `minLength` `-1`, the semantic-IR validator refuses `invalid_model_binding`/`malformed-declaration` at `Label` before the Text reader runs. With `Label`'s profile `nfx`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming `nfx`. With `label`'s `typeRef` `ix://quire/native/Text`, it refuses `unsupported_construct`/`declaration-form` at `label`, naming `profile` (a row that depends on the native vocabulary of the semantic-IR validator, as the Text paragraph above states); the admitted row and the `nfx` and `65`/`64` rows depend on the applicability change the Text paragraph states; with undeclared `ix://quire/native/UnknownText`, it refuses `invalid_model_binding`/`malformed-declaration` at `label`, naming `ix://quire/native/UnknownText`. K2's declared native `String` is not this unknown-name case and is not substituted by a parameterized `Text` alias. The same outcomes hold for an operation parameter and an operation result. | Test |
+| FR-056-AC-11 | A domain package whose field `label` is typed by a Text value type `Label` (the form of FR-056-AC-37) with bounds `0` and `64` and profile `nfc` is admitted, and `label`'s value type is `Text[0, 64; nfc]`; each of the other five QSpec FR-141 profiles is admitted the same way. Bounds satisfy `0 <= min <= max`: with `Label`'s bounds `65` and `64`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming the bounds; with `minLength` `-1`, the semantic-IR validator refuses `invalid_model_binding`/`malformed-declaration` at `Label` before the Text reader runs. With `Label`'s profile `nfx`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming `nfx`. With `label`'s `typeRef` `ix://quire/native/Text`, intake admits the package and `label` has no checked type (FR-056-AC-43); the admitted row and the `nfx` and `65`/`64` rows depend on the applicability change the Text paragraph states; with undeclared `ix://quire/native/UnknownText`, it refuses `invalid_model_binding`/`malformed-declaration` at `label`, naming `ix://quire/native/UnknownText`. K2's declared native `String` is not this unknown-name case and is not substituted by a parameterized `Text` alias. The same outcomes hold for an operation parameter and an operation result. | Test |
 | FR-056-AC-12 | The one parse refuses a document that repeats a member name within one object, at the repeated name's byte offset, and a document that begins with a byte order mark, at byte 0. A document repeating a member name, offered under the `sha256-jcs` digest of its last-wins value, refuses `stale_dependency`/`byte-digest-mismatch` with its raw digest as the recomputed digest. | Test (TC-145) |
 | FR-056-AC-13 | The one parse refuses a document holding `18446744073709551616`, `-18446744073709551616`, `1e20`, `9.007199254740993e15`, `9007199254740993` or `-9007199254740993` at `/package/count` with `noncanonical_wire`/`inexact-integer` and `document_pointer` `/package/count`; one holding `1e20` at member `c~d` of the first element of member `a/b` names `/a~1b/0/c~0d`, and one holding such numbers at `/b` and then `/a/0` names `/b`. The same document holding `9007199254740992` or `-9007199254740992` at `/package/count` is admitted. Documents that differ only in holding `18446744073709551615` or `18446744073709551616`, each offered under the `sha256-jcs` digest of the same document holding `18446744073709552000`, which they shared before this rule, refuse `noncanonical_wire`/`inexact-integer` at `/package/count`, never `stale_dependency`/`byte-digest-mismatch`; a field whose multiplicity `upper` is 2^60 + 1 refuses the same way at that bound's pointer under the digest it used to admit under and under its raw digest. | Test (TC-145) |
 | FR-056-AC-14 | The one parse refuses a document holding `9007199254740993.5`, `0.1000000000000000000001`, `1e-400`, `-1e-400` or `4.9e-324` at `/package/count` with `noncanonical_wire`/`inexact-number` and `document_pointer` `/package/count`; the same document holding `9007199254740993`, which fits both cases, refuses `inexact-integer`, as does `1e20`; and a document holding `0.5` at `/a/0` and `1e-400` at `/a/1` names `/a/1`. The same document holding `0.1`, `1.0`, `-0`, `-0.0`, `5e-324`, `1e15` or `9007199254740991` at `/package/count` is admitted, with the digest of the RFC 8785 text of the same value. A document holding `0.1000000000000000000001` at `/package/count`, offered under the `sha256-jcs` digest of the same document holding `0.1`, refuses `noncanonical_wire`/`inexact-number`, and the document holding `0.1` admits under it. The double nearest `1125899906842624.25` has two equally close shortest texts: a document holding `1125899906842624.2` (the even digit, RFC 8785's text) at `/package/count` is admitted, as are `1500000000000000.2` and `2.9802322387695312e-8`, and one holding `1125899906842624.3`, `1500000000000000.3` or `2.9802322387695313e-8` refuses `noncanonical_wire`/`inexact-number`. | Test (TC-145) |
@@ -918,6 +961,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-40 | Over `function s using v(x: String): Boolean pure { x = "abc" }`, `x` = `abc` gives `true`, and `ABC`, `abc ` and the empty String give `false`. `"a" = "a"` and `"\u00e9" = "é"` are `true`; `"\u00e9" = "e\u0301"` and `"A" = "a"` are `false`. Over `u: UUID`, `u = UUID("00112233-4455-6677-8899-aabbccddeeff")` is `true` for that value and `u != UUID("00112233-4455-6677-8899-aabbccddeefe")` is `true`. Over `t: Timestamp`, `t = Timestamp(5)` is `true` for `5` and `false` for `6`; `Timestamp(0) = Timestamp(-0)` is `true`, `Timestamp(0) = Timestamp(1)` is `false`, and `Timestamp(-170141183460469231731687303715884105728) = Timestamp(170141183460469231731687303715884105727)` is `false`. A literal compares in a call argument, a `let` binding and a field-read comparison (`x.label = "a"`) by the same rules. The String functions `s` and its `!=` counterpart replay through the real spine (FR-098) with the evaluated value and settlement of the Boolean in the `abc`, `ABC` and empty-text rows; the other rows check and evaluate without replay. | Test (TC-1052) |
 | FR-056-AC-41 | A literal never changes type to fit its slot. `x = "abc"` over `x: Text[0, 8; nfc]`, `u = "00112233-4455-6677-8899-aabbccddeeff"` over `u: UUID`, `x = UUID("00112233-4455-6677-8899-aabbccddeeff")` over `x: String`, `t = 5` over `t: Timestamp`, `n = Timestamp(5)` over `n: Integer`, and `r = "abc"` over `r: Reference<T>` each refuse `ill_typed`/`type-mismatch` at the comparison; the bodies `5` of a function whose result is `Timestamp`, `UUID("00112233-4455-6677-8899-aabbccddeeff")` of one whose result is `String` and `"abc"` of one whose result is `Text[0, 8; nfc]` refuse the same way at the literal. `"abc" < "abd"`, `UUID("00112233-4455-6677-8899-aabbccddeeff") <= UUID("00112233-4455-6677-8899-aabbccddeefe")` and `Timestamp(1) > Timestamp(2)` each refuse `ill_typed`/`operator-ineligible`. | Test (TC-1052) |
 | FR-056-AC-42 | A domain package whose operation parameter has `typeRef` `ix://quire/unit/ms` is admitted by intake with the `typeRef` unresolved; the assembler resolves it to the unit `ms` of a compiling unit that declares `ms`, and refuses it `missing_declaration`/`missing-name` naming `Operation.params[0].typeRef` when the unit declares no `ms`. A `typeRef` of the form `ix://quire/unit/<name>` on a field and on a result behave the same. | Test (TC-147) |
+| FR-056-AC-43 | A domain package whose object type `Note` declares fields `memo` typed `ix://quire/native/Text`, `ratio` typed `ix://quire/native/Rational`, `amount` typed `ix://quire/native/Decimal`, `amounts` typed `ix://quire/native/Decimal` with multiplicity `[0, 3]` and `count` typed `ix://quire/native/Integer`, an operation `scale(by)` whose parameter `by` is typed `ix://quire/native/Rational` and whose result is typed `ix://quire/native/Integer`, and an operation `peek()` whose result is typed `ix://quire/native/Text`, is admitted by intake and by the assembler with no refusal, and a unit selecting it whose clauses name none of these members is admitted. Adding, one at a time: the invariants `self.memo = self.memo`, `self.ratio = self.ratio`, `self.amount = self.amount` and `self.amounts = self.amounts` each refuse `ill_typed`/`operator-ineligible` at the projection naming `Note` and `Field.typeRef`; an invariant comparing a call of `scale` with argument `self.count` to `1` refuses the same at the call naming `scale` and `Operation.params[0].typeRef`, with no refusal for the argument; an invariant comparing a call of `peek()` to itself refuses at the call naming `peek` and `Operation.returns.typeRef`; an operation `touch()` with `modifies memo` and the postcondition `self.memo = pre(self.memo)` refuses at the post-state projection `self.memo` naming `Note` and `Field.typeRef`, while `touch()` with `modifies memo` and no postcondition is admitted. Over the admitted unit, an FR-106 snapshot whose `Note` object supplies `count` and omits `memo`, `ratio`, `amount` and `amounts` is admitted and an invariant over `count` is checked against it; the same snapshot supplying `{"kind": "text", "text": "a"}` for `memo` refuses `ill_typed`/`operator-ineligible` at `fields.memo` naming `Note` and `Field.typeRef`, the value unread. An invocation of `scale` supplying `by` refuses the same at `parameters.by` naming `scale` and `Operation.params[0].typeRef`, one omitting `by` refuses `invalid_runtime_input`/`missing-member`, and an invocation of `peek` with a non-null `result` refuses `ill_typed`/`operator-ineligible` at `result` naming `peek` and `Operation.returns.typeRef`. | Test (TC-897) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148) |
 
 ### FR-056-AC-17
