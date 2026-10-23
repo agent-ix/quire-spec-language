@@ -266,7 +266,7 @@ fn check_one(
                 }
             }
         }
-        for (index, variable) in variables.iter().enumerate() {
+        for variable in variables.iter() {
             if !equation_of.contains_key(variable.name.as_str()) {
                 complete = false;
                 stops.push(Stop::Cause(HybridCause::MissingEquation {
@@ -275,7 +275,6 @@ fn check_one(
                     span: mode.name.span,
                 }));
             }
-            let _ = index;
         }
 
         let mut transitions = Vec::with_capacity(mode.transitions.len());

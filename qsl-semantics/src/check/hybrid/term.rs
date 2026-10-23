@@ -128,7 +128,7 @@ pub(super) fn lower_at(
     let whole = span_of(spans, start.1, Span { start: 0, end: 0 });
     let mut tasks = vec![Task::Visit(start.0, start.1)];
     let mut values: Vec<Lowered> = Vec::new();
-    let mut bound: Vec<Binder> = outer.to_vec();
+    let mut bound: Vec<Binder> = Vec::new();
     while let Some(task) = tasks.pop() {
         match task {
             Task::Visit(id, at) => {
@@ -148,11 +148,10 @@ pub(super) fn lower_at(
                         values.push(leaf(meter, HybridTerm::Constant(constant), Kind::Real)?);
                     }
                     ExprNode::Name(name) => {
-                        values.push(resolve(name, span, env, &bound, meter)?);
+                        values.push(resolve(name, span, env, (outer, &bound), meter)?);
                     }
-                    ExprNode::Pre(operand) => {
-                        let _ = operand;
-                        values.push(pre(form, id, span, env, &bound, meter)?);
+                    ExprNode::Pre(_) => {
+                        values.push(pre(form, id, span, env, (outer, &bound), meter)?);
                     }
                     ExprNode::Let {
                         name, value, body, ..
@@ -238,10 +237,15 @@ fn resolve(
     name: &str,
     span: Span,
     env: &Env<'_>,
-    bound: &[Binder],
+    (outer, bound): (&[Binder], &[Binder]),
     meter: &mut Meter<'_>,
 ) -> Result<Lowered, Stop> {
-    if let Some((_, value)) = bound.iter().rev().find(|(binder, _)| binder == name) {
+    if let Some((_, value)) = bound
+        .iter()
+        .rev()
+        .chain(outer.iter().rev())
+        .find(|(binder, _)| binder == name)
+    {
         meter.charge(value.size)?;
         return Ok(value.clone());
     }
@@ -262,7 +266,7 @@ fn pre(
     id: ExprId,
     span: Span,
     env: &Env<'_>,
-    bound: &[Binder],
+    (outer, bound): (&[Binder], &[Binder]),
     meter: &mut Meter<'_>,
 ) -> Result<Lowered, Stop> {
     let malformed = HybridCause::Malformed {
@@ -275,7 +279,7 @@ fn pre(
     let ExprNode::Name(name) = form.expression.at(*operand).node() else {
         return Err(malformed.into());
     };
-    let shadowed = bound.iter().any(|(binder, _)| binder == name);
+    let shadowed = bound.iter().chain(outer).any(|(binder, _)| binder == name);
     match env.variables.get(name) {
         Some(index) if env.reset && !shadowed => {
             leaf(meter, HybridTerm::Variable(*index), Kind::Real)
