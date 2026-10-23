@@ -131,9 +131,10 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 FR-163's `Malformed`. `CertificateRejection.at` is FR-338's
 `CertificateLocus`, here `Query { part }` or `ProofStep { part, index: u64 }`,
 `part` being `Unrolling`, `Base` or `Step`; for a refinement certificate `Step`
-carries its row, `Step { row: Some(r) }`. QSpec FR-331 carries `rule` and `at`
-as non-empty texts and catalogues no finer spelling; FR-338 states the
-spelling QSL writes.
+carries its row, `Step { row: Some(r) }`. QSpec FR-331's Certification
+table spells every rule and both loci, `step/<r>` for a step row included,
+and lists the rules this checker may name at a query part and at a proof
+step; FR-338's "Rejection spellings" applies it.
 
 ## Outputs
 
