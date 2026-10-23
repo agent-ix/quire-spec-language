@@ -1631,7 +1631,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=ir-588-s4-eval#012eca45b7f6239f8b1647040722f8c91e37b56d"
+source = "git+https://github.com/agent-ix/quire-eval?branch=ir-588-s4-eval#f9d27bc07306f50cb472af99b43589bc895c7608"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1641,7 +1641,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#72b254219fd65a058b8cf93cefadda1c4c249fca"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#ab59015994daf05c8c42252daa6a71f06e3936d9"
 dependencies = [
  "allocator-api2",
  "num-bigint",
@@ -1686,7 +1686,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv#e331dd0af0723e3c0b036a02702bed9f3b913ac4"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=ir-588-s4-sv#60b05d42975156500578db377c26aa2d63938a74"
 dependencies = [
  "quire-canonical",
  "quire-exact",

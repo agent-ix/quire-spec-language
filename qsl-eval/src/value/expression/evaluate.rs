@@ -2237,11 +2237,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                         self.tasks.push(Task::DispatchGuard(Box::new(DispatchGuard {
                             body_function: candidate.body,
                             arguments: full_arguments,
-                            failure: PreconditionFailure {
-                                operation: operation.member.clone(),
+                            failure: PreconditionFailure::new(
+                                operation.member.clone(),
                                 selected,
-                                receiver: reference,
-                            },
+                                reference,
+                            ),
                             node,
                         })));
                         self.tasks.push(Task::Eval(callable.body));

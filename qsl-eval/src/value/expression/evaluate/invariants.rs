@@ -395,11 +395,11 @@ fn dispatch_table_candidate_and_each_callable_consumer_fault_at_its_own_site() {
             m.step(Task::DispatchGuard(Box::new(DispatchGuard {
                 body_function: usize::MAX,
                 arguments: vec![Value::Reference(reference())],
-                failure: PreconditionFailure {
-                    operation: "step".to_owned(),
-                    selected: "Body".to_owned(),
-                    receiver: reference(),
-                },
+                failure: PreconditionFailure::new(
+                    "step".to_owned(),
+                    "Body".to_owned(),
+                    reference(),
+                ),
                 node: node.root(),
             })))
         }
@@ -468,11 +468,11 @@ fn resolved_dispatch_and_callable_consumers_keep_the_matching_valid_prefixes() {
         .step(Task::DispatchGuard(Box::new(DispatchGuard {
             body_function: 0,
             arguments: vec![Value::Reference(receiver.clone())],
-            failure: PreconditionFailure {
-                operation: "step".to_owned(),
-                selected: "Body".to_owned(),
-                receiver: receiver.clone(),
-            },
+            failure: PreconditionFailure::new(
+                "step".to_owned(),
+                "Body".to_owned(),
+                receiver.clone(),
+            ),
             node: node.root(),
         })))
         .unwrap_or_else(|_| panic!("linked guard body"));
@@ -1674,15 +1674,15 @@ fn stack_extraction_and_frame_producers_report_their_own_invariants() {
         m.step(Task::DispatchGuard(Box::new(DispatchGuard {
             body_function: 0,
             arguments: vec![],
-            failure: PreconditionFailure {
-                operation: "probe".to_owned(),
-                selected: "probe".to_owned(),
-                receiver: ObjectReference::new(
+            failure: PreconditionFailure::new(
+                "probe".to_owned(),
+                "probe".to_owned(),
+                ObjectReference::new(
                     quire_exact::UniverseId::from_digest([0; 32]),
                     m.scope.types().object_types().next().unwrap().key(),
                     quire_exact::ObjectId::new("receiver").unwrap(),
                 ),
-            },
+            ),
             node: root.root(),
         })))
     });
