@@ -466,7 +466,7 @@ fn tc_906_the_node_limit_stops_the_replay_before_the_call() {
     assert_eq!(raised.charges(), unlimited.charges());
 }
 
-/// FR-255-AC-10 (TC-921): a `stage_limits` entry `work_units` is the
+/// FR-255-AC-10 (TC-921): a `stage_limits` entry `accounting.work_units` is the
 /// call's `work_units` whatever the request's accounting limits give it,
 /// and every other counter keeps the request's value; for FR-098-AC-9's
 /// counterexample the entry one below the node count settles `NoValue`
@@ -479,7 +479,8 @@ fn tc_921_a_stage_limits_counter_entry_sets_the_budget() {
     let nodes = 9_u64;
     let mut wire = fixture.input("p", value.clone());
     wire.accounting_limits.work_units = 10_000;
-    wire.stage_limits.insert("work_units".to_owned(), nodes - 1);
+    wire.stage_limits
+        .insert("accounting.work_units".to_owned(), nodes - 1);
     let request = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).expect("decodes");
     assert_eq!(request.accounting_limits().work_units, nodes - 1);
     assert_eq!(
@@ -500,7 +501,9 @@ fn tc_921_a_stage_limits_counter_entry_sets_the_budget() {
 
     let mut raised = fixture.input("p", value.clone());
     raised.accounting_limits.work_units = 0;
-    raised.stage_limits.insert("work_units".to_owned(), 10_000);
+    raised
+        .stage_limits
+        .insert("accounting.work_units".to_owned(), 10_000);
     let raised = assert_reproduced(replay(raised, ReplayLimits::default()));
     let unlimited = assert_reproduced(replay(fixture.input("p", value), ReplayLimits::default()));
     assert_eq!(raised.charges(), unlimited.charges());
