@@ -71,3 +71,18 @@ Merge-order note: #1269 (IR-583 S0) touches 13 of this PR's 17 files
 (`execute.rs`, `admitted.rs`, `outcome.rs`, `plugin_replay.rs`,
 `lifecycle.rs`, `claims.rs`, and others). Whichever PR lands second must be
 rebased and re-run on its focused tests.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The FND-001 fix is conservative: a claim whose owner is in a recursion group never reproduces, including a real undefined stop in the outer call (for example `f` at `x = 0`). FR-098 "the observation" still says the executor SHALL observe each evaluation in the call's own body, so code and spec now disagree for recursive owners. This fails safe (a missed reproduction). Mutual recursion is covered by the same `recursion()` check: a local probe with `g`/`h` at `x = 2` settles `NoValue` with the fix and `Reproduced(false)` without it. That case is untested. Fix: either amend FR-098 to state the recursive-owner rule (draco), or file the S6a frame-depth follow-up and add a mutual-recursion case to TC-444. | qsl-replay/src/execute.rs:849-861,1367-1369 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10999567d: `failed_at_site` is false when the owning function's node has `recursion()`. `tc_444_a_stop_inside_a_recursive_call_is_not_the_outer_observation` asserts `NoValue` at `x = 1`. I checked that the test fails at the head with the guard reverted (left `Reproduced(Some(Boolean(false)))`, right `NoValue`). |
+| FND-002 | fixed | 10999567d: a comment cites FR-098 and says the omission fails safe |
+| FND-003 | fixed | 10999567d: `declaration_key` panics with a clear message when the package was composed on this thread but lacks the function. It still returns the placeholder only for a package id this thread never composed, which refuses before claim selection. |
+| FND-004 | fixed | 10999567d (PR body edit): the changelog gains the `PluginReplayContext::request` line, naming the IR-672 and IR-968 consumers |

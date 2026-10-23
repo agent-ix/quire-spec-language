@@ -60,3 +60,21 @@ claim after the join, and the predicate path for value items. The FR-404
 strengthening covers AC-2, 3, 5, 6 and 7. FND-001 and FND-002 are untested
 or unfinished parts of the ticket's own scope and should be fixed in this PR.
 FND-004 and FND-007 are spec edits and should go to the spec lane.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | `tc_444_unread_parameters_fill_by_type` checks only that some in-range value is filled. A `Boolean` fill of `true`, `Int[3, 9]` filled with 9 or `Int[-9, -2]` filled with -9 would still pass, because the filled parameter is read nowhere. Fix: make the fill observable outside the claim's extent, for example `un(x, y) { 10 mod x + 10 mod (y + 2) }` at the first record with `x = 1`: the correct fill (-2) stops at the other site and settles `NoValue`, while -9 settles `Verdicts`. Use the same shape for `ur` and `ub`. | qsl-replay/src/execute/tests/application_claim.rs:527-551 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10999567d: `a_synthesized_owners_application_item_is_not_replayable` (dispatch_link_compile.rs) asserts that `callable(owner)` is none, the refusal is `NotReplayable` and the item settles `ReplayRefused(unknown_required_feature)`. `r`'s process-provider identity and `p`'s application item versus its contract item are asserted in plugin_tests.rs. |
+| FND-002 | fixed | 10999567d: the root-only test builds the member's request through root paths and asserts its `package_id` and occurrence key. The header now says the parameter node is not reachable from the root, so the request is not replayed there (a facade gap, recorded for QSL-1006). |
+| FND-003 | fixed | 10999567d: the Boolean, range-end (positive and negative) and non-integer arms are each exercised. The exact fill values are not pinned (new FND-008). |
+| FND-004 | deferred | Spec edit: reword FR-404-AC-2, TC-1173 expected result 2 and FR-290-AC-12 "completes 10". Left for the spec lane (draco); it does not block this code PR. |
+| FND-005 | fixed | 10999567d: the test asserts that the decoded request carries each of two distinct identities unchanged. FR-098 says the executor SHALL NOT check the identity, so minting a function-contract preimage would test nothing further. |
+| FND-006 | fixed | 10999567d: `member_request` now compares `source`, `profile_selections`, `state_environment`, `supplied_limits` and `object_environment`, and compares `declared_domains` element by element |
+| FND-007 | deferred | Spec edit: name `RequirementRecord::extent_roots()` in FR-062. Left for the spec lane (draco). |
