@@ -196,10 +196,10 @@ pub enum ModelCheckRefusal {
         /// The request's constraint name.
         name: String,
     },
-    /// A liveness clause over a protocol subject with a weak `parallel`,
-    /// whose memory constraints (FR-228) the liveness engine does not read
+    /// A liveness clause over a protocol subject with an `ra` `parallel`,
+    /// whose visibility fairness (FR-228) the liveness engine does not read
     /// yet (`unsupported_construct`/`not-yet-implemented`).
-    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over a weak `parallel` yet")]
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over an `ra` `parallel` yet")]
     WeakLiveness,
     /// A liveness clause over an `activation on each` protocol: the liveness
     /// engine does not read the instance bound (FR-209) yet, so a run could
@@ -584,7 +584,7 @@ pub struct ProtocolCheckRequest<'a> {
 /// # Errors
 ///
 /// [`ModelCheckRefusal`] as [`check_model`] returns it,
-/// [`ModelCheckRefusal::WeakLiveness`] for a liveness clause over a weak
+/// [`ModelCheckRefusal::WeakLiveness`] for a liveness clause over an `ra`
 /// `parallel`, and [`ModelCheckRefusal::Protocol`] when the protocol system
 /// does not build.
 pub fn check_protocol(
@@ -720,11 +720,12 @@ pub fn check_protocol(
     }
 }
 
-/// FR-126 and FR-212 for a liveness clause over a protocol subject under
-/// `sc` ([`super::liveness::check_protocol`]). A subject with a weak
-/// `parallel` is refused before any state is explored: its memory
-/// constraints (FR-228) and its memory bound are not applied by the liveness
-/// engine yet.
+/// FR-126 and FR-212 for a liveness clause over a protocol subject
+/// ([`super::liveness::check_protocol`]), over `ProtocolSystem<Sc>` or, when
+/// a `parallel` resolves to `tso`, `ProtocolSystem<Tso>` bounded by
+/// `max_store_buffer` with flush fairness in its fairness set (FR-228). A
+/// subject with an `ra` `parallel` is refused before any state is explored:
+/// the liveness engine does not read visibility fairness yet.
 fn check_protocol_liveness(
     request: ProtocolCheckRequest<'_>,
     cancel: &Cancel,
@@ -744,25 +745,59 @@ fn check_protocol_liveness(
             })
         })?;
     check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
-    let SubjectMemory::Sc = SubjectMemory::of(
+    let memory = SubjectMemory::of(
         &subject.memory,
         request.max_store_buffer,
         request.max_messages,
-    ) else {
-        return Err(ModelCheckRefusal::WeakLiveness);
-    };
+    );
     if activates_on_each(protocol) {
-        return Err(ModelCheckRefusal::InstanceLiveness);
+        return Err(if matches!(memory, SubjectMemory::Ra(_)) {
+            ModelCheckRefusal::WeakLiveness
+        } else {
+            ModelCheckRefusal::InstanceLiveness
+        });
     }
-    let system = ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
-    super::liveness::check_protocol(
-        subject,
-        &system,
-        request.item,
-        request.max_depth,
-        request.limits,
-        cancel,
-    )
+    let decided = match memory {
+        SubjectMemory::Ra(_) => return Err(ModelCheckRefusal::WeakLiveness),
+        SubjectMemory::Tso(tso) => {
+            let bound = MemoryBound {
+                member: MemoryBoundMember::MaxStoreBuffer,
+                value: tso.max_store_buffer(),
+            };
+            ProtocolSystem::new(model, subject, tso).map(|system| {
+                super::liveness::check_protocol(
+                    subject,
+                    &system,
+                    Some(bound),
+                    request.item,
+                    request.max_depth,
+                    request.limits,
+                    cancel,
+                )
+            })
+        }
+        SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc).map(|system| {
+            super::liveness::check_protocol(
+                subject,
+                &system,
+                None,
+                request.item,
+                request.max_depth,
+                request.limits,
+                cancel,
+            )
+        }),
+    };
+    match decided {
+        Ok(outcome) => outcome,
+        // FR-220 "Access shape": the pre-check settles V-8 before any state
+        // is explored.
+        Err(ProtocolRefusal::WeakAccessShape(shape)) => Ok(ModelCheckOutcome::Memory {
+            cause: MemoryCause::WeakAccessShape(shape),
+            stats: RunStats::default(),
+        }),
+        Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
+    }
 }
 
 /// What [`check_protocol`] runs over its protocol system, whichever memory

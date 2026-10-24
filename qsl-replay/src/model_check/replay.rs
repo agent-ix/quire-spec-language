@@ -698,14 +698,18 @@ impl ProtocolReplay<'_> {
             }
             None => Vec::new(),
         };
+        send_records_in_place(payload)?;
+        // A step that the resolved models do not reproduce refuses before a
+        // fairness set that differs, which a change of memory model changes
+        // too (FR-227-AC-1).
+        let replayed = replay_prefix(system, payload, &PROTOCOL_STEPS)?;
         if self.clause.is_some() && payload.fairness != fairness {
             return Err(refused(ModelTraceRefusal::ProtocolFairnessSet {
                 payload: payload.fairness.clone(),
                 recompiled: fairness,
             }));
         }
-        send_records_in_place(payload)?;
-        let Some((positions, steps)) = replay_prefix(system, payload, &PROTOCOL_STEPS)? else {
+        let Some((positions, steps)) = replayed else {
             return Ok(no_value());
         };
         if let Some(lasso) = payload.lasso {
