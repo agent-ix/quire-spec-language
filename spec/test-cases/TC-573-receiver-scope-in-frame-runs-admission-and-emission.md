@@ -16,9 +16,9 @@ Scope: FR-154-AC-3 to FR-154-AC-4.
 
 ## Test Procedure
 
-Fixtures: An invocation of `increment` on `self = c1` whose post snapshot changes `c2.value`.
+Fixtures: An invocation of `increment` on `self = c1` whose post snapshot changes `c2.value`, and a second whose post snapshot changes only `c1.value`.
 
-1. Run the `Frame` selection and a clause run over the invocation under each frame.
+1. Run the `Frame` selection and a clause run over the `c2.value` invocation under each frame; run clause admission over the `c1.value` invocation under `modifies self.value`.
 2. Emit the unit under each frame and compare frame node contents.
 3. Intake the unit with both `modifies self.value` and `modifies value` on `increment`.
 
@@ -26,6 +26,6 @@ Tag the tests `#[trace("TC-573", "FR-154-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `violation` with the witness naming `c2.value` and a `frame_violation` admission refusal under `modifies self.value`; `success` under `modifies value`.
+- Step 1: `violation` with the witness naming `c2.value` and a `frame_violation` admission refusal under `modifies self.value`; `success` under `modifies value`; the `c1.value` invocation is admitted under `modifies self.value`.
 - Step 2: scopes `receiver` and `every-object`; different contents.
 - Step 3: intake refuses `invalid_model_binding`/`conflicting-binding` naming both entries and `increment`; no frame node is emitted.
