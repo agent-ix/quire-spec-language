@@ -164,7 +164,7 @@ fn domain_leaf_type<'a>(
         // A unit type names a unit of the compiling QSL unit, not a native
         // scalar leaf or a package node, so the domain checker leaves it
         // unmapped.
-        ValueTypeRef::Unit(_) => return None,
+        ValueTypeRef::Clock | ValueTypeRef::Unit(_) => return None,
         ValueTypeRef::Package(key) => {
             NativeType::Domain(DomainType::new(package, package.declaration_by_key(key)?)?)
         }

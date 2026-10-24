@@ -304,10 +304,13 @@ pub enum SubjectMemory {
 }
 
 impl SubjectMemory {
-    /// The memory model for `resolved`, with `max_store_buffer` entries per
-    /// buffer, the published default 4 when `None` (ADR-025 MB-2). A
-    /// subject under `ra` runs with the published default message bound.
-    pub fn of(resolved: &ResolvedMemory, max_store_buffer: Option<u64>) -> Self {
+    /// The memory model for `resolved`, with the published defaults 4 for
+    /// both memory bounds when their request members are `None` (FR-225).
+    pub fn of(
+        resolved: &ResolvedMemory,
+        max_store_buffer: Option<u64>,
+        max_messages: Option<u64>,
+    ) -> Self {
         let resolves = |model| {
             resolved
                 .parallels()
@@ -319,7 +322,9 @@ impl SubjectMemory {
                 max_store_buffer.unwrap_or(super::DEFAULT_MEMORY_BOUND),
             ))
         } else if resolves(MemoryModelName::Ra) {
-            Self::Ra(super::Ra::default())
+            Self::Ra(super::Ra::new(
+                max_messages.unwrap_or(super::DEFAULT_MEMORY_BOUND),
+            ))
         } else {
             Self::Sc
         }
