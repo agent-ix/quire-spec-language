@@ -31,6 +31,7 @@
 mod abstraction_declaration;
 mod clause_text;
 mod dispatch;
+mod hybrid_declaration;
 mod hyper_clause;
 mod probabilistic;
 mod protocol_clause;
@@ -77,12 +78,13 @@ pub use syntax::{
     ClockForm, CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
     CompensationRetry, ConfidenceItemForm, ConfidenceKey, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
-    EventForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind, ExpectedQuantity,
-    ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
+    EquationForm, EventForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind,
+    ExpectedQuantity, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer, FractionForm,
-    FunctionDeclaration, HorizonForm, IntervalForm, IntervalUpper, MeasureForm, MeasureWindowForm,
-    NameForm, OperationBodyForm, OperatorInterval, ParameterForm, PopulationBoundForm,
-    PopulationForm, ProbabilisticBody, ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm,
+    FunctionDeclaration, HorizonForm, HybridForm, HybridInitialForm, HybridModeForm,
+    InitialEntryForm, IntervalForm, IntervalUpper, MeasureForm, MeasureWindowForm, NameForm,
+    OperationBodyForm, OperatorInterval, ParameterForm, PopulationBoundForm, PopulationForm,
+    ProbabilisticBody, ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm,
     ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
     QuantityForm, RandomForm, RecordFieldForm, RecordForm, RelatedForm, RelationshipForm,
     ReplicatedRoleForm, RequirementForm, RewardForm, RoleForm, RoleLifetime, SchedulerForm,
@@ -91,9 +93,9 @@ pub use syntax::{
     StepLabelForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
     TemporalOperator, TemporalOperatorForm, TemporalOperatorUse, TermOperator,
     TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm,
-    TimeSourceSyntax, TimedIntervalForm, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm,
-    UnionMemberForm, UnitForm, UrgentForm, UrgentTarget, UsingAlias, WeightedValueForm,
-    WeightingForm, WorkloadForm, WorkloadWeightForm,
+    TimeSourceSyntax, TimedIntervalForm, TransitionForm, TreeRefusal, TupleForm, TypeForm,
+    TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm, UrgentTarget, UsingAlias,
+    WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

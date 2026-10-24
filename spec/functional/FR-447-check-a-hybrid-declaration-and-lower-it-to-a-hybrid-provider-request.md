@@ -488,21 +488,28 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
   claim: its kind `temporal-satisfaction` (QSpec FR-290), its claim locus,
   its extent `bounded` when the claim's horizon is `Some` and `unbounded`
   when it is `None`, its `hybrid.limits` by FR-250, and the hybrid-dynamics
-  requirement QSpec FR-193 names, for negotiation (FR-075) to route.
+  requirement QSpec FR-193 "Routing a hybrid item" names, the item member
+  `"requirements": ["hybrid-dynamics"]`, for negotiation (FR-075) to route.
 - The request writer SHALL give that requirement to every hybrid claim,
-  since every checked hybrid model has a `Hybrid` variable (The clock line).
+  since every checked hybrid model has a `Hybrid` variable (The clock line),
+  and SHALL write no `requirements` member on the item of any other claim.
+  The requirement is part of the request identity (QSpec FR-306).
 - The item's `claim` SHALL name the claim's emitted `temporal_clause` node
   and its `claim` occurrence (QSpec FR-331 "Items", FR-481 "Hybrid claims"),
   so the item has one locus for every provider.
 - Negotiation SHALL route the item to any registered provider that
-  advertises the item's kind and requirement, in process or in a process of
-  its own; no rule restricts a hybrid item to either.
+  advertises the item's kind and whose descriptor `dynamics` holds `hybrid`
+  (FR-075), in process or in a process of its own; no rule restricts a
+  hybrid item to either. EN-6, whose descriptor holds no `dynamics`, is never
+  a candidate for it, so registering a hybrid provider beside EN-6 makes no
+  item ambiguous.
 - An in-process hybrid provider (QSpec FR-331 "In-process providers";
   FR-280) receives the request's manifest, `deadline_ms` and items as typed
   values, together with the checked package, and reads the claim's
-  `CheckedHybridClaim` and its `CheckedHybridModel` from that package. QSL's
-  built-in hybrid solver is such a provider, and FR-250's descriptor bounds
-  are its bounds.
+  `CheckedHybridClaim` and its `CheckedHybridModel` from that package. QSL
+  has no built-in hybrid solver (ADR-026 HY-3): every hybrid provider, in
+  process or not, is a registered backend that publishes its own solver
+  budget defaults in its descriptor `bounds` (FR-250).
 - A process hybrid provider, such as one that runs dReal or Flow*, receives
   the request frame with the emitted package's v2 bytes (QSpec FR-331
   "Package bytes") and reads the claim's `temporal_clause` node and its
@@ -545,9 +552,13 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
     `model-steps`; its activation `origin`, or `each` with the `on each`
     parameter's node at level 1 as `trigger` and its guard's term node; its
     captures, each named by the capture and holding its initializer's term
-    node; its fairness as QSpec FR-481 hybrid fairness members, `declaration`
-    the model node and `name` the mode for `fair S`, and `declaration` the
-    mode node of `S` and `name` the target for `fair S::T`; and its
+    node; its fairness as QSpec FR-481 hybrid fairness members: for `fair S`,
+    each member SHALL set `declaration` to the claim's `hybrid_model` node and
+    `name` to a text literal containing `S`'s mode name, selecting every
+    transition of `S`; for `fair S::T`, each member SHALL set `declaration` to
+    `S`'s `hybrid_mode` node and `name` to a text literal containing `T`'s
+    target mode name, selecting only transitions of `S` whose target is `T`;
+    and its
     `HybridFormula`, future and past operators alike, as QSpec FR-370
     formula nodes, each `HybridInterval` in the one form QSpec FR-370 admits
     under the claim's profile: under `quire.temporal.timed/v1` the timed
@@ -585,7 +596,7 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 | FR-447-AC-2 | Each mutation of `Braking` refuses at its span with the cause given: a second mode `Moving`, `conflicting_declaration`/`duplicate-declaration`; `transition to Halted`, `missing_declaration`/`missing-name`; `Stopped` without `t' = 1;`, `invalid_model_binding`/`malformed-declaration` naming `Stopped` and `t`; a second `v' = 0;` in `Moving`, `conflicting_declaration`/`duplicate-declaration`; `P::v' = 0;`, `invalid_model_binding`/`malformed-declaration`; an invariant `{ v }`, `ill_typed`/`non-boolean-root`; a reset `{ v + a = 1 }`, `invalid_model_binding`/`malformed-declaration`; a reset `{ v = 0 and v = 1 }`, `conflicting_declaration`/`duplicate-declaration`; a guard reading `w`, `missing_declaration`/`missing-name`; a guard `when { v + 1 }`, `ill_typed`/`non-boolean-root`; a flow `v' = true;`, `ill_typed`/`type-mismatch`; a flow `v' = f(v)` with no function `f` in scope, `missing_declaration`/`missing-name`; a flow `v' = v div 2`, `ill_typed`/`type-mismatch`; and a declaration whose only equations are `t' = 1;` in each mode, `invalid_timed_model`/`rate-one-hybrid`. | Test (TC-1187) |
 | FR-447-AC-3 | `SlowEnough` checks to a `CheckedHybridClaim` over `Braking` with the clock `ModelTime`, the activation `Origin`, no capture and no fairness, the formula `Always(Some([0, 10]), Holds(Compare(Lt, Variable(0), Constant(30))))` and horizon `Seconds(10)`; with the body `always [0, 10] eventually [0, 5] holds(h.v < 30)` the horizon is `Seconds(15)`, with `holds(h.v < 30) until [0, 4] holds(h.v = 0)` it is `Seconds(4)`, and with `always holds(h.v < 30)` or `always [0, *] holds(h.v < 30)` it is `None`. `clock "wall"` is refused `unsupported_construct`/`declaration-form`, and `h.w` is refused `missing_declaration`/`missing-name`. | Test (TC-1187) |
 | FR-447-AC-4 | The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`, extent `bounded`, carrying the hybrid-dynamics requirement, whose `claim` names `SlowEnough`'s emitted `temporal_clause` node and its `claim` occurrence; with an in-process fixture hybrid provider registered the item routes to it, which reads `Braking` from the checked package; with only a process fixture hybrid provider registered the item routes to it, which receives the package's v2 bytes and reads `Braking` and `SlowEnough` from their QSpec FR-481 nodes; with none registered it settles `unsupported`, `unsupported-requested-capability`. Two packages differing only in `Moving`'s rate of `v` have different checked package identities. | Test (TC-1187) |
-| FR-447-AC-5 | S4 emits the package holding `Braking` and `SlowEnough`, and QSpec's v2 reader admits it: one `hybrid`/`hybrid_model` node declared `[Braking]` whose variables are the parameter nodes of `v`, `a` and `t` at levels 0 to 2 classed `hybrid`, `hybrid` and `clock`, whose modes are `[Braking, Moving]` and `[Braking, Stopped]` in that order, `Moving`'s rates referencing the nodes of `-a`, `0` and `1` and its one transition node `target` 1 with the reset `(0, 0)`; and one `temporal_clause` node over a parameter typed by the model node, clock `model-time`. Replacing `Moving`'s `v' = -a` by `v' = -(2 * a)` changes the `package_id`. | Test (TC-1187) |
+| FR-447-AC-5 | S4 emits the package holding `Braking`, `SlowEnough` and `MovingFair`, and QSpec's v2 reader admits it: one `hybrid`/`hybrid_model` node declared `[Braking]` whose variables are the parameter nodes of `v`, `a` and `t` at levels 0 to 2 classed `hybrid`, `hybrid` and `clock`, whose modes are `[Braking, Moving]` and `[Braking, Stopped]` in that order, `Moving`'s rates referencing the nodes of `-a`, `0` and `1` and its one transition node `target` 1 with the reset `(0, 0)`; `SlowEnough` is one `temporal_clause` node over a parameter typed by the model node, clock `model-time`; and `MovingFair`, defined as `temporal MovingFair using p over (h: Braking) clock "model-time" on origin { fair Moving; always [0, 10] true }`, has one fairness node whose `quire.op.temporal.fair` application has a `fairness` member with `declaration` referencing the `[Braking]` `hybrid_model` node and `name` the text literal `Moving`. Replacing `Moving`'s `v' = -a` by `v' = -(2 * a)` changes the `package_id`. | Test (TC-1187) |
 | FR-447-AC-6 | `Braking2` builds a `HybridForm` whose `initial` holds two entries with their spans and checks to `initial` `[InitialEntry { mode: 0, condition: .. }, InitialEntry { mode: 1, condition: .. }]` in source order, so `Moving` and `Stopped` are both initial modes; `Braking` with `initial { mode Moving when { true }; }` checks to the same `CheckedHybridModel` and checked package identity as `Braking`; `initial { mode Halted when { true }; }` refuses `missing_declaration`/`missing-name` and `initial { mode Moving when { v }; }` `ill_typed`/`non-boolean-root`, each at its span; `initial` as a variable name elsewhere in the unit stays an identifier; and `Braking2` and `Braking` have different checked package identities. | Test (TC-1220) |
 | FR-447-AC-7 | Each as one mutation of `Braking`'s `Moving`, the flow `v' = -a * v`, the guard `v * v >= 2`, the rate `a' = if v > 1 then 0 else -1`, `v' = let k = a * v in -k`, a guard `v != 3` and a flow `v' = drag(v)` calling `function drag using p(s: Rational[-100, 100; 1, 1]): Rational[-1000, 0; 1, 10] pure { - s * s / 10 }`, S3 checks each to the `HybridTerm` the rules give: `Arithmetic(Mul, Negate(Variable(1)), Variable(0))`, `Compare(Ge, Arithmetic(Mul, Variable(0), Variable(0)), Constant(2))`, a `Conditional`, the substituted `Negate(Arithmetic(Mul, Variable(1), Variable(0)))`, `Compare(Ne, ..)` and `Call(drag, [Variable(0)])`; a call passing `v` to an `Integer` parameter refuses `ill_typed`/`type-mismatch` at the call; `pre(v)` in a guard refuses `invalid_model_binding`/`malformed-declaration`; and changing `drag`'s body changes the checked package identity. | Test (TC-1220) |
 | FR-447-AC-8 | The transition's reset `{ v = pre(v) / 2 and a >= 1 and a <= 2 }` checks to `[ResetConstraint { variable: 0, relation: Eq, value: Arithmetic(Div, Variable(0), Constant(2)) }, ResetConstraint { variable: 1, relation: Ge, value: Constant(1) }, ResetConstraint { variable: 1, relation: Le, value: Constant(2) }]`; `{ v = v + 1 }` checks to `[ResetConstraint { variable: 0, relation: Eq, value: Arithmetic(Add, Variable(0), Constant(1)) }]`, read over the pre-jump `v`; `{ let k = 2 in v = k }` checks to `value: Constant(2)`; `{ v = 0 and v >= 0 }` refuses `conflicting_declaration`/`duplicate-declaration` at the second conjunct, naming both; and `{ v = 0 or v = 1 }` refuses `invalid_model_binding`/`malformed-declaration`. | Test (TC-1220) |
@@ -597,6 +608,7 @@ QSpec FR-481's `hybrid` nodes and `temporal_clause` node.
 | FR-447-AC-14 | A claim body `always [0, 10] true` emits a `quire.op.temporal.true` formula node under the `always` node and no `quire.op.temporal.holds` node over a Boolean literal; `SlowEnough` emits the `temporal_profile` law its `using` alias selects. | Test (TC-1187) |
 | FR-447-AC-15 | `SlowEnough` written `using` a profile alias selecting `quire.temporal.timed/v1` checks with the interval `{lower: 0, lower_open: false, upper: Some(10), upper_open: false}` and horizon `Some(Seconds(10))`, and S4 emits its `always` node with the timed interval `{lower: 0, upper: 10, lower_end: closed, upper_end: closed}` in exact rational seconds and the `timed/v1` law, which QSpec's v2 reader admits; under the infinite-trace profile the same claim emits the integer `[0, 10]`. Under `timed/v1`, `always [0, *] holds(h.v < 30)` is admitted, a hybrid claim admitting `[q, *]` there, with `upper: None`, horizon `None` and the emitted timed interval `upper` `null`, `upper_end` `open`; `always holds(h.v < 30)`, with no interval, is admitted under `timed/v1` with horizon `None`, and under `quire.temporal.event-position.false-extension/v1` it refuses `unsupported_construct`/`expression-form` at the operator's span, naming the profile. | Test (TC-1187) |
 | FR-447-AC-16 | QSL's I2 reader admits AC-12's emitted package and reads back `Braking2`'s `CheckedHybridModel`, with its two initial entries and its reset constraints `Eq` and `Ge`, and `Slows`'s and `Recent`'s `CheckedHybridClaim`s, with their clocks, the `Each` activation and its guard, the capture `v0` and its type, the fairness constraint, the `Once` operator and the intervals, each equal to the checked one; and it refuses a written default `initial` `invalid_semantic_graph` at `initial` and a fairness member naming `Halted` `missing_declaration`/`missing-name`, at QSpec FR-481's loci. | Test (TC-1220) |
+| FR-447-AC-17 | The request writer writes `SlowEnough`'s item with the member `"requirements": ["hybrid-dynamics"]` beside `"kind": "temporal-satisfaction"`, and writes no `requirements` on the item of a temporal clause over a model without hybrid dynamics in the same unit; with EN-6 and an in-process fixture hybrid provider whose descriptor `dynamics` is `["hybrid"]` both registered, `SlowEnough`'s item routes to the fixture alone and the other item to EN-6 alone, neither settling `ambiguous-backend`; two requests that differ only in `SlowEnough`'s `requirements` have different request identities. | Test (TC-1187) |
 
 ## Dependencies
 

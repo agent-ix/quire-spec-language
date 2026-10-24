@@ -46,7 +46,7 @@ exactly when every counter is at 3, and `terminal any`.
    `archive`, the same predicate written as a quantifier over `counters`, and
    the same predicate in a model that adds `Gate` in `gates`.
 9. In the one-type model with no operations, classify the terminal state under
-   `terminal Done using v on M when { 2 / (2 - self.value) <= 1 };` for
+   `terminal Done using v on M when { 3 mod (2 - self.value) = 1 or self.value = 3 };` for
    `c1.value`, `c2.value` of 2 and 1, 2 and 3, and 0 and 3.
 
 Tag the tests `#[trace("TC-519", "FR-124-AC-n")]`.

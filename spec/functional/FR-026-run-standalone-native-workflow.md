@@ -1,129 +1,111 @@
 ---
 id: FR-026
-title: "Run a selected native workflow from files"
+title: "Read a native-v1 request and its selected files"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-002
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-025
-    type: references
-  - target: ix://agent-ix/quire-spec-language/FR-024
-    type: references
-  - target: ix://agent-ix/quire-spec-language/FR-023
+  - target: ix://agent-ix/quire-spec-language/FR-027
     type: references
   - target: "ix://agent-ix/quire-specification/FR-301"
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-100
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-287
+    type: references
 ---
 ## Description
 
-When an author invokes quire-spec run with a native-run/1 request file whose program source declares `0-draft` or no edition, the command shall compile the selected model and native sources and execute the selected clause against verified runtime artifacts.
+When a caller hands QSL's library operation `command` (FR-287) a native-run/1
+request file or a native-compile/1 request file, `command` shall read the
+request and each file it selects under this requirement's bounded intake.
 
-The run command routes each program source by the edition its header
-declares, with FR-027's edition reader. This requirement owns the `0-draft`
-route, which also takes a source declaring no edition. A `1-draft` program runs a named function through the spine under
-[FR-100](FR-100-run-a-named-function-through-the-spine.md), which owns that
-route's request members (`call`, `libraries`), outcome document
-(`spine-run-result/1` for the `quire-spec` CLI; FR-286 owns the driver's
-`quire-outcome/1`)
-and exit statuses. The members, outcome and exit
-contract below apply to `0-draft` programs.
+`command` routes the program by the edition its header declares, with
+FR-027's edition reader. Only a `1-draft` program reaches a runner or a
+compiler: `run` calls a named function or runs a clause through the spine
+([FR-100](FR-100-run-a-named-function-through-the-spine.md),
+[FR-312](FR-312-read-a-clause-run-request-and-run-it.md)), and `compile`
+returns `quire.checked-package/v2` bytes
+([FR-027](FR-027-export-compiled-native-package.md)). Every other declared
+edition, `0-draft` included, refuses `unknown_edition` (FR-027, FR-100).
+This requirement owns what the two requests share: the envelope, the
+source selections and their labels, path resolution, the intake limits, the
+digest checks and the intake refusal envelope. FR-100, FR-312 and FR-027 own
+each request's members, outcome and exit statuses. The driver owns the
+request-file operand, the option spelling that sets each limit, usage and
+arity errors, and writing to the process streams (FR-287).
 
-The code applies fixed 1 MiB, 64-file and
-8 MiB ceilings; they become the configurable `request_bytes` and
-`dependent_bytes` limits in Behavior (FR-026-AC-4).
-
-The `0-draft` request and result identities carry `revision_namespace` and
-`revision` (QSpec STD-150).
+The intake limits are the two byte limits `request_bytes` and
+`dependent_bytes` (Behavior). No intake limit counts files.
 
 ## Inputs
 
-A JSON object with format and request fields. The closed request names model
-sources with explicit native-rule-model/1 format, program source with complete
-authored clause bindings, snapshot/invocation file selections and an execution
-selection. Each source selects file, the two source labels of
-[FR-001](FR-001-read-exact-source.md) (`authority` and `identity`), SHA-256
-digest and formal document/revision. Both labels are required members. A
-request whose source identity lacks one, such as a request written with only
-`identity`, refuses at the request stage with the native code
-`invalid-request` and exits 20; the catalog keeps that code as a retained
-host code with its broad meaning, malformed command
-(`quire.native.diagnostics/v1`, "Other retained host/source codes").
-Runtime selections use the existing typed references.
+A JSON object with format and request fields. Each source selection names
+its file, the two source labels of [FR-001](FR-001-read-exact-source.md)
+(`authority` and `identity`), its SHA-256 digest and its formal
+document/revision. Both labels are required members. A request whose source
+identity lacks one, such as a request written with only `identity`, refuses
+at the request stage with the native code `invalid-request`, exit code 20;
+the catalog keeps that code as a retained host code with its broad meaning,
+malformed command (`quire.native.diagnostics/v1`, "Other retained
+host/source codes").
 Relative paths resolve against the request's directory; absolute paths remain
 valid local file operands. Source display paths retain the authored file string.
 Parent-relative components are also admitted local operands; the command does
 not establish a tenant filesystem boundary.
-Optional limits lower validation work and evaluation expression steps; omitted
-limits use the existing defaults. Null individual limit values also select those
-defaults; a supplied limits record must be an object. Other stages use their
-current default limits.
-The optional package selection under [FR-028](FR-028-run-selected-native-package.md)
-uses the existing verified reader; omission retains source compilation.
 
 ## Outputs
 
-One native-run-result/1 JSON result on stdout with request digest, compiled
-package byte/static identities, original source/model/runtime identities
-(each source and runtime artifact rendered with both labels and its digest),
-selected authored clause, actual stage status, diagnostics, work counters and
-ordered implication events. Only completed execution has Boolean truth.
-On FR-301's six-code contract, for a `0-draft` program, exit 0 means completed
-true; 10 means completed false (a logical violation); 20 means refused, invalid command usage, request
-syntax, identifier or I/O failure; 21 means a construct the parser recognizes
-but the admitted profile does not support, or a native package naming an
-unknown or unavailable required feature; 22 means incomplete. Output failure
-exits 30. This result's diagnostics field can carry several diagnostics of
-different classifications at once; when it does, the exit code is the
-highest-severity classification present, on FR-301's ordering (tool failure,
-invalid, unsupported, incomplete, violation, success) — an invalid diagnostic
-always outranks an unsupported one, which always outranks an incomplete one,
-regardless of how many of each are present or their order in the list.
-Intake failures use a JSON error on stderr with request digest when read, typed
-stage/code and relevant original source/reference details. Existing parse/format
-commands preserve their behavior. Broken pipes end quietly with the computed
-status. This output is a local native result, not a
-portable verification envelope or assurance claim.
-Serialized results are constructed from typed status/stage payloads; incomplete
-or refused payloads cannot carry truth. Command error spellings belong to the
-native code catalog. Resource causes distinguish file-byte and file-count limits.
+`command` returns a typed outcome and writes nothing to the process streams
+(FR-287); the driver renders it and exits with its FR-285 exit code. An
+intake failure's outcome carries no result document and no package bytes. It
+carries a command-error envelope in format `native-run-result/2` (FR-267)
+with the request digest when read, the typed stage and code and the relevant
+original source details. On FR-301's six-code contract, the outcome's exit
+code is 20 for malformed requests and I/O failures. Writing the outcome to a
+stream, and a stream that fails or closes, are the driver's (FR-287,
+Overlap). Command error spellings belong to the native code catalog. A
+resource cause names the byte limit reached, `request_bytes` or
+`dependent_bytes`.
 
 ## Behavior
 
 The command shall decode the envelope and select its format before request fields.
-The command shall admit, at decode, the members FR-100 defines for a `1-draft`
-program, and shall apply the member rules of the program's edition after it
-reads the program source's declared edition.
+The command shall admit, at decode, the members FR-100 and FR-027 define for a
+`1-draft` program.
 The command shall reject unknown/duplicate fields and positional record arrays.
 The command shall open each file once and cap reads before parsing or hashing.
 The command shall read the request under the caller's `request_bytes` limit
 (default 1 MiB) and the dependent files it names under the caller's
-`dependent_bytes` limit on their total size (default 8 MiB). The CLI raises
-them with `--request-bytes` and `--dependent-bytes`; neither has a ceiling.
-The command shall verify selected source and runtime digests before consumption.
-The command shall use the existing source frontend, admission, parser, linker,
-checker, package constructor and runtime execute APIs.
-The command shall preserve refused and incomplete stage outcomes without truth.
+`dependent_bytes` limit on their total size (default 8 MiB). The caller sets
+both in the limits it gives `command`; neither has a ceiling. A refusal at
+either names its setting (`request_bytes` or `dependent_bytes`) and its
+configured value.
+The command shall count every dependent file toward `dependent_bytes` by its
+size, whatever its role (model, each program unit, library, snapshot, invocation or
+package), and shall apply no limit on the number of files.
+The command shall verify each selected file's digest before consuming it.
 The command shall begin each invocation with fresh budgets.
-The CLI shall parse its command and operands once before I/O and report usage
-for the selected command when operands are missing or excessive.
-The command shall derive incomplete status consistently from its typed cause,
-including incomplete native, model, package and runtime input failures.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-026-AC-1 | A file-driven aggregate example returns exact true/false outcomes, package/source/input identities and measured work using the real compiler/runtime. | Test (TC-103) |
-| FR-026-AC-2 | Recorded pre/post operation files execute with immutable captures; illegal frame changes refuse without Boolean truth. | Test (TC-103) |
-| FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test (TC-104) |
-| FR-026-AC-4 | A request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the limit, its configured value and its CLI option; the same requests with each limit raised to their size run; caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test (TC-104) |
-| FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test (TC-103) |
-| FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix` and their own `identity` runs, and its result renders each with those two labels and its digest, and no other identity member. The same request without the program source's `authority`, and again without the snapshot selection's `identity`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
+| FR-026-AC-3 | Through `command` in process, a `1-draft` run request with a stale source digest, a malformed request, an unknown format and an unavailable file each refuse at their actual stage with their catalogued code and the available source details, with no result document and exit code 20; each command-error envelope conforms to the native result schema. | Test (TC-104) |
+| FR-026-AC-4 | Through `command` in process, a `1-draft` run request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the setting and its configured value; the same requests with each limit raised to their size run; a fresh default request then succeeds. | Test (TC-104) |
+| FR-026-AC-5 | `command` given one `1-draft` request file by its path from two different process working directories returns equal outcomes, the request's relative, absolute and parent-relative file paths resolving against the request's directory and as written; no call writes a byte to stdout or stderr. | Test (TC-104) |
+| FR-026-AC-6 | A `1-draft` run request whose program source names `authority` `agent-ix` and `identity` `p` runs, and its `spine-run-result/1` `source` renders those two labels and the source digest, and no other identity member. The same request without the program source's `authority`, and again without its `identity`, refuses at the request stage with `invalid-request`, exit code 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
 
 ## Dependencies
 
-- [FR-025](FR-025-compile-rule-model-source.md): public model source frontend.
-- [FR-024](FR-024-read-native-runtime-artifacts.md): selected runtime artifact intake.
-- [FR-023](FR-023-run-native-packages.md): native execution and retained outcomes.
+- [FR-001](FR-001-read-exact-source.md): the two source labels.
+- [FR-027](FR-027-export-compiled-native-package.md): the edition reader and
+  the native-compile/1 members.
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md): the
+  native-run/1 members of a `1-draft` program.
+- [FR-267](FR-267-write-run-results-as-native-run-result-2.md): the
+  `native-run-result/2` command-error envelope.
+- [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the driver, which
+  owns operands, option spellings, usage errors and stream writes.

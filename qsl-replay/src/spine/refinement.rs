@@ -47,7 +47,7 @@ pub enum RefinementClass {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReachedLimit {
     /// The limit's FR-255 setting name, such as `s1.nodes`, or an accounting
-    /// counter's bare name, such as `work_units`.
+    /// setting, such as `accounting.work_units`.
     pub name: &'static str,
     /// The limit's configured value.
     pub bound: u64,
@@ -346,7 +346,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::TimedNotChecked { .. }
         | CheckCause::Temporal(_)
         | CheckCause::Hyper(_)
-        | CheckCause::StateGraph(_) => None,
+        | CheckCause::StateGraph(_)
+        | CheckCause::Hybrid(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,
     }

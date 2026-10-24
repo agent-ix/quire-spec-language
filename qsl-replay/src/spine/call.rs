@@ -192,8 +192,8 @@ pub struct CallIncomplete {
 
 impl CallIncomplete {
     /// The `Call::accounting` field that raises this bound: the exhausted
-    /// counter's `quire.value.accounting/v1` member name, which is also its
-    /// setting's name.
+    /// counter's `quire.value.accounting/v1` member name, which is no setting
+    /// name (see [`Self::setting`]).
     pub fn limits_field(&self) -> &'static str {
         self.record.limit_kind.as_str()
     }

@@ -22,7 +22,7 @@ relationships:
 
 ## Description
 
-When a `1-draft` unit declares an `invariant`, `pre` or `post` state clause,
+When a `1-draft` unit declares an `invariant`, `constraint`, `pre` or `post` state clause,
 S2 (`qsl-forms`) SHALL build one `ProtocolClause` state clause form for it
 through the closed leading-token-kind entry table (ADR-012 §3, §4.3, §15.3).
 When a `1-draft` unit declares an `operation-body`, S2 SHALL build one
@@ -47,12 +47,12 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 
 - `DeclarationForm::StateClause(Box<StateClauseForm>)`, where
   `StateClauseForm` holds:
-  - `kind`: `StateClauseKind { Invariant, Precondition, Postcondition }`;
+  - `kind`: `StateClauseKind { Invariant, Constraint, Precondition, Postcondition }`;
   - `name`: the declared identifier and its span;
   - `profile`: the `using` alias and its span;
   - `context`: the `model-name` (`M::T`) and its span;
   - `operation`: the operation member name and its span for a `pre` or
-    `post` clause, and none for an invariant;
+    `post` clause, and none for an invariant or a constraint;
   - `body`: the block's `Expression` and its `DeclarationSpans`.
 - `DeclarationForm::OperationBody(Box<OperationBodyForm>)`, where
   `OperationBodyForm` retains the declaration label and span, `using` profile
@@ -68,11 +68,13 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 
 ## Behavior
 
-- `LeadingTokenKind` SHALL gain `Invariant`, `Pre` and `Post`. Each SHALL
-  select the one production `protocol_clause::state_clause`, and the
-  `dispatch` arm SHALL make exactly that one call (ADR-012 §4.3).
-  `from_spelling` SHALL map `invariant`, `pre` and `post` only in declaration
-  head position; `pre(e)` in an expression stays `Expression::Pre`.
+- `LeadingTokenKind` SHALL gain `Invariant`, `Constraint`, `Pre` and `Post`.
+  Each SHALL select the one production `protocol_clause::state_clause`, and
+  the `dispatch` arm SHALL make exactly that one call (ADR-012 §4.3).
+  `from_spelling` SHALL map `invariant`, `constraint`, `pre` and `post` only
+  in declaration head position; `pre(e)` in an expression stays
+  `Expression::Pre`, and `constraint` elsewhere stays an identifier or a
+  keyword of the construct that owns it.
 - `LeadingTokenKind` SHALL gain `Body`. It SHALL select only the
   `operation_body` production, and its `dispatch` arm SHALL make exactly one
   call. `from_spelling` SHALL map `body` only in declaration-head position.
@@ -88,11 +90,11 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
   authors on its own operation: those are kept by intake and parsed at S3
   (FR-103), are not built at S2 and are not `StateClauseForm`s.
 - The production SHALL read the kind from the leading token alone:
-  `invariant` gives `Invariant`, `pre` gives `Precondition` and `post` gives
-  `Postcondition`.
-- The production SHALL carry the `at current` observation of an invariant as
-  the kind itself. It adds no observation member, because the grammar admits
-  no other observation for an invariant.
+  `invariant` gives `Invariant`, `constraint` gives `Constraint` (FR-158),
+  `pre` gives `Precondition` and `post` gives `Postcondition`.
+- The production SHALL carry the `at current` observation of an invariant or
+  a constraint as the kind itself. It adds no observation member, because the
+  grammar admits no other observation for either.
 - The builder SHALL build `self` and `result` as leaf expressions and
   `reaches(a, b, edge)` as a node with two expression children and a member
   name. Nothing here checks where `self`, `result` or `reaches` may appear or
@@ -122,6 +124,7 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 | FR-102-AC-5 | An invariant whose body is 128 nested `not`s around `true`, and one of 100,000 nested `not`s around `true` parsed on a thread with a 512 KiB stack under S1 limits raised to fit it, each build their form on that thread, and no S2 outcome names a depth. | Test (TC-457) |
 | FR-102-AC-6 | With the `seam-probe` feature, the probe variant of `LeadingTokenKind` and of `Expression` still fails to compile at exactly the checked-in S2 seam list, which is unchanged by this feature (FR-063). | Test (TC-457) |
 | FR-102-AC-7 | `body forB using v on Config::ConfigVersion::resize(amount, extra) { amount + 22 }` builds one `OperationBodyForm` with label `forB`, profile alias `v`, target segments `Config`, `ConfigVersion` and `resize`, parameter names `amount` and `extra`, and a body expression, each with a span that slices to its source text and the target span slicing to `Config::ConfigVersion::resize`; a body with no parameters and a reserved member name (`size`) builds, and several bodies keep their source order. | Test (TC-457) |
+| FR-102-AC-8 | The unit `constraint Low using v on M::Counter at current { self.v <= 1 }` builds one `StateClauseForm` with kind `Constraint`, name `Low`, profile `v`, context `M::Counter`, no operation, and a body whose spans resolve to the source bytes of each sub-expression; the `dispatch` arm for `Constraint` makes exactly one call; the same text with `invariant` builds kind `Invariant` and an otherwise equal form. | Test (TC-456) |
 
 ## Dependencies
 

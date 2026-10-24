@@ -15,7 +15,7 @@ certificate with the first failing rule and its member, never accepts a
 certificate for a false claim, and stops at a caller limit.
 
 Scope: FR-163-AC-2, FR-163-AC-3, FR-163-AC-4, FR-163-AC-5,
-FR-163-AC-6, FR-163-AC-7.
+FR-163-AC-6, FR-163-AC-7, FR-163-AC-9.
 
 ## Test Procedure
 
@@ -46,6 +46,10 @@ vault; FR-181-AC-5's HP-5 body over the secure vault.
    to remain `[]` in both, and the witness set to retain its actual value.
    Removing `states` or the HP-3 witness set is a different, invalid shape;
    inserting a fabricated component is never a repair.
+7. Run §8.1's secure `NonInterference` proof twice and compare the two
+   certificates' bytes and their order with FR-126's certificate rules over
+   the self-composed product; check the certificate with two components no
+   edge joins listed in the other order.
 
 Tag the tests `#[trace("TC-646", "<AC id>")]`.
 
@@ -59,3 +63,4 @@ Tag the tests `#[trace("TC-646", "<AC id>")]`.
   with `l = 1`.
 - Step 3: `Stopped` with `{MaxStates, 1}` naming the limit and its
   value; equal results.
+- Step 7: byte-equal certificates in the computed order; `Accepted`.

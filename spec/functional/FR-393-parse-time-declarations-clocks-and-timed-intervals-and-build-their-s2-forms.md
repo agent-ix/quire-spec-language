@@ -171,6 +171,7 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
 | FR-393-AC-5 | `eventually[0, 3 ms] holds(p)`, `eventually[0 ms, 3] holds(p)` and `eventually[0 ms, *] holds(p)` fail at S1 with a parse diagnostic at `3 ms`, `3` and `*` respectively, and build no form. | Test (TC-1078) |
 | FR-393-AC-6 | The `Rpc` unit of AC-1, once with no facet selected and once with the complete facets selected, builds equal forms under `PartialEq`; S2 reports no facet diagnostic for either. | Test (TC-1078) |
 | FR-393-AC-7 | `x: Clock` builds `TypeForm::Clock`; `x: M::Clock` builds a named type form for the qualified name and no `TypeForm::Clock`; a unit that declares an unqualified type named `Clock` fails at S1 with a parse diagnostic at the declared name. | Test (TC-1078) |
+| FR-393-AC-8 | `Clock` and `Quantity<ms>` each build their type form (`TypeForm::Clock` and the `Quantity` type form over `ms`) in every type position: a function parameter and result (`function f(c: Clock): Clock`), a predicate parameter, an operation parameter, a record field, a tuple element, a union payload, a `type Alias = Clock;` target and the argument of `Option`, `Set`, `Sequence`, `Bag`, `OrderedSet` and a map, each with the span of the word; the forms are the same under every facet selection. | Test (TC-1078) |
 
 ## Dependencies
 

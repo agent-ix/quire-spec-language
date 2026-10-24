@@ -26,9 +26,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{
-    AccountingSetting, Setting, SettingLimits, SettingName, Source, SourceIdentity,
-};
+use qsl_foundation::{AccountingSetting, Setting, SettingLimits, Source, SourceIdentity};
 use qsl_replay::spine::{
     classify_clause_run, read_clause_run_request, AnchorWire, Classification, ClauseRequestParts,
     ClauseRunRefusal, ClauseRunRequest, ClauseRunSelectionWire, ClauseRunSource, ClauseRunStage,
@@ -534,12 +532,12 @@ impl Limits {
         let accounting = case
             .accounting
             .iter()
-            .map(|(name, bound)| match SettingName::from_name(name) {
-                Some(SettingName::Accounting(setting)) => Ok((setting, *bound)),
-                Some(SettingName::Stage(_)) | None => {
-                    Err(("accounting", format!("{name} is not a counter")))
-                }
-            })
+            .map(
+                |(name, bound)| match AccountingSetting::from_counter(name) {
+                    Some(setting) => Ok((setting, *bound)),
+                    None => Err(("accounting", format!("{name} is not a counter"))),
+                },
+            )
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             spine,

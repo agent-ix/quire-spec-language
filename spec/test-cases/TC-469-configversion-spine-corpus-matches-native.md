@@ -19,8 +19,9 @@ Scope: FR-108-AC-1 to FR-108-AC-6.
 
 ## Test Procedure
 
-The tests live in `tests/it/config_version_spine.rs`, with
-`mod config_version_spine;` in `tests/it/main.rs` (AGENTS.md). The spine
+Steps 1 to 4 and 6 live in `tests/it/config_version_spine.rs`, with
+`mod config_version_spine;` in `tests/it/main.rs` (AGENTS.md); step 5 lives
+in `qsl-replay`'s tests. The spine
 corpus generator (`examples/config-version/spine_corpus.rs`, reached through
 the `config_version_spine` support module) writes, per case, the spine files;
 the native fixtures generator (`examples/config-version/fixtures.rs`) writes
@@ -44,8 +45,10 @@ all under `ParentOrder` with self `child`.
    for every case that reaches compile, run again with the expected
    `package_id` set to the `package_id` spine `compile` emits for the unit,
    and compare.
-5. With `--features quire-extraction`, embed each case's unit in a
-   `rules.md` fence, extract it through `qsl-source`, and run the extracted
+5. In `qsl-replay`'s integration tests, built with
+   `cargo test -p qsl-replay --features quire-extraction` (the root crate has
+   no `quire-extraction` feature), take each of the 17 cases' units from the
+   same case catalog, embed each in a `rules.md` fence, extract it through `qsl-source`, and run the extracted
    source. Independently compile the extracted body's bytes under its body
    identity with a direct `spine::compile` call.
 6. Independently re-derive the unit's `package_id` via a direct `spine::

@@ -27,6 +27,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-364
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-031
+    type: references
 ---
 # FR-267: Write and read run results as native-run-result/2
 
@@ -46,7 +48,7 @@ CG campaign. CG owns that authentication through a separate producer/artifact
 binding receipt, as specified under **CG source-identity boundary** below.
 
 This lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), which also
-deletes native `run` (FR-026 to FR-032) and `native-run-result/1`; from that
+deletes native `run` and `native-run-result/1`; from that
 change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 (ADR-031 R-1).
 
@@ -76,12 +78,11 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
   FR-100's Reference form and the existing FR-286 outcome route.
 - The library serializer of an FR-109 `ClauseRunReport` SHALL write every
   clause-run result document with `format` `native-run-result/2`.
-- From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), the `run` command SHALL write every command-error envelope
+- From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), the `run` command SHALL return every command-error envelope
   with that format; before it, FR-100's refusals use FR-026's
   `native-run-result/1` envelope. A
-  function run's output is FR-100's `spine-run-result/1`, the `quire-spec`
-  CLI's current output, retired when the driver's verbs land (ADR-029
-  CB-1); the outcome document is FR-286's `quire-outcome/1`.
+  function run's result document is FR-100's `spine-run-result/1`; the
+  outcome document is FR-286's `quire-outcome/1`.
 - A clause-run document SHALL carry the report's disposition and usage in
   the members QSpec FR-352 defines for them, `basis` on every
   document, and `witness` exactly when `basis` is
@@ -96,6 +97,23 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
   or extra member in it, and refuse a `frame_witness` on any other
   disposition. Its nested `code` and `cause` SHALL equal those of the
   enclosing `refusal`.
+- A clause-run document of an extracted Markdown clause body (FR-031) SHALL
+  carry the report's extraction record as the top-level `extraction` member,
+  with exactly the members and JSON types QSpec FR-352 lists: `original`
+  (`authority`, `identity`, `path`, `digest`), `body` (`authority`,
+  `identity`, `document`, `digest`), `binding` (`clause`, `package`),
+  `outcome` (Quire's `availability`, `clauses` when Quire reports a clause
+  population, `clause_text` and `diagnostics`, in Quire's encoding,
+  unchanged), `map` (`region` as `{start, end}` byte offsets and a non-empty
+  `segments` array of `{body_start, body_end, original_start, original_end}`
+  in ascending `body_start` order) and, for a refusal whose locus names a
+  body span, a non-empty `original_regions` array of `{start, end}` regions
+  whose endpoints are `{byte, line, column}`, in original-document order. A
+  clause-run document of a unit given as bytes carries no `extraction`. The
+  reader SHALL restore the record without loss and refuse, naming
+  `extraction` and the member, an unknown, missing, duplicate or `null`
+  member at any level, a value of another JSON type, and an empty
+  `segments` or `original_regions` array.
 - A command-error envelope SHALL be one closed JSON object with exactly
   these members:
   - `format`: `native-run-result/2`;
@@ -191,7 +209,7 @@ row.
 | `holds` | `Completed(true)` | none | `success`, `true`, `closed-scope` | absent |
 | `violated` | `Completed(false)` | `position`, `counterexample` | `violation`, `false`, `closed-scope` | absent |
 | `undefined` | `Undefined` with a kernel or family cause | `position`, `counterexample` | `violation`, `false`, `closed-scope` | `{"kind": "undefined", "reason": R}`, `R` the undefined value's FR-100 reason |
-| `insufficient-data` | `Undefined` with `insufficient-data` | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | `{"kind": "undefined", "reason": "insufficient-data"}` |
+| `insufficient-data` | `InsufficientData` (FR-327) | `position`, `count`, `min_count` | `undefined`, absent, `unavailable` | `{"kind": "undefined", "reason": "insufficient-data"}` |
 | `pending` | `Pending` | none | `inconclusive`, absent, `unsettled` | absent |
 | `missing-fairness-premise` | `MissingFairnessPremise` | `constraint` | `unsupported`, absent, `unavailable` | `{"kind": "refused", "code": "unsupported_projection", "cause": "missing-fairness-premise"}` |
 | `incomplete` | `Incomplete` | none | `incomplete`, absent, `unavailable` | FR-100's `{"kind": "incomplete", "limit": ...}` |
@@ -327,6 +345,7 @@ condition is false; the reader refuses `null` or a default in its place.
 | Change | `deletes` | FR-115 | Ordered declaration-key array on deletion | Restore checked grant |
 | Declaration key | `package` | FR-056, FR-115 | Package identity | Restore key package |
 | Declaration key | `node` | FR-056, FR-115 | IR node identity | Restore key node |
+| Clause run | `extraction` | FR-031, FR-267, QSpec FR-352 | Extraction record of an extracted clause body, absent otherwise | Restore record or absence |
 | Disposition | `temporal` | FR-330, FR-267 | Closed temporal disposition, evaluate stage of a Temporal selection only | Restore typed temporal verdict or trace refusal |
 | Temporal | `kind` | FR-267 | One of the ten tags of the temporal table | Select verdict variant |
 | Temporal | `position` | FR-327 | Unsigned trace position | Restore position |
@@ -397,7 +416,7 @@ condition is false; the reader refuses `null` or a default in its place.
 |----|----------|--------------|
 | FR-267-AC-1 | FR-266-AC-1's `AllBelow` over `high` report writes a document with `format` `native-run-result/2`, `basis` `decisive-counterexample` and a `witness` holding the `forall`'s occurrence key, the reference to `mid`, `index` 1, the population-root value path and no `trace_position` member; the bytes equal their own RFC 8785 re-encoding, and reading them back gives an equal basis and record. The `AllBelow` over `low` report writes `closed-scope` with no `witness` member, and the exhausted-work report writes `unavailable` with no `witness` member. | Test |
 | FR-267-AC-2 | Each of these edits of FR-267-AC-1's `high` document refuses, naming the member: `index` removed; an extra member in `witness`; `trace_position` given as `0`; `basis` removed; `basis` `closed-scope` with the `witness` kept; `basis` `decisive-counterexample` with `witness` removed; `format` set to `native-run-result/1`; `format` set to `native-run-result/3`. | Test |
-| FR-267-AC-3 | From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), `run` over a native-run/1 request whose source declares `edition "9-draft"` writes nothing to stdout and writes a command-error envelope to stderr whose `format` is `native-run-result/2`, with exactly the members `format`, `stage` (`profile`), `code` (`unknown_edition`), `message`, `details` and `basis` (`unavailable`), no `witness` member, exiting 20. | Test |
+| FR-267-AC-3 | From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), `run` over a native-run/1 request whose source declares `edition "9-draft"` returns an outcome carrying no result document and a command-error envelope whose `format` is `native-run-result/2`, with exactly the members `format`, `stage` (`profile`), `code` (`unknown_edition`), `message`, `details` and `basis` (`unavailable`), no `witness` member, exiting 20. | Test |
 | FR-267-AC-4 | A valid `/2` document with no CG receipt is accepted by the wire reader but CG refuses its campaign binding, retaining the decoded outcome and an absent-receipt diagnostic; no campaign qualification, measured coverage classification or coverage discharge results. | Test |
 | FR-267-AC-5 | With an authenticated CG receipt associating the supplied result, producer execution, generated source and source map, CG accepts the binding and retains the result's original disposition, basis and witness. A bound violation, refusal, unsupported or incomplete result remains that outcome and cannot become success through receipt validation. | Test |
 | FR-267-AC-6 | Starting with AC-5's matching inputs, independently replacing the result, producer execution, generated source or source map causes CG to refuse the binding and identify the mismatched association, even when the replacement has the same path or QSL `package_id`. The original decoded outcome and available input identities remain available, with no campaign qualification, measured coverage classification or coverage discharge. | Test |
@@ -411,6 +430,7 @@ condition is false; the reader refuses `null` or a default in its place.
 | FR-267-AC-14 | Each of these FR-330 reports writes its temporal table row and reads back to an equal disposition: FR-330-AC-2's `pending` (`inconclusive`, `basis` `unsettled`, no `truth`, no `outcome`) and `holds`; FR-330-AC-4's `incomplete` (`outcome` limit `work_units`); FR-330-AC-5's `undefined` (`position` 2, `outcome` `{"kind": "undefined", "reason": "division-by-zero"}`, `basis` `closed-scope`, the envelope `cause` `division-by-zero`, `prefix` the three snapshots); FR-330-AC-6's `missing-fairness-premise` (`outcome` refused `unsupported_projection`/`missing-fairness-premise`, `constraint` `{"kind": "weak", "operation": ..., "granularity": "whole"}`); FR-330-AC-3's empty-loop report (`trace-refused`, `variant` `empty-loop`, `outcome` refused `invalid_runtime_input`/`invalid-value`) and the empty `Finite` report (`variant` `empty-trace`, same `outcome`), which read back to `EmptyLoop` and `EmptyTrace` respectively; and FR-330-AC-7's `condition-refused`. None writes a `refusal` member. Independently adding `temporal {"kind": "holds"}` to FR-109-AC-3's dangling-parent stage `admit` document, setting `kind` to `held`, setting `variant` to `empty-hoop`, dropping `counterexample` from AC-13's document, setting its `trace_position` to `1`, setting it to the string `"0"`, to `-1`, to `0.5` or to `9007199254740992`, adding a top-level `witness` to AC-13's document, adding a `refusal` member to the empty-loop document, and setting the `pending` document's `basis` to `unavailable` each refuse with a located wire diagnostic naming the member. | Test (TC-1160) |
 | FR-267-AC-15 | Through FR-330, the `Counter` clause `Windowed` under event-position false-extension, `on origin`, `always[0,2] (count where holds(c.value >= 0) over past[0, 9] >= 1)` with `min_count 5` (TC-629's count form), over `Finite` snapshots with `c.value` 0, 1, 2, writes `insufficient-data` at `position` 0 with `count` 1, `min_count` 5 and `outcome` `{"kind": "undefined", "reason": "insufficient-data"}`, category `undefined`; as a wire vector (no run: a clause run has no window-limit input, and the default `max_window_values` is 2^20), a `Windowed` report built to hold `TemporalVerdict::WindowLimitReached{limit: max_window_values, value: 2, setting: monitor.max_window_values}` writes `window-limit-reached`, category `incomplete`, with `limit` `max_window_values`, `value` 2 and `setting` `monitor.max_window_values` and `outcome` `{"kind": "incomplete", "limit": "max_window_values"}`, and reads back to that verdict; the clause `always[0,2] holds(lookup<Counters::Counter>(cs, c) absent undefined = c)` (FR-090-AC-12's `lookup` form) over snapshots whose population bound to `cs` holds no member for `c` writes `undefined` at `position` 0 with `outcome` reason `absent-key` and envelope `cause` `absent-key`; FR-328-AC-1's `always holds(c.value <= 1)` over the infinite-trace `Finite` prefix 0, 1, 2 writes `violated` at `position` 0 with a counterexample whose `prefix` holds the three snapshots, `loop` is empty and `interval` is `null`. Each reads back to an equal disposition, and independently dropping `count`, `min_count`, `limit`, `value` or `setting` refuses naming it. | Test (TC-1160) |
 | FR-267-AC-16 | Independently: adding `temporal` `{"kind": "holds"}` to FR-109-AC-3's exhausted-work report (stage `evaluate`); adding a `refusal` member to AC-13's `violated` document; setting the `outcome` reason of AC-14's `undefined` document to `insufficient-data`; setting the `outcome` limit of AC-14's `incomplete` document to `max_window_values`; setting the `outcome` reason of FR-109-AC-7's `precondition-false` report to `insufficient-data`; and setting the `outcome` limit of FR-109-AC-3's exhausted-work report to `max_window_values`, each refuse with a located wire diagnostic naming the member (QSpec FR-352-AC-11, FR-352-AC-12). | Test (TC-1160) |
+| FR-267-AC-17 | A clause-run report over an extracted Markdown clause body is written with a top-level `extraction` member holding exactly QSpec FR-352's `original`, `body`, `binding`, `outcome` and `map` members, plus `original_regions` for a refusal whose locus names a body span, and reads back to an equal record; a report over a unit given as bytes writes no `extraction`; an `extraction` with an unknown top-level member `source`, with `map` missing, with `binding` `null`, with a numeric `body.digest`, and with `map.segments` `[]` each refuse naming `extraction` and the member (QSpec FR-352-AC-13). | Test (TC-109) |
 
 ## Dependencies
 

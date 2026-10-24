@@ -70,21 +70,61 @@ candidate.
   `invalid_capability`/`ambiguous-backend`, and an item no engine advertises
   settled `unsupported` with `unsupported_projection`/
   `unsupported-requested-capability` naming its kind, exactly as through
-  `prove`.
+  `prove`. That record carries the diagnostic and no `cause`: QSpec FR-331's
+  closed `unsupported` causes hold no claim-kind cause, so there is no
+  `unsupported-claim-kind` cause, and the claim kind travels in the
+  diagnostic's FR-272 payload (the item's FR-290 kind, and its
+  `requirements` when it carries them).
+- `analyze` reads no manifest to route an item: it computes no candidate set
+  and settles no disposition. An item's engine is its `Supported` candidate
+  and no other, so an item two engines could decide reaches `analyze` only as
+  the `invalid-request`/`ambiguous-backend` disposition above.
 - A `Supported` candidate that `engines` does not hold settles the item
   `invalid-request` with `invalid_capability`/`unknown-backend` naming it,
   FR-290's first row, and no engine runs.
+- A `Supported` candidate that `engines` holds, but whose manifest does not
+  advertise the item's (kind, mode) pair, is a disposition negotiation could
+  not have given (QSpec FR-290's candidate table admits only an advertising
+  backend). It settles the item `invalid-request` with
+  `invalid_capability`/`inconsistent-candidates` naming the candidate and the
+  item's kind and mode, and no engine runs.
 
 `Engines` is the set of in-process engines `analyze` and the provider entry
 (FR-280) may run, each by its `BackendId` with its FR-331 manifest.
-`Engines::qsl()` holds every layer-A engine. `Engines::with` adds an
-implementation of `qsl_analyze::Engine`, the trait every layer-A engine
-implements: its manifest, and its run over one item, which returns the
-engine's own result (a proof with its certificate or none, a counterexample,
-an undefined evaluation, a budget stop) for `analyze` to settle. Tests use
+`Engines::qsl()` holds every layer-A engine, each under its own
+`BackendId`. `Engines::with` adds an implementation of `qsl_analyze::Engine`,
+the trait every layer-A engine implements: its manifest, and its run over one
+item, which returns the engine's own result (a proof with its certificate or
+none, a counterexample, an undefined evaluation, a budget stop, or the
+engine's refusal) for `analyze` to settle. `Engines` holds at most one engine
+per `BackendId`, so a candidate names at most one engine: `Engines::with`
+given an engine whose manifest's `BackendId` the set already holds returns
+`Err(DuplicateEngine)`, `invalid_capability`/`duplicate-backend` naming that
+`BackendId` (the cause QSpec FR-290 gives a registry holding one backend
+twice), and the set it was called on is unchanged. Tests use
 it to run test engines. SMT, Kani and plugin providers are not `Engine`s:
 they reach a claim through the driver's `prove`, never through `analyze`
 (ADR-029 OP-2).
+
+### Engine refusals
+
+An engine's settlement map (FR-127 for EN-1, FR-192 for EN-4, FR-203 for
+EN-5) gives some engine refusals no terminal record and leaves them to the
+caller. `analyze` is that caller, and it returns exactly one record per item,
+so it SHALL settle each such refusal of a `Supported` item by this table,
+with the record naming the engine:
+
+| Engine refusal | Record |
+| --- | --- |
+| `Admission(failure)` (FR-126 `ModelCheckRefusal`, FR-192, FR-203) | `declined`, cause `invalid-input` for a refused admission and `incomplete-input` for an incomplete one, with the failure's FR-272 diagnostic, as FR-280's provider entry settles a refused binding |
+| `RequiresBound` (FR-126 `ModelCheckRefusal::RequiresBound`, FR-192, FR-203 `NotSimulated(RequiresBound)`) | `unsupported` with the diagnostic `unsupported_projection`/`unbounded-extent`, whose payload is QSpec FR-272's for that cause: the item's FR-290 kind, the candidate (the engine's `BackendId`) and the modes its manifest advertises for that kind (QSpec FR-272-AC-9). FR-272 closes that payload, so the unbounded root FR-101's `RequiresBound` names is not written in the record |
+| EN-4 `Symmetry` (a malformed symmetry declaration, FR-151) | `declined`, cause `invalid-input`, diagnostic `invalid_runtime_input`/`invalid-value` |
+| EN-4 `NotStatistical` | `invalid-request` with `invalid_capability`/`not-statistical`, settled by that disposition and carrying no result (QSpec FR-331) |
+| Any other engine refusal with no settlement-map row, whose FR-272 diagnostic code is `unsupported_construct` or `unsupported_projection` (for example FR-126's `GuardedActivation` and `LivenessRefusal::ComponentCertificateNotBuilt`) | `unsupported` with that diagnostic |
+| Any other engine refusal with no settlement-map row | `failed` with its FR-272 diagnostic |
+
+An engine refusal never settles `proved`, `refuted` or `measured`, and no item
+is left without a record.
 
 ## Inputs
 
@@ -184,6 +224,15 @@ holding the `AdmissionFailure`, and no record.
   `invalid_capability`/`unknown-backend` naming the candidate.
 - The `analyze` operation shall run an item only on the candidate its
   disposition names, and never choose among engines.
+- If an item's disposition is `Supported(candidate)` and the engine `engines`
+  holds for that candidate does not advertise the item's (kind, mode), then
+  `analyze` shall settle the item, without running any engine for it,
+  `invalid-request` with `invalid_capability`/`inconsistent-candidates`.
+- If `Engines::with` is given an engine whose `BackendId` the set holds, then
+  it shall return `invalid_capability`/`duplicate-backend` naming that
+  `BackendId` and leave the set unchanged.
+- When an engine refuses an item and its settlement map gives the refusal no
+  terminal record, `analyze` shall settle the item by "Engine refusals".
 - If FR-120 admission does not admit the subject binding, then `analyze` shall
   return `StageFailure::Refused(AnalyzeRefusal::Binding)` with the
   admission failure, before any item runs.
@@ -227,6 +276,8 @@ holding the `AdmissionFailure`, and no record.
 | FR-281-AC-7 | Over a finite model with one reachable state at which the invariant `100 / x > 0` divides by zero, an EN-1 item claiming that invariant settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names that state and whose `cause` is `division-by-zero`; replay reproduces the undefined value at that state, the record carries no `undefined` label, and FR-285 maps the outcome to exit 10. | Test (TC-763) |
 | FR-281-AC-8 | With `engines` holding test engines `qsl.test-a` and `qsl.test-b`, both advertising (`value-validity`, `bounded`): an item settled `Supported(qsl.test-b)` runs on `qsl.test-b` alone and its record names it; the same item settled `InvalidRequest` with `invalid_capability`/`ambiguous-backend` naming `qsl.test-a` and `qsl.test-b`, as `negotiate_*` settles it with both candidates and no named backend (QSpec FR-290, FR-331-AC-4), returns a record settled by that disposition with that diagnostic and runs neither engine; settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability`, a record settled by that disposition and no run; settled `RequiresBound`, a record settled by that disposition with no diagnostic and no run; and settled `Supported(qsl.test-c)`, which `engines` does not hold, `invalid-request` with `invalid_capability`/`unknown-backend` naming `qsl.test-c` and no run. | Test (TC-762) |
 | FR-281-AC-9 | AC-3's request returns its three records in `request_index` order 0, 1, 2. The same request whose binding's `universes` name a population the package does not declare returns `StageFailure::Refused(AnalyzeRefusal::Binding)` holding FR-120's `invalid_runtime_input`/`wrong-role-mapping`, no record, and no engine runs. | Test (TC-762) |
+| FR-281-AC-10 | `Engines::with` holding `qsl.test-a`, given a second engine whose manifest's `BackendId` is `qsl.test-a`, returns `invalid_capability`/`duplicate-backend` naming `qsl.test-a`, and the set still runs the first engine for an item settled `Supported(qsl.test-a)`. With `qsl.test-a` advertising only (`value-validity`, `bounded`), a `temporal-satisfaction` item settled `Supported(qsl.test-a)` settles `invalid-request` with `invalid_capability`/`inconsistent-candidates` naming `qsl.test-a` and the item's kind and mode, and `qsl.test-a` does not run. AC-3's unsupported record carries the diagnostic naming the claim kind and no `cause` member. | Test (TC-762) |
+| FR-281-AC-11 | With test engines that each refuse a `Supported` item, `analyze` settles: an `Admission` refusal `declined` with cause `invalid-input` and its diagnostic, and an incomplete admission `declined` with `incomplete-input`; a `RequiresBound` refusal `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names the item's kind, the engine's `BackendId` and the modes its manifest advertises for that kind; a `Symmetry` refusal `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; a `NotStatistical` refusal `invalid-request` with `invalid_capability`/`not-statistical` and no result; a refusal carrying `unsupported_construct`/`not-yet-implemented` `unsupported` with that diagnostic; and a refusal carrying `invalid_runtime_input`/`wrong-value-kind` `failed` with that diagnostic. Each record names its engine. One request holding the refused-admission case and the five cases after it returns those six records in `request_index` order; the incomplete admission is a seventh case, run as a request of its own because a test engine reports one admission outcome per run, and returns one `declined`, `incomplete-input` record. Over a model one of whose operations `modifies` a field of type `Integer` (an unbounded FR-120 root), an EN-1 item over `Engines::qsl()` settled `Supported` on EN-1 settles `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`, EN-1's one advertised mode. | Test (TC-763) |
 
 ## Dependencies
 
