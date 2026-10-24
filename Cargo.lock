@@ -1532,6 +1532,7 @@ dependencies = [
  "qsl-foundation",
  "quire-canonical",
  "quire-checked",
+ "quire-contract-model",
  "quire-exact",
  "quire-semantic-value",
  "quire-walk",
@@ -1627,8 +1628,9 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#0a63033cf673ce99ecd7ab2a3b9890891f3e1dab"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#fdf65a045150b6592e4524b8592927c1e564cb94"
 dependencies = [
+ "ix-trace-rs",
  "jsonschema 0.17.1",
  "num-bigint",
  "num-integer",
@@ -1705,7 +1707,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#aaa37436765a8176980b1fdd1e753bfde42c7d45"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0f922ad161b48afa68ee924088c6ce8cee887e69"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -2690,9 +2692,12 @@ version = "0.1.0"
 dependencies = [
  "arch-lint",
  "ix-trace-rs",
+ "logos",
  "proc-macro2",
+ "qsl-cst",
  "qsl-foundation",
  "qsl-replay",
+ "qsl-route",
  "qsl-semantics",
  "qsl-string-edge",
  "serde",

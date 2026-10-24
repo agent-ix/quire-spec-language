@@ -241,9 +241,9 @@ pub(crate) fn stop_verdict(system: &ModelSystem<'_>, stop: ExpansionStop) -> Ste
         return fault("system-invariant");
     }
     StepVerdict::Stopped(match stop.limit {
-        Some(ExpansionLimit::EvaluationMeter) => ReachedLimit {
-            limit: ModelCheckLimit::EvaluationMeter,
-            value: system.meter().work_units,
+        Some(ExpansionLimit::EvaluationMeter(counter)) => ReachedLimit {
+            limit: ModelCheckLimit::EvaluationMeter { counter },
+            value: crate::model_check::limits::meter_bound(&system.meter(), counter),
         },
         Some(ExpansionLimit::MaxCandidates) | None => ReachedLimit {
             limit: ModelCheckLimit::MaxCandidates,

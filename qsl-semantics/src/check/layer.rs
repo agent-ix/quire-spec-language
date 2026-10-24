@@ -5,7 +5,8 @@
 //! ([`DefinitionLock::admitted_forms`]), and refuses a form outside it with
 //! `unsupported_construct` at the form's span, naming the layer.
 //!
-//! A model construct (FR-361 item 5) is admitted by the model layer alone. In
+//! A model construct (FR-361 item 5) is admitted by the model layer and its
+//! temporal successor. In
 //! a unit that does not select the model profile the unit-level gate
 //! ([`super::model_gate`]) is its only refusal, so this rule skips it there
 //! (FR-361 item 12).

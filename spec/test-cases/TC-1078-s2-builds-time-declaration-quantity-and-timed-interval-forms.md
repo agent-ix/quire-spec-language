@@ -12,7 +12,7 @@ relationships:
 
 Verify that S1 parses and S2 builds the `time-decl`, `time-invariant`, `urgent-decl`, `Clock` type, `quantity-literal` and `timed-interval` forms, dispatches each leading token to its one production, keeps the contextual words usable as identifiers, rejects mixed interval bounds, builds the same forms under every facet selection, and defers every meaning check to S3.
 
-Scope: FR-393-AC-1 to FR-393-AC-7.
+Scope: FR-393-AC-1 to FR-393-AC-8.
 
 ## Test Procedure
 
@@ -25,6 +25,7 @@ Fixtures: the declarations of FR-393-AC-1; a unit with a field named `time` and 
 5. Parse `eventually[0, 3 ms] holds(p)`, `eventually[0 ms, 3] holds(p)` and `eventually[0 ms, *] holds(p)`.
 6. Build the `Rpc` unit under both facet selections and compare the forms.
 7. Build the three `Clock` units.
+8. Build a unit with `function f(c: Clock): Clock`, `predicate p(c: Clock)`, an operation parameter `c: Clock`, `record R { x: Clock; d: Quantity<ms>; o: Option<Clock>; s: Set<Quantity<ms>> }`, a tuple with a `Clock` element, a union case with a `Clock` payload and `type Alias = Clock;`, under no facet and under the complete facets.
 
 Tag the tests `#[trace("TC-1078", "FR-393-AC-n")]`.
 
@@ -37,3 +38,4 @@ Tag the tests `#[trace("TC-1078", "FR-393-AC-n")]`.
 - Step 5: a parse diagnostic at `3 ms`, `3` and `*` respectively, no form.
 - Step 6: equal forms and no facet diagnostic.
 - Step 7: `TypeForm::Clock`; a named type form with no `TypeForm::Clock`; a parse diagnostic at the declared name.
+- Step 8: `TypeForm::Clock` or the `Quantity` type form at each position with the span of its word, the same forms under both selections, and no diagnostic.
