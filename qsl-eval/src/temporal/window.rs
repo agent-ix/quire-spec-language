@@ -14,7 +14,14 @@
 //! **Values.** Values are exact rationals in one unit; converting a threshold
 //! to the value's unit is the checker's step (FR-142), not this module's.
 //! The caller reads the value, filter and predicate of a position through
-//! [`WindowSource`].
+//! [`WindowSource`], which may find any of them undefined.
+//!
+//! **Undefined positions.** A window is read oldest position first and the
+//! read stops at the first position whose filter, value or predicate is
+//! undefined: the atom is undefined with that cause, whatever the values
+//! before it would have summed to and whatever `min_count` asks, and the
+//! positions after it are neither read nor charged. A filter that rejects a
+//! position keeps that position's value from being read.
 //!
 //! **Work and memory.** One work unit is charged for each window position
 //! visited, whether or not its filter admits it, so a filtered scan pays
@@ -25,7 +32,7 @@
 
 use std::cmp::Ordering;
 
-use quire_exact::{Charge, ChargePoint, ComparisonOperator, Incomplete, Integer, Meter, Rational};
+use quire_exact::{Charge, ChargePoint, ComparisonOperator, Integer, Meter, Rational};
 use quire_semantic_value::catalog::InternalFault;
 
 use super::letters::{AtomReading, LetterStop, UndefinedCause};
@@ -255,14 +262,28 @@ pub enum WindowRefusal {
     TimestampsDecrease,
 }
 
+/// What a [`WindowSource`] read at one position: the value, or the cause
+/// for which the filter, value or predicate there is undefined.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WindowRead<T> {
+    /// The read is defined.
+    Defined(T),
+    /// The read is undefined (ADR-018 UE-2).
+    Undefined(UndefinedCause),
+}
+
 /// Reads what an aggregate gathers at a trace position. The caller owns the
 /// observations and their expressions (FR-107); each method charges the
-/// meter for its own work.
+/// meter for its own work. A run stop is `Err`; an undefined read is
+/// [`WindowRead::Undefined`] and stops only the atom.
 pub trait WindowSource {
     /// Whether the term's filter holds at `position`; `true` when the term
     /// has no filter.
-    fn admits(&mut self, position: TemporalPosition, meter: &mut Meter)
-        -> Result<bool, Incomplete>;
+    fn admits(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop>;
 
     /// The value expression at `position`. Read for `sum`, `min`, `max` and
     /// `quantile`.
@@ -270,14 +291,14 @@ pub trait WindowSource {
         &mut self,
         position: TemporalPosition,
         meter: &mut Meter,
-    ) -> Result<Rational, Incomplete>;
+    ) -> Result<WindowRead<Rational>, LetterStop>;
 
     /// Whether the predicate of `fraction holds(P)` holds at `position`.
     fn predicate(
         &mut self,
         position: TemporalPosition,
         meter: &mut Meter,
-    ) -> Result<bool, Incomplete>;
+    ) -> Result<WindowRead<bool>, LetterStop>;
 }
 
 /// An aggregate compared with a threshold: one atom of a monitor (ADR-024
@@ -311,36 +332,47 @@ impl Gathered {
         }
     }
 
-    /// Fold in the gathered `position`.
+    /// Fold in the gathered `position`; `Some(cause)` when its value or
+    /// predicate is undefined, in which case nothing is folded in.
     fn take<S: WindowSource>(
         &mut self,
         source: &mut S,
         position: TemporalPosition,
         meter: &mut Meter,
-    ) -> Result<(), Incomplete> {
+    ) -> Result<Option<UndefinedCause>, LetterStop> {
         match self {
             Self::Count => {}
-            Self::Sum(total) => *total = total.add(&source.value(position, meter)?),
-            Self::Min(least) => {
-                let value = source.value(position, meter)?;
-                if least.as_ref().is_none_or(|held| value < *held) {
-                    *least = Some(value);
+            Self::Sum(total) => match source.value(position, meter)? {
+                WindowRead::Defined(value) => *total = total.add(&value),
+                WindowRead::Undefined(cause) => return Ok(Some(cause)),
+            },
+            Self::Min(least) => match source.value(position, meter)? {
+                WindowRead::Defined(value) => {
+                    if least.as_ref().is_none_or(|held| value < *held) {
+                        *least = Some(value);
+                    }
                 }
-            }
-            Self::Max(greatest) => {
-                let value = source.value(position, meter)?;
-                if greatest.as_ref().is_none_or(|held| value > *held) {
-                    *greatest = Some(value);
+                WindowRead::Undefined(cause) => return Ok(Some(cause)),
+            },
+            Self::Max(greatest) => match source.value(position, meter)? {
+                WindowRead::Defined(value) => {
+                    if greatest.as_ref().is_none_or(|held| value > *held) {
+                        *greatest = Some(value);
+                    }
                 }
-            }
-            Self::Fraction { holding } => {
-                if source.predicate(position, meter)? {
-                    *holding = holding.saturating_add(1);
-                }
-            }
-            Self::Quantile(values) => values.push(source.value(position, meter)?),
+                WindowRead::Undefined(cause) => return Ok(Some(cause)),
+            },
+            Self::Fraction { holding } => match source.predicate(position, meter)? {
+                WindowRead::Defined(true) => *holding = holding.saturating_add(1),
+                WindowRead::Defined(false) => {}
+                WindowRead::Undefined(cause) => return Ok(Some(cause)),
+            },
+            Self::Quantile(values) => match source.value(position, meter)? {
+                WindowRead::Defined(value) => values.push(value),
+                WindowRead::Undefined(cause) => return Ok(Some(cause)),
+            },
         }
-        Ok(())
+        Ok(None)
     }
 
     /// The aggregate over `count >= 1` gathered values.
@@ -399,9 +431,11 @@ impl AggregateAtom {
         }
     }
 
-    /// The atom at `position` of `trace`: true or false, or undefined when
-    /// the window holds fewer than `min_count` values. A window that would
-    /// hold more than `max_window_values` values stops the evaluation.
+    /// The atom at `position` of `trace`: true or false; undefined with the
+    /// cause of the first position, oldest first, whose filter, value or
+    /// predicate is undefined; or else undefined when the window holds
+    /// fewer than `min_count` values. A window that would hold more than
+    /// `max_window_values` values stops the evaluation.
     pub fn evaluate<S: WindowSource>(
         &self,
         trace: &WindowTrace,
@@ -416,8 +450,10 @@ impl AggregateAtom {
         for index in window {
             meter.charge(Charge::new(ChargePoint::CollectionVisit))?;
             let at = TemporalPosition::new(index);
-            if !source.admits(at, meter)? {
-                continue;
+            match source.admits(at, meter)? {
+                WindowRead::Defined(true) => {}
+                WindowRead::Defined(false) => continue,
+                WindowRead::Undefined(cause) => return Ok(AtomReading::Undefined(cause)),
             }
             if count >= max_window_values {
                 return Err(LetterStop::WindowLimit(WindowLimitReached::at(
@@ -425,7 +461,9 @@ impl AggregateAtom {
                 )));
             }
             count += 1;
-            gathered.take(source, at, meter)?;
+            if let Some(cause) = gathered.take(source, at, meter)? {
+                return Ok(AtomReading::Undefined(cause));
+            }
         }
         if count < self.term.min_count {
             return Ok(AtomReading::Undefined(UndefinedCause::InsufficientData(

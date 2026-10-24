@@ -461,6 +461,53 @@ fn a_cancelled_replay_is_refused_as_cancelled() {
     );
 }
 
+/// Checks FR-193-AC-5 (TC-628 step 5): `Service` and `Health` are each
+/// refused at S4, `emit_checked` naming `not-yet-implemented`, and the
+/// witnesses of the `2 ms` claim over `Service` and of the fault claim over
+/// `Health` replay `Reproduced` over their checked subjects all the same,
+/// `replay_sampled_witness` taking only the checked subject, the provenance
+/// and the witness.
+#[trace("TC-628", "FR-193-AC-5")]
+#[test]
+fn witnesses_replay_over_a_subject_whose_package_s4_refuses() {
+    let refused = |world: &World| {
+        let refusal = qsl_package::emit_checked(&world.package).expect_err("S4 refuses");
+        (refusal.code(), refusal.cause())
+    };
+    let not_yet = (
+        qsl_foundation::Code::UnsupportedConstruct,
+        Some("not-yet-implemented"),
+    );
+
+    let service = World::new(&prob_world::service(&p95("Two", 2)));
+    assert_eq!(refused(&service), not_yet);
+    let verdict = decide(&service, "Two", StatisticalMethod::Okamoto, 3);
+    assert_eq!(verdict.witnesses.len(), 3);
+    for witness in &verdict.witnesses {
+        assert_eq!(
+            replay(&service, "Two", &verdict.provenance, witness),
+            Ok(SampledWitnessReplay::Reproduced)
+        );
+    }
+
+    let claim = "probabilistic Fault using ev on M over (n: M::Node) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.005 \
+         { probability <= 0.01 [ eventually[0,1000] holds(not n.healthy) ] }";
+    let health = World::new(&prob_world::health(
+        "self.healthy = (pre(self.healthy) and not fault)",
+        "true: 1, false: 99",
+        false,
+        claim,
+    ));
+    assert_eq!(refused(&health), not_yet);
+    let verdict = decide(&health, "Fault", StatisticalMethod::Sprt, 1);
+    assert_eq!(verdict.witnesses.len(), 1);
+    assert_eq!(
+        replay(&health, "Fault", &verdict.provenance, &verdict.witnesses[0]),
+        Ok(SampledWitnessReplay::Reproduced)
+    );
+}
+
 /// TC-761 step 4, the part of FR-280-AC-5 that holds without `analyze`: `Service`'s
 /// checked package, which `emit_checked` refuses, is served by EN-4's entry.
 /// The `2 ms` claim (Okamoto, seed 7, `max_witnesses` 3) settles one
