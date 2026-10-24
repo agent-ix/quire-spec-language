@@ -18,10 +18,11 @@ mod expression;
 pub use expression::{
     admit_arguments, evaluate_closed, evaluate_history_update, evaluate_protocol_slot,
     evaluate_refinement_row, evaluate_reward, evaluate_state_predicate,
-    evaluate_terminal_predicate, input_refusal_code, refusal_record, supplied_stop_cause,
-    supplied_stop_code, CheckedPackageEvaluation, ClauseEvaluation, ClauseRead, ClauseSetEntry,
-    ClauseSetEvaluation, ClauseSetOutcome, FrameEvaluation, InvalidQualifiedName,
-    InvocationBinding, ObservationIdentity, PackageClosure, PackageTask, QualifiedName,
-    RuntimeValuePath, Separation, SeparationStep, StopReport, ValueInvariantEvaluation,
-    ValueInvariantOutcome, ValueInvariantResult, ValuePathStep, ValuePathSubject, WitnessClaim,
+    evaluate_state_predicate_at_absent_key, evaluate_terminal_predicate, input_refusal_code,
+    refusal_record, supplied_stop_cause, supplied_stop_code, CheckedPackageEvaluation,
+    ClauseEvaluation, ClauseRead, ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome,
+    FrameEvaluation, InvalidQualifiedName, InvocationBinding, ObservationIdentity, PackageClosure,
+    PackageTask, QualifiedName, RuntimeValuePath, Separation, SeparationStep, StopReport,
+    ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult, ValuePathStep,
+    ValuePathSubject, WitnessClaim,
 };

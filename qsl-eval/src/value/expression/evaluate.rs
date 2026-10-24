@@ -630,6 +630,24 @@ pub(crate) struct Machine<'a, 'm> {
     /// check 6.5 witnessed out of range: the provenance an equality needs
     /// before it compares such an operand instead of faulting.
     witnessed_reads: std::collections::BTreeSet<Location>,
+    /// FR-125 Instancing: the claim's `over` parameter when the state holds
+    /// under its key no object conforming to the parameter's type. Every
+    /// read through it is `absent-key` undefined, except the reference
+    /// operand of a `lookup` (the guard).
+    absent_parameter: Option<AbsentParameter>,
+    /// The claim body's `lookup` reference operands that read the absent
+    /// parameter as the guard, by node id. A guard reached through a `let`
+    /// alias or a helper is not recognised (QSL-1054 asks the spec whether it should be).
+    guard_operands: std::collections::BTreeSet<NodeId>,
+}
+
+/// The `over` parameter of a claim at a key with no conforming object.
+struct AbsentParameter {
+    /// The local slot holding the parameter.
+    slot: Slot,
+    /// The population the instance was listed under, named in the
+    /// `absent-key` value.
+    binding: String,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -721,7 +739,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             trail: None,
             iterations: 0,
             witnessed_reads: std::collections::BTreeSet::new(),
+            absent_parameter: None,
+            guard_operands: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// FR-125 Instancing: read the parameter in `slot` as `absent-key`
+    /// undefined in every read except a `lookup`'s reference operand, `binding`
+    /// naming the population of the instance.
+    pub(crate) fn with_absent_parameter(mut self, slot: Slot, binding: String) -> Self {
+        self.absent_parameter = Some(AbsentParameter { slot, binding });
+        self
     }
 
     /// FR-265: record `trail` while evaluating (a state clause's own
@@ -1303,12 +1331,40 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn eval(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+        if let (NodeKind::Lookup { reference, .. }, 1, true) =
+            (node.kind(), self.frames.len(), self.imported.is_empty())
+        {
+            let operand = node.at(*reference);
+            if matches!(operand.kind(), NodeKind::Local(_)) {
+                self.guard_operands.insert(operand.id());
+            }
+        }
         match node.kind() {
             NodeKind::Literal(CheckedLiteral(value)) => {
                 self.values.push(value.clone());
                 return Ok(());
             }
             NodeKind::Local(slot) => {
+                if let Some((absent_slot, binding)) = self
+                    .absent_parameter
+                    .as_ref()
+                    .map(|absent| (absent.slot, absent.binding.clone()))
+                {
+                    if absent_slot == *slot
+                        && self.frames.len() == 1
+                        && !self.guard_operands.contains(&node.id())
+                    {
+                        let key = match self.slot(*slot)?.as_ref() {
+                            Some(Value::Reference(reference)) => {
+                                render_identity(reference.object().as_str().as_bytes())
+                            }
+                            _ => return Err(invariant("absent-parameter-reference-expected")),
+                        };
+                        return Err(Halt::Family(FamilyResult::Undefined(Box::new(
+                            StateModelUndefined::AbsentKey { binding, key },
+                        ))));
+                    }
+                }
                 let value = self
                     .slot(*slot)?
                     .clone()

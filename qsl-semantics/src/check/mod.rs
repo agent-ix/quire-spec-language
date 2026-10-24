@@ -3511,14 +3511,15 @@ impl PackageDeclarations {
                 };
                 for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
                     let extent = claimed
-                        .population()
-                        .map(|domain| population_domain_key(&object_types, &object_nodes, domain))
-                        .transpose()
-                        .and_then(|population| {
+                        .populations()
+                        .iter()
+                        .map(|domain| population_domain_key(&object_types, &object_nodes, *domain))
+                        .collect::<Result<Vec<_>, _>>()
+                        .and_then(|populations| {
                             claimed.requirements(
                                 claims::wire(lowered.key),
                                 &[claims::wire(lowered.over)],
-                                population,
+                                &populations,
                                 named_keys.as_ref().map_err(Clone::clone)?,
                             )
                         })

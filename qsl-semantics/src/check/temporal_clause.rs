@@ -77,7 +77,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
-use super::state_clause::{population_of, PopulationDomain};
+use super::state_clause::{populations_covering, PopulationDomain};
 use super::Scope;
 use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
@@ -311,7 +311,7 @@ pub struct TemporalClaim {
     infinite_trace: bool,
     /// The population of the `over` object type when the unit declares no
     /// maximum for it: an unbounded domain of the record (FR-336-AC-1).
-    population: Option<PopulationDomain>,
+    populations: Vec<PopulationDomain>,
     /// The fairness kinds the clause's fairness set uses (FR-134): the
     /// backend must decide each of them.
     fairness: BTreeSet<FairnessKind>,
@@ -337,7 +337,7 @@ impl TemporalClaim {
             kind: Capability::TemporalSatisfaction,
             parameter_domains,
             infinite_trace,
-            population: None,
+            populations: Vec::new(),
             fairness: BTreeSet::new(),
             punctual: None,
             model_subject,
@@ -349,17 +349,22 @@ impl TemporalClaim {
         self.kind
     }
 
-    /// The unbounded population the clause ranges over: the `over` object
-    /// type's population, when the unit declares no maximum for it. Its key
-    /// is [`CheckedGraph::population_key`](crate::check::CheckedGraph::population_key).
-    pub fn population(&self) -> Option<PopulationDomain> {
-        self.population
+    /// The unbounded populations the clause ranges over: each population that
+    /// covers the `over` object type and for which the unit declares no
+    /// maximum, in ascending declaration order (FR-125 Instancing: several may
+    /// cover the type). The key of each is
+    /// [`CheckedGraph::population_key`](crate::check::CheckedGraph::population_key).
+    ///
+    /// A population whose member type is a subtype of the `over` type
+    /// overlaps it but is not listed here (QSL-1051 owns that gap).
+    pub fn populations(&self) -> &[PopulationDomain] {
+        &self.populations
     }
 
     /// The claim's requirement record (FR-326 "Requirement record"), keyed
     /// by the clause's checked node and each parameter's, in the order the
-    /// clause declares them. `population` is the key of
-    /// [`Self::population`]; the record takes no universe (FR-336-AC-1).
+    /// clause declares them. `populations` are the keys of
+    /// [`Self::populations`], in its order; the record takes no universe (FR-336-AC-1).
     ///
     /// `named` are the keys of the unbounded populations the clause's
     /// `holds` atoms name (FR-391 "Requirements"), each a population domain
@@ -368,7 +373,7 @@ impl TemporalClaim {
         &self,
         clause: WireNodeId,
         parameters: &[WireNodeId],
-        population: Option<DomainKey>,
+        populations: &[DomainKey],
         named: &[DomainKey],
     ) -> Result<Requirements, InternalFault> {
         let mut domains = BTreeMap::new();
@@ -393,10 +398,11 @@ impl TemporalClaim {
                 DomainKind::InfiniteTrace,
             );
         }
-        if self.population.is_some() {
-            let key =
-                population.ok_or_else(|| InternalFault::new(STAGE, "population-domain-keyed"))?;
-            domains.insert(key, DomainKind::Population);
+        if populations.len() != self.populations.len() {
+            return Err(InternalFault::new(STAGE, "population-domain-keyed"));
+        }
+        for key in populations {
+            domains.insert(key.clone(), DomainKind::Population);
         }
         for key in named {
             domains.insert(key.clone(), DomainKind::Population);
@@ -927,18 +933,14 @@ fn check_clause(
         .collect();
     let formula = build_formula(&form.formula, &intervals)?;
     let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
-    let population = match types.first() {
+    let populations: Vec<PopulationDomain> = match types.first() {
         Some(ValueType::Reference(object)) => {
-            population_of(declarations.models, *object, declarations.scope.types())
-                .map_err(|populations| {
-                    refuse(TemporalCause::AmbiguousPopulation {
-                        populations,
-                        span: declaration.span,
-                    })
-                })?
+            populations_covering(declarations.models, *object, declarations.scope.types())
+                .into_iter()
                 .filter(|domain| domain.maximum.is_none())
+                .collect()
         }
-        _ => None,
+        _ => Vec::new(),
     };
     let property_form = property_form(profile, model_subject, &formula);
     let activation = match &form.activation {
@@ -972,7 +974,7 @@ fn check_clause(
             kind: Capability::TemporalSatisfaction,
             parameter_domains,
             infinite_trace: !bounded,
-            population,
+            populations,
             fairness: fairness.iter().map(FairnessConstraint::kind).collect(),
             punctual: unsupported_punctual,
             model_subject,

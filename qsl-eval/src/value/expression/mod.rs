@@ -210,6 +210,40 @@ pub fn evaluate_state_predicate(
     )
 }
 
+/// [`evaluate_state_predicate`] for an instance of the claim's `over`
+/// parameter whose key holds in the state no object conforming to the
+/// parameter's type (FR-125 Instancing). `key` is the reference to read the
+/// parameter as where it is a `lookup`'s operand, the guard: the reference
+/// of the parameter's type under the instance's key. Every other read through
+/// the parameter is `absent-key` undefined; an expression that does not read
+/// it evaluates normally. `binding` names the instance's population in the
+/// undefined value.
+pub fn evaluate_state_predicate_at_absent_key(
+    package: &CheckedPackage,
+    predicate: &impl qsl_semantics::check::StatePredicate,
+    current: &ObjectEnvironment,
+    key: quire_exact::ObjectReference,
+    binding: String,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .with_absent_parameter(0, binding)
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        vec![Value::Reference(key)],
+    )
+}
+
 /// ADR-027 ST-1 to ST-9, PD-1: evaluate one checked protocol slot `body` (a
 /// node's constraint or the protocol's `terminal when` predicate) of
 /// `package` through the one clause evaluator (FR-107), at the state whose

@@ -1173,15 +1173,6 @@ pub enum TemporalCause {
         /// The constraint's span.
         span: Span,
     },
-    /// FR-336-AC-1: the `over` object type is covered by several
-    /// populations, so its population cannot be named exactly once. Located
-    /// at the clause.
-    AmbiguousPopulation {
-        /// The covering populations, in ascending `DeclarationKey` order.
-        populations: Vec<quire_checked::key::DeclarationKey>,
-        /// The clause's span.
-        span: Span,
-    },
     /// A timed interval (FR-393) under a profile other than the timed
     /// profile, where FR-233's `model-steps` rule is not checked yet:
     /// refused rather than checked as a step interval. Located at the
@@ -1323,7 +1314,6 @@ impl TemporalCause {
             | Self::ParameterType { span, .. }
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
-            | Self::AmbiguousPopulation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
             | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
@@ -1375,9 +1365,7 @@ impl TemporalCause {
                     Code::IllTyped
                 }
             },
-            Self::AmbiguousFairnessOperation { .. } | Self::AmbiguousPopulation { .. } => {
-                Code::AmbiguousDeclaration
-            }
+            Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } => Code::IllTyped,
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }
@@ -1400,9 +1388,7 @@ impl TemporalCause {
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. } => "expression-form",
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
-            Self::AmbiguousFairnessOperation { .. } | Self::AmbiguousPopulation { .. } => {
-                "ambiguous-name"
-            }
+            Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } => "type-mismatch",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
