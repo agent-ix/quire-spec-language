@@ -66,12 +66,18 @@ fn parse_document(bytes: &[u8]) -> PackageDocument {
         .expect("the test document parses as JSON")
 }
 
+#[trace("TC-145", "FR-056-AC-1")]
 #[test]
 fn the_model_reader_cohort_admits_dimensions_and_scaled_units() {
     let mut document: Value = serde_json::from_slice(include_bytes!(
         "../../../tests/fixtures/spine-model.semantic-ir.json"
     ))
     .expect("the authored model fixture is JSON");
+    let original = read_records(
+        "acme/orders",
+        &parse_document(&serde_json::to_vec(&document).expect("serialize original model")),
+    )
+    .expect("the original model reads");
     let origin = document["types"][0]["origin"].clone();
     document["dimensions"] = serde_json::json!([{
         "identity": "ix://acme/orders/dimension/Time", "name": "Time",
@@ -89,13 +95,18 @@ fn the_model_reader_cohort_admits_dimensions_and_scaled_units() {
     let parsed = parse_document(&bytes);
     let records = read_records("acme/orders", &parsed)
         .expect("the FCD reader admits the original model with its dimension/unit graph");
-    assert!(!records.is_empty());
+    assert!(!original.is_empty());
+    assert_eq!(
+        records, original,
+        "the original declarations stay unchanged"
+    );
 
     document["units"][1]["target"] = "ix://acme/orders/unit/missing".into();
     let invalid = parse_document(&serde_json::to_vec(&document).expect("serialize mutation"));
     let errors = read_records("acme/orders", &invalid)
         .expect_err("the cohort must retain the owner's unresolved-unit refusal");
     assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, qsl_foundation::Code::InvalidModelBinding);
     assert!(
         errors[0].detail.contains("UNRESOLVED_UNIT_REF"),
         "{errors:?}"
