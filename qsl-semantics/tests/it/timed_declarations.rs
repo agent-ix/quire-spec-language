@@ -32,12 +32,7 @@ fn clock_document() -> Vec<u8> {
     let field = config_version_identity("x");
     let mut clock = wire_field(&field, "x", "ix://quire/native/Clock", "required", 1);
     // FCD admits a Clock field only with a non-unique multiplicity.
-    clock["multiplicity"] = json!({
-        "lower": 0,
-        "upper": 3,
-        "ordered": true,
-        "unique": false,
-    });
+    clock["multiplicity"]["unique"] = json!(false);
     document["types"]
         .as_array_mut()
         .expect("the fixture declares types")
@@ -106,9 +101,8 @@ fn s2_keeps_a_dense_time_member_for_the_temporal_layer() {
     );
 }
 
-/// FR-230-AC-23: a bounded, ordered, non-unique package Clock field remains a
-/// clock place while S3 checks the package's time source.
-#[trace("FR-230-AC-23")]
+/// QSL-1030: the native Clock field with `unique:false` is admitted as a
+/// model place while S3 checks the package's time source.
 #[test]
 fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit ms;\n";
