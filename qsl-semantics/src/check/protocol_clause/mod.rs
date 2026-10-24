@@ -327,7 +327,7 @@ fn check_predicate_joins(
             ));
             continue;
         };
-        if kind != "function" {
+        if declarations.callable_kind(function) != Some(qsl_forms::DeclarationKind::Function) {
             refusals.push((
                 span,
                 refusal(ProtocolAnchorCause::JoinFunctionKind {
