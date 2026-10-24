@@ -94,3 +94,34 @@ Mergeable once FND-001 is fixed or explicitly deferred to a ticket.
 | FND-003 | low | `holds_reference` returns `false` when `types.composite(key)` has no declaration for a `ValueType::Composite`. That is a broken checker invariant, and the rest of the checker faults on one (`self.fault(..)`). Here the row is silently admitted as holding no reference. Fix: return a tri-state, or fault (`composite-type-has-a-declaration`) from the caller. | qsl-semantics/src/check/refinement.rs:1046-1048 |
 | FND-004 | low | `population_node` returning `Err(NodeKeyRefusal)` (the identity budget exceeded while keying the abstract population) is reported as the internal fault `abstract-population-has-a-node-key`. Lowering reports a keying refusal for the same content as a limit refusal. Reachability is doubtful, since the abstract package's identity was admitted under the same limits. Fix: map `Err` to the same limit refusal lowering gives, and keep the fault for `Ok(None)`. | qsl-semantics/src/check/refinement.rs:1618-1624 |
 | FND-005 | low | The PR changes the fixture of the existing FR-140-AC-9 test `an_undefined_row_outranks_an_unmapped_type_that_sorts_first`: ring `a` gets `next = b`, a ring the state does not hold. The PR body does not explain it. Reverting it at the head still passes (probe P2), so the change is unnecessary and adds a dangling reference to an AC fixture. Fix: revert it, or state why it is needed. | qsl-replay/tests/it/refinement_unmapped.rs:123 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The FND-004 fix pushes `preimage_refusal(&Location::root(Origin::Expression), refusal)` straight into `findings.refusals`, so the limit refusal carries no source span. Every other refusal a population row produces goes through `findings.refuse(row.span, ..)`, and `check_row_as` wraps a check refusal as `RefinementCause::Check` at a span. A node-key budget refusal for an abstract population therefore has no locus in the refinement source (FR-096) and does not name the refinement. Fix: `self.findings.refuse(row.span, RefinementCause::Check(preimage_refusal(&location, refusal).cause))`. Untested, and probably unreachable from admitted inputs. | qsl-semantics/src/check/refinement.rs:1627-1633 |
+
+## Dispositions
+
+Round 1. Reviewed at `c2abdd278b12e1156321da44d0a0f3ec6759ab51` (origin/main merged). Checks rerun by the reviewer in its own target directory:
+
+- qsl-semantics (`test-support`), qsl-replay and qsl-eval tests pass.
+- `cargo check --locked --workspace --all-targets` is clean.
+- clippy `-D warnings`, fmt and string-edge are clean.
+
+Reviewer mutations, each in its own worktree and target directory, all killed by `a_row_nesting_a_reference_other_than_a_whole_population_is_unsupported`:
+
+- the record arm of `holds_reference` returns `false`;
+- the tuple arm returns `false`;
+- the union arm returns `false`;
+- `field_row: false` on the field-row context.
+
+The matrix is unchanged: the four tagged criteria are tagged, and the four deferred ones are untagged.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | still-open | Catching a tuple is acceptable under FR-135's rationale (lifting inside a nested value is not built), so the behaviour stands. But the doc comment the finding names, on `UnsupportedFeature::NestedReferenceRow` (refinement.rs:126-130), still says "option, record, union or collection". Only `nests_reference`'s doc now says a tuple is a record by position. Still needed: add tuple to the variant doc, a one-line edit, and ask the FR-135 owner to name tuple, or record that a tuple counts as a record. |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |

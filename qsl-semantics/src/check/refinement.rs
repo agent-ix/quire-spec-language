@@ -124,7 +124,7 @@ pub enum UnsupportedFeature {
     /// key (FR-138).
     HistoryRow,
     /// A field row whose type nests a `Reference` in an option, record,
-    /// union or collection, other than a whole-population `Set<Reference<T>>`
+    /// tuple (a record by position), union or collection, other than a whole-population `Set<Reference<T>>`
     /// (FR-135): the lifting of ADR-020 RM-3 reaches no further than the
     /// reference itself.
     NestedReferenceRow,
@@ -1626,9 +1626,9 @@ impl<'c, 'a> Checker<'c, 'a> {
                     }
                     Err(refusal) => {
                         let location = Location::root(Origin::Expression);
+                        let cause = preimage_refusal(&location, refusal).cause;
                         self.findings
-                            .refusals
-                            .push(preimage_refusal(&location, refusal));
+                            .refuse(row.span, RefinementCause::Check(cause));
                         continue;
                     }
                 };

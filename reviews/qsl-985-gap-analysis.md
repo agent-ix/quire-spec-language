@@ -83,3 +83,12 @@ is the untested composite path behind SR-17011 FND-001.
 - Semantic review: the clause-by-clause test-to-AC check is in the Summary
   above.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1. Reviewed at `c2abdd278b12e1156321da44d0a0f3ec6759ab51`. `quire matrix --scope . --format json` was rerun. FR-135-AC-6, FR-138-AC-9, FR-139-AC-7 and FR-140-AC-15 are tagged. FR-139-AC-6, FR-136-AC-5, FR-140-AC-14 and FR-140-AC-11 are untagged.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | The four untagged criteria are deferred to QSL-1056, and the PR body now reads "Remaining work: QSL-1056 (FR-139-AC-6, FR-136-AC-5, FR-140-AC-14, FR-140-AC-11)". |
+| FND-002 | fixed | - |
