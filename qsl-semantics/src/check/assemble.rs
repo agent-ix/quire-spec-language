@@ -275,6 +275,13 @@ pub enum AssemblyCause {
         /// The name as written.
         name: String,
     },
+    /// A model member's `typeRef` names no unit in the compiling unit.
+    UnresolvedModelQuantityType {
+        /// The unit name as written.
+        name: String,
+        /// The typed member path, such as `Operation.params[0].typeRef`.
+        member_path: String,
+    },
     /// A dimension reaches itself through derived dimensions, or a unit's
     /// target chain reaches that unit again.
     QuantityCycle {
@@ -482,6 +489,7 @@ impl AssemblyCause {
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::UnresolvedModelQuantityType { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 Code::ConflictingDeclaration
             }
@@ -568,6 +576,7 @@ impl AssemblyCause {
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::UnresolvedModelQuantityType { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 "duplicate-declaration"
             }
@@ -1120,6 +1129,12 @@ fn model_object_types(
                             profile: None,
                         }))
                     }
+                    Err(Unmapped::QuantityType { name, member_path }) => {
+                        errors.push(AssemblyError {
+                            cause: AssemblyCause::UnresolvedModelQuantityType { name, member_path },
+                            span,
+                        })
+                    }
                     Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
                         cause: AssemblyCause::UnresolvedQuantityName { name },
                         span,
@@ -1147,6 +1162,12 @@ fn model_object_types(
                             rounding: RoundingMode::Exact,
                             profile: None,
                         }))
+                    }
+                    Err(Unmapped::QuantityType { name, member_path }) => {
+                        errors.push(AssemblyError {
+                            cause: AssemblyCause::UnresolvedModelQuantityType { name, member_path },
+                            span,
+                        })
                     }
                     Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
                         cause: AssemblyCause::UnresolvedQuantityName { name },
@@ -1287,6 +1308,10 @@ fn model_object_types(
                     rounding: RoundingMode::Exact,
                     profile: None,
                 })),
+                Err(Unmapped::QuantityType { name, member_path }) => errors.push(AssemblyError {
+                    cause: AssemblyCause::UnresolvedModelQuantityType { name, member_path },
+                    span,
+                }),
                 Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
                     cause: AssemblyCause::UnresolvedQuantityName { name },
                     span,
@@ -1508,6 +1533,8 @@ enum Unmapped {
     Float(IeeeWidth),
     /// A `ix://quire/unit/<name>` reference has no unit in the compiling unit.
     QuantityName(String),
+    /// An unresolved unit in a model typeRef with its source contract path.
+    QuantityType { name: String, member_path: String },
     /// A key the admitted view does not resolve: a broken invariant of I1.
     Broken,
 }
@@ -1647,7 +1674,14 @@ fn model_field(
         meaning_handles,
         variant_shapes,
         units,
-    )?;
+    )
+    .map_err(|error| match error {
+        Unmapped::QuantityName(name) => Unmapped::QuantityType {
+            name,
+            member_path: "Field.typeRef".to_owned(),
+        },
+        error => error,
+    })?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
     let Some(target) = &field.redefines else {
         return Ok(declaration);
@@ -1677,7 +1711,7 @@ fn model_operation(
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
     let mut parameters = Vec::with_capacity(operation.parameters.len());
-    for parameter in &operation.parameters {
+    for (index, parameter) in operation.parameters.iter().enumerate() {
         let parameter_name = member_identity_name(&operation.key.node, &parameter.key.node)
             .ok_or(Unmapped::Broken)?;
         let value_type = model_value_type(
@@ -1688,7 +1722,14 @@ fn model_operation(
             meaning_handles,
             variant_shapes,
             units,
-        )?;
+        )
+        .map_err(|error| match error {
+            Unmapped::QuantityName(name) => Unmapped::QuantityType {
+                name,
+                member_path: format!("Operation.params[{index}].typeRef"),
+            },
+            error => error,
+        })?;
         parameters.push((parameter_name.to_owned(), value_type));
     }
     let result = operation
@@ -1704,6 +1745,13 @@ fn model_operation(
                 variant_shapes,
                 units,
             )
+            .map_err(|error| match error {
+                Unmapped::QuantityName(name) => Unmapped::QuantityType {
+                    name,
+                    member_path: "Operation.returns.typeRef".to_owned(),
+                },
+                error => error,
+            })
         })
         .transpose()?;
     Ok(OperationDeclaration::new(

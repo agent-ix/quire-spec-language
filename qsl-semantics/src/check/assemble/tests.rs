@@ -22,8 +22,8 @@ use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
     ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
     Multiplicity, NamespaceRecord, NativeValueType, OperationEffect, OperationMemberRecord,
-    ScalarTypeRecord, ScalarValueDomain, StateMachineRecord, StateMachineStateRecord,
-    StateMachineTransitionRecord, ValueTypeRef,
+    OperationParameterRecord, ScalarTypeRecord, ScalarValueDomain, StateMachineRecord,
+    StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::normalize::{normalize, NormalizeOutcome};
@@ -252,6 +252,83 @@ fn a_model_scalar_is_named_with_its_integer_interval() {
     )
     .expect("a scalar-only model is supported");
     assert_eq!(types.scalars, [("M::Total".to_owned(), int(0, 1000))]);
+}
+
+/// FR-056-AC-42: an unresolved unit typeRef identifies the model member path.
+#[trace("TC-147", "FR-056-AC-42")]
+#[test]
+fn unresolved_model_unit_type_names_the_operation_parameter_path() {
+    let object = DeclarationKey::fixture("ix://test/orders/Counter");
+    let operation = DeclarationKey::fixture("ix://test/orders/Counter/set");
+    let parameter = DeclarationKey::fixture("ix://test/orders/Counter/set/value");
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.unresolved-model-unit-type"),
+        vec![
+            DomainPackageRecord::ObjectType(crate::model::domain_package::ObjectTypeRecord {
+                key: object.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: operation,
+                owner: object,
+                parameters: vec![OperationParameterRecord {
+                    key: parameter,
+                    value_type: ValueTypeRef::Unit("missing".to_owned()),
+                    multiplicity: Multiplicity {
+                        lower: 1,
+                        upper: Some(1),
+                        ordered: false,
+                        unique: false,
+                    },
+                }],
+                result: None,
+                effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
+                has_body: true,
+                redefines: None,
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::default())
+    else {
+        panic!("the unit-free domain package normalizes");
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 10, end: 20 },
+        view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let mut operations = super::OperationTable::default();
+    let errors = match super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        IdentityLimits::default(),
+        &BTreeMap::new(),
+    ) {
+        Ok(_) => panic!("the unresolved unit typeRef refuses during model assembly"),
+        Err(errors) => errors,
+    };
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        errors[0].cause,
+        AssemblyCause::UnresolvedModelQuantityType {
+            name: "missing".to_owned(),
+            member_path: "Operation.params[0].typeRef".to_owned(),
+        }
+    );
+    assert_eq!(errors[0].span, selected.span);
+    assert_eq!(
+        errors[0].cause.catalog_code().to_string(),
+        "missing_declaration/missing-name"
+    );
 }
 
 /// The span of the last occurrence of `needle` in `text`.
