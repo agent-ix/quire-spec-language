@@ -1041,6 +1041,7 @@ mod settlement {
     /// `Positive` (12 s); a plugin's `trusted` proof is checked the same way,
     /// and the plain plugin path admits no `bounded-solver` basis.
     #[trace("TC-705", "FR-250-AC-7")]
+    #[trace("TC-774", "FR-290-AC-1", "FR-290-AC-5", "FR-289-AC-9")]
     #[test]
     fn coverage_is_decided_from_the_checked_claims_own_horizon() {
         let unit = braking_unit(FLOW, "v = 0");
