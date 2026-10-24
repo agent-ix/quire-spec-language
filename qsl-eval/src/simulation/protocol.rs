@@ -209,6 +209,16 @@ pub enum ProtocolRefusal {
     /// (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
     Unsupported(Unsupported),
+    /// A constraint of a node in a weak `parallel` reads through a form
+    /// QSpec FR-383 gives no footprint rule, so the model locations it reads
+    /// cannot be told (`unsupported_construct`/`not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: the constraint of node {node}: {refusal}")]
+    NodeFootprint {
+        /// The node, by its static declaration path.
+        node: String,
+        /// Why its reads have no footprint.
+        refusal: qsl_semantics::check::footprint::FootprintRefusal,
+    },
     /// An initial state's settling stopped: a guard's evaluation ran out of
     /// a budget, or broke.
     #[error("{}/{}: settling an initial state", .0.cause.code(), .0.cause.cause())]
@@ -231,7 +241,9 @@ impl ProtocolRefusal {
             | Self::OverBinding { .. }
             | Self::RolePopulation { .. }
             | Self::Memory(_) => Code::InvalidRuntimeInput,
-            Self::Unsupported(_) | Self::WeakAccessShape(_) => Code::UnsupportedConstruct,
+            Self::Unsupported(_) | Self::NodeFootprint { .. } | Self::WeakAccessShape(_) => {
+                Code::UnsupportedConstruct
+            }
             Self::InitialStop(stop) => {
                 Code::from_code(stop.cause.code()).unwrap_or(Code::RuntimeInvariant)
             }
@@ -247,7 +259,7 @@ impl ProtocolRefusal {
             | Self::RolePopulation { .. }
             | Self::Memory(_) => "invalid-value",
             Self::RoleMapping { .. } => "wrong-role-mapping",
-            Self::Unsupported(_) => "not-yet-implemented",
+            Self::Unsupported(_) | Self::NodeFootprint { .. } => "not-yet-implemented",
             Self::WeakAccessShape(_) => "weak-access-shape",
             Self::InitialStop(stop) => stop.cause.cause(),
             Self::Fault(_) => "established-invariant-broken",
@@ -699,9 +711,13 @@ pub(crate) fn over_value(
 /// # Errors
 ///
 /// [`ProtocolRefusal`] when `memory` does not resolve the protocol's
-/// outermost `parallel` controls, for a construct this system does not
-/// step, or when an application has no footprint. `over` is the instance
-/// the protocol's `over` input is bound to.
+/// outermost `parallel` controls; [`ProtocolRefusal::OverBinding`] or
+/// [`Unsupported::OverNotAnObject`] when `over`, the instance the
+/// protocol's `over` input is bound to, is not an object of the input's
+/// type; for a construct this system does not step; when an attempt's
+/// application has no footprint; and [`ProtocolRefusal::NodeFootprint`] when
+/// the constraint of an `event`, `effect`, `commit`, `send` or `receive`
+/// node of a weak `parallel` reads through a form with no footprint rule.
 pub fn classify_accesses(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,

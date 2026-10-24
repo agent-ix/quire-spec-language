@@ -33,6 +33,7 @@ use super::ProtocolRefusal;
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Location;
 use crate::simulation::model::encode::{reference_enc, Enc};
+use crate::simulation::model::FootprintError;
 use crate::simulation::model::{Cell, ModelSimState, ModelSystem, OperationRef};
 
 /// What one instantiated attempt is (ADR-025 MA-2, MA-4).
@@ -380,9 +381,19 @@ pub(crate) fn classify(
         let (Some(body), Some(chain)) = (constraint, chain_of(*node)?) else {
             continue;
         };
-        let reads = model
-            .node_reads(program.text(*node)?, &parameters, body, over)
-            .map_err(|_| ProtocolRefusal::Unsupported(super::Unsupported::AccessFootprint))?;
+        let path = program.text(*node)?;
+        let reads =
+            model
+                .node_reads(path, &parameters, body, over)
+                .map_err(|error| match error {
+                    FootprintError::Refused(refusal) => ProtocolRefusal::NodeFootprint {
+                        node: path.to_owned(),
+                        refusal,
+                    },
+                    FootprintError::UnknownTransition | FootprintError::UnknownConstraint => {
+                        ProtocolRefusal::fault("a-node-constraint-has-a-footprint")
+                    }
+                })?;
         node_reads.insert(*node, reads);
         reader_chains.insert(*node, chain);
     }
