@@ -116,11 +116,12 @@ impl ModelSystem {
   not Markov, `ModelSystem` SHALL return the undecided result, because the
   expansion that finds it runs before any draw is judged.
 
-Note: FR-120's state key and transition identity have no encoding for an
-enumeration or quantity value (FR-120 "State key"), so a state, parameter or
-random value of such a type is refused with an `EncodingRefusal`; FR-187-AC-1
-declares the `Service` fixture's enumerations as a bounded `Int` and a
-`Boolean`.
+FR-120's state key and transition identity encode quantity values using the
+typed rational-with-unit form, and encode other admitted FR-181 value families
+in their typed canonical forms (FR-120-AC-16). FR-187-AC-1 keeps its `Phase`
+enumeration represented as a bounded `Int` and its random parameter as
+`Boolean` for that fixture; those choices do not prohibit quantity-valued
+rewards or measures.
 
 - Weights play no part in the support graph: the transitions that
   `weighted_steps` gives positive probability SHALL be exactly FR-120's

@@ -19,9 +19,13 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-187
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-120
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-188
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-280
+    type: references
+  - target: ix://agent-ix/quire-specification/FR-410
     type: references
 ---
 # FR-189: Decide a probabilistic claim by statistical model checking (EN-4)
@@ -87,7 +91,7 @@ pub struct TestResult { pub index: u32, pub initial: u32, pub binding: Option<Bi
     pub quantile: Option<MeasureValue>,         // a quantile claim's nearest-rank quantile of the counted samples
     pub samples: u64, pub draws: u64,
     pub undefined: Option<UndefinedEvaluation> }   // ADR-024 SV-11; `where` names the sample
-pub enum MeasureValue { Value(Rational), Censored }  // a quantity's Rational is its magnitude in the claim's threshold unit (QSpec FR-410)
+pub enum MeasureValue { Value(Rational), Censored }  // a quantity's Rational is in the reward unit, which FR-186 normalizes the threshold into (QSpec FR-410)
 pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
 pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 ```
@@ -163,6 +167,39 @@ the claim's form does not admit (FR-190, SPRT and Clopper–Pearson below).
 - A test of any other claim form, and a quantile test with no estimate, SHALL
   have `quantile` absent.
 - The decision of a test SHALL NOT read `quantile`.
+
+### Quantity-valued measures
+
+For a checked reward of type `Quantity<u>`, each finite measure value is an
+exact `Rational` magnitude in the reward's declared unit `u`. The
+`MeasureValue::Value(Rational)` variant stores that magnitude and has no
+separate unit member. Its caller interprets the value using the checked reward
+type in the request; a sampled witness uses the same checked reward type from
+the model subject. FR-186 normalizes the threshold into that reward unit, so
+the result also satisfies QSpec FR-410's threshold-unit rule. EN-4 SHALL keep
+the magnitude in `u` and SHALL NOT convert it to a base unit. A quantity
+operand written in another unit enters the checked measure only through the
+explicit conversion required by QSpec FR-142.
+
+The canonical finite magnitude is an exact `Rational` in lowest terms: its
+denominator is positive, its numerator and denominator have gcd 1, and only
+the numerator carries a sign. An integer magnitude uses denominator 1 and zero
+is `0/1`; no floating-point approximation is used. For example, the canonical
+magnitude of `1.50 ms` is `3/2` in the `ms` unit. `MeasureValue` carries the
+unit through the checked claim's reward type rather than adding a second unit
+member to `Value(Rational)`. FR-120's existing typed quantity encoding remains
+the encoding for state and transition values; EN-4's statistical result keeps
+the rational magnitude paired with its checked claim context. A `Censored`
+value has no finite magnitude, while its checked claim still supplies the unit
+context.
+
+The checked S3 claim is the boundary for unit refusals: a threshold of another
+dimension refuses `ill_typed`/`unit-mismatch` under FR-186, and a random
+parameter support value that is not of the declared `Quantity<u>` type,
+including one written in a different unit, refuses `value-outside-type` under
+FR-185. These refusals occur before EN-4 draws a sample. EN-4 SHALL decide a
+well-typed quantity claim normally; a quantity type alone is not an
+unsupported condition.
 
 - If the event, the measure or its comparison evaluates `Undefined` on a
   sample, then EN-4 SHALL decide that test Rejected at once, stop the
@@ -262,7 +299,7 @@ the claim's form does not admit (FR-190, SPRT and Clopper–Pearson below).
 | FR-189-AC-12 | The activation variant of FR-189-AC-4 with the activation probability 0 and `max_draws` 1,000 stops `MaxDraws` with 0 samples counted and no decision. | Test (TC-624) |
 | FR-189-AC-13 | A sampler stub that returns event samples for a mean-of-fraction claim with Okamoto, `θ = 1/2`, `α = β = 1/3` and `ι = 2/5` and a non-strict bound (a strict `Below` bound on a mean of a fraction is refused `StrictBound`) (so `N = ⌈ln 3 / (2ι²)⌉ = ⌈3.43⌉ = 4`), 3 holding of the 4 counted, gives the estimate `3/4` and no refusal. | Test (TC-624) |
 | FR-189-AC-14 | A regenerative request over two tests with `max_draws` `u64::MAX` is not refused `TraceIndexRange`, and the same `max_draws` under Okamoto with two tests is. | Test (TC-624) |
-| FR-189-AC-15 | Through the `BehaviourSampler` seam, a quantile `<= 3` claim at `q = 1/2` over 4 counted samples (the stub ends the test after exactly 4 counted samples) with `M` values 1, 3, 2, 5 gives the test `quantile` `Value(2)`; at `q = 9/10` with the samples 1, 3, 2 and one censored sample, the rank `⌈36/10⌉ = 4` lies among the censored samples and `quantile` is `Censored`; at `q = 1/2` the same samples give `Value(2)`. With `M` of type `Quantity<ms>`, the threshold `3 ms` and samples `1 ms`, `3 ms`, `2 ms`, `5 ms` at `q = 1/2`, the test `quantile` is `Value(2)`, the magnitude in `ms` (not `1/500`, the magnitude in `s`). A `P95` probability-bound test and a quantile test that has no estimate, because it counted no sample, have `quantile` absent. | Test (TC-624) |
+| FR-189-AC-15 | Through the `BehaviourSampler` seam, a quantile `<= 3` claim at `q = 1/2` over 4 counted samples (the stub ends the test after exactly 4 counted samples) with `M` values 1, 3, 2, 5 gives the test `quantile` `Value(2)`; at `q = 9/10` with the samples 1, 3, 2 and one censored sample, the rank `⌈36/10⌉ = 4` lies among the censored samples and `quantile` is `Censored`; at `q = 1/2` the same samples give `Value(2)`. With `M` of type `Quantity<ms>`, threshold `3 ms` and samples `1 ms`, `3 ms`, `2 ms`, `5 ms` at `q = 1/2`, the test quantile is `Value(2)` interpreted in `ms` by the checked reward type and canonically stored as `2/1`; it is not `1/500 s`. In another run with `q = 1/2` and samples `1 ms`, `1.50 ms`, `2 ms`, `5 ms`, the quantile is `Value(3/2)`; replacing `1.50 ms` with the equivalent `rational(3, 2) ms` gives the same exact rational value. With a quantity reward whose unit is `ms`, a threshold of `0.005 s` reaches EN-4 as `5 ms` under FR-186's exact conversion rule. A `1 s` support value for a `Quantity<ms>` parameter is refused `value-outside-type` as FR-185-AC-8 requires, and a threshold `5 m` for the time reward is refused `ill_typed`/`unit-mismatch` as FR-186-AC-2 requires, each before EN-4 draws a sample. A `P95` probability-bound test and a quantile test that has no estimate, because it counted no sample, have `quantile` absent. | Test (TC-624) |
 | FR-189-AC-16 | A sampler stub that returns `k` holding samples of `N = 231` for a claim `probability >= 9/10` with `α = β = 1/100`, `ι = 1/10` and `m = 1`, under `StatisticalMethod::ClopperPearson`, settles the test Accepted at `k` = 231 and 219, Undecided (`IndifferenceRegion`) at 218 and 197, and Rejected at 196 and 184, while `Okamoto` on the same stub accepts only at 231 and rejects only at 184; at `k = 219` the exact Clopper–Pearson ends, each truncated after 20 digits, are `0.90351472792271070929…` (lower) and `0.97621175445884490995…` (upper), and the reported lower end is at most the exact lower end and within `2^-64` of it, and the reported upper end at least the exact upper end and within `2^-64` of it, and the basis records `ClopperPearson` with coverage `FiniteSample`. A mean-of-fraction claim and a long-run fraction claim with `ClopperPearson` refuse `NotStatistical` before any sample is drawn. | Test (TC-624) |
 
 ## Dependencies
@@ -273,6 +310,7 @@ the claim's form does not admit (FR-190, SPRT and Clopper–Pearson below).
   [FR-186](FR-186-check-probabilistic-claim-forms-at-s3.md),
   [FR-187](FR-187-give-model-transitions-step-probabilities-and-rewards.md),
   [FR-188](FR-188-draw-weighted-choices-with-the-qspec-sampler.md),
+  [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-280](FR-280-serve-the-driver-s-lower-generate-and-prove-operations.md)
   (EN-4's provider manifest).
 - FR-190 adds the regenerative method, FR-191 the limits and
@@ -282,5 +320,6 @@ the claim's form does not admit (FR-190, SPRT and Clopper–Pearson below).
 
 - QSpec half, which owns the normative statistical methods and the rational
   bounds for logarithms, square roots and normal quantiles: QSpec FR-408
-  (Linear STD-137).
+  (Linear STD-137), and QSpec FR-410's statistical result and quantity-unit
+  context.
 - Owning ticket: Linear QSL-371.
