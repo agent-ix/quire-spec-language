@@ -145,21 +145,26 @@ impl ModelCheckLimit {
         }
     }
 
-    /// The request member or FR-255 accounting setting name that raises this limit.
+    /// The FR-255 setting name that raises this limit: the `model_check.*`
+    /// row of an EN-1 member, `expansion.max_candidates`,
+    /// `hybrid.max_solver_steps`, an `accounting.*` row for a meter, or an
+    /// EN-4 `statistical.*` row. An EN-5 exact-build stop still names the
+    /// `model_check.*` row, not `exact_prob.*` (tracked by QSL-1050, the follow-up
+    /// ticket "EN-5 exact-build stops must name exact_prob.*").
     pub fn setting(self) -> &'static str {
         match self {
-            Self::MaxStates => "max_states",
-            Self::MaxTransitions => "max_transitions",
-            Self::MaxAutomatonStates => "max_automaton_states",
+            Self::MaxStates => "model_check.max_states",
+            Self::MaxTransitions => "model_check.max_transitions",
+            Self::MaxAutomatonStates => "model_check.max_automaton_states",
             Self::EvaluationMeter { counter } => {
                 crate::limits::AccountingLimits::setting_of(counter).name()
             }
             Self::MaxCandidates => "expansion.max_candidates",
             Self::SolverSteps => "hybrid.max_solver_steps",
-            Self::WitnessSamples => "witness_samples",
-            Self::MaxWalkSteps => "max_walk_steps",
-            Self::MaxWitnessSet => "max_witness_set",
-            Self::MaxRelationTuples => "max_relation_tuples",
+            Self::WitnessSamples => "model_check.witness_samples",
+            Self::MaxWalkSteps => "model_check.max_walk_steps",
+            Self::MaxWitnessSet => "model_check.max_witness_set",
+            Self::MaxRelationTuples => "model_check.max_relation_tuples",
             Self::Statistical(limit) => limit.setting(),
         }
     }
