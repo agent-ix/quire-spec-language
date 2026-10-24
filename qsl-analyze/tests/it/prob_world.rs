@@ -6,9 +6,8 @@
 //!
 //! The models are ADR-024 §7's and ADR-028 §15's. `Service`'s `phase` is
 //! `Int[0, 2]` (`0` Idle, `1` Busy, `2` Done), its `d` is `Int[1, 12]` and
-//! its `outcome` a Boolean `ok`, since FR-120 has no encoding for an
-//! enumeration or quantity value; the ADR's `1 ms`, `3 ms` and `12 ms` are
-//! `1`, `3` and `12`.
+//! its `outcome` a Boolean `ok`. Quantity-valued probabilistic tests use a
+//! variant whose `d` parameter is typed by the declared `ms` unit.
 
 use std::collections::BTreeMap;
 
@@ -506,6 +505,30 @@ pub(crate) fn service(extra: &str) -> Model {
         ),
         initial: json!({"phase": {"integer": "0"}, "attempts": {"integer": "0"}}),
     }
+}
+
+/// `Service` with a quantity-typed `d` parameter and quantity support values.
+/// `support` is inserted as the support map's value/weight pairs.
+pub(crate) fn quantity_service(support: &str, extra: &str) -> Model {
+    let mut model = service("");
+    model.operations[1].parameters[0].1 = "ix://quire/unit/ms".to_owned();
+    let integer_support = "random Server::attempt(d) ~ { 1: 90, 3: 7, 12: 3 };";
+    let quantity_support = format!("random Server::attempt(d) ~ {{ {support} }};");
+    assert!(
+        model.body.contains(integer_support),
+        "the service random clause exists"
+    );
+    model.body = model.body.replace(integer_support, &quantity_support);
+    model.body = model.body.replace(
+        "random Server::attempt(ok) ~ { true: 98, false: 2 };",
+        "random Server::attempt(ok) ~ { true: 1 };",
+    );
+    model.body = format!(
+        "dimension Time;\nunit ms : Time = rational(1, 1);\n\
+         unit s : Time = rational(1000, 1) * ms;\n{}\n{extra}",
+        model.body
+    );
+    model
 }
 
 /// ADR-028 §15.4's `Link`, with `extra` appended: two sends that lose with

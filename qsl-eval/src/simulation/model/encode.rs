@@ -207,6 +207,20 @@ pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> En
                 ("denominator", Enc::text(rational.denominator().to_string())),
             ],
         ),
+        Value::Quantity(quantity) => {
+            let magnitude = quantity.magnitude();
+            Enc::tagged(
+                "rational",
+                vec![
+                    ("numerator", Enc::text(magnitude.numerator().to_string())),
+                    (
+                        "denominator",
+                        Enc::text(magnitude.denominator().to_string()),
+                    ),
+                    ("unit", Enc::text(hex(quantity.unit().as_bytes()))),
+                ],
+            )
+        }
         Value::Float(float) => {
             let (tag, digits) = match float.width() {
                 IeeeWidth::Binary32 => ("float32", 8),
@@ -256,7 +270,6 @@ pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> En
             placeholder(reference).unwrap_or_else(|| reference_enc(reference))
         }
         Value::Decimal(_) => Enc::Unencodable("a decimal value"),
-        Value::Quantity(_) => Enc::Unencodable("a quantity value"),
         Value::Uuid(_) => Enc::Unencodable("a uuid value"),
         Value::Timestamp(_) => Enc::Unencodable("a timestamp value"),
         Value::Enum(_) => Enc::Unencodable("an enum value"),
@@ -394,7 +407,7 @@ pub(super) fn model_key(model: &StateModel, state: &ModelState) -> ModelKey {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use quire_exact::{Integer, ValueType};
+    use quire_exact::{Integer, NodeKey, Quantity, Rational, UnitId, ValueType};
 
     use super::*;
 
@@ -406,6 +419,28 @@ mod tests {
             .canonical_text(Limits::new(1024))
             .expect("an integer encodes");
         assert_eq!(text, r#"{"type":"integer","value":"-12"}"#);
+    }
+
+    /// FR-120-AC-16 / FR-189-AC-15: a quantity keeps its exact magnitude and
+    /// declared unit identity in the rational wire form.
+    #[trace("TC-1195", "FR-120-AC-16")]
+    #[test]
+    fn a_quantity_encodes_its_rational_magnitude_and_unit() {
+        let unit = UnitId::declared(NodeKey::from_digest([0xab; 32]));
+        let quantity = Value::Quantity(Quantity::new(
+            Rational::new(Integer::from(3_i64), Integer::from(2_i64)).expect("nonzero"),
+            unit,
+        ));
+        let text = value_enc(&quantity)
+            .canonical_text(Limits::new(1024))
+            .expect("a quantity encodes");
+        assert_eq!(
+            text,
+            format!(
+                r#"{{"denominator":"2","numerator":"3","type":"rational","unit":"{}"}}"#,
+                "ab".repeat(32)
+            )
+        );
     }
 
     /// A value with no form refuses to write rather than writing a guess.

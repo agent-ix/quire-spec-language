@@ -218,27 +218,37 @@ fn a_quantile_claim_reports_its_empirical_quantile() {
     assert_eq!(verdict.quantile, None);
 }
 
-/// FR-189-AC-15's unit property at the model sampler: a quantity-typed
-/// reward gives its magnitude in the claim's threshold unit, so a latency of
-/// `1 ms` per attempt is the measure `1`, not `1/1000`. (The quantity-typed
-/// *parameter* value of the clause is not encodable: see the module doc of
-/// `prob_world.rs`.)
+/// FR-189-AC-15: quantity-valued random parameters cross the model transition
+/// identity and reward paths with their unit, and measured values retain the
+/// exact magnitude in the checked reward unit.
 #[trace("TC-624", "FR-189-AC-15")]
 #[test]
-fn a_quantity_reward_is_measured_by_its_magnitude_in_the_threshold_unit() {
-    let claims = "dimension Time;\nunit s : Time = rational(1, 1);\nunit ms : Time = rational(1, 1000) * s;\n\
-         reward latency on Server::attempt = 1 ms;\n\
-         probabilistic Lat using ev on M over (s: M::Server) under Steady on origin \
+fn quantity_parameters_are_encoded_and_measured_as_exact_unit_magnitudes() {
+    let claim = "probabilistic Q using ev on M over (s: M::Server) under Steady on origin \
          with alpha 0.01, beta 0.01, indifference 0.01 \
-         { quantile 0.5 of (accumulate latency from holds(s.phase = 1) \
-         until holds(s.phase = 2) within 10) <= 3 ms }\n";
-    let world = World::new(&prob_world::service(claims));
-    let verdict = decided(&world, "Lat", StatisticalMethod::Okamoto);
-    assert_eq!(
-        verdict.quantile,
-        Some(MeasureValue::Value(ratio(1, 1))),
-        "{verdict:?}"
-    );
+         { quantile 0.75 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 0.005 s }";
+    let decimal = World::new(&prob_world::quantity_service("1 ms: 1, 1.50 ms: 1", claim));
+    let rational = World::new(&prob_world::quantity_service(
+        "1 ms: 1, rational(3, 2) ms: 1",
+        claim,
+    ));
+
+    let check = |world: &World| {
+        completed(run(
+            world,
+            "Q",
+            StatisticalMethod::Sprt,
+            StatisticalLimits::default(),
+            DEFAULT_MAX_WITNESSES,
+        ))
+    };
+    let decimal = check(&decimal);
+    let rational = check(&rational);
+    let expected = Some(MeasureValue::Value(ratio(3, 2)));
+    assert_eq!(decimal.quantile, expected, "{decimal:?}");
+    assert_eq!(rational.quantile, expected, "{rational:?}");
+    assert_eq!(decimal.tests[0].samples, rational.tests[0].samples);
 }
 
 /// Checks FR-189-AC-4 (TC-624 step 4), the activation clause: over a
