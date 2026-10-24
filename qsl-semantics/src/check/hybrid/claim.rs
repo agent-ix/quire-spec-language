@@ -186,7 +186,6 @@ fn check_claim(
         ),
     };
 
-    let name = identifier(&form.name.name, form.name.span, stops);
     let over = identifier(&form.over.name.name, form.over.name.span, stops);
 
     let variables: BTreeMap<String, VariableIndex> = model
@@ -347,28 +346,21 @@ fn check_claim(
         None => None,
     };
 
-    let (clock, activation, name, over, lowered) = (clock?, activation?, name?, over?, lowered?);
+    let (clock, activation, over, lowered) = (clock?, activation?, over?, lowered?);
     if !captures_ok {
         return None;
     }
-    let (formula, reach) = lowered;
-    let horizon = match (&activation, reach) {
-        (HybridActivation::Each { .. }, _) | (_, None) => None,
-        (HybridActivation::Origin, Some(reach)) => match clock {
-            HybridClock::ModelTime => Some(HybridHorizon::Seconds(reach)),
-            HybridClock::ModelSteps => match reach.numerator().to_u64() {
-                Some(positions) if reach.is_integer() => Some(HybridHorizon::Positions(positions)),
-                _ => {
-                    stops.push(cause(HybridCause::HorizonOutOfRange {
-                        span: declaration.span,
-                    }));
-                    return None;
-                }
-            },
-        },
+    let formula = lowered;
+    let horizon = match hybrid_horizon(&formula, clock, &activation) {
+        Ok(horizon) => horizon,
+        Err(HorizonOutOfRange) => {
+            stops.push(cause(HybridCause::HorizonOutOfRange {
+                span: declaration.span,
+            }));
+            return None;
+        }
     };
     Some(CheckedHybridClaim {
-        name,
         model: model_index,
         profile,
         over,
@@ -457,9 +449,9 @@ fn fairness(
                 })
                 .map(|(position, _)| (ModeIndex::new(mode_index), TransitionIndex::new(position)))
                 .collect();
-            (!transitions.is_empty()).then_some(transitions)
+            (!transitions.is_empty()).then_some((transitions, target.map(ModeIndex::new)))
         });
-        let Some(transitions) = resolved else {
+        let Some((transitions, named_target)) = resolved else {
             stops.push(missing());
             ok = false;
             continue;
@@ -473,6 +465,7 @@ fn fairness(
                 Some(qsl_forms::FairnessGranularity::Each) => FairnessGranularity::Each,
                 Some(qsl_forms::FairnessGranularity::Whole) | None => FairnessGranularity::Whole,
             },
+            named_target,
             transitions,
         };
         if !checked.contains(&checked_constraint) {
@@ -612,8 +605,8 @@ fn interval(
     Ok(Some(interval))
 }
 
-/// The claim's formula and its reach (`None` when unbounded).
-type Lowered = (HybridFormula, Option<Rational>);
+/// The claim's formula.
+type Lowered = HybridFormula;
 
 fn formula(
     form: &TemporalFormulaForm,
@@ -629,10 +622,9 @@ fn formula(
     let mut ok = true;
     for (id, node) in form.iter().collect::<Vec<_>>().into_iter().rev() {
         let lowered = match node {
-            TemporalNodeForm::Constant { value, .. } => Some((
-                HybridFormula::Holds(HybridTerm::Boolean(*value)),
-                Some(zero()),
-            )),
+            TemporalNodeForm::Constant { value, .. } => {
+                Some(HybridFormula::Holds(HybridTerm::Boolean(*value)))
+            }
             TemporalNodeForm::Holds { condition, .. } => {
                 if condition.expression.iter().any(|node| {
                     matches!(
@@ -645,8 +637,7 @@ fn formula(
                     }));
                     None
                 } else {
-                    typed(condition, Kind::Boolean, env, meter, stops)
-                        .map(|term| (HybridFormula::Holds(term), Some(zero())))
+                    typed(condition, Kind::Boolean, env, meter, stops).map(HybridFormula::Holds)
                 }
             }
             TemporalNodeForm::Operator(operator) => {
@@ -692,8 +683,7 @@ fn take(built: &mut [Option<Lowered>], id: TemporalNodeId) -> Option<Lowered> {
     built.get_mut(id.index())?.take()
 }
 
-/// `operator` applied to its lowered `operands` (source order), with its
-/// reach.
+/// `operator` applied to its lowered `operands` (source order).
 fn combine(
     operator: TemporalOperator,
     interval: Option<HybridInterval>,
@@ -704,57 +694,142 @@ fn combine(
     } else {
         None
     };
-    let (left, left_reach) = operands.pop()?;
+    let left = operands.pop()?;
     match (operator, right) {
-        (TemporalOperator::Not, None) => Some((HybridFormula::Not(Box::new(left)), left_reach)),
+        (TemporalOperator::Not, None) => Some(HybridFormula::Not(Box::new(left))),
         (TemporalOperator::And | TemporalOperator::Or | TemporalOperator::Implies, Some(right)) => {
             let op = match operator {
                 TemporalOperator::And => LogicOp::And,
                 TemporalOperator::Or => LogicOp::Or,
                 _ => LogicOp::Implies,
             };
-            let (right, right_reach) = right;
-            Some((
-                HybridFormula::Logic(op, Box::new(left), Box::new(right)),
-                greater(left_reach, right_reach),
-            ))
+            Some(HybridFormula::Logic(op, Box::new(left), Box::new(right)))
         }
-        (TemporalOperator::Always, None) => {
-            let reach = future(&interval, left_reach);
-            Some((HybridFormula::Always(interval, Box::new(left)), reach))
-        }
+        (TemporalOperator::Always, None) => Some(HybridFormula::Always(interval, Box::new(left))),
         (TemporalOperator::Eventually, None) => {
-            let reach = future(&interval, left_reach);
-            Some((HybridFormula::Eventually(interval, Box::new(left)), reach))
+            Some(HybridFormula::Eventually(interval, Box::new(left)))
         }
         (TemporalOperator::Historically, None) => {
-            let reach = past(&interval, left_reach);
-            Some((HybridFormula::Historically(interval, Box::new(left)), reach))
+            Some(HybridFormula::Historically(interval, Box::new(left)))
         }
-        (TemporalOperator::Once, None) => {
-            let reach = past(&interval, left_reach);
-            Some((HybridFormula::Once(interval, Box::new(left)), reach))
-        }
-        (TemporalOperator::Until | TemporalOperator::Release, Some(right)) => {
-            let (right, right_reach) = right;
-            let reach = future(&interval, greater(left_reach, right_reach));
-            let (left, right) = (Box::new(left), Box::new(right));
-            Some(match operator {
-                TemporalOperator::Until => (HybridFormula::Until(interval, left, right), reach),
-                _ => (HybridFormula::Release(interval, left, right), reach),
-            })
-        }
-        (TemporalOperator::Since | TemporalOperator::Triggered, Some(right)) => {
-            let (right, right_reach) = right;
-            let reach = greater(left_reach, past(&interval, right_reach));
-            let (left, right) = (Box::new(left), Box::new(right));
-            Some(match operator {
-                TemporalOperator::Since => (HybridFormula::Since(interval, left, right), reach),
-                _ => (HybridFormula::Triggered(interval, left, right), reach),
-            })
-        }
+        (TemporalOperator::Once, None) => Some(HybridFormula::Once(interval, Box::new(left))),
+        (TemporalOperator::Until, Some(right)) => Some(HybridFormula::Until(
+            interval,
+            Box::new(left),
+            Box::new(right),
+        )),
+        (TemporalOperator::Release, Some(right)) => Some(HybridFormula::Release(
+            interval,
+            Box::new(left),
+            Box::new(right),
+        )),
+        (TemporalOperator::Since, Some(right)) => Some(HybridFormula::Since(
+            interval,
+            Box::new(left),
+            Box::new(right),
+        )),
+        (TemporalOperator::Triggered, Some(right)) => Some(HybridFormula::Triggered(
+            interval,
+            Box::new(left),
+            Box::new(right),
+        )),
         _ => None,
     }
+}
+
+/// The horizon of a claim with `formula` under `clock` and `activation`
+/// (FR-447 "Horizon"): the reach of the formula, in seconds under
+/// `model-time` and in positions under `model-steps`, and `None` for an
+/// `each` activation or an unbounded formula. QSL's I2 read derives the
+/// horizon of a claim from its formula nodes by this one rule.
+///
+/// # Errors
+///
+/// [`HorizonOutOfRange`] when a `model-steps` reach is not a whole number
+/// of positions that fits a `u64`.
+pub fn hybrid_horizon(
+    formula: &HybridFormula,
+    clock: HybridClock,
+    activation: &HybridActivation,
+) -> Result<Option<HybridHorizon>, HorizonOutOfRange> {
+    let reach = match (activation, reach(formula)) {
+        (HybridActivation::Each { .. }, _) | (_, None) => return Ok(None),
+        (HybridActivation::Origin, Some(reach)) => reach,
+    };
+    match clock {
+        HybridClock::ModelTime => Ok(Some(HybridHorizon::Seconds(reach))),
+        HybridClock::ModelSteps => match reach.numerator().to_u64() {
+            Some(positions) if reach.is_integer() => Ok(Some(HybridHorizon::Positions(positions))),
+            _ => Err(HorizonOutOfRange),
+        },
+    }
+}
+
+/// A `model-steps` horizon that is not a whole number of positions that
+/// fits a `u64`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("the formula's reach is not a whole number of positions that fits a u64")]
+pub struct HorizonOutOfRange;
+
+/// The reach of `formula` (`None` when unbounded): `r(Holds)` is 0, a future
+/// operator's reach is its interval's upper bound plus its operands', and a
+/// past operator reads only earlier positions.
+fn reach(formula: &HybridFormula) -> Option<Rational> {
+    enum Step<'f> {
+        Visit(&'f HybridFormula),
+        Build(&'f HybridFormula),
+    }
+    let mut steps = vec![Step::Visit(formula)];
+    let mut done: Vec<Option<Rational>> = Vec::new();
+    while let Some(step) = steps.pop() {
+        match step {
+            Step::Visit(node) => match node {
+                HybridFormula::Holds(_) => done.push(Some(zero())),
+                HybridFormula::Not(operand)
+                | HybridFormula::Always(_, operand)
+                | HybridFormula::Eventually(_, operand)
+                | HybridFormula::Historically(_, operand)
+                | HybridFormula::Once(_, operand) => {
+                    steps.push(Step::Build(node));
+                    steps.push(Step::Visit(operand));
+                }
+                HybridFormula::Logic(_, left, right)
+                | HybridFormula::Until(_, left, right)
+                | HybridFormula::Release(_, left, right)
+                | HybridFormula::Since(_, left, right)
+                | HybridFormula::Triggered(_, left, right) => {
+                    steps.push(Step::Build(node));
+                    steps.push(Step::Visit(right));
+                    steps.push(Step::Visit(left));
+                }
+            },
+            Step::Build(node) => {
+                let combined = match node {
+                    HybridFormula::Holds(_) | HybridFormula::Not(_) => continue,
+                    HybridFormula::Always(interval, _) | HybridFormula::Eventually(interval, _) => {
+                        future(interval, done.pop()?)
+                    }
+                    HybridFormula::Historically(interval, _) | HybridFormula::Once(interval, _) => {
+                        past(interval, done.pop()?)
+                    }
+                    HybridFormula::Logic(..) => {
+                        let (right, left) = (done.pop()?, done.pop()?);
+                        greater(left, right)
+                    }
+                    HybridFormula::Until(interval, ..) | HybridFormula::Release(interval, ..) => {
+                        let (right, left) = (done.pop()?, done.pop()?);
+                        future(interval, greater(left, right))
+                    }
+                    HybridFormula::Since(interval, ..) | HybridFormula::Triggered(interval, ..) => {
+                        let (right, left) = (done.pop()?, done.pop()?);
+                        greater(left, past(interval, right))
+                    }
+                };
+                done.push(combined);
+            }
+        }
+    }
+    done.pop()?
 }
 
 /// The greater of two reaches; unbounded when either is.

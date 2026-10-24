@@ -91,17 +91,9 @@ pub(in crate::check) fn check_models(
     checked
 }
 
-/// The refusal of a declaration that checks but that no S4 emission writes
-/// yet (FR-447).
+/// The refusal `stop` stands for.
 pub(super) fn into_refusal(stop: Stop) -> CheckRefusal {
     refusal(stop)
-}
-
-pub(in crate::check) fn not_emitted(name: &qsl_forms::DeclaredName) -> CheckRefusal {
-    refusal(Stop::Cause(HybridCause::NotEmitted {
-        name: name.name.clone(),
-        span: name.span,
-    }))
 }
 
 fn refusal(stop: Stop) -> CheckRefusal {

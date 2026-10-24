@@ -332,6 +332,7 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
         NodeTag::Protocol => CheckedNodeTag::Protocol,
         NodeTag::Claim => CheckedNodeTag::Claim,
         NodeTag::Correspondence => CheckedNodeTag::Correspondence,
+        NodeTag::Hybrid => CheckedNodeTag::Hybrid,
     }
 }
 
