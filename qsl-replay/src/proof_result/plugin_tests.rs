@@ -132,8 +132,7 @@ fn hybrid_plugin_cause_reads_insufficient_horizon() {
     assert_eq!(item["cause"]["jumps"], 1);
 }
 
-/// FR-290-AC-5.
-#[trace("TC-774", "FR-290-AC-5")]
+/// The plugin basis spellings read as their typed values.
 #[test]
 fn tc_774_basis_reader_accepts_the_plugin_spellings() {
     let horizon = json!({"denominator": "2", "numerator": "5"});

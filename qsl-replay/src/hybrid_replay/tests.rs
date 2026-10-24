@@ -1041,7 +1041,6 @@ mod settlement {
     /// `Positive` (12 s); a plugin's `trusted` proof is checked the same way,
     /// and the plain plugin path admits no `bounded-solver` basis.
     #[trace("TC-705", "FR-250-AC-7")]
-    #[trace("TC-774", "FR-290-AC-1", "FR-290-AC-5", "FR-289-AC-9")]
     #[test]
     fn coverage_is_decided_from_the_checked_claims_own_horizon() {
         let unit = braking_unit(FLOW, "v = 0");
@@ -1117,6 +1116,117 @@ mod settlement {
                 cause: ValueFault::InvalidValue,
             })
         );
+    }
+
+    /// The whole of FR-290-AC-5 and FR-289-AC-9: every plugin basis spelling
+    /// reads as the typed value; a non-hybrid basis settles `proved` and
+    /// `trusted` naming the plugin; a `bounded-solver` basis is refused by
+    /// the generic entry, and on a hybrid claim settles `proved` when its
+    /// coverage satisfies the claim and `inconclusive` when it does not.
+    #[trace("TC-774", "FR-290-AC-5")]
+    #[trace("TC-773", "FR-289-AC-9")]
+    #[test]
+    fn plugin_bases_read_and_settle_by_item_kind() {
+        use crate::proof_result::read_plugin_basis;
+        let plugin = || BackendId::new("acme");
+        let solver = |method: &str, horizon: Value| {
+            json!({"type": "bounded-solver", "exhaustive": ["time"], "horizon": horizon,
+                   "jumps": 3, "method": method})
+        };
+        let five_halves = json!({"denominator": "2", "numerator": "5"});
+        let horizon = |value: Rational| SolverHorizon::new(value).expect("non-negative");
+        let bounded = |method, value: Rational| ProofBasis::BoundedSolver {
+            method,
+            horizon: horizon(value),
+            jumps: 3,
+            exhaustive: BTreeSet::from([BoundDimension::Time]),
+        };
+        let read = |value: Value| read_plugin_basis(&value).expect("reads");
+
+        assert_eq!(read(json!({"type": "exhaustive"})), ProofBasis::Exhaustive);
+        assert_eq!(
+            read(json!({"type": "bounded-complete", "depth": 4})),
+            ProofBasis::BoundedComplete { depth: 4 }
+        );
+        assert_eq!(
+            read(json!({"type": "inductive", "depth": 0})),
+            ProofBasis::Inductive { depth: 0 }
+        );
+        let delta = read(solver("delta-complete", five_halves.clone()));
+        assert_eq!(delta, bounded(SolverMethod::DeltaComplete, q(5, 2)));
+        assert_eq!(
+            read(solver("flowpipe-unrounded", five_halves)),
+            bounded(SolverMethod::FlowpipeUnrounded, q(5, 2))
+        );
+        let reduced = read(json!({"type": "reduced", "reductions": [
+            {"parameters": {"proviso": "breadth-first-revisit"}, "reduction": "partial-order", "row": "invariant"},
+            {"parameters": {"classes": [["a", "b"]]}, "reduction": "copy-swap", "row": "hyper"}
+        ]}));
+        assert!(matches!(&reduced, ProofBasis::Reduced { reductions } if reductions.len() == 2));
+
+        for basis in [
+            ProofBasis::Exhaustive,
+            ProofBasis::BoundedComplete { depth: 4 },
+            ProofBasis::Inductive { depth: 0 },
+            reduced,
+        ] {
+            let record =
+                TerminalRecord::from_plugin_proof(RequestIndex::new(2), plugin(), basis.clone())
+                    .expect("admitted");
+            assert_eq!(
+                record.value(),
+                &TerminalValue::Proved {
+                    basis,
+                    certification: Certification::Trusted,
+                }
+            );
+            assert_eq!(record.backend(), Some(&plugin()));
+        }
+
+        assert_eq!(
+            TerminalRecord::from_plugin_proof(RequestIndex::new(2), plugin(), delta.clone()).err(),
+            Some(invalid_basis_type())
+        );
+
+        let unit = braking_unit(FLOW, "v = 0");
+        let hybrid = |name: &str, basis| {
+            TerminalRecord::from_hybrid_plugin_proof(
+                RequestIndex::new(2),
+                plugin(),
+                basis,
+                claim(&unit, name),
+            )
+            .expect("admitted")
+        };
+        let covering = read(solver(
+            "delta-complete",
+            json!({"denominator": "1", "numerator": "10"}),
+        ));
+        let proved = hybrid("SlowEnough", covering.clone());
+        assert_eq!(
+            proved.value(),
+            &TerminalValue::Proved {
+                basis: covering,
+                certification: Certification::Trusted,
+            }
+        );
+        assert_eq!(proved.backend(), Some(&plugin()));
+        let short = hybrid("SlowEnough", delta);
+        assert_eq!(
+            short.value(),
+            &TerminalValue::Inconclusive(InconclusiveCause::InsufficientHorizon {
+                horizon: horizon(q(5, 2)),
+                jumps: 3,
+                exhaustive: BTreeSet::from([BoundDimension::Time]),
+            })
+        );
+    }
+
+    fn invalid_basis_type() -> PluginResultRefusal {
+        PluginResultRefusal::Malformed {
+            pointer: "/basis/type".to_owned(),
+            cause: ValueFault::InvalidValue,
+        }
     }
 
     /// FR-250-AC-6: a first-party `uncertified` `bounded-solver` entry whose
