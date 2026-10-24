@@ -145,7 +145,12 @@ impl ModelCheckLimit {
         }
     }
 
-    /// The request member or FR-255 accounting setting name that raises this limit.
+    /// The FR-255 setting name that raises this limit: the `model_check.*`
+    /// row of an EN-1 member, `expansion.max_candidates`,
+    /// `hybrid.max_solver_steps`, an `accounting.*` row for a meter, or an
+    /// EN-4 `statistical.*` row. An EN-5 exact-build stop still names the
+    /// `model_check.*` row, not `exact_prob.*` (tracked by the follow-up
+    /// ticket "EN-5 exact-build stops must name exact_prob.*").
     pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "model_check.max_states",
