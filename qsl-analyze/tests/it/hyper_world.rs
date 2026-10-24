@@ -137,6 +137,14 @@ pub(crate) fn key(suffix: &str) -> DeclarationKey {
     }
 }
 
+/// The declaration `suffix` of the second model.
+fn other_key(suffix: &str) -> DeclarationKey {
+    DeclarationKey {
+        package: OTHER.to_owned(),
+        node: format!("ix://{OTHER}/{suffix}"),
+    }
+}
+
 fn origin(identity: &str) -> Json {
     json!({"generated": {"generatorIdentity": identity, "generatorVersion": "1.0.0",
         "inputIdentities": [identity]}})
@@ -358,17 +366,14 @@ fn snapshot(
     name: &str,
     vaults: &[(&str, (i64, i64))],
     busy: Option<i64>,
+    second: Option<&[(&str, (i64, i64))]>,
 ) -> DocumentRef {
     let digest = *package_input([document]).keys().next().expect("one model");
     let header = json!({"identity": PACKAGE, "version": "1.0.0",
         "digest": format!("sha256-jcs:{}", hex(&digest))});
-    let body = json!({
-        "format": "quire.state.snapshot/v1",
-        "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
-            "revision": "fixture:1"},
-        "observation": "current", "model": header,
-        "anchor": {"kind": "initialization", "name": "start"},
-        "populations": [{"population": ident("vaults"), "complete": true,
+    let population = |package: &str, vaults: &[(&str, (i64, i64))]| {
+        let ident = |suffix: &str| format!("ix://{package}/{suffix}");
+        json!({"population": ident("vaults"), "complete": true,
             "objects": vaults.iter().map(|(key, (h, l))| {
                 let mut fields = json!({"h": {"integer": h.to_string()},
                     "l": {"integer": l.to_string()}});
@@ -376,7 +381,18 @@ fn snapshot(
                     fields["busy"] = json!({"integer": busy.to_string()});
                 }
                 json!({"key": key, "type": ident("Vault"), "fields": fields})
-            }).collect::<Vec<_>>()}],
+            }).collect::<Vec<_>>()})
+    };
+    let populations: Vec<Json> = std::iter::once(population(PACKAGE, vaults))
+        .chain(second.map(|second| population(OTHER, second)))
+        .collect();
+    let body = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {"authority": "test", "identity": name, "revision_namespace": "fixture",
+            "revision": "fixture:1"},
+        "observation": "current", "model": header,
+        "anchor": {"kind": "initialization", "name": "start"},
+        "populations": populations,
     });
     let bytes = body.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -436,6 +452,12 @@ pub(crate) struct World {
     pub(crate) max_depth: Option<usize>,
     /// The keys of the universe of `vaults`.
     pub(crate) universe: Vec<String>,
+    /// Whether the request bounds `vaults` with `universe`; when it does not,
+    /// the population has no universe.
+    pub(crate) bounded: bool,
+    /// The keys of the universe of the second model's `vaults`, when it has
+    /// one.
+    pub(crate) other_universe: Option<Vec<String>>,
 }
 
 impl World {
@@ -458,14 +480,7 @@ impl World {
             .iter()
             .map(|start| start.map(|start| (KEY, start)).into_iter().collect())
             .collect();
-        Self::build(
-            vault,
-            reset,
-            snapshots,
-            vec![KEY.to_owned()],
-            false,
-            declaration,
-        )
+        Self::build(vault, reset, snapshots, vec![KEY.to_owned()], declaration)
     }
 
     /// One initial state holding the vaults `objects`, `(key, (h, l))`, which
@@ -476,14 +491,7 @@ impl World {
         declaration: &str,
     ) -> Self {
         let universe = objects.iter().map(|(key, _)| (*key).to_owned()).collect();
-        Self::build(
-            vault,
-            false,
-            vec![objects.to_vec()],
-            universe,
-            false,
-            declaration,
-        )
+        Self::build(vault, false, vec![objects.to_vec()], universe, declaration)
     }
 
     /// One initial state for each of `snapshots`, each holding its vaults
@@ -496,7 +504,7 @@ impl World {
         declaration: &str,
     ) -> Self {
         let universe = universe.iter().map(|key| (*key).to_owned()).collect();
-        Self::build(vault, false, snapshots, universe, false, declaration)
+        Self::build(vault, false, snapshots, universe, declaration)
     }
 
     /// The vault, started from `starts`, with the vault again as a second
@@ -506,15 +514,41 @@ impl World {
         starts: &[(i64, i64)],
         declaration: &str,
     ) -> Self {
-        let snapshots = starts.iter().map(|start| vec![(KEY, *start)]).collect();
-        Self::build(
+        let snapshots: Vec<_> = starts.iter().map(|start| vec![(KEY, *start)]).collect();
+        Self::assemble(
             vault,
             false,
-            snapshots,
+            snapshots.clone(),
+            Some(snapshots),
+            Vec::new(),
             vec![KEY.to_owned()],
-            true,
             declaration,
         )
+    }
+
+    /// [`Self::with_second_model`] from one initial state that holds the
+    /// vaults `first` in the first model and `second` in the second model,
+    /// `(key, (h, l))`, each of which is also its model's universe.
+    pub(crate) fn with_second_vaults(
+        vault: Vault,
+        first: &[(&str, (i64, i64))],
+        second: &[(&str, (i64, i64))],
+        declaration: &str,
+    ) -> Self {
+        let keys = |objects: &[(&str, (i64, i64))]| {
+            objects.iter().map(|(key, _)| (*key).to_owned()).collect()
+        };
+        let mut world = Self::assemble(
+            vault,
+            false,
+            vec![first.to_vec()],
+            Some(vec![second.to_vec()]),
+            Vec::new(),
+            keys(first),
+            declaration,
+        );
+        world.other_universe = Some(keys(second));
+        world
     }
 
     /// A busy vault (ADR-023 section 13) started from each of `starts`, a
@@ -529,9 +563,9 @@ impl World {
             vault,
             false,
             snapshots,
+            None,
             flags,
             vec![KEY.to_owned()],
-            false,
             declaration,
         )
     }
@@ -541,34 +575,33 @@ impl World {
         reset: bool,
         starts: Vec<Vec<(&str, (i64, i64))>>,
         universe: Vec<String>,
-        second: bool,
         declaration: &str,
     ) -> Self {
         Self::assemble(
             vault,
             reset,
             starts,
+            None,
             Vec::new(),
             universe,
-            second,
             declaration,
         )
     }
 
     /// The world over `starts`, whose snapshot `index` has the flag
     /// `flags[index]` (0 when `flags` holds none) in a busy vault, with the
-    /// vault again as a second model under alias `N` when `second`.
+    /// vaults `second_starts` as a second model under alias `N` when given.
     fn assemble(
         vault: Vault,
         reset: bool,
         starts: Vec<Vec<(&str, (i64, i64))>>,
+        second_starts: Option<Vec<Vec<(&str, (i64, i64))>>>,
         flags: Vec<i64>,
         universe: Vec<String>,
-        second: bool,
         declaration: &str,
     ) -> Self {
         let document = document(vault.busy(), reset);
-        let other = second.then(|| other_document(&document));
+        let other = second_starts.as_ref().map(|_| other_document(&document));
         let other = other.as_deref();
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
         let base = unit_text(&document, other, vault, reset, "");
@@ -589,7 +622,16 @@ impl World {
             .enumerate()
             .map(|(index, start)| {
                 let busy = vault.busy().then(|| flags.get(index).copied().unwrap_or(0));
-                snapshot(&document, &mut snapshots, &format!("s{index}"), start, busy)
+                snapshot(
+                    &document,
+                    &mut snapshots,
+                    &format!("s{index}"),
+                    start,
+                    busy,
+                    second_starts
+                        .as_ref()
+                        .map(|second| second[index].as_slice()),
+                )
             })
             .collect();
         Self {
@@ -602,6 +644,8 @@ impl World {
             max_candidates: 1_000_000,
             max_depth: None,
             universe,
+            bounded: true,
+            other_universe: None,
         }
     }
 
@@ -614,10 +658,16 @@ impl World {
                 normalization: ModelNormalizationLimits::default(),
                 snapshots: &self.snapshots,
                 initial: self.initial.clone(),
-                universes: vec![PopulationUniverse {
-                    population: key("vaults"),
-                    keys: self.universe.clone(),
-                }],
+                universes: [(key("vaults"), self.bounded.then_some(&self.universe))]
+                    .into_iter()
+                    .chain([(other_key("vaults"), self.other_universe.as_ref())])
+                    .filter_map(|(population, keys)| {
+                        keys.map(|keys| PopulationUniverse {
+                            population,
+                            keys: keys.clone(),
+                        })
+                    })
+                    .collect(),
                 observation: ObservationLimits::default(),
                 expansion: ExpansionLimits {
                     max_candidates: self.max_candidates,
@@ -857,6 +907,7 @@ impl Seams<'_> {
                 [x, "=", "V::Vault::step"] if x.ends_with(".step.op") => {
                     operation_of(label(x)).is_some_and(is_step)
                 }
+                ["false"] => false,
                 [x, "=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_none(),
                 [x, "!=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_some(),
                 // The inputs agree where both steps are `step`s (the conjunct is the

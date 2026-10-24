@@ -7,20 +7,21 @@
 //!
 //! Not claimed here: FR-182-AC-1 to AC-3 and AC-7, whose `proved` rows need
 //! FR-163's product-closure certificate and checker, the SMT `k`-induction
-//! row, the HP-1 rows and the HP-4 negotiation rows; AC-4 to AC-6, which are
-//! HP-1's; AC-9, whose `NoInstance` settles from an engine run over an empty
-//! universe the vault world does not model; and the "published defaults"
+//! row and the HP-1 rows; AC-4 to AC-6, which are HP-1's; and the "published defaults"
 //! marking of a `proved` record in FR-184-AC-1.
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::{ModelCheckRefusal, Reductions};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::{
-    settle_hyper_check, BoundCovers, Code, DisagreementCause, Execution, HyperCounterexample,
-    HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause, HyperSettleRefusal,
-    IncompleteCause, InconclusiveCause, LimitOrigin, ModelCheckLimit, ModelCheckLimits,
-    ModelTraceSettlement, ReachedLimit, ReductionKind, ReplayRefusal, ResultLabel, RunStats,
-    SettlementBasis, TerminalValue, Truth, UnavailabilityCause, UndecidedCause, EXPLICIT_STATE,
+    settle_hyper_check, settle_hyper_form, BoundCovers, Code, DisagreementCause, Execution,
+    HyperCounterexample, HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause,
+    HyperSettleRefusal, IncompleteCause, InconclusiveCause, LimitOrigin, ModelCheckLimit,
+    ModelCheckLimits, ModelTraceSettlement, ReachedLimit, ReductionKind, ReplayRefusal,
+    ResultLabel, RunStats, SettlementBasis, TerminalValue, Truth, UnavailabilityCause,
+    UndecidedCause, EXPLICIT_STATE,
 };
+use qsl_semantics::check::{HyperForm, HyperUnsupported};
 use quire_exact::{Cancel, Undefined};
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::catalog::InternalFault;
@@ -567,4 +568,140 @@ fn a_reduction_outcome_settles_by_its_cause_and_a_reduced_hold_waits_for_the_che
         reduced,
         Err(HyperSettleRefusal::ProductClosureCheckerNotBuilt)
     );
+}
+
+/// FR-173-AC-2: each clause S3 classifies `Other` settles `unsupported`,
+/// `unsupported-requested-capability`, naming its rule, from its form alone:
+/// `settle_hyper_form` reads the classification and no run, and an admitted
+/// form settles nothing there.
+#[trace("TC-598", "FR-173-AC-2")]
+#[test]
+fn an_other_clause_settles_unsupported_at_negotiation_with_no_run() {
+    let safe = "holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b)";
+    let clause = |prefix: &str, body: &str| {
+        format!(
+            "hyper H using inf over behaviours (v: V::Vault) {prefix} \
+             match {{ a.step.Vault::step.i = b.step.Vault::step.i }} {{ {body} }}"
+        )
+    };
+    let flat = |declaration: &str| World::new(Vault::Secure, false, &STARTS, declaration);
+    let projected = World::busy(
+        Vault::Busy,
+        &IDLE,
+        &clause(
+            "forall trace a of V exists trace b of V align skip { V::Vault::mix }",
+            safe,
+        ),
+    );
+    for (world, reason) in [
+        (
+            flat(&clause("exists trace b of V forall trace a of V", safe)),
+            HyperUnsupported::ExistentialBeforeUniversal,
+        ),
+        (
+            flat(&clause(
+                "forall trace a of V exists trace b of V",
+                "always eventually holds(v.l @ a = v.l @ b)",
+            )),
+            HyperUnsupported::ExistentialOutsideSafety,
+        ),
+        (
+            flat(&clause(
+                "forall trace a of V exists trace b of V fair weak V::Vault::step;",
+                safe,
+            )),
+            HyperUnsupported::ExistentialOutsideSafety,
+        ),
+        (projected, HyperUnsupported::ProjectionOutsideSafety),
+    ] {
+        let form = world.clause.form().expect("the clause has a form");
+        assert_eq!(form, &HyperForm::Other { reason }, "{}", world.text);
+        let Some(TerminalValue::Unsupported(cause)) = settle_hyper_form(form) else {
+            panic!("an HP-4 clause settles unsupported");
+        };
+        assert_eq!(cause, UnavailabilityCause::UnsupportedHyperForm { reason });
+        assert_eq!(cause.as_str(), "unsupported-requested-capability");
+        assert_eq!(cause.code(), Some("unsupported_projection"));
+    }
+    let admitted = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    assert_eq!(admitted.clause.form(), Some(&HyperForm::Universal));
+    assert_eq!(
+        settle_hyper_form(admitted.clause.form().expect("a form")),
+        None
+    );
+}
+
+/// FR-182-AC-9: `NonInterference` over an empty `Vault` universe settles
+/// `inconclusive`, `NoInstance`, basis `unsettled`, before any state is
+/// explored. `SavesPower` over `(d: V::Vault, e: N::Vault)` settles the same
+/// way with either universe empty and the other not, and with both empty. The
+/// same clause over a population with no universe refuses `RequiresBound`
+/// and settles nothing.
+#[trace("TC-607", "FR-182-AC-9")]
+#[test]
+fn an_empty_universe_settles_no_instance_and_a_missing_one_requires_a_bound() {
+    let unsettled = |world: &World| {
+        let outcome = world
+            .run_selecting(Reductions::default())
+            .expect("the run is not refused");
+        let record = settle(world, &outcome);
+        assert_eq!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::NoInstance)
+        );
+        assert_eq!(
+            row(&record),
+            (
+                ResultLabel::Inconclusive,
+                SettlementBasis::Unsettled,
+                Execution::Completed,
+                Truth::Pending,
+                Category::Inconclusive
+            )
+        );
+        assert_eq!(record.counterexample, None);
+        assert_eq!(outcome.stats().product_states, 0);
+    };
+    let mut empty = World::started(
+        Vault::Secure,
+        false,
+        &[None],
+        &non_interference(EQUAL_INPUTS),
+    );
+    empty.universe = Vec::new();
+    unsettled(&empty);
+
+    let saves_power = "hyper SavesPower using inf over behaviours (d: V::Vault, e: N::Vault) \
+         forall trace s of V forall trace n of N \
+         match { s.step.Vault::step.i = n.step.Vault::step.i } \
+         { always holds(d.l @ s = e.l @ n) }";
+    let vault = [("v", (0, 0))];
+    for (first, second) in [
+        (&vault[..], &[][..]),
+        (&[][..], &vault[..]),
+        (&[][..], &[][..]),
+    ] {
+        unsettled(&World::with_second_vaults(
+            Vault::Secure,
+            first,
+            second,
+            saves_power,
+        ));
+    }
+
+    let mut unbounded = World::with_vaults(
+        Vault::Secure,
+        &[("v", (0, 0))],
+        &non_interference(EQUAL_INPUTS),
+    );
+    unbounded.bounded = false;
+    assert!(matches!(
+        unbounded.run(ModelCheckLimits::default(), &Cancel::new()),
+        Err(ModelCheckRefusal::RequiresBound(_))
+    ));
 }
