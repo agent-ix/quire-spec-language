@@ -137,7 +137,7 @@ fn lt13_reaches_its_weak_outcome_under_ra_only() {
 /// an `ra` that allows an RC11-forbidden outcome (for instance by not pruning
 /// a cyclic SC choice) fails here. Each program's RC11 set excludes the
 /// listed outcomes.
-#[trace("TC-668", "FR-223-AC-5")]
+#[trace("TC-668")]
 #[test]
 fn ra_reaches_exactly_the_rc11_outcomes_outside_psc7() {
     let sb = vec![

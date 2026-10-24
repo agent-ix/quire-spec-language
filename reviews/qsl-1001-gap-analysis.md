@@ -47,3 +47,17 @@ Spec against test, clause by clause:
 FR-223-AC-6 and AC-8 to AC-10 are untagged on the head and on main. They are outside this ticket and are not findings here.
 
 Production code: none changed. The PR adds no code without an owning requirement.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The new test `ra_reaches_exactly_the_rc11_outcomes_outside_psc7` carries `#[trace("TC-668", "FR-223-AC-5")]`. It runs SB `seq_cst`, SB `seq_cst` with an observer, and IRIW `seq_cst`, none of which is one of "the two programs" AC-5 names (LT-12 and LT-13). What it asserts, IRIW `seq_cst` unreachable and SB `seq_cst` weak unreachable under `ra`, is FR-223-AC-2's and FR-223-AC-1's subject. This is the same pattern that the fix for FND-001 removed from the calibration test. Tag it `TC-668` only, or `FR-223-AC-2`. | qsl-analyze/tests/it/rc11_oracle.rs:140-142 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix commit f53e17f66: the calibration test, renamed `the_rc11_checker_matches_known_litmus_verdicts`, is tagged `#[trace("TC-668")]` only, and its doc comment says it runs the checker alone. `quoin matrix` at f53e17f66 no longer lists it as an FR-223-AC-5 binder. After: `#[trace("TC-668")]` / `fn the_rc11_checker_matches_known_litmus_verdicts()` |
+
+Matrix at f53e17f66 (quoin 0.28.4): FR-223-AC-5 is tagged, with binders `lt12_reaches_its_weak_outcome_under_ra_only`, `lt13_reaches_its_weak_outcome_under_ra_only` and `ra_reaches_exactly_the_rc11_outcomes_outside_psc7` (FND-002). AC-1 to AC-4 and AC-7 are tagged by their existing tests. AC-6 and AC-8 to AC-10 are untagged, as on main. The coder's LT-18 observation (FR-223-AC-6's weak outcome reachable under `ra`) is outside this ticket and is recorded on QSL-1027.

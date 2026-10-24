@@ -67,3 +67,12 @@ Mutation runs, in the throwaway worktree, with the switches set from the environ
 | `ra.rs`: cycle pruning disabled | LT tests green (FND-001); `seq_cst` SB and IRIW tests fail |
 | `ra.rs`: `F(ℓ)` summary or `owed` dropped | LT tests green |
 | `ra.rs`: prune every choice with a later SC write | LT-12 fails |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix commit f53e17f66: `check` became `compare`, which asserts `ra \ rc11` equals the given PSC-7 extras. The new test `ra_reaches_exactly_the_rc11_outcomes_outside_psc7` runs SB `seq_cst`, SB `seq_cst` with an observer, and IRIW `seq_cst` with no extras. The doc comments and the PR body now say the LT tests alone cannot detect an `ra` that admits too much. Reviewer re-run at f53e17f66: with `Ra::sc_event`'s cycle pruning disabled, the new test fails and LT-12 and LT-13 stay green. After: `/// Programs outside PSC-7 on which ra reaches exactly RC11's outcomes, so an ra that allows an RC11-forbidden outcome (for instance by not pruning a cyclic SC choice) fails here.` |
+| FND-002 | fixed | Fix commit f53e17f66: `the_rc11_checker_matches_known_litmus_verdicts` has 15 rows: SB relaxed, release/acquire, seq_cst and fenced; MP relaxed, release/acquire, release fence only, acquire fence only, and both fences; a release sequence, with a control where another thread's store breaks it; CoRR stale and fresh; LB; and a `psc_F` eco program. Reviewer re-run at f53e17f66: each mutant (release sequence, fence `sw` heads, fence `sw` tails, coherence, no-thin-air, `psc_F`) now fails this test. `sb\|≠loc;hb;sb\|≠loc` fails LT-12, the fence ends of `psc_base` fail LT-13, and removing `psc` fails all four tests. After: rows such as `("MP release sequence", ..., vec![2, 0, 3, 3], false)` and `("seq_cst fences ordered through a relaxed write and an acquire read", ..., vec![0, 1, 0, 3], false)`. |
+
+Gates at f53e17f66 (own target dir): `cargo test -p qsl-analyze --test it` 728 passed; `cargo clippy -p qsl-analyze --tests -- -D warnings` clean; `cargo fmt --all -- --check` clean.
