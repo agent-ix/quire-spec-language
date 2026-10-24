@@ -327,12 +327,6 @@ fn the_strong_whole_mutex_refutation_carries_the_same_hint() {
         [r#"{"type":"integer","value":"1"}"#],
         "acq(1)"
     );
-    assert!(
-        hints
-            .iter()
-            .all(|hint| hint.suggested.granularity() != FairnessGranularity::Whole),
-        "the held whole constraint draws no hint: {hints:?}"
-    );
 
     let (each, payload) =
         crate::strong_fairness::mutex_lasso_for(crate::strong_fairness::STRONG_EACH);

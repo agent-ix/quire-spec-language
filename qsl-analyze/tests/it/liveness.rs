@@ -818,7 +818,10 @@ fn behaviour_values(fixture: &Fixture) -> Vec<i64> {
 }
 
 /// The TemporalTrace evaluator's value of `fixture`'s clause on `trace`,
-/// whose position `i` reads `values[i]` through `atom`.
+/// whose position `i` reads `values[i]` through `atom`. As in the repo's
+/// other evaluator tests, the letter is a test closure: the clause's atom
+/// text is not itself evaluated here (that is the one clause evaluator's,
+/// FR-107), so the formula structure is what these readings exercise.
 fn evaluated(
     fixture: &Fixture,
     trace: TemporalTrace,
@@ -1007,7 +1010,11 @@ fn the_counter_behaviour_is_positions_anchored_by_initialization_then_each_inc_a
         model.state_key(&state.model).expect("encodes").1,
         "the stutter returns to the same state"
     );
+    let written = |step: &ProductTransition<_>| {
+        quire_canonical::to_vec(step, quire_canonical::Limits::new(1 << 16)).expect("encodes")
+    };
+    let stutter_identity = written(&stutter);
     for inc in incs {
-        assert_ne!(stutter, ProductTransition::Model(inc));
+        assert_ne!(stutter_identity, written(&ProductTransition::Model(inc)));
     }
 }
