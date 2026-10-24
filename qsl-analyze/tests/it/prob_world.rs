@@ -6,9 +6,8 @@
 //!
 //! The models are ADR-024 §7's and ADR-028 §15's. `Service`'s `phase` is
 //! `Int[0, 2]` (`0` Idle, `1` Busy, `2` Done), its `d` is `Int[1, 12]` and
-//! its `outcome` a Boolean `ok`, since FR-120 has no encoding for an
-//! enumeration or quantity value; the ADR's `1 ms`, `3 ms` and `12 ms` are
-//! `1`, `3` and `12`.
+//! its `outcome` a Boolean `ok`. Quantity-valued probabilistic tests use a
+//! variant whose `d` parameter is typed by the declared `ms` unit.
 
 use std::collections::BTreeMap;
 
@@ -17,7 +16,7 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
 use qsl_package::CheckedPackage;
 use qsl_replay::ModelCheckLimits;
-use qsl_semantics::check::{CheckedProbabilisticClaim, PackageDeclarations};
+use qsl_semantics::check::{CheckRefusal, CheckedProbabilisticClaim, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::hex;
@@ -253,6 +252,19 @@ impl World {
         )
     }
 
+    /// `model`'s S3 check result, exposed for acceptance tests of pre-sampling
+    /// refusals.
+    pub(crate) fn try_new(model: &Model) -> Result<Self, Vec<CheckRefusal>> {
+        Self::try_build(
+            model,
+            &[model.key],
+            &[model.key],
+            &[&model.initial],
+            false,
+            false,
+        )
+    }
+
     /// `model`, checked, over a universe of `keys`, every one of them live in
     /// the initial snapshot.
     pub(crate) fn with_objects(model: &Model, keys: &[&str]) -> Self {
@@ -308,6 +320,18 @@ impl World {
         symmetric: bool,
         value_profile: bool,
     ) -> Self {
+        Self::try_build(model, keys, live, initials, symmetric, value_profile)
+            .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:#?}"))
+    }
+
+    fn try_build(
+        model: &Model,
+        keys: &[&str],
+        live: &[&str],
+        initials: &[&Json],
+        symmetric: bool,
+        value_profile: bool,
+    ) -> Result<Self, Vec<CheckRefusal>> {
         let document = model.document(symmetric);
         let packages = package_input([document.as_slice()]);
         let digest = *packages.keys().next().expect("one model");
@@ -352,8 +376,7 @@ impl World {
         )
         .expect("the unit assembles")
         .with_unwritten_terminals()
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:#?}"));
+        .check(CheckingLimits::default())?;
 
         let header = json!({"identity": model.package, "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", hex(&digest))});
@@ -393,7 +416,7 @@ impl World {
             package: model.package.to_owned(),
             node: model.ident(model.population),
         };
-        Self {
+        Ok(Self {
             package: CheckedPackage::link(graph),
             packages,
             snapshots,
@@ -402,7 +425,7 @@ impl World {
                 population,
                 keys: keys.iter().map(|key| (*key).to_owned()).collect(),
             },
-        }
+        })
     }
 
     fn simulation(&self) -> ModelSimulationRequest<'_> {
@@ -506,6 +529,30 @@ pub(crate) fn service(extra: &str) -> Model {
         ),
         initial: json!({"phase": {"integer": "0"}, "attempts": {"integer": "0"}}),
     }
+}
+
+/// `Service` with a quantity-typed `d` parameter and quantity support values.
+/// `support` is inserted as the support map's value/weight pairs.
+pub(crate) fn quantity_service(support: &str, extra: &str) -> Model {
+    let mut model = service("");
+    model.operations[1].parameters[0].1 = "ix://quire/unit/ms".to_owned();
+    let integer_support = "random Server::attempt(d) ~ { 1: 90, 3: 7, 12: 3 };";
+    let quantity_support = format!("random Server::attempt(d) ~ {{ {support} }};");
+    assert!(
+        model.body.contains(integer_support),
+        "the service random clause exists"
+    );
+    model.body = model.body.replace(integer_support, &quantity_support);
+    model.body = model.body.replace(
+        "random Server::attempt(ok) ~ { true: 98, false: 2 };",
+        "random Server::attempt(ok) ~ { true: 1 };",
+    );
+    model.body = format!(
+        "dimension Time;\nunit ms : Time = rational(1, 1);\n\
+         unit s : Time = rational(1000, 1) * ms;\n{}\n{extra}",
+        model.body
+    );
+    model
 }
 
 /// ADR-028 §15.4's `Link`, with `extra` appended: two sends that lose with

@@ -346,6 +346,8 @@ pub enum ValueTypeRef {
     Native(NativeValueType),
     /// A node of a package: `ix://<package>/<artifact id>`.
     Package(DeclarationKey),
+    /// A unit of the compiling QSL unit: `ix://quire/unit/<name>`.
+    Unit(String),
 }
 
 impl ValueTypeRef {
@@ -353,7 +355,7 @@ impl ValueTypeRef {
     /// package; `None` for a native value type, which names no node.
     pub fn as_package(&self) -> Option<&DeclarationKey> {
         match self {
-            Self::Native(_) => None,
+            Self::Native(_) | Self::Unit(_) => None,
             Self::Package(key) => Some(key),
         }
     }
@@ -366,6 +368,7 @@ impl std::fmt::Display for ValueTypeRef {
         match self {
             Self::Native(native) => write!(f, "ix://quire/native/{}", native.as_str()),
             Self::Package(key) => f.write_str(&key.node),
+            Self::Unit(name) => write!(f, "ix://quire/unit/{name}"),
         }
     }
 }

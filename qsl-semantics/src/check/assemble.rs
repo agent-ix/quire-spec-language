@@ -275,6 +275,15 @@ pub enum AssemblyCause {
         /// The name as written.
         name: String,
     },
+    /// A model member's `typeRef` names no unit in the compiling unit.
+    UnresolvedModelQuantityType {
+        /// The unit name as written.
+        name: String,
+        /// The field, parameter or operation identity carrying the type.
+        member_identity: String,
+        /// The typed member path, such as `Operation.params[0].typeRef`.
+        member_path: String,
+    },
     /// A dimension reaches itself through derived dimensions, or a unit's
     /// target chain reaches that unit again.
     QuantityCycle {
@@ -482,6 +491,7 @@ impl AssemblyCause {
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::UnresolvedModelQuantityType { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 Code::ConflictingDeclaration
             }
@@ -568,6 +578,7 @@ impl AssemblyCause {
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::UnresolvedModelQuantityType { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 "duplicate-declaration"
             }
@@ -1025,6 +1036,7 @@ fn model_object_types(
     span: Span,
     table: &mut OperationTable,
     identity_limits: IdentityLimits,
+    units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<ModelTypes, Vec<AssemblyError>> {
     let package = model.view.domain_package();
     let identities = model.view.type_identities();
@@ -1107,6 +1119,7 @@ fn model_object_types(
                     identities,
                     &meaning_handles,
                     &variant_shapes,
+                    units,
                 ) {
                     Ok(declaration) => fields.entry(&field.owner).or_default().push(declaration),
                     Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
@@ -1118,6 +1131,22 @@ fn model_object_types(
                             profile: None,
                         }))
                     }
+                    Err(Unmapped::QuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    }) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedModelQuantityType {
+                            name,
+                            member_identity,
+                            member_path,
+                        },
+                        span,
+                    }),
+                    Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedQuantityName { name },
+                        span,
+                    }),
                 }
             }
             DomainPackageRecord::OperationMember(operation) => {
@@ -1127,6 +1156,7 @@ fn model_object_types(
                     identities,
                     &meaning_handles,
                     &variant_shapes,
+                    units,
                 ) {
                     Ok(declaration) => operations
                         .entry(&operation.owner)
@@ -1141,6 +1171,22 @@ fn model_object_types(
                             profile: None,
                         }))
                     }
+                    Err(Unmapped::QuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    }) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedModelQuantityType {
+                            name,
+                            member_identity,
+                            member_path,
+                        },
+                        span,
+                    }),
+                    Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
+                        cause: AssemblyCause::UnresolvedQuantityName { name },
+                        span,
+                    }),
                 }
             }
             // State-machine clauses and context namespaces remain admitted
@@ -1258,6 +1304,7 @@ fn model_object_types(
                 identities,
                 &meaning_handles,
                 &variant_shapes,
+                units,
             ) {
                 // A record's declaration holds its effective fields; the
                 // field a redefinition replaces is hidden in the view, so the
@@ -1275,6 +1322,22 @@ fn model_object_types(
                     rounding: RoundingMode::Exact,
                     profile: None,
                 })),
+                Err(Unmapped::QuantityType {
+                    name,
+                    member_identity,
+                    member_path,
+                }) => errors.push(AssemblyError {
+                    cause: AssemblyCause::UnresolvedModelQuantityType {
+                        name,
+                        member_identity,
+                        member_path,
+                    },
+                    span,
+                }),
+                Err(Unmapped::QuantityName(name)) => errors.push(AssemblyError {
+                    cause: AssemblyCause::UnresolvedQuantityName { name },
+                    span,
+                }),
             }
         }
         let declared_supertypes: &[DeclarationKey] = match record {
@@ -1327,6 +1390,7 @@ fn model_object_types(
                 identities,
                 &meaning_handles,
                 &variant_shapes,
+                units,
             )
             .ok()?;
             Some((format!("{alias}::{artifact}"), value_type))
@@ -1489,6 +1553,14 @@ enum Unmapped {
     Unsupported,
     /// A floating type, refused as the assembler refuses every float.
     Float(IeeeWidth),
+    /// A `ix://quire/unit/<name>` reference has no unit in the compiling unit.
+    QuantityName(String),
+    /// An unresolved unit in a model typeRef with its source contract path.
+    QuantityType {
+        name: String,
+        member_identity: String,
+        member_path: String,
+    },
     /// A key the admitted view does not resolve: a broken invariant of I1.
     Broken,
 }
@@ -1525,6 +1597,7 @@ fn model_value_type(
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
+    units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<ValueType, Unmapped> {
     let element = match value_type {
         ValueTypeRef::Native(native) => match native {
@@ -1545,6 +1618,11 @@ fn model_value_type(
                 return Err(Unmapped::Unsupported)
             }
         },
+        ValueTypeRef::Unit(name) => ValueType::Quantity(
+            *units
+                .get(name)
+                .ok_or_else(|| Unmapped::QuantityName(name.clone()))?,
+        ),
         ValueTypeRef::Package(key) => match records.get(key) {
             Some(DomainPackageRecord::ObjectType(_)) => {
                 ValueType::Reference(*identities.get(key).ok_or(Unmapped::Broken)?)
@@ -1611,6 +1689,7 @@ fn model_field(
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
+    units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<FieldDeclaration, Unmapped> {
     let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
     let value_type = model_value_type(
@@ -1620,7 +1699,16 @@ fn model_field(
         identities,
         meaning_handles,
         variant_shapes,
-    )?;
+        units,
+    )
+    .map_err(|error| match error {
+        Unmapped::QuantityName(name) => Unmapped::QuantityType {
+            name,
+            member_identity: field.key.node.clone(),
+            member_path: "Field.typeRef".to_owned(),
+        },
+        error => error,
+    })?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
     let Some(target) = &field.redefines else {
         return Ok(declaration);
@@ -1645,11 +1733,12 @@ fn model_operation(
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
+    units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<OperationDeclaration, Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
     let mut parameters = Vec::with_capacity(operation.parameters.len());
-    for parameter in &operation.parameters {
+    for (index, parameter) in operation.parameters.iter().enumerate() {
         let parameter_name = member_identity_name(&operation.key.node, &parameter.key.node)
             .ok_or(Unmapped::Broken)?;
         let value_type = model_value_type(
@@ -1659,7 +1748,16 @@ fn model_operation(
             identities,
             meaning_handles,
             variant_shapes,
-        )?;
+            units,
+        )
+        .map_err(|error| match error {
+            Unmapped::QuantityName(name) => Unmapped::QuantityType {
+                name,
+                member_identity: parameter.key.node.clone(),
+                member_path: format!("Operation.params[{index}].typeRef"),
+            },
+            error => error,
+        })?;
         parameters.push((parameter_name.to_owned(), value_type));
     }
     let result = operation
@@ -1673,7 +1771,16 @@ fn model_operation(
                 identities,
                 meaning_handles,
                 variant_shapes,
+                units,
             )
+            .map_err(|error| match error {
+                Unmapped::QuantityName(name) => Unmapped::QuantityType {
+                    name,
+                    member_identity: operation.key.node.clone(),
+                    member_path: "Operation.returns.typeRef".to_owned(),
+                },
+                error => error,
+            })
         })
         .transpose()?;
     Ok(OperationDeclaration::new(
@@ -2487,6 +2594,19 @@ impl PackageDeclarations {
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
+        let quantity_owners = OwnerSelection::new([owner.node_owner()]);
+        let quantity_result = units::assemble(
+            &unit.dimensions,
+            &unit.units,
+            &owner,
+            &quantity_owners,
+            limits,
+        );
+        let model_units = quantity_result
+            .as_ref()
+            .ok()
+            .map(|quantities| super::check::declared_unit_ids(&quantities.graph))
+            .unwrap_or_default();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
         let (models, model_meter) = models.into().into_parts();
@@ -2520,6 +2640,7 @@ impl PackageDeclarations {
                 selection.span,
                 &mut operations,
                 limits.identity,
+                &model_units,
             ) {
                 Ok(types) => {
                     for declaration in &types.objects {
@@ -2762,15 +2883,14 @@ impl PackageDeclarations {
         }
 
         // The unit's dimensions and units, admitted under its owner.
-        let owners = OwnerSelection::new([owner.node_owner()]);
-        let quantities =
-            match units::assemble(&unit.dimensions, &unit.units, &owner, &owners, limits) {
-                Ok(quantities) => Some(quantities),
-                Err(found) => {
-                    errors.extend(found);
-                    None
-                }
-            };
+        let owners = quantity_owners;
+        let quantities = match quantity_result {
+            Ok(quantities) => Some(quantities),
+            Err(found) => {
+                errors.extend(found);
+                None
+            }
+        };
 
         // Every type form names declarations of the unit or admitted model
         // object and record/event types.

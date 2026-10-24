@@ -393,6 +393,7 @@ impl ModelIndex {
     ) -> Result<bool, crate::model::accounting::Incomplete> {
         match (s, t) {
             (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
+            (ValueTypeRef::Unit(a), ValueTypeRef::Unit(b)) => Ok(a == b),
             // A bounded integer scalar is an Integer; a native alias is its
             // own target.
             (ValueTypeRef::Package(a), ValueTypeRef::Native(b)) => {
