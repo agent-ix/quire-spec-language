@@ -747,8 +747,7 @@ mod tests {
         FiniteBound::depth(maximum).unwrap()
     }
 
-    /// Trace: FR-447-AC-17, FR-250-AC-1, TC-1187.
-    #[ix_trace_rs::trace("TC-1187", "FR-447-AC-17")]
+    #[ix_trace_rs::trace("TC-1187", "FR-447-AC-17", "FR-250-AC-1")]
     #[test]
     fn request_writer_keeps_hybrid_dynamics_in_the_item_identity() {
         let ordinary = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);

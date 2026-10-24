@@ -13,6 +13,7 @@ use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
 use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
+use crate::hybrid_replay::{HybridTrace, ReplayRecord};
 use crate::model_check::limits::ModelCheckLimit;
 use crate::model_check::state_graph::WitnessSource;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
@@ -39,7 +40,7 @@ mod plugin_replay;
 pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause, ValueFault};
 pub use plugin_read::{
     read_plugin_assignments, read_plugin_basis, read_plugin_certification,
-    read_plugin_inconclusive_cause,
+    read_plugin_inconclusive_cause, read_plugin_inconclusive_cause_over,
 };
 pub use plugin_replay::{PluginReplayContext, PluginReplayRefusal};
 
@@ -630,8 +631,15 @@ pub enum InconclusiveCause {
     SufficientTestFailed,
     /// FR-250: a hybrid solver result that proves nothing (`δ-sat`, a
     /// flowpipe meeting the unsafe set, `unknown`, or a method not sound for
-    /// its outcome).
-    SolverInconclusive,
+    /// its outcome). The path the solver reported, if any, stays as
+    /// unverified evidence with the outcome of its FR-450 replay.
+    SolverInconclusive {
+        /// The reported trace, checked against the claim's model.
+        trace: Option<Box<HybridTrace>>,
+        /// The replay outcomes kept with the trace; `None` when it was not
+        /// replayed.
+        replay: Option<Box<ReplayRecord>>,
+    },
     /// A sound bounded solver proof did not cover every state the claim reads.
     InsufficientHorizon {
         /// The proof's time bound.
@@ -776,7 +784,7 @@ impl InconclusiveCause {
             Self::ReplayParity(_) => REPLAY_PARITY_KIND,
             Self::ReplayRefused(_) => REPLAY_REFUSED_KIND,
             Self::ScalarAgrees(_) => "scalar-agrees",
-            Self::SolverInconclusive => "solver-inconclusive",
+            Self::SolverInconclusive { .. } => "solver-inconclusive",
             Self::InsufficientHorizon { .. } => "insufficient-horizon",
             Self::SufficientTestFailed => "sufficient-test-failed",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
@@ -803,7 +811,7 @@ impl InconclusiveCause {
             | Self::MappingUndetermined
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
-            | Self::SolverInconclusive
+            | Self::SolverInconclusive { .. }
             | Self::InsufficientHorizon { .. }
             | Self::ReductionNotPreserving { .. }
             | Self::ConstraintReached { .. }

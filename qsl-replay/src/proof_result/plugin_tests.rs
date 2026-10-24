@@ -63,7 +63,6 @@ fn settle_basis(basis: ProofBasis) -> TerminalRecord {
     TerminalRecord::from_plugin_proof(RequestIndex::new(0), plugin(), basis).unwrap()
 }
 
-/// Trace: FR-290-AC-18, TC-774.
 #[trace("TC-774", "FR-290-AC-18")]
 #[test]
 fn hybrid_plugin_basis_reads_coverage_and_the_closed_method_table() {
@@ -111,7 +110,6 @@ fn hybrid_plugin_basis_reads_coverage_and_the_closed_method_table() {
     }
 }
 
-/// Trace: FR-290-AC-18, TC-774.
 #[trace("TC-774", "FR-290-AC-18")]
 #[test]
 fn hybrid_plugin_cause_reads_insufficient_horizon() {
@@ -134,7 +132,6 @@ fn hybrid_plugin_cause_reads_insufficient_horizon() {
     assert_eq!(item["cause"]["jumps"], 1);
 }
 
-/// Trace: FR-250-AC-7, FR-290-AC-18, TC-705, TC-774.
 #[trace("TC-705", "FR-250-AC-7", "TC-774", "FR-290-AC-18")]
 #[test]
 fn hybrid_plugin_proof_checks_coverage_before_trusting_it() {
@@ -394,7 +391,13 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
             "sufficient-test-failed",
             InconclusiveCause::SufficientTestFailed,
         ),
-        ("solver-inconclusive", InconclusiveCause::SolverInconclusive),
+        (
+            "solver-inconclusive",
+            InconclusiveCause::SolverInconclusive {
+                trace: None,
+                replay: None,
+            },
+        ),
         ("match-undetermined", InconclusiveCause::MatchUndetermined),
         ("vacuous-match", InconclusiveCause::VacuousMatch),
     ] {

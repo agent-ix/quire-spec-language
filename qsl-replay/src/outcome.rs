@@ -393,7 +393,7 @@ impl ItemCause {
                 | InconclusiveCause::VacuousMatch
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
-                | InconclusiveCause::SolverInconclusive,
+                | InconclusiveCause::SolverInconclusive { .. },
             ) => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {
                 reduction,

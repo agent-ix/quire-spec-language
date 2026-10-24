@@ -3,8 +3,9 @@
 //! terminal value. A result settles `proved` only where its method kind makes
 //! it sound for its outcome, and that proof is `uncertified`: a solver QSL
 //! runs has no core certificate checker (ADR-018 PC-1). Every other result is
-//! `inconclusive` or `incomplete`. No
-//! solver result settles `refuted`, and a provider's own claim about its
+//! `inconclusive` or `incomplete`. A solver result settles `refuted` only
+//! through FR-450's exact replay of the trace it reports
+//! ([`SolverResult::settle`]), and a provider's own claim about its
 //! soundness is never read: [`SolverMethod`] has no such field.
 
 use quire_exact::Rational;
@@ -12,10 +13,16 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeSet;
 
+use crate::hybrid_replay::{
+    exact_replay, static_replay, ExactRecord, ExactReplay, HybridCounterexample, HybridReplayMeter,
+    HybridReplayRefusal, HybridTrace, ReplayRecord,
+};
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
 };
+use qsl_semantics::check::{CheckedGraph, CheckedHybridClaim};
+use quire_exact::LimitKind;
 
 /// The kind of method a provider ran. QSL decides soundness from the kind
 /// (QSpec FR-193), never from a provider's say-so.
@@ -93,23 +100,36 @@ pub enum SolverStop {
     Steps(u64),
 }
 
-/// A provider's outcome (FR-250 Inputs).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+/// A provider's outcome (FR-250 Inputs). The outcomes that report a possible
+/// violation carry the path the solver reports to it, if any.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SolverOutcome {
     /// The unsafe set is unreachable.
     Unsat,
     /// A δ-satisfying point exists: a possible violation, not a witness.
-    DeltaSat,
+    DeltaSat(Option<Box<HybridTrace>>),
     /// A flowpipe enclosure is disjoint from the unsafe set.
     EnclosureDisjoint,
     /// A flowpipe enclosure meets the unsafe set.
-    EnclosureMeetsUnsafe,
+    EnclosureMeetsUnsafe(Option<Box<HybridTrace>>),
     /// The solver could not decide.
-    Unknown,
+    Unknown(Option<Box<HybridTrace>>),
     /// The model has no initial state; no behavior establishes a proof.
     NoInitialState,
     /// A budget stopped the solver.
     Stopped(SolverStop),
+}
+
+impl SolverOutcome {
+    /// The path to the possible violation the solver reported, if any.
+    pub fn trace(&self) -> Option<&HybridTrace> {
+        match self {
+            Self::DeltaSat(trace) | Self::EnclosureMeetsUnsafe(trace) | Self::Unknown(trace) => {
+                trace.as_deref()
+            }
+            Self::Unsat | Self::EnclosureDisjoint | Self::NoInitialState | Self::Stopped(_) => None,
+        }
+    }
 }
 
 /// A non-negative time horizon, an exact rational number of seconds.
@@ -207,7 +227,7 @@ impl SolverCoverage {
 }
 
 /// A provider's result (FR-250 Inputs).
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SolverResult {
     /// The kind of method that produced the outcome.
     pub method: SolverMethod,
@@ -218,25 +238,26 @@ pub struct SolverResult {
 }
 
 impl SolverResult {
-    /// FR-250's method and coverage map for a checked claim. A sound proof
-    /// settles `proved` only when its coverage includes the claim; a sound
-    /// bounded result that falls short names its actual bounds. No provider
-    /// assertion of soundness is read.
+    /// FR-250's method and coverage map for a checked claim, before any
+    /// replay. A sound proof settles `proved` only when its coverage includes
+    /// the claim; a sound bounded result that falls short names its actual
+    /// bounds. A reported trace is kept unreplayed. No provider assertion of
+    /// soundness is read.
     pub fn terminal_value(&self, claim: &ClaimHorizon) -> TerminalValue {
-        match self.outcome {
+        match &self.outcome {
             SolverOutcome::Stopped(SolverStop::Time) => {
                 TerminalValue::Incomplete(IncompleteCause::TimedOut)
             }
             SolverOutcome::Stopped(SolverStop::Steps(value)) => {
                 TerminalValue::Incomplete(IncompleteCause::LimitReached {
                     limit: ModelCheckLimit::SolverSteps,
-                    value,
+                    value: *value,
                 })
             }
             SolverOutcome::NoInitialState => {
                 TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
             }
-            outcome if self.method.is_sound_for(&outcome, &self.coverage) => match &self.coverage {
+            outcome if self.method.is_sound_for(outcome, &self.coverage) => match &self.coverage {
                 SolverCoverage::Bounded {
                     horizon,
                     jumps,
@@ -268,34 +289,116 @@ impl SolverResult {
                     certification: Certification::Uncertified,
                 },
             },
-            SolverOutcome::Unsat
-            | SolverOutcome::DeltaSat
-            | SolverOutcome::EnclosureDisjoint
-            | SolverOutcome::EnclosureMeetsUnsafe
-            | SolverOutcome::Unknown => {
-                TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive)
-            }
+            outcome => TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+                trace: outcome.trace().cloned().map(Box::new),
+                replay: None,
+            }),
         }
+    }
+
+    /// FR-250 with FR-450: the map of [`Self::terminal_value`], and for a
+    /// reported trace its replay against the claim's model in `graph`. The
+    /// trace is admitted first (QSpec FR-193 "Hybrid trace"); static replay
+    /// keeps its outcome with the trace on the `inconclusive` record, and a
+    /// trace exact replay reproduces settles `refuted` with its
+    /// counterexample, the only path to `refuted`. A replay that exhausts the
+    /// caller's `work_units` meter settles `incomplete`, with no verdict or
+    /// counterexample.
+    ///
+    /// # Errors
+    ///
+    /// [`HybridReplayRefusal`] when the trace breaks the correspondence
+    /// rules, or the claim's model or a called function cannot be read.
+    pub fn settle(
+        &self,
+        graph: &CheckedGraph,
+        claim: &CheckedHybridClaim,
+        horizon: &ClaimHorizon,
+        meter: &mut HybridReplayMeter,
+    ) -> Result<HybridSettlement, HybridReplayRefusal> {
+        let value = self.terminal_value(horizon);
+        let Some(trace) = self.outcome.trace() else {
+            return Ok(HybridSettlement::without_counterexample(value));
+        };
+        if !matches!(
+            value,
+            TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive { .. })
+        ) {
+            return Ok(HybridSettlement::without_counterexample(value));
+        }
+        let exhausted = |meter: &HybridReplayMeter| {
+            HybridSettlement::without_counterexample(TerminalValue::Incomplete(
+                IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::EvaluationMeter {
+                        counter: LimitKind::WorkUnits,
+                    },
+                    value: meter.work_units,
+                },
+            ))
+        };
+        let static_outcome = match static_replay(graph, claim, trace, meter) {
+            Ok(outcome) => outcome,
+            Err(HybridReplayRefusal::ResourceExhausted { .. }) => return Ok(exhausted(meter)),
+            Err(refusal) => return Err(refusal),
+        };
+        let exact = match exact_replay(graph, claim, trace, meter) {
+            Ok(ExactReplay::Reproduced(counterexample)) => {
+                return Ok(HybridSettlement {
+                    value: TerminalValue::Refuted,
+                    counterexample: Some(*counterexample),
+                });
+            }
+            Ok(ExactReplay::NotReproduced { at, check }) => {
+                Some(ExactRecord::NotReproduced { at, check })
+            }
+            Ok(ExactReplay::NotExact) => Some(ExactRecord::NotExact),
+            Err(HybridReplayRefusal::ResourceExhausted { .. }) => return Ok(exhausted(meter)),
+            Err(refusal) => return Err(refusal),
+        };
+        Ok(HybridSettlement::without_counterexample(
+            TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+                trace: Some(Box::new(trace.clone())),
+                replay: Some(Box::new(ReplayRecord {
+                    static_outcome,
+                    exact,
+                })),
+            }),
+        ))
     }
 
     /// The QSpec FR-243 basis the result settles with: `closed-scope` for a
     /// proof within its horizon and jump bound, `unsettled` for an
     /// inconclusive result, `unavailable` for a stopped solver.
     pub fn basis(&self, claim: &ClaimHorizon) -> SettlementBasis {
-        match self.outcome {
+        match &self.outcome {
             SolverOutcome::Stopped(_) => SettlementBasis::Unavailable,
             outcome
-                if self.method.is_sound_for(&outcome, &self.coverage)
+                if self.method.is_sound_for(outcome, &self.coverage)
                     && self.coverage.covers(claim) =>
             {
                 SettlementBasis::ClosedScope
             }
-            SolverOutcome::Unsat
-            | SolverOutcome::DeltaSat
-            | SolverOutcome::EnclosureDisjoint
-            | SolverOutcome::EnclosureMeetsUnsafe
-            | SolverOutcome::Unknown
-            | SolverOutcome::NoInitialState => SettlementBasis::Unsettled,
+            _ => SettlementBasis::Unsettled,
+        }
+    }
+}
+
+/// What settling a provider's result produced: the terminal value and, when
+/// FR-450's exact replay reproduced the reported trace, the item's
+/// counterexample (one `counterexamples` entry).
+#[derive(Clone, Debug, PartialEq)]
+pub struct HybridSettlement {
+    /// The terminal value.
+    pub value: TerminalValue,
+    /// The reproduced trace; `Some` exactly when `value` is `Refuted`.
+    pub counterexample: Option<HybridCounterexample>,
+}
+
+impl HybridSettlement {
+    fn without_counterexample(value: TerminalValue) -> Self {
+        Self {
+            value,
+            counterexample: None,
         }
     }
 }
@@ -316,8 +419,7 @@ mod tests {
         SolverHorizon::new(Rational::from_integer(Integer::from(seconds))).expect("non-negative")
     }
 
-    /// Trace: FR-250-AC-6, FR-250-AC-7, TC-705.
-    #[trace("TC-705", "FR-250-AC-7")]
+    #[trace("TC-705", "FR-250-AC-7", "FR-250-AC-6")]
     #[test]
     fn bounded_coverage_requires_the_claims_dimension_and_full_extent() {
         let time = SolverCoverage::Bounded {
@@ -351,8 +453,7 @@ mod tests {
         assert!(SolverCoverage::Inductive.covers(&ClaimHorizon::ModelSteps(None)));
     }
 
-    /// Trace: FR-250-AC-6, FR-250-AC-7, TC-705.
-    #[trace("TC-705", "FR-250-AC-7")]
+    #[trace("TC-705", "FR-250-AC-7", "FR-250-AC-6")]
     #[test]
     fn sound_bounded_result_that_misses_a_claim_is_inconclusive() {
         let result = SolverResult {
@@ -378,8 +479,7 @@ mod tests {
         );
     }
 
-    /// Trace: FR-250-AC-6, FR-250-AC-7, TC-705.
-    #[trace("TC-705", "FR-250-AC-7")]
+    #[trace("TC-705", "FR-250-AC-7", "FR-250-AC-6")]
     #[test]
     fn inductive_enclosure_proves_unbounded_claims_only_with_inductive_coverage() {
         let result = SolverResult {
@@ -402,7 +502,6 @@ mod tests {
         );
     }
 
-    /// Trace: FR-250-AC-6, TC-705.
     #[trace("TC-705", "FR-250-AC-6")]
     #[test]
     fn an_empty_initial_set_never_proves_a_claim() {
@@ -421,7 +520,6 @@ mod tests {
         );
     }
 
-    /// Trace: FR-250-AC-1, TC-705.
     #[trace("TC-705", "FR-250-AC-1")]
     #[test]
     fn absent_hybrid_provider_settles_unsupported_requested_capability() {
@@ -436,7 +534,6 @@ mod tests {
         assert_eq!(item["cause"]["code"], "unsupported_projection");
     }
 
-    /// Trace: FR-250-AC-6, TC-705.
     #[trace("TC-705", "FR-250-AC-6")]
     #[test]
     fn only_the_three_classified_method_outcome_coverage_triples_are_sound() {
@@ -455,10 +552,10 @@ mod tests {
         ];
         let outcomes = [SolverOutcome::Unsat, SolverOutcome::EnclosureDisjoint];
         for method in methods {
-            for outcome in outcomes {
+            for outcome in outcomes.clone() {
                 for coverage in [&bounded, &inductive] {
                     let expected = matches!(
-                        (method, outcome, coverage),
+                        (method, outcome.clone(), coverage),
                         (
                             SolverMethod::DeltaComplete,
                             SolverOutcome::Unsat,
@@ -559,23 +656,26 @@ mod tests {
     #[test]
     fn an_unsound_or_undecided_result_settles_inconclusive() {
         let unsound = [
-            result(SolverMethod::DeltaComplete, SolverOutcome::DeltaSat),
+            result(SolverMethod::DeltaComplete, SolverOutcome::DeltaSat(None)),
             result(
                 SolverMethod::FlowpipeUnrounded,
                 SolverOutcome::EnclosureDisjoint,
             ),
             result(
                 SolverMethod::FlowpipeOutwardRounded,
-                SolverOutcome::EnclosureMeetsUnsafe,
+                SolverOutcome::EnclosureMeetsUnsafe(None),
             ),
-            result(SolverMethod::DeltaComplete, SolverOutcome::Unknown),
+            result(SolverMethod::DeltaComplete, SolverOutcome::Unknown(None)),
             result(SolverMethod::FlowpipeOutwardRounded, SolverOutcome::Unsat),
         ];
         for result in &unsound {
             assert_eq!(result.basis(&claim()), SettlementBasis::Unsettled);
             assert_eq!(
                 result.terminal_value(&claim()),
-                TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive),
+                TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+                    trace: None,
+                    replay: None
+                }),
                 "{result:?}"
             );
         }
@@ -642,8 +742,10 @@ mod tests {
         use SolverMethod::{
             DeltaComplete as D, FlowpipeOutwardRounded as O, FlowpipeUnrounded as U,
         };
-        use SolverOutcome::{DeltaSat, EnclosureDisjoint, EnclosureMeetsUnsafe};
-        use SolverOutcome::{Unknown, Unsat};
+        use SolverOutcome::{EnclosureDisjoint, Unsat};
+        let delta_sat = || SolverOutcome::DeltaSat(None);
+        let meets_unsafe = || SolverOutcome::EnclosureMeetsUnsafe(None);
+        let unknown = || SolverOutcome::Unknown(None);
         #[derive(Clone, Copy)]
         enum Expect {
             Proved,
@@ -656,29 +758,29 @@ mod tests {
         let steps = SolverOutcome::Stopped(SolverStop::Steps(1));
         let table = [
             (D, Unsat, Proved),
-            (D, DeltaSat, Inconclusive),
+            (D, delta_sat(), Inconclusive),
             (D, EnclosureDisjoint, Inconclusive),
-            (D, EnclosureMeetsUnsafe, Inconclusive),
-            (D, Unknown, Inconclusive),
-            (D, time, TimedOut),
-            (D, steps, StepsReached),
+            (D, meets_unsafe(), Inconclusive),
+            (D, unknown(), Inconclusive),
+            (D, time.clone(), TimedOut),
+            (D, steps.clone(), StepsReached),
             (O, Unsat, Inconclusive),
-            (O, DeltaSat, Inconclusive),
+            (O, delta_sat(), Inconclusive),
             (O, EnclosureDisjoint, Proved),
-            (O, EnclosureMeetsUnsafe, Inconclusive),
-            (O, Unknown, Inconclusive),
-            (O, time, TimedOut),
-            (O, steps, StepsReached),
+            (O, meets_unsafe(), Inconclusive),
+            (O, unknown(), Inconclusive),
+            (O, time.clone(), TimedOut),
+            (O, steps.clone(), StepsReached),
             (U, Unsat, Inconclusive),
-            (U, DeltaSat, Inconclusive),
+            (U, delta_sat(), Inconclusive),
             (U, EnclosureDisjoint, Inconclusive),
-            (U, EnclosureMeetsUnsafe, Inconclusive),
-            (U, Unknown, Inconclusive),
+            (U, meets_unsafe(), Inconclusive),
+            (U, unknown(), Inconclusive),
             (U, time, TimedOut),
             (U, steps, StepsReached),
         ];
         for (method, outcome, expect) in table {
-            let settled = result(method, outcome);
+            let settled = result(method, outcome.clone());
             let (value, basis) = (settled.terminal_value(&claim()), settled.basis(&claim()));
             match expect {
                 Proved => {
@@ -700,7 +802,10 @@ mod tests {
                 Inconclusive => {
                     assert_eq!(
                         value,
-                        TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive),
+                        TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+                            trace: None,
+                            replay: None
+                        }),
                         "{method:?} {outcome:?}"
                     );
                     assert_eq!(basis, SettlementBasis::Unsettled);

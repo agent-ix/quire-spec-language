@@ -26,6 +26,10 @@ use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, Rational};
 use quire_semantic_value::fairness::PropertyForm;
 
+mod trace;
+
+pub use trace::read_plugin_inconclusive_cause_over;
+
 /// The largest FR-331 count, 2^53 - 1.
 const MAX_COUNT: u64 = (1 << 53) - 1;
 
@@ -546,7 +550,10 @@ pub fn read_plugin_inconclusive_cause(
         "no-initial-state" => InconclusiveCause::NoInitialState,
         "no-instance" => InconclusiveCause::NoInstance,
         "sufficient-test-failed" => InconclusiveCause::SufficientTestFailed,
-        "solver-inconclusive" => InconclusiveCause::SolverInconclusive,
+        "solver-inconclusive" => InconclusiveCause::SolverInconclusive {
+            trace: None,
+            replay: None,
+        },
         "insufficient-horizon" => InconclusiveCause::InsufficientHorizon {
             exhaustive: read_exhaustive(
                 member(members, "exhaustive", BASE)?,

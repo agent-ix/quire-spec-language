@@ -737,3 +737,293 @@ fn expanding_a_deep_term_uses_caller_fuel() {
     assert!(expander.term(&term, &mut enough).is_ok());
     assert_eq!(enough.consumed(), 1025);
 }
+
+// ----------------------------------------------------- settlement (FR-250)
+
+mod settlement {
+    use super::*;
+    use crate::hybrid::{
+        BoundDimension, ClaimHorizon, SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome,
+        SolverResult,
+    };
+    use crate::model_check::limits::ModelCheckLimit;
+    use crate::proof_result::{
+        read_plugin_inconclusive_cause_over, IncompleteCause, InconclusiveCause,
+        PluginResultRefusal, TerminalValue, ValueFault,
+    };
+    use quire_exact::LimitKind;
+    use serde_json::{json, Value};
+    use std::collections::BTreeSet;
+
+    fn result(outcome: SolverOutcome) -> SolverResult {
+        SolverResult {
+            method: SolverMethod::FlowpipeOutwardRounded,
+            outcome,
+            coverage: SolverCoverage::Bounded {
+                horizon: SolverHorizon::new(n(10)).expect("non-negative"),
+                jumps: 3,
+                exhaustive: BTreeSet::from([BoundDimension::Time]),
+            },
+        }
+    }
+
+    fn horizon() -> ClaimHorizon {
+        ClaimHorizon::ModelTime(Some(SolverHorizon::new(n(12)).expect("non-negative")))
+    }
+
+    fn settle(
+        unit: &Unit,
+        name: &str,
+        result: &SolverResult,
+        work_units: u64,
+    ) -> Result<crate::hybrid::HybridSettlement, HybridReplayRefusal> {
+        result.settle(
+            &unit.graph,
+            claim(unit, name),
+            &horizon(),
+            &mut HybridReplayMeter::new(work_units),
+        )
+    }
+
+    /// FR-250-AC-4, FR-450-AC-2: a solver's reported trace is kept on the
+    /// `inconclusive` record with its static (and not-reproduced exact)
+    /// replay outcome and no counterexample; the same trace settles
+    /// `refuted` with its counterexample only where exact replay reproduces
+    /// it; a result with no trace keeps `trace: None`.
+    #[trace("TC-705", "FR-250-AC-4")]
+    #[test]
+    fn a_reported_trace_is_replayed_and_refutes_only_through_exact_replay() {
+        let unit = braking_unit(FLOW, "v = 0");
+        let trace = braking_trace(10, 0);
+        let meets = result(SolverOutcome::EnclosureMeetsUnsafe(Some(Box::new(
+            trace.clone(),
+        ))));
+
+        let kept = settle(&unit, "SlowEnough", &meets, u64::MAX).expect("settles");
+        assert_eq!(kept.counterexample, None);
+        assert_eq!(
+            kept.value,
+            TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+                trace: Some(Box::new(trace.clone())),
+                replay: Some(Box::new(ReplayRecord {
+                    static_outcome: StaticReplay::Consistent,
+                    exact: Some(ExactRecord::NotReproduced {
+                        at: JsonPointer::root(),
+                        check: ExactCheck::Claim,
+                    }),
+                })),
+            })
+        );
+
+        let refuted = settle(&unit, "Positive", &meets, u64::MAX).expect("settles");
+        assert_eq!(refuted.value, TerminalValue::Refuted);
+        let Some(counterexample) = refuted.counterexample else {
+            panic!("a reproduced trace is the item's counterexample");
+        };
+        assert_eq!(counterexample.kind, HybridCounterexampleKind::Formula);
+        assert_eq!(counterexample.trace, trace);
+
+        let untraced = settle(
+            &unit,
+            "SlowEnough",
+            &result(SolverOutcome::DeltaSat(None)),
+            u64::MAX,
+        )
+        .expect("settles");
+        assert_eq!(
+            untraced.value,
+            TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive {
+                trace: None,
+                replay: None,
+            })
+        );
+        assert_eq!(untraced.counterexample, None);
+    }
+
+    /// FR-250-AC-4: a trace taking transition 1, one whose enclosure lacks a
+    /// variable, and one with a time interval whose lower bound exceeds its
+    /// upper bound are each refused at the member; FR-450: a replay that
+    /// exhausts the caller's `work_units` settles `incomplete` with no
+    /// verdict or counterexample.
+    #[trace("TC-705", "FR-250-AC-4")]
+    #[test]
+    fn a_trace_that_breaks_the_model_is_refused_and_a_spent_meter_is_incomplete() {
+        let unit = braking_unit(FLOW, "v = 0");
+        let refused = |trace: HybridTrace| {
+            settle(
+                &unit,
+                "SlowEnough",
+                &result(SolverOutcome::DeltaSat(Some(Box::new(trace)))),
+                u64::MAX,
+            )
+            .expect_err("a refusal")
+        };
+
+        let mut transition = braking_trace(10, 0);
+        transition.jumps[0].transition = 1;
+        assert_eq!(
+            refused(transition),
+            HybridReplayRefusal::Trace(TraceRefusal {
+                pointer: pointer("/jumps/0/transition"),
+                fault: TraceFault::UnknownTransition,
+            })
+        );
+        let mut missing = braking_trace(10, 0);
+        missing.start.enclosure.pop();
+        assert_eq!(
+            refused(missing),
+            HybridReplayRefusal::Trace(TraceRefusal {
+                pointer: pointer("/start/enclosure"),
+                fault: TraceFault::EnclosureArity,
+            })
+        );
+        let mut inverted = braking_trace(10, 0);
+        inverted.start.time = ExactInterval::new(n(3), n(2));
+        assert_eq!(
+            refused(inverted),
+            HybridReplayRefusal::Trace(TraceRefusal {
+                pointer: pointer("/start/time"),
+                fault: TraceFault::InvertedInterval,
+            })
+        );
+
+        let spent = settle(
+            &unit,
+            "Positive",
+            &result(SolverOutcome::DeltaSat(Some(Box::new(braking_trace(
+                10, 0,
+            ))))),
+            0,
+        )
+        .expect("settles");
+        assert_eq!(
+            spent.value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: LimitKind::WorkUnits
+                },
+                value: 0,
+            })
+        );
+        assert_eq!(spent.counterexample, None);
+    }
+
+    fn rational_json(value: i64) -> Value {
+        json!({"numerator": value.to_string(), "denominator": "1"})
+    }
+
+    fn interval_json(value: i64) -> Value {
+        json!({"lower": rational_json(value), "upper": rational_json(value)})
+    }
+
+    fn state_json(mode: &str, time: i64, values: [i64; 3]) -> Value {
+        json!({
+            "mode": mode,
+            "time": interval_json(time),
+            "enclosure": {
+                "v": interval_json(values[0]),
+                "a": interval_json(values[1]),
+                "t": interval_json(values[2]),
+            },
+        })
+    }
+
+    fn cause_json(trace: Value) -> Value {
+        json!({"type": "solver-inconclusive", "trace": trace})
+    }
+
+    fn trace_json() -> Value {
+        json!({
+            "start": state_json("Moving", 0, [20, 2, 0]),
+            "jumps": [{
+                "transition": 0,
+                "before": {
+                    "time": interval_json(10),
+                    "enclosure": {
+                        "v": interval_json(0),
+                        "a": interval_json(2),
+                        "t": interval_json(10),
+                    },
+                },
+                "state": state_json("Stopped", 10, [0, 2, 10]),
+            }],
+        })
+    }
+
+    /// FR-250-AC-4, FR-290: through the plugin reader a `solver-inconclusive`
+    /// cause carrying a trace in QSpec FR-193's wire form reads
+    /// `SolverInconclusive{trace: Some(..)}` with the same trace on a hybrid
+    /// claim and is `Malformed` at `/cause/trace` on any other item; a
+    /// correspondence failure is `Malformed` at its member and a provider's
+    /// `replay` member is an unknown member.
+    #[trace("TC-705", "FR-250-AC-4")]
+    #[test]
+    fn the_plugin_reader_resolves_a_wire_trace_against_the_claims_model() {
+        let unit = braking_unit(FLOW, "v = 0");
+        let model = &unit.graph.hybrid_models()[0];
+        let read = |cause: &Value| read_plugin_inconclusive_cause_over(cause, Some(model));
+        let malformed = |pointer: &str| PluginResultRefusal::Malformed {
+            pointer: pointer.to_owned(),
+            cause: ValueFault::InvalidValue,
+        };
+
+        assert_eq!(
+            read(&cause_json(trace_json())),
+            Ok(InconclusiveCause::SolverInconclusive {
+                trace: Some(Box::new(braking_trace(10, 0))),
+                replay: None,
+            })
+        );
+        assert_eq!(
+            read_plugin_inconclusive_cause_over(
+                &json!({"type": "solver-inconclusive"}),
+                Some(model)
+            ),
+            Ok(InconclusiveCause::SolverInconclusive {
+                trace: None,
+                replay: None,
+            })
+        );
+        assert_eq!(
+            read_plugin_inconclusive_cause_over(&cause_json(trace_json()), None),
+            Err(malformed("/cause/trace"))
+        );
+
+        let mut wrong_transition = trace_json();
+        wrong_transition["jumps"][0]["transition"] = json!(1);
+        assert_eq!(
+            read(&cause_json(wrong_transition)),
+            Err(malformed("/cause/trace/jumps/0/transition"))
+        );
+        let mut missing_variable = trace_json();
+        missing_variable["start"]["enclosure"]
+            .as_object_mut()
+            .expect("an object")
+            .remove("t");
+        assert_eq!(
+            read(&cause_json(missing_variable)),
+            Err(malformed("/cause/trace/start/enclosure"))
+        );
+        let mut inverted = trace_json();
+        inverted["start"]["time"] = json!({"lower": rational_json(3), "upper": rational_json(2)});
+        assert_eq!(
+            read(&cause_json(inverted)),
+            Err(malformed("/cause/trace/start/time"))
+        );
+        let mut unknown_mode = trace_json();
+        unknown_mode["start"]["mode"] = json!("Halted");
+        assert_eq!(
+            read(&cause_json(unknown_mode)),
+            Err(malformed("/cause/trace/start/mode"))
+        );
+
+        let mut replayed = cause_json(trace_json());
+        replayed["replay"] = json!({"static": {"outcome": "consistent"}});
+        assert_eq!(
+            read(&replayed),
+            Err(PluginResultRefusal::UnknownMember {
+                pointer: "/cause/replay".to_owned()
+            })
+        );
+    }
+}

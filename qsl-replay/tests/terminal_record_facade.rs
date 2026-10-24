@@ -440,7 +440,10 @@ fn plugin_result_claiming_a_qsl_only_cause_fails() {
         InconclusiveCause::VacuousMatch,
         InconclusiveCause::MappingUndetermined,
         InconclusiveCause::SufficientTestFailed,
-        InconclusiveCause::SolverInconclusive,
+        InconclusiveCause::SolverInconclusive {
+            trace: None,
+            replay: None,
+        },
     ] {
         assert_eq!(qsl_replay::read_plugin_cause_kind(cause.as_str()), Ok(()));
     }

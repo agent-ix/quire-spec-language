@@ -413,7 +413,7 @@ pub fn descriptor_from_manifest_with_dynamics<'a>(
         Some(DynamicsMember::NotAList) => {
             return Err(descriptor.dynamics_refusal(DynamicsDefect::NotAList));
         }
-        Some(DynamicsMember::List(labels)) if labels.is_empty() => {
+        Some(DynamicsMember::List([])) => {
             return Err(descriptor.dynamics_refusal(DynamicsDefect::Empty));
         }
         Some(DynamicsMember::List(labels)) => {
