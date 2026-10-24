@@ -228,7 +228,7 @@ pub use proof_result::{
     ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind, ReportedInconclusiveCause,
     SettlementBasis, StatedInstanceBound, StatedMemoryBound, StatisticalRequestRefusal,
     SymmetryBrokenCause, SymmetryRefusal, TerminalRecord, TerminalRecordRefusal, TerminalValue,
-    UnavailabilityCause, ValueFault,
+    UnavailabilityCause, ValueFault, WeakAccessFailure,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

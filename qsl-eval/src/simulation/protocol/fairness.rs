@@ -17,17 +17,25 @@
 //! The set is the clause's authored operation constraints, each with origin
 //! `authored`, and, unless the protocol declares `scheduling adversarial`,
 //! one `fair weak whole` scheduler constraint per `parallel` branch and one
-//! over the root, each with origin `scheduler`; it is ordered by the JCS
-//! bytes of its members (QSpec FR-430 "Fairness set members").
+//! over the root, each with origin `scheduler`, and the constraints the
+//! subject's memory models add, each with origin `memory` (ADR-025 MF-1); it
+//! is ordered by the JCS bytes of its members (QSpec FR-430 "Fairness set
+//! members"). A memory step carries a thread path, but the thread paths of a
+//! `parallel` branch are not known before the run (a branch that is forked
+//! again has a new ordinal), so a memory step target names the branch whose
+//! threads' steps it covers, as a thread target does, and its `each` classes
+//! are one per thread.
 
 use std::collections::BTreeMap;
 
-use qsl_semantics::check::{CheckedProtocol, CheckedScheduling, ControlStep};
+use qsl_foundation::MemoryModelName;
+use qsl_semantics::check::{CheckedProtocol, CheckedScheduling, ControlStep, ProtocolNodeId};
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::identity::{ProtocolTransition, ThreadPath};
+use super::memory::MemoryBranch;
 use crate::fairness::{Constraint, Identity, Strength};
 use crate::simulation::model::encode::Enc;
 
@@ -49,6 +57,25 @@ pub enum ProtocolTarget {
     /// The thread target of the branch `branch` of the `parallel` whose
     /// static declaration path is `parallel`.
     Branch {
+        /// The `parallel` node's static declaration path.
+        parallel: String,
+        /// The branch label.
+        branch: String,
+    },
+    /// An interim shape, pending the FR-228/FR-436 ruling on how a memory
+    /// step's thread target is spelled (QSL-994, spec PR #1442): the
+    /// specification names a thread path, which is not known before the run,
+    /// so the member names the branch instead and its `each` classes are one
+    /// per thread.
+    ///
+    /// The memory steps `step` of `model` of the threads of the branch
+    /// `branch` of the `parallel` at `parallel`, such as `tso`'s
+    /// `flush(b)` (ADR-025 MF-1).
+    MemoryStep {
+        /// The memory model that owns the step.
+        model: MemoryModelName,
+        /// The step's name.
+        step: &'static str,
         /// The `parallel` node's static declaration path.
         parallel: String,
         /// The branch label.
@@ -81,6 +108,20 @@ impl ProtocolTarget {
                     ("branch", Enc::text(branch.clone())),
                 ],
             ),
+            Self::MemoryStep {
+                model,
+                step,
+                parallel,
+                branch,
+            } => Enc::tagged(
+                "memory-step",
+                vec![
+                    ("model", Enc::text(model.label())),
+                    ("step", Enc::text(*step)),
+                    ("node", Enc::text(parallel.clone())),
+                    ("branch", Enc::text(branch.clone())),
+                ],
+            ),
         }
     }
 }
@@ -92,6 +133,8 @@ pub enum FairnessOrigin {
     Authored,
     /// Derived from the protocol clause (ADR-027 PA-3).
     Scheduler,
+    /// Given by a memory model (ADR-025 MF-1).
+    Memory,
 }
 
 impl FairnessOrigin {
@@ -99,6 +142,7 @@ impl FairnessOrigin {
         match self {
             Self::Authored => "authored",
             Self::Scheduler => "scheduler",
+            Self::Memory => "memory",
         }
     }
 }
@@ -150,6 +194,27 @@ impl ProtocolFairness {
         )
     }
 
+    /// The `fair weak each` constraint over the memory steps `step` of
+    /// `model` of the threads of `branch` of `parallel` (ADR-025 MF-1).
+    pub fn memory_step(
+        model: MemoryModelName,
+        step: &'static str,
+        parallel: impl Into<String>,
+        branch: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            FairnessKind::Weak,
+            ProtocolTarget::MemoryStep {
+                model,
+                step,
+                parallel: parallel.into(),
+                branch: branch.into(),
+            },
+            FairnessGranularity::Each,
+            FairnessOrigin::Memory,
+        )
+    }
+
     /// The member's strength.
     pub const fn kind(&self) -> FairnessKind {
         self.kind
@@ -180,6 +245,27 @@ impl ProtocolFairness {
                 (application.operation() == name).then(|| {
                     if each {
                         ProtocolClass::Application(application.clone())
+                    } else {
+                        ProtocolClass::Whole
+                    }
+                })
+            }
+            ProtocolTarget::MemoryStep {
+                model,
+                step,
+                parallel,
+                branch,
+            } => {
+                let identity = transition.memory_step()?;
+                let owns = identity.model == *model
+                    && identity.step == *step
+                    && identity.thread.steps.last().is_some_and(|last| {
+                        last.node() == Some(parallel.as_str())
+                            && last.branch() == Some(branch.as_str())
+                    });
+                owns.then(|| {
+                    if each {
+                        ProtocolClass::Thread(identity.thread.clone())
                     } else {
                         ProtocolClass::Whole
                     }
@@ -278,10 +364,43 @@ pub(super) fn scheduler_constraints(protocol: &CheckedProtocol) -> Vec<ProtocolF
     members
 }
 
+/// Every branch of every `parallel` of `protocol`, with the memory model
+/// that governs it (`governing`, by `parallel` node).
+pub(super) fn memory_branches(
+    protocol: &CheckedProtocol,
+    governing: &BTreeMap<ProtocolNodeId, MemoryModelName>,
+) -> Vec<MemoryBranch> {
+    let tree = &protocol.controls;
+    let mut branches = Vec::new();
+    for control in &tree.controls {
+        if control.step() != ControlStep::Parallel {
+            continue;
+        }
+        let Some(model) = governing.get(&control.node) else {
+            continue;
+        };
+        let parallel = control.path.join("/");
+        for child in control
+            .children
+            .iter()
+            .filter_map(|node| tree.control(*node))
+        {
+            if child.step() == ControlStep::Branch {
+                branches.push(MemoryBranch {
+                    model: *model,
+                    parallel: parallel.clone(),
+                    branch: child.name.clone(),
+                });
+            }
+        }
+    }
+    branches
+}
+
 /// The fairness set over `protocol` of a clause whose authored constraints
 /// are `authored`, each operation named by the text `operation_text` gives
-/// it: the authored members and the scheduler constraints, each once, in
-/// ascending JCS bytes (QSpec FR-430).
+/// it: the authored members, the scheduler constraints and the `memory`
+/// members, each once, in ascending JCS bytes (QSpec FR-430).
 ///
 /// # Errors
 ///
@@ -291,6 +410,7 @@ pub(super) fn fairness_set<'t>(
     protocol: &CheckedProtocol,
     authored: &[FairnessConstraint],
     operation_text: impl Fn(&FairnessConstraint) -> Option<&'t str>,
+    memory: Vec<ProtocolFairness>,
 ) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
     let mut members = Vec::with_capacity(authored.len());
     for constraint in authored {
@@ -308,6 +428,7 @@ pub(super) fn fairness_set<'t>(
         ));
     }
     members.extend(scheduler_constraints(protocol));
+    members.extend(memory);
     let mut keyed: BTreeMap<Vec<u8>, ProtocolFairness> = BTreeMap::new();
     for member in members {
         let bytes = quire_canonical::to_vec(&member, quire_canonical::Limits::new(u64::MAX))
@@ -364,6 +485,58 @@ mod tests {
                 .expect("a member encodes"),
         )
         .expect("JCS is UTF-8")
+    }
+
+    /// ADR-025 MF-1: a flush member is `weak each`, one constraint per
+    /// thread of its branch. The flushes of two threads of branch `w` (here
+    /// of two protocol instances, the only way two live in one branch) are
+    /// two classes, so a loop that flushes one thread while the other's flush
+    /// stays enabled is unfair; one `whole` class over both would pass it.
+    #[trace("TC-673")]
+    #[test]
+    fn a_flush_member_is_one_constraint_per_thread_of_its_branch() {
+        use super::super::memory::MemoryStepId;
+        use crate::fairness::{check_loop, EdgeLabel, LassoFairness, LoopStep};
+
+        let flush = |instance: u64| {
+            ProtocolTransition::memory(MemoryStepId {
+                model: MemoryModelName::Tso,
+                step: "flush",
+                thread: ThreadPath::root(instance).child("Both", "w", 0),
+            })
+        };
+        let (first, second) = (flush(0), flush(1));
+        let member = ProtocolFairness::memory_step(MemoryModelName::Tso, "flush", "Both", "w");
+        assert_ne!(member.class_of(&first), member.class_of(&second));
+        let numbers = [
+            (first.clone(), Identity::new(0)),
+            (second.clone(), Identity::new(1)),
+        ];
+        let identity = |transition: &ProtocolTransition| -> Result<Identity, ()> {
+            numbers
+                .iter()
+                .find(|(known, _)| known == transition)
+                .map(|(_, identity)| *identity)
+                .ok_or(())
+        };
+        let constraints: Vec<Constraint> = protocol_constraints(
+            std::slice::from_ref(&member),
+            &[first.clone(), second.clone()],
+            identity,
+        )
+        .expect("both are numbered")
+        .into_iter()
+        .map(|(_, constraint)| constraint)
+        .collect();
+        assert_eq!(constraints.len(), 2);
+        let step = LoopStep::new(
+            [Identity::new(0), Identity::new(1)],
+            EdgeLabel::Transition(Identity::new(0)),
+        );
+        assert!(matches!(
+            check_loop(&[step], &constraints),
+            Ok(LassoFairness::Unfair { .. })
+        ));
     }
 
     /// QSpec FR-430 "Fairness set members": a scheduler constraint over a

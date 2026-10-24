@@ -48,14 +48,14 @@ use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{AccessClass, AccessOrdering};
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::Value;
-use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::access::location_enc;
+use super::fairness::ProtocolFairness;
 use super::footprint::ProtocolLocation;
 use super::identity::ThreadPath;
 use super::memory::{
-    Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryChoice, MemoryModel, MemoryStep,
-    Read, ReadChoice, SharedCell, Written,
+    Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryBranch, MemoryChoice, MemoryModel,
+    MemoryStep, Read, ReadChoice, SharedCell, Written,
 };
 use super::tso::DEFAULT_MEMORY_BOUND;
 use crate::simulation::footprint::{Footprint, Location};
@@ -1467,7 +1467,7 @@ impl MemoryModel for Ra {
 
     /// MF-2's visibility fairness is FR-228's; no infinite-trace clause over
     /// a protocol subject is decided yet (FR-215), so none is added here.
-    fn fairness(&self) -> Vec<FairnessConstraint> {
+    fn fairness(&self, _branches: &[MemoryBranch]) -> Vec<ProtocolFairness> {
         Vec::new()
     }
 

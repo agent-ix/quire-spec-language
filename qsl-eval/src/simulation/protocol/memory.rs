@@ -9,10 +9,10 @@ use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::AccessClass;
 use qsl_semantics::check::AccessOrdering;
 use quire_canonical::{Encode, Error, Sink, Writer};
-use quire_semantic_value::fairness::FairnessConstraint;
 
 use std::collections::BTreeSet;
 
+use super::fairness::ProtocolFairness;
 use super::footprint::ProtocolLocation;
 use super::identity::ThreadPath;
 use super::ra::CarriedView;
@@ -133,6 +133,18 @@ pub enum FootprintStep<'a> {
         /// The shared locations.
         stored: &'a BTreeSet<Location>,
     },
+}
+
+/// A branch of a `parallel` and the memory model that governs it, which
+/// selects the memory constraints over the branch's threads (ADR-025 MF-1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryBranch {
+    /// The model governing the `parallel`.
+    pub model: MemoryModelName,
+    /// The `parallel` node's static declaration path.
+    pub parallel: String,
+    /// The branch label.
+    pub branch: String,
 }
 
 /// `buf(thread)`: `thread`'s part of the memory component (ADR-025 MR-1).
@@ -344,8 +356,9 @@ pub trait MemoryModel {
     ) -> Cow<'s, ModelSimState>;
 
     /// (h) The constraints the model adds to every infinite-trace clause,
-    /// with a `memory` origin.
-    fn fairness(&self) -> Vec<FairnessConstraint>;
+    /// with a `memory` origin, over `branches`, every branch of every
+    /// `parallel` of the protocol with the model that governs it.
+    fn fairness(&self, branches: &[MemoryBranch]) -> Vec<ProtocolFairness>;
 
     /// ADR-025 MR-1: add to `footprint`, `thread`'s `step`'s protocol and
     /// model footprint, the memory-component locations it reads, writes or
@@ -460,7 +473,7 @@ impl MemoryModel for Sc {
     }
 
     /// None.
-    fn fairness(&self) -> Vec<FairnessConstraint> {
+    fn fairness(&self, _branches: &[MemoryBranch]) -> Vec<ProtocolFairness> {
         Vec::new()
     }
 
