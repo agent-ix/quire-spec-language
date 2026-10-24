@@ -52,9 +52,10 @@ use crate::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord,
     Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
     OperationContractClause, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, OriginalDeclaration, PersistenceInterfaceRecord, PopulationRecord,
-    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef, VariantRecord,
+    OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
+    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
@@ -4902,9 +4903,54 @@ pub fn read_domain_package(
         }
     }
     intake_refusals.sort_by(|left, right| refusal_node(left).cmp(&refusal_node(right)));
+    // FCD validates these graph declarations at I1. Keep their authored
+    // identities and exact coefficients so S3 can resolve an owner-qualified
+    // time unit without inventing an unqualified source unit.
+    let dimensions = document
+        .tree
+        .get("dimensions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|node| {
+            let identity = node.get("identity")?.as_str()?;
+            let name = node.get("name")?.as_str()?;
+            let base = node.get("terms")?.as_array()?.is_empty();
+            Some(PackageDimensionRecord {
+                key: declaration_key(&selection.identity, identity),
+                name: name.to_owned(),
+                base,
+            })
+        })
+        .collect();
+    let units = document
+        .tree
+        .get("units")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|node| {
+            let identity = node.get("identity")?.as_str()?;
+            let name = node.get("name")?.as_str()?;
+            let dimension = node.get("dimension")?.as_str()?;
+            let scale = node.get("scale")?.as_str()?;
+            let offset = node.get("offset")?.as_str()?;
+            let target = node.get("target").and_then(Value::as_str);
+            Some(PackageUnitRecord {
+                key: declaration_key(&selection.identity, identity),
+                name: name.to_owned(),
+                dimension: declaration_key(&selection.identity, dimension),
+                target: target.map(|target| declaration_key(&selection.identity, target)),
+                scale: scale.to_owned(),
+                offset: offset.to_owned(),
+            })
+        })
+        .collect();
     Ok(DomainPackage {
         model_selection: selection,
         records,
+        dimensions,
+        units,
         originals,
         intake_refusals,
         declared_record_count: Some(source_record_count(&document.tree)),

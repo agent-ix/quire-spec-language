@@ -118,11 +118,10 @@ fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
     assert_eq!(checked.time_sources()[0].model, "Config");
 }
 
-/// Fails today at S3: a qualified package unit refuses `TimedNotChecked`
-/// because S3 has no package-owned unit table (QSL-1031). FCD I1 already
-/// admits the package dimensions and units. Untagged while ignored.
+/// FR-230-AC-5/AC-33: a package-owned unit resolves through its model owner
+/// and binds the timed source to the package's nominal base Time node.
+#[trace("FR-230-AC-5", "FR-230-AC-33")]
 #[test]
-#[ignore = "QSL-1031: S3 has no package-owned unit table, so `Config::ms` refuses TimedNotChecked"]
 fn package_time_units_reach_s3_with_their_model_owner() {
     let declarations = admit_and_assemble_with_profiles(
         &package_units_document(),
@@ -134,6 +133,10 @@ fn package_time_units_reach_s3_with_their_model_owner() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("S3 resolves the package-owned Time unit");
     assert_eq!(checked.time_sources()[0].unit, "Config::ms");
+    assert_ne!(
+        checked.time_sources()[0].time_dimension.as_bytes(),
+        &[0; 32]
+    );
 }
 
 #[trace("TC-685")]
