@@ -553,6 +553,9 @@ pub struct ProtocolCheckRequest<'a> {
     /// The method bound `max_store_buffer` (FR-225, ADR-025 MB-2): the
     /// entries per thread's buffer under `tso`; `None` runs with 4.
     pub max_store_buffer: Option<u64>,
+    /// The method bound `max_messages` (FR-225, ADR-025 MB-2): the live
+    /// messages per location under `ra`; `None` runs with 4.
+    pub max_messages: Option<u64>,
     /// The method bound `max_live_instances` (FR-209, ADR-027 AE-4): the live
     /// instances of an `activation on each` protocol; `None` runs with 3. It
     /// is outside the subject and its obligation identity.
@@ -665,7 +668,11 @@ pub fn check_protocol(
         max_automaton_states,
         instance_bound,
     };
-    let memory = SubjectMemory::of(&subject.memory, request.max_store_buffer);
+    let memory = SubjectMemory::of(
+        &subject.memory,
+        request.max_store_buffer,
+        request.max_messages,
+    );
     let built = match memory {
         SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc).map(|system| {
             protocol_run.decide(
@@ -716,7 +723,7 @@ pub fn check_protocol(
 /// FR-126 and FR-212 for a liveness clause over a protocol subject under
 /// `sc` ([`super::liveness::check_protocol`]). A subject with a weak
 /// `parallel` is refused before any state is explored: its memory
-/// constraints (FR-228) and its memory bound are not read by the liveness
+/// constraints (FR-228) and its memory bound are not applied by the liveness
 /// engine yet.
 fn check_protocol_liveness(
     request: ProtocolCheckRequest<'_>,
@@ -737,7 +744,11 @@ fn check_protocol_liveness(
             })
         })?;
     check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
-    let SubjectMemory::Sc = SubjectMemory::of(&subject.memory, request.max_store_buffer) else {
+    let SubjectMemory::Sc = SubjectMemory::of(
+        &subject.memory,
+        request.max_store_buffer,
+        request.max_messages,
+    ) else {
         return Err(ModelCheckRefusal::WeakLiveness);
     };
     if activates_on_each(protocol) {

@@ -140,15 +140,16 @@ impl Case {
         item: ModelCheckItem<'_>,
         max_store_buffer: Option<u64>,
     ) -> ModelCheckOutcome<ProtocolTransition> {
-        self.check_bounded(selection, item, max_store_buffer, None)
+        self.check_bounded(selection, item, max_store_buffer, None, None)
     }
 
-    /// [`Self::check`] under the instance bound `max_live_instances` too.
+    /// [`Self::check`] under the optional message and instance bounds too.
     fn check_bounded(
         &self,
         selection: &[MemorySelection],
         item: ModelCheckItem<'_>,
         max_store_buffer: Option<u64>,
+        max_messages: Option<u64>,
         max_live_instances: Option<u64>,
     ) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
@@ -157,6 +158,7 @@ impl Case {
                 item,
                 max_depth: None,
                 max_store_buffer,
+                max_messages,
                 max_live_instances,
                 limits: ModelCheckLimits::default(),
             },
@@ -191,6 +193,17 @@ impl Case {
         deadlock: bool,
         max_store_buffer: Option<u64>,
     ) -> ModelCheckRecord<ProtocolTransition> {
+        self.settle_with_messages(selection, outcome, deadlock, max_store_buffer, None)
+    }
+
+    fn settle_with_messages(
+        &self,
+        selection: &[MemorySelection],
+        outcome: &ModelCheckOutcome<ProtocolTransition>,
+        deadlock: bool,
+        max_store_buffer: Option<u64>,
+        max_messages: Option<u64>,
+    ) -> ModelCheckRecord<ProtocolTransition> {
         let item = if deadlock {
             ModelCheckItem::DeadlockFreedom
         } else {
@@ -207,6 +220,7 @@ impl Case {
                 subject: self.subject(selection),
                 item,
                 max_store_buffer,
+                max_messages,
                 max_live_instances: None,
             },
             &Cancel::new(),
@@ -244,6 +258,7 @@ impl Case {
             roles: subject.roles.clone(),
             memory: subject.memory.clone(),
             max_store_buffer: None,
+            max_messages: None,
             max_live_instances: None,
         }
     }
@@ -533,6 +548,7 @@ fn unset_bounds_default_to_four_and_stay_out_of_the_obligation() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             max_store_buffer,
+            max_messages: None,
             max_live_instances: None,
             limits: ModelCheckLimits::default(),
         };
@@ -2658,7 +2674,13 @@ fn the_memory_bound_settles_before_the_instance_bound() {
     assert_ne!(each, origin);
     let two = Case::new(&each);
     let tso = [select("SB::Both", MemoryModelName::Tso)];
-    let both = two.check_bounded(&tso, ModelCheckItem::DeadlockFreedom, Some(1), Some(1));
+    let both = two.check_bounded(
+        &tso,
+        ModelCheckItem::DeadlockFreedom,
+        Some(1),
+        None,
+        Some(1),
+    );
     assert!(
         matches!(
             both,
@@ -2669,7 +2691,7 @@ fn the_memory_bound_settles_before_the_instance_bound() {
         ),
         "{both:?}"
     );
-    let instances = two.check_bounded(&tso, ModelCheckItem::DeadlockFreedom, None, Some(1));
+    let instances = two.check_bounded(&tso, ModelCheckItem::DeadlockFreedom, None, None, Some(1));
     assert!(
         matches!(
             instances,
@@ -2679,5 +2701,61 @@ fn the_memory_bound_settles_before_the_instance_bound() {
             }
         ),
         "{instances:?}"
+    );
+}
+
+/// FR-225-AC-3 (TC-670 step 3): the SB counterexample remains visible under
+/// `tso` at `max_store_buffer` 1, while `ra` at `max_messages` 1 settles
+/// `MemoryBoundReached` because a second live message is cut.
+#[trace("TC-670", "FR-225-AC-3")]
+#[test]
+fn ra_message_bound_is_a_request_member_and_settles_memory_bound_reached() {
+    let sb = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    assert!(matches!(
+        sb.claim(&tso, Some(1)),
+        ModelCheckOutcome::Violated { .. }
+    ));
+
+    let ra = [select("SB::Both", MemoryModelName::Ra)];
+    let outcome = sb.check_bounded(
+        &ra,
+        ModelCheckItem::Clause {
+            clause: sb.checked.graph().temporal_clauses()[0].clause(),
+            letters: sb.letters,
+        },
+        None,
+        Some(1),
+        None,
+    );
+    let ModelCheckOutcome::Memory {
+        cause: MemoryCause::BoundReached { bound, states },
+        ..
+    } = &outcome
+    else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(
+        *bound,
+        MemoryBound {
+            member: MemoryBoundMember::MaxMessages,
+            value: 1,
+        }
+    );
+    assert!(*states >= 1);
+    let record = sb.settle_with_messages(&ra, &outcome, false, None, Some(1));
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached {
+            bound: *bound,
+            states: *states,
+        })
+    );
+    assert_eq!(
+        record.memory_bound,
+        Some(StatedMemoryBound {
+            bound: *bound,
+            reached: true,
+        })
     );
 }

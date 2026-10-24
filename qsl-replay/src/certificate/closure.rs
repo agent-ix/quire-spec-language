@@ -277,6 +277,9 @@ pub struct ProtocolCertificateRequest<'a> {
     /// The `max_store_buffer` the run used; `None` for the default 4
     /// (FR-225).
     pub max_store_buffer: Option<u64>,
+    /// The `max_messages` the run used; `None` runs with the default 4
+    /// (FR-225).
+    pub max_messages: Option<u64>,
     /// The `max_live_instances` the run used; `None` for the default 3
     /// (ADR-027 AE-4).
     pub max_live_instances: Option<u64>,
@@ -317,7 +320,11 @@ pub fn check_protocol_closure(
     let instance = activates_on_each(protocol).then_some(InstanceBound {
         value: live_instances,
     });
-    match SubjectMemory::of(&subject.memory, request.max_store_buffer) {
+    match SubjectMemory::of(
+        &subject.memory,
+        request.max_store_buffer,
+        request.max_messages,
+    ) {
         SubjectMemory::Sc => {
             let system = ProtocolSystem::new(model, subject, Sc)
                 .map_err(ClosureRefusal::Protocol)?

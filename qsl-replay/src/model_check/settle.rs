@@ -233,7 +233,11 @@ pub fn settle_protocol_check(
         |closure| check_protocol_closure(certificate, closure, limits, cancel),
         replay,
     );
-    let bound = match SubjectMemory::of(&certificate.subject.memory, certificate.max_store_buffer) {
+    let bound = match SubjectMemory::of(
+        &certificate.subject.memory,
+        certificate.max_store_buffer,
+        certificate.max_messages,
+    ) {
         SubjectMemory::Sc => None,
         SubjectMemory::Tso(tso) => Some(MemoryBound {
             member: MemoryBoundMember::MaxStoreBuffer,
