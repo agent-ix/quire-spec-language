@@ -62,12 +62,17 @@
 //! concrete entry. A state constraint on a liveness clause is refused
 //! ([`ModelCheckRefusal::ReducedLiveness`]).
 //!
-//! A protocol subject under `sc` (FR-212) is one more [`LiveSubject`]: its
-//! products are explored and decided by the same phases, the fairness
-//! filter reads the clause's fairness set over the subject (its authored
-//! operation constraints and the protocol's scheduler constraints) over
-//! FR-212's classes of protocol transition identities, and its run is never
-//! reduced.
+//! A protocol subject under `sc` or `tso` (FR-212, FR-228) is one more
+//! [`LiveSubject`]: its products are explored and decided by the same
+//! phases, the fairness filter reads the clause's fairness set over the
+//! subject (its authored operation constraints, the protocol's scheduler
+//! constraints and, under `tso`, flush fairness) over FR-212's classes of
+//! protocol transition identities, and its run is never reduced. A `tso`
+//! state that the store buffer bound left a store of unexpanded is
+//! bound-limited (ADR-025 MB-3): a run that explored one settles
+//! `MemoryBoundReached` in place of a proof or a counterexample, since the
+//! cut store is enabled for the fairness filter (ADR-025 MF-4) and the
+//! engine does not read it so.
 //!
 //! Under partial-order reduction (ADR-021 POR-6 to POR-11) each product
 //! state is expanded through the ample set `ample` chooses at its model
@@ -87,21 +92,21 @@ use qsl_eval::fairness::{
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
-    protocol_constraints, ProtocolFairness, ProtocolSystem, ProtocolTransition, Sc,
+    protocol_constraints, MemoryModel, ProtocolFairness, ProtocolSystem, ProtocolTransition,
 };
 use qsl_eval::simulation::{
-    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit, Limits,
-    OfferedReductions, Outcome, Permutation, SubjectSystem, SubjectTransition, SymmetryGroup,
-    TransitionSystem,
+    Bounded, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit,
+    Limits, OfferedReductions, Outcome, Permutation, SubjectSystem, SubjectTransition,
+    SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::IdentityLimits;
 use qsl_replay::{
     undefined_finding, AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind,
-    IncompleteCause, ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome,
-    ModelStep, Proviso, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
-    UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    IncompleteCause, ItemRefusal, Lasso, MemoryBound, MemoryCause, ModelCheckItem, ModelCheckLimit,
+    ModelCheckOutcome, ModelStep, Proviso, ReachedLimit, ReductionCause, RunStats,
+    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
@@ -235,6 +240,7 @@ pub(super) fn check(
             letters,
             fairness: clause.fairness(),
             bindings: &bindings,
+            memory_bound: None,
             root_cancelled,
             no_initial,
         },
@@ -260,9 +266,10 @@ pub(super) fn check(
 /// # Errors
 ///
 /// [`ModelCheckRefusal`] as [`check`] returns it.
-pub(super) fn check_protocol(
+pub(super) fn check_protocol<M: MemoryModel>(
     subject: &ProtocolSubject<'_>,
-    system: &ProtocolSystem<'_, Sc>,
+    system: &ProtocolSystem<'_, M>,
+    memory_bound: Option<MemoryBound>,
     item: ModelCheckItem<'_>,
     max_depth: Option<usize>,
     limits: qsl_replay::ModelCheckLimits,
@@ -300,6 +307,7 @@ pub(super) fn check_protocol(
             letters,
             fairness: &fairness,
             bindings: &bindings,
+            memory_bound,
             root_cancelled,
             no_initial: simulation.initial.is_empty(),
         },
@@ -322,6 +330,9 @@ struct Bound<'r, S: LiveSubject> {
     letters: &'r dyn ModelLetters,
     fairness: &'r [Fair<S>],
     bindings: &'r [Binding],
+    /// The memory bound a protocol subject runs under, which a bound-limited
+    /// state reaches (ADR-025 MB-4).
+    memory_bound: Option<MemoryBound>,
     /// The cancellation that stopped the clause identity's resolution.
     root_cancelled: Option<CancelCause>,
     no_initial: bool,
@@ -373,11 +384,13 @@ fn decide_bindings<S: LiveSubject>(
         fairness: bound.fairness,
         letters: bound.letters,
         bindings: bound.bindings,
+        memory_bound: bound.memory_bound,
         request,
         cancel,
         meter: RefCell::new(Meter::new(meter)),
         transitions_left: Cell::new(max_transitions),
         lifted: Cell::new(0),
+        dead_limited: RefCell::new(BTreeSet::new()),
     };
     run.decide(totals)
 }
@@ -392,7 +405,7 @@ trait LiveSubject: SubjectSystem<TransitionId: Ord> + Sized {
         &self,
         state: &Self::State,
         enforce: bool,
-    ) -> Result<Expansion<Tr<Self>, Self::State, ModelFinding>, ExpansionStop>;
+    ) -> Result<Bounded<Tr<Self>, Self::State>, ExpansionStop>;
 
     /// The subject's symmetry, which lifts a reduced path (FR-161).
     fn permuter(&self) -> Option<PermuterOf<'_, Self>>;
@@ -450,12 +463,13 @@ impl<'a> LiveSubject for ModelSystem<'a> {
         &self,
         state: &ModelSimState,
         enforce: bool,
-    ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
-        if enforce {
+    ) -> Result<Bounded<ModelTransition, ModelSimState>, ExpansionStop> {
+        let expansion = if enforce {
             self.successors_enforced(state)
         } else {
             self.successors(state)
-        }
+        }?;
+        Ok((expansion, Cut::default()))
     }
 
     fn permuter(&self) -> Option<PermuterOf<'_, Self>> {
@@ -505,13 +519,13 @@ impl<'a> LiveSubject for ModelSystem<'a> {
     }
 }
 
-impl LiveSubject for ProtocolSystem<'_, Sc> {
+impl<M: MemoryModel> LiveSubject for ProtocolSystem<'_, M> {
     fn expand_live(
         &self,
         state: &Self::State,
         _enforce: bool,
-    ) -> Result<Expansion<ProtocolTransition, Self::State, ModelFinding>, ExpansionStop> {
-        self.successors(state)
+    ) -> Result<Bounded<ProtocolTransition, Self::State>, ExpansionStop> {
+        self.successors_bounded(state)
     }
 
     fn permuter(&self) -> Option<PermuterOf<'_, Self>> {
@@ -735,6 +749,8 @@ enum Finding<T> {
     Enabled(Vec<T>),
     /// The state is at the search horizon and has an edge that was not taken.
     HorizonCut,
+    /// The memory bound left a store of the state unexpanded (ADR-025 MB-3).
+    BoundLimited,
 }
 
 /// Why a product's exploration ended before its frontier emptied.
@@ -821,11 +837,9 @@ impl<S: LiveSubject> LassoSystem<'_, S> {
         Ok(())
     }
 
-    /// The subject's expansion of `state`, recording why when it stops.
-    fn expand(
-        &self,
-        state: &S::State,
-    ) -> Result<Expansion<Tr<S>, S::State, ModelFinding>, ExpansionStop> {
+    /// The subject's expansion of `state`, and what the memory bound left of
+    /// it unexpanded, recording why when it stops.
+    fn expand(&self, state: &S::State) -> Result<Bounded<Tr<S>, S::State>, ExpansionStop> {
         self.system
             .expand_live(state, self.enforce)
             .inspect_err(|&stop| {
@@ -964,7 +978,7 @@ impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
             }
             Property::After(at) => Before::At(*at),
         };
-        let expansion = self.expand(&state.model)?;
+        let (expansion, cut) = self.expand(&state.model)?;
         let mut findings: Vec<Self::Finding> = expansion
             .findings
             .into_iter()
@@ -982,6 +996,9 @@ impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
         enabled.sort();
         enabled.dedup();
         findings.push(Finding::Enabled(enabled));
+        if cut.memory {
+            findings.push(Finding::BoundLimited);
+        }
         if findings
             .iter()
             .any(|finding| matches!(finding, Finding::Contract(_)))
@@ -996,6 +1013,14 @@ impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
             // Every product state has an edge under infinite-trace: a
             // terminal model state steps by its stutter edge.
             findings.push(Finding::HorizonCut);
+            return Ok(Expansion {
+                successors: Vec::new(),
+                findings,
+            });
+        }
+        // ADR-025 MB-3: a state whose only enabled steps are cut stores is a
+        // boundary state, never stutter-extended.
+        if cut.memory && expansion.successors.is_empty() {
             return Ok(Expansion {
                 successors: Vec::new(),
                 findings,
@@ -1303,6 +1328,7 @@ struct Run<'r, S: LiveSubject> {
     fairness: &'r [Fair<S>],
     letters: &'r dyn ModelLetters,
     bindings: &'r [Binding],
+    memory_bound: Option<MemoryBound>,
     request: RunRequest,
     cancel: &'r Cancel,
     /// The run's meter, which the annotated quotient's work of every
@@ -1315,6 +1341,9 @@ struct Run<'r, S: LiveSubject> {
     transitions_left: Cell<usize>,
     /// The concrete steps lifted since that charge.
     lifted: Cell<usize>,
+    /// The model states the memory bound cut a store of in the model-only
+    /// passes.
+    dead_limited: RefCell<BTreeSet<DigestRecord>>,
 }
 
 impl<'r, S: LiveSubject> Run<'r, S> {
@@ -1432,6 +1461,25 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                 Second::Stopped(cause, limit) => return Ok(stopped(cause, limit, totals.stats())),
                 Second::NoneFair => {}
             }
+        }
+        // ADR-025 MB-4: a bound-limited state settles before a counterexample
+        // or a proof (see the module docs for why a counterexample too).
+        let mut limited = self.dead_limited.borrow().clone();
+        for run in &explored {
+            for state in run.graph.states() {
+                if state.findings.contains(&Finding::BoundLimited) {
+                    limited.insert(self.digest(&state.state.model)?);
+                }
+            }
+        }
+        if let (Some(bound), false) = (self.memory_bound, limited.is_empty()) {
+            return Ok(ModelCheckOutcome::Memory {
+                cause: MemoryCause::BoundReached {
+                    bound,
+                    states: widen(limited.len()),
+                },
+                stats: totals.stats(),
+            });
         }
         if let Some(counterexample) = shortest {
             return Ok(ModelCheckOutcome::Violated {
@@ -1812,13 +1860,16 @@ impl<'r, S: LiveSubject> Run<'r, S> {
                     return Ok(phase);
                 }
             };
-            let expansion = match run.product.expand(&model) {
-                Ok(expansion) => expansion,
+            let (expansion, cut) = match run.product.expand(&model) {
+                Ok(expanded) => expanded,
                 Err(_) => {
                     stop(&mut phase)?;
                     return Ok(phase);
                 }
             };
+            if cut.memory {
+                self.dead_limited.borrow_mut().insert(self.digest(&model)?);
+            }
             let kind = if let Reading::Undefined { atom, cause } = reading {
                 Some((UndefinedLocus::Atom(atom), None, cause))
             } else {

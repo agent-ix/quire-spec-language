@@ -80,8 +80,8 @@ pub use identity::{
     RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
 };
 pub use memory::{
-    Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryChoice, MemoryModel, MemoryStep,
-    MemoryStepId, Read, ReadChoice, Sc, ScComponent, SharedCell, Written,
+    Access, CarriedKey, Chosen, FootprintStep, GatedStep, MemoryBranch, MemoryChoice, MemoryModel,
+    MemoryStep, MemoryStepId, Read, ReadChoice, Sc, ScComponent, SharedCell, Written,
 };
 use program::{Program, Rest};
 pub use ra::{CarriedView, Ra, RaComponent};
@@ -966,9 +966,10 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
 
     /// FR-212 (ADR-027 PA-3, QSpec FR-430): the fairness set of an
     /// infinite-trace clause whose authored constraints are `authored`
-    /// over this subject: the authored members and, unless the protocol
-    /// declares `scheduling adversarial`, its scheduler constraints, in
-    /// ascending JCS bytes.
+    /// over this subject: the authored members, unless the protocol
+    /// declares `scheduling adversarial` its scheduler constraints, and the
+    /// `memory` constraints of its memory model (FR-228), in ascending JCS
+    /// bytes.
     ///
     /// # Errors
     ///
@@ -978,11 +979,19 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         &self,
         authored: &[quire_semantic_value::fairness::FairnessConstraint],
     ) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
-        fairness::fairness_set(self.protocol, authored, |constraint| {
-            let operation = constraint.operation();
-            self.model
-                .operation_text(operation.declaring_type(), operation.name())
-        })
+        let memory = self
+            .memory
+            .fairness(&fairness::memory_branches(self.protocol, &self.governing));
+        fairness::fairness_set(
+            self.protocol,
+            authored,
+            |constraint| {
+                let operation = constraint.operation();
+                self.model
+                    .operation_text(operation.declaring_type(), operation.name())
+            },
+            memory,
+        )
     }
 
     /// The memory model it runs under.

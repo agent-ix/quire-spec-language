@@ -679,13 +679,13 @@ fn an_authored_operation_constraint_joins_the_scheduler_constraints() {
     assert!(keys.windows(2).all(|pair| pair[0] < pair[1]), "{keys:?}");
 }
 
-/// FR-228: a liveness clause over a protocol whose `Both` runs under `tso`
+/// FR-228: a liveness clause over a protocol whose `Both` runs under `ra`
 /// refuses `unsupported_construct`/`not-yet-implemented`: the engine reads
-/// no memory fairness, and an unflushed store buffer would give a false
+/// no visibility fairness, and a stale read would give a false
 /// counterexample.
 #[trace("TC-657")]
 #[test]
-fn liveness_over_a_weak_parallel_refuses() {
+fn liveness_over_an_ra_parallel_refuses() {
     let chatter = Chatter::new("", EVENTUALLY, &IS_ONE);
     let mut subject = chatter.subject();
     let checked = chatter
@@ -697,7 +697,7 @@ fn liveness_over_a_weak_parallel_refuses() {
         checked,
         &[MemorySelection {
             parallel: "Chatter::Both".to_owned(),
-            model: MemoryModelName::Tso,
+            model: MemoryModelName::Ra,
         }],
     )
     .expect("the selection resolves");
@@ -712,7 +712,7 @@ fn liveness_over_a_weak_parallel_refuses() {
         },
         &Cancel::new(),
     )
-    .expect_err("a weak liveness clause refuses");
+    .expect_err("an ra liveness clause refuses");
     assert!(
         matches!(refusal, ModelCheckRefusal::WeakLiveness),
         "{refusal:?}"
