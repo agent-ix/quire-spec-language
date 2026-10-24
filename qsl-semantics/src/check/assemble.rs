@@ -1113,6 +1113,12 @@ fn model_object_types(
                 ) {
                     continue;
                 }
+                // Clock is retained in the admitted domain package as a
+                // model place; it is not a QSL data field in the kernel's
+                // TypeEnvironment.
+                if matches!(field.value_type, ValueTypeRef::Clock) {
+                    continue;
+                }
                 match model_field(
                     field,
                     &records,
@@ -1600,6 +1606,7 @@ fn model_value_type(
     units: &BTreeMap<String, quire_exact::UnitId>,
 ) -> Result<ValueType, Unmapped> {
     let element = match value_type {
+        ValueTypeRef::Clock => return Err(Unmapped::Unsupported),
         ValueTypeRef::Native(native) => match native {
             NativeValueType::Boolean => ValueType::Boolean,
             NativeValueType::Integer => ValueType::Integer,

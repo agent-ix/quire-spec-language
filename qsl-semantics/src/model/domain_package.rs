@@ -342,6 +342,9 @@ impl std::str::FromStr for NativeValueType {
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValueTypeRef {
+    /// A clock place: `ix://quire/native/Clock`. Clock is a place in a timed
+    /// model, not a value type in QSL's ordinary data algebra.
+    Clock,
     /// A native value type: `ix://quire/native/<Name>`.
     Native(NativeValueType),
     /// A node of a package: `ix://<package>/<artifact id>`.
@@ -355,7 +358,7 @@ impl ValueTypeRef {
     /// package; `None` for a native value type, which names no node.
     pub fn as_package(&self) -> Option<&DeclarationKey> {
         match self {
-            Self::Native(_) | Self::Unit(_) => None,
+            Self::Clock | Self::Native(_) | Self::Unit(_) => None,
             Self::Package(key) => Some(key),
         }
     }
@@ -366,6 +369,7 @@ impl std::fmt::Display for ValueTypeRef {
     /// resolving to it would spell it on the wire.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Clock => f.write_str("ix://quire/native/Clock"),
             Self::Native(native) => write!(f, "ix://quire/native/{}", native.as_str()),
             Self::Package(key) => f.write_str(&key.node),
             Self::Unit(name) => write!(f, "ix://quire/unit/{name}"),
