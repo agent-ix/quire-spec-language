@@ -565,8 +565,8 @@ fn the_adr_clauses_classify_into_their_forms() {
     assert!(unbounded(&CheckedHyper::Relation(Box::new(det))));
 }
 
-/// FR-173-AC-2: each clause outside the admitted forms is `Other` and names
-/// the rule that placed it there.
+/// Each clause outside the admitted forms is `Other` and names the rule that
+/// placed it there.
 #[trace("TC-598")]
 #[test]
 fn a_clause_outside_the_admitted_forms_names_its_rule() {

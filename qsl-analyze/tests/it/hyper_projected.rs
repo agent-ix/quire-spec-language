@@ -18,9 +18,9 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::AtomReading;
 use qsl_replay::{
-    BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
-    IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelTraceRefusal, ReplayRefusal, StepMark,
-    UndecidedCause,
+    BoundCovers, Code, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome,
+    HyperStep, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelTraceRefusal,
+    ReplayRefusal, StepMark, UndecidedCause,
 };
 use qsl_semantics::check::{FormulaNodeId, OperationKey};
 use quire_checked::key::DeclarationKey;
@@ -354,12 +354,13 @@ fn an_undefined_match_ends_the_paths_at_the_first_such_visible_step() {
     }
 }
 
-/// FR-178-AC-5, at the projected position: when both runs start mid-operation
-/// the first such step follows two skip moves, one for each run's `mix`. The
-/// paths are unmarked, each holds its `mix` and the visible `step(0)`, and the
-/// evaluation is at the projected position 1, the number of visible steps,
-/// not at the three moves that reach it.
-#[trace("TC-603", "FR-178-AC-5")]
+/// FR-178-AC-9: AC-5's request with both runs starting mid-operation,
+/// `(1, 0, true)`, follows two skip moves, one for each run's `mix`, to the
+/// first such step. The paths are unmarked, each holds its `mix` and the
+/// visible `step(0)`, and `trace_position` and the evaluation are at the
+/// projected position 1, the number of visible steps, not at the three moves
+/// that reach it.
+#[trace("TC-603", "FR-178-AC-9")]
 #[test]
 fn an_undefined_match_after_skip_moves_is_at_the_projected_position() {
     let world = World::busy(Vault::Busy, &[(1, 0, 1)], &aligned(&[INVERSE]));
@@ -384,6 +385,22 @@ fn an_undefined_match_after_skip_moves_is_at_the_projected_position() {
 /// The input of trace `trace`'s `step`, the one after its `mix`.
 fn inputs_after_mix(counterexample: &HyperCounterexample, trace: usize) -> i64 {
     input(&counterexample.traces[trace].steps[1])
+}
+
+/// FR-178-AC-7: the `align skip` clause of AC-1 with the added `match`
+/// conjunct `false`, which no joint visible step satisfies, returns `Holds`
+/// and never `Undecided(VacuousMatch)`; the same clause over the leaky vault, which AC-2
+/// refutes, is held too, so the empty `match` is what decides it.
+#[trace("TC-603", "FR-178-AC-7")]
+#[test]
+fn a_match_no_joint_step_satisfies_holds_and_is_never_vacuous() {
+    for vault in [Vault::Busy, Vault::BusyLeaky] {
+        let world = World::busy(vault, &IDLE, &aligned(&["false"]));
+        let outcome = run(&world);
+        assert!(matches!(outcome, HyperOutcome::Holds { .. }), "{outcome:?}");
+    }
+    let unmatched = World::busy(Vault::BusyLeaky, &IDLE, &aligned(&[]));
+    assert!(matches!(run(&unmatched), HyperOutcome::Violated { .. }));
 }
 
 /// FR-178-AC-6, the engine half: a `match` whose reading is incomplete or
@@ -413,11 +430,12 @@ fn an_incomplete_or_refused_match_is_undetermined_and_never_holds() {
     }
 }
 
-/// The replay of an `Undefined` counterexample of an `align skip` clause is
-/// not stated by FR-183: its paths differ in length and its position counts
-/// visible steps, so the replay refuses it as unsupported rather than reading
-/// it as a lockstep one.
-#[trace("TC-603")]
+/// FR-183-AC-7: FR-178-AC-9's `Undefined` counterexample, whose paths each
+/// hold a skipped `mix` and a visible `step(0)`, is refused with
+/// `unsupported_construct`/`not-yet-implemented` and settles no result; it is
+/// not replayed as a lockstep counterexample, though its paths differ in
+/// length from a lockstep one's and its position counts visible steps.
+#[trace("TC-608", "FR-183-AC-7")]
 #[test]
 fn an_undefined_counterexample_of_an_align_skip_clause_is_refused_by_replay() {
     let undefined = World::busy(Vault::Busy, &[(1, 0, 1)], &aligned(&[INVERSE]));
@@ -427,10 +445,17 @@ fn an_undefined_counterexample_of_an_align_skip_clause_is_refused_by_replay() {
         HyperCounterexampleKind::Undefined(_)
     ));
     assert!(counterexample.marks_match_kind());
+    for (index, trace) in counterexample.traces.iter().enumerate() {
+        let kinds: Vec<_> = trace.steps.iter().map(is_mix).collect();
+        assert_eq!(kinds, [true, false]);
+        assert_eq!(inputs_after_mix(&counterexample, index), 0);
+    }
     let Err(ReplayRefusal::ModelTrace(refusal)) = undefined.replay(&counterexample) else {
         panic!("expected the replay to refuse");
     };
     assert_eq!(*refusal, ModelTraceRefusal::HyperProjected);
+    assert_eq!(refusal.code(), Code::UnsupportedConstruct);
+    assert_eq!(refusal.cause(), "not-yet-implemented");
 }
 
 /// The marks belong to a `Projected` counterexample: one for every step of
@@ -562,9 +587,7 @@ fn an_evaluator_that_runs_out_while_confirming_stops_the_item() {
 /// the body `always holds(v.l @ a = 0)`, `step(1)` rejects and `step(0)` is
 /// the visible move on which AC-5's conjunct has no value; `step(0)` is the
 /// canonically first move, so the undefined state is discovered first.
-#[trace("TC-603")]
-#[test]
-fn an_undefined_match_discovered_before_a_rejection_wins() {
+fn assert_an_undefined_match_discovered_before_a_rejection_wins() {
     let clause = aligned_over("always holds(v.l @ a = 0)", &[INVERSE]);
     let world = World::busy(Vault::Busy, &IDLE, &clause);
     let counterexample = refuted(run(&world));
@@ -609,9 +632,7 @@ impl StepMatch for UndefinedOnOne<'_> {
 /// The other order: over idle starts with `l = 1` and the body
 /// `always holds(v.l @ a = 1)`, `step(0)` rejects and `step(1)` is the move
 /// with no value for `mu_U`; `step(0)` is first, so the rejecting state wins.
-#[trace("TC-603")]
-#[test]
-fn a_rejection_discovered_before_an_undefined_match_wins() {
+fn assert_a_rejection_discovered_before_an_undefined_match_wins() {
     let clause = aligned_over("always holds(v.l @ a = 1)", &[]);
     let world = World::busy(Vault::Busy, &[(0, 1, 0), (1, 1, 0)], &clause);
     let matcher = UndefinedOnOne(world.seams());
@@ -624,6 +645,16 @@ fn a_rejection_discovered_before_an_undefined_match_wins() {
         )
         .expect("the run is not refused");
     assert_eq!(refuted(outcome).kind, HyperCounterexampleKind::Projected);
+}
+
+/// FR-178-AC-8: the first product state in breadth-first order decides
+/// between an undefined `μ_U` and a rejecting monitor state, whichever of the
+/// two it is.
+#[trace("TC-603", "FR-178-AC-8")]
+#[test]
+fn the_first_discovered_of_an_undefined_match_and_a_rejection_wins() {
+    assert_an_undefined_match_discovered_before_a_rejection_wins();
+    assert_a_rejection_discovered_before_an_undefined_match_wins();
 }
 
 /// A body already false at projected position 0 is rejected before any move:
