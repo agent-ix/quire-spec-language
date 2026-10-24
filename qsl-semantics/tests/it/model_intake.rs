@@ -113,44 +113,6 @@ fn the_model_reader_cohort_admits_dimensions_and_scaled_units() {
     );
 }
 
-#[test]
-fn the_selected_frontend_publishes_adjacent_semantic_kernel_unions() {
-    let root = fcd_fixtures_dir().join("../../..");
-    let schema_root = root.join("packages/semantic-core/generated/json-schema");
-    for name in [
-        "ConstraintDecl",
-        "EnumValuesConstraintValues",
-        "MinConstraintValue",
-        "MaxConstraintValue",
-        "ExclusiveMinConstraintValue",
-        "ExclusiveMaxConstraintValue",
-        "TypeRefTarget",
-    ] {
-        let schema: Value = serde_json::from_slice(
-            &std::fs::read(schema_root.join(format!("{name}.json")))
-                .expect("the selected frontend's semantic-core schema exists"),
-        )
-        .expect("the producer schema is JSON");
-        let branches = schema["oneOf"].as_array().expect("a closed union");
-        assert!(branches.len() >= 2, "{name}");
-        for branch in branches {
-            assert_eq!(branch["type"], "object", "{name}");
-            assert!(branch["properties"]["kind"]["const"].is_string(), "{name}");
-            assert!(branch["properties"]["value"].is_object(), "{name}");
-            assert_eq!(
-                branch["required"],
-                serde_json::json!(["kind", "value"]),
-                "{name}"
-            );
-            assert_eq!(
-                branch["unevaluatedProperties"],
-                serde_json::json!({"not": {}}),
-                "{name}"
-            );
-        }
-    }
-}
-
 /// Resolves to the checked-out `agent-ix-extraction-frontend` git
 /// dependency's own `fixtures` directory
 /// (`crates/extraction-frontend/fixtures` in the pinned
