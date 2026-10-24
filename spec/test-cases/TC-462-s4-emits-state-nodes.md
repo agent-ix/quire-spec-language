@@ -13,7 +13,7 @@ relationships:
 Verify the node set, bodies, types, dependencies and occurrences S4 emits for
 state clauses, and the totality of the clause-kind mapping.
 
-Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9, FR-105-AC-10.
+Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8 to FR-105-AC-11.
 
 ## Test Procedure
 
@@ -38,6 +38,10 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8, FR-105-AC-9, FR-105-A
    with `constraint` replaced by `invariant`; read each package with QSL's I2
    read; decode (`state`, `state_clause`, `quire.op.state.clause`,
    `constraint`).
+8. Compile a unit with only an attempt naming `attemptUpdate`, then units with
+   both the attempt and `VersionUnchanged`, once with the attempt before the
+   clause and once after it; compare the frame occurrence's region and its
+   `(node id, role, ordinal)`.
 
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.

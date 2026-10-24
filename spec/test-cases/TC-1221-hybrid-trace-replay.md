@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-450
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-290
+    type: verifies
 ---
 # TC-1221: Hybrid traces replay statically and exactly against the checked hybrid model
 
@@ -14,7 +16,7 @@ Verify static replay, exact replay and the settlement each gives, for a
 trace from a `solver-inconclusive` cause and from a provider's `refuted`
 entry.
 
-Scope: FR-450-AC-1 to FR-450-AC-8.
+Scope: FR-450-AC-1 to FR-450-AC-9 and FR-290-AC-19.
 
 ## Test Procedure
 
@@ -40,6 +42,11 @@ provider, each returning a scripted entry with a scripted `HybridTrace`.
 8. Statically replay the `Up`-to-`Down` point trace over AC-8's `Bounce`
    variant, after S3 admits `descending(x)` as a hybrid guard call, first with
    `work_units` 100 and then with `work_units` `u64::MAX`.
+9. Over `Braking` with `Moving`'s flow `v' = -v`, submit AC-2's point trace
+   as a provider's `refuted` entry.
+10. For a process provider's `refuted` entry on the hybrid `Braking` claim,
+    read AC-2's named `hybrid-counterexample` in QSpec FR-193 wire form and
+    settle it; repeat with a malformed trace and on a non-hybrid claim.
 
 Run each step through both fixture providers.
 
@@ -52,8 +59,9 @@ Tag the tests `#[trace("TC-1221", "FR-450-AC-n")]`.
 - Step 2: `Reproduced`, kind `Formula`, the item `refuted` with the trace as
   its counterexample and one `counterexamples` entry, from both entries;
   `NotReproduced` at `Claim` against `SlowEnough`, the item `inconclusive`.
-- Step 3: `NotReproduced` at `Dwell` for each; `inconclusive`,
-  `ReplayParity`, with no `counterexamples` entry.
+- Step 3: `NotReproduced` at `Dwell` for each; each settles with
+  `ReplayParity(DisagreementCause::HybridTrace(NotReproduced{counterexample}))`
+  retaining its input, with no `counterexamples` entry.
 - Step 4: `NotExact` and `inconclusive`; exact replay with the stated
   polynomials and `NotReproduced` at `Dwell`; `NotExact`.
 - Step 5: `Reproduced`, kind `UndefinedEvaluation` at time 15/2, the item
@@ -82,4 +90,12 @@ Tag the tests `#[trace("TC-1221", "FR-450-AC-n")]`.
   20,000 recursive edges (20,001 recursive `descend` calls plus the one
   `descending` wrapper call) and completes on the explicit stack,
   static replay returns `Consistent`, and no stack overflow occurs.
+- Step 9: exact replay returns `NotExact`; the item settles with the distinct
+  `ReplayParity(DisagreementCause::HybridTrace(NotExact{counterexample}))`
+  cause, preserving the submitted counterexample, and writes no
+  `counterexamples` entry.
+- Step 10: the valid process entry maps to the same typed counterexample as
+  the in-process fixture and settles by exact replay; the malformed trace is
+  refused before a terminal record is built, and the hybrid arm on a
+  non-hybrid claim is malformed.
 - Both fixture providers give the same outcomes.

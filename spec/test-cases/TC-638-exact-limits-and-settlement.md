@@ -19,7 +19,7 @@ Scope: FR-203-AC-1 to FR-203-AC-4 and FR-203-AC-6.
 Fixtures: §15.1, §15.2, §15.3 and §15.4 claims; the FR-197-AC-4, FR-201-AC-1, FR-202-AC-2 and FR-199-AC-3 cases.
 
 1. Settle §15.2 at `5 ms`, §15.1 with `max_rational_bits` 1,024, and §15.4's `Deliver`.
-2. Settle FR-197-AC-4's straddle; §15.3's per-window claim with `max_states` 1,000; a request omitting every limit.
+2. Settle FR-197-AC-4's straddle; §15.3's per-window claim with `exact_prob.max_states` 1,000; a request omitting every limit.
 3. Settle the rejected certificate, the duplicated path set and the zero-weight variant.
 4. Count proofs in a summary; compare obligation identities across confidence and `precision_bits`.
 5. Settle a build stopped at `max_automaton_states`, a cancelled build, an undecided successor, an unnamed internal and an unnamed non-internal expansion stop, and an `Internal` refusal.
@@ -29,7 +29,7 @@ Tag the tests `#[trace("TC-638", "FR-203-AC-n")]`.
 ## Expected Results
 
 - Step 1: `ExactValue{24233/25000}`; `ValueBounds{BackwardInduction{64}}`; `refuted` with a `Min` entry.
-- Step 2: `PrecisionBudget` around `99/100`; `LimitReached` naming `max_states`, 1,000 and `max_states`; the published defaults.
+- Step 2: `PrecisionBudget` around `99/100`; `LimitReached` naming `max_states`, 1,000 and `exact_prob.max_states`; the published defaults.
 - Step 3: `CertificateRejected`; `ReplayParity`; `ZeroWeightComponent`; no `measured` value.
 - Step 4: 2 proved; distinct identities for confidence, one identity across `precision_bits`.
 - Step 5: `LimitReached`, `Cancelled`, `Inconclusive(UndecidedSuccessor)`, `Failed` with the invariant diagnostic, `Failed` with the stop's cause, `Failed`.

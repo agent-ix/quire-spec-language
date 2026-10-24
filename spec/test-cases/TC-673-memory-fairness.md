@@ -39,7 +39,9 @@ Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
 ## Expected Results
 
 - Step 1: two `flush` constraints with origin `memory` under `tso`;
-  one `strong` visibility member under `ra`; none under `sc`.
+  one `strong` visibility member per (thread, loaded location) under `ra`,
+  with origin `memory` and target `{"type":"visibility","model":"ra"}`;
+  none under `sc`.
 - Step 2: `proved`; the lasso meets the scheduler constraints and is
   rejected by `flush(w)`'s; `refuted` with that lasso when ignored.
 - Step 3: rejected, then passed.

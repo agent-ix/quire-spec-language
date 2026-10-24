@@ -17,7 +17,9 @@ Scope: FR-225-AC-1 to FR-225-AC-5.
 ## Test Procedure
 
 1. Read the terminal records of ADR-025 §10's three requests; compare
-   identities across `max_store_buffer` values.
+   identities across `max_store_buffer` values, and inspect the independent
+   `ModelCheckRequest` members plus `ProtocolCheckRequest`'s
+   `max_store_buffer` and `max_messages` members.
 2. Run FR-225-AC-2's three-store protocol, whose three locations are
    loaded by the other branch, with bound 2 and bound 3.
 3. Run `SB` under `tso` with `max_store_buffer` 1 and under `ra` with
@@ -31,8 +33,9 @@ Tag the tests `#[trace("TC-670", "FR-225-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: 4, not reached, for `tso` and `ra`; no memory bound for `sc`;
-  equal identities.
+- Step 1: `max_store_buffer` 4, not reached, for `tso`, and `max_messages`
+  4, not reached, for `ra`; no memory bound for `sc`; equal identities for
+  the two `tso` requests.
 - Step 2: V-6 `MemoryBoundReached` naming `max_store_buffer` 2; V-1, not
   reached.
 - Step 3: `refuted`; V-6 naming `max_messages` 1.
