@@ -20,6 +20,8 @@ use crate::model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductio
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::replay::ModelTraceSettlement;
 use crate::model_check::settle::{Execution, ResultLabel, Row, Truth, EXPLICIT_STATE};
+use qsl_semantics::check::HyperForm;
+
 use crate::proof_result::{
     IncompleteCause, InconclusiveCause, SettlementBasis, TerminalValue, UnavailabilityCause,
 };
@@ -72,6 +74,23 @@ pub struct HyperRecord {
     pub count: Option<u64>,
     /// The counterexample a `refuted` record carries.
     pub counterexample: Option<HyperCounterexample>,
+}
+
+/// FR-173, FR-182: a hyper item S3 classified into HP-4 settles
+/// `unsupported`, `unsupported-requested-capability` at negotiation, naming its
+/// rule, and no engine runs for it. `None` for every admitted form, which an
+/// engine settles.
+pub fn settle_hyper_form(form: &HyperForm) -> Option<TerminalValue> {
+    match form {
+        HyperForm::Other { reason } => Some(TerminalValue::Unsupported(
+            UnavailabilityCause::UnsupportedHyperForm { reason: *reason },
+        )),
+        HyperForm::StepRelation
+        | HyperForm::Universal
+        | HyperForm::ForallExistsSafety
+        | HyperForm::SingleExistential
+        | HyperForm::ProjectionAligned => None,
+    }
 }
 
 /// Why a hyper outcome settles no record.

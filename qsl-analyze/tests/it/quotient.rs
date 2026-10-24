@@ -26,7 +26,8 @@ use qsl_analyze::model_check::{
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_replay::{
     AppliedReduction, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelTraceSettlement, ModelTraceValue, ReachedLimit, TemporalCounterexample,
+    ModelStep, ModelTraceSettlement, ModelTraceValue, ReachedLimit, ReductionCause, ResultLabel,
+    SettlementBasis, TemporalCounterexample, TerminalValue,
 };
 use quire_exact::ScalarLimits;
 
@@ -568,4 +569,264 @@ fn a_loop_that_needs_two_passes_closes_at_the_concrete_entry() {
     let holders: Vec<&str> = states.iter().map(holder).collect();
     assert_eq!(holders, ["b", "a", "b"], "pass(b), then pass(a)");
     assert!(reproduced(&world.replay(counterexample.clone())));
+}
+
+/// The reduced-refutation settlement clause (QSL-1045 tracks its wording): it
+/// says the counterexample equals the
+/// unreduced one "byte for byte", and a `TemporalCounterexample` has no
+/// encoded form here, so what is asserted is equality over every member).
+/// ADR-021 §7.1's `fair weak whole` refutation from the symmetry run settles
+/// through `settle_model_check` with its replay: `refuted`,
+/// `decisive-counterexample`, a record equal to the unreduced run's, which
+/// names no reduction, and the counterexample, three `upd(b)` steps from
+/// `(0,0,0)`, equal to the unreduced run's counterexample. The symmetry run
+/// is a reduced one: it stores fewer product states.
+#[trace("TC-584")]
+#[test]
+fn a_symmetry_refutation_settles_as_the_unreduced_refutation_does() {
+    let world = configs("fair weak whole M::Counter::bump; always eventually holds(x.v = 2)");
+    let at_two = || vec![atom(|v| Some(v == 2))];
+    let reduced = run(&world, |v| Some(v == 2), symmetric()).expect("checks");
+    let unreduced = run(&world, |v| Some(v == 2), Reductions::default()).expect("checks");
+    assert!(
+        reduced.stats().product_states < unreduced.stats().product_states,
+        "the symmetry run explores the quotient: {} against {}",
+        reduced.stats().product_states,
+        unreduced.stats().product_states
+    );
+
+    let record = world.settle_clause(0, at_two(), &reduced);
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(record.label, ResultLabel::Refuted);
+    assert_eq!(record.basis, SettlementBasis::DecisiveCounterexample);
+    let counterexample = record
+        .counterexample
+        .as_ref()
+        .expect("a retained counterexample");
+
+    let plain = world.settle_clause(0, at_two(), &unreduced);
+    assert_eq!(plain.value, TerminalValue::Refuted);
+    assert_eq!(record, plain, "the record names no reduction");
+    assert_eq!(Some(counterexample), plain.counterexample.as_ref());
+
+    let states = world.positions(counterexample);
+    assert_eq!(values(&states[0]), (0, 0, 0));
+    assert_eq!(moved(&states), ["b", "b", "b"]);
+}
+
+/// The counterexample's members, every one: a new member (a canonical
+/// state, a permutation, a reduction name) stops this from compiling.
+fn carries_only_concrete_members(counterexample: &TemporalCounterexample) {
+    let TemporalCounterexample {
+        initial_state: _,
+        prefix,
+        over_binding: _,
+        fairness: _,
+        kind: _,
+        lasso: _,
+        blocked,
+        refinement,
+    } = counterexample;
+    for ModelStep {
+        transition: _,
+        post_state: _,
+    } in prefix
+    {}
+    assert!(blocked.is_empty() && refinement.is_none());
+}
+
+/// The concretised-counterexample clause (QSL-1045 tracks its wording): its
+/// serialize/decode round trip and
+/// "byte-equal" have nothing to run against, because `TemporalCounterexample`
+/// has no encoded form here; what is asserted is equality over every member
+/// and that the witness envelope carries it to a replay, tracked as QSL-1045).
+/// The ring's partial-order counterexample replays, and agrees with the
+/// unreduced run's on every member but the step list (the reduced path is
+/// longer), ending in a state with the same `q.v`; the counting subject's constrained
+/// counterexample equals the unconstrained run's, in a world where the same
+/// constraint demonstrably cuts the search (`always holds(x.v <= 2)` settles
+/// `ConstraintReached{12}` over 20 stored states, where the unconstrained
+/// run is violated). AC-1's, AC-2's and AC-3's concretised counterexamples
+/// replay, and each step's recorded post-state is the digest of a concrete
+/// successor of its transition. Every one is a `TemporalCounterexample`
+/// whose members hold no canonical state, permutation or reduction name.
+/// Concretising AC-1 twice gives equal counterexamples.
+#[trace("TC-586")]
+#[test]
+fn every_counterexample_is_concrete_and_replays_as_an_unreduced_one_does() {
+    use crate::por_world::ring;
+    use crate::reduction::{constraint, count, infinite};
+
+    let reproduced_any = |settlement: &ModelTraceSettlement| {
+        matches!(settlement, ModelTraceSettlement::Reproduced { .. })
+    };
+
+    // The ring under partial-order reduction.
+    let fixture = ring(&["always holds(x.v < 2)"]);
+    let outcome = fixture
+        .run(
+            Some(0),
+            crate::partial_order::below_two(),
+            crate::partial_order::reduced(),
+        )
+        .expect("checks");
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("expected a violation, got {outcome:?}");
+    };
+    carries_only_concrete_members(counterexample);
+    assert_eq!(counterexample.prefix.len(), 6);
+    assert_eq!(fixture.positions(counterexample).len(), 7);
+    let plain = fixture
+        .run(
+            Some(0),
+            crate::partial_order::below_two(),
+            Reductions::default(),
+        )
+        .expect("checks");
+    let ModelCheckOutcome::Violated {
+        counterexample: plain,
+        ..
+    } = &plain
+    else {
+        panic!("the unreduced run is violated too, got {plain:?}");
+    };
+    assert_eq!(
+        (
+            counterexample.initial_state,
+            &counterexample.over_binding,
+            &counterexample.fairness,
+            &counterexample.kind,
+            counterexample.lasso,
+            &counterexample.blocked,
+            &counterexample.refinement
+        ),
+        (
+            plain.initial_state,
+            &plain.over_binding,
+            &plain.fairness,
+            &plain.kind,
+            plain.lasso,
+            &plain.blocked,
+            &plain.refinement
+        )
+    );
+    let last = |cx: &TemporalCounterexample| {
+        let states = fixture.positions(cx);
+        crate::por_world::ring_state(states.last().expect("a final state"))
+    };
+    assert_eq!(last(counterexample).1, 2, "q.v reaches 2");
+    assert_eq!(last(counterexample).1, last(plain).1);
+    assert!(reproduced_any(&fixture.replay(
+        Some(0),
+        crate::partial_order::below_two(),
+        counterexample.as_ref().clone()
+    )));
+
+    // The constrained counterexample.
+    let counting = count(&[
+        infinite("always holds(x.v <= 1)"),
+        infinite("always holds(x.v <= 2)"),
+    ]);
+    let low = || vec![atom(|v| Some(v <= 1))];
+    let cut = counting
+        .run(
+            Some(1),
+            vec![atom(|v| Some(v <= 2))],
+            constraint("Low"),
+            None,
+            ModelCheckLimits::default(),
+        )
+        .expect("checks");
+    assert_eq!(cut.stats().product_states, 20);
+    assert!(
+        matches!(
+            cut,
+            ModelCheckOutcome::Reduction {
+                cause: ReductionCause::ConstraintReached {
+                    boundary_states: 12
+                },
+                ..
+            }
+        ),
+        "the constraint `Low` is active in this world: {cut:?}"
+    );
+    let constrained = counting
+        .run(
+            Some(0),
+            low(),
+            constraint("Low"),
+            None,
+            ModelCheckLimits::default(),
+        )
+        .expect("checks");
+    let unconstrained = counting
+        .run(
+            Some(0),
+            low(),
+            Reductions::default(),
+            None,
+            ModelCheckLimits::default(),
+        )
+        .expect("checks");
+    let (
+        ModelCheckOutcome::Violated {
+            counterexample: constrained,
+            ..
+        },
+        ModelCheckOutcome::Violated {
+            counterexample: unconstrained,
+            ..
+        },
+    ) = (&constrained, &unconstrained)
+    else {
+        panic!("both runs are violated");
+    };
+    carries_only_concrete_members(constrained);
+    assert_eq!(constrained, unconstrained);
+    let path: Vec<_> = counting.positions(constrained).iter().map(values).collect();
+    assert_eq!(path, [(0, 0, 0), (1, 0, 0), (2, 0, 0)]);
+    assert!(reproduced_any(&counting.replay_clause(
+        0,
+        low(),
+        constrained.as_ref().clone()
+    )));
+
+    // AC-1, twice.
+    let whole = configs("fair weak whole M::Counter::bump; always eventually holds(x.v = 2)");
+    let at_two = |v| Some(v == 2);
+    let first = run(&whole, at_two, symmetric());
+    let second = run(&whole, at_two, symmetric());
+    let (first, second) = (violation(&first), violation(&second));
+    assert_eq!(
+        first, second,
+        "concretising twice gives equal counterexamples"
+    );
+    carries_only_concrete_members(first);
+    assert_eq!(whole.positions(first).len(), 4);
+    assert!(reproduced(&whole.replay_clause(
+        0,
+        vec![atom(at_two)],
+        first.clone()
+    )));
+
+    // AC-2.
+    let token = Subject::Token;
+    let tokens = Flags::new(token, "", EVENTUALLY_FIRED);
+    let outcome = tokens.run(flagged(token));
+    let counterexample = violation(&outcome);
+    carries_only_concrete_members(counterexample);
+    assert_eq!(tokens.positions(counterexample).len(), 3);
+    assert!(reproduced(&tokens.replay(counterexample.clone())));
+
+    // AC-3.
+    let each = configs(REFUTATION);
+    let not_two = |v| Some(v != 2);
+    let outcome = run(&each, not_two, symmetric());
+    let counterexample = violation(&outcome);
+    carries_only_concrete_members(counterexample);
+    assert!(reproduced(&each.replay_clause(
+        0,
+        vec![atom(not_two)],
+        counterexample.clone()
+    )));
 }
