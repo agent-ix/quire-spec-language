@@ -215,6 +215,42 @@ pub use node_key::{
     NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf, OperationMode,
     Operator, Owner, PackageRef, SourceOwner, TupleMember, TupleTerm, WireNodeRef,
 };
+
+/// The structural key of QSpec's built-in Rational scalar type (FR-092).
+/// Timed tick sources use this primitive literal type even when the checked
+/// unit contains no other rational expression from which S4 could discover it.
+pub fn builtin_rational_type_key() -> quire_exact::NodeKey {
+    let body = BodyTerm::aggregate(Vec::new());
+    let input = node_key::NodeInput {
+        owner: None,
+        node_tag: NodeTag::ScalarType,
+        semantic_form: "rational",
+        semantic_type: None,
+        declaration: None,
+        body: &body,
+    };
+    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
+        .expect("the built-in Rational scalar has a valid structural key")
+        .key
+}
+
+/// The structural key of QSpec's built-in Text scalar type (FR-092).
+/// Timed source metadata uses this primitive even when no source expression
+/// already caused its scalar node to enter the checked graph.
+pub fn builtin_text_type_key() -> quire_exact::NodeKey {
+    let body = BodyTerm::aggregate(Vec::new());
+    let input = node_key::NodeInput {
+        owner: None,
+        node_tag: NodeTag::ScalarType,
+        semantic_form: "text",
+        semantic_type: None,
+        declaration: None,
+        body: &body,
+    };
+    node_key::node_key(&input, qsl_foundation::IdentityLimits::default())
+        .expect("the built-in Text scalar has a valid structural key")
+        .key
+}
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
 // module) and once more, byte-for-byte, in `value::expression::family`'s
@@ -775,6 +811,18 @@ fn root(origin: Origin) -> Location {
     Location::root(origin)
 }
 
+/// Internal declared-span key for a timed source. Timed declarations have a
+/// source span but no distinct `Origin` variant; the spaced name cannot
+/// collide with a QSL declaration name.
+fn time_source_origin(index: usize) -> String {
+    format!("time source {index}")
+}
+
+/// Internal declared-span key for a timed source's qualified operation name.
+fn time_operation_origin(index: usize) -> String {
+    format!("time source {index} operation")
+}
+
 /// FR-115: one [`CheckedOperationFrame`] per distinct (declaring type,
 /// operation name) in `named`, in first-named order. Every clause and
 /// attempt naming one operation is bound to the same anchor and frame node
@@ -989,6 +1037,24 @@ impl PackageDeclarations {
                                 .iter()
                                 .find(|model| model.alias() == Some(source.model.name.as_str()))
                             {
+                                let model_nodes = model.object_type_model_node_keys(self.identity);
+                                let [model_node] = model_nodes.as_slice() else {
+                                    let cause = if model_nodes.is_empty() {
+                                        TemporalCause::MissingTimedModel {
+                                            name: source.model.name.clone(),
+                                            span: source.model.span,
+                                        }
+                                    } else {
+                                        TemporalCause::AmbiguousTimedModel {
+                                            name: source.model.name.clone(),
+                                            span: source.model.span,
+                                        }
+                                    };
+                                    return Some(CheckRefusal {
+                                        location: root(Origin::Expression),
+                                        cause: CheckCause::Temporal(Box::new(cause)),
+                                    });
+                                };
                                 let target = match units.target(&source.unit.name) {
                                     Ok(Some(target)) => target,
                                     Ok(None) => {
@@ -1014,6 +1080,8 @@ impl PackageDeclarations {
                                         })
                                     }
                                 };
+                                let mut tick_operation_key = None;
+                                let mut tick_operation_span = None;
                                 let source_kind = match &source.source {
                                     qsl_forms::TimeSourceSyntax::Dense => TimeSourceKind::Dense,
                                     qsl_forms::TimeSourceSyntax::Tick { operation, period } => {
@@ -1035,6 +1103,8 @@ impl PackageDeclarations {
                                                 cause: CheckCause::Temporal(Box::new(cause)),
                                             });
                                         };
+                                        tick_operation_key = Some((*resolved).clone());
+                                        tick_operation_span = Some(operation.span);
                                         let magnitude = match probabilistic::exact_value(
                                             &period.magnitude,
                                             limits.rational_bits(),
@@ -1109,9 +1179,16 @@ impl PackageDeclarations {
                                 };
                                 self.time_sources.push(ModelTimeSource {
                                     model: source.model.name.clone(),
+                                    span: source.span,
+                                    model_node: *model_node,
+                                    tick_operation_key,
+                                    tick_operation_span,
+                                    tick_operation_anchor: None,
                                     source: source_kind,
                                     unit: source.unit.name.clone(),
+                                    unit_node: target.unit(),
                                     time_dimension: target.dimension(),
+                                    nominal_nodes: target.nominal_nodes().to_vec(),
                                 });
                                 return None;
                             }
@@ -1387,7 +1464,13 @@ impl PackageDeclarations {
             return Err(refusals);
         }
         let source = self.source;
-        let type_spans = self.declared_type_spans;
+        let mut type_spans = self.declared_type_spans;
+        for (index, source) in self.time_sources.iter().enumerate() {
+            type_spans.insert(time_source_origin(index), source.span);
+            if let Some(span) = source.tick_operation_span {
+                type_spans.insert(time_operation_origin(index), span);
+            }
+        }
         let site_spans = self.declared_site_spans;
         let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
@@ -3002,8 +3085,65 @@ impl PackageDeclarations {
                 });
             }
         }
+        // FR-230-AC-35: resolve each admitted tick operation to the same
+        // declaration and operation-anchor machinery used by clauses and
+        // protocol attempts. Keep the input owned here so the anchor joins
+        // the canonical frame-registration order above.
+        let timed_operations: Vec<(
+            usize,
+            quire_exact::EffectiveId,
+            crate::model::operation::OperationDeclaration,
+            Location,
+            Location,
+        )> = self
+            .time_sources
+            .iter()
+            .enumerate()
+            .filter_map(|(index, source)| {
+                let TimeSourceKind::Tick { .. } = source.source else {
+                    return None;
+                };
+                let key = source.tick_operation_key.as_ref()?;
+                let model = models
+                    .iter()
+                    .find(|model| model.alias() == Some(source.model.as_str()))?;
+                let (declaring, name) = model.operation_anchor_declaration(key)?;
+                let operation = scope.operation_declaration(declaring, &name)?.clone();
+                Some((
+                    index,
+                    declaring,
+                    operation,
+                    root(Origin::TypeDeclaration {
+                        name: time_source_origin(index),
+                    }),
+                    root(Origin::TypeDeclaration {
+                        name: time_operation_origin(index),
+                    }),
+                ))
+            })
+            .collect();
+        for (_, declaring, operation, location, reference) in &timed_operations {
+            anchors.push(lowering::AnchorInput {
+                declaring: *declaring,
+                operation,
+                location,
+                reference,
+            });
+        }
         if let Err(refusal) = lowering.register_frame_occurrences(&anchors) {
             refusals.push(refusal);
+        }
+        for (index, declaring, operation, location, reference) in &timed_operations {
+            let anchor = lowering::AnchorInput {
+                declaring: *declaring,
+                operation,
+                location,
+                reference,
+            };
+            match lowering.time_source_anchor(&anchor) {
+                Ok(key) => self.time_sources[*index].tick_operation_anchor = Some(key),
+                Err(refusal) => refusals.push(refusal),
+            }
         }
         // FR-104: each state clause after every function it may call,
         // minting its node identity and recording its `claim` occurrence.
