@@ -92,8 +92,9 @@ use quire_contract_model::{
     CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
     CheckedPackageLockV2, CheckedPackageV2, CheckedRational, CheckedSelection,
     CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage,
-    NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm,
+    NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST,
+    PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -584,7 +585,8 @@ impl<'g> Candidate<'g> {
                     .collect(),
             }),
             owner: node.owner().map(wire_owner),
-            body: node.wire_body().map_err(encoding)?,
+            body: serde_json::from_value::<CheckedTerm>(node.wire_body().map_err(encoding)?)
+                .map_err(encoding)?,
         })
     }
 }
@@ -1145,23 +1147,12 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
 }
 
 /// The unique digest-ascending reference targets directly named by a body.
-fn body_reference_targets(body: &serde_json::Value) -> Vec<CheckedNodeId> {
-    fn visit(value: &serde_json::Value, targets: &mut Vec<CheckedNodeId>) {
-        match value {
-            serde_json::Value::Object(fields) => {
-                if fields.get("term") == Some(&serde_json::Value::String("reference".into())) {
-                    if let Ok(target) = serde_json::from_value(fields["target"].clone()) {
-                        targets.push(target);
-                    }
-                }
-                fields.values().for_each(|child| visit(child, targets));
-            }
-            serde_json::Value::Array(items) => items.iter().for_each(|child| visit(child, targets)),
-            _ => {}
-        }
-    }
-    let mut targets = Vec::new();
-    visit(body, &mut targets);
+fn body_reference_targets(body: &CheckedTerm) -> Vec<CheckedNodeId> {
+    let mut targets = body
+        .reference_targets()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
     targets.sort_by(|left, right| left.digest.cmp(&right.digest));
     targets.dedup();
     targets

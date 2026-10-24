@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use quire_contract_model::{
     CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedOccurrence, CheckedPackageV2,
-    CheckedSemanticNodeV2, NominalIdentityPreimage,
+    CheckedSemanticNodeV2, CheckedTerm, NominalIdentityPreimage,
 };
 use quire_exact::{Integer, Rational};
 use serde_json::Value;
@@ -270,33 +270,46 @@ impl CheckedTimedModel {
                 + self.urgencies.len()
                 + self.normalized_constraints.len(),
         );
-        nodes.push(write_source(&self.source, &self.literal_types));
+        nodes.push(write_source(&self.source, &self.literal_types)?);
         nodes.extend(
             self.clock_places
                 .iter()
                 .map(|place| write_place(place, &self.literal_types))
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        nodes.extend(self.resets.iter().map(write_reset));
+        nodes.extend(
+            self.resets
+                .iter()
+                .map(write_reset)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         nodes.extend(
             self.guards
                 .iter()
-                .map(|guard| write_predicate(&guard.metadata, "clock_guard", &guard.predicate)),
+                .map(|guard| write_predicate(&guard.metadata, "clock_guard", &guard.predicate))
+                .collect::<Result<Vec<_>, _>>()?,
         );
-        nodes.extend(self.invariants.iter().map(|invariant| {
-            write_predicate(&invariant.metadata, "time_invariant", &invariant.predicate)
-        }));
+        nodes.extend(
+            self.invariants
+                .iter()
+                .map(|invariant| {
+                    write_predicate(&invariant.metadata, "time_invariant", &invariant.predicate)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         nodes.extend(
             self.urgencies
                 .iter()
-                .map(|urgency| write_urgency(urgency, &self.literal_types)),
+                .map(|urgency| write_urgency(urgency, &self.literal_types))
+                .collect::<Result<Vec<_>, _>>()?,
         );
         nodes.extend(
             self.normalized_constraints
                 .iter()
-                .map(|constraint| write_constraint(constraint, &self.literal_types)),
+                .map(|constraint| write_constraint(constraint, &self.literal_types))
+                .collect::<Result<Vec<_>, _>>()?,
         );
-        nodes.push(write_root(self));
+        nodes.push(write_root(self)?);
         Ok(nodes)
     }
 }
@@ -316,8 +329,8 @@ impl TimedNodeMetadata {
         }
     }
 
-    fn node(&self, form: &str, body: Value) -> CheckedSemanticNodeV2 {
-        CheckedSemanticNodeV2 {
+    fn node(&self, form: &str, body: Value) -> Result<CheckedSemanticNodeV2, &'static str> {
+        Ok(CheckedSemanticNodeV2 {
             node_id: self.node_id.clone(),
             schema_version: self.schema_version.clone(),
             node_tag: "timed_model".into(),
@@ -329,12 +342,16 @@ impl TimedNodeMetadata {
             nominal_identity_preimage: self.nominal_identity_preimage.clone(),
             declaration: self.declaration.clone(),
             owner: self.owner.clone(),
-            body,
-        }
+            body: serde_json::from_value::<CheckedTerm>(body)
+                .map_err(|_| "timed-node writer constructs a malformed checked term")?,
+        })
     }
 }
 
-fn write_source(source: &CheckedTimeSource, types: &TimedLiteralTypes) -> CheckedSemanticNodeV2 {
+fn write_source(
+    source: &CheckedTimeSource,
+    types: &TimedLiteralTypes,
+) -> Result<CheckedSemanticNodeV2, &'static str> {
     let mut fields = vec![
         binding_term("kind", text_literal(&types.text, &source.kind)),
         binding_term("unit", reference_term(&source.unit)),
@@ -427,7 +444,7 @@ fn write_place(
             ]))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(place.metadata.node(
+    place.metadata.node(
         "clock_place",
         aggregate_term(vec![
             binding_term("model", reference_term(&place.model)),
@@ -435,10 +452,10 @@ fn write_place(
             binding_term("resolved_path", aggregate_term(resolved_path)),
             binding_term("guards", reference_terms(&place.guards)),
         ]),
-    ))
+    )
 }
 
-fn write_reset(reset: &CheckedClockReset) -> CheckedSemanticNodeV2 {
+fn write_reset(reset: &CheckedClockReset) -> Result<CheckedSemanticNodeV2, &'static str> {
     reset.metadata.node(
         "clock_reset",
         aggregate_term(vec![
@@ -455,14 +472,17 @@ fn write_predicate(
     metadata: &TimedNodeMetadata,
     form: &str,
     predicate: &CheckedNodeId,
-) -> CheckedSemanticNodeV2 {
+) -> Result<CheckedSemanticNodeV2, &'static str> {
     metadata.node(
         form,
         aggregate_term(vec![binding_term("predicate", reference_term(predicate))]),
     )
 }
 
-fn write_urgency(urgency: &CheckedUrgency, types: &TimedLiteralTypes) -> CheckedSemanticNodeV2 {
+fn write_urgency(
+    urgency: &CheckedUrgency,
+    types: &TimedLiteralTypes,
+) -> Result<CheckedSemanticNodeV2, &'static str> {
     match urgency {
         CheckedUrgency::When {
             metadata,
@@ -492,7 +512,7 @@ fn write_urgency(urgency: &CheckedUrgency, types: &TimedLiteralTypes) -> Checked
 fn write_constraint(
     constraint: &CheckedClockConstraint,
     types: &TimedLiteralTypes,
-) -> CheckedSemanticNodeV2 {
+) -> Result<CheckedSemanticNodeV2, &'static str> {
     constraint.metadata.node(
         "clock_constraint",
         aggregate_term(vec![
@@ -509,7 +529,7 @@ fn write_constraint(
     )
 }
 
-fn write_root(model: &CheckedTimedModel) -> CheckedSemanticNodeV2 {
+fn write_root(model: &CheckedTimedModel) -> Result<CheckedSemanticNodeV2, &'static str> {
     let references =
         |ids: Vec<&CheckedNodeId>| aggregate_term(ids.into_iter().map(reference_term).collect());
     model.metadata.node(
@@ -638,32 +658,32 @@ fn project_root(
     nodes: &BTreeMap<CheckedNodeId, &CheckedSemanticNodeV2>,
     literal_types: &TimedLiteralTypes,
 ) -> Result<CheckedTimedModel, &'static str> {
-    let body = &root.body;
-    let model = reference(binding(body, "model")?)?;
-    let time_dimension = reference(binding(body, "time_dimension")?)?;
-    let source_node = referenced_node(binding(body, "source")?, nodes)?;
+    let body = checked_body(root)?;
+    let model = reference(binding(&body, "model")?)?;
+    let time_dimension = reference(binding(&body, "time_dimension")?)?;
+    let source_node = referenced_node(binding(&body, "source")?, nodes)?;
     let source = project_source(source_node)?;
-    let clock_places = reference_list(binding(body, "clock_places")?)?
+    let clock_places = reference_list(binding(&body, "clock_places")?)?
         .into_iter()
         .map(|id| project_place(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
-    let resets = reference_list(binding(body, "resets")?)?
+    let resets = reference_list(binding(&body, "resets")?)?
         .into_iter()
         .map(|id| project_reset(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
-    let guards = reference_list(binding(body, "guards")?)?
+    let guards = reference_list(binding(&body, "guards")?)?
         .into_iter()
         .map(|id| project_predicate(referenced_node_by_id(&id, nodes)?, "clock_guard"))
         .collect::<Result<Vec<_>, _>>()?;
-    let invariants = reference_list(binding(body, "invariants")?)?
+    let invariants = reference_list(binding(&body, "invariants")?)?
         .into_iter()
         .map(|id| project_predicate(referenced_node_by_id(&id, nodes)?, "time_invariant"))
         .collect::<Result<Vec<_>, _>>()?;
-    let urgencies = reference_list(binding(body, "urgencies")?)?
+    let urgencies = reference_list(binding(&body, "urgencies")?)?
         .into_iter()
         .map(|id| project_urgency(referenced_node_by_id(&id, nodes)?))
         .collect::<Result<Vec<_>, _>>()?;
-    let normalized_constraints = reference_list(binding(body, "constraints")?)?
+    let normalized_constraints = reference_list(binding(&body, "constraints")?)?
         .into_iter()
         .map(|id| project_constraint(referenced_node_by_id(&id, nodes)?, source.unit.clone()))
         .collect::<Result<Vec<_>, _>>()?;
@@ -686,15 +706,15 @@ fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'s
     if node.semantic_form.as_ref() != "time_source" {
         return Err("timed source reference has wrong form");
     }
-    let body = &node.body;
-    let kind = literal_text(binding(body, "kind")?)?.to_owned();
-    let unit = reference(binding(body, "unit")?)?;
+    let body = checked_body(node)?;
+    let kind = literal_text(binding(&body, "kind")?)?.to_owned();
+    let unit = reference(binding(&body, "unit")?)?;
     let (model, operation, period) = if kind == "tick" {
         (
-            Some(reference(binding(body, "model")?)?),
-            Some(reference(binding(body, "operation")?)?),
+            Some(reference(binding(&body, "model")?)?),
+            Some(reference(binding(&body, "operation")?)?),
             Some(normalized_rational(literal_string(binding(
-                body, "period",
+                &body, "period",
             )?)?)?),
         )
     } else if kind == "dense" {
@@ -710,9 +730,9 @@ fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'s
         operation,
         period,
         period_type: if node.semantic_form.as_ref() == "time_source"
-            && binding(body, "period").is_ok()
+            && binding(&body, "period").is_ok()
         {
-            Some(literal_type(binding(body, "period")?)?)
+            Some(literal_type(binding(&body, "period")?)?)
         } else {
             None
         },
@@ -723,13 +743,13 @@ fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'st
     if node.semantic_form.as_ref() != "clock_place" {
         return Err("clock place reference has wrong form");
     }
-    let body = &node.body;
-    let path_value = binding(body, "path")?;
+    let body = checked_body(node)?;
+    let path_value = binding(&body, "path")?;
     let path = aggregate(path_value)?
         .iter()
         .map(project_path_step)
         .collect::<Result<Vec<_>, _>>()?;
-    let resolved_path = aggregate(binding(body, "resolved_path")?)?
+    let resolved_path = aggregate(binding(&body, "resolved_path")?)?
         .iter()
         .map(project_resolved_step)
         .collect::<Result<Vec<_>, _>>()?;
@@ -737,8 +757,8 @@ fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'st
         metadata: TimedNodeMetadata::from_node(node),
         path,
         resolved_path,
-        model: reference(binding(body, "model")?)?,
-        guards: reference_list(binding(body, "guards")?)?,
+        model: reference(binding(&body, "model")?)?,
+        guards: reference_list(binding(&body, "guards")?)?,
     })
 }
 
@@ -792,12 +812,12 @@ fn project_reset(node: &CheckedSemanticNodeV2) -> Result<CheckedClockReset, &'st
     if node.semantic_form.as_ref() != "clock_reset" {
         return Err("clock reset reference has wrong form");
     }
-    let body = &node.body;
+    let body = checked_body(node)?;
     Ok(CheckedClockReset {
         metadata: TimedNodeMetadata::from_node(node),
-        place: reference(binding(body, "place")?)?,
-        value: normalized_rational(literal_string(binding(body, "value")?)?)?,
-        value_type: literal_type(binding(body, "value")?)?,
+        place: reference(binding(&body, "place")?)?,
+        value: normalized_rational(literal_string(binding(&body, "value")?)?)?,
+        value_type: literal_type(binding(&body, "value")?)?,
     })
 }
 
@@ -810,7 +830,7 @@ fn project_predicate(
     }
     Ok(CheckedTimedPredicate {
         metadata: TimedNodeMetadata::from_node(node),
-        predicate: reference(binding(&node.body, "predicate")?)?,
+        predicate: reference(binding(&checked_body(node)?, "predicate")?)?,
     })
 }
 
@@ -818,16 +838,16 @@ fn project_urgency(node: &CheckedSemanticNodeV2) -> Result<CheckedUrgency, &'sta
     if node.semantic_form.as_ref() != "urgency" {
         return Err("urgency reference has wrong form");
     }
-    let body = &node.body;
-    match literal_text(binding(body, "kind")?)? {
+    let body = checked_body(node)?;
+    match literal_text(binding(&body, "kind")?)? {
         "when" => Ok(CheckedUrgency::When {
             metadata: TimedNodeMetadata::from_node(node),
-            predicate: reference(binding(body, "predicate")?)?,
+            predicate: reference(binding(&body, "predicate")?)?,
         }),
         "operation" => Ok(CheckedUrgency::Operation {
             metadata: TimedNodeMetadata::from_node(node),
-            model: reference(binding(body, "model")?)?,
-            operation_name: literal_text(binding(body, "operation_name")?)?.to_owned(),
+            model: reference(binding(&body, "model")?)?,
+            operation_name: literal_text(binding(&body, "operation_name")?)?.to_owned(),
         }),
         _ => Err("unknown urgency kind"),
     }
@@ -840,14 +860,14 @@ fn project_constraint(
     if node.semantic_form.as_ref() != "clock_constraint" {
         return Err("clock constraint reference has wrong form");
     }
-    let body = &node.body;
+    let body = checked_body(node)?;
     Ok(CheckedClockConstraint {
         metadata: TimedNodeMetadata::from_node(node),
-        place: reference(binding(body, "place")?)?,
-        comparison: literal_text(binding(body, "comparison")?)?.to_owned(),
-        bound: normalized_rational(literal_string(binding(body, "bound")?)?)?,
+        place: reference(binding(&body, "place")?)?,
+        comparison: literal_text(binding(&body, "comparison")?)?.to_owned(),
+        bound: normalized_rational(literal_string(binding(&body, "bound")?)?)?,
         unit,
-        bound_type: literal_type(binding(body, "bound")?)?,
+        bound_type: literal_type(binding(&body, "bound")?)?,
     })
 }
 
@@ -875,6 +895,10 @@ fn binding<'a>(value: &'a Value, name: &str) -> Result<&'a Value, &'static str> 
         .find(|member| member["term"] == "binding" && member["name"] == name)
         .map(|member| &member["value"])
         .ok_or("admitted timed-model binding is absent")
+}
+
+fn checked_body(node: &CheckedSemanticNodeV2) -> Result<Value, &'static str> {
+    serde_json::to_value(&node.body).map_err(|_| "admitted timed-model body cannot be serialized")
 }
 
 fn aggregate(value: &Value) -> Result<&[Value], &'static str> {
@@ -961,5 +985,9 @@ fn find_literal_type(
         }
     }
 
-    nodes.values().find_map(|node| visit(&node.body, kind))
+    nodes.values().find_map(|node| {
+        serde_json::to_value(&node.body)
+            .ok()
+            .and_then(|body| visit(&body, kind))
+    })
 }

@@ -10,22 +10,22 @@
 
 use ix_trace_rs::trace;
 use quire_contract_model::{
-    CHECKED_PACKAGE_V2, CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
+    CheckedArtifactRef, CheckedExtensionDefinition, CheckedPackageEvidence,
     CheckedPackageRefusalCause, CheckedPackageRefusalCode, NominalIdentityPreimage,
-    PACKAGE_DOMAIN_V2,
+    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{Read, V2ReadLimits, V2ReadRefusal, read_checked_package_v2, read_v2};
+use super::{read_checked_package_v2, read_v2, Read, V2ReadLimits, V2ReadRefusal};
 use std::collections::BTreeMap;
 
-use qsl_foundation::Setting;
 use qsl_foundation::diagnostic::{Code, LimitExceeded, LimitKind, Locus};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::CheckCause;
+use qsl_foundation::Setting;
 use qsl_semantics::check::imports::ImportedNames;
+use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
     RefusalClass,
@@ -1806,10 +1806,10 @@ fn conformance_a_model_with_every_variable_clocked_is_refused_at_a_class_literal
         .iter()
         .position(|node| node["semantic_form"] == "hybrid_model")
         .expect("the Tank model node");
-    let variables =
-        candidate["semantic_graph"]["nodes"][model]["body"]["members"][0]["value"]["members"]
-            .as_array_mut()
-            .expect("variables");
+    let variables = candidate["semantic_graph"]["nodes"][model]["body"]["members"][0]["value"]
+        ["members"]
+        .as_array_mut()
+        .expect("variables");
     for variable in variables {
         variable["members"][1]["value"]["value"] = json!("clock");
     }
@@ -1966,13 +1966,11 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
         .unwrap();
     assert_eq!(operation["node_tag"], "state");
     assert_eq!(operation["semantic_form"], "operation_anchor");
-    assert!(
-        admitted
-            .graph()
-            .nodes
-            .iter()
-            .any(|node| node.node_id.digest.as_ref() == operation_id["digest"].as_str().unwrap())
-    );
+    assert!(admitted
+        .graph()
+        .nodes
+        .iter()
+        .any(|node| node.node_id.digest.as_ref() == operation_id["digest"].as_str().unwrap()));
 }
 
 /// FR-415-AC-17 / FR-322-AC-122: the typed timed-model writer re-emits all
@@ -2253,7 +2251,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         .find(|node| {
             node.node_tag.as_ref() == "value"
                 && node.semantic_form.as_ref() == "literal"
-                && node.body.to_string().contains("audit")
+                && serde_json::to_string(&node.body).is_ok_and(|body| body.contains("audit"))
         })
         .expect("fixture text key value")
         .node_id
@@ -2867,8 +2865,8 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
         })
         .expect("the all-families fixture holds a temporal clause");
     let mut package = base.clone();
-    package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]["identity"] =
-        json!("quire.fixture.temporal-profile/v1");
+    package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]["definition"]
+        ["identity"] = json!("quire.fixture.temporal-profile/v1");
     // Rekey innermost first: each changed key is renamed wherever it is named.
     for _ in 0..=nodes_of(&package).len() {
         let mut changed = false;
