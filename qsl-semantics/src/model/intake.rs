@@ -52,9 +52,10 @@ use crate::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord,
     Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
     OperationContractClause, OperationEffect, OperationMemberRecord, OperationParameterRecord,
-    OperationResult, OriginalDeclaration, PersistenceInterfaceRecord, PopulationRecord,
-    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef, VariantRecord,
+    OperationResult, OriginalDeclaration, PackageDimensionRecord, PackageUnitRecord,
+    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
@@ -2501,7 +2502,7 @@ fn read_operation_parameter(
         ));
     }
     let type_ref = ctx.str_field("typeRef")?;
-    let value_type = read_value_type_ref(package, &ctx, type_ref)?;
+    let value_type = read_value_type_ref(package, &ctx, type_ref, false)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
     Ok(OperationParameterRecord {
         key: declaration_key(package, node),
@@ -2660,7 +2661,7 @@ pub(super) fn read_operation_member(
                 .ok_or_else(|| {
                     returns_ctx.malformed_in("returns.typeRef", "missing or not a string")
                 })?;
-            let value_type = read_value_type_ref(package, &returns_ctx, type_ref)?;
+            let value_type = read_value_type_ref(package, &returns_ctx, type_ref, false)?;
             let multiplicity = returns_ctx.multiplicity_of(returns, "returns.multiplicity")?;
             Some(OperationResult {
                 value_type,
@@ -2940,7 +2941,7 @@ impl<'a> NodeCtx<'a> {
     }
 }
 
-/// Resolves a `typeRef` (field, parameter or `returns` alike -- FR-154's
+/// Resolves a data-value `typeRef` (field, parameter or `returns` alike -- FR-154's
 /// Fields row, `model-complete.md`:157: "`typeRef` names a native value
 /// type, or a type of the package"): the sole resolver every `typeRef` site
 /// goes through. `ix://quire/native/<Name>` names one of
@@ -2959,6 +2960,7 @@ fn read_value_type_ref(
     package: &str,
     ctx: &NodeCtx<'_>,
     type_ref: &str,
+    allow_clock: bool,
 ) -> Result<ValueTypeRef, ModelRefusal> {
     if let Some(name) = type_ref.strip_prefix("ix://quire/unit/") {
         if name.is_empty() || name.contains('/') {
@@ -2970,6 +2972,9 @@ fn read_value_type_ref(
         return Ok(ValueTypeRef::Unit(name.to_owned()));
     }
     if let Some(name) = type_ref.strip_prefix(native::PREFIX) {
+        if name == "Clock" && allow_clock {
+            return Ok(ValueTypeRef::Clock);
+        }
         let native = name.parse::<NativeValueType>().map_err(|()| {
             ctx.malformed_in(
                 "typeRef",
@@ -3019,7 +3024,9 @@ fn read_field_member(
         ));
     }
     let type_ref = ctx.str_field("typeRef")?;
-    let value_type = read_value_type_ref(package, &ctx, type_ref)?;
+    // FR-230 models Clock as a place, so only a field reader can admit it;
+    // parameters and results use the ordinary data value algebra.
+    let value_type = read_value_type_ref(package, &ctx, type_ref, true)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
     // QSpec's own Presence row (`model-complete.md`:158): `presence` is
     // exactly `required` or `optional`, independent of `multiplicity`'s
@@ -3395,7 +3402,7 @@ fn read_value_type(
             .malformed("a value type declares no supertype"));
     }
     if let Some(target) = type_value.get("target").and_then(Value::as_str) {
-        let value_type = read_value_type_ref(package, &ctx, target)?;
+        let value_type = read_value_type_ref(package, &ctx, target, false)?;
         let ValueTypeRef::Native(native) = value_type else {
             return Err(ctx.malformed_in("target", "a QSL value alias names a native value type"));
         };
@@ -4896,9 +4903,54 @@ pub fn read_domain_package(
         }
     }
     intake_refusals.sort_by(|left, right| refusal_node(left).cmp(&refusal_node(right)));
+    // FCD validates these graph declarations at I1. Keep their authored
+    // identities and exact coefficients so S3 can resolve an owner-qualified
+    // time unit without inventing an unqualified source unit.
+    let dimensions = document
+        .tree
+        .get("dimensions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|node| {
+            let identity = node.get("identity")?.as_str()?;
+            let name = node.get("name")?.as_str()?;
+            let base = node.get("terms")?.as_array()?.is_empty();
+            Some(PackageDimensionRecord {
+                key: declaration_key(&selection.identity, identity),
+                name: name.to_owned(),
+                base,
+            })
+        })
+        .collect();
+    let units = document
+        .tree
+        .get("units")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|node| {
+            let identity = node.get("identity")?.as_str()?;
+            let name = node.get("name")?.as_str()?;
+            let dimension = node.get("dimension")?.as_str()?;
+            let scale = node.get("scale")?.as_str()?;
+            let offset = node.get("offset")?.as_str()?;
+            let target = node.get("target").and_then(Value::as_str);
+            Some(PackageUnitRecord {
+                key: declaration_key(&selection.identity, identity),
+                name: name.to_owned(),
+                dimension: declaration_key(&selection.identity, dimension),
+                target: target.map(|target| declaration_key(&selection.identity, target)),
+                scale: scale.to_owned(),
+                offset: offset.to_owned(),
+            })
+        })
+        .collect();
     Ok(DomainPackage {
         model_selection: selection,
         records,
+        dimensions,
+        units,
         originals,
         intake_refusals,
         declared_record_count: Some(source_record_count(&document.tree)),
@@ -6229,9 +6281,24 @@ mod tests {
     fn resolves_a_known_native_type_ref() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let value_type = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Boolean")
-            .expect("a known, unparameterized native typeRef resolves");
+        let value_type =
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Boolean", false)
+                .expect("a known, unparameterized native typeRef resolves");
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
+    }
+
+    #[test]
+    fn resolves_clock_only_for_a_clock_field() {
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/clock"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        assert_eq!(
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Clock", true)
+                .expect("Clock is admitted as a field place"),
+            ValueTypeRef::Clock
+        );
+        assert!(
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Clock", false).is_err()
+        );
     }
 
     #[trace("TC-897", "FR-056-AC-17")]
@@ -6239,8 +6306,9 @@ mod tests {
     fn resolves_timestamp_as_a_distinct_native_type_ref() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/instant"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let value_type = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Timestamp")
-            .expect("Timestamp is a native value type");
+        let value_type =
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Timestamp", false)
+                .expect("Timestamp is a native value type");
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Timestamp));
         assert_eq!(value_type.to_string(), "ix://quire/native/Timestamp");
     }
@@ -6255,8 +6323,9 @@ mod tests {
     fn refuses_an_unknown_native_type_ref_as_malformed_declaration() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/flag"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let refusal = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Frobnicate")
-            .expect_err("a native-prefixed typeRef naming no native value type refuses");
+        let refusal =
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Frobnicate", false)
+                .expect_err("a native-prefixed typeRef naming no native value type refuses");
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -6290,8 +6359,13 @@ mod tests {
     fn resolves_uuid_as_a_native_value_type() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let resolved = read_value_type_ref("agent-ix/architecture", &ctx, "ix://quire/native/UUID")
-            .expect("UUID is a native value type");
+        let resolved = read_value_type_ref(
+            "agent-ix/architecture",
+            &ctx,
+            "ix://quire/native/UUID",
+            false,
+        )
+        .expect("UUID is a native value type");
         assert_eq!(resolved, ValueTypeRef::Native(NativeValueType::Uuid));
     }
 
@@ -6310,7 +6384,7 @@ mod tests {
     fn refuses_a_parameterized_native_type_as_unsupported() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let refusal = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Decimal")
+        let refusal = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Decimal", false)
             .expect_err(
                 "Decimal requires dmin/dmax, which the constraint vocabulary cannot express",
             );

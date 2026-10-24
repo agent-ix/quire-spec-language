@@ -64,6 +64,8 @@ fn check(package: &PackageDeclarations) -> Outcome {
     let units = crate::check::time_units::TimeUnits::new(
         &package.units,
         package.nominal_spans.keys().copied(),
+        &package.models,
+        package.identity,
     );
     let scope = Scope::new(
         package.types.clone(),

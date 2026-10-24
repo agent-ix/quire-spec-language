@@ -333,15 +333,17 @@ impl std::str::FromStr for NativeValueType {
     }
 }
 
-/// A field, parameter or result's resolved value type: QSL's own closed
-/// native vocabulary, declaring no node of any package, or a node of some
-/// package. The sole output shape [`crate::model::intake`]'s unified
-/// `typeRef` resolver produces -- never a synthetic `DeclarationKey` under a
-/// made-up "quire/native" package.
+/// A field, parameter or result's resolved type: a `Clock` place, QSL's own
+/// closed native value vocabulary, no node of any package, a node of some
+/// package, or a unit of the compiling unit. Clock is represented separately
+/// because it is not a value in QSL's ordinary data algebra.
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValueTypeRef {
+    /// A clock place: `ix://quire/native/Clock`. Clock is a place in a timed
+    /// model, not a value type in QSL's ordinary data algebra.
+    Clock,
     /// A native value type: `ix://quire/native/<Name>`.
     Native(NativeValueType),
     /// A node of a package: `ix://<package>/<artifact id>`.
@@ -352,10 +354,11 @@ pub enum ValueTypeRef {
 
 impl ValueTypeRef {
     /// This value type's own declaration key, when it names a node of a
-    /// package; `None` for a native value type, which names no node.
+    /// package; `None` for Clock, native value types and units, which name no
+    /// package node.
     pub fn as_package(&self) -> Option<&DeclarationKey> {
         match self {
-            Self::Native(_) | Self::Unit(_) => None,
+            Self::Clock | Self::Native(_) | Self::Unit(_) => None,
             Self::Package(key) => Some(key),
         }
     }
@@ -366,6 +369,7 @@ impl std::fmt::Display for ValueTypeRef {
     /// resolving to it would spell it on the wire.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Clock => f.write_str("ix://quire/native/Clock"),
             Self::Native(native) => write!(f, "ix://quire/native/{}", native.as_str()),
             Self::Package(key) => f.write_str(&key.node),
             Self::Unit(name) => write!(f, "ix://quire/unit/{name}"),
@@ -742,6 +746,37 @@ pub struct PopulationRecord {
     pub symmetric: bool,
 }
 
+/// A domain package's declared dimension, kept with its package identity so
+/// timed checks can bind a package unit to the exact base `Time` node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PackageDimensionRecord {
+    /// The original FCD identity.
+    pub key: DeclarationKey,
+    /// The authored dimension name.
+    pub name: String,
+    /// Whether this is a base dimension (`terms` is empty).
+    pub base: bool,
+}
+
+/// A domain package's unit edge, retained for owner-qualified time-unit
+/// resolution. Coefficients remain in their canonical FCD spelling until S3
+/// performs exact rational resolution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PackageUnitRecord {
+    /// The original FCD identity.
+    pub key: DeclarationKey,
+    /// The authored unit name.
+    pub name: String,
+    /// The original FCD identity of its dimension.
+    pub dimension: DeclarationKey,
+    /// The original FCD identity of its target, or `None` for the root.
+    pub target: Option<DeclarationKey>,
+    /// The exact edge scale spelling.
+    pub scale: String,
+    /// The exact edge offset spelling.
+    pub offset: String,
+}
+
 /// A variant type's `enum` export (FR-056 "Variant types"): the type's
 /// declaration, its artifact id as `name`, and its case names as the
 /// unordered set `members`, kept in ascending UTF-8 byte order of the name so
@@ -905,6 +940,10 @@ pub struct DomainPackage {
     pub model_selection: DomainPackageRef,
     /// The domain package's records, in the producer's declared order.
     pub records: Vec<DomainPackageRecord>,
+    /// Package-owned dimensions from the admitted FCD unit graph.
+    pub dimensions: Vec<PackageDimensionRecord>,
+    /// Package-owned units from the admitted FCD unit graph.
+    pub units: Vec<PackageUnitRecord>,
     /// Original intake provenance, separate from normalized identities.
     pub(crate) originals: BTreeMap<DeclarationKey, OriginalDeclaration>,
     /// FR-154 intake refusals retained until normalization has charged every
@@ -938,6 +977,8 @@ impl DomainPackage {
         Self {
             model_selection,
             records,
+            dimensions: Vec::new(),
+            units: Vec::new(),
             originals: BTreeMap::new(),
             intake_refusals: Vec::new(),
             declared_record_count: None,

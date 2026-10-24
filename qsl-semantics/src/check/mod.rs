@@ -957,7 +957,12 @@ impl PackageDeclarations {
             let admitted = crate::value::definition::DefinitionLock::pinned()
                 .closure(&selected)
                 .contains(&required);
-            let units = time_units::TimeUnits::new(&self.units, self.nominal_spans.keys().copied());
+            let units = time_units::TimeUnits::new(
+                &self.units,
+                self.nominal_spans.keys().copied(),
+                &self.models,
+                self.identity,
+            );
             let mut seen_time_sources = BTreeMap::new();
             let refusals = self
                 .timed_forms
@@ -984,18 +989,6 @@ impl PackageDeclarations {
                                 .iter()
                                 .find(|model| model.alias() == Some(source.model.name.as_str()))
                             {
-                                // Source-unit lookup has no package owner table yet.
-                                // A qualified unit must never be mistaken for a
-                                // missing unqualified source unit.
-                                if lowering::is_qualified_spelling(&source.unit.name) {
-                                    return Some(CheckRefusal {
-                                        location: root(Origin::Expression),
-                                        cause: CheckCause::TimedNotChecked {
-                                            construct: TimedConstruct::TimeSource,
-                                            span: source.unit.span,
-                                        },
-                                    });
-                                }
                                 let target = match units.target(&source.unit.name) {
                                     Ok(Some(target)) => target,
                                     Ok(None) => {
@@ -1024,15 +1017,6 @@ impl PackageDeclarations {
                                 let source_kind = match &source.source {
                                     qsl_forms::TimeSourceSyntax::Dense => TimeSourceKind::Dense,
                                     qsl_forms::TimeSourceSyntax::Tick { operation, period } => {
-                                        if lowering::is_qualified_spelling(&period.unit.name) {
-                                            return Some(CheckRefusal {
-                                                location: root(Origin::Expression),
-                                                cause: CheckCause::TimedNotChecked {
-                                                    construct: TimedConstruct::TimeSource,
-                                                    span: period.unit.span,
-                                                },
-                                            });
-                                        }
                                         let operations = model.tick_operation_keys(&operation.name);
                                         let [resolved] = operations.as_slice() else {
                                             let cause = if operations.is_empty() {
@@ -1127,6 +1111,7 @@ impl PackageDeclarations {
                                     model: source.model.name.clone(),
                                     source: source_kind,
                                     unit: source.unit.name.clone(),
+                                    time_dimension: target.dimension(),
                                 });
                                 return None;
                             }
@@ -2526,8 +2511,12 @@ impl PackageDeclarations {
         // emit (an `on each` activation or a capture) is refused rather
         // than compiled and silently missing from the package
         // (`temporal_clause::not_emitted`).
-        let time_units =
-            time_units::TimeUnits::new(&self.units, self.nominal_spans.keys().copied());
+        let time_units = time_units::TimeUnits::new(
+            &self.units,
+            self.nominal_spans.keys().copied(),
+            &models,
+            self.identity,
+        );
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
             selections: &self.temporal_selections,
@@ -2938,6 +2927,12 @@ impl PackageDeclarations {
             .enumerate()
             .map(|(index, form)| clause_location(index, &form.name))
             .collect();
+        // FR-105 "Outputs": each clause's qualified operation reference, where
+        // the frame's `generated` occurrence is placed if the clause is the
+        // first to name the operation.
+        let reference_locations: Vec<Location> = (0..state_clause_forms.len())
+            .map(lowering::state_operation_location)
+            .collect();
         // FR-114: every protocol attempt's own real location
         // (never `generated_location`), the same reason a clause's own
         // `AnchorInput::location` must be real (FR-096).
@@ -2976,14 +2971,15 @@ impl PackageDeclarations {
             .collect();
         let mut anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
             .iter()
-            .zip(&clause_locations)
-            .filter_map(|(form, location)| {
+            .zip(clause_locations.iter().zip(&reference_locations))
+            .filter_map(|(form, (location, reference))| {
                 form.operation
                     .as_ref()
                     .map(|operation| lowering::AnchorInput {
                         declaring: operation.declaring,
                         operation: &operation.declaration,
                         location,
+                        reference,
                     })
             })
             .collect();
@@ -2993,6 +2989,7 @@ impl PackageDeclarations {
                     declaring: bound.operation.declaring,
                     operation: &bound.operation.declaration,
                     location,
+                    reference: location,
                 });
             }
         }
@@ -3002,6 +2999,7 @@ impl PackageDeclarations {
                     declaring: template.operation.declaring,
                     operation: &template.operation.declaration,
                     location,
+                    reference: location,
                 });
             }
         }
@@ -3099,6 +3097,7 @@ impl PackageDeclarations {
                                 declaring: operation.declaring,
                                 operation: &operation.declaration,
                                 location,
+                                reference: location,
                             }),
                         parameters: &typed.parameters,
                         body: typed.body.root(),
@@ -3130,6 +3129,7 @@ impl PackageDeclarations {
                             declaring: bound.operation.declaring,
                             operation: &bound.operation.declaration,
                             location,
+                            reference: location,
                         },
                         frame_population: bound.frame_population,
                     };
@@ -3158,6 +3158,7 @@ impl PackageDeclarations {
                             declaring: template.operation.declaring,
                             operation: &template.operation.declaration,
                             location,
+                            reference: location,
                         },
                         frame_population: template.frame_population,
                     };
