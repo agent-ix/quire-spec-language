@@ -23,10 +23,10 @@ mod term;
 
 pub(super) use callee::Callees;
 pub use cause::{HybridCause, MalformedReason};
-pub use claim::HybridClaimDeclaration;
 pub(super) use claim::{check_claims, ClaimInputs};
+pub use claim::{hybrid_horizon, HorizonOutOfRange, HybridClaimDeclaration};
+pub(super) use model::check_models;
 pub use model::HybridDeclaration;
-pub(super) use model::{check_models, not_emitted};
 
 /// A mode of a [`CheckedHybridModel`], by its position in
 /// [`CheckedHybridModel::modes`].
@@ -287,8 +287,6 @@ pub enum HybridTerm {
 /// typed by a `hybrid` declaration (FR-447 "Hybrid claims").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedHybridClaim {
-    /// The declared clause name.
-    pub name: Identifier,
     /// The model the `over` parameter's type names.
     pub model: HybridModelIndex,
     /// The temporal profile the claim's `using` alias selects.
@@ -352,6 +350,9 @@ pub struct HybridFairness {
     pub kind: FairnessKind,
     /// One constraint over the named transitions, or one per transition.
     pub granularity: FairnessGranularity,
+    /// The target after `::` when the source writes `fair S::T`; absent for
+    /// `fair S`, even if all of S's transitions have the same target.
+    pub named_target: Option<ModeIndex>,
     /// The named transitions, in source order.
     pub transitions: Vec<(ModeIndex, TransitionIndex)>,
 }

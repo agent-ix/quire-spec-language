@@ -503,9 +503,6 @@ pub struct PackageDeclarations {
     /// clauses whose `over` type names one of [`Self::hybrids`], each with its
     /// `using` alias resolved by the FR-091 assembler.
     pub hybrid_claims: Vec<super::HybridClaimDeclaration>,
-    /// Test-only: check a package that holds a `hybrid` declaration without
-    /// refusing it as not emitted (FR-447).
-    pub emit_unwritten_hybrids: bool,
     /// FR-147: the unit's `refinement_internals` input, supplied beside the
     /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
     /// name, "internal": [class, ...]}` objects. `None` is the empty list.
@@ -582,17 +579,6 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_unwritten_state_graph_claims(mut self) -> Self {
         self.emit_unwritten_state_graph_claims = true;
-        self
-    }
-
-    /// These declarations, to be checked without refusing a `hybrid`
-    /// declaration as not emitted, so the S3 value
-    /// (`CheckedGraph::hybrid_models`) stays testable until S4 writes it
-    /// (FR-447).
-    #[cfg(any(test, feature = "test-support"))]
-    #[must_use]
-    pub fn with_unwritten_hybrids(mut self) -> Self {
-        self.emit_unwritten_hybrids = true;
         self
     }
 
@@ -677,7 +663,6 @@ impl PackageDeclarations {
             refinements: Vec::new(),
             hybrids: Vec::new(),
             hybrid_claims: Vec::new(),
-            emit_unwritten_hybrids: false,
             refinement_internals: None,
             refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,

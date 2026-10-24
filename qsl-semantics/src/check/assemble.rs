@@ -3373,6 +3373,30 @@ impl PackageDeclarations {
                 );
             }
         }
+        // FR-447: a hybrid model's nodes are located at its declared name,
+        // each mode's clause and each transition's clause; a hybrid claim's
+        // nodes at its declared name and its `over` parameter's name.
+        for (model, declaration) in package.hybrids.iter().enumerate() {
+            use super::lowering::{hybrid_site, HybridSite};
+            let form = &declaration.form;
+            declared_type_spans.insert(hybrid_site(HybridSite::Model(model)), form.name.span);
+            for (mode, written) in form.modes.iter().enumerate() {
+                declared_type_spans
+                    .insert(hybrid_site(HybridSite::Mode(model, mode)), written.span);
+                for (transition, clause) in written.transitions.iter().enumerate() {
+                    declared_type_spans.insert(
+                        hybrid_site(HybridSite::Transition(model, mode, transition)),
+                        clause.span,
+                    );
+                }
+            }
+        }
+        for (claim, declaration) in package.hybrid_claims.iter().enumerate() {
+            use super::lowering::{hybrid_site, HybridSite};
+            let form = &declaration.form;
+            declared_type_spans.insert(hybrid_site(HybridSite::Claim(claim)), form.name.span);
+            declared_type_spans.insert(hybrid_site(HybridSite::Over(claim)), form.over.name.span);
+        }
         // FR-185: each random parameter's support values and each reward's
         // expression are located at their own sites.
         declared_site_spans.extend(super::probabilistic::site_spans(&unit.probabilistic));
