@@ -46,7 +46,7 @@ const BUMPS: &str = "pre Below using v on M::Counter::bump { self.v < 2 }\n\
 /// ADR-021 §7.2's `ReachesTwo`.
 pub(crate) const REACHES_TWO: &str = "eventually holds(x.v = 2)";
 
-fn reduced() -> Reductions {
+pub(crate) fn reduced() -> Reductions {
     Reductions {
         partial_order: true,
         ..Reductions::default()
@@ -830,7 +830,7 @@ fn a_strong_constraint_makes_the_same_writes_visible() {
 // The ring (FR-156-AC-3)
 // ---------------------------------------------------------------------------
 
-fn below_two() -> Vec<por_world::Atom> {
+pub(crate) fn below_two() -> Vec<por_world::Atom> {
     vec![Box::new(|state, key| {
         por_world::number(state, "counters", key, "Counter/v").map(|v| v < 2)
     })]

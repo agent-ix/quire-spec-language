@@ -7,7 +7,7 @@
 use super::frame::identifier;
 use super::*;
 use crate::spine::{CallOutcome, OperationName};
-use qsl_semantics::model::observation::FrameChange;
+use qsl_semantics::model::observation::{AdmissionFailure, FrameChange};
 
 #[path = "../../../../../qsl-semantics/tests/support/receiver_frames.rs"]
 pub(super) mod fixture;
@@ -85,6 +85,26 @@ fn run_frame(
     post_objects: &[serde_json::Value],
     deleted: &[&str],
 ) -> super::super::ClauseRunReport {
+    run_selected(
+        operations,
+        operation,
+        post_objects,
+        deleted,
+        |name, invocation| ClauseRunSelection::Frame {
+            operation: name,
+            invocation,
+        },
+    )
+}
+
+/// Runs `selection` over the invocation [`run_frame`] describes.
+fn run_selected(
+    operations: &[&str],
+    operation: &str,
+    post_objects: &[serde_json::Value],
+    deleted: &[&str],
+    selection: impl FnOnce(OperationName, DocumentRef) -> ClauseRunSelection,
+) -> super::super::ClauseRunReport {
     let (unit, packages) = unit_and_packages(operations);
     let (pre, pre_bytes) = document_ref_and_bytes("counters-pre", |label| {
         snapshot(
@@ -121,20 +141,17 @@ fn run_frame(
         unit,
         packages,
         "counters.native",
-        ClauseRunSelection::Frame {
-            operation: OperationName {
+        selection(
+            OperationName {
                 model: identifier("Counters"),
                 object: identifier("Counter"),
                 operation: identifier(operation),
             },
-            invocation,
-        },
+            invocation.clone(),
+        ),
     );
     request.snapshots.insert(pre.digest, pre_bytes);
     request.snapshots.insert(post.digest, post_bytes);
-    let ClauseRunSelection::Frame { invocation, .. } = &request.selection else {
-        panic!("a frame selection");
-    };
     request
         .invocations
         .insert(invocation.digest, invocation_bytes);
@@ -202,4 +219,77 @@ fn deleting_self_grants_the_receiver_and_not_another_object() {
     assert_eq!(type_name.node, type_of("Counter"));
     let deletes: Vec<&str> = deletes.iter().map(|key| key.node.as_str()).collect();
     assert_eq!(deletes, [type_of("Gauge")]);
+}
+
+/// FR-154-AC-3 (TC-573 step 1): an invocation of `increment` (`own`, framed
+/// `modifies self.value`, and `all`, framed `modifies value`) on `self = c1`
+/// whose post snapshot changes `c2.value`. The `Frame` run settles
+/// `violation` (exit 10) with the witness naming `c2.value` under `own` and
+/// `success` (exit 0) under `all`; the clause run of the operation's
+/// postcondition over the same invocation refuses `frame_violation` at
+/// admission under `own` and admits and evaluates under `all`.
+#[trace("TC-573", "FR-154-AC-3")]
+#[test]
+fn the_frame_run_and_the_clause_admission_apply_the_receiver_scope() {
+    let post = [counter("c1", 0), counter("c2", 1)];
+    let clause = |name: &'static str| {
+        move |_: OperationName, invocation: DocumentRef| {
+            ClauseRunSelection::Clause(ClauseSelection {
+                name: name.to_owned(),
+                input: ClauseSelectionInput::Invocation { invocation },
+            })
+        }
+    };
+
+    let own = run_frame(&["own", "all"], "own", &post, &[]);
+    let ClauseDisposition::FrameViolation(witness) = &own.disposition else {
+        panic!("expected FrameViolation, got {:?}", own.disposition);
+    };
+    let FrameChange::FieldWrite { object, field, .. } = &witness.change else {
+        panic!("expected a field write, got {:?}", witness.change);
+    };
+    assert_eq!((object.as_str(), field.as_str()), ("c2", "value"));
+    assert_eq!(
+        own.disposition.category(),
+        quire_semantic_value::catalog::Category::Violation
+    );
+    assert_eq!(own.disposition.category().exit_code(), 10);
+
+    let all = run_frame(&["own", "all"], "all", &post, &[]);
+    assert!(
+        matches!(
+            all.disposition,
+            ClauseDisposition::Evaluate(CallOutcome::Completed(super::super::CallValue::Boolean(
+                true
+            )))
+        ),
+        "{:?}",
+        all.disposition
+    );
+    assert_eq!(
+        all.disposition.category(),
+        quire_semantic_value::catalog::Category::Success
+    );
+    assert_eq!(all.disposition.category().exit_code(), 0);
+
+    let admitted_own = run_selected(&["own", "all"], "own", &post, &[], clause("DoneOwn"));
+    let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &admitted_own.disposition
+    else {
+        panic!(
+            "expected a refused admission, got {:?}",
+            admitted_own.disposition
+        );
+    };
+    assert_eq!(
+        record.code,
+        qsl_foundation::diagnostic::Code::FrameViolation
+    );
+    assert_eq!(record.cause, "unauthorized-change");
+
+    let admitted_all = run_selected(&["own", "all"], "all", &post, &[], clause("DoneAll"));
+    assert!(
+        matches!(admitted_all.disposition, ClauseDisposition::Evaluate(_)),
+        "{:?}",
+        admitted_all.disposition
+    );
 }
