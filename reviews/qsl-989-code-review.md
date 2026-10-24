@@ -70,3 +70,14 @@ Mutation (red) checks, each in the review worktree and then reverted:
 - Removing the `trace_position` check fails 2 tests.
 - Removing the visible-count equality check fails none (FND-002).
 - Removing both mark rules fails none of the 139 `hyper_` tests (FND-001).
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | At a152a0f10 each Projected refusal case isolates one rule and asserts the reason through `shape_reason`: every step marked skipped with counts 0/0 and position 0, and both runs mid-operation with `mix` marked visible, counts 2/2 and position 2. Reviewer red check: neutralising either mark arm alone fails 2 tests. |
+| FND-002 | fixed | The `fewer` case now sets `trace_position` to the first trace's visible count, so only the equality rule can refuse it. Reviewer red check: removing the equality check fails 2 tests. |
+| FND-003 | fixed | Any kind other than `Undefined` of an `align skip` clause is now `HyperShape` (`WRONG_KIND_FOR_ALIGN_SKIP`); `HyperProjected` is kept for `Undefined` only. A new test covers Lockstep and WitnessExhausted, and reverting the change fails it. |
+| FND-004 | fixed | The `HyperProjected` `#[error]` text now names the `Undefined` counterexample, and the `HyperShape` doc lists the Projected reasons and the wrong-kind case. |
+| FND-005 | accepted-no-change | Changing only `b`'s first input leaves `b`'s loop, re-entered at 1, open: `(1,0) -step(1)-> (1,0) -step(0)-> (1,1)`. FR-128's loop check precedes `μ_U`, so the literal case is refused `LoopOpen`, not `μ_U` false. The test changes both steps and says why in a comment, which keeps AC-3's intent (`μ_U` false) and the tag. Spec ruling to request: amend FR-183-AC-3's clause to "with `b`'s inputs changed to 1 at both steps (`μ_U` false at joint step 1)". |
+| FND-006 | fixed | The replay first evaluates the whole prefix, then bisects for the shortest bad prefix and reports its last position. That is sound because a bad prefix stays bad as it grows, and an `Incomplete` or `WindowLimitReached` probe settles no value. The engine's canonical counterexample still reproduces at L (its BFS-first rejecting state is minimal), and `hyper_settle` does not compare positions. The new test (payload names 2, reproduces at 1) fails when the payload position is echoed. |

@@ -47,3 +47,10 @@ The trace decisions are correct apart from FND-001.
 - **AC-3.** The tag holds. Through the three called tests, the aggregate asserts every refusal AC-3 lists: one trace one step shorter, `μ_U` false, post-state digest altered, Projected with a `step` marked skipped, and the unfair loop. Each settles no result. The literal "first input" case and which rule refuses the Projected case are covered in SR-16625 (FND-001, FND-005).
 - **AC-2.** Correctly untagged. Its `StepTuple` half has no arm. The Projected half is tested by `a_projected_counterexample_replays_to_its_evaluated_witness`, tagged TC-608 only.
 - **Doc comments.** The module doc names FR-183-AC-2 and AC-5 only as "not claimed", and `quire matrix` does not count that text as a binder. No doc comment presents an untagged AC as covered.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-989's scope says FR-183-AC-7 "stays as is". Tagging the retargeted TC-603 test (AC names TC-608) belongs to a later trace pass. Behaviour is unchanged and the test asserts AC-7's case. |
+| FND-002 | deferred | QSL-1044, a spec ruling on PA-7 `ReplayParity` versus FR-183 `Verdicts`. The code follows FR-183 and cites QSL-1044 at hyper_replay.rs. |
