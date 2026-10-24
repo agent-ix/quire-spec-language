@@ -58,9 +58,12 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 - Step 1: no refusal for `SB` and the variants, each attempt atomic or non-atomic by its ordering, no class recorded; class `Local` for the attempt that touches no data place.
 - Step 2: `ill_typed`/`operator-ineligible` at S3 naming each access no possible kind takes; the RMW with no ordering and the `release` load that also writes a register check; the four fences check; `invalid_syntax` at S1 at the `relaxed` token of the
   fence, with no S3 result.
-- Step 3: the two-field attempt checks at S3 under `tso` and under `sc`; the any-object field write refuses `unsupported_construct`/`declaration-form` naming the location; V-8 `WeakAccessShape{MultiLocation}` under the selection.
+- Step 3: the two-field attempt checks at S3 under `tso` and under `sc`; the any-object field write refuses `unsupported_construct`/`declaration-form` naming the location; the selection produces a `WeakAccessShape.failures` entry with `MultiLocation` under the selected weak model.
 - Step 4: 16 states and `proved` both times.
-- Step 5: V-8 `WeakAccessShape` with `MultiLocation{locations}` naming both locations; V-8 `WeakAccessShape` with `JoinPolicy`; each serialized as QSpec FR-439 writes it.
+- Step 5: `WeakAccessShape.failures` contains an entry with
+  `MultiLocation{locations}` naming both locations and an entry with
+  `JoinPolicy`; each shape serializes as QSpec FR-439 specifies, and both use
+  the common entry form and canonical ordering.
 - Step 6: no refusal; both attempts atomic with ordering `relaxed`; no class recorded.
 - Step 7: no refusal; no class recorded.
 - Step 8: checks under both models; every attempt atomic, ordering recorded, no class recorded.
