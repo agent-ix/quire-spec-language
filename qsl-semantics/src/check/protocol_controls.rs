@@ -15,10 +15,9 @@
 //! Each `send` and `receive` names a declared channel and binds its
 //! `carries` type. A `fifo` key is checked through the one clause checker
 //! (FR-104) over its binder and constants only: it reads no model state and
-//! its type admits `=`. A `predicate(name)` join names a function no checker
-//! reads yet; `protocol_clause::content` refuses it as unimplemented through
-//! the construct S2 records for it, so a protocol holding one never compiles
-//! unchecked.
+//! its type admits `=`. A `predicate(name)` join resolves a pure function
+//! whose parameters match the distinct branch labels and records its checked
+//! function identity.
 
 use std::collections::{BTreeMap, BTreeSet};
 
