@@ -60,6 +60,20 @@ thing, and an attempt means exactly what the operation's contract means in
 - For `model_check`: FR-126's `ModelCheckRequest`, whose subject is a
   model subject or a protocol subject.
 
+The protocol subject's request form SHALL expose both memory bounds:
+
+```rust
+pub struct ProtocolCheckRequest<'a> {
+    pub subject: ProtocolSubject<'a>,
+    pub item: ModelCheckItem<'a>,
+    pub max_depth: Option<usize>,
+    pub max_store_buffer: Option<u64>, // FR-225 method bound
+    pub max_messages: Option<u64>,     // FR-225 method bound
+    pub max_live_instances: Option<u64>, // None means 3 (FR-209)
+    pub limits: ModelCheckLimits,
+}
+```
+
 ## Outputs
 
 ```rust
