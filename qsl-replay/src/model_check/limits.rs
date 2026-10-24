@@ -149,7 +149,7 @@ impl ModelCheckLimit {
     /// row of an EN-1 member, `expansion.max_candidates`,
     /// `hybrid.max_solver_steps`, an `accounting.*` row for a meter, or an
     /// EN-4 `statistical.*` row. An EN-5 exact-build stop still names the
-    /// `model_check.*` row, not `exact_prob.*` (tracked by the follow-up
+    /// `model_check.*` row, not `exact_prob.*` (tracked by QSL-1050, the follow-up
     /// ticket "EN-5 exact-build stops must name exact_prob.*").
     pub fn setting(self) -> &'static str {
         match self {

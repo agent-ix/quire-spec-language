@@ -29,7 +29,10 @@ hollow: two mutations turned it red (see SR-17009).
 
 ## Verdict
 
-**CONDITIONAL.** The PR's one criterion, FR-127-AC-7, is traced and backed by
+**PASS with deferral (round 1).** FND-001 is deferred to QSL-1050, and
+FR-127-AC-7 remains traced at ee2b4bd3d.
+
+Round 0: **CONDITIONAL.** The PR's one criterion, FR-127-AC-7, is traced and backed by
 a passing test that can fail. One low spec-drift finding sits outside the diff.
 The quality of the test's binding to the AC is covered in SR-17009 (FND-001
 to FND-003).
@@ -51,3 +54,12 @@ to FND-003).
 - Semantic review: covered by the code-review method (SR-17009), not run
   separately.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, verified at head ee2b4bd3d. `quire matrix` still binds FR-127-AC-7,
+to closure_certificate.rs:820.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Deferred to QSL-1050, which covers aligning the FR-203 Use case and TC-638 step 2 with FR-255's `exact_prob.max_states` |
