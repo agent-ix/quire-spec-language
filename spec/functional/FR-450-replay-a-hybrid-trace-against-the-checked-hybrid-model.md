@@ -241,7 +241,7 @@ item's `Counterexample`.
   Each variant SHALL carry the provider's complete `HybridCounterexample`
   (its kind and trace), and SHALL not be converted to a
   `SeparatingWitnessRecord`, `Verdicts` or `NoValue`. The serialized
-  disagreement cause SHALL use `{"cause":"hybrid-trace","disagreement":{"type":"not-reproduced","counterexample":{"kind":...,"trace":...}}}` or the same object with `type` `not-exact`; `trace` uses QSpec FR-193's hybrid trace wire form. The enclosing `replay-parity` cause SHALL preserve this distinct variant and the complete counterexample. The
+  disagreement cause SHALL use `{"cause":"hybrid-trace","disagreement":{"type":"not-reproduced","counterexample":{"type":"hybrid-counterexample","kind":...,"trace":...}}}` or the same object with `type` `not-exact`; `trace` uses QSpec FR-193's hybrid trace wire form. The enclosing `replay-parity` cause SHALL preserve this distinct variant and the complete counterexample. The
   resulting record SHALL have no `counterexamples` entry.
 - No other path SHALL settle a hybrid item `refuted`.
 

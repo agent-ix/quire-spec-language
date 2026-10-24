@@ -7,6 +7,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-290
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-269
+    type: verifies
 ---
 # TC-1221: Hybrid traces replay statically and exactly against the checked hybrid model
 
@@ -16,7 +18,7 @@ Verify static replay, exact replay and the settlement each gives, for a
 trace from a `solver-inconclusive` cause and from a provider's `refuted`
 entry.
 
-Scope: FR-450-AC-1 to FR-450-AC-9 and FR-290-AC-19.
+Scope: FR-450-AC-1 to FR-450-AC-9, FR-290-AC-19 and FR-269-AC-5.
 
 ## Test Procedure
 
@@ -47,6 +49,10 @@ provider, each returning a scripted entry with a scripted `HybridTrace`.
 10. For a process provider's `refuted` entry on the hybrid `Braking` claim,
     read AC-2's named `hybrid-counterexample` in QSpec FR-193 wire form and
     settle it; repeat with a malformed trace and on a non-hybrid claim.
+11. Serialize Step 3's `NotReproduced` hybrid cause and Step 9's `NotExact`
+    hybrid cause through the shared `DisagreementCause` codec with the
+    checked `Braking` model, then read each cause with that model and the
+    checked package; repeat a read with no model context.
 
 Run each step through both fixture providers.
 
@@ -98,4 +104,7 @@ Tag the tests `#[trace("TC-1221", "FR-450-AC-n")]`.
   the in-process fixture and settles by exact replay; the malformed trace is
   refused before a terminal record is built, and the hybrid arm on a
   non-hybrid claim is malformed.
+- Step 11: the two causes round-trip to equal, distinct typed arms; the
+  read without a checked model is refused. The existing verdict, no-value
+  and witness cause codec round trips remain unchanged.
 - Both fixture providers give the same outcomes.

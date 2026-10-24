@@ -36,6 +36,19 @@ local access over its shared footprint (ADR-025 MA-1, MA-2). Under a weak
 model, S3 SHALL refuse the access shapes it decides without object identity,
 and the EN-1 pre-check SHALL settle every other shape (ADR-025 MA-4).
 
+EN-1 SHALL distinguish potential footprints from enabled footprints.
+EN-1 SHALL derive potential footprints over the subject's universes and
+argument domains without evaluating selected effective preconditions or
+attempt constraints. Potential locations shared by branches SHALL reserve
+only the memory-model backing needed to preserve operations that may become
+enabled, including their store-buffer or message behavior. Potential
+footprints SHALL NOT make a location shared for access classification or
+cause a V-8 refusal. At each reachable state, enabled footprints SHALL
+include only applications whose selected effective precondition evaluates
+`Completed(true)` over that thread's observation and whose record satisfies
+the attempt constraint (ADR-025 MA-1). Enabled footprints alone SHALL decide
+sharing, access classification and V-8 refusal.
+
 ## Use case
 
 A verification operator annotates each attempt with the ordering its Rust
@@ -55,8 +68,12 @@ weak model corresponds to real accesses.
 - On each checked attempt in a `parallel`: `class: Option<AccessClass>`, which
   is `Local` for an attempt whose footprint touches no data place and `None`
   for every other attempt, and its `ordering: Option<Ordering>`.
-- From EN-1, for each instantiated attempt, the class `AccessClass::{Load,
-  Store, Rmw, Local}` over its shared footprint (ADR-025 MA-2).
+- From EN-1, for each enabled instantiated attempt, the class
+  `AccessClass::{Load, Store, Rmw, Local}` over its enabled shared footprint
+  (ADR-025 MA-2).
+- From EN-1, potential footprints and potential shared locations that reserve
+  memory-model backing; they do not contribute to access classification or
+  the pre-check's `WeakAccessShape{failures}`.
 - A checked `fence` control with its ordering.
 - The S3 refusals `ill_typed`/`operator-ineligible` for an attempt's ordering and
   `unsupported_construct`/`declaration-form` for an access shape, and the pre-check's V-8 `WeakAccessShape{failures}`. This keeps the existing
@@ -65,8 +82,10 @@ weak model corresponds to real accesses.
   reachable protocol state, the pre-check considers only attempt applications
   whose selected effective precondition evaluates `Completed(true)` over the
   thread's observation and whose record satisfies the attempt node's constraint
-  (ADR-027 ST-1); it settles at the first reachable state with failures, before
-  generating that state's outgoing transitions. Each failure is
+  (ADR-027 ST-1). Potential footprints may reserve memory backing but SHALL
+  not contribute to sharing or failures. The pre-check settles at the first
+  reachable state with failures, before generating that state's outgoing
+  transitions. Each failure is
   `{site, transition, shape}`;
   `shape` is QSpec FR-439's `MultiLocation{locations}` (`multi-location`),
   `JoinPolicy` (`join-policy`) or `OrderingMismatch{access, ordering}`
@@ -82,10 +101,24 @@ weak model corresponds to real accesses.
 
 ### Sharing and classification
 
-- A location SHALL be shared in a weak `parallel` when the instantiated
-  footprints of attempts in two or more of its branches contain it and at
-  least one writes it.
-- Every location an attempt touches that is not shared SHALL be branch-local.
+- EN-1 SHALL derive potential footprints without evaluating selected
+  effective preconditions or attempt constraints. A potential location that
+  may be touched by conflicting operations in different branches, including
+  a protocol reader in one branch and a potential writer in another, SHALL
+  reserve the memory-model backing those operations need, including TSO
+  store-buffer or RA message behavior. This reservation SHALL NOT make the
+  location shared for access classification or trigger a V-8 refusal.
+- At each reachable state, EN-1 SHALL derive enabled footprints using only
+  applications whose selected effective precondition evaluates
+  `Completed(true)` over that thread's observation and whose record satisfies
+  its attempt constraint. Only these enabled footprints SHALL decide which
+  locations are shared and which access shapes or ordering mismatches fail.
+- A location SHALL be shared for access classification in a weak `parallel`
+  when enabled footprints of attempts in two or more of its branches contain
+  it and at least one writes it.
+- Every location an enabled attempt touches that is not shared SHALL be
+  branch-local for access classification; potential memory backing SHALL NOT
+  change that classification.
 - An `event`, `effect`, `commit`, `send` or `receive` node inside a branch of a
   weak `parallel` whose constraint reads a model location SHALL be a reader of
   that location (ADR-025 MA-1): the location SHALL count toward sharing as an
@@ -217,11 +250,11 @@ local access takes none).
 | FR-220-AC-8 | A branch whose attempts write a register field of its core and then read that register again (the register-read-again shape of message passing and load buffering) checks at S3 with no refusal and no class recorded. | Test (TC-665) |
 | FR-220-AC-9 | ADR-025 §10's `SB` checks at S3 under a `parallel` declaring `tso` and under one declaring `ra`, with every attempt atomic, ordering recorded and no class recorded. | Test (TC-665) |
 | FR-220-AC-10 | An attempt carrying `ordering seq_cst` that lies outside every `parallel` refuses `ill_typed`/`operator-ineligible` at S3, naming the attempt. | Test (TC-665) |
-| FR-220-AC-11 | EN-1 classifies ADR-025 §10's `SB` under `tso` and under `ra` using only attempt applications whose selected precondition is true in the current thread observation: `Sx` and `Sy` are stores, `Ly` and `Lx` are loads, and (`c1`, `r`), (`c2`, `r`) are branch-local. Applications whose selected precondition is false contribute no access footprint, including for a receiver or argument in the domain. | Test (EN-1 sharing; TC-665 step 10) |
+| FR-220-AC-11 | EN-1 classifies ADR-025 §10's `SB` under `tso` and under `ra` using only attempt applications whose selected precondition is true in the current thread observation and whose attempt constraint admits the application record: `Sx` and `Sy` are stores, `Ly` and `Lx` are loads, and (`c1`, `r`), (`c2`, `r`) are branch-local. Applications whose selected precondition is false contribute no enabled access footprint, including for a receiver or argument in the domain; their potential footprints may reserve memory backing but do not affect these classifications. | Test (EN-1 sharing; TC-665 step 10) |
 | FR-220-AC-12 | EN-1 classifies AC-7's two `relaxed` stores as two stores to one shared location. | Test (EN-1 sharing; TC-665 step 11) |
 | FR-220-AC-13 | EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. | Test (EN-1 sharing; TC-665 step 12) |
 | FR-220-AC-14 | At the initial state, the EN-1 pre-check collects V-8 `WeakAccessShape.failures` before generating any outgoing transition under `tso` and under `ra`: an enabled instantiated load with `release` as `{"type":"ordering-mismatch","access":"load","ordering":"release"}`, a load with `acq_rel` as `{"type":"ordering-mismatch","access":"load","ordering":"acq_rel"}`, a store with `acquire` as `{"type":"ordering-mismatch","access":"store","ordering":"acquire"}`, a store with `acq_rel` as `{"type":"ordering-mismatch","access":"store","ordering":"acq_rel"}`, and an RMW with no ordering as `{"type":"ordering-mismatch","access":"rmw","ordering":null}`. Under `sc` each is admitted. An attempt with `release` that writes a branch-local register (so S3 admits it) and, on instantiation, touches no shared location is a local access and contributes `{"type":"ordering-mismatch","access":"local","ordering":"release"}`. An attempt with `acquire` that reads a branch-local register and writes two shared fields, which S3 admits because it reads, contributes its `MultiLocation` entry and is not tested for ordering mismatch. The pre-check does not stop at that entry; all other applicable failures are collected in canonical order. | Test (EN-1 pre-check; TC-665 step 13) |
-| FR-220-AC-15 | In `SB`'s `parallel` under `tso`, an `event` reader whose constraint reads `x.v` beside the branch whose enabled attempt stores `x.v` contributes a `MultiLocation` entry and settles V-8 `WeakAccessShape.failures`; the ordinary storing attempt is not itself a failing shape. In a variant where that store carries `acquire`, the reader entry and the enabled store attempt's `OrderingMismatch` entry are both returned in one list, ordered together by ascending JCS bytes of their typed protocol transition identities (ADR-027 TS-2); the reader entry names the event and `(x, v)` and has `transition: None`, and the attempt entry names its instantiated transition. The first entry supplies the headline reason, without category precedence. The `SB` operations' selected preconditions and attempt constraints admit accesses to `x` and `y` only; their `kind` fields are immutable, so in a variant whose universe also holds a `Cell` `z` of kind `Other`, no attempt is enabled for `z`. With the `event` reading `z.v`, the item is admitted. Under `sc` the shared-reader variant is admitted, and a `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
+| FR-220-AC-15 | In `SB`'s `parallel` under `tso`, an `event` reader whose constraint reads `x.v` beside the branch whose enabled attempt stores `x.v` contributes a `MultiLocation` entry and settles V-8 `WeakAccessShape.failures`; the ordinary storing attempt is not itself a failing shape. In a variant where that store carries `acquire`, the reader entry and the enabled store attempt's `OrderingMismatch` entry are both returned in one list, ordered together by ascending JCS bytes of their typed protocol transition identities (ADR-027 TS-2); the reader entry names the event and `(x, v)` and has `transition: None`, and the attempt entry names its instantiated transition. The first entry supplies the headline reason, without category precedence. The `SB` operations' selected preconditions and attempt constraints admit accesses to `x` and `y` only; their `kind` fields are immutable, so in a variant whose universe also holds a `Cell` `z` of kind `Other`, no attempt is enabled for `z`. With the `event` reading `z.v`, the item is admitted: a potential footprint may reserve memory backing for `z`, but it does not make `z.v` enabled-shared or cause a refusal. Under `sc` the shared-reader variant is admitted, and a `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
 
 ## Dependencies
 

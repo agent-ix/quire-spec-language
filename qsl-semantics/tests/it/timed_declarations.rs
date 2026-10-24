@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-393 builds the timed declarations and the `Clock` type at S2 and leaves whether a unit admits them to S3. Until
-//! FR-230's check reads them, S3 refuses each `unsupported_construct`/
-//! `not-yet-implemented` at its own span, so none compiles unchecked. Run
-//! over TC-458's `ConfigVersion` fixture package
-//! (`crate::model_operations`).
+//! FR-393 builds the timed declarations and the `Clock` type at S2; FR-230
+//! checks them at S3 under the timed-complete facet. Run over TC-458's
+//! `ConfigVersion` fixture package (`crate::model_operations`).
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
@@ -101,11 +99,9 @@ fn s2_keeps_a_dense_time_member_for_the_temporal_layer() {
     );
 }
 
-/// Fails today at QSL model intake (`model/intake.rs`, "names no native value
-/// type QSL declares"): QSL-1030 must admit the native Clock `typeRef`. FCD I1
-/// already accepts the field. Untagged while ignored so it verifies nothing.
+/// QSL-1030: the native Clock field with `unique:false` is admitted as a
+/// model place while S3 checks the package's time source.
 #[test]
-#[ignore = "QSL-1030: model intake rejects the ix://quire/native/Clock field typeRef"]
 fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit ms;\n";
     let declarations = admit_and_assemble_with_profiles(
@@ -120,11 +116,10 @@ fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
     assert_eq!(checked.time_sources()[0].model, "Config");
 }
 
-/// Fails today at S3: a qualified package unit refuses `TimedNotChecked`
-/// because S3 has no package-owned unit table (QSL-1031). FCD I1 already
-/// admits the package dimensions and units. Untagged while ignored.
+/// FR-230-AC-5/AC-33: a package-owned unit resolves through its model owner
+/// and binds the timed source to the package's nominal base Time node.
+#[trace("FR-230-AC-5", "FR-230-AC-33")]
 #[test]
-#[ignore = "QSL-1031: S3 has no package-owned unit table, so `Config::ms` refuses TimedNotChecked"]
 fn package_time_units_reach_s3_with_their_model_owner() {
     let declarations = admit_and_assemble_with_profiles(
         &package_units_document(),
@@ -136,6 +131,10 @@ fn package_time_units_reach_s3_with_their_model_owner() {
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .expect("S3 resolves the package-owned Time unit");
     assert_eq!(checked.time_sources()[0].unit, "Config::ms");
+    assert_ne!(
+        checked.time_sources()[0].time_dimension.as_bytes(),
+        &[0; 32]
+    );
 }
 
 #[trace("TC-685")]
@@ -284,30 +283,21 @@ fn urgent_when_without_a_time_source_refuses_as_a_missing_binding() {
     assert!(refusals.iter().any(|refusal| matches!(&refusal.cause, CheckCause::Temporal(cause) if matches!(&**cause, TemporalCause::UrgencyWithoutTimeSource { .. }))), "{refusals:?}");
 }
 
-#[trace("TC-685")]
+#[trace("TC-685", "FR-230-AC-5", "FR-230-AC-33")]
 #[test]
-fn qualified_package_unit_is_not_misdiagnosed_as_a_missing_source_unit() {
+fn qualified_package_unit_resolves_even_when_a_local_unit_has_the_same_name() {
     let body =
         "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit Config::ms;\n";
     let declarations = admit_and_assemble_with_profiles(
-        &document(),
+        &package_units_document(),
         "profile t = \"quire.temporal.complete/v1\";\n",
         body,
     )
-    .expect("S2 keeps the qualified unit name");
-    let refusals = declarations
+    .expect("S2 keeps the qualified package unit name");
+    let checked = declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
-        .expect_err("package unit lookup is pending");
-    assert!(
-        refusals.iter().any(|refusal| matches!(
-            &refusal.cause,
-            CheckCause::TimedNotChecked {
-                construct: TimedConstruct::TimeSource,
-                ..
-            }
-        )),
-        "{refusals:?}"
-    );
+        .expect("S3 resolves the selected package's unit rather than the local ms");
+    assert_eq!(checked.time_sources()[0].unit, "Config::ms");
 }
 
 #[trace("TC-685")]

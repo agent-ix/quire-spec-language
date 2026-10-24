@@ -78,6 +78,7 @@ fn timed(body: &str) -> Fixture {
         model: "M".to_owned(),
         source: TimeSourceKind::Dense,
         unit: "ms".to_owned(),
+        time_dimension: quire_exact::NodeKey::from_digest([0; 32]),
     }];
     let mut checked = check_clauses(&package);
     let clause = match checked.pop() {

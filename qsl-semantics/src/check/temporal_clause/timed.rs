@@ -65,6 +65,8 @@ pub struct ModelTimeSource {
     pub source: TimeSourceKind,
     /// The time unit `u`, by its declared name in the package's unit graph.
     pub unit: String,
+    /// The exact nominal `Time` dimension node selected by `unit` (FR-230-AC-33).
+    pub time_dimension: quire_exact::NodeKey,
 }
 
 /// A clause's `model-time` binding (FR-233's `ModelClockBinding::ModelTime`):
