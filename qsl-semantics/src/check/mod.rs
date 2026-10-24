@@ -282,9 +282,12 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // function rather than two.
 pub use field_refinement::RefinementObligation;
 pub use hybrid::{
-    ArithmeticOp, CaptureIndex, CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp,
-    ContinuousVariable, HybridCause, HybridDeclaration, HybridTerm, InitialEntry, LogicOp,
-    MalformedReason, ModeIndex, ResetConstraint, TransitionIndex, VariableClass, VariableIndex,
+    ArithmeticOp, CaptureIndex, CheckedFunctionRef, CheckedHybridClaim, CheckedHybridModel,
+    CheckedMode, CheckedTransition, CompareOp, ContinuousVariable, HybridActivation, HybridCapture,
+    HybridCause, HybridClaimDeclaration, HybridClock, HybridDeclaration, HybridFairness,
+    HybridFormula, HybridHorizon, HybridInterval, HybridModelIndex, HybridTerm, InitialEntry,
+    LogicOp, MalformedReason, ModeIndex, ResetConstraint, TransitionIndex, VariableClass,
+    VariableIndex,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
@@ -537,6 +540,8 @@ pub struct CheckedGraph {
     state_graph_claims: Vec<CheckedStateGraphClaim>,
     /// FR-447: every checked hybrid model, in declaration order.
     hybrid_models: Vec<CheckedHybridModel>,
+    /// FR-447: every checked hybrid claim, in declaration order.
+    hybrid_claims: Vec<CheckedHybridClaim>,
     /// FR-185: every checked random parameter, reward and workload.
     probabilistic: CheckedProbabilisticModel,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -1391,6 +1396,17 @@ impl PackageDeclarations {
             .iter()
             .map(|function| (function.name.clone(), function.kind()))
             .collect();
+        // FR-447: the bodies a hybrid term's calls are validated against,
+        // kept before the function loop consumes the declarations.
+        let hybrid_bodies: Vec<qsl_forms::Expression> =
+            if self.hybrids.is_empty() && self.hybrid_claims.is_empty() {
+                Vec::new()
+            } else {
+                self.functions
+                    .iter()
+                    .map(|function| function.body.clone())
+                    .collect()
+            };
         for (index, function) in self.functions.into_iter().enumerate() {
             // FR-092 "Function nodes": the kind travels with the draft to
             // lowering, which keys a predicate's node `predicate`.
@@ -2441,18 +2457,43 @@ impl PackageDeclarations {
                 }
             }
         }
-        // FR-447: each `hybrid` declaration, checked against the same
-        // package-wide node total.
-        let checked_hybrid = hybrid::check_models(&self.hybrids, limits.nodes(), &mut nodes_used);
+        // FR-447: each `hybrid` declaration and each claim over one, checked
+        // against the same package-wide node total.
+        let hybrid_callees = hybrid::Callees {
+            signatures: &signatures,
+            bodies: &hybrid_bodies,
+        };
+        let checked_hybrid = hybrid::check_models(
+            &self.hybrids,
+            &hybrid_callees,
+            limits.nodes(),
+            &mut nodes_used,
+        );
+        let checked_hybrid_claims = hybrid::check_claims(
+            &self.hybrid_claims,
+            &hybrid::ClaimInputs {
+                models: &checked_hybrid.models,
+                index: &checked_hybrid.index,
+                scope: &scope,
+                units: &time_units,
+                rational_bits: limits.rational_bits(),
+                callees: &hybrid_callees,
+                node_limit: limits.nodes(),
+            },
+            &mut nodes_used,
+        );
         let hybrid_exhausted = checked_hybrid
             .refusals
             .iter()
+            .chain(&checked_hybrid_claims.refusals)
             .any(|refusal| matches!(refusal.cause, CheckCause::ResourceExhausted(_)));
         refusals.extend(checked_hybrid.refusals);
+        refusals.extend(checked_hybrid_claims.refusals);
         if hybrid_exhausted {
             return Err(refusals);
         }
         let checked_hybrid_models = checked_hybrid.models;
+        let checked_hybrid_claim_list = checked_hybrid_claims.claims;
         // FR-172: each `hyper` clause and `relation`, checked through the
         // `TemporalTrace` family under the unit's one temporal profile. A
         // clause that checks is refused as not emitted, as a `temporal`
@@ -3409,12 +3450,19 @@ impl PackageDeclarations {
                 .map(state_graph_claim::not_emitted)
                 .collect());
         }
-        // FR-447: likewise, no S4 emission writes a hybrid model yet.
-        if !self.emit_unwritten_hybrids && !checked_hybrid_models.is_empty() {
+        // FR-447: likewise, no S4 emission writes a hybrid model or claim yet.
+        if !self.emit_unwritten_hybrids
+            && !(checked_hybrid_models.is_empty() && checked_hybrid_claim_list.is_empty())
+        {
             return Err(self
                 .hybrids
                 .iter()
-                .map(|declaration| hybrid::not_emitted(&declaration.form))
+                .map(|declaration| hybrid::not_emitted(&declaration.form.name))
+                .chain(
+                    self.hybrid_claims
+                        .iter()
+                        .map(|declaration| hybrid::not_emitted(&declaration.form.name)),
+                )
                 .collect());
         }
         let mut graph = CheckedGraph {
@@ -3446,6 +3494,7 @@ impl PackageDeclarations {
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
             hybrid_models: checked_hybrid_models,
+            hybrid_claims: checked_hybrid_claim_list,
             probabilistic: probabilistic_model,
             operation_frames,
             model_objects,
@@ -3896,6 +3945,11 @@ impl CheckedGraph {
     /// FR-447: every checked hybrid model, in declaration order.
     pub fn hybrid_models(&self) -> &[CheckedHybridModel] {
         &self.hybrid_models
+    }
+
+    /// FR-447: every checked hybrid claim, in declaration order.
+    pub fn hybrid_claims(&self) -> &[CheckedHybridClaim] {
+        &self.hybrid_claims
     }
 
     /// FR-185: the package's checked random parameters, rewards and

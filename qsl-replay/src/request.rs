@@ -32,7 +32,7 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
 use qsl_semantics::model::refusal::{Inexact, IntakeLimit, ModelRefusalCause};
-use qsl_semantics::value::supplied::SuppliedLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)

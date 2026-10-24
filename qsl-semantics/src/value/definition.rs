@@ -845,17 +845,6 @@ pub fn divide(
     )
 }
 
-/// Evaluate `mod`: always the Euclidean remainder, independent of any selected
-/// `div`/`rem` law, charged only at the four `integer-modulus.*` points.
-pub fn modulo(
-    dividend: &Integer,
-    divisor: &Integer,
-    domain: &IntegerDomain,
-    meter: &mut Meter,
-) -> Outcome<Integer> {
-    quire_exact::modulo(dividend, divisor, domain, meter)
-}
-
 /// An IEEE package whose profile definition closure was admitted. Only
 /// [`DefinitionLock::admit_ieee_profile`] constructs it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

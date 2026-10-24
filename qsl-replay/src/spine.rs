@@ -983,6 +983,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::Abstraction(refusal) => {
             message = format!("{message}: in an `abstraction` declaration: {refusal:?}");
         }
+        CheckCause::Hybrid(cause) => {
+            message = format!("{message}: in a hybrid model or temporal claim: {cause:?}");
+        }
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
         }
@@ -1250,6 +1253,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
                 TemporalCause::TimedTraceSubject { .. } => {
                     format!("{message}: a timed clause over a trace subject is not checked yet")
+                }
+                TemporalCause::MissingClock { .. } => {
+                    format!("{message}: a clause over this subject must write a `clock` member")
                 }
             };
         }
@@ -1682,13 +1688,29 @@ mod tests {
         SpineStage,
     };
     use ix_trace_rs::trace;
-    use qsl_foundation::{Code, SourceIdentity};
-    use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolAnchorCause};
+    use qsl_foundation::{Code, SourceIdentity, Span};
+    use qsl_semantics::check::{CheckCause, CheckRefusal, HybridCause, ProtocolAnchorCause};
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
     use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    /// FR-447: a hybrid checker refusal may belong to a temporal claim, so
+    /// its message must not identify every cause as a hybrid declaration.
+    #[trace("FR-447-AC-3")]
+    #[test]
+    fn hybrid_claim_refusal_message_does_not_mislabel_its_declaration() {
+        let refusal = CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::Hybrid(Box::new(HybridCause::UnsupportedClock {
+                span: Span { start: 0, end: 12 },
+            })),
+        };
+        let message = check_message(&[refusal]);
+        assert!(message.contains("temporal claim"), "{message}");
+        assert!(!message.contains("in a `hybrid` declaration"), "{message}");
+    }
 
     #[trace("TC-1065", "FR-218-AC-31")]
     #[test]

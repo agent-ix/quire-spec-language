@@ -58,9 +58,9 @@ fn proved() -> String {
 }
 
 /// A supplied-value run at the default ceilings over a handle nobody cancels.
-fn default_run() -> qsl_semantics::value::supplied::SuppliedRun {
-    qsl_semantics::value::supplied::SuppliedRun::new(
-        qsl_semantics::value::supplied::SuppliedLimits::default(),
+fn default_run() -> quire_semantic_value::supplied_stop::SuppliedRun {
+    quire_semantic_value::supplied_stop::SuppliedRun::new(
+        quire_semantic_value::supplied_stop::SuppliedLimits::default(),
         quire_exact::Cancel::new(),
     )
     .expect("a run")

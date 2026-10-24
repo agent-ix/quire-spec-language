@@ -14,8 +14,12 @@ use qsl_forms::{BinaryOperator, ExprId, ExprNode, ExpressionForm, ExpressionSpan
 use qsl_foundation::Span;
 use quire_exact::Rational;
 
+use super::callee::Callees;
 use super::cause::MalformedReason;
-use super::{ArithmeticOp, CompareOp, HybridCause, HybridTerm, LogicOp, VariableIndex};
+use super::{
+    ArithmeticOp, CaptureIndex, CompareOp, HybridCause, HybridTerm, LogicOp, VariableIndex,
+};
+use crate::check::refusal::CheckingLimitKind;
 
 /// The kind of value a hybrid expression denotes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,9 +46,11 @@ pub(super) enum Stop {
     Cause(HybridCause),
     /// The package's node ceiling was reached.
     Limit {
+        /// The ceiling reached.
+        kind: CheckingLimitKind,
         /// The declared ceiling.
         limit: u64,
-        /// The node count the refused step would have reached.
+        /// The count the refused step would have reached.
         actual: u128,
     },
 }
@@ -66,6 +72,7 @@ impl Meter<'_> {
         let reached = u128::from(*self.used) + u128::from(nodes);
         if reached > u128::from(self.limit) {
             return Err(Stop::Limit {
+                kind: CheckingLimitKind::Nodes,
                 limit: self.limit,
                 actual: reached,
             });
@@ -75,6 +82,18 @@ impl Meter<'_> {
     }
 }
 
+/// The names a hybrid claim's expressions read besides the model's
+/// variables (FR-447 "Hybrid claims").
+pub(super) struct ClaimNames<'a> {
+    /// The `over` parameter, whose `h.x` reads the variable `x`.
+    pub(super) over: &'a str,
+    /// The `on each` parameter, whose `q.x` reads `x` at the activation
+    /// position.
+    pub(super) trigger: Option<&'a str>,
+    /// The captures declared so far, with the kind each holds.
+    pub(super) captures: &'a [(String, Kind)],
+}
+
 /// What an expression's names resolve against.
 pub(super) struct Env<'a> {
     /// The declaration's continuous variables by name.
@@ -82,6 +101,11 @@ pub(super) struct Env<'a> {
     /// Whether the expression is read in a reset: only there is `pre(x)`
     /// admitted.
     pub(super) reset: bool,
+    /// The claim a claim expression is read in; `None` in a model
+    /// expression, which names its variables bare.
+    pub(super) claim: Option<&'a ClaimNames<'a>>,
+    /// The functions a call may apply.
+    pub(super) callees: &'a Callees<'a>,
 }
 
 enum Task {
@@ -153,6 +177,15 @@ pub(super) fn lower_at(
                     ExprNode::Pre(_) => {
                         values.push(pre(form, id, span, env, (outer, &bound), meter)?);
                     }
+                    ExprNode::Field { operand, field } => {
+                        values.push(field_read(form, *operand, field, span, env, meter)?);
+                    }
+                    ExprNode::Call { arguments, .. } => {
+                        tasks.push(Task::Finish(id, at));
+                        for (position, argument) in arguments.iter().enumerate().rev() {
+                            tasks.push(Task::Visit(*argument, child(spans, at, position)));
+                        }
+                    }
                     ExprNode::Let {
                         name, value, body, ..
                     } => {
@@ -193,7 +226,7 @@ pub(super) fn lower_at(
             Task::Finish(id, at) => {
                 let span = span_of(spans, at, whole);
                 let node = form.expression.at(id).node();
-                let lowered = finish(node, span, &mut values, meter)?;
+                let lowered = finish(node, span, &mut values, env, meter)?;
                 values.push(lowered);
             }
         }
@@ -220,17 +253,8 @@ fn leaf(meter: &mut Meter<'_>, term: HybridTerm, kind: Kind) -> Result<Lowered, 
 /// A node no hybrid expression form admits: every other construct has an
 /// operand or result that is neither real nor Boolean, or is an integer
 /// operation (QSpec FR-193 "Continuous values and expressions").
-fn unsupported(node: &ExprNode, span: Span) -> Stop {
-    // A call is resolved by the section that checks pure functions; a name
-    // that is no function in scope is `missing_declaration`.
-    match node {
-        ExprNode::Call { name, .. } => HybridCause::MissingName {
-            name: name.clone(),
-            span,
-        }
-        .into(),
-        _ => HybridCause::TypeMismatch { span }.into(),
-    }
+fn unsupported(_node: &ExprNode, span: Span) -> Stop {
+    HybridCause::TypeMismatch { span }.into()
 }
 
 fn resolve(
@@ -249,14 +273,74 @@ fn resolve(
         meter.charge(value.size)?;
         return Ok(value.clone());
     }
-    match env.variables.get(name) {
-        Some(index) => leaf(meter, HybridTerm::Variable(*index), Kind::Real),
-        None => Err(HybridCause::MissingName {
+    let missing = || {
+        Stop::from(HybridCause::MissingName {
             name: name.to_owned(),
             span,
+        })
+    };
+    match env.claim {
+        // A claim reads its model's variables as `h.x`, and a capture bare.
+        Some(claim) => {
+            let position = claim
+                .captures
+                .iter()
+                .position(|(capture, _)| capture == name)
+                .ok_or_else(missing)?;
+            let kind = claim
+                .captures
+                .get(position)
+                .map_or(Kind::Real, |(_, kind)| *kind);
+            leaf(
+                meter,
+                HybridTerm::Capture(CaptureIndex::new(position)),
+                kind,
+            )
         }
-        .into()),
+        None => match env.variables.get(name) {
+            Some(index) => leaf(meter, HybridTerm::Variable(*index), Kind::Real),
+            None => Err(missing()),
+        },
     }
+}
+
+/// `p.x` in a claim: the continuous variable `x` of the model, read at the
+/// current position through the `over` parameter `p`, or at the activation
+/// position through the `on each` parameter.
+fn field_read(
+    form: &ExpressionForm,
+    operand: ExprId,
+    field: &str,
+    span: Span,
+    env: &Env<'_>,
+    meter: &mut Meter<'_>,
+) -> Result<Lowered, Stop> {
+    let Some(claim) = env.claim else {
+        return Err(HybridCause::TypeMismatch { span }.into());
+    };
+    let ExprNode::Name(parameter) = form.expression.at(operand).node() else {
+        return Err(HybridCause::TypeMismatch { span }.into());
+    };
+    let missing = |name: &str| {
+        Stop::from(HybridCause::MissingName {
+            name: name.to_owned(),
+            span,
+        })
+    };
+    let at_activation = if parameter == claim.over {
+        false
+    } else if claim.trigger == Some(parameter.as_str()) {
+        true
+    } else {
+        return Err(missing(parameter));
+    };
+    let index = *env.variables.get(field).ok_or_else(|| missing(field))?;
+    let term = if at_activation {
+        HybridTerm::ActivationVariable(index)
+    } else {
+        HybridTerm::Variable(index)
+    };
+    leaf(meter, term, Kind::Real)
 }
 
 /// `pre(x)`: admitted only in a reset, over a continuous variable, and read
@@ -286,6 +370,13 @@ fn pre(
         }
         _ => Err(malformed.into()),
     }
+}
+
+/// Whether `name` is a qualified name with a `::` segment. `#[string_edge]`:
+/// the qualified spelling is the one source-text distinction S2 leaves to S3.
+#[ix_trace_rs::string_edge]
+pub(super) fn is_qualified(name: &str) -> bool {
+    name.contains("::")
 }
 
 fn take(values: &mut Vec<Lowered>, span: Span) -> Result<Lowered, Stop> {
@@ -318,9 +409,23 @@ fn finish(
     node: &ExprNode,
     span: Span,
     values: &mut Vec<Lowered>,
+    env: &Env<'_>,
     meter: &mut Meter<'_>,
 ) -> Result<Lowered, Stop> {
     match node {
+        ExprNode::Call { name, arguments } => {
+            let mut applied: Vec<Lowered> = Vec::with_capacity(arguments.len());
+            for _ in arguments {
+                applied.push(take(values, span)?);
+            }
+            applied.reverse();
+            let (function, kind) = env.callees.resolve(name, &applied, span)?;
+            let size = applied
+                .iter()
+                .fold(0_u64, |total, argument| total.saturating_add(argument.size));
+            let terms = applied.into_iter().map(|argument| argument.term).collect();
+            combine(meter, kind, size, HybridTerm::Call(function, terms))
+        }
         ExprNode::Negate(_) => {
             let operand = expect(take(values, span)?, Kind::Real, span)?;
             let size = operand.size;

@@ -497,6 +497,10 @@ pub struct PackageDeclarations {
     /// FR-447: the unit's `hybrid` declarations in declaration order, each
     /// with its `using` alias resolved by the FR-091 assembler.
     pub hybrids: Vec<super::HybridDeclaration>,
+    /// FR-447: the unit's hybrid claims in declaration order, the `temporal`
+    /// clauses whose `over` type names one of [`Self::hybrids`], each with its
+    /// `using` alias resolved by the FR-091 assembler.
+    pub hybrid_claims: Vec<super::HybridClaimDeclaration>,
     /// Test-only: check a package that holds a `hybrid` declaration without
     /// refusing it as not emitted (FR-447).
     pub emit_unwritten_hybrids: bool,
@@ -670,6 +674,7 @@ impl PackageDeclarations {
             emit_unwritten_terminals: false,
             refinements: Vec::new(),
             hybrids: Vec::new(),
+            hybrid_claims: Vec::new(),
             emit_unwritten_hybrids: false,
             refinement_internals: None,
             refinement_support: super::RefinementSupport::BUILD,

@@ -13,7 +13,7 @@
 //!    `quire_semantic_value::quantity::UnitTable` over an admitted
 //!    `quire_semantic_value::unit::UnitGraph`;
 //! 2. explicit operation tables: [`evaluate_decimal`](quire_exact::evaluate_decimal)
-//!    (FR-140), [`divide`] and [`modulo`] (FR-147),
+//!    (FR-140), [`divide`] and `quire_eval::modulo` (FR-147),
 //!    [`admit_text`](quire_exact::admit_text),
 //!    [`compare_text`](quire_exact::compare_text) and `quire_semantic_value::enumeration::compare_enum`
 //!    (FR-141), `quire_semantic_value::quantity`'s `evaluate_quantity` and
@@ -130,7 +130,6 @@ pub(crate) mod layer;
 pub(crate) mod member;
 pub mod model_query;
 pub(crate) mod semantic_node;
-pub mod supplied;
 pub(crate) mod unit;
 
 // `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
@@ -165,9 +164,8 @@ pub(crate) mod unit;
 // `quire_semantic_value::definition`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
 pub use definition::{
-    divide, modulo, AdmittedIeeeProfile, AdmittedSelection, CatalogEntry, CatalogRole,
-    DefinitionLock, DefinitionReference, ModelEntry, ModelRole, TemporalEntry, TemporalRole,
-    Trigger,
+    divide, AdmittedIeeeProfile, AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock,
+    DefinitionReference, ModelEntry, ModelRole, TemporalEntry, TemporalRole, Trigger,
 };
 pub use diagnostics_catalog::{native_diagnostics_catalog, NATIVE_DIAGNOSTICS_IDENTITY};
 pub use layer::{HeaderLayer, LayerForm, LayerRow, WitnessKind, WitnessRequest};
@@ -197,12 +195,6 @@ pub use member::Member;
 // submodule is deleted; every former consumer now imports
 // `quire_exact::{Outcome, Undefined, Refusal}` directly -- one definition,
 // one import path, no re-export standing in for the deleted module.
-// `PreconditionFailure` was `outcome`'s own non-kernel type (FR-151 dispatch
-// vocabulary, ADR-013 T-6); it moved to `value::expression::causes`, the
-// module that owns the `StateModel` undefined cause it is the payload of,
-// narrowed to `pub(crate)` since its only consumers are inside
-// `value::expression` (rust-review "narrow API" bar: `pub` only for what
-// consumers outside the crate use).
 // `InvalidSemanticGraph` and `SemanticGraphCause` are
 // `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
