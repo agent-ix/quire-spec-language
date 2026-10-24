@@ -1279,7 +1279,10 @@ fn a_partial_order_run_a_limit_stops_settles_as_incomplete() {
             value: 3,
         })
     );
-    assert_eq!(ModelCheckLimit::MaxStates.setting(), "max_states");
+    assert_eq!(
+        ModelCheckLimit::MaxStates.setting(),
+        "model_check.max_states"
+    );
 }
 
 /// FR-156 "Visibility": a transition is also visible when its write footprint
