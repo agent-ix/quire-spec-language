@@ -5,21 +5,31 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, AggregateAtom, AggregateKind, AggregateTerm, AtomReading, InsufficientData,
-    LetterStop, PastWindow, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace,
-    TermRefusal, UndefinedCause, UndefinedEvaluation, WindowLimitReached, WindowRefusal,
-    WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
+    evaluate, AggregateAtom, AggregateKind, AggregateTerm, AtomReading, HoldsStop,
+    InsufficientData, LetterStop, ObservedWindowExpressions, ObservedWindowSource, PastWindow,
+    TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace, TermRefusal, UndefinedCause,
+    UndefinedEvaluation, WindowLimitReached, WindowRead, WindowRefusal, WindowSource, WindowTrace,
+    DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
 };
+use qsl_forms::{BinaryOperator, Expression};
 use qsl_foundation::SourceIdentity;
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
+    check_clauses, CheckedExpression, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
     SCALAR_LIMITS_UNLIMITED,
 };
 use qsl_semantics::model::intake::SelectedModels;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
-    ComparisonOperator, Incomplete, Integer, LimitKind, Meter, Rational, ScalarLimits,
+    Charge, ChargePoint, ComparisonOperator, EffectiveId, FieldValue, Integer, IntegerInterval,
+    LimitKind, Meter, ObjectId, ObjectReference, Presence, Rational, RationalDomain, ScalarLimits,
+    Undefined, UniverseId, Value, ValueType,
 };
-use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::{Category, InternalFault};
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
+use quire_semantic_value::object_closure::ObjectClosure;
+use sha2::{Digest, Sha256};
 
 const UNLIMITED: u64 = u64::MAX;
 
@@ -39,6 +49,8 @@ struct Rows {
     value: Vec<Rational>,
     predicate: Vec<bool>,
     visited: Vec<u64>,
+    /// The positions whose value is undefined by division by zero.
+    divides_by_zero: Vec<u64>,
 }
 
 impl Rows {
@@ -48,7 +60,14 @@ impl Rows {
             value,
             predicate,
             visited: Vec::new(),
+            divides_by_zero: Vec::new(),
         }
+    }
+
+    /// These rows, but with the value at each of `positions` undefined.
+    fn undefined_at(mut self, positions: &[u64]) -> Self {
+        self.divides_by_zero = positions.to_vec();
+        self
     }
 
     fn values(values: &[i64]) -> Self {
@@ -65,17 +84,34 @@ fn row<T: Clone>(rows: &[T], position: TemporalPosition) -> T {
 }
 
 impl WindowSource for Rows {
-    fn admits(&mut self, position: TemporalPosition, _: &mut Meter) -> Result<bool, Incomplete> {
+    fn admits(
+        &mut self,
+        position: TemporalPosition,
+        _: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
         self.visited.push(position.index());
-        Ok(row(&self.admit, position))
+        Ok(WindowRead::Defined(row(&self.admit, position)))
     }
 
-    fn value(&mut self, position: TemporalPosition, _: &mut Meter) -> Result<Rational, Incomplete> {
-        Ok(row(&self.value, position))
+    fn value(
+        &mut self,
+        position: TemporalPosition,
+        _: &mut Meter,
+    ) -> Result<WindowRead<Rational>, LetterStop> {
+        if self.divides_by_zero.contains(&position.index()) {
+            return Ok(WindowRead::Undefined(UndefinedCause::Kernel(
+                Undefined::DivisionByZero,
+            )));
+        }
+        Ok(WindowRead::Defined(row(&self.value, position)))
     }
 
-    fn predicate(&mut self, position: TemporalPosition, _: &mut Meter) -> Result<bool, Incomplete> {
-        Ok(row(&self.predicate, position))
+    fn predicate(
+        &mut self,
+        position: TemporalPosition,
+        _: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        Ok(WindowRead::Defined(row(&self.predicate, position)))
     }
 }
 
@@ -523,24 +559,42 @@ fn clause() -> CheckedTemporalClause {
 }
 
 /// The clause's atom, read as the aggregate at each position.
-struct Derived<'a> {
+struct Derived<'a, S> {
     atom: &'a AggregateAtom,
     trace: &'a WindowTrace,
-    rows: Rows,
+    rows: S,
     limit: u64,
     readings: Vec<AtomReading>,
+    /// The work units the aggregate itself charged, apart from the
+    /// evaluator's node-visit and letter-read units.
+    window_units: u64,
 }
 
-impl TemporalLetters for Derived<'_> {
+impl<'a, S: WindowSource> Derived<'a, S> {
+    fn new(atom: &'a AggregateAtom, trace: &'a WindowTrace, rows: S, limit: u64) -> Self {
+        Self {
+            atom,
+            trace,
+            rows,
+            limit,
+            readings: Vec::new(),
+            window_units: 0,
+        }
+    }
+}
+
+impl<S: WindowSource> TemporalLetters for Derived<'_, S> {
     fn atom(
         &mut self,
         _: FormulaNodeId,
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
+        let before = meter.consumed(LimitKind::WorkUnits);
         let reading =
             self.atom
                 .evaluate(self.trace, &mut self.rows, self.limit, position, meter)?;
+        self.window_units += meter.consumed(LimitKind::WorkUnits) - before;
         self.readings.push(reading.clone());
         Ok(reading)
     }
@@ -562,13 +616,12 @@ fn run(
 ) -> (TemporalOutcome, Vec<AtomReading>) {
     let len = errors.len();
     let trace = WindowTrace::positions(u64::try_from(len).expect("small"));
-    let mut letters = Derived {
+    let mut letters = Derived::new(
         atom,
-        trace: &trace,
-        rows: Rows::new(errors, vec![whole(0); len], vec![false; len]),
+        &trace,
+        Rows::new(errors, vec![whole(0); len], vec![false; len]),
         limit,
-        readings: Vec::new(),
-    };
+    );
     let mut meter = Meter::new(budget);
     let outcome = evaluate(
         &clause(),
@@ -699,5 +752,669 @@ fn a_window_over_the_limit_settles_the_run_with_the_limit_record() {
     assert!(
         matches!(&outcome, TemporalOutcome::Incomplete(record) if record.limit_kind == LimitKind::WorkUnits),
         "{outcome:?}"
+    );
+}
+
+/// The package of one object type `M::E` with an integer field `x`, and the
+/// object environment of each position of a trace of such an object `e1`
+/// whose `x` is `xs[i]` at position `i`.
+struct Observed {
+    package: CheckedPackage,
+    environments: Vec<ObjectEnvironment>,
+    over: ObjectReference,
+    object_type: EffectiveId,
+}
+
+impl Observed {
+    fn new(xs: &[i64]) -> Self {
+        let effective = EffectiveId::from_digest(Sha256::digest(b"M::E").into());
+        let declaration = ObjectTypeDeclaration::new(
+            effective,
+            "M::E",
+            vec![
+                FieldDeclaration::new("x", ValueType::Integer, Presence::Required),
+                FieldDeclaration::new("one", quotient(), Presence::Required),
+            ],
+        );
+        let types = TypeEnvironment::new([], vec![declaration]).expect("one object type");
+        // The complete value profile, which `/` needs, is selected by a
+        // function declaration.
+        let text = "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\";\n\
+             function zero using v(): Integer pure { 0 }\n";
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "window", "git", "1"),
+            "window.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+        let mut declarations = PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            unit,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("the unit assembles");
+        declarations.types = types.clone();
+        let graph = declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks");
+        let over = ObjectReference::new(
+            UniverseId::from_digest([0x42; 32]),
+            effective,
+            ObjectId::new("e1").expect("an object id"),
+        );
+        let environments = xs
+            .iter()
+            .map(|x| {
+                let present = FieldValue::Present(Value::Integer(Integer::from(*x)));
+                let one = FieldValue::Present(Value::Rational(whole(1)));
+                ObjectEnvironment::new(
+                    ObjectClosure::new(
+                        &types,
+                        [(over.clone(), vec![("x", present), ("one", one)])],
+                        &[],
+                    )
+                    .expect("the object closes"),
+                )
+            })
+            .collect();
+        Self {
+            package: CheckedPackage::link(graph),
+            environments,
+            over,
+            object_type: effective,
+        }
+    }
+
+    /// The checked expression over the parameter `e`.
+    fn check(&self, expression: &Expression, expected: Option<&ValueType>) -> CheckedExpression {
+        let parameter = ValueType::Reference(self.object_type);
+        self.package
+            .graph()
+            .check_expression(
+                vec![("e".to_owned(), parameter)],
+                expression,
+                expected,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .expect("the expression checks")
+    }
+
+    /// `atom` at `position` of `trace`, its expressions read from the objects.
+    fn read(
+        &self,
+        atom: &AggregateAtom,
+        expressions: ObservedWindowExpressions<'_>,
+        trace: &WindowTrace,
+        position: u64,
+    ) -> AtomReading {
+        let mut source = self.source(expressions);
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        atom.evaluate(
+            trace,
+            &mut source,
+            UNLIMITED,
+            TemporalPosition::new(position),
+            &mut meter,
+        )
+        .expect("the window is readable")
+    }
+
+    fn source<'a>(
+        &'a self,
+        expressions: ObservedWindowExpressions<'a>,
+    ) -> ObservedWindowSource<'a> {
+        ObservedWindowSource::new(&self.package, &self.environments, &self.over, expressions)
+    }
+}
+
+/// The rational type of `6 / e.x`.
+fn quotient() -> ValueType {
+    let interval = |lower: i64, upper: i64| {
+        IntegerInterval::new(Integer::from(lower), Integer::from(upper)).expect("an interval")
+    };
+    ValueType::Rational(
+        RationalDomain::new(interval(-100, 100), interval(1, 100)).expect("a domain"),
+    )
+}
+
+/// `e.x`.
+fn x() -> Expression {
+    Expression::field(
+        Expression::deref(Expression::name("e".to_owned())),
+        "x".to_owned(),
+    )
+}
+
+/// `6 / e.x`.
+fn six_over_x() -> Expression {
+    Expression::binary(BinaryOperator::Divide, Expression::integer(6_i64), x())
+}
+
+/// `6 / e.x > e.one`, where `one` is the field that holds 1: a checked
+/// ordering of rationals takes its type from an operand that is not a
+/// literal.
+fn six_over_x_above_one() -> Expression {
+    Expression::binary(
+        BinaryOperator::Greater,
+        six_over_x(),
+        Expression::field(
+            Expression::deref(Expression::name("e".to_owned())),
+            "one".to_owned(),
+        ),
+    )
+}
+
+/// `e.x != 0`.
+fn x_is_nonzero() -> Expression {
+    Expression::binary(BinaryOperator::NotEqual, x(), Expression::integer(0_i64))
+}
+
+fn division_by_zero() -> AtomReading {
+    AtomReading::Undefined(UndefinedCause::Kernel(Undefined::DivisionByZero))
+}
+
+fn atom_of(
+    kind: AggregateKind,
+    window: PastWindow,
+    min_count: u64,
+    operator: ComparisonOperator,
+    threshold: Rational,
+) -> AggregateAtom {
+    AggregateAtom::new(term(kind, window, min_count), operator, threshold)
+}
+
+/// FR-194-AC-5: over `x` values `2, 1, 0, 4`, read from the observed
+/// objects by the production source (the filter and predicate are written
+/// `6 / e.x > e.one`, `one` being a field that holds 1, because the checker
+/// cannot type `> 1` against a quotient), an undefined value, filter or
+/// predicate makes the atom undefined with its cause at the first undefined
+/// position, ahead of any sum and of `min_count`; a guarded filter keeps it
+/// defined; the clause is undefined at the first position whose atom is, in
+/// the violation category; and `InsufficientData` stays O-16 undefined.
+#[trace("TC-629", "FR-194-AC-5")]
+#[test]
+fn an_undefined_value_filter_or_predicate_stops_the_window_at_its_first_position() {
+    let observed = Observed::new(&[2, 1, 0, 4]);
+    let value = observed.check(&six_over_x(), Some(&quotient()));
+    let unguarded = ObservedWindowExpressions {
+        value: Some(&value),
+        ..ObservedWindowExpressions::default()
+    };
+    let trace = WindowTrace::positions(4);
+    let positions = |a, b| PastWindow::Positions { a, b };
+    let read_at = |atom: &AggregateAtom, expressions: ObservedWindowExpressions<'_>, position| {
+        observed.read(atom, expressions, &trace, position)
+    };
+
+    // The clause is undefined where the atom first is: position 2, whose
+    // window is the first to hold `x` 0.
+    let sum = atom_of(
+        AggregateKind::Sum,
+        positions(0, 3),
+        1,
+        ComparisonOperator::LessOrEqual,
+        whole(20),
+    );
+    let mut letters = Derived::new(&sum, &trace, observed.source(unguarded), UNLIMITED);
+    let outcome = evaluate(
+        &clause(),
+        TemporalTrace::Finite { len: 4 },
+        &mut letters,
+        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    )
+    .expect("the trace is readable");
+    assert_eq!(
+        outcome,
+        TemporalOutcome::Undefined(UndefinedEvaluation {
+            at: TemporalPosition::new(2),
+            cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
+        })
+    );
+    assert_eq!(outcome.category(), Category::Violation);
+
+    // At position 3 the atom is undefined, not the sum 10.5 of the other
+    // three and not a holding result.
+    assert_eq!(read_at(&sum, unguarded, 3), division_by_zero());
+
+    // The guarded sum stays defined: 3 + 6 + 3/2 = 21/2.
+    let guard = observed.check(&x_is_nonzero(), None);
+    let guarded = ObservedWindowExpressions {
+        filter: Some(&guard),
+        ..unguarded
+    };
+    assert_eq!(read_at(&sum, guarded, 3), AtomReading::True);
+    let exactly = |threshold: Rational| {
+        let atom = atom_of(
+            AggregateKind::Sum,
+            positions(0, 3),
+            1,
+            ComparisonOperator::GreaterOrEqual,
+            threshold,
+        );
+        read_at(&atom, guarded, 3)
+    };
+    assert_eq!(exactly(ratio(21, 2)), AtomReading::True);
+    assert_eq!(exactly(ratio(22, 2)), AtomReading::False);
+
+    // An undefined filter, and an undefined predicate.
+    let filter = observed.check(&six_over_x_above_one(), None);
+    let count = atom_of(
+        AggregateKind::Count,
+        positions(0, 3),
+        1,
+        ComparisonOperator::GreaterOrEqual,
+        whole(1),
+    );
+    let filtered = ObservedWindowExpressions {
+        filter: Some(&filter),
+        ..ObservedWindowExpressions::default()
+    };
+    assert_eq!(read_at(&count, filtered, 3), division_by_zero());
+    let fraction = atom_of(
+        AggregateKind::Fraction,
+        positions(0, 3),
+        1,
+        ComparisonOperator::GreaterOrEqual,
+        ratio(1, 2),
+    );
+    let predicated = ObservedWindowExpressions {
+        predicate: Some(&filter),
+        ..ObservedWindowExpressions::default()
+    };
+    assert_eq!(read_at(&fraction, predicated, 3), division_by_zero());
+
+    // Undefined beats `min_count`; a guarded sum short of `min_count` is
+    // `InsufficientData`, which is O-16 undefined and never a violation.
+    let needs_five = |guard: ObservedWindowExpressions<'_>| {
+        let atom = atom_of(
+            AggregateKind::Sum,
+            positions(0, 3),
+            5,
+            ComparisonOperator::LessOrEqual,
+            whole(20),
+        );
+        read_at(&atom, guard, 3)
+    };
+    assert_eq!(needs_five(unguarded), division_by_zero());
+    let short = AtomReading::Undefined(UndefinedCause::InsufficientData(InsufficientData {
+        count: 3,
+        min_count: 5,
+    }));
+    assert_eq!(needs_five(guarded), short);
+    let atom = atom_of(
+        AggregateKind::Sum,
+        positions(0, 3),
+        5,
+        ComparisonOperator::LessOrEqual,
+        whole(20),
+    );
+    let mut letters = Derived::new(&atom, &trace, observed.source(guarded), UNLIMITED);
+    let outcome = evaluate(
+        &clause(),
+        TemporalTrace::Finite { len: 4 },
+        &mut letters,
+        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    )
+    .expect("the trace is readable");
+    // The guarded sum holds one value at position 0, the first position the
+    // clause reads, against a `min_count` of 5.
+    assert_eq!(
+        outcome,
+        TemporalOutcome::Undefined(UndefinedEvaluation {
+            at: TemporalPosition::new(0),
+            cause: UndefinedCause::InsufficientData(InsufficientData {
+                count: 1,
+                min_count: 5
+            }),
+        })
+    );
+    assert_eq!(outcome.category(), Category::Undefined);
+
+    // `past[2, 3]` at position 3 holds positions 0 and 1 only, with no zero.
+    let behind = positions(2, 3);
+    let sum_behind = atom_of(
+        AggregateKind::Sum,
+        behind.clone(),
+        1,
+        ComparisonOperator::Equal,
+        whole(9),
+    );
+    assert_eq!(read_at(&sum_behind, unguarded, 3), AtomReading::True);
+    let count_behind = atom_of(
+        AggregateKind::Count,
+        behind.clone(),
+        1,
+        ComparisonOperator::Equal,
+        whole(2),
+    );
+    assert_eq!(read_at(&count_behind, unguarded, 3), AtomReading::True);
+    let fraction_behind = atom_of(
+        AggregateKind::Fraction,
+        behind,
+        1,
+        ComparisonOperator::Equal,
+        whole(1),
+    );
+    assert_eq!(read_at(&fraction_behind, predicated, 3), AtomReading::True);
+}
+
+/// FR-194-AC-6: over `x` values `1, 0, 2, 3` the window is read oldest
+/// position first and stops at position 1: the atom at position 3 is
+/// undefined and charges 2 visit units (a newest-first visit would charge
+/// 3), the clause is undefined at position 1 having charged 3 visit units
+/// over positions 0 and 1, and `max_window_values` 2 does not turn the
+/// atom `Incomplete`, because the third admitted value is not reached. A
+/// filter that rejects 10 of 20 positions charges 20 visit units.
+#[trace("TC-629", "FR-194-AC-6")]
+#[test]
+fn the_window_is_read_oldest_first_and_charges_only_the_positions_visited() {
+    let sum = atom_of(
+        AggregateKind::Sum,
+        PastWindow::Positions { a: 0, b: 3 },
+        1,
+        ComparisonOperator::LessOrEqual,
+        whole(20),
+    );
+    let rows = || {
+        Rows::new(
+            vec![true; 4],
+            vec![whole(6), whole(0), whole(3), whole(2)],
+            vec![false; 4],
+        )
+        .undefined_at(&[1])
+    };
+    let trace = WindowTrace::positions(4);
+
+    for limit in [UNLIMITED, 2] {
+        let mut source = rows();
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let reading = sum.evaluate(
+            &trace,
+            &mut source,
+            limit,
+            TemporalPosition::new(3),
+            &mut meter,
+        );
+        assert_eq!(reading, Ok(division_by_zero()), "limit {limit}");
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 2, "limit {limit}");
+        assert_eq!(source.visited, vec![0, 1], "limit {limit}");
+    }
+
+    let mut letters = Derived::new(&sum, &trace, rows(), UNLIMITED);
+    let outcome = evaluate(
+        &clause(),
+        TemporalTrace::Finite { len: 4 },
+        &mut letters,
+        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    )
+    .expect("the trace is readable");
+    assert_eq!(
+        outcome,
+        TemporalOutcome::Undefined(UndefinedEvaluation {
+            at: TemporalPosition::new(1),
+            cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
+        })
+    );
+    assert_eq!(
+        letters.readings,
+        vec![AtomReading::True, division_by_zero()]
+    );
+    assert_eq!(letters.window_units, 3);
+
+    let wide = atom_of(
+        AggregateKind::Sum,
+        PastWindow::Positions { a: 0, b: 19 },
+        1,
+        ComparisonOperator::GreaterOrEqual,
+        whole(0),
+    );
+    let half: Vec<bool> = (0..20).map(|position| position % 2 == 0).collect();
+    let mut filtered = Rows::new(half, vec![whole(1); 20], vec![false; 20]);
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    wide.evaluate(
+        &WindowTrace::positions(20),
+        &mut filtered,
+        20,
+        TemporalPosition::new(19),
+        &mut meter,
+    )
+    .expect("the window is within the limit");
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 20);
+}
+
+/// `ObservedWindowSource` reads each kind of expression result at a trace
+/// position: an integer value is a number, a non-Boolean condition is a
+/// fault and not a `false`, a missing expression is a fault, a position
+/// without an environment is a fault, a failed call or a refused result
+/// stops the run with its record kept, and an exhausted budget is
+/// `Incomplete`.
+#[trace("TC-629")]
+#[test]
+fn the_observed_source_reads_numbers_and_faults_on_anything_else() {
+    let fault = |code: &'static str| {
+        LetterStop::Fault(InternalFault::new("temporal.observed-window", code))
+    };
+    let at = TemporalPosition::new;
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let observed = Observed::new(&[2, 1, 0, 4]);
+    let integer = observed.check(&x(), None);
+
+    // An integer value is the rational of the same number.
+    let numbers = ObservedWindowExpressions {
+        value: Some(&integer),
+        ..ObservedWindowExpressions::default()
+    };
+    assert_eq!(
+        observed.source(numbers).value(at(3), &mut meter),
+        Ok(WindowRead::Defined(whole(4)))
+    );
+
+    // A condition that is not a Boolean is a fault, as filter and predicate.
+    let wrong = ObservedWindowExpressions {
+        filter: Some(&integer),
+        predicate: Some(&integer),
+        ..ObservedWindowExpressions::default()
+    };
+    assert_eq!(
+        observed.source(wrong).admits(at(0), &mut meter),
+        Err(fault("window-condition-boolean"))
+    );
+    assert_eq!(
+        observed.source(wrong).predicate(at(0), &mut meter),
+        Err(fault("window-condition-boolean"))
+    );
+
+    // A missing expression: no filter admits every position; no value or
+    // predicate is a fault.
+    let none = ObservedWindowExpressions::default();
+    assert_eq!(
+        observed.source(none).admits(at(0), &mut meter),
+        Ok(WindowRead::Defined(true))
+    );
+    assert_eq!(
+        observed.source(none).value(at(0), &mut meter),
+        Err(fault("aggregate-has-a-value-expression"))
+    );
+    assert_eq!(
+        observed.source(none).predicate(at(0), &mut meter),
+        Err(fault("aggregate-has-a-predicate-expression"))
+    );
+
+    // A position the trace has no environment for.
+    assert_eq!(
+        observed.source(numbers).value(at(9), &mut meter),
+        Err(fault("position-has-an-environment"))
+    );
+
+    // A call that fails: the object is absent from that position's
+    // environment. The run stops and the failure is kept.
+    let mut gap = Observed::new(&[2, 1]);
+    gap.environments[1] = ObjectEnvironment::default();
+    let mut source = gap.source(numbers);
+    assert!(source.stopped().is_none());
+    assert_eq!(
+        source.value(at(0), &mut meter),
+        Ok(WindowRead::Defined(whole(2)))
+    );
+    assert!(source.stopped().is_none());
+    assert_eq!(
+        source.value(at(1), &mut meter),
+        Err(fault("window-expression-call-failed"))
+    );
+    assert!(matches!(source.stopped(), Some(HoldsStop::Failed(_))));
+
+    // A result the kernel refuses: 6 / 1 is outside the rational domain
+    // [-5, 5] / [1, 5].
+    let interval = |lower: i64, upper: i64| {
+        IntegerInterval::new(Integer::from(lower), Integer::from(upper)).expect("an interval")
+    };
+    let narrow = ValueType::Rational(
+        RationalDomain::new(interval(-5, 5), interval(1, 5)).expect("a domain"),
+    );
+    let quotient = observed.check(&six_over_x(), Some(&narrow));
+    let refusing = ObservedWindowExpressions {
+        value: Some(&quotient),
+        ..ObservedWindowExpressions::default()
+    };
+    let mut source = observed.source(refusing);
+    assert_eq!(
+        source.value(at(0), &mut meter),
+        Ok(WindowRead::Defined(whole(3)))
+    );
+    assert!(source.stopped().is_none());
+    assert_eq!(
+        source.value(at(1), &mut meter),
+        Err(fault("window-expression-refused"))
+    );
+    assert!(matches!(source.stopped(), Some(HoldsStop::Refused(_))));
+
+    // An exhausted budget is `Incomplete`, not a value.
+    let sum = observed.check(
+        &Expression::binary(BinaryOperator::Add, x(), Expression::integer(1_i64)),
+        None,
+    );
+    let adding = ObservedWindowExpressions {
+        value: Some(&sum),
+        ..ObservedWindowExpressions::default()
+    };
+    let mut broke = Meter::new(ScalarLimits {
+        work_units: 0,
+        ..SCALAR_LIMITS_UNLIMITED
+    });
+    let stop = observed
+        .source(adding)
+        .value(at(0), &mut broke)
+        .expect_err("no budget to add");
+    assert!(
+        matches!(&stop, LetterStop::Incomplete(record) if record.limit_kind == LimitKind::WorkUnits),
+        "{stop:?}"
+    );
+}
+
+/// A position whose value is undefined holds no value: when it is the one
+/// that would exceed `max_window_values`, the atom is undefined there, and
+/// the first defined position past the limit is the overflow.
+#[trace("TC-629")]
+#[test]
+fn an_undefined_position_at_the_limit_is_undefined_and_not_an_overflow() {
+    let sum = atom_of(
+        AggregateKind::Sum,
+        PastWindow::Positions { a: 0, b: 2 },
+        1,
+        ComparisonOperator::GreaterOrEqual,
+        whole(0),
+    );
+    let trace = WindowTrace::positions(3);
+    let rows = |undefined: &[u64]| Rows::values(&[1, 1, 1]).undefined_at(undefined);
+    assert_eq!(
+        read(&sum, &trace, &mut rows(&[2]), 2, 2),
+        Ok(division_by_zero())
+    );
+    assert_eq!(
+        read(&sum, &trace, &mut rows(&[]), 2, 2),
+        Err(LetterStop::WindowLimit(WindowLimitReached {
+            limit: "max_window_values",
+            value: 2,
+            setting: MAX_WINDOW_VALUES_SETTING,
+        }))
+    );
+}
+
+/// A source that charges one work unit for each value it reads.
+struct Charging(Rows);
+
+impl WindowSource for Charging {
+    fn admits(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        self.0.admits(position, meter)
+    }
+
+    fn value(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<Rational>, LetterStop> {
+        meter.charge(Charge::new(ChargePoint::CollectionVisit))?;
+        self.0.value(position, meter)
+    }
+
+    fn predicate(
+        &mut self,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<WindowRead<bool>, LetterStop> {
+        self.0.predicate(position, meter)
+    }
+}
+
+/// The value past `max_window_values` is read before the limit is checked,
+/// so an undefined one can win over the overflow. That read is charged, and
+/// when it exhausts the work budget the run stops on the budget
+/// (`Incomplete`, work units), not on the limit. FR-194 is silent on that
+/// order; this pins the behaviour.
+#[trace("TC-629")]
+#[test]
+fn the_read_past_the_limit_is_charged_and_the_budget_stops_before_the_limit() {
+    let sum = atom_of(
+        AggregateKind::Sum,
+        PastWindow::Positions { a: 0, b: 2 },
+        1,
+        ComparisonOperator::GreaterOrEqual,
+        whole(0),
+    );
+    let trace = WindowTrace::positions(3);
+    // Three visits and three value reads: two admitted values and the one
+    // past the limit 2.
+    let outcome = |work_units: u64| {
+        let mut meter = Meter::new(ScalarLimits {
+            work_units,
+            ..SCALAR_LIMITS_UNLIMITED
+        });
+        sum.evaluate(
+            &trace,
+            &mut Charging(Rows::values(&[1, 1, 1])),
+            2,
+            TemporalPosition::new(2),
+            &mut meter,
+        )
+    };
+    assert_eq!(
+        outcome(6),
+        Err(LetterStop::WindowLimit(WindowLimitReached {
+            limit: "max_window_values",
+            value: 2,
+            setting: MAX_WINDOW_VALUES_SETTING,
+        }))
+    );
+    assert!(
+        matches!(outcome(5), Err(LetterStop::Incomplete(record)) if record.limit_kind == LimitKind::WorkUnits)
     );
 }
