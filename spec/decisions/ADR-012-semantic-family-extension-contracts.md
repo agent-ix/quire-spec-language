@@ -113,7 +113,7 @@ and the stage hooks it implements.
 | `Value` | scalar and composite values, types, expressions, function application | none | none | #214 (function application), #120, #164, #170, #175 |
 | `StateModel` | state, model population, lookup, inheritance, dispatch | `Value` | #220 | #120, #121, #164 |
 | `SumCase` | sum types and `case` with its exhaustiveness obligation | `Value` | #221 | #187 |
-| `TemporalTrace` | temporal and trace semantics, and the control-to-temporal mapping (QSpec FR-300, PR #59) | `Value`, `StateModel`, `ProtocolClause` | #222 | #188, #189 |
+| `TemporalTrace` | temporal and trace semantics, and the control-to-temporal activation map (FR-449, QSpec FR-464 "Activation relation") | `Value`, `StateModel`, `ProtocolClause` | #222 | #188, #189 |
 | `ProtocolClause` | protocols, clauses, frames, scoped anchors | `Value`, `StateModel` | #223 | #218 |
 | `Relation` | refinement and model-to-implementation relations. Amended by ADR-020 §1: the refinement declaration between two QSL models is a `Relation` declaration with `check` and `requirements` hooks at S3, checked into `CheckedRefinement` (ADR-020 RM-1 to RM-8, AX-1) | `StateModel`, `ProtocolClause` | #223 | #191, #192, #198 |
 
@@ -131,7 +131,7 @@ the `check` core:
 | checked expression node (today `NodeKind`, `value::expression::ir`, moved by ADR-011 M-5) and checked type node | `Value` | every other family |
 | checked model element reference, population extent and dispatch target | `StateModel` | `TemporalTrace`, `ProtocolClause`, `Relation` |
 | canonical checked clause kind (S5) | `ProtocolClause` | `TemporalTrace`, `Relation`, the layer-4 `package` emitter |
-| checked operation header and checked clause subnodes (frame, scoped anchor, pre- and postcondition) | `ProtocolClause` | `TemporalTrace` (the FR-300 control-to-temporal mapping), `Relation` |
+| checked operation header and checked clause subnodes (frame, scoped anchor, pre- and postcondition) | `ProtocolClause` | `TemporalTrace` (the FR-449 control-to-temporal activation map), `Relation` |
 
 The same rule holds in layer 2 `forms`, layer 4 `package` and layer 5
 `value::expression`: a family module depends on its layer's core only.
@@ -826,7 +826,7 @@ states the contract; the change belongs to their own tickets (§14).
 | ADR-010 OBS-014 | The five production string sites are the rows marked "yes" in §9. Each is typed at its intake edge. |
 | ADR-010 OBS-033 | Cross-repository dispatch is on closed enums decoded at v2 intake; no vocabulary is re-derived from a wire string after intake (§9, seams S6 and S9). The enum sets follow the vocabulary as widened by agent-ix/quire-specification#134. agent-ix/quire-contract-ir#141 and agent-ix/quire-contract-codegen#86 implement it; RT owns its edits. |
 | ADR-010 DA-11 | One authority per role. Vocabulary and wire spelling: agent-ix/quire-specification#134 (FR-290). QSL alignment and the claim form → kind table: #229 (FR-057, QSL PR #237). Rust type: #213. Requirement derivation: each family's `requirements` hook. Advertisement: each backend's descriptor. Registry and routing: #185, using the candidate mechanism in §7.2. Per-item disposition: CG `negotiate_*` only. Runtime availability: the executing adapter. #210 owns DA-11; #229 is its secondary owner for QSL's alignment to the vocabulary. |
-| FR-300 control-to-temporal mapping (deferred to #210 by ADR-010 §8) | The mapping belongs to `TemporalTrace`, which reads checked `ProtocolClause` output (§1). It does not wait on #210. Its QSL consumer is #188. |
+| Control-to-temporal activation map (derived by FR-449) | The map belongs to `TemporalTrace`, which reads checked `ProtocolClause` output (§1): FR-449 derives it from the `protocol_clause` node's `activation` and `requirements` (QSpec FR-464 "Activation relation"), with no wire of its own. Its QSL consumer is #188. |
 
 ## 11. L1-D1: which ladder tickets wait on #185
 
@@ -1058,7 +1058,7 @@ item settles `invalid-request` with no preference order
 | Remaining `Value` forms | #120, #164, #170, #175 |
 | `StateModel` migration, including the `StateModel` arms of `infer_form` | #120, #121, #164 via #220 |
 | `SumCase` | #187 via #221 (§16) |
-| `TemporalTrace`, including the FR-300 mapping | #188, #189 via #222 |
+| `TemporalTrace`, including the FR-449 activation map | #188, #189 via #222 |
 | `ProtocolClause` | #218 via #223 |
 | `Relation` | #191, #192, #198 via #223 |
 | IR tag and form enums decoded at v2 intake; removal of the post-intake `as_str()` sites in IR `src/kani/` | agent-ix/quire-contract-ir#141 |
@@ -1344,10 +1344,15 @@ by SEAM-3 (`src/protocol_artifact/mod.rs`). So the order is:
    runs both paths.
 2. M-6c retires the `0-draft` native path as a whole: FR-100's
    `0-draft` route of CLI `run`, native `compile` and `lower`, `NativePackage`
-   and the native-linked-package/1 reader. The same PR deletes native `run`,
-   `state`, `runtime`, `mapped` and `model_source`, the modules only those
-   paths reach (ADR-011 §7.3 M-6c), and FR-108's parity test. FR-108's check
-   against its independent expected dispositions stays.
+   and the native-linked-package/1 reader, with native `run`, `state`,
+   `runtime`, `mapped`, `model_source` and `located_json`, the modules only
+   those paths reach (ADR-011 §7.3 M-6c), and FR-108's parity test. Each
+   path is deleted in the slice that makes it unreachable, and no two paths
+   run side by side: `model_source`, with `located_json`, which only
+   `model_source` imports, goes in the slice that deletes the native front
+   end (the `0-draft` parser). `formal_source` is SEAM-2 and is not deleted in step 2 (ADR-011
+   §7.3 X-2, M-6e). FR-108's check against its independent expected
+   dispositions stays.
 3. `native_model` goes last. SEAM-2 (`src/checking/composed/solver.rs`) and
    SEAM-3 (`src/protocol_artifact/mod.rs`) import `NativeModel`, so it is
    deleted in the PR that removes the last of those importers (ADR-011 §7.3
@@ -1518,7 +1523,7 @@ they have an arm.
 | S3 construction | the `check`-core call-target seam function (§16.2), then `check::sum_case::construct`. The member is resolved against the union, and each payload argument is checked against its declared position type. FR-143's four construction refusals are the existing `CheckCause::IllTyped` with tag `type-mismatch` (§16.5). | `check::sum_case`; the `check`-core call-target seam function; the `Call` and `Name` arms of `Typer::infer_form` | S3 | none |
 | S3 `case` | the `Case` arm of `Typer::infer_form` makes one call to `check::sum_case::check_case`. That function is a §4 staged builder with states Scrutinee, then Arms (§16.5). Each arm is a clause with independent meaning (§4.1). | `check::sum_case`; `check` core dispatch arm | S3, S4 | none |
 | S3 checked nodes | `NodeKind` (`qsl-semantics/src/check/ir.rs:294-547`) gains a union-construction variant and a `Case` variant. The compiler forces one arm at each existing match over `NodeKind`. `Pre` forced the same sites: `check/check/typing.rs`, `check/lowering.rs` (`Lowering::lower_node`, `:2739`), `check/claims.rs`, `check/facts.rs`, `check/observation.rs`, `ir.rs` children (`:590`) and the evaluator's `Machine::apply` (`qsl-eval/src/value/expression/evaluate.rs:929`). Each forced arm walks children or makes one call into `sum_case`. | `check` core; each listed site | S3 | none |
-| S3 collection element types | a set, bag or ordered set whose element type contains a union is admitted at S3 and keyed by QSpec FR-144's union row (FR-323): sets and bags in key order, ordered sets in first-occurrence order. The kernel's key arm for a union value produces exactly that key and invents no other order. A union whose payload contains a type with no FR-144 key (an IEEE-bearing type) makes a set, bag or ordered set of it refuse `ill_typed`/`operator-ineligible`, on the same path as an IEEE-bearing element type (`quire_semantic_value::declaration::TypeEnvironment::type_refusal`, beside `contains_ieee`). A `Sequence<U>` needs no key and is admitted. | `quire_semantic_value::declaration`; `quire-exact` `key.rs` | none | QSpec FR-144 (SC-G5) |
+| S3 collection element types | a set, bag or ordered set whose element type contains a union is admitted at S3 and keyed by QSpec FR-144's union row (FR-323): sets and bags in key order, ordered sets in first-occurrence order. The kernel's key arm for a union value produces exactly that key and invents no other order. A union whose payload contains a `Float32` or `Float64` is admitted and keyed by the FR-144 union row over its payload keys (a float by its FR-148 `totalOrder` key), its members being the same member by bit identity of the floats (QSpec FR-144's membership relation). A `Sequence<U>` needs no key and is admitted. | `quire_semantic_value::declaration`; `quire-exact` `key.rs` | none | QSpec FR-144 (SC-G5) |
 | S3 requirements | none new. A state clause containing `case` records one `operation-contract` claim, the clause's own, through the state family. A scalar operation application in an arm body is a `Value` claim site found by the existing walk (`check/claims.rs`), which only gains the forced child-walk arm. `SumCaseFamily::requirements()` returns no claim (FR-057; recipe "A note on `requirements()`"). | none | none | none |
 | S3 lowering | FR-093 lowering of the union type node, a union construction and a `case` expression to v2 nodes. This needs the wire vocabulary `NodeTag`, `SemanticTerm` and `Operator` (`qsl-semantics/src/check/node_key/mod.rs:288`, `:324`, `:631`), and a member variant (`qsl-semantics/src/value/member.rs:96` region), each with QSpec FR-440's spelling and QSpec FR-441's member key. | `check::lowering`, `check::node_key`, `value::member` | S3, S5 wire totality | QSpec FR-440, FR-441 (SC-G1 to SC-G3, §16.10) |
 | S4 | the emitter's `BodyNames::of` arm for each new body term (`qsl-package/src/emit.rs:279`; the `SemanticTerm::Frame` arm at `:319-330` is the precedent). `emit_checked` (`:780`) is otherwise generic. A node whose (tag, form) the IR cannot decode is omitted with `UnsupportedForm` (`:194`, `:393`), together with every node that names it (§2 "Packaging"). | `package` | S3 | SC-G1 |
@@ -1612,7 +1617,7 @@ obligation. The scrutinee refusal and the construction refusals reuse
 `CheckCause::IllTyped` (`:561`), so each (code, cause) pair has one cause
 path. No `Code` variant is added to `qsl-foundation/src/diagnostic.rs`.
 
-**Provenance.** Every refusal's locus is a `quire_semantic_value::location::Location` resolved through
+**Provenance.** Every refusal's locus is a `quire_semantic_value::location::ExpressionLocation` resolved through
 the unit's S2 form spans to `Locus::Region` (O-12, T-5, FR-096). `ArmForm`
 and `CaseForm` therefore carry their spans. Each `case` and construction node
 records its occurrences (O-07). A replayed evaluation of a function body that
@@ -1741,7 +1746,7 @@ to the named cases.
 | Adverse, construction | FR-143's four construction refusals, one case each | S3 | `ill_typed`/`type-mismatch` at the construction |
 | Adverse, declaration | `union L { Nil, Cons(Integer, L) }` (does not escape) refuses `ill_typed`, and the same union with `Option<L>` is admitted (AD-015 decision row); a union declaring one member name twice refuses `ambiguous_declaration`/`ambiguous-name` | S3 | §16.5 declaration rows |
 | Adverse, parse | a `case` whose scrutinee is an unparenthesized record value is not parsed as a scrutinee; the parenthesized form parses (shared-grammar.md `case` rule) | S1 | parse diagnostic, and the admitted form |
-| Collections | `Set<U>`, `Bag<U>` and `OrderedSet<U>` of a union are admitted and keyed by the FR-144 union key (sets and bags in key order, ordered sets in first-occurrence order); a union with an IEEE-bearing payload makes them refuse `ill_typed`/`operator-ineligible`; `Sequence<U>` is admitted (§16.4, FR-323) | S3 | §16.4 collection row |
+| Collections | `Set<U>`, `Bag<U>` and `OrderedSet<U>` of a union are admitted and keyed by the FR-144 union key (sets and bags in key order, ordered sets in first-occurrence order); a union with a float payload is admitted and keyed by its payload keys; `Sequence<U>` is admitted (§16.4, FR-323) | S3 | §16.4 collection row |
 | Limits | a `case` nested 1,000 levels deep is admitted under the default limits; a nested `case` fixture of N nodes checked with `s3.nodes` at N - 1 returns `StageFailure::Limit` with the node-count kind, bound N - 1, count N and setting `s3.nodes`, and the same fixture at N is admitted (FR-062-AC-7 pattern). No outcome names a nesting-depth limit | S3 | §16.5 limit row |
 | Adverse, admission | one supplied union argument for each SC-R3 refusal case: a foreign union key, a non-member `VariantId`, a wrong payload count, and a payload of the wrong type; and a union payload holding a dangling reference, refused by the reference walk | argument admission | `invalid_runtime_input`/`wrong-value-kind` before any charge |
 | Builder | out-of-order clause submission refuses with a clause-order refusal, and in-order submission admits (recipe item 2); diagnostic order by builder state, then source position | S3 | §4.2 |

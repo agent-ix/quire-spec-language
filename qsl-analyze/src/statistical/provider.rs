@@ -6,9 +6,12 @@
 //! The entry reads the checked package a [`StatisticalRequest`]'s subject
 //! carries and takes no `EmittedPackage`: S4 refuses to emit a package that
 //! holds a probabilistic claim (FR-185), so an entry that read an emitted
-//! package could serve no EN-4 item. `analyze` settles an EN-4 item through
-//! the same two calls, [`check_statistical`] and FR-192's settlement, so the
-//! record of an item is the same through either path (ADR-029 OP-2).
+//! package could serve no EN-4 item.
+//!
+//! No `analyze` operation exists yet (FR-281, QSL-596), so nothing here
+//! equals `analyze`'s record by test. When it lands, `analyze` must settle an
+//! EN-4 item through [`serve_request`] so the two paths stay one path
+//! (ADR-029 OP-2), and [`serve_items`] must become that path.
 
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::{
@@ -36,8 +39,8 @@ pub struct RoutedItem<'a> {
 /// # Errors
 ///
 /// [`UnsettledRefusal`] for a refusal FR-192 settles with no terminal record
-/// (`NotStatistical`, `RequiresBound`, `Admission`, `Symmetry`,
-/// `PredicateRefused`): the caller reports it.
+/// (`NotStatistical`, `RequiresBound`, `Admission`, `Symmetry`): the caller
+/// reports it.
 pub fn serve_request(
     request: StatisticalRequest<'_>,
     cancel: &Cancel,

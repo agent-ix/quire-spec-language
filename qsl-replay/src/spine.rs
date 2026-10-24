@@ -719,6 +719,34 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `{site}` names a `{actual}`, not {}",
                     admitted.join(" or ")
                 ),
+                ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel, function, ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}`, but no function declaration resolves"
+                ),
+                ProtocolAnchorCause::JoinFunctionKind {
+                    parallel,
+                    function,
+                    kind,
+                    ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}`, which resolves to a `{kind}`, not a function"
+                ),
+                ProtocolAnchorCause::JoinFunctionType {
+                    parallel,
+                    function,
+                    expected_parameters,
+                    actual_parameters,
+                    expected_result,
+                    actual_result,
+                    ..
+                } => format!(
+                    "{message}: parallel `{parallel}` joins on predicate `{function}` with signature {} -> {}; expected {} -> {}",
+                    signature_source(actual_parameters),
+                    value_type_source(actual_result),
+                    signature_source(expected_parameters),
+                    value_type_source(expected_result),
+                ),
                 ProtocolAnchorCause::ChannelMismatch {
                     receive_channel,
                     send_channel,
@@ -954,6 +982,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         }
         CheckCause::Abstraction(refusal) => {
             message = format!("{message}: in an `abstraction` declaration: {refusal:?}");
+        }
+        CheckCause::Hybrid(cause) => {
+            message = format!("{message}: in a hybrid model or temporal claim: {cause:?}");
         }
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
@@ -1222,6 +1253,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
                 TemporalCause::TimedTraceSubject { .. } => {
                     format!("{message}: a timed clause over a trace subject is not checked yet")
+                }
+                TemporalCause::MissingClock { .. } => {
+                    format!("{message}: a clause over this subject must write a `clock` member")
                 }
             };
         }
@@ -1584,14 +1618,148 @@ mod dependency_tests;
 #[cfg(test)]
 mod wide_integer_tests;
 
+/// A parameter list in source syntax: `(Boolean, Int[0, 3])`.
+fn signature_source(parameters: &[quire_exact::ValueType]) -> String {
+    let parameters: Vec<String> = parameters.iter().map(value_type_source).collect();
+    format!("({})", parameters.join(", "))
+}
+
+/// A value type in source syntax, with the bounds and modes the type
+/// declares. A record, tuple, union, enum or reference type carries only
+/// opaque identity digests, never a declared name, so it spells its kind and
+/// identity (`Composite[<node key>]`, `Reference[<effective id>]`) and an
+/// enum its kind alone.
+fn value_type_source(value_type: &quire_exact::ValueType) -> String {
+    use qsl_foundation::diagnostic::{spell_decimal, spell_int, spell_rational};
+    use quire_exact::{CollectionKind, RoundingMode, ValueType};
+    match value_type {
+        ValueType::Boolean => "Boolean".to_owned(),
+        ValueType::Integer => "Integer".to_owned(),
+        ValueType::Int(interval) => spell_int(interval),
+        ValueType::Rational(domain) => spell_rational(domain),
+        ValueType::Decimal(decimal) => spell_decimal(decimal),
+        ValueType::Float(float) => {
+            let bare = format!("Float{}", float.width().bits());
+            match float.rounding() {
+                RoundingMode::Exact => bare,
+                mode => format!("{bare}[{}]", mode.as_str()),
+            }
+        }
+        ValueType::Quantity(unit) => format!("Quantity[{unit}]"),
+        ValueType::Text(text) => format!(
+            "Text[{}, {}; {}]",
+            text.min(),
+            text.max(),
+            text.profile().as_str()
+        ),
+        ValueType::String => "String".to_owned(),
+        ValueType::Uuid => "Uuid".to_owned(),
+        ValueType::Timestamp => "Timestamp".to_owned(),
+        ValueType::Enum(_) => "Enum".to_owned(),
+        ValueType::Option(inner) => format!("Option<{}>", value_type_source(inner)),
+        ValueType::Composite(key) => format!("Composite[{key}]"),
+        ValueType::Collection(collection) => {
+            let kind = match collection.kind() {
+                CollectionKind::Sequence => "Sequence",
+                CollectionKind::Set => "Set",
+                CollectionKind::Bag => "Bag",
+                CollectionKind::OrderedSet => "OrderedSet",
+            };
+            let element = value_type_source(collection.element());
+            match collection.bound() {
+                Some(bound) => format!(
+                    "{kind}<{element}>[{}, {}]",
+                    bound.minimum(),
+                    bound.maximum()
+                ),
+                None => format!("{kind}<{element}>"),
+            }
+        }
+        ValueType::Reference(id) => format!("Reference[{id}]"),
+        ValueType::Population(Some(maximum)) => format!("Population<_>[{maximum}]"),
+        ValueType::Population(None) => "Population<_>".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SpineStage};
+    use super::{
+        check_message, compose, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits,
+        SpineStage,
+    };
     use ix_trace_rs::trace;
-    use qsl_foundation::{Code, SourceIdentity};
+    use qsl_foundation::{Code, SourceIdentity, Span};
+    use qsl_semantics::check::{CheckCause, CheckRefusal, HybridCause, ProtocolAnchorCause};
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    /// FR-447: a hybrid checker refusal may belong to a temporal claim, so
+    /// its message must not identify every cause as a hybrid declaration.
+    #[trace("FR-447-AC-3")]
+    #[test]
+    fn hybrid_claim_refusal_message_does_not_mislabel_its_declaration() {
+        let refusal = CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::Hybrid(Box::new(HybridCause::UnsupportedClock {
+                span: Span { start: 0, end: 12 },
+            })),
+        };
+        let message = check_message(&[refusal]);
+        assert!(message.contains("temporal claim"), "{message}");
+        assert!(!message.contains("in a `hybrid` declaration"), "{message}");
+    }
+
+    #[trace("TC-1065", "FR-218-AC-31")]
+    #[test]
+    fn predicate_join_refusal_messages_name_each_function_failure() {
+        let span = super::Span { start: 0, end: 0 };
+        let cases = [
+            (
+                ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done`, but no function declaration resolves",
+            ),
+            (
+                ProtocolAnchorCause::JoinFunctionKind {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    kind: "predicate",
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done`, which resolves to a `predicate`, not a function",
+            ),
+            (
+                ProtocolAnchorCause::JoinFunctionType {
+                    parallel: "Workers".to_owned(),
+                    function: "done".to_owned(),
+                    expected_parameters: vec![ValueType::Boolean, ValueType::Boolean].into_boxed_slice(),
+                    actual_parameters: vec![ValueType::Int(
+                        IntegerInterval::new(Integer::from(0_i64), Integer::from(3_i64)).unwrap(),
+                    )]
+                    .into_boxed_slice(),
+                    expected_result: Box::new(ValueType::Boolean),
+                    actual_result: Box::new(ValueType::Integer),
+                    span,
+                },
+                "parallel `Workers` joins on predicate `done` with signature (Int[0, 3]) -> Integer; expected (Boolean, Boolean) -> Boolean",
+            ),
+        ];
+
+        for (cause, expected) in cases {
+            let refusal = CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause: CheckCause::ProtocolAnchor(Box::new(cause)),
+            };
+            let message = check_message(&[refusal]);
+            assert!(message.ends_with(expected), "{message}");
+        }
+    }
 
     /// FR-096 at the CLI's compile: `Typer`'s package-wide node stop on
     /// `not not not true`, after `g`'s one node, under a node limit of 4
@@ -2039,5 +2207,52 @@ mod tests {
         assert_eq!(refusal.stage(), SpineStage::Emit);
         assert_eq!(refusal.code(), Code::UnsupportedProjection);
         assert!(refusal.region().is_none());
+    }
+    /// A join signature spells every parameter type in source syntax, not
+    /// its debug form.
+    #[test]
+    fn join_signature_types_are_spelled_in_source_syntax() {
+        use quire_exact::{
+            CardinalityBound, CollectionKind, CollectionType, FloatType, IeeeWidth, NodeKey,
+            RoundingMode, TextProfile, TextType,
+        };
+        let sequence = ValueType::collection(CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Integer,
+            Some(CardinalityBound::new(1, 4).unwrap()),
+        ));
+        let cases = [
+            (
+                ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
+                "Float64",
+            ),
+            (
+                ValueType::Float(FloatType::new(
+                    IeeeWidth::Binary32,
+                    RoundingMode::NearestEven,
+                )),
+                "Float32[nearest-even]",
+            ),
+            (
+                ValueType::Text(TextType::new(0, 8, TextProfile::Nfc).unwrap()),
+                "Text[0, 8; nfc]",
+            ),
+            (sequence.clone(), "Sequence<Integer>[1, 4]"),
+            (
+                ValueType::Option(std::sync::Arc::new(sequence)),
+                "Option<Sequence<Integer>[1, 4]>",
+            ),
+            (
+                ValueType::Composite(NodeKey::from_digest([0xab; 32])),
+                &format!("Composite[{}]", "ab".repeat(32)),
+            ),
+        ];
+        for (value_type, expected) in cases {
+            assert_eq!(super::value_type_source(&value_type), expected);
+        }
+        assert_eq!(
+            super::signature_source(&[ValueType::Boolean, ValueType::String]),
+            "(Boolean, String)"
+        );
     }
 }

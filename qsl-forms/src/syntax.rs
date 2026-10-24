@@ -3208,12 +3208,21 @@ pub struct TimedIntervalForm {
     pub lower: QuantityForm,
     /// Whether the lower end is closed: `[` (true) or `(` (false).
     pub lower_closed: bool,
-    /// The upper end's quantity.
-    pub upper: QuantityForm,
+    /// The upper end: a quantity, or `*` for `[q, *]`.
+    pub upper: TimedUpper,
     /// Whether the upper end is closed: `]` (true) or `)` (false).
     pub upper_closed: bool,
     /// The span of the whole bracketed interval.
     pub span: Span,
+}
+
+/// The upper end of a [`TimedIntervalForm`] (FR-393, FR-447).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimedUpper {
+    /// A quantity literal.
+    Finite(QuantityForm),
+    /// `*`: the interval has no upper bound.
+    Open,
 }
 
 /// A temporal operator's interval (FR-325 as amended by FR-393): one member
@@ -3426,8 +3435,13 @@ pub struct TemporalClauseForm {
     pub profile: UsingAlias,
     /// The `over (p: T)` parameter.
     pub over: ParameterForm,
-    /// The `clock "<string>"` the clause is stepped by.
-    pub clock: ClockForm,
+    /// The `clock "<string>"` the clause is stepped by; `None` when no
+    /// `clock` member is written (QSpec FR-252: S3 binds the subject's
+    /// default clock).
+    pub clock: Option<ClockForm>,
+    /// The span of the whole `clock "..."` member, for refusals that belong
+    /// to the clause rather than its string literal.
+    pub clock_clause_span: Option<Span>,
     /// The activation.
     pub activation: ActivationForm,
     /// The fairness constraints in source order.
@@ -3938,6 +3952,81 @@ pub struct UrgentForm {
     pub span: Span,
 }
 
+/// `hybrid Name using p { [initial { entry+ }] mode+ }` (FR-447, QSpec FR-193
+/// "Source form and the clock line"). S2 resolves nothing: the `using`
+/// alias, the mode and transition names and every equation's left side stay
+/// spelled and spanned, in declared order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HybridForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `initial { ... }` clause, `None` when unwritten.
+    pub initial: Option<HybridInitialForm>,
+    /// The modes, in declared order.
+    pub modes: Vec<HybridModeForm>,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// An `initial { mode M when { c }; ... }` clause (FR-447).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HybridInitialForm {
+    /// The entries, in source order.
+    pub entries: Vec<InitialEntryForm>,
+    /// The span of the whole clause.
+    pub span: Span,
+}
+
+/// One initial entry, `mode M when { c };` (FR-447).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InitialEntryForm {
+    /// The mode the entry names.
+    pub mode: DeclaredName,
+    /// The `when` block's condition.
+    pub condition: ExpressionForm,
+    /// The span of the whole entry, `;` included.
+    pub span: Span,
+}
+
+/// One `mode` of a `hybrid` declaration (FR-447).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HybridModeForm {
+    /// The mode's name.
+    pub name: DeclaredName,
+    /// The `invariant` block's expression.
+    pub invariant: ExpressionForm,
+    /// The flow equations, in declared order.
+    pub equations: Vec<EquationForm>,
+    /// The transitions, in declared order.
+    pub transitions: Vec<TransitionForm>,
+    /// The span of the whole mode.
+    pub span: Span,
+}
+
+/// One flow equation, `x' = e;` (FR-447).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EquationForm {
+    /// The left side as written; S3 admits a single identifier only.
+    pub variable: NameForm,
+    /// The right side, the variable's rate in the mode.
+    pub rate: ExpressionForm,
+    /// The span of the whole equation, `;` included.
+    pub span: Span,
+}
+
+/// One transition, `transition to T when { g } reset { r };` (FR-447).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransitionForm {
+    /// The target mode's name.
+    pub target: DeclaredName,
+    /// The `when` block's guard.
+    pub guard: ExpressionForm,
+    /// The `reset` block's expression.
+    pub reset: ExpressionForm,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -4008,6 +4097,9 @@ pub enum DeclarationForm {
     TimeInvariant(Box<TimeInvariantForm>),
     /// An `urgent` declaration (FR-393).
     Urgent(Box<UrgentForm>),
+    /// A `hybrid` declaration (FR-447), boxed for the same reason as
+    /// [`Self::Function`].
+    Hybrid(Box<HybridForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

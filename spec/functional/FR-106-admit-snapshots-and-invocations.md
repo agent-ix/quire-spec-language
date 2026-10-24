@@ -25,7 +25,15 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-141
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-142
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-144
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-148
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-205
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-207
     type: depends_on
@@ -211,12 +219,18 @@ Snapshot, format `quire.state.snapshot/v1`:
   `{"sequence": [<value>, ...]}`, `{"set": [<value>, ...]}`,
   `{"bag": [<value>, ...]}`, `{"ordered-set": [<value>, ...]}`, the record
   form below, the variant form of
-  FR-360 and the five payload object forms below, `{"kind": "string",
+  FR-360 and the eleven payload object forms below, `{"kind": "string",
   "text": "<any Unicode scalar sequence>"}`, `{"kind": "uuid", "text":
   "<canonical UUID>"}`, `{"kind": "timestamp", "nanoseconds":
-  "<canonical decimal>"}`, `{"kind": "text", "text": "<any Unicode scalar
-  sequence>"}` and `{"kind": "decimal", "coefficient": "<integer>",
-  "scale": "<scale>"}`.
+  "<canonical decimal>"}`, `{"kind": "bytes", "text": "<canonical
+  lowercase hexadecimal>"}`, `{"kind": "json_object", "text": "<canonical
+  JCS text>"}`, `{"kind": "text", "text": "<any Unicode scalar
+  sequence>"}`, `{"kind": "decimal", "coefficient": "<integer>",
+  "scale": "<scale>"}`, `{"kind": "rational", "numerator": "<integer>",
+  "denominator": "<integer>"}`, `{"kind": "float32", "bits": "<8 hex
+  digits>"}`, `{"kind": "float64", "bits": "<16 hex digits>"}` and
+  `{"kind": "quantity", "unit": "<unit>", "magnitude": <Rational or Decimal
+  object>}`.
 
 A set, bag or ordered-set value is the native spelling of QSpec FR-181's
 `set`, `bag` and `ordered-set` forms, with QSpec FR-144's "Supplied
@@ -234,10 +248,13 @@ collection values" admission:
   decided; an element of the wrong kind SHALL refuse
   `invalid_runtime_input`/`wrong-value-kind` at the element's path with its
   index.
-- In a set or ordered set, an element FR-149-equal to an earlier one SHALL
-  refuse `invalid_runtime_input`/`duplicate-member` at the later element,
-  naming the earlier; a supplied set is never deduplicated. A bag groups
-  equal elements into one member whose multiplicity is their number.
+- In a set or ordered set, an element that is the same member as an earlier
+  one under QSpec FR-144's collection membership relation (FR-149 equality,
+  with a float compared by its bits) SHALL refuse
+  `invalid_runtime_input`/`duplicate-member` at the later element, naming the
+  earlier; a supplied set is never deduplicated. A bag groups the elements
+  that are the same member into one member whose multiplicity is their
+  number.
 - The array order of a set or bag is not part of its value: two documents
   whose set or bag elements differ only in order give the same typed
   observation and different document digests, since the digest is
@@ -259,10 +276,17 @@ collection values" admission:
   includes a Decimal in a sequence or ordered set that is itself inside a
   set or bag element. Every Decimal that is not inside a set or bag element
   keeps its supplied coefficient and scale.
+- Every Rational and every Quantity magnitude inside an element of a set or
+  bag is written as its normalized Rational (below); a Rational and a
+  Quantity keep no supplied representation anywhere. A Float element keeps its
+  exact bits, and a String element its exact scalar sequence. A set or bag of
+  `String`, `Rational`, `Float32`, `Float64` or `Quantity` elements, or of a
+  record, option, sequence or variant holding them at any depth, is read and
+  ordered exactly as any other element type.
 - A set, bag or ordered-set type whose element type is, or contains at any
-  depth, a type QSpec FR-181 gives no form (`String`) SHALL refuse
-  `unknown_required_feature`/`unsupported-feature` naming the element type
-  (QSpec FR-144).
+  depth, a population (which is not a value and has no QSpec FR-181 form)
+  SHALL refuse `unknown_required_feature`/`unsupported-feature` naming the
+  element type (QSpec FR-144).
 
 A record value is `{"record": {"type": "<declaration identity>",
 "fields": {"<field name>": <value>, ...}}}`. The outer object has exactly
@@ -280,8 +304,16 @@ The record carries no object key, population or identity, and an object
 FR-208 by most-specific type and every effective field; JSON member order
 does not affect the typed value or the `sha256-jcs` digest.
 
-A **native payload value** is a String, a UUID or a Timestamp, the closed wire
-objects of FR-056's K2 canonical native payloads. They take that requirement's
+A **native payload value** is a String, a UUID, a Timestamp, a Bytes or a
+JsonObject, the closed wire objects of FR-056's K2 canonical native payloads
+and "Native Bytes, JsonObject and Duration". The Bytes object is
+`{"kind": "bytes", "text": "00ff"}` and the JsonObject object is
+`{"kind": "json_object", "text": "{\"a\":1}"}`, each with exactly the members
+`kind` and `text`, the text being the canonical payload of FR-056 and no other
+spelling; a noncanonical text refuses `invalid_runtime_input`/`invalid-value`
+at the value, and a Bytes or JsonObject object in a field of another native
+type, and the reverse, refuses `wrong-value-kind`. A Duration field holds the
+quantity form over the unit `s`. They take that requirement's
 spelling unchanged: the String object is `{"kind": "string", "text":
 "ready"}`, whose `text` is any Unicode scalar sequence, the empty one
 included; the UUID object is `{"kind": "uuid", "text":
@@ -291,7 +323,8 @@ Timestamp object is `{"kind": "timestamp", "nanoseconds": "0"}`, whose
 `nanoseconds` is a signed count on FR-056's POSIX-epoch scale in the
 signed-128 domain, spelled `0`, or an optional `-` then a nonzero digit and
 more digits. A value object with a `kind` member is a payload object (the
-three native payload objects above and the Text and Decimal objects below); every other
+native payload objects above and the Text, Decimal, Rational, Float and
+Quantity objects below); every other
 value is a single-tag object. A UUID object has exactly
 the members `kind` and `text`, a String object exactly `kind` and `text`, a
 Text object exactly `kind` and `text`, and a Timestamp object exactly `kind`
@@ -317,7 +350,9 @@ read. Only a String slot reads a String object and only a Text slot a Text
 object; the object `key` of an object, a record's `type`, a variant `case`
 and every member name are identities, not String or Text values. UUID admission accepts every 128-bit payload, Nil and Max
 included, and retains the version and variant bits. A String, UUID, Timestamp,
-Text or Decimal object counts as one value against the values-per-document setting.
+Text, Decimal, Rational, Float or Quantity object counts as one value against
+the values-per-document setting; the magnitude object inside a Quantity is
+part of that value and counts nothing further.
 Two admitted String, UUID or Timestamp values of one kind are equal exactly
 when their canonical payloads are equal (QSpec FR-149; FR-056 for String,
 whose payloads are equal when the scalar sequences are identical), so the
@@ -373,13 +408,69 @@ two in one set or ordered set are duplicates. Membership in a declared
 `Decimal[lo, hi; smin, smax; mode]` is QSpec FR-140's, decided by value, so
 the supplied representation never decides it.
 
+A **Rational value** is the object `{"kind": "rational", "numerator":
+"<integer>", "denominator": "<integer>"}`, the value of a field, parameter,
+result or element of declared type `Rational` or `Rational[nmin, nmax; dmin,
+dmax]` (QSpec FR-205). Both members are in FR-038's integer spelling, and a
+Rational object has exactly the members `kind`, `numerator` and
+`denominator`. Admission reduces the supplied pair to QSpec FR-205's
+normalized form (greatest common divisor 1, positive denominator, zero as
+`0`/`1`) and retains only that form, wherever the Rational stands:
+`{"numerator": "2", "denominator": "4"}`, `{"numerator": "-1", "denominator":
+"-2"}` and `{"numerator": "1", "denominator": "2"}` are one value `1/2`, and
+`0`/`-7` is `0`/`1`. A zero denominator is refused before normalization. The
+declared bounds are checked on the normalized components, every inclusive
+boundary value admitting (QSpec FR-039). Two Rationals are equal exactly when
+their normalized components are equal, so the frame check compares a
+Rational field by value.
+
+A **Float value** is the object `{"kind": "float32", "bits": "<hex>"}` or
+`{"kind": "float64", "bits": "<hex>"}`, the value of a field, parameter,
+result or element of declared type `Float32` or `Float64`, with or without a
+rounding mode (the mode governs operations, not a stored value). `bits` is the
+IEEE 754 binary32 or binary64 bit pattern as exactly 8 or 16 lowercase
+hexadecimal digits, big-endian (QSpec FR-181), and a Float object has exactly
+the members `kind` and `bits`. Every bit pattern is a Float value: admission
+retains the bits unchanged, never rounds, canonicalizes a NaN or merges a
+signed zero. Two Floats of one width are equal exactly when their bits are
+identical (QSpec FR-148 `bitIdentical`), so `+0` and `-0` are two values, two
+NaNs are one value only with the same payload, and the frame check compares a
+Float field by bits. A set, bag or ordered set holds Floats by the same
+relation (QSpec FR-144).
+
+A **Quantity value** is the object `{"kind": "quantity", "unit": "<unit>",
+"magnitude": <magnitude>}`, the value of a field, parameter, result or element
+of declared type `Quantity<u>` (QSpec FR-142). `unit` is the qualified name of
+the declared unit `u`, and `magnitude` is a Rational object or a Decimal object
+that denotes the quantity's exact rational magnitude, which has no declared
+bound: a Decimal magnitude `{"kind": "decimal", "coefficient": "5", "scale":
+"1"}` and a Rational magnitude `1`/`2` denote the same value. Admission reads
+the magnitude by the rules of its own object and retains the exact value as the
+normalized Rational, so a Quantity keeps no supplied representation. A
+Quantity object has exactly the members `kind`, `unit` and `magnitude`. Two
+Quantities are equal exactly when their unit and exact magnitude are equal
+(QSpec FR-149), so the frame check compares a Quantity field by value.
+
+Each of these objects denotes one QSpec FR-181 form, which fixes its meaning in
+a state key: a String object the `string` form with its `text` as `value`, a
+Rational object the `rational` form, a `float32` or `float64` object the form
+of that name with the same `bits`, and a Quantity object the `rational` form
+with `unit`, over the normalized magnitude. A quantity value has one state key
+whatever magnitude spelling was supplied: the exact normalized rational with its
+unit (`1.50` metre and `3`/`2` metre are the one key), and a Decimal magnitude is
+accepted on read and normalized to that key.
+
 A field, parameter or result of declared type `String` admits only a String
 object, one of declared type `UUID` only a UUID object, one of declared
 type `Timestamp` only a Timestamp object, and one of declared type `Text[min,
 max; profile]` only a Text object, and one of declared type `Decimal` or
-`Decimal[lo, hi; smin, smax; mode]` only a Decimal object. A String, UUID,
-Timestamp, Text or Decimal object fits no other declared type, and no other
-form fits those five. A Text
+`Decimal[lo, hi; smin, smax; mode]` only a Decimal object, one of declared
+type `Rational` or `Rational[nmin, nmax; dmin, dmax]` only a Rational object,
+one of declared type `Float32` only a `float32` object, one of declared type
+`Float64` only a `float64` object, and one of declared type `Quantity<u>` only
+a Quantity object of unit `u`. A String, UUID, Timestamp, Text, Decimal,
+Rational, Float or Quantity object fits no other declared type, and no other
+form fits those eight. A Text
 object does not fit a `String` slot and a String object does not fit a Text
 slot. Admission checks a payload object in this order and
 refuses the first defect found, at the nested value path and naming the
@@ -389,14 +480,16 @@ catalog codes):
 
 1. A `kind` member that is not a JSON string (a number, `null`, an object)
    refuses `wrong-value-kind`, naming `kind`.
-2. A `kind` string other than `string`, `uuid`, `timestamp`, `text` and
-   `decimal`
+2. A `kind` string other than `string`, `uuid`, `timestamp`, `text`,
+   `decimal`, `rational`, `float32`, `float64` and `quantity`
    (including a letter-case variant such as `String`, `UUID` or `Text`)
    refuses `invalid-value`,
    naming `kind`. The members of such an object are not examined.
 3. A missing payload member of the object's kind refuses `missing-member`,
-   naming `text` (String, UUID, Text), `nanoseconds` (Timestamp) or the
-   first missing of `coefficient` and `scale` (Decimal). So
+   naming `text` (String, UUID, Text), `nanoseconds` (Timestamp), the
+   first missing of `coefficient` and `scale` (Decimal), the first missing of
+   `numerator` and `denominator` (Rational), `bits` (Float) or the first
+   missing of `unit` and `magnitude` (Quantity). So
    `{"kind":"uuid","nanoseconds":"0"}`,
    `{"kind":"string","nanoseconds":"0"}` and
    `{"kind":"text","nanoseconds":"0"}` refuse `missing-member` naming
@@ -405,12 +498,17 @@ catalog codes):
    first in document order. Here `nanoseconds` on a String, UUID or Text
    object is unknown.
 5. A payload member that is not a JSON string, including a bare JSON number
-   (even `0`) or `null`, refuses `wrong-value-kind`, naming the member.
-6. A payload kind that differs from the slot's declared type, a payload
-   object in a slot of any other declared type, and a single-tag object
-   (such as `{"integer": "5"}`) in a `String`, `UUID`, `Timestamp`, `Text`
-   or `Decimal`
-   slot each refuse `wrong-value-kind`. A String object whose text spells a
+   (even `0`) or `null`, refuses `wrong-value-kind`, naming the member. A
+   Quantity `magnitude` is the one payload member that is an object: any other
+   JSON kind refuses `wrong-value-kind`, naming `magnitude`.
+6. A payload kind that differs from the slot's declared type (a `float32`
+   object in a `Float64` slot included), a payload object in a slot of any
+   other declared type, a single-tag object (such as `{"integer": "5"}`) in a
+   `String`, `UUID`, `Timestamp`, `Text`, `Decimal`, `Rational`, `Float32`,
+   `Float64` or `Quantity` slot, a Quantity `unit` that is not the qualified
+   name of the slot's unit, and a Quantity `magnitude` whose `kind` is neither
+   `rational` nor `decimal` each refuse `wrong-value-kind`, naming `kind`,
+   `unit` or `magnitude`. A String object whose text spells a
    UUID or a Timestamp is still a String object and fits only a `String`
    slot, and a Text object holding the same scalars as a String fits only a
    `Text` slot; no payload is read as another kind.
@@ -430,7 +528,17 @@ catalog codes):
    member. A well-spelled Decimal whose value is not a member of the
    declared `Decimal[lo, hi; smin, smax; mode]` refuses `invalid-value`,
    naming the declared type and the supplied coefficient and scale; the
-   spelling check takes precedence over membership.
+   spelling check takes precedence over membership. A Rational `numerator` or
+   `denominator` not in FR-038's integer spelling, and a `denominator` of
+   zero, refuses `invalid-value`, naming the member; a well-spelled Rational
+   whose normalized numerator and denominator lie outside the declared
+   `Rational[nmin, nmax; dmin, dmax]` refuses `invalid-value`, naming the
+   declared type and the normalized pair, the spelling and zero-denominator
+   checks taking precedence. A Float `bits` that is not exactly 8 (`float32`)
+   or 16 (`float64`) lowercase hexadecimal digits refuses `invalid-value`,
+   naming `bits`. A Quantity `magnitude` is then checked by this same order at
+   the nested path `magnitude`, as a Rational object or a Decimal object with
+   no declared domain.
 
 A repeated member name in a document, a lone surrogate escape in a `text` and
 bytes that are not UTF-8 are settled earlier, by check 1.3's shared-reader
@@ -644,8 +752,8 @@ required; check 10 settles it.
       type is not one of its member types (FR-084), then admission SHALL
       refuse `invalid_runtime_input`/`wrong-role-mapping`.
    2. If the object's type declares a set, bag or ordered-set field whose
-      element type is, or contains at any depth, a type with no QSpec FR-181
-      form, then admission SHALL refuse
+      element type is, or contains at any depth, a population (not a value,
+      so a type with no QSpec FR-181 form), then admission SHALL refuse
       `unknown_required_feature`/`unsupported-feature` at that field.
    3. If an object's key repeats an earlier key of its population, then
       admission SHALL refuse `invalid_runtime_input`/`conflicting-identity`
@@ -669,8 +777,8 @@ required; check 10 settles it.
       `missing-member`, an extra field `unknown-member`, an incompatible
       record type or value tag `wrong-value-kind`, and a malformed scalar
       payload `invalid-value`, all under `invalid_runtime_input` at the
-      nested value path. A String, UUID, Timestamp, Text or Decimal object is checked by the
-      payload rule above. The same rule applies to operation parameters and
+      nested value path. A String, UUID, Timestamp, Text, Decimal, Rational, Float
+      or Quantity object is checked by the payload rule above. The same rule applies to operation parameters and
       results in check 10.
       Inputs are refused, outputs are evidence: this refusal applies to
       every current snapshot, every pre snapshot and every operation
@@ -690,9 +798,10 @@ required; check 10 settles it.
       field is evidence in the same way. The field's declared range is part
       of the operation's contract, so the observation is the witness of a
       violation; the caller settles it. A post-state value of the wrong
-      kind, not in FR-038's spelling, or a String, UUID, Timestamp, Text or
-      Decimal object that fails the payload checks above (a Text outside its
-      declared length and a Decimal outside its declared domain included) is
+      kind, not in FR-038's spelling, or a String, UUID, Timestamp, Text, Decimal,
+      Rational, Float or Quantity object that fails the payload checks above (a
+      Text outside its declared length and a Decimal or Rational outside its
+      declared domain included) is
       still refused. The default is
       `Refuse`, under which every snapshot refuses, and a `Frame` run's
       post snapshot always refuses. A clause that compares or orders the
@@ -748,7 +857,8 @@ required; check 10 settles it.
    12. For each entry, over the machine's effective fields in exposed
        effective field order: if the machine declares a set, bag or
        ordered-set field whose element type is, or contains at any depth, a
-       type with no QSpec FR-181 form, then admission SHALL refuse
+       population (not a value, so a type with no QSpec FR-181 form), then
+       admission SHALL refuse
        `unknown_required_feature`/
        `unsupported-feature` at that field; if a declared field is missing,
        `invalid_runtime_input`/`missing-member` naming it; if a field of
@@ -757,8 +867,8 @@ required; check 10 settles it.
        `transitions` is such a field unless the machine declares it); and,
        for each field in order, the value rules of check 6.5 apply to its
        value unchanged: kind fit, integer spelling and range, a record's
-       effective fields, the payload order for String, UUID, Timestamp and Text
-       objects, and the nested path, which here starts at the context (root
+       effective fields, the payload order for String, UUID, Timestamp, Text,
+       Decimal, Rational, Float and Quantity objects, and the nested path, which here starts at the context (root
        the machine, then the field). A reference value fits a `Reference<T>`
        field by the conformance rule of 6.5, and its target is resolved in
        check 8 against the objects of the same snapshot. The post-state
@@ -862,7 +972,9 @@ required; check 10 settles it.
     retained sequence under that profile (QSpec FR-141), so U+00E9 and U+0065
     U+0301 are one value under `nfc`, `nfd`, `nfkc` and `nfkd` and two under
     `unicode-scalars` and `binary-utf8`; `UUID` and `Timestamp` the same
-    canonical payload; `Reference<T>` the same population and key; `Option<T>`
+    canonical payload; `Rational[..]` the same normalized numerator and
+    denominator; `Float32` and `Float64` identical bits, so `+0` and `-0` and
+    two NaN payloads are changes; `Quantity<u>` the same exact magnitude; `Reference<T>` the same population and key; `Option<T>`
     both absent, or both present with equal contents; `Sequence<T>` the same
     length with equal elements in order; `Set<T>` the same members and
     `Bag<T>` the same members with equal multiplicities, whatever their
@@ -1005,10 +1117,17 @@ required; check 10 settles it.
 | FR-106-AC-48 | `ValueInvariants` over TC-235 K2 with `Order` given `quoted`, `history`, `discount` and operation `requote(amount: Money)` admits observation `s1` holding `o1` and invocation `i1` of `requote` with `amount` `{amount_minor: -7, currency: "EUR"}`, and names `s1`, `i1`'s `pre` snapshot and `i1`'s parameter `amount`; the same selection with a `pre` document as `snapshot` refuses `wrong_snapshot`/`wrong-observation`, and with an `i1` whose `amount` is missing refuses `invalid_runtime_input`/`missing-member`. | Test (TC-1051) |
 | FR-106-AC-49 | Over TC-1044's fixture with the record `Address { street: Title }` held by the field `address`, the frame check compares a record's field by that field's declared type: `street` changed from U+00E9 to U+0065 U+0301 under `nfc` is no change and admits without a grant, and `street` changed to another text is a change and refuses `frame_violation`/`unauthorized-change` naming `child` and `address`. | Test (TC-1044) |
 | FR-106-AC-50 | Over TC-1171's fixture (object type `Tagged` with fields `ids: Set<UUID>[0, 3]`, `counts: Bag<Int[0, 9]>[0, 4]`, `order: OrderedSet<Int[0, 9]>[0, 3]`, `stamps: OrderedSet<Timestamp>[0, 2]` and `peers: Set<Reference<Tagged>>[0, 2]`; populations `ix://test/tagged/T` holding `t1` and `z1` and `ix://test/tagged/U` holding `a1`), a current snapshot whose `t1` holds `ids` `{"set": [{"kind":"uuid","text":"00000000-0000-0000-0000-000000000002"}, {"kind":"uuid","text":"00000000-0000-0000-0000-000000000001"}]}`, `counts` `{"bag": [{"integer":"2"}, {"integer":"1"}, {"integer":"2"}]}`, `order` `{"ordered-set": [{"integer":"3"}, {"integer":"1"}]}`, `stamps` `{"ordered-set": [{"kind":"timestamp","nanoseconds":"5"}, {"kind":"timestamp","nanoseconds":"-1"}]}` and `peers` `{"set": [{"reference":{"population":"ix://test/tagged/T","key":"z1"}}, {"reference":{"population":"ix://test/tagged/U","key":"a1"}}]}`, and whose `z1` and `a1` each hold `ids` `{"set": []}`, `counts` `{"bag": []}`, `order` `{"ordered-set": []}`, `stamps` `{"ordered-set": []}` and `peers` `{"set": []}`, admits: `ids` has two members, `counts` member `1` with multiplicity 1 and `2` with multiplicity 2, `order` the order `3, 1`, `stamps` the order `5, -1`, and `peers` is written `a1` of `U` before `z1` of `T` (ordered by key, then population). The same document with `ids`, `counts` and `peers` elements in reversed order gives an equal typed observation and a different document digest; with `order` reversed it gives an unequal typed observation. | Test (TC-1171) |
-| FR-106-AC-51 | Over TC-1171's fixture: `order` `{"ordered-set": [{"integer":"1"}, {"integer":"1"}]}` and `ids` holding one UUID twice refuse `invalid_runtime_input`/`duplicate-member` at element 1 naming element 0; `counts` with five elements refuses `cardinality_out_of_bound`/`above-maximum` naming the bound `[0, 4]` and the count 5, before any element is read; `ids` `{"set": [{"integer":"1"}]}` refuses `invalid_runtime_input`/`wrong-value-kind` at element 0; `ids` written `{"sequence": [...]}` refuses `wrong-value-kind` at `ids`; `ids` holding `{"kind":"uuid","text":"00000000-0000-0000-0000-00000000000A"}` (uppercase hex) and `stamps` holding `{"kind":"timestamp","nanoseconds":"01"}` each refuse `invalid_runtime_input`/`invalid-value` at element 0; `counts` `{"bag": [{"integer":"x"}, {"integer":"1"}, {"integer":"1"}]}` refuses `invalid-value` at element 0, not `duplicate-member`; variants whose `Tagged` declares `names: Set<String>[0, 2]` or `notes: Set<Option<String>>[0, 2]` each refuse `unknown_required_feature`/`unsupported-feature` at that field naming `String`. The same cases in a parameter or a state-machine context field use their own path roots. | Test (TC-1171) |
+| FR-106-AC-51 | Over TC-1171's fixture: `order` `{"ordered-set": [{"integer":"1"}, {"integer":"1"}]}` and `ids` holding one UUID twice refuse `invalid_runtime_input`/`duplicate-member` at element 1 naming element 0; `counts` with five elements refuses `cardinality_out_of_bound`/`above-maximum` naming the bound `[0, 4]` and the count 5, before any element is read; `ids` `{"set": [{"integer":"1"}]}` refuses `invalid_runtime_input`/`wrong-value-kind` at element 0; `ids` written `{"sequence": [...]}` refuses `wrong-value-kind` at `ids`; `ids` holding `{"kind":"uuid","text":"00000000-0000-0000-0000-00000000000A"}` (uppercase hex) and `stamps` holding `{"kind":"timestamp","nanoseconds":"01"}` each refuse `invalid_runtime_input`/`invalid-value` at element 0; `counts` `{"bag": [{"integer":"x"}, {"integer":"1"}, {"integer":"1"}]}` refuses `invalid-value` at element 0, not `duplicate-member`. The same cases in a parameter or a state-machine context field use their own path roots. | Test (TC-1171) |
 | FR-106-AC-52 | Over TC-1171's fixture, an invocation whose post `ids` holds the pre members in another order, or whose post `counts` holds the same multiset reordered, is no change and admits without a grant; one whose post `counts` drops one `2`, or whose post `order` is `1, 3`, is a change and refuses `frame_violation`/`unauthorized-change` naming the object and the field when the frame does not grant it. Under `PostStateRange::Witness`, a post `counts` `{"bag": [{"integer":"1"}, {"integer":"10"}, {"integer":"2"}]}` admits and reports one `OutOfRange` with index 1, the supplied array index. With `observation.values` set to the exact count of a document whose last value in walk order is an element of `order`, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`. | Test (TC-1171) |
 | FR-106-AC-53 | Over TC-1171's decimal fixture (TC-1171's `Tagged` also declaring `price: Decimal[0, 10000; 2, 2]`, `rates: Set<Decimal[0, 10000; 2, 2]>[0, 3]`, `tallies: Bag<Decimal[0, 10000; 2, 2]>[0, 3]`, `steps: OrderedSet<Decimal[0, 10000; 2, 2]>[0, 2]`, `opts: Set<Option<Decimal[0, 10000; 2, 2]>>[0, 2]` and `runs: Bag<Sequence<Decimal[0, 10000; 2, 2]>[0, 2]>[0, 2]`, with `z1` and `a1` holding `price` `{"kind":"decimal","coefficient":"0","scale":"0"}` and the empty value of each collection), a current snapshot whose `t1` holds `price` `{"kind":"decimal","coefficient":"150","scale":"2"}`, `rates` `{"set": [{"kind":"decimal","coefficient":"2","scale":"0"}, {"kind":"decimal","coefficient":"150","scale":"2"}]}`, `tallies` `{"bag": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"15","scale":"1"}]}`, `steps` `{"ordered-set": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"1","scale":"0"}]}`, `opts` `{"set": [{"present": {"kind":"decimal","coefficient":"150","scale":"2"}}, {"absent": {}}]}` and `runs` `{"bag": [{"sequence": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"100","scale":"2"}]}]}` admits: `price` keeps coefficient `150` and scale `2`; `rates` is written `[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"2","kind":"decimal","scale":"0"}]`, normalized and ordered by those bytes; `tallies` has the one member `{"coefficient":"15","kind":"decimal","scale":"1"}` with multiplicity 2 and is written `[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"15","kind":"decimal","scale":"1"}]`; `opts` is written `[{"absent":{}},{"present":{"coefficient":"15","kind":"decimal","scale":"1"}}]`; `runs` is written `[{"sequence":[{"coefficient":"15","kind":"decimal","scale":"1"},{"coefficient":"1","kind":"decimal","scale":"0"}]}]`, the Decimals inside the bag's sequence element normalized and in the sequence's order; `steps` keeps the order `1.50, 1` with coefficient `150` and scale `2` for its first element. `price` `{"kind":"decimal","coefficient":"1000","scale":"3"}` (`1.000`) admits, a member of `Decimal[0, 10000; 2, 2]` by value. A `retag` invocation whose post `price` is `{"kind":"decimal","coefficient":"15","scale":"1"}` is no change and admits without a grant; one whose post `price` is `{"kind":"decimal","coefficient":"151","scale":"2"}` refuses `frame_violation`/`unauthorized-change` naming `t1` and `price`. | Test (TC-1171) |
 | FR-106-AC-54 | Over TC-1171's decimal fixture, each refuses `invalid_runtime_input` with the cause and path given and nothing is admitted: `rates` `{"set": [{"kind":"decimal","coefficient":"150","scale":"2"}, {"kind":"decimal","coefficient":"15","scale":"1"}]}` and `steps` holding the same two elements, `duplicate-member` at element 1 naming element 0; `price` `{"kind":"decimal","coefficient":"1","scale":"3"}` (`0.001`, scale above `smax`) and `{"kind":"decimal","coefficient":"10001","scale":"2"}` (`100.01`, coefficient above `hi`) and a `rates` element `{"kind":"decimal","coefficient":"-1","scale":"0"}`, `invalid-value` naming `Decimal[0, 10000; 2, 2]`; `price` with `coefficient` `"01"` or `"-0"`, or with `scale` `"-1"`, `"01"` or `"4294967296"`, `invalid-value` naming that member; `scale` given as the JSON number `2`, `wrong-value-kind` naming `scale`; `scale` removed, `missing-member` naming `scale`; an added member `unit`, `unknown-member` naming `unit`; `kind` `"Decimal"`, `invalid-value` naming `kind`; `price` written `{"integer": "1"}` and a Decimal object as an element of `order`, `wrong-value-kind`. Under `PostStateRange::Witness`, a `retag` post `price` `{"kind":"decimal","coefficient":"10001","scale":"2"}` still refuses `invalid-value` and reports no `OutOfRange`. | Test (TC-1171) |
+| FR-106-AC-55 | Over TC-1171's numeric fixture (TC-1171's `Tagged` also declaring `ratio: Rational[-10, 10; 1, 12]`, `ratios: Set<Rational[-10, 10; 1, 12]>[0, 3]`, `weights: Bag<Rational[-10, 10; 1, 12]>[0, 3]`, `lane: OrderedSet<Rational[-10, 10; 1, 12]>[0, 2]` and `gain: Float64`, `levels: Set<Float64>[0, 6]`, `taps: Bag<Float32>[0, 3]`, `reach: Quantity<Units::metre>`, `spans: Set<Quantity<Units::metre>>[0, 3]`, `loads: Bag<Quantity<Units::metre>>[0, 3]`, with `z1` and `a1` holding the zero of each scalar and the empty value of each collection), a current snapshot whose `t1` holds `ratio` `{"kind":"rational","numerator":"2","denominator":"4"}` admits `ratio` as the value `1`/`2`; `{"numerator":"-1","denominator":"-2"}` and `{"numerator":"0","denominator":"-7"}` admit as `1`/`2` and `0`/`1`; `ratios` `{"set": [2/4, 1/3, -3/1]}` (each element a Rational object, written here as numerator/denominator) is written `[{"denominator":"1","kind":"rational","numerator":"-3"},{"denominator":"2","kind":"rational","numerator":"1"},{"denominator":"3","kind":"rational","numerator":"1"}]`, each element normalized and the elements ordered by those bytes; `weights` `{"bag": [2/4, 1/2]}` has the one member `1`/`2` with multiplicity 2; the boundary values `-10`/`1` and `10`/`1` admit. A `retag` invocation whose post `ratio` is `{"numerator":"3","denominator":"6"}` over a pre `ratio` of `1`/`2` is no change and admits without a grant, and one whose post `ratio` is `1`/`3` refuses `frame_violation`/`unauthorized-change` naming `t1` and `ratio`. | Test (TC-1171) |
+| FR-106-AC-56 | Over TC-1171's numeric fixture, each refuses `invalid_runtime_input` with the cause and path given and nothing is admitted: `ratios` `{"set": [2/4, 1/2]}` and `lane` holding the same two elements, `duplicate-member` at element 1 naming element 0; `ratio` with `denominator` `"0"` and `{"numerator":"0","denominator":"0"}`, `invalid-value` naming `denominator`; `numerator` `"01"`, `"+1"` or `"-0"`, `invalid-value` naming `numerator`; `ratio` `11`/`1`, `22`/`2` (which normalizes to `11`/`1`) and `1`/`13`, `invalid-value` naming `Rational[-10, 10; 1, 12]` and the normalized pair; `denominator` given as the JSON number `2`, `wrong-value-kind` naming `denominator`; `denominator` removed, `missing-member` naming `denominator`; an added member `unit`, `unknown-member` naming `unit`; `kind` `"Rational"`, `invalid-value` naming `kind`; `ratio` written `{"integer": "1"}`, a Decimal object, a `float64` object or a Quantity object, `wrong-value-kind`; a Rational object as the value of `gain`, `wrong-value-kind`. Under `PostStateRange::Witness`, a `retag` post `ratio` of `11`/`1` still refuses `invalid-value` and reports no `OutOfRange`. | Test (TC-1171) |
+| FR-106-AC-57 | Over TC-1171's numeric fixture, a current snapshot whose `t1` holds `gain` `{"kind":"float64","bits":"3ff0000000000000"}` admits `gain` as the `Float64` with those bits; `gain` `{"kind":"float64","bits":"7ff8000000000001"}` (a quiet NaN of payload 1) admits with exactly those bits; `levels` `{"set": [fff0000000000000, bff0000000000000, 8000000000000000, 0000000000000000, 3ff0000000000000, 7ff0000000000000]}` (each as a `float64` object) admits six members written `[{"bits":"0000000000000000","kind":"float64"},{"bits":"3ff0000000000000","kind":"float64"},{"bits":"7ff0000000000000","kind":"float64"},{"bits":"8000000000000000","kind":"float64"},{"bits":"bff0000000000000","kind":"float64"},{"bits":"fff0000000000000","kind":"float64"}]`, ordered by those bytes; `levels` holding `7ff8000000000001` and `7ff8000000000002` has two members; `taps` `{"bag": [3f800000, 3f800000]}` (each as a `float32` object) has the one member `3f800000` with multiplicity 2. A `retag` invocation whose post `gain` has the pre `gain`'s bits is no change; one whose post `gain` is `8000000000000000` over a pre `0000000000000000`, or `7ff8000000000002` over `7ff8000000000001`, refuses `frame_violation`/`unauthorized-change` naming `t1` and `gain`; one whose post `levels` holds the pre members in another order is no change. | Test (TC-1171) |
+| FR-106-AC-58 | Over TC-1171's numeric fixture, each refuses `invalid_runtime_input` with the cause and path given and nothing is admitted: `levels` holding `0000000000000000` twice or `7ff8000000000001` twice, `duplicate-member` at element 1 naming element 0, while `+0` and `-0` together admit; `gain` `bits` `"3FF0000000000000"` (uppercase), a 15-digit string, a 17-digit string, `"3ff000000000000g"` and `"0x3ff0000000000000"`, `invalid-value` naming `bits`; a `float32` object whose `bits` has 16 digits, `invalid-value` naming `bits`; `bits` given as the JSON number `0`, `wrong-value-kind` naming `bits`; `bits` removed, `missing-member` naming `bits`; an added member `value`, `unknown-member` naming `value`; `kind` `"Float64"`, `invalid-value` naming `kind`; a `float32` object in the `Float64` field `gain`, a `float64` object in a `Float32` element of `taps`, `{"integer": "1"}` in `gain`, and a `float64` object in `ratio`, `wrong-value-kind`. Every bit pattern, signalling NaNs included, admits; under `PostStateRange::Witness` a Float is never an `OutOfRange` observation. | Test (TC-1171) |
+| FR-106-AC-59 | Over TC-1171's numeric fixture, a current snapshot whose `t1` holds `reach` `{"kind":"quantity","unit":"Units::metre","magnitude":{"kind":"rational","numerator":"3","denominator":"6"}}` admits as `1`/`2` metre, and the same with the Decimal magnitude `{"kind":"decimal","coefficient":"5","scale":"1"}` is the same value; `spans` holding the first and the Decimal-magnitude spelling refuses `duplicate-member` at element 1 naming element 0, while `loads` holding them has the one member `1`/`2` metre with multiplicity 2, written `[{"kind":"quantity","magnitude":{"denominator":"2","kind":"rational","numerator":"1"},"unit":"Units::metre"},{"kind":"quantity","magnitude":{"denominator":"2","kind":"rational","numerator":"1"},"unit":"Units::metre"}]`. A `retag` invocation whose post `reach` is the Decimal magnitude spelling over the Rational pre `reach` is no change, and one whose post magnitude is `2`/`3` refuses `frame_violation`/`unauthorized-change` naming `t1` and `reach`. Each of these refuses `invalid_runtime_input` and admits nothing: `unit` `"Units::second"` and `unit` as the JSON number `1`, `wrong-value-kind` naming `unit`; `unit` removed or `magnitude` removed, `missing-member` naming the member; `magnitude` as a String object, `{"integer": "1"}` or a JSON string, `wrong-value-kind` naming `magnitude`; `magnitude` with `denominator` `"0"`, `invalid-value` naming `denominator` at the path `magnitude`; `magnitude` Decimal with `scale` `"-1"`, `invalid-value` naming `scale` at the path `magnitude`; an added member `bits`, `unknown-member` naming `bits`; a Quantity object in `ratio` and a Rational object in `reach`, `wrong-value-kind`. A Decimal magnitude outside any `Decimal[..]` domain admits, because a Quantity magnitude has no declared bound. | Test (TC-1171) |
+| FR-106-AC-60 | Over TC-1171's numeric fixture (also declaring `names: Set<String>[0, 4]`, `notes: Set<Option<String>>[0, 2]` and `lines: OrderedSet<String>[0, 3]`), a current snapshot whose `t1` holds `names` `{"set": [b, "", "\u00e9", "e\u0301"]}` (each as a String object) admits four members, the composed and the decomposed spelling of `é` being two, written `[{"kind":"string","text":""},{"kind":"string","text":"b"},{"kind":"string","text":"e\u0301"},{"kind":"string","text":"\u00e9"}]` ordered by those bytes; `notes` `{"set": [{"present": {"kind":"string","text":"x"}}, {"absent": {}}]}` is written `[{"absent":{}},{"present":{"kind":"string","text":"x"}}]`; `lines` keeps its order. `names` holding `a` twice and `lines` holding `a` twice refuse `invalid_runtime_input`/`duplicate-member` at element 1 naming element 0; a Text object `{"kind":"text","text":"a"}` as an element of `names`, a UUID object, and `{"kind":"string","text":1}` refuse `wrong-value-kind` at element 0, the last naming `text`; `names` with five elements refuses `cardinality_out_of_bound`/`above-maximum` before any element is read. A `retag` invocation whose post `names` holds the pre members in another order is no change, and one whose post `names` replaces U+00E9 by U+0065 U+0301 refuses `frame_violation`/`unauthorized-change` naming `t1` and `names`. | Test (TC-1171) |
+| FR-106-AC-61 | A snapshot whose object type has fields `blob: Bytes`, `doc: JsonObject` and `span: Duration` (the unit of compilation declaring `dimension Time; unit s : Time = rational(1, 1);`) admits `blob` `{"kind":"bytes","text":"00ff"}`, `doc` `{"kind":"json_object","text":"{\"a\":1}"}` and `span` as the quantity form of `3/2` over `s`, and two snapshots differing only in JSON member order of the enclosing document have one digest. `blob` `00FF`, `doc` `{"a": 1}` refuse `invalid_runtime_input`/`invalid-value`; the Bytes object in `doc`, the JsonObject object in `blob` and a String object in either refuse `wrong-value-kind`; an object with an extra member or a non-string `text` refuses as the String object does. | Test (TC-1231) |
 
 
 ## Dependencies

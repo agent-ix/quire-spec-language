@@ -36,3 +36,60 @@ What was checked and found correct:
 | --- | --- | --- | --- |
 | FND-001 | high | `serve_request` and `serve_items` give no terminal record for a `PredicateRefused` item. They document this and return `Err(UnsettledRefusal::PredicateRefused)`, through `settle_statistical_refusal` (settle.rs:233). FR-192 as merged in this PR's base (STD-282, #1256 merged 316359fec, an ancestor of bb3980366) settles every `PredicateRefused` (Behavior table rows 114-116, FR-192-AC-7): `KernelRefused(r)`/`FamilyRefused(code)` settle `failed` with the refusal's code; `Incomplete(i)` settles `incomplete` `limit-reached` naming the counter by FR-255 Behavior 9; `NotBoolean`/`KernelUndefined`/`FamilyUndefined`/`KernelRefused(CheckedInvariant)` settle `failed` `runtime_invariant`/`established-invariant-broken`. Only `Admission` and `RequiresBound` stay unsettled. So a routed EN-4 item whose predicate read is refused returns no record, where FR-280 requires one terminal record per routed item. The PR body calls this blocked on #1256, but #1256 is merged. Fix in this PR: settle the three row groups in `settle_statistical_refusal`, drop `UnsettledRefusal::PredicateRefused`, fix the `serve_request` doc, and add FR-192-AC-7's test (TC-1166). | qsl-replay/src/statistical/settle.rs:233; qsl-analyze/src/statistical/provider.rs:36-41; spec/functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md:114-116,152 |
 | FND-002 | medium | The module doc says in the present tense that "`analyze` settles an EN-4 item through the same two calls ... so the record of an item is the same through either path (ADR-029 OP-2)". No `analyze` operation exists: FR-281 is unimplemented and its slice, QSL-596, is in Backlog. FR-280 also says the entry runs routed items through `analyze`, while this entry calls EN-4 directly. Make the doc state what is true: this is EN-4's settlement, and the `analyze` parity is FR-280-AC-2/AC-5 work for QSL-596. When QSL-596 lands `analyze`, either `analyze` calls `serve_request` for EN-4 items or `serve_items` is replaced, so that there is one path, not two. | qsl-analyze/src/statistical/provider.rs:1-11 |
+
+## New findings (disposition pass 1)
+
+Reviewed at 509e057d6 (fix commit 03d0e5172).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | A `PredicateRefused(Incomplete(i))` for the `work_units` counter settles `LimitReached{EvaluationMeter}`, so it is spelled `evaluation-meter` with setting `meter`. FR-192 row 115 names `i`'s counter by FR-255 Behavior 9's rule: the counter itself (`work_units`) and the setting as the counter's own name (`work_units`). FR-255 also says "The evaluation meter an engine reads is the call's accounting limits, whose setting names are the accounting table's". `meter` is no setting in any FR-255 table, so `--limit meter=...` is refused as an unknown setting and the user cannot raise the bound the record names. `ModelCheckLimit::of_counter` maps `WorkUnits` to `EvaluationMeter`, and `a_refused_predicate_read_settles_as_en5_does` asserts that wrong mapping. Fix: settle every counter as `Counter(kind)` (limit and setting `work_units`). Also fix `EvaluationMeter.setting()` to `work_units`: FR-192 row 105 says the expansion-meter row's setting is the exhausted counter's name, so `meter` is wrong there too. This is the most common meter stop. | qsl-replay/src/model_check/limits.rs:121-127,154; qsl-replay/src/statistical/settle.rs:266-271,689-695 |
+| FND-004 | low | `items_with_evidence` writes `statistical` (`map_or(EvidenceKind::Statistical, ...)`) for a `probabilistic-satisfaction` record that carries no evidence kind. FR-195 says every such record carries one, so a record missing it is a broken invariant. The fallback hides it and silently routes an exact-only claim to EN-4. Make it unrepresentable (the probabilistic `Requirements` constructor takes the evidence kind), or settle it as an internal fault. | qsl-route/src/request.rs:623-631 |
+
+## Dispositions
+
+Round 1, by the reviewer, at 509e057d6 (fix commit 03d0e5172).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 03d0e5172. `settle_statistical_refusal` settles `PredicateRefused` through `predicate_refused` by FR-192 rows 114-116: a kernel refusal with code and cause gives `failed` with that code (only `CheckedInvariant` has none, so it gives `BROKEN`); a family refusal gives `failed` with its code; `Incomplete` gives `incomplete` `limit-reached` with the configured bound; `NotBoolean` and the undefined outcomes give `BROKEN`. `UnsettledRefusal::PredicateRefused` is deleted, and the FR-192-AC-7 test is added. The counter-naming part is wrong; see new FND-003. |
+| FND-002 | fixed | 03d0e5172. The module doc now says that no `analyze` exists (FR-281, QSL-596), and that `analyze` must settle through `serve_request` so the two stay one path. |
+
+## New findings (disposition pass 2)
+
+Reviewed at 325723f6e.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-192 contradicts itself about the evaluation-meter setting, and the code now follows only one side. FR-192-AC-1 and TC-627 step 1 say a `Stopped` by an expansion naming `EvaluationMeter` settles with "setting `meter`". FR-192 row 105 says that setting is "the exhausted accounting counter's name for the evaluation meter". FR-255 says "The evaluation meter an engine reads is the call's accounting limits, whose setting names are the accounting table's", and no FR-255 table has a `meter` setting. 325723f6e (`EvaluationMeter.setting()` = `work_units`, following this reviewer's round-1 FND-003) matches row 105 and FR-255, but now contradicts AC-1's text, and its TC-627 test asserts `work_units`. Every engine that stops at `ModelCheckLimit::EvaluationMeter` now reports setting `work_units`; no other test or schema in the repo asserts `meter`. Keep the code: `meter` is a setting the settings operation refuses. Fix the spec instead: a spec-only STD change of FR-192-AC-1 and TC-627 to `work_units`. This does not block the code merge. | spec/functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md:105,146; spec/test-cases/TC-627-statistical-results-settle-as-measured.md:31; qsl-replay/src/model_check/limits.rs:144 |
+
+## Dispositions (round 2)
+
+Round 2, by the reviewer, at 325723f6e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 325723f6e. `of_counter` is deleted. `predicate_refused` settles `LimitReached{Counter(incomplete.limit_kind), incomplete.limit}` for every counter, `work_units` included, so the limit and setting are the counter's own name (FR-255 Behavior 9). `EvaluationMeter.setting()` is `work_units`; the spec conflict this exposes is FND-005. The FR-192-AC-7 test asserts `Counter(LimitKind::WorkUnits)`. |
+| FND-004 | fixed | 325723f6e. The `statistical` fallback is gone. A probabilistic record with no evidence kind now gets `evidence: None` and `CandidateSet::none` (no backend), and no second-kind item under `Both`, so an exact-only claim is no longer routed to EN-4. It is not prevented at the type level (`Requirements::new` can still build such a record) and has no test. Judged acceptable: no S3 path builds such a record, and the arm only guards a broken invariant. The type-level fix belongs with the S3 probabilistic-record work (SR-12361 FND-004), where the probabilistic `Requirements` constructor should take the evidence kind. |
+
+## Dispositions (round 3)
+
+Round 3, by the reviewer, at the rebased head. Restored here from Linear comment 91bed3f7-dff8-4e28-a11b-e75589dc19bd, because that round's scratch file under /tmp/qsl-570-reviewer no longer exists.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | FR-192's table, AC-1 and TC-627 now agree on the FR-255 setting names. Accounting settings come from the shared typed setting mapping. |
+
+## Dispositions (round 4: merge resolution)
+
+Round 4, by the reviewer, at 7a4bce3e52750fa4d1a1c36b7596ca35155c1855: the merge of origin/main (dc267af55, which includes #1413/QSL-1025 and #1410/QSL-1018) into the round-3 head ee3373823. No finding was open before this round, so the round adds no outcome rows and no new findings.
+
+This round reviewed only the merge resolution. `git show --remerge-diff` shows that it changes two files compared with an automatic merge: `qsl-replay/src/model_check/limits.rs` and `qsl-replay/src/statistical/settle.rs`.
+
+- **limits.rs.** The resolution keeps main's `EvaluationMeter { counter }` and `AccountingLimits::setting_of`. It drops the PR's `Counter(LimitKind)` variant, its two match arms and its imports. Behaviour is unchanged. The PR's `Counter(kind).as_str()` was `quire_exact::LimitKind::as_str` (quire-exact 72b2542, src/accounting.rs:118-129). Main's `EvaluationMeter { counter }.as_str()` matches it on all ten counters. The setting is `AccountingLimits::setting_of(kind).name()` on both sides. The PR's `EvaluationMeter => AccountingSetting::WorkUnits.name()` was a special case of main's per-counter mapping. `MaxCandidates` now gets `expansion.max_candidates` from main (QSL-1018), which is the follow-up round 3 deferred.
+- **settle.rs.** `predicate_refused` settles `Incomplete` as `LimitReached { EvaluationMeter { counter: incomplete.limit_kind }, incomplete.limit }`. On the wire this gives the same limit and setting the PR gave. `KernelRefused`/`FamilyRefused` still settle `failed` with their code, and every other outcome settles `BROKEN`. TC-1166 / FR-192-AC-7 keeps its trace tag and every assertion. Only the two variant constructors were respoken, and the `setting` assertions (`AccountingSetting::TextInputBytes/WorkUnits.name()`) are unchanged. Main's added assertions for TC-627 (`accounting.work_units`, `integer_bits`, `value_occurrences`) are kept.
+- **Trace tags.** The union of `#[trace(...)]` tags in both parents, minus the tags at the merge, is `FR-469-AC-1`, `TC-665` and `TC-665, TC-664`. All of them were in the merge base and are absent on main, so main removed them, not the resolution. Every tag the PR added (`TC-1163`, `TC-1163/FR-075-AC-18`, `TC-761` x3, `TC-1166/FR-192-AC-7`) is present.
+- **Gates run at 7a4bce3e5 (own target dir).** `cargo test -p qsl-replay --lib`: 803 passed. `cargo test -p qsl-analyze`: 69 + 716 passed. `cargo clippy -p qsl-replay -p qsl-analyze --all-targets -D warnings`: clean.
+- **`quire matrix`.** FR-192-AC-7 is tagged (settle.rs:697). FR-192-AC-1, FR-075-AC-18 and FR-126-AC-19 are tagged. FR-280-AC-5 and FR-195-AC-6 are untagged, as in rounds 1-3: they stay open under QSL-596 and the S3 follow-up.
+
+Verdict: mergeable subject to the lead's final-head aggregate gate.

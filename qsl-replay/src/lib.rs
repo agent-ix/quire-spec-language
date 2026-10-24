@@ -160,7 +160,7 @@ pub use model_check::hyper_settle::{
 pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
-    ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+    meter_bound, ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
     DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
     DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
@@ -257,7 +257,6 @@ pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
 // without naming `qsl_replay::spine` or `qsl_semantics`.
 pub use qsl_semantics::library::PackageId;
 pub use qsl_semantics::model::object_environment::ObjectEnvironment;
-pub use qsl_semantics::value::supplied::SuppliedLimits;
 pub use quire_exact::{Cancel, CancelCause};
 pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,

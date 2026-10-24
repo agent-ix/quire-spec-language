@@ -22,7 +22,7 @@
 //! holding a punctual interval records that interval's span: the request
 //! writer disposes its item `Unsupported`, `PunctualInterval` (DF-5).
 
-use qsl_forms::{QuantityForm, TimedIntervalForm};
+use qsl_forms::{QuantityForm, TimedIntervalForm, TimedUpper};
 use qsl_foundation::bound::TimedInterval;
 use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
 use qsl_foundation::{Setting, Span};
@@ -195,7 +195,14 @@ impl TimedReader<'_> {
         written: &TimedIntervalForm,
     ) -> Result<TimedInterval, IntervalFailure> {
         let lower = self.bound(&written.lower)?;
-        let upper = self.bound(&written.upper)?;
+        let TimedUpper::Finite(upper) = &written.upper else {
+            // `[q, *]` is a hybrid claim's form (FR-447); a model-subject
+            // clause has no unbounded timed interval (ADR-014 TR-3).
+            return Err(IntervalFailure::Cause(TemporalCause::OpenInterval {
+                span: written.span,
+            }));
+        };
+        let upper = self.bound(upper)?;
         TimedInterval::new(lower, written.lower_closed, upper, written.upper_closed).map_err(
             |reason| {
                 IntervalFailure::Cause(TemporalCause::InvalidTimedInterval {

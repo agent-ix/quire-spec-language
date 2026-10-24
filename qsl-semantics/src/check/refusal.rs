@@ -8,9 +8,9 @@ use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::MemoryModelName;
 use qsl_foundation::Setting;
 use qsl_foundation::Span;
-use quire_exact::Integer;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
+use quire_exact::{Integer, ValueType};
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IdentityRefusal;
@@ -124,6 +124,45 @@ pub enum ProtocolAnchorCause {
         construct: &'static str,
         /// The construct's own span: the earliest such construct in the
         /// protocol.
+        span: Span,
+    },
+    /// FR-218 Predicate joins: the named unit declaration does not exist.
+    JoinFunctionMissing {
+        /// The parallel node containing the join.
+        parallel: String,
+        /// The function name as written.
+        function: String,
+        /// The function name's span.
+        span: Span,
+    },
+    /// FR-218 Predicate joins: the name resolves to a declaration that is
+    /// not a function.
+    JoinFunctionKind {
+        /// The parallel node containing the join.
+        parallel: String,
+        /// The function name as written.
+        function: String,
+        /// The resolved declaration kind.
+        kind: &'static str,
+        /// The function name's span.
+        span: Span,
+    },
+    /// FR-218 Predicate joins: the resolved function's Boolean signature
+    /// does not match the distinct joined labels.
+    JoinFunctionType {
+        /// The parallel node containing the join.
+        parallel: String,
+        /// The resolved function name.
+        function: String,
+        /// The required parameter types.
+        expected_parameters: Box<[ValueType]>,
+        /// The function's declared parameter types.
+        actual_parameters: Box<[ValueType]>,
+        /// The required return type.
+        expected_result: Box<ValueType>,
+        /// The function's declared return type.
+        actual_result: Box<ValueType>,
+        /// The function name's span.
         span: Span,
     },
     /// The protocol's `using` alias names no profile selection of
@@ -846,6 +885,9 @@ impl ProtocolAnchorCause {
             | Self::MissingContract { span, .. }
             | Self::WrongContractAnchor { span, .. }
             | Self::Unimplemented { span, .. }
+            | Self::JoinFunctionMissing { span, .. }
+            | Self::JoinFunctionKind { span, .. }
+            | Self::JoinFunctionType { span, .. }
             | Self::MissingProfile { span, .. }
             | Self::MissingRoleType { span, .. }
             | Self::MissingRole { span, .. }
@@ -903,6 +945,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRelationship { .. }
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => Code::MissingDeclaration,
+            Self::JoinFunctionMissing { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -916,6 +959,7 @@ impl ProtocolAnchorCause {
             | Self::RelatedEnd { .. }
             | Self::RolePopulationType { .. }
             | Self::RoleMax { .. } => Code::IllTyped,
+            Self::JoinFunctionKind { .. } | Self::JoinFunctionType { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
@@ -954,6 +998,7 @@ impl ProtocolAnchorCause {
             | Self::MissingRelationship { .. }
             | Self::MissingRolePopulation { .. }
             | Self::MissingRelated { .. } => "missing-name",
+            Self::JoinFunctionMissing { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -962,11 +1007,13 @@ impl ProtocolAnchorCause {
             | Self::RelatedEnd { .. }
             | Self::RolePopulationType { .. }
             | Self::RoleMax { .. } => "type-mismatch",
+            Self::JoinFunctionType { .. } => "type-mismatch",
             Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }
             | Self::AccessOrdering { .. }
             | Self::RequirementKind { .. } => "operator-ineligible",
+            Self::JoinFunctionKind { .. } => "operator-ineligible",
             // Only a cause that has a tag is wrapped
             // (`protocol_controls::check_fifo`, `protocol_slots`).
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => {
@@ -1155,6 +1202,14 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// A clause over a non-hybrid subject that writes no `clock` member: its
+    /// subject's default clock (QSpec FR-252, QSL FR-233 "Default") is not
+    /// built, so the clause is refused rather than stepped by a guessed
+    /// clock. Located at the clause.
+    MissingClock {
+        /// The clause's span.
+        span: Span,
+    },
 }
 
 /// Why a quantity's unit is not a time unit (FR-230 "The time dimension and
@@ -1205,7 +1260,8 @@ impl TemporalCause {
             | Self::ZeroDenominator { span }
             | Self::TimeQuantity { span, .. }
             | Self::TimedProfileWithoutModelTime { span, .. }
-            | Self::TimedTraceSubject { span } => *span,
+            | Self::TimedTraceSubject { span }
+            | Self::MissingClock { span } => *span,
         }
     }
 
@@ -1220,7 +1276,8 @@ impl TemporalCause {
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
-            | Self::TimedTraceSubject { .. } => Code::UnsupportedConstruct,
+            | Self::TimedTraceSubject { .. }
+            | Self::MissingClock { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
             Self::InvalidTimedInterval { .. } | Self::ModelTimeOnUntimedModel { .. } => {
                 Code::InvalidTimedModel
@@ -1259,7 +1316,8 @@ impl TemporalCause {
             | Self::NotEmitted { .. }
             | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
-            | Self::TimedTraceSubject { .. } => "not-yet-implemented",
+            | Self::TimedTraceSubject { .. }
+            | Self::MissingClock { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
@@ -1859,6 +1917,9 @@ pub enum CheckCause {
     /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
     /// for the same reason as `ProtocolAnchor` above.
     StateGraph(Box<StateGraphCause>),
+    /// FR-447: S3 refused a `hybrid` declaration. Boxed for the same reason
+    /// as `ProtocolAnchor` above.
+    Hybrid(Box<super::hybrid::HybridCause>),
     /// FR-381, FR-218: S3 refused a protocol's role, activation, capture or
     /// compensation template. Boxed for the same reason as `ProtocolAnchor`
     /// above.
@@ -2222,6 +2283,7 @@ impl CheckCause {
             Self::Temporal(cause) => cause.code(),
             Self::Hyper(cause) => cause.code(),
             Self::StateGraph(cause) => cause.code(),
+            Self::Hybrid(cause) => cause.code(),
             Self::ProtocolObligation(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
@@ -2304,6 +2366,7 @@ impl CheckCause {
             Self::Temporal(cause) => Some(cause.tag()),
             Self::Hyper(cause) => Some(cause.tag()),
             Self::StateGraph(cause) => cause.tag(),
+            Self::Hybrid(cause) => Some(cause.tag()),
             Self::ProtocolObligation(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --

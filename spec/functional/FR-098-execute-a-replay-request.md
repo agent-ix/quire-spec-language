@@ -228,13 +228,11 @@ list.
     a proper subtype's reference is a `Reference<T>`; or a reference's
     `identity` is empty or not UTF-8, which the kernel's object identity
     constructor never accepts (FR-100);
-  - a `set` or `ordered-set` holds two elements the kernel's equality
-    relates (decimals compare by numeric value, so `1.0` and `1.00` are
-    duplicates, though FR-070 gives them distinct value texts);
-  - a decoded `set` or `ordered-set` whose elements bear a float. S3 admits
-    no declared set type whose element type bears a float (QSpec
-    FR-144-AC-6, FR-323-AC-3), so such a value matches no declared type and
-    fails conversion as a kind mismatch.
+  - a `set` or `ordered-set` holds two elements the kernel's collection
+    membership relation relates (decimals compare by numeric value, so `1.0`
+    and `1.00` are duplicates, though FR-070 gives them distinct value texts;
+    floats compare by bits, so `+0` and `-0` and two NaN payloads are not
+    duplicates and two identical bit patterns are).
 - An enum member converts to the kernel member with its declared rank. A
   text converts to a kernel text of the declared text type. A String object
   converts to a kernel String of its exact scalar sequence, which no content
@@ -263,9 +261,10 @@ list.
   (`quire.value.accounting/v1` `occ`) against the request's accounting
   limit `value_occurrences`, and the nodes it converts against
   `work_units`. These are `quire.value.accounting/v1` accounting limits
-  (ADR-014 B-2), not stage limits. FR-255 names each by its counter name,
-  which is its setting, and a `stage_limits` entry of that name replaces
-  the request's accounting-limits value for that counter (FR-255
+  (ADR-014 B-2), not stage limits. FR-255 names each by its setting,
+  `accounting.` and its counter name (`accounting.value_occurrences`,
+  `accounting.work_units`), and a `stage_limits` entry of that setting name
+  replaces the request's accounting-limits value for that counter (FR-255
   Behavior 10). These checks, the call and every identity that binds the
   request's limits use the resulting effective accounting limits. When
   a count exceeds its limit, the replay SHALL settle, with no call, as

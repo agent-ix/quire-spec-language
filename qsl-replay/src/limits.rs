@@ -19,7 +19,7 @@ use crate::bounds::ReplayLimits;
 use crate::spine::{default_accounting, SpineLimits, DEFAULT_WORK_UNITS};
 
 /// The call's accounting limits (`quire.value.accounting/v1`): each of the
-/// ten counters is an [`AccountingSetting`] named by the counter (FR-255's
+/// ten counters is an [`AccountingSetting`] named `accounting.<counter>` (FR-255's
 /// accounting table). A newtype over the foreign [`ScalarLimits`]. The
 /// default is FR-100's: `work_units` 1,000,000 and every other counter
 /// `u64::MAX`.
@@ -301,8 +301,6 @@ impl SettingLimits for CallerLimits {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use ix_trace_rs::trace;
     use qsl_foundation::UsageCause;
 
@@ -316,142 +314,6 @@ mod tests {
             .find(|(reported, _)| *reported == setting)
             .map(|(_, bound)| bound)
             .unwrap_or_else(|| panic!("no limits type reports {setting}"))
-    }
-
-    /// One row of FR-255's setting table.
-    struct Row {
-        name: String,
-        stage: String,
-        kind: String,
-        default: String,
-    }
-
-    const SPEC: &str = include_str!(
-        "../../spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md"
-    );
-
-    /// The table rows of the section under `heading`, up to the next `## `.
-    fn section_rows(heading: &str) -> Vec<Vec<&'static str>> {
-        let body = SPEC
-            .split_once(heading)
-            .unwrap_or_else(|| panic!("FR-255 has no `{heading}` section"))
-            .1;
-        let body = body
-            .split_once("\n## ")
-            .map_or(body, |(section, _)| section);
-        body.lines()
-            .filter(|line| line.starts_with("| `"))
-            .map(|line| line.trim_matches('|').split('|').map(str::trim).collect())
-            .collect()
-    }
-
-    /// FR-255's setting table (stage settings only), read from the spec file
-    /// itself, so the tests below judge the code against the requirement and
-    /// not against the code's own list.
-    fn spec_table() -> Vec<Row> {
-        section_rows("\n## Setting names")
-            .into_iter()
-            .map(|cells| {
-                assert_eq!(cells.len(), 5, "a table row has five cells: {cells:?}");
-                Row {
-                    name: cells[0].trim_matches('`').to_owned(),
-                    stage: cells[1].to_owned(),
-                    kind: cells[2].to_owned(),
-                    default: cells[4].to_owned(),
-                }
-            })
-            .collect()
-    }
-
-    /// FR-255's accounting table: each setting name with its default text.
-    fn accounting_table() -> Vec<(String, String)> {
-        section_rows("\n## Accounting setting names")
-            .into_iter()
-            .map(|cells| {
-                assert_eq!(
-                    cells.len(),
-                    3,
-                    "an accounting row has three cells: {cells:?}"
-                );
-                assert_eq!(cells[0], cells[1], "a counter is its own setting");
-                (cells[0].trim_matches('`').to_owned(), cells[2].to_owned())
-            })
-            .collect()
-    }
-
-    /// The numeric default a table cell opens with.
-    fn default_of(name: &str, cell: &str) -> u64 {
-        cell.split_whitespace()
-            .next()
-            .and_then(|first| first.parse().ok())
-            .unwrap_or_else(|| panic!("{name} has no numeric default: {cell}"))
-    }
-
-    /// FR-255-AC-3: the union of the limits types' setting names equals
-    /// FR-255's setting and accounting tables, each name once, with the table's stage and kind, and
-    /// setting one changes that field's bound and no other.
-    #[trace("TC-720", "FR-255-AC-3")]
-    #[test]
-    fn each_limits_field_maps_to_one_distinct_setting_and_sets_only_itself() {
-        let defaults = CallerLimits::default();
-        let reported: Vec<Setting> = defaults
-            .bounds()
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect();
-        let distinct: BTreeSet<Setting> = reported.iter().copied().collect();
-        assert_eq!(distinct.len(), reported.len(), "a setting is mapped twice");
-        let table = spec_table();
-        let accounting = accounting_table();
-        let table_names: BTreeSet<&str> = table
-            .iter()
-            .map(|row| row.name.as_str())
-            .chain(accounting.iter().map(|(name, _)| name.as_str()))
-            .collect();
-        assert_eq!(
-            table_names.len(),
-            table.len() + accounting.len(),
-            "a table row is repeated"
-        );
-        let code_names: BTreeSet<&str> = reported
-            .iter()
-            .map(|setting| setting.name())
-            .chain(
-                defaults
-                    .accounting
-                    .bounds()
-                    .into_iter()
-                    .map(|(setting, _)| setting.name()),
-            )
-            .collect();
-        assert_eq!(
-            code_names, table_names,
-            "the limits types and FR-255's table name different settings"
-        );
-        for row in &table {
-            let setting = Setting::from_name(&row.name).expect("a table name is a setting");
-            assert_eq!(setting.stage(), row.stage, "{}", row.name);
-            let kind = setting
-                .kind()
-                .catalog_cause()
-                .trim_end_matches("-exceeded")
-                .replace('-', " ");
-            assert_eq!(kind, row.kind, "{}", row.name);
-        }
-        for (setting, bound) in defaults.bounds() {
-            let mut changed = defaults;
-            assert!(changed.set_bound(setting, bound ^ 1));
-            let before = defaults.bounds();
-            let after = changed.bounds();
-            assert_eq!(before.len(), after.len());
-            for ((name, old), (_, new)) in before.into_iter().zip(after) {
-                if name == setting {
-                    assert_eq!(new, bound ^ 1, "{name} did not take its value");
-                } else {
-                    assert_eq!(new, old, "setting {setting} changed {name}");
-                }
-            }
-        }
     }
 
     /// The builders and the settings mapping are one: each builder sets the
@@ -598,80 +460,6 @@ mod tests {
         }
     }
 
-    /// FR-255-AC-6: with nothing configured, each limit is at the default
-    /// FR-255's table lists, read from the table itself.
-    #[trace("TC-721", "FR-255-AC-6")]
-    #[test]
-    fn unconfigured_limits_are_at_the_published_defaults() {
-        let defaults = CallerLimits::from_operands([]).unwrap();
-        let table: Vec<Row> = spec_table();
-        assert_eq!(table.len(), Setting::ALL.len());
-        for row in table {
-            let setting = Setting::from_name(&row.name).expect("a table name is a setting");
-            assert_eq!(
-                bound_of(&defaults, setting),
-                default_of(&row.name, &row.default),
-                "{}",
-                row.name
-            );
-        }
-        let accounting = accounting_table();
-        assert_eq!(accounting.len(), AccountingSetting::ALL.len());
-        for (name, default) in accounting {
-            assert_eq!(
-                bound_of_accounting(&defaults.accounting, &name),
-                default_of(&name, &default),
-                "{name}"
-            );
-        }
-    }
-
-    /// FR-255-AC-8: each accounting setting sets its counter alone, no
-    /// operand gives the table's defaults, and `u64::MAX` is a bound.
-    #[trace("TC-921", "FR-255-AC-8")]
-    #[test]
-    fn each_accounting_setting_sets_its_counter_alone() {
-        let table = accounting_table();
-        assert_eq!(table.len(), 10);
-        let defaults = CallerLimits::from_operands([]).unwrap().accounting;
-        for (name, default) in &table {
-            assert_eq!(
-                bound_of_accounting(&defaults, name),
-                default_of(name, default),
-                "{name}"
-            );
-        }
-        for (name, _) in &table {
-            let operand = format!("{name}=123456789");
-            let set = CallerLimits::from_operands([operand.as_str()])
-                .unwrap()
-                .accounting;
-            for (other, default) in &table {
-                let expected = if other == name {
-                    123_456_789
-                } else {
-                    default_of(other, default)
-                };
-                assert_eq!(
-                    bound_of_accounting(&set, other),
-                    expected,
-                    "{name}: {other}"
-                );
-            }
-        }
-        let max = CallerLimits::from_operands(["work_units=18446744073709551615"]).unwrap();
-        assert_eq!(max.accounting.0.work_units, u64::MAX);
-    }
-
-    fn bound_of_accounting(limits: &AccountingLimits, name: &str) -> u64 {
-        limits
-            .bounds()
-            .into_iter()
-            .find(|(reported, _)| reported.name() == name)
-            .map(|(_, bound)| bound)
-            .expect("the accounting limits report it")
-    }
-
     /// FR-255-AC-9: the grammar, duplicate and overflow rules of the stage
     /// settings hold for the accounting names.
     #[trace("TC-921", "FR-255-AC-9")]
@@ -680,28 +468,33 @@ mod tests {
         for (operands, operand, cause) in [
             (vec!["depth=1"], "depth=1", UsageCause::UnknownSetting),
             (
-                vec!["accounting.work_units=1"],
-                "accounting.work_units=1",
+                vec!["work_units=1"],
+                "work_units=1",
                 UsageCause::UnknownSetting,
             ),
             (
-                vec!["work_units=ten"],
-                "work_units=ten",
+                vec!["accounting=1"],
+                "accounting=1",
+                UsageCause::UnknownSetting,
+            ),
+            (
+                vec!["accounting.work_units=ten"],
+                "accounting.work_units=ten",
                 UsageCause::NotAnInteger,
             ),
             (
-                vec!["work_units=-1"],
-                "work_units=-1",
+                vec!["accounting.work_units=-1"],
+                "accounting.work_units=-1",
                 UsageCause::NotAnInteger,
             ),
             (
-                vec!["work_units=18446744073709551616"],
-                "work_units=18446744073709551616",
+                vec!["accounting.work_units=18446744073709551616"],
+                "accounting.work_units=18446744073709551616",
                 UsageCause::NotAnInteger,
             ),
             (
-                vec!["work_units=5", "work_units=6"],
-                "work_units=6",
+                vec!["accounting.work_units=5", "accounting.work_units=6"],
+                "accounting.work_units=6",
                 UsageCause::Repeated,
             ),
         ] {

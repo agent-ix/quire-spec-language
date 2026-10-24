@@ -731,6 +731,92 @@ fn each_outcome_settles_its_row_of_the_map() {
     }
 }
 
+/// FR-127-AC-16: a stop by an exhausted meter counter or by the candidate
+/// bound settles `failed`, `resource-incomplete`, `unavailable`,
+/// `Incomplete(LimitReached{limit, value, setting})`, category incomplete,
+/// for `work_units` 0, `value_occurrences` 7, `integer_bits` `u64::MAX` and
+/// `max_candidates` 1. Each setting is the FR-255 accounting or expansion
+/// name, never `meter`, a bare counter or a bare `max_candidates`, and the
+/// settings operation accepts each accounting name to raise that bound (the
+/// settings table registers no `expansion.*` row yet).
+#[trace("TC-522", "FR-127-AC-16")]
+#[test]
+fn a_meter_or_candidate_stop_settles_naming_its_setting() {
+    use qsl_replay::CallerLimits;
+    use quire_exact::LimitKind;
+
+    let case = case(CONTRACT, &[0]);
+    for (limit, value, name, setting, operand) in [
+        (
+            ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::WorkUnits,
+            },
+            0,
+            "work_units",
+            "accounting.work_units",
+            "accounting.work_units=1",
+        ),
+        (
+            ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::ValueOccurrences,
+            },
+            7,
+            "value_occurrences",
+            "accounting.value_occurrences",
+            "accounting.value_occurrences=8",
+        ),
+        (
+            ModelCheckLimit::EvaluationMeter {
+                counter: LimitKind::IntegerBits,
+            },
+            u64::MAX,
+            "integer_bits",
+            "accounting.integer_bits",
+            "accounting.integer_bits=1",
+        ),
+        (
+            ModelCheckLimit::MaxCandidates,
+            1,
+            "max_candidates",
+            "expansion.max_candidates",
+            "expansion.max_candidates=2",
+        ),
+    ] {
+        let reached = ReachedLimit { limit, value };
+        let record = settle(
+            &case,
+            &ModelCheckOutcome::Stopped {
+                cause: IncompleteCause::ResourceExhausted,
+                limit: Some(reached),
+                stats: RunStats::default(),
+            },
+        );
+        assert_eq!(
+            record.value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached { limit, value })
+        );
+        assert_eq!(
+            (record.label, record.basis, record.execution, record.truth),
+            (
+                ResultLabel::Failed,
+                SettlementBasis::Unavailable,
+                Execution::ResourceIncomplete,
+                Truth::Unavailable
+            )
+        );
+        assert_eq!(record.value.category(), Category::Incomplete);
+        assert_eq!(record.limit_reached, Some(reached));
+        assert_eq!(limit.as_str(), name);
+        assert_eq!(limit.setting(), setting);
+        assert!(!matches!(setting, "meter" | "max_candidates"));
+        assert!(!setting.eq(name), "no bare counter name: {setting}");
+        if setting.starts_with("accounting.") {
+            CallerLimits::from_operands([operand])
+                .expect("the settings operation accepts the name");
+        }
+    }
+}
+
 /// Verifies the settlement half of FR-127-AC-5, not its obligation-identity
 /// clause (the record carries no obligation identity): FR-126-AC-3's
 /// deadlock-freedom violation

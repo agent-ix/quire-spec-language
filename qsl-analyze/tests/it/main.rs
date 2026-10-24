@@ -31,6 +31,7 @@ mod model_world;
 mod partial_order;
 mod por_world;
 mod prob_world;
+mod probabilistic_request_items;
 mod protocol_compensation;
 mod protocol_constructs;
 mod protocol_counted_steps;

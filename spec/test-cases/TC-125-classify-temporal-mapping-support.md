@@ -18,8 +18,8 @@ support table in `resources/native-v1/spec/functional/FR-095-preserve-native-tl-
 never from an installed TL version, a backend report or the classifier's own
 output. Each numbered group corresponds to the matching acceptance criterion.
 
-The correspondence FR-045 establishes for a supported classification is
-verified in [TC-1240](./TC-1240-establish-the-native-to-tl-temporal-correspondence.md).
+The correspondence Contract IR FR-350 constructs from a supported QSL
+classification is verified in [TC-1240](./TC-1240-establish-the-native-to-tl-temporal-correspondence.md).
 
 Groups 1–5 execute in `tests/composed_temporal_mapping.rs` and group 6 in
 `tests/composed_temporal_mapping_v2.rs`. No TL evaluator, bridge definition or
@@ -94,8 +94,9 @@ and its activation record; nothing is substituted or reduced. A `/2`
 classification retains the definition selection it authenticated, and a `/1`
 classification is never mistakable for one.
 
-The emission half of the bridge — the TL formula, valuation request and
-correspondence record under
-`ix://agent-ix/quire-specification/FR-095` — is not exercised here. A supported
-classification is a statement about the table, not evidence that any mapping was
-performed.
+This case verifies QSL's classification boundary only. Contract IR FR-350 owns
+the projection and result join; its full owner-reader, past-history, identity,
+mutation and limit vectors are specified by
+[TC-1240](./TC-1240-establish-the-native-to-tl-temporal-correspondence.md).
+A supported classification is an input to that bridge and does not itself claim
+that correspondence has been produced.

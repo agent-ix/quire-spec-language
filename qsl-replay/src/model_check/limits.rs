@@ -3,6 +3,7 @@
 //! run names.
 
 use qsl_eval::simulation::Limits;
+use quire_exact::{LimitKind, ScalarLimits};
 
 use crate::statistical::StatisticalLimit;
 
@@ -95,7 +96,10 @@ pub enum ModelCheckLimit {
     /// `ModelCheckLimits::max_automaton_states`.
     MaxAutomatonStates,
     /// The subject's evaluation meter budget.
-    EvaluationMeter,
+    EvaluationMeter {
+        /// The denied accounting counter.
+        counter: LimitKind,
+    },
     /// The subject's `ExpansionLimits::max_candidates`.
     MaxCandidates,
     /// FR-250: a hybrid solver's step budget.
@@ -114,13 +118,24 @@ pub enum ModelCheckLimit {
 
 impl ModelCheckLimit {
     /// The limit's FR-331 spelling.
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::MaxStates => "max-states",
             Self::MaxTransitions => "max-transitions",
             Self::MaxAutomatonStates => "max-automaton-states",
-            Self::EvaluationMeter => "evaluation-meter",
-            Self::MaxCandidates => "max-candidates",
+            Self::EvaluationMeter { counter } => match counter {
+                LimitKind::IntegerBits => "integer_bits",
+                LimitKind::DecimalDigits => "decimal_digits",
+                LimitKind::ScaleExpansion => "scale_expansion",
+                LimitKind::TextInputBytes => "text_input_bytes",
+                LimitKind::TextScalars => "text_scalars",
+                LimitKind::NormalizedScalars => "normalized_scalars",
+                LimitKind::UnitEdges => "unit_edges",
+                LimitKind::ValueOccurrences => "value_occurrences",
+                LimitKind::WorkUnits => "work_units",
+                LimitKind::ResultUnits => "result_units",
+            },
+            Self::MaxCandidates => "max_candidates",
             Self::SolverSteps => "solver-steps",
             Self::WitnessSamples => "witness-samples",
             Self::MaxWalkSteps => "max-walk-steps",
@@ -130,14 +145,16 @@ impl ModelCheckLimit {
         }
     }
 
-    /// The request member that raises this limit, as the request spells it.
-    pub const fn setting(self) -> &'static str {
+    /// The request member or FR-255 accounting setting name that raises this limit.
+    pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "max_states",
             Self::MaxTransitions => "max_transitions",
             Self::MaxAutomatonStates => "max_automaton_states",
-            Self::EvaluationMeter => "meter",
-            Self::MaxCandidates => "max_candidates",
+            Self::EvaluationMeter { counter } => {
+                crate::limits::AccountingLimits::setting_of(counter).name()
+            }
+            Self::MaxCandidates => "expansion.max_candidates",
             Self::SolverSteps => "max_solver_steps",
             Self::WitnessSamples => "witness_samples",
             Self::MaxWalkSteps => "max_walk_steps",
@@ -148,6 +165,22 @@ impl ModelCheckLimit {
     }
 }
 
+/// The configured bound for one evaluation counter.
+pub fn meter_bound(limits: &ScalarLimits, counter: LimitKind) -> u64 {
+    match counter {
+        LimitKind::IntegerBits => limits.integer_bits,
+        LimitKind::DecimalDigits => limits.decimal_digits,
+        LimitKind::ScaleExpansion => limits.scale_expansion,
+        LimitKind::TextInputBytes => limits.text_input_bytes,
+        LimitKind::TextScalars => limits.text_scalars,
+        LimitKind::NormalizedScalars => limits.normalized_scalars,
+        LimitKind::UnitEdges => limits.unit_edges,
+        LimitKind::ValueOccurrences => limits.value_occurrences,
+        LimitKind::WorkUnits => limits.work_units,
+        LimitKind::ResultUnits => limits.result_units,
+    }
+}
+
 /// A limit a run reached and the value it was set to.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ReachedLimit {
@@ -155,4 +188,33 @@ pub struct ReachedLimit {
     pub limit: ModelCheckLimit,
     /// Its value in the run.
     pub value: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModelCheckLimit;
+    use ix_trace_rs::trace;
+
+    #[trace("TC-521", "FR-126-AC-19")]
+    #[test]
+    fn evaluation_meter_stop_names_the_accounting_setting() {
+        assert_eq!(
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            }
+            .setting(),
+            "accounting.work_units"
+        );
+        assert_eq!(
+            ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::IntegerBits
+            }
+            .as_str(),
+            "integer_bits"
+        );
+        assert_eq!(
+            ModelCheckLimit::MaxCandidates.setting(),
+            "expansion.max_candidates"
+        );
+    }
 }

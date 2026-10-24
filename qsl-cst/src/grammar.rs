@@ -1464,8 +1464,7 @@ fn temporal(g: &mut Grammar) {
             ident(),
             x("over"),
             bound_parameter(),
-            x("clock"),
-            text(),
+            opt(s(vec![x("clock"), text()])),
             r(P::Activation),
             x("{"),
             star(r(P::Fairness)),
@@ -2314,9 +2313,25 @@ fn analysis(g: &mut Grammar) {
             x("using"),
             ident(),
             x("{"),
+            opt(r(P::HybridInitial)),
             plus(r(P::HybridMode)),
             x("}"),
         ]),
+    );
+    // `hybrid-initial = 'initial', '{', initial-entry, { initial-entry }, '}'`:
+    // `initial` is a keyword spelling only as the first word of this clause.
+    g.insert(
+        P::HybridInitial,
+        s(vec![
+            literal("initial"),
+            x("{"),
+            plus(r(P::InitialEntry)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::InitialEntry,
+        s(vec![x("mode"), ident(), x("when"), r(P::Block), x(";")]),
     );
     g.insert(
         P::SynthesisDeclaration,

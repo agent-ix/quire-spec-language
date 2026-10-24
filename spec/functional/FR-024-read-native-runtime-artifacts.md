@@ -7,10 +7,6 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-018
     type: references
-  - target: ix://agent-ix/quire-spec-language/FR-023
-    type: references
-  - target: ix://agent-ix/quire-spec-language/FR-020
-    type: references
 ---
 # FR-024: Read exact native runtime artifacts
 
@@ -98,6 +94,4 @@ model-aware execution remain reader/constructor/runtime responsibilities.
 ## Dependencies
 
 - [FR-018](FR-018-construct-native-runtime-inputs.md): structural constructors and input encoding.
-- [FR-023](FR-023-run-native-packages.md): native execution of admitted artifacts.
-- [FR-020](FR-020-read-and-rebind-native-packages.md): shared closed JSON record adapter.
 - [Input contract](../../docs/native-runtime-inputs.md): complete native-state-input/1 fields.

@@ -51,6 +51,7 @@ mod tests;
 pub use awaits::Selections;
 pub use coverage::content;
 pub(crate) use graph::dominates;
+use types::PendingPredicateJoin;
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
@@ -59,10 +60,11 @@ pub use types::{
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{BinderForm, BinderKind, ProtocolDeclarationForm};
+use qsl_forms::{BinderForm, BinderKind, JoinPolicy, ProtocolDeclarationForm};
 use qsl_foundation::Span;
 
 use super::protocol_obligation::CheckedObligations;
+use super::protocol_requirement::UnitDeclarations;
 use super::refusal::{AliasKind, CheckCause, CheckRefusal, ProtocolAnchorCause};
 use super::state_clause::{AttemptDeclaration, StateClauseDeclaration};
 use super::{Scope, Signatures};
@@ -112,6 +114,7 @@ pub fn check(
     native_names: &BTreeSet<String>,
     scope: &Scope,
     signatures: &Signatures,
+    declarations: &UnitDeclarations<'_>,
     attempts: &[AttemptDeclaration],
     state_clauses: &[StateClauseDeclaration],
     selections: Selections<'_>,
@@ -160,6 +163,7 @@ pub fn check(
         scope,
         signatures,
     ));
+    refusals.extend(check_predicate_joins(protocol, signatures, declarations));
 
     let mut resolved = Vec::with_capacity(protocol.scoped_anchors.len());
     for anchor in &protocol.scoped_anchors {
@@ -217,32 +221,43 @@ pub fn check(
             replicated: role.replicated.is_some(),
         })
         .collect();
-    let parallels = protocol
-        .parallels
-        .iter()
-        .map(|parallel| {
-            let mut joined: Vec<String> = Vec::new();
-            for label in &parallel.labels {
-                if !joined.contains(&label.name) {
-                    joined.push(label.name.clone());
-                }
+    let mut parallels = Vec::new();
+    let mut pending_predicate_joins = Vec::new();
+    for parallel in &protocol.parallels {
+        let mut joined: Vec<String> = Vec::new();
+        for label in &parallel.labels {
+            if !joined.contains(&label.name) {
+                joined.push(label.name.clone());
             }
-            CheckedParallel {
+        }
+        let node = ProtocolNodeId(parallel.declaration);
+        let outstanding = parallel.outstanding.as_ref().map(|rule| match rule.value {
+            qsl_forms::Outstanding::Continue => CheckedOutstanding::Continue,
+            qsl_forms::Outstanding::Cancel => CheckedOutstanding::Cancel,
+        });
+        let policy = match &parallel.join.value {
+            qsl_forms::JoinPolicy::All => Some(CheckedJoinPolicy::All),
+            qsl_forms::JoinPolicy::Any => Some(CheckedJoinPolicy::Any),
+            qsl_forms::JoinPolicy::Quorum(count) => Some(CheckedJoinPolicy::Quorum(*count)),
+            qsl_forms::JoinPolicy::Predicate(name) => {
+                pending_predicate_joins.push(PendingPredicateJoin {
+                    node,
+                    name: name.clone(),
+                    joined: joined.clone(),
+                    outstanding,
+                });
+                None
+            }
+        };
+        if let Some(policy) = policy {
+            parallels.push(CheckedParallel {
                 node: ProtocolNodeId(parallel.declaration),
-                policy: match &parallel.join.value {
-                    qsl_forms::JoinPolicy::All => CheckedJoinPolicy::All,
-                    qsl_forms::JoinPolicy::Any => CheckedJoinPolicy::Any,
-                    qsl_forms::JoinPolicy::Quorum(count) => CheckedJoinPolicy::Quorum(*count),
-                    qsl_forms::JoinPolicy::Predicate(_) => CheckedJoinPolicy::Predicate,
-                },
+                policy,
                 joined,
-                outstanding: parallel.outstanding.as_ref().map(|rule| match rule.value {
-                    qsl_forms::Outstanding::Continue => CheckedOutstanding::Continue,
-                    qsl_forms::Outstanding::Cancel => CheckedOutstanding::Cancel,
-                }),
-            }
-        })
-        .collect();
+                outstanding,
+            });
+        }
+    }
 
     let finish = protocol
         .declarations
@@ -270,6 +285,7 @@ pub fn check(
             owners: Vec::new(),
             roles,
             parallels,
+            pending_predicate_joins,
             finish,
             resolved_anchors: resolved,
             attempts: Vec::new(),
@@ -286,6 +302,86 @@ pub fn check(
         },
         bound_attempts,
     ))
+}
+
+/// FR-218: resolve and type-check every predicate join's named function.
+fn check_predicate_joins(
+    protocol: &ProtocolDeclarationForm,
+    signatures: &Signatures,
+    declarations: &UnitDeclarations<'_>,
+) -> Vec<(Span, CheckRefusal)> {
+    let mut refusals = Vec::new();
+    for parallel in &protocol.parallels {
+        let JoinPolicy::Predicate(function) = &parallel.join.value else {
+            continue;
+        };
+        let span = parallel.predicate_span.unwrap_or(parallel.join.span);
+        let Some(kind) = declarations.kind(function) else {
+            refusals.push((
+                span,
+                refusal(ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel: parallel.name.name.clone(),
+                    function: function.clone(),
+                    span,
+                }),
+            ));
+            continue;
+        };
+        if declarations.callable_kind(function) != Some(qsl_forms::DeclarationKind::Function) {
+            refusals.push((
+                span,
+                refusal(ProtocolAnchorCause::JoinFunctionKind {
+                    parallel: parallel.name.name.clone(),
+                    function: function.clone(),
+                    kind,
+                    span,
+                }),
+            ));
+            continue;
+        }
+        let Some(index) = signatures.position(function) else {
+            refusals.push((
+                span,
+                refusal(ProtocolAnchorCause::JoinFunctionMissing {
+                    parallel: parallel.name.name.clone(),
+                    function: function.clone(),
+                    span,
+                }),
+            ));
+            continue;
+        };
+        let Some(signature) = signatures.as_slice().get(index) else {
+            continue;
+        };
+        let distinct_labels: BTreeSet<&str> = parallel
+            .labels
+            .iter()
+            .map(|label| label.name.as_str())
+            .collect();
+        let expected_parameters = vec![quire_exact::ValueType::Boolean; distinct_labels.len()];
+        let actual_parameters: Vec<quire_exact::ValueType> = signature
+            .parameters
+            .iter()
+            .map(|(_, value_type)| value_type.clone())
+            .collect();
+        if actual_parameters != expected_parameters
+            || signature.result != quire_exact::ValueType::Boolean
+        {
+            refusals.push((
+                span,
+                refusal(ProtocolAnchorCause::JoinFunctionType {
+                    parallel: parallel.name.name.clone(),
+                    function: function.clone(),
+                    expected_parameters: expected_parameters.into_boxed_slice(),
+                    actual_parameters: actual_parameters.into_boxed_slice(),
+                    expected_result: Box::new(quire_exact::ValueType::Boolean),
+                    actual_result: Box::new(signature.result.clone()),
+                    span,
+                }),
+            ));
+        }
+    }
+    refusals
 }
 
 /// The name of the role that owns the node `declaration` as written
