@@ -287,10 +287,13 @@ fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
     assert_eq!(hints[0].first_enabled_position, 0);
 }
 
-/// FR-133-AC-1's `strong` (whole) half: under `fair strong acquire` the
-/// mutex is refuted by the same lasso, and the clause's whole constraint does
-/// not suppress the `each` hint, which names `acq(1)` at loop position 0.
-#[trace("TC-534", "FR-133-AC-1")]
+/// FR-133-AC-1's `strong` (whole) half and FR-133-AC-5: under
+/// `fair strong acquire` the mutex is refuted by the same lasso, and the
+/// clause's whole constraint does not suppress the `each` hint, which names
+/// `acq(1)` at loop position 0 and no `Whole` hint for the held constraint.
+/// The same lasso under `strong each` is refused by replay `UnfairLasso`, so
+/// no replay result carries a hint, and its EN-1 settlement carries none.
+#[trace("TC-534", "FR-133-AC-1", "FR-133-AC-5")]
 #[test]
 fn the_strong_whole_mutex_refutation_carries_the_same_hint() {
     let fixture = mutex("fair strong M::Counter::setTo;");
@@ -318,6 +321,30 @@ fn the_strong_whole_mutex_refutation_carries_the_same_hint() {
         .prefix
         .iter()
         .all(|step| step.transition != *identity));
+    assert!(identity.operation().contains("Counter/setTo"));
+    assert_eq!(
+        identity.arguments(),
+        [r#"{"type":"integer","value":"1"}"#],
+        "acq(1)"
+    );
+
+    let (each, payload) =
+        crate::strong_fairness::mutex_lasso_for(crate::strong_fairness::STRONG_EACH);
+    let refused = crate::lasso_replay::replay_with(&each, payload.clone(), is_one);
+    assert!(
+        matches!(refused, Err(qsl_replay::ReplayRefusal::UnfairLasso { .. })),
+        "{refused:?}"
+    );
+    let record = crate::strong_fairness::settle_en1(
+        &each,
+        &ModelCheckOutcome::Violated {
+            counterexample: Box::new(payload),
+            stats: Default::default(),
+        },
+        is_one,
+    );
+    assert!(record.hints.is_empty(), "{:?}", record.hints);
+    assert!(record.counterexample.is_none());
 }
 
 /// The hints come in the model's operation order: by the declaring type's
