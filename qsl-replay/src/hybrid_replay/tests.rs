@@ -747,10 +747,12 @@ mod settlement {
     };
     use crate::model_check::limits::ModelCheckLimit;
     use crate::proof_result::{
-        read_first_party_solver_basis, read_plugin_inconclusive_cause_over, AppliedReduction,
-        Certification, IncompleteCause, InconclusiveCause, PluginResultRefusal, ProofBasis,
-        Proviso, TerminalRecord, TerminalValue, ValueFault,
+        read_first_party_solver_basis, read_plugin_hybrid_counterexample,
+        read_plugin_inconclusive_cause_over, AppliedReduction, Certification, IncompleteCause,
+        InconclusiveCause, PluginResultRefusal, ProofBasis, Proviso, TerminalRecord, TerminalValue,
+        ValueFault,
     };
+    use crate::result::{DisagreementCause, HybridTraceDisagreement};
     use qsl_foundation::{BackendId, RequestIndex};
     use quire_exact::LimitKind;
     use serde_json::{json, Value};
@@ -1021,6 +1023,94 @@ mod settlement {
                 pointer: "/cause/replay".to_owned()
             })
         );
+    }
+
+    /// FR-290-AC-19: provider formula counterexamples are strictly read
+    /// against the routed model before exact replay settles them.
+    #[trace("TC-1221", "FR-290-AC-19")]
+    #[test]
+    fn provider_formula_counterexample_is_read_and_exactly_settled() {
+        let unit = braking_unit(FLOW, "v = 0");
+        let model = &unit.graph.hybrid_models()[0];
+        let entry = json!({"counterexample": {
+            "type": "hybrid-counterexample",
+            "kind": "formula",
+            "trace": trace_json(),
+        }});
+        let input = HybridCounterexample {
+            kind: HybridCounterexampleKind::Formula,
+            trace: braking_trace(10, 0),
+        };
+        assert_eq!(
+            read_plugin_hybrid_counterexample(&entry, Some(model)),
+            Ok(input.clone())
+        );
+        assert_eq!(
+            read_plugin_hybrid_counterexample(&entry, None),
+            Err(PluginResultRefusal::MissingCounterexample {
+                pointer: "/counterexample/type".to_owned(),
+                cause: ValueFault::InvalidValue,
+            })
+        );
+        let mut undefined_kind = entry.clone();
+        undefined_kind["counterexample"]["kind"] = json!("undefined-evaluation");
+        assert_eq!(
+            read_plugin_hybrid_counterexample(&undefined_kind, Some(model)),
+            Err(PluginResultRefusal::Malformed {
+                pointer: "/counterexample/kind".to_owned(),
+                cause: ValueFault::InvalidValue,
+            })
+        );
+
+        let mut meter = HybridReplayMeter::new(u64::MAX);
+        let refuted = crate::hybrid::HybridSettlement::from_provider_counterexample(
+            &unit.graph,
+            claim(&unit, "Positive"),
+            input.clone(),
+            &mut meter,
+        )
+        .expect("the provider's formula counterexample reproduces");
+        assert_eq!(refuted.value, TerminalValue::Refuted);
+        assert_eq!(refuted.counterexample, Some(input.clone()));
+
+        let not_reproduced_input = HybridCounterexample {
+            kind: HybridCounterexampleKind::Formula,
+            trace: braking_trace(10, 1),
+        };
+        let not_reproduced = crate::hybrid::HybridSettlement::from_provider_counterexample(
+            &unit.graph,
+            claim(&unit, "Positive"),
+            not_reproduced_input.clone(),
+            &mut HybridReplayMeter::new(u64::MAX),
+        )
+        .expect("a non-reproducing provider trace settles inconclusive");
+        assert_eq!(
+            not_reproduced.value,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+                DisagreementCause::HybridTrace(HybridTraceDisagreement::NotReproduced {
+                    counterexample: Box::new(not_reproduced_input),
+                })
+            ))
+        );
+        assert_eq!(not_reproduced.counterexample, None);
+
+        let changed_model = braking_unit("v' = -v; a' = 0; t' = 1;", "v = 0");
+        let not_exact = crate::hybrid::HybridSettlement::from_provider_counterexample(
+            &changed_model.graph,
+            claim(&changed_model, "Positive"),
+            input.clone(),
+            &mut HybridReplayMeter::new(u64::MAX),
+        )
+        .expect("a non-exact provider trace settles inconclusive");
+        assert_eq!(
+            not_exact.value,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+                DisagreementCause::HybridTrace(HybridTraceDisagreement::NotExact {
+                    counterexample: Box::new(input),
+                })
+            ))
+        );
+        assert_eq!(not_exact.counterexample, None);
     }
 
     fn proof(method: SolverMethod, seconds: i64) -> SolverResult {
