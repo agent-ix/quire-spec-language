@@ -45,3 +45,11 @@ QSL-1038 also mentions an AC-11 half that needs two covering populations. The te
 - Stubs: none. `activation` returns `True` only for the unguarded clauses `clause_letters` admits, and `activation_reads` returns the empty set for the same clauses, which is the modelled answer.
 - Semantic review: done inline, without fan-out, through the red checks recorded in SR-16618.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, verified against d5762e3d0d49ff9d9b58cd1245038ec82f0cb13e. `quire matrix --scope . --format json` was rerun with quire 0.36.2.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open: the binding survives through the doc comment | `#[trace]` now reads `("TC-520")` only, but `quire matrix` still reports FR-125-AC-12 `tagged`, binding `a_key_holding_no_object_of_the_type_reads_absent_key` at model_instances.rs:733. The test's doc comment opens with `/// FR-125-AC-12, with ...` (line 722), and the matrix takes that id as a binding. Rewording the opening to `/// AC-12 (partial), with ...` in a throwaway copy made the matrix report FR-125-AC-12 `untagged`. Fix: remove the `FR-125-AC-12` id from that doc comment, then confirm `untagged` with `quire matrix`. |

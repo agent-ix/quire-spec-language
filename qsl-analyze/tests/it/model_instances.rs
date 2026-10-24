@@ -719,7 +719,7 @@ fn the_bound_parameter_reads_as_the_reference_of_the_object_held_under_its_key()
     assert_eq!(readings, [[AtomReading::True], [AtomReading::True]]);
 }
 
-/// FR-125-AC-12, with `animals` (`Animal`, universe `[k, t]`, a `Dog` under
+/// AC-12 (partial), with `animals` (`Animal`, universe `[k, t]`, a `Dog` under
 /// `k` and a `Cat` under `t`) the one population that covers `Dog`: the
 /// instances of `over (x: Dog)` are `k` and `t`; `k` reads as the `Dog`
 /// reference, and the object `t` holds, a `Cat`, reads `absent-key`

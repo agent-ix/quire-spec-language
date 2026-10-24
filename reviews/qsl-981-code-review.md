@@ -60,3 +60,15 @@ Red checks, run in a throwaway worktree:
 - Reverting the production change (model.rs and letters.rs back to main) makes the new tests fail to compile, with no `clause_letters`.
 - Binding only within `instance.population` fails the FR-125-AC-11 test, at the P1/P2 shared key `c`.
 - Dropping the type-conformance check fails the FR-125-AC-12 test, because `t`'s `Cat` is then read as bound.
+
+## Dispositions
+
+Round 1, verified against d5762e3d0d49ff9d9b58cd1245038ec82f0cb13e.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred: QSL-1039 | The deferral is acceptable. `check_model` has no caller outside tests. The `ClauseLetters` and `clause_letters` docs forbid a production `check_model` caller before QSL-1039 lands. Every panic message names QSL-1039, and the line-171 message now reads "the `holds` condition was refused or completed no Boolean". The refusals cannot be detected in advance, because they depend on states reached later. |
+| FND-002 | deferred: QSL-1038 | Documented on `ClauseLetters` (letters.rs:55-58) and recorded in a QSL-1038 comment. That comment cites SR-16619 where it should cite SR-16618, which is cosmetic. |
+| FND-003 | fixed | model_subject.rs:86-92 now says the reference is the one "held under the instance's key by the first population that overlaps the parameter's type and holds there an object conforming to it", which matches `ClauseLetters::bound`. |
+| FND-004 | fixed | The new test `letters_refuse_a_non_reference_over` asserts `Some(LettersRefusal::OverNotReference)`. `GuardedActivation` and its check were removed, and I verified that the check was dead. `TemporalClauseNode` has private fields and is built only by the package check. That check pushes `not_emitted` for any clause `is_emitted` rejects (qsl-semantics/src/check/mod.rs:2554), and `is_emitted` admits only `ActivationForm::Origin`. A guarded `on each` clause therefore cannot reach `clause_letters`. QSL-1037's description still says `clause_letters` refuses such a clause with `GuardedActivation`, so it needs updating. |
+| FND-005 | deferred: QSL-1039 | Documented on `ClauseLetters` (letters.rs:50-53) as owned by QSL-1039, but QSL-1039's ticket text does not list it yet; add it there. |
