@@ -59,3 +59,12 @@ departs from the AC's literal premise, and that needs a spec ruling.
 - Stubs / coverage inflation: none.
 - Semantic review: run (dispatching brief), FR-220-AC-15 only.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, verified against `9e04f511976f8279747935487477475f379859fd`. `quire matrix --scope .` at that sha: FR-220-AC-15 `tagged`, binder `weak_memory.rs:806`. The tagged test and the new tests pass (`qsl-analyze --test it` 728 passed).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-1040 (spec ruling on AC-15's "Cell z"). The test doc now records that it realises the AC's intent, not its letter. |
+| FND-002 | fixed | The AC-15 test no longer asserts `transition`. The order and the reader's `None` are pinned by an untagged test documented as lead defaults pending QSL-1040, so no AC tag binds them. |
