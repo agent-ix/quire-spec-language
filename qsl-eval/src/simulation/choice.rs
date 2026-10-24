@@ -399,6 +399,28 @@ mod tests {
         }
     }
 
+    /// FR-188-AC-7: weights that are empty, hold a zero or hold a negative
+    /// are refused with the offending index, and no digest is computed.
+    #[trace("TC-623", "FR-188-AC-7")]
+    #[test]
+    fn weights_that_are_not_positive_are_refused_with_no_digest() {
+        let weight = |numerator: i64, denominator: i64| {
+            Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("nonzero")
+        };
+        assert_eq!(
+            weighted_choice_counted(at(0), &[]),
+            (Err(WeightsRefusal::Empty), 0)
+        );
+        assert_eq!(
+            weighted_choice_counted(at(0), &[weight(1, 1), weight(0, 1)]),
+            (Err(WeightsRefusal::NotPositive { index: 1 }), 0)
+        );
+        assert_eq!(
+            weighted_choice_counted(at(0), &[weight(1, 1), weight(-1, 2)]),
+            (Err(WeightsRefusal::NotPositive { index: 1 }), 0)
+        );
+    }
+
     /// FR-188-AC-5: weights `(2^256 − 1, 1)` scale to the total `2^256`,
     /// which accepts every draw: each choice computes exactly one digest and
     /// selects index 1 only when `v` is the last value below `2^256`.

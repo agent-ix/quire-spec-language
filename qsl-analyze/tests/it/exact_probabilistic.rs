@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
     build_product, Accumulator, Amount, FormulaState, MeasurePhase, MonitorState, MonitorVerdict,
-    PredicateRole, ProbBuild, ProbEdge, ProbProduct, ProbStateId, ProductAction, ProductKind,
-    ProductRefusal, ProductStop, UndefinedRead,
+    PredicateRole, ProbBuild, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction,
+    ProductKind, ProductRefusal, ProductStop, UndefinedRead,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -1242,6 +1242,10 @@ fn statistical_evidence_is_refused_for_a_claim_only_exact_evidence_decides() {
     );
 }
 
+const ACTIVATED_AT_TERMINAL: &str = "probabilistic Late using ev on M over (m: M::Msg) under Even \
+     on origin { probability >= 0.5 [ steps from holds(m.delivered) \
+     until holds(not m.delivered) within 4 <= 10 ] }";
+
 const HORIZON: &str =
     "probabilistic Idle using ev on M over (s: M::Server) under Steady on origin \
      { probability >= 0.5 [ steps from holds(s.phase = 1 and s.attempts = 2) \
@@ -1249,9 +1253,12 @@ const HORIZON: &str =
      probabilistic Source using ev on M over (s: M::Server) under Steady on origin \
      { probability >= 0.5 [ fraction holds(s.phase = 0) over [0, 2] >= rational(1, 2) ] }";
 
-/// Checks FR-196 "Behavior": a measure whose `A` never holds is unactivated when the
-/// window ends, decided with amount zero; a fraction reads its predicate at
-/// the position the step leaves, not at the position it reaches.
+/// Checks FR-196 "Behavior" (TC-631): a `steps` measure whose `A` never holds ends
+/// every path at `Measure{remaining: 0, phase: Unactivated}` with accumulator
+/// `Steps{activated: false, amount: 0}`, decided and not expanded; a `steps`
+/// measure activated at a terminal model state counts each stutter step up to
+/// its horizon; a fraction reads its predicate at the position the step
+/// leaves, not at the position it reaches.
 #[trace("TC-631")]
 #[test]
 fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
@@ -1279,6 +1286,15 @@ fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
             })
         );
     }
+    // Every path ends there, and a decided state is not expanded.
+    for state in idle.ids() {
+        assert_eq!(
+            idle.outgoing(state).is_empty(),
+            is_decided(&idle, state),
+            "{:?}",
+            idle.states[state.index()]
+        );
+    }
 
     // Idle holds only at the first position; the positions reached never do.
     let source = built(&world, "Source");
@@ -1297,6 +1313,52 @@ fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
             .collect(),
     );
     assert_eq!(complete, [(1, 3)]);
+
+    // `Late` activates where the message is delivered, a terminal model
+    // state: each stutter step from there adds one step until the window
+    // ends censored.
+    let late = World::new(&prob_world::link(ACTIVATED_AT_TERMINAL));
+    let product = built(&late, "Late");
+    let steps = |state: ProbStateId| match &product.states[state.index()] {
+        ProbKey {
+            monitor: Some(MonitorState::Measure { remaining, .. }),
+            accumulator: Some(Accumulator::Steps { activated, amount }),
+            ..
+        } => (*remaining, *activated, amount.clone()),
+        other => panic!("a steps measure: {other:?}"),
+    };
+    let activated_terminal: Vec<ProbStateId> = product
+        .edges
+        .iter()
+        .filter(|edge| matches!(edge.choice, ProductAction::TerminalStutter))
+        .map(|edge| edge.from)
+        .filter(|state| {
+            let (_, activated, amount) = steps(*state);
+            activated && amount == Amount::Exact(ratio(0, 1))
+        })
+        .collect();
+    assert!(!activated_terminal.is_empty());
+    for start in activated_terminal {
+        let mut chain = vec![steps(start)];
+        let mut at = start;
+        while let [edge] = product.outgoing(at) {
+            assert!(matches!(edge.choice, ProductAction::TerminalStutter));
+            at = edge.to;
+            chain.push(steps(at));
+        }
+        let remaining = chain[0].0;
+        let expected: Vec<_> = (0..=remaining)
+            .map(|taken| {
+                let amount = if taken == remaining {
+                    Amount::Censored
+                } else {
+                    Amount::Exact(ratio(i64::try_from(taken).expect("small"), 1))
+                };
+                (remaining - taken, true, amount)
+            })
+            .collect();
+        assert_eq!(chain, expected);
+    }
 }
 
 const LOOSE_COST: &str = "reward cost on Node::tick = 2;\n\
@@ -1362,21 +1424,27 @@ const BINDINGS: &str = "probabilistic Terminates using inf on M over (p: M::Proc
      under every scheduler on origin \
      { probability >= 0.99 [ eventually holds(p.done) ] }";
 
-/// Checks FR-196 "Behavior": the initial product states are each initial state per
-/// `over` binding, and the binding is part of a state's identity: the same
-/// model state under two bindings has different futures and labels.
-#[trace("TC-631")]
+/// Checks FR-196-AC-10 (TC-631): over a population of two live objects, a
+/// claim `over` the object type builds two initial product states for the
+/// subject's one initial state, one per binding; the same model state under
+/// the same monitor state and the two bindings is two product states whose
+/// keys differ in `binding`, and the two have different labels.
+#[trace("TC-631", "FR-196-AC-10")]
 #[test]
 fn each_over_binding_has_its_own_states() {
     let world = World::with_objects(&prob_world::process(BINDINGS), &["p", "q"]);
     let product = built(&world, "Terminates");
-    let [(_, first, a), (_, second, b)] = &product.initial[..] else {
+    let [(initial_a, first, a), (initial_b, second, b)] = &product.initial[..] else {
         panic!("one initial state per binding: {:?}", product.initial);
     };
+    assert_eq!(initial_a, initial_b, "both start at the one initial state");
     assert_ne!(a, b);
     assert!(first.is_some() && second.is_some() && first != second);
     assert_eq!(product.states[a.index()].binding, *first);
     assert_eq!(product.states[b.index()].binding, *second);
+    let (x, y) = (&product.states[a.index()], &product.states[b.index()]);
+    assert_eq!((&x.model, &x.monitor), (&y.model, &y.monitor));
+    assert_ne!(x, y);
     // One model state, two readings: where `p` is done and `q` is not.
     let differing = product.ids().any(|left| {
         product.ids().any(|right| {
@@ -1385,7 +1453,9 @@ fn each_over_binding_has_its_own_states() {
                 &product.states[right.index()],
             );
             x.model == y.model
+                && x.monitor == y.monitor
                 && x.binding != y.binding
+                && x != y
                 && product.labels[left.index()] != product.labels[right.index()]
         })
     });
