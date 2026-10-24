@@ -2594,7 +2594,9 @@ version = "0.1.0"
 dependencies = [
  "arch-lint",
  "ix-trace-rs",
+ "logos",
  "proc-macro2",
+ "qsl-cst",
  "qsl-foundation",
  "qsl-replay",
  "qsl-route",

@@ -600,10 +600,11 @@ fn a_replicated_role_a_channel_and_an_activation_build_as_written() {
     }
 }
 
-/// Verifies the parse only and claims no criterion.
-/// A `fence` control and a `parallel` with a `memory` clause
-/// build as protocol nodes beside the controls around them; the `memory`
-/// words do not become the parallel's name or join labels.
+/// A `parallel` with `memory tso` builds `Some(Tso)` with the span of its
+/// whole clause, and one with no `memory` clause builds `None`. A `fence`
+/// control builds as a protocol node beside the controls around it; the
+/// `memory` words do not become the parallel's name or join labels.
+#[trace("TC-888")]
 #[test]
 fn a_fence_and_a_memory_clause_build_beside_their_controls() {
     let run = format!(
@@ -630,9 +631,74 @@ fn a_fence_and_a_memory_clause_build_beside_their_controls() {
         .map(|declaration| declaration.name.name.as_str())
         .collect();
     assert_eq!(fences, ["Barrier"]);
+    let memory = parallel.memory.as_ref().expect("a memory clause");
+    assert_eq!(memory.value, MemoryModelName::Tso);
+    assert_eq!(slice(&text, memory.span), "memory tso");
+    let run = format!("sequence Main {{ parallel P {PARALLEL_BRANCHES} join all [a, b]; }}");
+    let unit = build(&source("", &run));
+    assert!(protocol(&unit).parallels[0].memory.is_none());
+    let [fence] = &form.fences[..] else {
+        panic!("one fence: {:?}", form.fences);
+    };
+    assert_eq!(fence.ordering.value, AccessOrdering::SeqCst);
+    assert_eq!(slice(&text, fence.ordering.span), "seq_cst");
+}
+
+/// FR-309-AC-2: an attempt written with `ordering release` builds
+/// `Some(Release)` with its span, and one with no ordering builds `None`; a
+/// `fence F1 ordering seq_cst;` between two attempts builds a `FenceForm`
+/// with `SeqCst`, as the second of three sibling controls.
+#[trace("TC-888", "FR-309-AC-2")]
+#[test]
+fn an_attempt_ordering_and_a_fence_between_attempts_are_built_as_written() {
+    let plain = source(
+        "",
+        &RUN.replacen("contracts", "ordering release contracts", 1),
+    );
+    let unit = build(&plain);
+    let form = protocol(&unit);
+    let [attempt] = &form.attempts[..] else {
+        panic!("one attempt: {:?}", form.attempts);
+    };
+    let ordering = attempt.ordering.as_ref().expect("an ordering");
+    assert_eq!(ordering.value, AccessOrdering::Release);
+    assert_eq!(slice(&plain, ordering.span), "release");
+
+    let unit = build(&source("", RUN));
+    assert!(protocol(&unit).attempts[0].ordering.is_none());
+
+    let attempt = |name: &str| {
+        format!(
+            "attempt {name} by R on Config::ConfigVersion::attemptUpdate contracts [] \
+             as (b{name}: Config::ConfigVersion) {{ true }};"
+        )
+    };
+    let run = format!(
+        "sequence Main {{ {} fence F1 ordering seq_cst; {} }}",
+        attempt("A1"),
+        attempt("A2")
+    );
+    let text = source("", &run);
+    let unit = build(&text);
+    let form = protocol(&unit);
+    let controls: Vec<(&str, ProtocolNodeKind)> = form
+        .declarations
+        .iter()
+        .filter(|declaration| {
+            matches!(
+                declaration.kind,
+                ProtocolNodeKind::Attempt | ProtocolNodeKind::Fence
+            )
+        })
+        .map(|declaration| (declaration.name.name.as_str(), declaration.kind))
+        .collect();
     assert_eq!(
-        parallel.memory.as_ref().map(|memory| memory.value),
-        Some(MemoryModelName::Tso)
+        controls,
+        [
+            ("A1", ProtocolNodeKind::Attempt),
+            ("F1", ProtocolNodeKind::Fence),
+            ("A2", ProtocolNodeKind::Attempt)
+        ]
     );
     let [fence] = &form.fences[..] else {
         panic!("one fence: {:?}", form.fences);
@@ -641,27 +707,39 @@ fn a_fence_and_a_memory_clause_build_beside_their_controls() {
     assert_eq!(slice(&text, fence.ordering.span), "seq_cst");
 }
 
-/// A `parallel` with no `memory` clause records none, and an attempt records
-/// the `ordering` it is written with and none when it has none.
+/// FR-309-AC-3: a field named `acquire` read in a guard builds an
+/// expression, not an ordering; `fence F ordering relaxed;` builds no
+/// `FenceForm` and refuses as a recovering CST, since `fence-order` does not
+/// admit `relaxed`; building one declaration twice gives equal forms.
+#[trace("TC-888", "FR-309-AC-3")]
 #[test]
-fn a_memory_default_and_an_attempt_ordering_are_built_as_written() {
-    let plain = source(
-        "",
-        &RUN.replacen("contracts", "ordering acq_rel contracts", 1),
-    );
-    let unit = build(&plain);
+fn a_memory_word_outside_its_position_is_an_identifier_and_a_relaxed_fence_refuses() {
+    let members = "terminal when { input.acquire };";
+    let text = source(members, RUN);
+    let unit = build(&text);
     let form = protocol(&unit);
-    let [attempt] = &form.attempts[..] else {
-        panic!("one attempt: {:?}", form.attempts);
+    let [ProtocolMemberForm::Terminal(TerminalForm::When { predicate, .. })] = &form.members[..]
+    else {
+        panic!("one terminal when: {:?}", form.members);
     };
-    let ordering = attempt.ordering.as_ref().expect("an ordering");
-    assert_eq!(ordering.value, AccessOrdering::AcqRel);
-    assert_eq!(slice(&plain, ordering.span), "acq_rel");
+    assert_eq!(expression_text(&text, predicate), "input.acquire");
+    assert!(form
+        .attempts
+        .iter()
+        .all(|attempt| attempt.ordering.is_none()));
+    assert!(form.fences.is_empty());
 
-    let unit = build(&source("", RUN));
-    assert!(protocol(&unit).attempts[0].ordering.is_none());
+    let relaxed = source("", "sequence Main { fence F ordering relaxed; }");
+    let parsed = parse(&relaxed);
+    assert!(
+        !parsed.cst().recoveries().is_empty(),
+        "S1 recovers at the relaxed fence"
+    );
+    match build_unit(&parsed) {
+        Err(refusal) => assert_eq!(refusal.cause, FormsCause::RecoveringCst),
+        Ok(unit) => panic!("a refusal, not {unit:?}"),
+    }
 
-    let run = format!("sequence Main {{ parallel P {PARALLEL_BRANCHES} join all [a, b]; }}");
-    let unit = build(&source("", &run));
-    assert!(protocol(&unit).parallels[0].memory.is_none());
+    let again = build(&text);
+    assert_eq!(protocol(&unit), protocol(&again));
 }
