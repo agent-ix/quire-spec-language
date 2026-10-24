@@ -538,6 +538,48 @@ fn okamoto_decides_a_mean_of_a_fraction_over_the_sample_mean() {
     assert_eq!(UnitFraction::try_from(ratio(5, 4)), Err(NotAFraction));
 }
 
+/// FR-189-AC-13: a sampler that returns event samples for a mean-of-fraction
+/// claim with Okamoto, `θ = 1/2`, `α = β = 1/3`, `ι = 2/5` and a non-strict
+/// bound needs `N = ⌈ln 3 / (2ι²)⌉ = 4` samples; with 3 of the 4 counted
+/// holding, the estimate is `3/4` and nothing is refused. A strict `Below`
+/// bound on a mean of a fraction is refused `StrictBound`.
+#[trace("TC-624", "FR-189-AC-13")]
+#[test]
+fn event_samples_of_a_mean_of_a_fraction_estimate_their_holding_share() {
+    let confidence = Confidence::new(ratio(1, 3), ratio(1, 3), ratio(2, 5)).expect("confidence");
+    let bound = |comparison| Bound {
+        comparison,
+        threshold: ratio(1, 2),
+    };
+    let claim = StatisticalClaim::new(
+        ClaimForm::MeanOfFraction,
+        bound(Comparison::AtLeast),
+        confidence.clone(),
+    )
+    .expect("a non-strict mean of a fraction");
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let outcome = check_sampled(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut ByInitial(|_, trace| Sample::Event(trace != 3)),
+        &Cancel::new(),
+    )
+    .expect("no refusal");
+    let verdict = completed(outcome);
+    assert_eq!(verdict.tests[0].samples, 4);
+    assert_eq!(verdict.tests[0].estimate, Some(ratio(3, 4)));
+    assert_eq!(verdict.estimate, Some(ratio(3, 4)));
+
+    assert_eq!(
+        StatisticalClaim::new(
+            ClaimForm::MeanOfFraction,
+            bound(Comparison::Below),
+            confidence
+        ),
+        Err(ClaimRefusal::StrictBound)
+    );
+}
+
 /// FR-189-AC-6's `Coin`: `v` starts 0 and each `flip` draws `b ~ {0: 1,
 /// 1: 1}` at choice 0; `1 / (1 − c.v)` is undefined at the first position
 /// with `v = 1`.
@@ -1642,8 +1684,11 @@ fn okamoto_refuses_a_fraction_for_a_probability_claim() {
     );
 }
 
-/// The `max_draws · m` trace-index check applies only to the interleaved
-/// methods: regenerative test `j` uses trace index `j` alone.
+/// FR-189-AC-14: the `max_draws · m` trace-index check applies only to the
+/// interleaved methods. Over two tests, a regenerative request with
+/// `max_draws` `u64::MAX` is not refused `TraceIndexRange`, since test `j`
+/// uses trace index `j` alone, and the same `max_draws` under Okamoto is.
+#[trace("TC-624", "FR-189-AC-14")]
 #[test]
 fn a_regenerative_request_is_not_refused_for_the_interleaved_trace_range() {
     let claim = long_run(Comparison::AtLeast, ratio(999, 1000));
@@ -1659,6 +1704,19 @@ fn a_regenerative_request_is_not_refused_for_the_interleaved_trace_range() {
     let verdict = completed(run(huge, &mut Identical));
     assert_eq!(verdict.decision, Decision::Accepted);
     assert_eq!(verdict.provenance.tests[1].traces.first, 1);
+
+    let event = p95();
+    let mut interleaved = request(&event, &tests, StatisticalMethod::Okamoto, &sampler);
+    interleaved.limits.max_draws = u64::MAX;
+    let mut probe = fixed(Ok(Sample::Event(true)));
+    assert_eq!(
+        check_sampled(interleaved, &mut probe, &Cancel::new()),
+        Err(StatisticalRefusal::TraceIndexRange {
+            max_draws: u64::MAX,
+            tests: 2
+        })
+    );
+    assert_eq!(probe.calls, 0);
 }
 
 /// `Service` with the steps of each sample: one step per attempt, drawing

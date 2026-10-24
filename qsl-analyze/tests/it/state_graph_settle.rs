@@ -378,7 +378,10 @@ fn altered_rank_certificates_never_settle_proved() {
     );
     assert_eq!(stopped.value.category(), Category::Incomplete);
     let reached = stopped.limit_reached.expect("the record names its limit");
-    assert_eq!((reached.limit.setting(), reached.value), ("max_states", 2));
+    assert_eq!(
+        (reached.limit.setting(), reached.value),
+        ("model_check.max_states", 2)
+    );
     assert_eq!(replays, 0, "no witness of a rejected certificate replays");
 }
 
@@ -905,7 +908,7 @@ fn horizon_limit_undecided_and_empty_runs_settle_their_rows() {
     );
     assert_eq!(
         stopped.limit_reached.map(|reached| reached.limit.setting()),
-        Some("max_states")
+        Some("model_check.max_states")
     );
 
     let guarded = config_world_over(

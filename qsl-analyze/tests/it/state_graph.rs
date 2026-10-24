@@ -615,7 +615,10 @@ fn an_overflowing_trace_index_and_a_cancellation_stop_before_any_walk() {
     let end = stopped_at(ModelCheckLimit::WitnessSamples, u64::MAX);
     assert_eq!(result.graph.end, end);
     assert!(result.graph.nodes.is_empty());
-    assert_eq!(ModelCheckLimit::WitnessSamples.setting(), "witness_samples");
+    assert_eq!(
+        ModelCheckLimit::WitnessSamples.setting(),
+        "model_check.witness_samples"
+    );
     for instance in &result.items[0] {
         assert_eq!(
             instance.outcome,
@@ -810,7 +813,10 @@ fn the_walk_budget_bounds_and_counts_each_walk() {
     let defaults = ModelCheckLimits::default();
     assert_eq!(defaults.max_walk_steps, DEFAULT_MAX_WALK_STEPS);
     assert_eq!(DEFAULT_MAX_WALK_STEPS, 4_096);
-    assert_eq!(ModelCheckLimit::MaxWalkSteps.setting(), "max_walk_steps");
+    assert_eq!(
+        ModelCheckLimit::MaxWalkSteps.setting(),
+        "model_check.max_walk_steps"
+    );
     let result = run(world.request(AB, vec![world.item("ReachesThree")], short_walks()));
     for instance in &result.items[0] {
         assert_eq!(instance.walks_stopped, 64);

@@ -805,6 +805,204 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
     assert_eq!(stopped.execution, Execution::ResourceIncomplete);
 }
 
+/// FR-127-AC-7 end to end through the settlement map, on FR-338's two-counter
+/// `{a, b}` vector. The accepted TP-1 certificate settles `proved`,
+/// `closed-scope`, `Proved{Exhaustive, Certified}`; the certificate with
+/// model state (1, 0) removed for instance `a` settles `inconclusive`,
+/// `unsettled`, `CertificateRejected{SuccessorMissing, (1, 0)}`. A graph
+/// budget of 2 states settles `Incomplete(LimitReached{max_states, 2})` whose
+/// record names `model_check.max_states`; a zero `work_units` meter settles
+/// `LimitReached{work_units, 0}` naming `accounting.work_units`; a requested
+/// and a deadline cancellation keep their source. None of the stops settles
+/// `CertificateRejected` (of any rule, `WitnessFails` included).
+#[trace("TC-522", "FR-127-AC-7")]
+#[test]
+fn a_certificate_check_settles_accepted_rejected_or_stopped_with_the_named_setting() {
+    let world = world(CONTRACT, &[("a", 0), ("b", 0)]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    let outcome = invariant.run(&world);
+    let package = invariant.package_id(&world);
+    let settle =
+        |outcome: &ModelCheckOutcome, limits: &ModelCheckLimits, meter, cancel: &Cancel| {
+            settle_model_check(
+                outcome,
+                limits,
+                &package,
+                &invariant.request(&world, meter),
+                cancel,
+                |_| panic!("a proof replays nothing"),
+            )
+        };
+    let defaults = ModelCheckLimits::default();
+
+    let accepted = settle(&outcome, &defaults, UNLIMITED, &Cancel::new());
+    assert_eq!(
+        accepted.value,
+        TerminalValue::Proved {
+            basis: ProofBasis::Exhaustive,
+            certification: Certification::Certified,
+        }
+    );
+    assert_eq!(
+        (accepted.label, accepted.basis),
+        (ResultLabel::Proved, SettlementBasis::ClosedScope)
+    );
+
+    let ModelCheckOutcome::Holds { certificate, stats } = &outcome else {
+        panic!("a proof");
+    };
+    let a = invariant.translation(&world.objects()[0]);
+    let at = ProductStateRef {
+        model_state: world.digest(&[1, 0]),
+        automaton_state: a.key(SafetyState::Carried).expect("encodes"),
+    };
+    let mut tampered = certificate.clone();
+    tampered.states.retain(|state| *state != at);
+    assert_eq!(tampered.states.len(), certificate.states.len() - 1);
+    let rejected = settle(
+        &ModelCheckOutcome::Holds {
+            certificate: tampered,
+            stats: *stats,
+        },
+        &defaults,
+        UNLIMITED,
+        &Cancel::new(),
+    );
+    assert_eq!(
+        rejected.value,
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::SuccessorMissing,
+            at: CertificateLocus::ProductState(at),
+        })
+    );
+    assert_eq!(
+        (rejected.label, rejected.basis),
+        (ResultLabel::Inconclusive, SettlementBasis::Unsettled)
+    );
+
+    let mut small = defaults;
+    small.limits.max_states = 2;
+    let max_states = settle(&outcome, &small, UNLIMITED, &Cancel::new());
+    let work_units = settle(&outcome, &defaults, ZERO, &Cancel::new());
+    let requested = Cancel::new();
+    requested.cancel(CancelCause::Requested);
+    let deadline = Cancel::new();
+    deadline.cancel(CancelCause::Deadline);
+    let cancelled_requested = settle(&outcome, &defaults, UNLIMITED, &requested);
+    let cancelled_deadline = settle(&outcome, &defaults, UNLIMITED, &deadline);
+
+    let meter = ModelCheckLimit::EvaluationMeter {
+        counter: quire_exact::LimitKind::WorkUnits,
+    };
+    let limit_stops = [
+        (
+            &max_states,
+            ModelCheckLimit::MaxStates,
+            2,
+            "model_check.max_states",
+        ),
+        (&work_units, meter, 0, "accounting.work_units"),
+    ];
+    for (record, limit, value, setting) in limit_stops {
+        assert_eq!(
+            record.value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached { limit, value })
+        );
+        assert_eq!(record.limit_reached, Some(ReachedLimit { limit, value }));
+        assert_eq!(limit.setting(), setting);
+    }
+    for (record, source) in [
+        (&cancelled_requested, CancelCause::Requested),
+        (&cancelled_deadline, CancelCause::Deadline),
+    ] {
+        assert_eq!(
+            record.value,
+            TerminalValue::Incomplete(IncompleteCause::Cancelled { source })
+        );
+        assert_eq!(record.limit_reached, None);
+    }
+    for stopped in [
+        &max_states,
+        &work_units,
+        &cancelled_requested,
+        &cancelled_deadline,
+    ] {
+        assert_eq!(stopped.execution, Execution::ResourceIncomplete);
+        assert!(!matches!(
+            stopped.value,
+            TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { .. })
+        ));
+    }
+}
+
+/// A cancellation that arrives after the package is bound, during the
+/// certificate check itself, settles `Incomplete(Cancelled{source})` with no
+/// limit and never `CertificateRejected`. The handle is cancelled from its
+/// observer at the last meter charge of the settlement, which the package
+/// emission alone does not reach.
+#[trace("TC-522")]
+#[test]
+fn a_cancellation_during_the_certificate_check_settles_cancelled() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, OnceLock};
+
+    let world = world(CONTRACT, &[("a", 0), ("b", 0)]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    let outcome = invariant.run(&world);
+    let package = invariant.package_id(&world);
+    let request = invariant.request(&world, UNLIMITED);
+    let settle = |cancel: &Cancel| {
+        settle_model_check(
+            &outcome,
+            &ModelCheckLimits::default(),
+            &package,
+            &request,
+            cancel,
+            |_| panic!("a proof replays nothing"),
+        )
+    };
+    let counted = |run: &dyn Fn(&Cancel)| {
+        let polls = Arc::new(AtomicU32::new(0));
+        let seen = Arc::clone(&polls);
+        run(&Cancel::observing(move || {
+            seen.fetch_add(1, Ordering::Relaxed);
+        }));
+        polls.load(Ordering::Relaxed)
+    };
+    let emission = counted(&|cancel| {
+        qsl_package::emit_checked_with_cancel(request.subject.simulation.package, cancel)
+            .expect("emits");
+    });
+    let total = counted(&|cancel| {
+        settle(cancel);
+    });
+    assert!(
+        total > emission,
+        "the check charges the meter after binding"
+    );
+
+    for source in [CancelCause::Requested, CancelCause::Deadline] {
+        let polls = Arc::new(AtomicU32::new(0));
+        let handle: Arc<OnceLock<Cancel>> = Arc::new(OnceLock::new());
+        let (seen, target) = (Arc::clone(&polls), Arc::clone(&handle));
+        let cancel = Cancel::observing(move || {
+            if seen.fetch_add(1, Ordering::Relaxed) + 1 == total {
+                if let Some(cancel) = target.get() {
+                    cancel.cancel(source);
+                }
+            }
+        });
+        assert!(handle.set(cancel.clone()).is_ok());
+        let record = settle(&cancel);
+        assert_eq!(cancel.cause(), Some(source));
+        assert_eq!(
+            record.value,
+            TerminalValue::Incomplete(IncompleteCause::Cancelled { source })
+        );
+        assert_eq!(record.limit_reached, None);
+    }
+}
+
 /// A budget or a cancellation stops the checker with the typed cause and
 /// never accepts: `max_states` 2, `max_transitions` 1 and
 /// `max_automaton_states` 0 name their limit and value, a zero evaluation
