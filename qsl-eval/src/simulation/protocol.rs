@@ -209,6 +209,16 @@ pub enum ProtocolRefusal {
     /// (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
     Unsupported(Unsupported),
+    /// A constraint of a node in a weak `parallel` reads through a form
+    /// QSpec FR-383 gives no footprint rule, so the model locations it reads
+    /// cannot be told (`unsupported_construct`/`not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: the constraint of node {node}: {refusal}")]
+    NodeFootprint {
+        /// The node, by its static declaration path.
+        node: String,
+        /// Why its reads have no footprint.
+        refusal: qsl_semantics::check::footprint::FootprintRefusal,
+    },
     /// An initial state's settling stopped: a guard's evaluation ran out of
     /// a budget, or broke.
     #[error("{}/{}: settling an initial state", .0.cause.code(), .0.cause.cause())]
@@ -231,7 +241,9 @@ impl ProtocolRefusal {
             | Self::OverBinding { .. }
             | Self::RolePopulation { .. }
             | Self::Memory(_) => Code::InvalidRuntimeInput,
-            Self::Unsupported(_) | Self::WeakAccessShape(_) => Code::UnsupportedConstruct,
+            Self::Unsupported(_) | Self::NodeFootprint { .. } | Self::WeakAccessShape(_) => {
+                Code::UnsupportedConstruct
+            }
             Self::InitialStop(stop) => {
                 Code::from_code(stop.cause.code()).unwrap_or(Code::RuntimeInvariant)
             }
@@ -247,7 +259,7 @@ impl ProtocolRefusal {
             | Self::RolePopulation { .. }
             | Self::Memory(_) => "invalid-value",
             Self::RoleMapping { .. } => "wrong-role-mapping",
-            Self::Unsupported(_) => "not-yet-implemented",
+            Self::Unsupported(_) | Self::NodeFootprint { .. } => "not-yet-implemented",
             Self::WeakAccessShape(_) => "weak-access-shape",
             Self::InitialStop(stop) => stop.cause.cause(),
             Self::Fault(_) => "established-invariant-broken",
@@ -661,6 +673,36 @@ pub fn explore_protocol<M: MemoryModel>(
     )
 }
 
+/// The `over` parameter's value: the reference to `over`'s key in its
+/// declared type's universe.
+pub(crate) fn over_value(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+    over: &ModelInstance,
+) -> Result<Value, ProtocolRefusal> {
+    let input = protocol
+        .slots
+        .binders
+        .first()
+        .filter(|binder| binder.node.is_none())
+        .ok_or_else(|| ProtocolRefusal::fault("a-protocol-has-an-over-input"))?;
+    let refused = || ProtocolRefusal::OverBinding {
+        parameter: input.name.clone(),
+        object: over.key.clone(),
+    };
+    let ValueType::Reference(object_type) = input.value_type else {
+        return Err(ProtocolRefusal::Unsupported(Unsupported::OverNotAnObject));
+    };
+    let instances = model.instances(&input.value_type).map_err(|_| refused())?;
+    if !instances.contains(over) {
+        return Err(refused());
+    }
+    model
+        .bound_reference(object_type, over)
+        .map(Value::Reference)
+        .map_err(|_| refused())
+}
+
 /// FR-220 "Sharing and classification" (ADR-025 MA-1, MA-2): EN-1's
 /// sharing and classification of every attempt of each `parallel` `memory`
 /// resolves weak, over the initial states of `model`. It reads no memory
@@ -669,23 +711,31 @@ pub fn explore_protocol<M: MemoryModel>(
 /// # Errors
 ///
 /// [`ProtocolRefusal`] when `memory` does not resolve the protocol's
-/// outermost `parallel` controls, for a construct this system does not
-/// step, or when an application has no footprint.
+/// outermost `parallel` controls; [`ProtocolRefusal::OverBinding`] or
+/// [`Unsupported::OverNotAnObject`] when `over`, the instance the
+/// protocol's `over` input is bound to, is not an object of the input's
+/// type; for a construct this system does not step; when an attempt's
+/// application has no footprint; and [`ProtocolRefusal::NodeFootprint`] when
+/// the constraint of an `event`, `effect`, `commit`, `send` or `receive`
+/// node of a weak `parallel` reads through a form with no footprint rule.
 pub fn classify_accesses(
     model: &ModelSystem<'_>,
     protocol: &CheckedProtocol,
     memory: &ResolvedMemory,
+    over: &ModelInstance,
 ) -> Result<WeakAccesses, ProtocolRefusal> {
     let governing = memory
         .governing(protocol)
         .map_err(ProtocolRefusal::Memory)?;
     let program = Program::new(protocol)?;
+    let over = over_value(model, protocol, over)?;
     access::classify(
         model,
         protocol,
         &program,
         &governing,
         model.initial().first(),
+        &over,
     )
 }
 
@@ -781,7 +831,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             }
             roles.push((role.name.clone(), binding.model.clone()));
         }
-        let over = Self::over_value(&model, protocol, &subject.over)?;
+        let over = over_value(&model, protocol, &subject.over)?;
         let governing = subject
             .memory
             .governing(protocol)
@@ -812,6 +862,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             &program,
             &governing,
             model.initial().first(),
+            &over,
         )?;
         if let Some(shape) = weak.first_shape() {
             return Err(ProtocolRefusal::WeakAccessShape(Box::new(shape)));
@@ -870,36 +921,6 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 Ok(objects)
             })
             .collect()
-    }
-
-    /// The `over` parameter's value: the reference to `over`'s key in its
-    /// declared type's universe.
-    fn over_value(
-        model: &ModelSystem<'_>,
-        protocol: &CheckedProtocol,
-        over: &ModelInstance,
-    ) -> Result<Value, ProtocolRefusal> {
-        let input = protocol
-            .slots
-            .binders
-            .first()
-            .filter(|binder| binder.node.is_none())
-            .ok_or_else(|| ProtocolRefusal::fault("a-protocol-has-an-over-input"))?;
-        let refused = || ProtocolRefusal::OverBinding {
-            parameter: input.name.clone(),
-            object: over.key.clone(),
-        };
-        let ValueType::Reference(object_type) = input.value_type else {
-            return Err(ProtocolRefusal::Unsupported(Unsupported::OverNotAnObject));
-        };
-        let instances = model.instances(&input.value_type).map_err(|_| refused())?;
-        if !instances.contains(over) {
-            return Err(refused());
-        }
-        model
-            .bound_reference(object_type, over)
-            .map(Value::Reference)
-            .map_err(|_| refused())
     }
 
     /// FO-3: for each initial model state, instance 0 with its root thread
