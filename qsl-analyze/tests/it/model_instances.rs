@@ -432,14 +432,11 @@ const P1: (&str, &[&str]) = ("P1", &["Lamp", "Switch"]);
 const P2: (&str, &[&str]) = ("P2", &["Thing"]);
 const Q: (&str, &[&str]) = ("Q", &["Other"]);
 
-// A checked clause names the one population that covers its `over` type, a
-// member type that is `T` or a proper supertype of it (FR-104), and S3 refuses
-// one that several cover (FR-336-AC-1). Admission is wider: a member type that
-// is `T`, a subtype or a supertype of it (FR-125). `over (x: Thing)` is covered
-// by `P2` alone and admitted by both `P1` (by its subtypes) and `P2`, so it is
-// the clause these tests read several admitting populations through; `P1` and
-// `P2` together both cover `Lamp`, so an `over (x: Lamp)` clause meets each of
-// them in a model without the other.
+// A checked clause ranges over every population that covers its `over` type, a
+// member type that is `T` or a proper supertype of it, and S3 admits several
+// (FR-125 Instancing). Admission by the subject is wider: a member type that
+// is `T`, a subtype or a supertype of it. `over (x: Thing)` is covered by `P2`
+// alone and admitted by both `P1` (by its subtypes) and `P2`.
 
 /// FR-125-AC-8 and FR-125-AC-10: `P1` declares `Lamp` and `Switch`, `P2`
 /// declares their supertype `Thing`, `Q` declares the unrelated `Other`.
@@ -762,7 +759,8 @@ impl World {
 /// `Thing`. The object is found by its key across the populations that
 /// overlap `Thing`: with `c` listed by `P1` and `P2` and the object held by
 /// `P2` alone, the instance (at `P1`, its first listing) reads
-/// `contains(allInstances<Thing>(P2), x)` true and the same of `P1` false.
+/// `contains(allInstances<Thing>(P2), x)` true, `P1` and `P2` both declaring
+/// `Thing`, so that both cover the clause's `over` type.
 #[trace("TC-520", "FR-125-AC-11")]
 #[test]
 fn the_bound_parameter_reads_as_the_reference_of_the_object_held_under_its_key() {
@@ -793,7 +791,11 @@ fn the_bound_parameter_reads_as_the_reference_of_the_object_held_under_its_key()
         ModelCheckOutcome::Holds { .. }
     ));
 
-    let shared = self::world(&[P1, P2], &[("P1", &[]), ("P2", &[("c", "Switch")])]);
+    const COVERING_P1: Declared<'_> = ("P1", &["Thing"]);
+    let shared = self::world(
+        &[COVERING_P1, P2],
+        &[("P1", &[]), ("P2", &[("c", "Switch")])],
+    );
     let both = || universes(&[("P1", &["c"]), ("P2", &["c"])]);
     let readings = shared.atom_readings(
         "Thing",
@@ -805,45 +807,69 @@ fn the_bound_parameter_reads_as_the_reference_of_the_object_held_under_its_key()
     assert_eq!(readings, [[AtomReading::True], [AtomReading::True]]);
 }
 
-/// AC-12 (partial), with `animals` (`Animal`, universe `[k, t]`, a `Dog` under
-/// `k` and a `Cat` under `t`) the one population that covers `Dog`: the
-/// instances of `over (x: Dog)` are `k` and `t`; `k` reads as the `Dog`
-/// reference, and the object `t` holds, a `Cat`, reads `absent-key`
-/// undefined, so the unguarded `x.age` refutes at `t` with an undefined
-/// evaluation. A subject whose only population holds only a `Cat` still has
-/// its instance and is not `NoInstance`. Not covered: the guard exception, and
-/// the half of the criterion that needs `dogs` beside `animals`, which S3
-/// refuses for a clause over `Dog` (two populations cover it).
-#[trace("TC-520")]
+/// FR-125-AC-12: `dogs` declares `Dog` (universe `[d]`) and `animals`
+/// `Animal` (universe `[k, t]`), holding a `Dog` under `k`, a `Cat` under `t`
+/// and a `Dog` under `d`. `over (x: Dog)` has the instances `k`, `t`, `d`,
+/// the clause is admitted with both populations covering `Dog`, `k` reads as
+/// the `Dog` reference, `t`'s `Cat` reads `absent-key` in every read through
+/// `x` and so refutes the unguarded `x.age`, while the atom `true` reads
+/// normally there. The guard `G` over both populations is false at `t` and true
+/// at `k` and `d`, and the guarded property holds; a guard over `animals`
+/// alone is false at `d`. A subject whose only population holds only a `Cat`
+/// still has its instance.
+#[trace("TC-520", "FR-125-AC-12")]
 #[test]
 fn a_key_holding_no_object_of_the_type_reads_absent_key() {
     let world = world(
-        &[("animals", &["Animal"])],
-        &[("animals", &[("k", "Dog"), ("t", "Cat")])],
+        &[("animals", &["Animal"]), ("dogs", &["Dog"])],
+        &[
+            ("animals", &[("k", "Dog"), ("t", "Cat")]),
+            ("dogs", &[("d", "Dog")]),
+        ],
     );
-    let bounded = || universes(&[("animals", &["k", "t"])]);
+    let bounded = || universes(&[("animals", &["k", "t"]), ("dogs", &["d"])]);
     let instances = world.instances("Dog", bounded()).expect("bounded");
     assert_eq!(
         instances,
-        vec![instance("animals", "k"), instance("animals", "t")]
+        vec![
+            instance("animals", "k"),
+            instance("animals", "t"),
+            instance("dogs", "d")
+        ]
     );
 
-    let readings = world.atom_readings(
-        "Dog",
-        "always (holds(exists(o in allInstances<M::Dog>(M::animals) : o = x)) \
-         and holds(x.age >= 0))",
-        bounded(),
-        &instances,
-    );
     let absent_key = AtomReading::Undefined(UndefinedCause::Family(UndefinedRecord {
         reason: UndefinedReason::AbsentKey,
         fields: BTreeMap::new(),
     }));
+    // The reading of the one atom of `always holds(<atom>)` at each instance.
+    let atom = |atom: &str| {
+        let mut readings = world.atom_readings(
+            "Dog",
+            &format!("always holds({atom})"),
+            bounded(),
+            &instances,
+        );
+        assert_eq!(readings.len(), 1);
+        readings.remove(0)
+    };
+    let (t, true_, false_) = (absent_key.clone(), AtomReading::True, AtomReading::False);
+    // k reads as the Dog reference the population yields; d, held by `dogs`,
+    // is no member of `animals`.
     assert_eq!(
-        readings,
-        vec![vec![AtomReading::True, absent_key.clone()]; 2],
-        "k reads as the Dog reference; t's Cat reads absent-key in every atom"
+        atom("exists(o in allInstances<M::Dog>(M::animals) : o = x)"),
+        [true_.clone(), t.clone(), false_.clone()]
     );
+    assert_eq!(
+        atom("exists(o in allInstances<M::Dog>(M::dogs) : o = x)"),
+        [false_.clone(), t.clone(), true_.clone()]
+    );
+    assert_eq!(
+        atom("x.age >= 0"),
+        [true_.clone(), t.clone(), true_.clone()]
+    );
+    // An atom that does not read x reads normally at the key of the Cat.
+    assert_eq!(atom("true"), [true_.clone(), true_.clone(), true_.clone()]);
 
     let unguarded = world
         .run_formula("Dog", "always holds(x.age >= 0)", bounded())
@@ -856,6 +882,43 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
         panic!("expected an undefined evaluation: {counterexample:?}");
     };
     assert_eq!(AtomReading::Undefined(evaluation.cause.clone()), absent_key);
+    assert!(matches!(
+        world
+            .run_formula("Dog", "always holds(true)", bounded())
+            .expect("checked"),
+        ModelCheckOutcome::Holds { .. }
+    ));
+
+    const IN_ANIMALS: &str = "present(lookup<M::Dog>(M::animals, x) absent empty)";
+    const IN_DOGS: &str = "present(lookup<M::Dog>(M::dogs, x) absent empty)";
+    let guard = format!("{IN_ANIMALS} or {IN_DOGS}");
+    // G is false at t and true at k and d.
+    assert_eq!(atom(&guard), [true_.clone(), false_.clone(), true_.clone()]);
+    // The guarded read evaluates at every instance.
+    assert_eq!(
+        atom(&format!("({guard}) implies x.age >= 0")),
+        vec![true_.clone(); 3]
+    );
+    // The animals-only guard is false at d, so the property it guards holds
+    // there vacuously, though it is false where the guard holds (k).
+    assert_eq!(
+        atom(IN_ANIMALS),
+        [true_.clone(), false_.clone(), false_.clone()]
+    );
+    assert_eq!(
+        atom(&format!("{IN_ANIMALS} implies x.age > 9")),
+        [false_.clone(), true_.clone(), true_.clone()]
+    );
+    assert!(matches!(
+        world
+            .run_formula(
+                "Dog",
+                &format!("always holds(({guard}) implies x.age >= 0)"),
+                bounded()
+            )
+            .expect("checked"),
+        ModelCheckOutcome::Holds { .. }
+    ));
 
     let cats = self::world(&[("animals", &["Animal"])], &[("animals", &[("t", "Cat")])]);
     let only = || universes(&[("animals", &["t"])]);
@@ -863,11 +926,6 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
         cats.instances("Dog", only()).expect("bounded"),
         vec![instance("animals", "t")]
     );
-    assert!(matches!(
-        cats.run_formula("Dog", "always holds(x.age >= 0)", only())
-            .expect("checked"),
-        ModelCheckOutcome::Violated { .. }
-    ));
 }
 
 /// `ModelSystem::clause_letters` refuses a clause whose `over` parameter is

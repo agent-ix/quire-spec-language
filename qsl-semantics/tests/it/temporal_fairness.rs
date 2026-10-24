@@ -364,10 +364,14 @@ fn clauses_over_a_model_subject_classify_into_their_property_form() {
                 &[WireNodeId::from_digest([2; 32])],
                 // The population's key is FR-336's test; this one reads the
                 // formula's domain.
-                claim.population().map(|_| DomainKey::Population {
-                    member_type: WireNodeId::from_digest([3; 32]),
-                    ordinal: 0,
-                }),
+                &claim
+                    .populations()
+                    .iter()
+                    .map(|_| DomainKey::Population {
+                        member_type: WireNodeId::from_digest([3; 32]),
+                        ordinal: 0,
+                    })
+                    .collect::<Vec<_>>(),
                 &[],
             )
             .expect("the record is keyed");
@@ -436,10 +440,10 @@ fn a_clauses_requirements_carry_its_fairness_kinds() {
                 &[WireNodeId::from_digest([2; 32])],
                 // The clauses are over `ConfigVersion`, whose population is
                 // unbounded: the caller keys it.
-                Some(DomainKey::Population {
+                &[DomainKey::Population {
                     member_type: WireNodeId::from_digest([3; 32]),
                     ordinal: 0,
-                }),
+                }],
                 &[],
             )
             .expect("the record is keyed")

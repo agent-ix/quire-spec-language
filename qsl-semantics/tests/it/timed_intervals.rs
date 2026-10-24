@@ -293,10 +293,10 @@ fn a_punctual_interval_is_unsupported_outside_a_bounded_window() {
         .requirements(
             qsl_foundation::digest::WireNodeId::from_digest([1; 32]),
             &[qsl_foundation::digest::WireNodeId::from_digest([2; 32])],
-            Some(qsl_foundation::bound::DomainKey::Population {
+            &[qsl_foundation::bound::DomainKey::Population {
                 member_type: qsl_foundation::digest::WireNodeId::from_digest([3; 32]),
                 ordinal: 0,
-            }),
+            }],
             &[],
         )
         .expect("the record is keyed");

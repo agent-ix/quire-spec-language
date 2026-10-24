@@ -10,26 +10,25 @@
 //! by comparing the whole reference.
 //!
 //! Where no such object conforms to the parameter's type, or none is held
-//! under the key, every atom of the clause reads `absent-key` undefined, as
-//! a state-graph predicate does. The guard exception of FR-125 (a
-//! `lookup<T>(p, x)` that is absent rather than undefined at such a key)
-//! is not read here: the evaluator gives a read through a reference to no
-//! object no `absent-key` value to guard against.
+//! under the key, the clause is evaluated with the parameter at that key: a
+//! read through it is `absent-key` undefined, but its use as the reference
+//! operand of a `lookup<T>(p, x)`, the guard, is not, so the guard is false
+//! where `p` holds no conforming object under the key (FR-125 Instancing). An
+//! atom that does not read the parameter is evaluated normally.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::{CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, Incomplete, Meter, ObjectReference, ValueType};
-use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
 
 use super::contracts::{verdict, Verdict};
 use super::walk::{walk_of, Walk};
 use super::{ClauseOutcome, ModelSimState, ModelSystem};
 use crate::model_subject::{ModelInstance, ModelLetters};
-use crate::temporal::{AtomReading, UndefinedCause};
-use crate::value::evaluate_state_predicate;
+use crate::temporal::AtomReading;
+use crate::value::{evaluate_state_predicate, evaluate_state_predicate_at_absent_key};
 
 /// Why a clause has no [`ClauseLetters`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -52,10 +51,6 @@ pub enum LettersRefusal {
 /// recomputed per call) and charges the engine's meter only for the
 /// evaluation itself, not the observation; QSL-1039 owns both.
 ///
-/// A key with no conforming object makes every atom of the clause read
-/// `absent-key` undefined, including an atom that does not read the
-/// parameter (FR-125 says "every read through the bound parameter"); QSL-1038
-/// owns the exact rule.
 pub struct ClauseLetters<'s, 'a> {
     system: &'s ModelSystem<'a>,
     node: &'s TemporalClauseNode,
@@ -131,6 +126,23 @@ impl ClauseLetters<'_, '_> {
     }
 }
 
+impl ClauseLetters<'_, '_> {
+    /// The reference of the parameter's type under `instance`'s key, which no
+    /// object of the state need hold.
+    fn key_reference(&self, instance: &ModelInstance) -> ObjectReference {
+        self.system
+            .model
+            .type_key(self.parameter)
+            .and_then(|type_key| {
+                self.system
+                    .model
+                    .object_reference(type_key, &instance.key)
+                    .ok()
+            })
+            .unwrap_or_else(|| panic!("QSL-1039: the parameter's type is an object type"))
+    }
+}
+
 impl ModelLetters for ClauseLetters<'_, '_> {
     /// # Panics
     ///
@@ -150,21 +162,24 @@ impl ModelLetters for ClauseLetters<'_, '_> {
         });
         let walk = walk_of(self.system, state, None)
             .unwrap_or_else(|stop| panic!("QSL-1039: the state is observable: {stop:?}"));
-        let Some(bound) = self.bound(&walk, instance) else {
-            return Ok(AtomReading::Undefined(UndefinedCause::Family(
-                UndefinedRecord {
-                    reason: UndefinedReason::AbsentKey,
-                    fields: BTreeMap::new(),
-                },
-            )));
-        };
-        let evaluation = evaluate_state_predicate(
-            self.system.package,
-            &Condition { body, slots },
-            &walk.observation.environment,
-            Some(bound),
-            meter,
-        )
+        let condition = Condition { body, slots };
+        let evaluation = match self.bound(&walk, instance) {
+            Some(bound) => evaluate_state_predicate(
+                self.system.package,
+                &condition,
+                &walk.observation.environment,
+                Some(bound),
+                meter,
+            ),
+            None => evaluate_state_predicate_at_absent_key(
+                self.system.package,
+                &condition,
+                &walk.observation.environment,
+                self.key_reference(instance),
+                instance.population.node.clone(),
+                meter,
+            ),
+        }
         .unwrap_or_else(|fault| panic!("QSL-1039: the evaluator does not fault: {fault:?}"));
         match verdict(&evaluation.outcome) {
             Verdict::True => Ok(AtomReading::True),
