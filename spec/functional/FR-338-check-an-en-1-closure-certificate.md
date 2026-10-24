@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-126
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-225
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: references
   - target: ix://agent-ix/quire-specification/FR-370
@@ -57,6 +59,18 @@ claims and finds every successor inside it and no bad state.
   `ModelCheckRequest.smt_encoding` (FR-126), under which CG's SMT backend
   encoded the item's queries. EN-1's own checks read no member of it.
 - A `ClosureCertificate`.
+
+For a protocol subject, the checker request SHALL carry both memory bounds:
+
+```rust
+pub struct ProtocolCertificateRequest<'a> {
+    pub subject: ProtocolSubject<'a>,
+    pub item: ModelCheckItem<'a>,
+    pub max_store_buffer: Option<u64>, // None means 4 (FR-225)
+    pub max_messages: Option<u64>,     // None means 4 (FR-225)
+    pub max_live_instances: Option<u64>, // None means 3 (ADR-027 AE-4)
+}
+```
 
 ```rust
 pub struct ProductStateRef {
@@ -876,6 +890,10 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
 - The checker SHALL NOT refuse a request for its memory bounds and SHALL
   NOT compare them with the run's: they are method parameters outside the
   obligation identity (FR-225), and the closure check decides.
+- `ProtocolCertificateRequest` SHALL carry `max_store_buffer` and
+  `max_messages` independently, with the values used by the run; `None`
+  means the corresponding FR-225 default of 4. The checker SHALL use
+  `max_store_buffer` for `tso` and `max_messages` for `ra`.
 - If a reached state is bound-limited under the request's bounds, an
   enabled store that the bound cuts (FR-225), then the checker SHALL reject
   with `SuccessorMissing` at that product state: the cut store's successor
@@ -939,7 +957,7 @@ Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md),
   [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (the certificate's producer), [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
-  (the settlement that runs the check).
+  (the settlement that runs the check), FR-225 (memory-bound values and defaults).
 
 ## References
 
