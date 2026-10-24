@@ -461,13 +461,11 @@ fn a_cancelled_replay_is_refused_as_cancelled() {
     );
 }
 
-/// Checks FR-193-AC-5 (TC-628 step 5): `Service` and `Health` are each
-/// refused at S4, `emit_checked` naming `not-yet-implemented`, and the
-/// witnesses of the `2 ms` claim over `Service` and of the fault claim over
-/// `Health` replay `Reproduced` over their checked subjects all the same,
-/// `replay_sampled_witness` taking only the checked subject, the provenance
-/// and the witness.
-#[trace("TC-628", "FR-193-AC-5")]
+/// Checks TC-628 step 5: `Service` and `Health` are each refused at S4,
+/// `emit_checked` naming `not-yet-implemented`, and the witnesses of the
+/// `2 ms` claim over `Service` and of the fault claim over `Health` replay
+/// `Reproduced` over their checked subjects all the same.
+#[trace("TC-628")]
 #[test]
 fn witnesses_replay_over_a_subject_whose_package_s4_refuses() {
     let refused = |world: &World| {

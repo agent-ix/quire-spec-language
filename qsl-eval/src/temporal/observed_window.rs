@@ -75,6 +75,7 @@ impl<'a> ObservedWindowSource<'a> {
     }
 
     /// The outcome of `expression` at `position`.
+    #[deny(clippy::wildcard_enum_match_arm)]
     fn read(
         &mut self,
         expression: &CheckedExpression,

@@ -28,7 +28,10 @@
 //! for every position it reads. The values a window gathers are kept, and a
 //! window that would hold more than the run's `max_window_values` stops the
 //! evaluation. A quantile sorts the gathered values once; that sort is
-//! bounded by `max_window_values` and is not charged separately.
+//! bounded by `max_window_values` and is not charged separately. A position
+//! whose value is undefined holds no value, so the undefined position is
+//! reported and not the overflow it would otherwise have been the last to
+//! reach.
 
 use std::cmp::Ordering;
 
@@ -455,15 +458,18 @@ impl AggregateAtom {
                 WindowRead::Defined(false) => continue,
                 WindowRead::Undefined(cause) => return Ok(AtomReading::Undefined(cause)),
             }
+            if let Some(cause) = gathered.take(source, at, meter)? {
+                return Ok(AtomReading::Undefined(cause));
+            }
+            // A position whose value or predicate is undefined holds no value,
+            // so it is not an overflow; the first position past the limit
+            // that holds one is.
             if count >= max_window_values {
                 return Err(LetterStop::WindowLimit(WindowLimitReached::at(
                     max_window_values,
                 )));
             }
             count += 1;
-            if let Some(cause) = gathered.take(source, at, meter)? {
-                return Ok(AtomReading::Undefined(cause));
-            }
         }
         if count < self.term.min_count {
             return Ok(AtomReading::Undefined(UndefinedCause::InsufficientData(

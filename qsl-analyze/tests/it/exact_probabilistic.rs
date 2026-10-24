@@ -1253,13 +1253,13 @@ const HORIZON: &str =
      probabilistic Source using ev on M over (s: M::Server) under Steady on origin \
      { probability >= 0.5 [ fraction holds(s.phase = 0) over [0, 2] >= rational(1, 2) ] }";
 
-/// Checks FR-196-AC-11 (TC-631): a `steps` measure whose `A` never holds ends
+/// Checks FR-196 "Behavior" (TC-631): a `steps` measure whose `A` never holds ends
 /// every path at `Measure{remaining: 0, phase: Unactivated}` with accumulator
 /// `Steps{activated: false, amount: 0}`, decided and not expanded; a `steps`
 /// measure activated at a terminal model state counts each stutter step up to
 /// its horizon; a fraction reads its predicate at the position the step
 /// leaves, not at the position it reaches.
-#[trace("TC-631", "FR-196-AC-11")]
+#[trace("TC-631")]
 #[test]
 fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
     let world = World::new(&prob_world::service(HORIZON));

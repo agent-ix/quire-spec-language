@@ -5,9 +5,9 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, AggregateAtom, AggregateKind, AggregateTerm, AtomReading, InsufficientData,
-    LetterStop, ObservedWindowExpressions, ObservedWindowSource, PastWindow, TemporalLetters,
-    TemporalOutcome, TemporalPosition, TemporalTrace, TermRefusal, UndefinedCause,
+    evaluate, AggregateAtom, AggregateKind, AggregateTerm, AtomReading, HoldsStop,
+    InsufficientData, LetterStop, ObservedWindowExpressions, ObservedWindowSource, PastWindow,
+    TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace, TermRefusal, UndefinedCause,
     UndefinedEvaluation, WindowLimitReached, WindowRead, WindowRefusal, WindowSource, WindowTrace,
     DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
 };
@@ -25,7 +25,7 @@ use quire_exact::{
     ObjectId, ObjectReference, Presence, Rational, RationalDomain, ScalarLimits, Undefined,
     UniverseId, Value, ValueType,
 };
-use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::{Category, InternalFault};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -929,7 +929,9 @@ fn atom_of(
 }
 
 /// FR-194-AC-5: over `x` values `2, 1, 0, 4`, read from the observed
-/// objects by the production source, an undefined value, filter or
+/// objects by the production source (the filter and predicate are written
+/// `6 / e.x > e.one`, `one` being a field that holds 1, because the checker
+/// cannot type `> 1` against a quotient), an undefined value, filter or
 /// predicate makes the atom undefined with its cause at the first undefined
 /// position, ahead of any sum and of `min_count`; a guarded filter keeps it
 /// defined; the clause is undefined at the first position whose atom is, in
@@ -1059,13 +1061,18 @@ fn an_undefined_value_filter_or_predicate_stops_the_window_at_its_first_position
         &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
     )
     .expect("the trace is readable");
-    assert!(matches!(
-        &outcome,
+    // The guarded sum holds one value at position 0, the first position the
+    // clause reads, against a `min_count` of 5.
+    assert_eq!(
+        outcome,
         TemporalOutcome::Undefined(UndefinedEvaluation {
-            cause: UndefinedCause::InsufficientData(_),
-            ..
+            at: TemporalPosition::new(0),
+            cause: UndefinedCause::InsufficientData(InsufficientData {
+                count: 1,
+                min_count: 5
+            }),
         })
-    ));
+    );
     assert_eq!(outcome.category(), Category::Undefined);
 
     // `past[2, 3]` at position 3 holds positions 0 and 1 only, with no zero.
@@ -1178,4 +1185,162 @@ fn the_window_is_read_oldest_first_and_charges_only_the_positions_visited() {
     )
     .expect("the window is within the limit");
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 20);
+}
+
+/// `ObservedWindowSource` reads each kind of expression result at a trace
+/// position: an integer value is a number, a non-Boolean condition is a
+/// fault and not a `false`, a missing expression is a fault, a position
+/// without an environment is a fault, a failed call or a refused result
+/// stops the run with its record kept, and an exhausted budget is
+/// `Incomplete`.
+#[trace("TC-629")]
+#[test]
+fn the_observed_source_reads_numbers_and_faults_on_anything_else() {
+    let fault = |code: &'static str| {
+        LetterStop::Fault(InternalFault::new("temporal.observed-window", code))
+    };
+    let at = TemporalPosition::new;
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let observed = Observed::new(&[2, 1, 0, 4]);
+    let integer = observed.check(&x(), None);
+
+    // An integer value is the rational of the same number.
+    let numbers = ObservedWindowExpressions {
+        value: Some(&integer),
+        ..ObservedWindowExpressions::default()
+    };
+    assert_eq!(
+        observed.source(numbers).value(at(3), &mut meter),
+        Ok(WindowRead::Defined(whole(4)))
+    );
+
+    // A condition that is not a Boolean is a fault, as filter and predicate.
+    let wrong = ObservedWindowExpressions {
+        filter: Some(&integer),
+        predicate: Some(&integer),
+        ..ObservedWindowExpressions::default()
+    };
+    assert_eq!(
+        observed.source(wrong).admits(at(0), &mut meter),
+        Err(fault("window-condition-boolean"))
+    );
+    assert_eq!(
+        observed.source(wrong).predicate(at(0), &mut meter),
+        Err(fault("window-condition-boolean"))
+    );
+
+    // A missing expression: no filter admits every position; no value or
+    // predicate is a fault.
+    let none = ObservedWindowExpressions::default();
+    assert_eq!(
+        observed.source(none).admits(at(0), &mut meter),
+        Ok(WindowRead::Defined(true))
+    );
+    assert_eq!(
+        observed.source(none).value(at(0), &mut meter),
+        Err(fault("aggregate-has-a-value-expression"))
+    );
+    assert_eq!(
+        observed.source(none).predicate(at(0), &mut meter),
+        Err(fault("aggregate-has-a-predicate-expression"))
+    );
+
+    // A position the trace has no environment for.
+    assert_eq!(
+        observed.source(numbers).value(at(9), &mut meter),
+        Err(fault("position-has-an-environment"))
+    );
+
+    // A call that fails: the object is absent from that position's
+    // environment. The run stops and the failure is kept.
+    let mut gap = Observed::new(&[2, 1]);
+    gap.environments[1] = ObjectEnvironment::default();
+    let mut source = gap.source(numbers);
+    assert!(source.stopped().is_none());
+    assert_eq!(
+        source.value(at(0), &mut meter),
+        Ok(WindowRead::Defined(whole(2)))
+    );
+    assert!(source.stopped().is_none());
+    assert_eq!(
+        source.value(at(1), &mut meter),
+        Err(fault("window-expression-call-failed"))
+    );
+    assert!(matches!(source.stopped(), Some(HoldsStop::Failed(_))));
+
+    // A result the kernel refuses: 6 / 1 is outside the rational domain
+    // [-5, 5] / [1, 5].
+    let interval = |lower: i64, upper: i64| {
+        IntegerInterval::new(Integer::from(lower), Integer::from(upper)).expect("an interval")
+    };
+    let narrow = ValueType::Rational(
+        RationalDomain::new(interval(-5, 5), interval(1, 5)).expect("a domain"),
+    );
+    let quotient = observed.check(&six_over_x(), Some(&narrow));
+    let refusing = ObservedWindowExpressions {
+        value: Some(&quotient),
+        ..ObservedWindowExpressions::default()
+    };
+    let mut source = observed.source(refusing);
+    assert_eq!(
+        source.value(at(0), &mut meter),
+        Ok(WindowRead::Defined(whole(3)))
+    );
+    assert!(source.stopped().is_none());
+    assert_eq!(
+        source.value(at(1), &mut meter),
+        Err(fault("window-expression-refused"))
+    );
+    assert!(matches!(source.stopped(), Some(HoldsStop::Refused(_))));
+
+    // An exhausted budget is `Incomplete`, not a value.
+    let sum = observed.check(
+        &Expression::binary(BinaryOperator::Add, x(), Expression::integer(1_i64)),
+        None,
+    );
+    let adding = ObservedWindowExpressions {
+        value: Some(&sum),
+        ..ObservedWindowExpressions::default()
+    };
+    let mut broke = Meter::new(ScalarLimits {
+        work_units: 0,
+        ..SCALAR_LIMITS_UNLIMITED
+    });
+    let stop = observed
+        .source(adding)
+        .value(at(0), &mut broke)
+        .expect_err("no budget to add");
+    assert!(
+        matches!(&stop, LetterStop::Incomplete(record) if record.limit_kind == LimitKind::WorkUnits),
+        "{stop:?}"
+    );
+}
+
+/// A position whose value is undefined holds no value: when it is the one
+/// that would exceed `max_window_values`, the atom is undefined there, and
+/// the first defined position past the limit is the overflow.
+#[trace("TC-629")]
+#[test]
+fn an_undefined_position_at_the_limit_is_undefined_and_not_an_overflow() {
+    let sum = atom_of(
+        AggregateKind::Sum,
+        PastWindow::Positions { a: 0, b: 2 },
+        1,
+        ComparisonOperator::GreaterOrEqual,
+        whole(0),
+    );
+    let trace = WindowTrace::positions(3);
+    let rows = |undefined: &[u64]| Rows::values(&[1, 1, 1]).undefined_at(undefined);
+    assert_eq!(
+        read(&sum, &trace, &mut rows(&[2]), 2, 2),
+        Ok(division_by_zero())
+    );
+    assert_eq!(
+        read(&sum, &trace, &mut rows(&[]), 2, 2),
+        Err(LetterStop::WindowLimit(WindowLimitReached {
+            limit: "max_window_values",
+            value: 2,
+            setting: MAX_WINDOW_VALUES_SETTING,
+        }))
+    );
 }
