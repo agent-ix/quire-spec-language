@@ -122,9 +122,7 @@ fn an_asymmetric_clause_is_stored_unreduced() {
 /// `(AA, dead)` and `(BB, dead)` and pairs the others, `(AA, ¬a)` with
 /// `(AA, ¬b)`, `(AB, ¬a)` with `(BA, ¬b)` and `(AB, dead)` with `(BA, dead)`:
 /// 5. The item holds.
-#[trace("TC-599")]
-#[test]
-fn a_swap_that_permutes_the_automaton_s_states_halves_the_product() {
+fn assert_a_swap_that_permutes_the_automaton_s_states_halves_the_product() {
     let world = World::new(
         TOGGLING,
         false,
@@ -149,9 +147,7 @@ fn a_swap_that_permutes_the_automaton_s_states_halves_the_product() {
 /// so the engine stores the product whole and names no reduction. Each copy
 /// must always output 0; the negation is `eventually not` of either, two
 /// acceptance sets the swap exchanges.
-#[trace("TC-599")]
-#[test]
-fn a_swap_that_exchanges_acceptance_sets_is_not_applied() {
+fn assert_a_swap_that_exchanges_acceptance_sets_is_not_applied() {
     let world = World::new(
         Vault::Secure,
         false,
@@ -170,6 +166,43 @@ fn a_swap_that_exchanges_acceptance_sets_is_not_applied() {
     );
     let counterexample = refuted(outcome);
     assert_lockstep_behaviours(&world, &counterexample);
+}
+
+/// A clause with one class whose swap passes and one whose exchange fails is
+/// stored whole. The first class `a`, `b` must each eventually output 1 over
+/// the toggling vault, which the swap permutes; the second class `c`, `d` must
+/// each always output 0, whose negation holds two acceptance sets the swap of
+/// `c` and `d` exchanges. The copy group holds both classes, and the engine
+/// applies neither: it names no reduction and stores the unreduced product.
+fn assert_a_class_that_fails_keeps_the_class_that_passes_unreduced() {
+    let world = World::new(
+        TOGGLING,
+        false,
+        &[(0, 0), (0, 1)],
+        "hyper Mixed using inf over behaviours (v: V::Vault) \
+             forall trace a of V forall trace b of V forall trace c of V forall trace d of V \
+             match { a.step.op = b.step.op and a.step.Vault::step.i = b.step.Vault::step.i \
+                     and c.step.op = d.step.op and c.step.Vault::step.i = d.step.Vault::step.i } \
+             { (eventually holds(v.l @ a = 1) and eventually holds(v.l @ b = 1)) \
+                and always holds(v.l @ c = 0) and always holds(v.l @ d = 0) }",
+    );
+    assert_eq!(
+        world.clause.copy_group().classes,
+        [["a", "b"], ["c", "d"]].map(|class| class.map(str::to_owned).to_vec())
+    );
+    let outcome = run(&world);
+    assert_stored_whole(&world, &outcome);
+}
+
+/// FR-174-AC-6: a swap that exchanges two acceptance sets is not applied, a
+/// swap that fixes the body's lone acceptance structure is, and a clause with
+/// one class that passes and one that fails is stored whole.
+#[trace("TC-599", "FR-174-AC-6")]
+#[test]
+fn a_swap_is_applied_only_when_every_class_keeps_acceptance() {
+    assert_a_swap_that_exchanges_acceptance_sets_is_not_applied();
+    assert_a_swap_that_permutes_the_automaton_s_states_halves_the_product();
+    assert_a_class_that_fails_keeps_the_class_that_passes_unreduced();
 }
 
 /// The body of three copies that is equal under every exchange of two, and
@@ -747,9 +780,7 @@ const RESET_RAISES: &str = "pre R using v on V::Vault::reset { self.l = 0 }\n\
 /// the counterexample is fair. Reduced, the copy at `l = 1` sits in one slot
 /// and its `reset` is enabled and never taken there, which rejects the cycle
 /// and would prove the item.
-#[trace("TC-599")]
-#[test]
-fn copies_alternating_their_outputs_under_fairness_are_stored_whole() {
+fn assert_copies_alternating_their_outputs_under_fairness_are_stored_whole() {
     let contracts: &'static str = Box::leak(
         format!(
             "post Step using v on V::Vault::step \
@@ -837,9 +868,7 @@ fn three_copies_under_fairness_hold_as_the_unreduced_check_holds_them() {
 /// whole product has the 16 tuples of four secrets and the 4 pairs of shared
 /// outputs, 64 states; the swap of `c` and `d` takes the 4 pairs of their
 /// secrets to 3, so 48.
-#[trace("TC-599")]
-#[test]
-fn only_the_classes_without_fairness_are_swapped() {
+fn assert_only_the_classes_without_fairness_are_swapped() {
     let world = World::new(
         Vault::Secure,
         false,
@@ -867,6 +896,17 @@ fn only_the_classes_without_fairness_are_swapped() {
         }]
     );
     assert_eq!((unreduced, stats.product_states), (64, 48));
+}
+
+/// FR-174-AC-5: copies that carry fairness are stored whole, with the
+/// unreduced count and no reduction named, and refuted by a counterexample
+/// that replays fair; with a second class without fairness, only that class is
+/// swapped.
+#[trace("TC-599", "FR-174-AC-5")]
+#[test]
+fn a_swap_is_applied_only_to_the_classes_without_fairness() {
+    assert_copies_alternating_their_outputs_under_fairness_are_stored_whole();
+    assert_only_the_classes_without_fairness_are_swapped();
 }
 
 /// A vault whose `step` flips `l` on input 0 and keeps it on input 1.
