@@ -61,3 +61,7 @@ Measured:
 | --- | --- | --- |
 | FND-001 | fixed | PR body (not a commit): the changelog now lists `IdentityEncodeError` gaining `PositionOrder` under BREAKING, since the enum is not `non_exhaustive` |
 | FND-002 | fixed | 1adffb125 |
+
+## Disposition pass 2 notes
+
+Re-reviewed at `8e9ee1f3034be2366fb220900511e37c0e24e823`, with code-review and rust-review over the changes since 1adffb125. The only production-adjacent change is 8e9ee1f30. It repoints `SuppliedLimits` to `quire_semantic_value::supplied_stop` in scalar.rs (the `ValueIdentity.supplied` field), outcome.rs and proof_result.rs (test fixtures), and value_parity_identity.rs. This matches the type `ReplayRequestWire.supplied_limits` already carries on main (request.rs:35), so `wire.supplied_limits.unwrap_or_default()` in `ValueIdentity::sent` type-checks with no conversion. The main-merge resolution in value_parity.rs is correct. No re-exports or vendoring were added. Gates: qsl-replay lib tests 826 passed, clippy `-D warnings` clean, fmt clean. No new findings; FND-001 and FND-002 stay fixed.
