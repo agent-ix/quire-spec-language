@@ -571,7 +571,8 @@ fn a_loop_that_needs_two_passes_closes_at_the_concrete_entry() {
     assert!(reproduced(&world.replay(counterexample.clone())));
 }
 
-/// FR-160-AC-4 (tagged by no id: the AC says the counterexample equals the
+/// The reduced-refutation settlement clause (QSL-1045 tracks its wording): it
+/// says the counterexample equals the
 /// unreduced one "byte for byte", and a `TemporalCounterexample` has no
 /// encoded form here, so what is asserted is equality over every member).
 /// ADR-021 §7.1's `fair weak whole` refutation from the symmetry run settles
@@ -634,13 +635,14 @@ fn carries_only_concrete_members(counterexample: &TemporalCounterexample) {
     assert!(blocked.is_empty() && refinement.is_none());
 }
 
-/// FR-161-AC-4 (tagged by no id: the AC's serialize/decode round trip and
+/// The concretised-counterexample clause (QSL-1045 tracks its wording): its
+/// serialize/decode round trip and
 /// "byte-equal" have nothing to run against, because `TemporalCounterexample`
 /// has no encoded form here; what is asserted is equality over every member
 /// and that the witness envelope carries it to a replay, tracked as QSL-1045).
-/// FR-156-AC-3's partial-order counterexample replays, and agrees with the
+/// The ring's partial-order counterexample replays, and agrees with the
 /// unreduced run's on every member but the step list (the reduced path is
-/// longer), ending in a state with the same `q.v`; FR-158-AC-1's constrained
+/// longer), ending in a state with the same `q.v`; the counting subject's constrained
 /// counterexample equals the unconstrained run's, in a world where the same
 /// constraint demonstrably cuts the search (`always holds(x.v <= 2)` settles
 /// `ConstraintReached{12}` over 20 stored states, where the unconstrained
@@ -659,7 +661,7 @@ fn every_counterexample_is_concrete_and_replays_as_an_unreduced_one_does() {
         matches!(settlement, ModelTraceSettlement::Reproduced { .. })
     };
 
-    // FR-156-AC-3's ring under partial-order reduction.
+    // The ring under partial-order reduction.
     let fixture = ring(&["always holds(x.v < 2)"]);
     let outcome = fixture
         .run(
@@ -720,7 +722,7 @@ fn every_counterexample_is_concrete_and_replays_as_an_unreduced_one_does() {
         counterexample.as_ref().clone()
     )));
 
-    // FR-158-AC-1's constrained counterexample.
+    // The constrained counterexample.
     let counting = count(&[
         infinite("always holds(x.v <= 1)"),
         infinite("always holds(x.v <= 2)"),

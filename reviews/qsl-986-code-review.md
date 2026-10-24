@@ -95,3 +95,17 @@ The weak spots are these:
 | FND-002 | low | PR #1432 body describes QSL-988 (HP-4 `settle_hyper_form`, FR-173..183, hyper mutations), not this diff; the ACs-covered, not-tagged, checks and mutations sections are all for another PR, so the merge record would be wrong | PR #1432 description |
 | FND-003 | low | FR-154-AC-3 test: with the clause-run admission's receiver unbound (M5) the test still passes, because the only vector changes `c2.value`, which is refused with or without a receiver; the receiver scope on the admission path is not shown to grant `c1` | qsl-replay/src/spine/clause/tests/receiver_frames.rs:224-295 |
 | FND-004 | low | Doc drift: qsl-package receiver_frames.rs `//!` header still lists only TC-1043 (FR-154-AC-6/7/10) and TC-573 (FR-154-AC-4) and omits the new TC-572 FR-154-AC-5 test; the FR-161-AC-4 test doc does not say why the ticket's serialize/decode round trip was replaced by Eq plus exhaustive destructuring (TemporalCounterexample has no encoded form) | qsl-package/src/emit/tests/receiver_frames.rs:2; qsl-analyze/tests/it/quotient.rs:634-641 |
+
+## Dispositions
+
+Round 1 checks the fix commit f5f5cc826. M3, M4 and M5 were re-run in an
+isolated worktree. M4 and M5 now fail their tests, and M3 is still killed.
+`cargo test` gives quotient 12, qsl-replay receiver_frames 5 and qsl-package
+receiver_frames 10.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | quotient.rs:724-750 adds a run of `always holds(x.v <= 2)` under `Low` in the same world and asserts `ConstraintReached{boundary_states: 12}` over 20 stored states. M4 (constraint ignored) now fails at quotient.rs:738 |
+| FND-002 | fixed | the PR #1432 body is now QSL-986's: an AC table for FR-154-AC-2/3/5, FR-160-AC-4 and FR-161-AC-4, and this PR's checks and mutations |
+| FND-003 | fixed | receiver_frames.rs:291-314 adds a post that changes only `c1.value`. It succeeds in the Frame run and is admitted under `own`. M5 now fails at receiver_frames.rs:295 |
+| FND-004 | fixed | the qsl-package `//!` header names TC-572 (FR-154-AC-5). The quotient.rs docs state why there is no round trip (no encoded form, QSL-1045) |

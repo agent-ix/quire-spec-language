@@ -117,3 +117,19 @@ test code only. No stubs.
 - Semantic review: run for the five ACs in scope (caller-requested clause
   comparison).
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1 checks the fix commit f5f5cc826. `quire matrix --scope . --format
+json` was re-run at that commit.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | "Unchanged" is now shown for both counterexamples. The partial-order one equals the unreduced run's on every member but `prefix`, and ends at `q.v = 2` like it. The constrained one comes from a world where `Low` demonstrably cuts the search (`ConstraintReached{12}`, and M4 is killed). The FR-161-AC-4 id was withdrawn from the `#[trace]` attribute |
+| FND-002 | deferred | QSL-1045 (comment of 2026-10-24) tracks rewording FR-160-AC-4 "byte for byte" and FR-161-AC-4 "decodes"/"byte-equal", or adding a wire form |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The tag drop is not effective: the doc comments still open with "FR-160-AC-4 (tagged by no id: ...)" and "FR-161-AC-4 (tagged by no id: ...)", and `quire matrix` at f5f5cc826 still reports both ACs `tagged`, bound to these two tests (quotient.rs:585, :654). The PR body says "NOT tagged", so the matrix claims coverage the PR disclaims | qsl-analyze/tests/it/quotient.rs:574; qsl-analyze/tests/it/quotient.rs:637 |
