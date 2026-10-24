@@ -22,6 +22,7 @@ use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
     UnavailabilityCause,
 };
+use crate::result::{DisagreementCause, HybridTraceDisagreement};
 use qsl_semantics::check::{CheckedGraph, CheckedHybridClaim, HybridClock, HybridHorizon};
 use quire_exact::LimitKind;
 
@@ -439,6 +440,56 @@ impl HybridSettlement {
         Self {
             value,
             counterexample: None,
+        }
+    }
+
+    /// FR-450: exact-replay a process provider's `refuted` hybrid counterexample.
+    /// The provider payload is retained for a replay-parity disagreement.
+    pub fn from_provider_counterexample(
+        graph: &CheckedGraph,
+        claim: &CheckedHybridClaim,
+        counterexample: HybridCounterexample,
+        meter: &mut HybridReplayMeter,
+    ) -> Result<Self, HybridReplayRefusal> {
+        if !matches!(
+            counterexample.kind,
+            crate::hybrid_replay::HybridCounterexampleKind::Formula
+        ) {
+            return Err(HybridReplayRefusal::UnsupportedCounterexampleKind);
+        }
+        let exhausted = |meter: &HybridReplayMeter| {
+            Self::without_counterexample(TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: LimitKind::WorkUnits,
+                },
+                value: meter.work_units,
+            }))
+        };
+        match exact_replay(graph, claim, &counterexample.trace, meter) {
+            Ok(ExactReplay::Reproduced(replayed)) if replayed.kind == counterexample.kind => {
+                Ok(Self {
+                    value: TerminalValue::Refuted,
+                    counterexample: Some(counterexample),
+                })
+            }
+            Ok(ExactReplay::Reproduced(_)) | Ok(ExactReplay::NotReproduced { .. }) => {
+                Ok(Self::without_counterexample(TerminalValue::Inconclusive(
+                    InconclusiveCause::ReplayParity(DisagreementCause::HybridTrace(
+                        HybridTraceDisagreement::NotReproduced {
+                            counterexample: Box::new(counterexample),
+                        },
+                    )),
+                )))
+            }
+            Ok(ExactReplay::NotExact) => Ok(Self::without_counterexample(
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+                    DisagreementCause::HybridTrace(HybridTraceDisagreement::NotExact {
+                        counterexample: Box::new(counterexample),
+                    }),
+                )),
+            )),
+            Err(HybridReplayRefusal::ResourceExhausted { .. }) => Ok(exhausted(meter)),
+            Err(refusal) => Err(refusal),
         }
     }
 }
