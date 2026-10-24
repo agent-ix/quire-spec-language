@@ -85,8 +85,9 @@ impl ModelCheckLimits {
     }
 }
 
-/// The limit a stopped EN-1 run reached, by the request member that raises
-/// it: a member of [`ModelCheckLimits`], or of the subject's FR-120 limits.
+/// The limit a stopped EN-1 or EN-5 run reached, by the request member that
+/// raises it: a member of [`ModelCheckLimits`], or of the subject's FR-120
+/// limits.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ModelCheckLimit {
     /// `ModelCheckLimits::limits.max_states`.
@@ -95,13 +96,17 @@ pub enum ModelCheckLimit {
     MaxTransitions,
     /// `ModelCheckLimits::max_automaton_states`.
     MaxAutomatonStates,
-    /// EN-5's product bound `ExactProbLimits.model.limits.max_states`
-    /// (FR-203): FR-331 spelling as [`Self::MaxStates`], setting
-    /// `exact_prob.max_states`.
+    /// EN-5's product bound `max_states` (FR-203), read from the exact
+    /// run's `ModelCheckLimits::limits.max_states`: limit name `max_states`,
+    /// setting `exact_prob.max_states`.
     ExactProbMaxStates,
-    /// EN-5's product bound `ExactProbLimits.model.limits.max_transitions`.
+    /// EN-5's product bound `max_transitions`, read from
+    /// `ModelCheckLimits::limits.max_transitions`; setting
+    /// `exact_prob.max_transitions`.
     ExactProbMaxTransitions,
-    /// EN-5's product bound `ExactProbLimits.model.max_automaton_states`.
+    /// EN-5's product bound `max_automaton_states`, read from
+    /// `ModelCheckLimits::max_automaton_states`; setting
+    /// `exact_prob.max_automaton_states`.
     ExactProbMaxAutomatonStates,
     /// The subject's evaluation meter budget.
     EvaluationMeter {
@@ -125,12 +130,16 @@ pub enum ModelCheckLimit {
 }
 
 impl ModelCheckLimit {
-    /// The limit's FR-331 spelling.
+    /// The limit's name: the FR-331 spelling for an EN-1 member, FR-255's
+    /// snake_case engine-table limit name for an EN-5 product bound.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::MaxStates | Self::ExactProbMaxStates => "max-states",
-            Self::MaxTransitions | Self::ExactProbMaxTransitions => "max-transitions",
-            Self::MaxAutomatonStates | Self::ExactProbMaxAutomatonStates => "max-automaton-states",
+            Self::MaxStates => "max-states",
+            Self::ExactProbMaxStates => "max_states",
+            Self::MaxTransitions => "max-transitions",
+            Self::ExactProbMaxTransitions => "max_transitions",
+            Self::MaxAutomatonStates => "max-automaton-states",
+            Self::ExactProbMaxAutomatonStates => "max_automaton_states",
             Self::EvaluationMeter { counter } => match counter {
                 LimitKind::IntegerBits => "integer_bits",
                 LimitKind::DecimalDigits => "decimal_digits",
@@ -211,28 +220,30 @@ mod tests {
     use ix_trace_rs::trace;
 
     #[test]
-    fn exact_prob_product_bounds_name_exact_prob_settings_and_share_spellings() {
-        let pairs = [
+    fn exact_prob_product_bounds_pair_a_snake_case_limit_with_an_exact_prob_setting() {
+        let rows = [
             (
                 ModelCheckLimit::ExactProbMaxStates,
-                ModelCheckLimit::MaxStates,
+                "max_states",
                 "exact_prob.max_states",
+                ModelCheckLimit::MaxStates,
             ),
             (
                 ModelCheckLimit::ExactProbMaxTransitions,
-                ModelCheckLimit::MaxTransitions,
+                "max_transitions",
                 "exact_prob.max_transitions",
+                ModelCheckLimit::MaxTransitions,
             ),
             (
                 ModelCheckLimit::ExactProbMaxAutomatonStates,
-                ModelCheckLimit::MaxAutomatonStates,
+                "max_automaton_states",
                 "exact_prob.max_automaton_states",
+                ModelCheckLimit::MaxAutomatonStates,
             ),
         ];
-        for (exact, model, setting) in pairs {
-            assert_eq!(exact.setting(), setting);
+        for (exact, name, setting, model) in rows {
+            assert_eq!((exact.as_str(), exact.setting()), (name, setting));
             assert_ne!(exact.setting(), model.setting());
-            assert_eq!(exact.as_str(), model.as_str());
         }
     }
 
