@@ -15,7 +15,10 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
+use qsl_analyze::model_check::{
+    check_model, check_state_graph, ModelCheckRefusal, ModelCheckRequest, StateGraphItem,
+    StateGraphRequest,
+};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, LettersRefusal, ModelSimState, ModelSimulationRequest, ModelSystem,
@@ -312,6 +315,46 @@ impl World {
         )
     }
 
+    /// The state-graph run of `possible Reach using v over (x: M::<over>)
+    /// { true }` under `universes`: the key of each instance's bound object, in
+    /// instance order.
+    fn reach(
+        &self,
+        over: &str,
+        universes: Vec<PopulationUniverse>,
+    ) -> Result<Vec<String>, ModelCheckRefusal> {
+        let body = format!("possible Reach using v over (x: M::{over}) {{ true }}\n");
+        let graph = declarations_in(PACKAGE, &self.document, &body)
+            .with_unwritten_state_graph_claims()
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+        let package = CheckedPackage::link(graph);
+        let [claim] = package.graph().state_graph_claims() else {
+            panic!("one declared claim");
+        };
+        let run = check_state_graph(
+            StateGraphRequest {
+                subject: self.subject(&package, universes),
+                items: vec![StateGraphItem { claim }],
+                deadlock_freedom: false,
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                seed: None,
+            },
+            &Cancel::new(),
+        )?;
+        let [instances] = run.items.as_slice() else {
+            panic!("one item");
+        };
+        Ok(instances
+            .iter()
+            .map(|instance| {
+                let reference = instance.over.as_ref().expect("a bound object");
+                reference.object().as_str().to_owned()
+            })
+            .collect())
+    }
+
     /// The core's closure check of `over`'s clause under `universes`, of an
     /// empty certificate.
     fn check(
@@ -529,6 +572,49 @@ fn an_unbounded_admitting_population_requires_a_bound_and_no_key_is_no_instance(
             ..
         }
     ));
+}
+
+/// FR-125's Instancing for a state-graph claim: `possible Reach ... over (x:
+/// M::Thing) { true }` is read through the same derivation as a clause, so
+/// over the populations of the instance tests a subtype-conforming population
+/// yields its objects in canonical order, a population that admits `Thing`
+/// and has no universe refuses the run `RequiresBound` naming it, and no
+/// admitting key gives the item no instance.
+#[trace("TC-520")]
+#[test]
+fn a_state_graph_claim_is_instanced_like_a_clause() {
+    let world = world(
+        &[P1, P2, Q],
+        &[
+            ("P1", &[("d", "Lamp"), ("c", "Switch")]),
+            ("P2", &[("b", "Lamp")]),
+            ("Q", &[]),
+        ],
+    );
+    let bounded = || universes(&[("Q", &["z"]), ("P2", &["b", "a"]), ("P1", &["d", "c"])]);
+    assert_eq!(
+        world.reach("Thing", bounded()).expect("bounded"),
+        ["d", "c", "b", "a"]
+    );
+    assert_eq!(world.reach("Other", bounded()).expect("bounded"), ["z"]);
+
+    let world = self::world(&[P1, P2, Q], &[("P2", &[("b", "Lamp")])]);
+    let refusal = world
+        .reach("Thing", universes(&[("P2", &["b"])]))
+        .expect_err("P1 admits Thing and has no universe");
+    let ModelCheckRefusal::RequiresBound(bound) = &refusal else {
+        panic!("expected RequiresBound, got {refusal:?}");
+    };
+    let roots: Vec<_> = bound
+        .domains
+        .iter()
+        .map(|(key, kind)| (key.clone(), kind))
+        .collect();
+    assert_eq!(roots, [(population_root("P1"), DomainKind::Population)]);
+
+    let world = self::world(&[P1, P2], &[("P1", &[]), ("P2", &[])]);
+    let none = universes(&[("P1", &["d"]), ("P2", &["b"])]);
+    assert!(world.reach("Other", none).expect("bounded").is_empty());
 }
 
 /// FR-125 and FR-338: the closure checker derives the same instances as
