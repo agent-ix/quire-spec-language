@@ -263,7 +263,7 @@ impl HybridCause {
             | Self::HorizonOutOfRange { .. } => Code::UnsupportedConstruct,
             Self::InvalidInterval { .. } => Code::InvalidTimedModel,
             Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
+                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
                     Code::MissingDeclaration
                 }
                 TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {
@@ -296,7 +296,7 @@ impl HybridCause {
             | Self::HorizonOutOfRange { .. } => "expression-form",
             Self::InvalidInterval { .. } => "invalid-interval",
             Self::TimeQuantity { cause, .. } => match &**cause {
-                TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
+                TimeUnitCause::NoTimeDimension { .. } | TimeUnitCause::UnknownUnit { .. } => {
                     "missing-name"
                 }
                 TimeUnitCause::NotTimeDimension { .. } | TimeUnitCause::AffineUnit { .. } => {

@@ -2482,7 +2482,7 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let unit = Unit::new(forms);
+        let mut unit = Unit::new(forms);
         // FR-393: retain the parsed timed forms through S2. FR-230 checks
         // their meaning, including the facet gate, at S3.
         let mut errors: Vec<AssemblyError> = Vec::new();

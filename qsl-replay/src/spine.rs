@@ -1235,7 +1235,7 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     format!("{message}: an interval bound has a zero denominator")
                 }
                 TemporalCause::TimeQuantity { cause, .. } => match &**cause {
-                    TimeUnitCause::NoTimeDimension => {
+                    TimeUnitCause::NoTimeDimension { .. } => {
                         format!("{message}: the unit graph has no base dimension `Time`")
                     }
                     TimeUnitCause::UnknownUnit { name } => {

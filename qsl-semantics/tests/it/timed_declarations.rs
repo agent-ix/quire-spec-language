@@ -106,7 +106,7 @@ fn s2_keeps_a_dense_time_member_for_the_temporal_layer() {
 
 #[trace("TC-685")]
 #[test]
-#[ignore = "IR-990: FCD I1 rejects the package Clock field typeRef"]
+#[ignore = "QSL model intake does not admit the ix://quire/native/Clock field typeRef"]
 fn a_package_clock_field_reaches_the_timed_model_check() {
     let assembled = admit_and_assemble_with_profiles(
         &clock_document(),
@@ -121,7 +121,7 @@ fn a_package_clock_field_reaches_the_timed_model_check() {
 
 #[trace("TC-685")]
 #[test]
-#[ignore = "FCD FR-146: pinned I1 schema rejects top-level dimensions"]
+#[ignore = "S3 has no package-owned unit table: a qualified time unit refuses TimedNotChecked"]
 fn package_time_units_reach_s3_with_their_model_owner() {
     let declarations = admit_and_assemble_with_profiles(
         &package_units_document(),
