@@ -3,15 +3,20 @@ id: TC-1240
 title: "Establish the native-to-TL temporal correspondence"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-045
+  - target: ix://agent-ix/quire-contract-ir/FR-350
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-045
+    type: references
+  - target: ix://agent-ix/quire-specification/FR-092
+    type: references
 ---
 # TC-1240: Establish the native-to-TL temporal correspondence
 
 ## Description
 
-These are the public Rust API controls for the correspondence section of
-[FR-045](../functional/FR-045-classify-temporal-mapping-support.md).
+These are the public Rust API controls for the Contract IR correspondence
+requirement [FR-350](https://github.com/agent-ix/quire-contract-ir), using the
+QSL `mapping_support_v2` classification and the strict `/2` package.
 
 Each case compiles a real native temporal declaration and emits a strict
 `quire.compiled-protocol/2` package. It classifies the declaration through
@@ -26,7 +31,12 @@ owners. The compiler evaluates no TL artifact.
 Expected truths come from the authored source and the profile definitions,
 never from either evaluator's output.
 
-Scope: FR-045-AC-7 to FR-045-AC-14.
+The complete bounded-past operator set is the four operators in QSpec
+[FR-092](https://github.com/agent-ix/quire-specification): `once`,
+`historically`, `since` and `triggered`; strong previous is `once[1,1]`.
+
+Scope: Contract IR FR-350; QSL FR-045 supplies the classification and owner
+inputs.
 
 ## Test Procedure
 
@@ -82,9 +92,11 @@ Tag the tests `#[trace("TC-1240", "FR-045-AC-n")]`.
   - The finite-window claim is rejected.
   - Each `Unsupported` projection is `unsupported`, names the
     classification's dimensions and carries no formula.
-  - With the execution-origin boundary, the past declaration emits
-    `tl-syntax.formula/v2` with a position history.
-  - With the history-cutoff boundary it yields `incomplete`, cause
+  - Each of `once`, `historically`, `since` and `triggered`, alone under
+    each false-extension profile with an execution-origin boundary, emits
+    `tl-syntax.formula/v2` with a position history and the
+    `mltl.origin-complete-history/v1` target.
+  - Each with a history-cutoff boundary yields `incomplete`, cause
     `missing-history`.
 - Step 3:
   - Each axis mutation changes the correspondence reference and names that
