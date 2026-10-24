@@ -42,8 +42,8 @@ use serde_json::{json, Value as Json};
 
 use crate::fill::{reachable, Reached};
 use crate::litmus::{
-    attempt, contracts, core, document, field, package, protocol, protocol_with, sb_run, sb_unit,
-    unit_text, Documents, NO_BOTH_ZERO,
+    attempt, contracts, core, document, field, key, package, protocol, protocol_with, sb_run,
+    sb_unit, unit_text, Documents, NO_BOTH_ZERO,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -62,6 +62,8 @@ pub(crate) struct Case {
     checked: CheckedPackage,
     /// The letters of the unit's one claim.
     letters: &'static dyn ModelLetters,
+    /// The cell `SB`'s `over` input is bound to, when not the core.
+    over: Option<ModelInstance>,
 }
 
 impl Case {
@@ -83,11 +85,33 @@ impl Case {
             documents: Documents::new(),
             checked: package(body),
             letters,
+            over: None,
+        }
+    }
+
+    /// The unit with `body`, `SB` over the object `object` of `population`;
+    /// `spare` adds the `Spare` object `z` to the universe.
+    fn over_object(body: &str, population: &str, object: &str, spare: bool) -> Self {
+        Self {
+            documents: if spare {
+                Documents::with_spare_cell()
+            } else {
+                Documents::new()
+            },
+            over: Some(ModelInstance {
+                population: key(population),
+                key: object.to_owned(),
+            }),
+            ..Self::new(body)
         }
     }
 
     pub(crate) fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {
-        self.documents.subject(&self.checked, "SB", selection)
+        let mut subject = self.documents.subject(&self.checked, "SB", selection);
+        if let Some(over) = &self.over {
+            subject.over = over.clone();
+        }
+        subject
     }
 
     /// EN-1's classification of `SB` under `selection`.
@@ -95,7 +119,7 @@ impl Case {
         let subject = self.subject(selection);
         let model = ModelSystem::new(subject.model.simulation.clone()).expect("admits");
         let protocol = self.checked.graph().protocol("SB").expect("SB");
-        classify_accesses(&model, protocol, &subject.memory).expect("classifies")
+        classify_accesses(&model, protocol, &subject.memory, &subject.over).expect("classifies")
     }
 
     /// The protocol system of `SB` under `memory`.
@@ -747,6 +771,271 @@ fn en1_keeps_a_register_read_again_by_its_own_branch_local() {
             location: None
         }));
     assert!(local(&accesses, "Both/left/L/Cp").contains(&name("core", "r1")));
+}
+
+/// `SB`'s protocol over an object of `object_type`, the `over` input `k`,
+/// with `run` and the `finish` constraint `finish`.
+fn object_unit(object_type: &str, run: &str, finish: &str) -> String {
+    contracts()
+        + &protocol("SB", run)
+            .replace("over (k: M::Core)", &format!("over (k: M::{object_type})"))
+            .replace("{ d }", finish)
+}
+
+/// `SB`'s `parallel` with `event` ahead of the right branch's attempts.
+fn sb_with_event(event: &str) -> String {
+    format!(
+        "parallel Both {{ branch left sequence L {{ {} {} }} \
+         branch right sequence R {{ {event} {} {} }} }} join all [left, right];",
+        attempt("Sx", "w", "Cell::set", "", "IsX, StoreOne"),
+        attempt("Ly", "c", "Core::read1", "", "ReadsY1, Read1"),
+        attempt("Sy", "w", "Cell::set", "", "IsY, StoreOne"),
+        attempt("Lx", "c", "Core::read2", "", "ReadsX2, Read2"),
+    )
+}
+
+/// FR-220-AC-15 (TC-665 step 14): an `event` in a branch of `SB`'s weak
+/// `parallel`, whose constraint reads `x.v`, beside the branch whose attempt
+/// stores `x.v`, settles V-8 `WeakAccessShape` with `MultiLocation` naming
+/// the event and `(x, v)` before any state is explored, under `tso` and
+/// `ra`; under `sc` it is admitted. The same `event` reading the unaccessed
+/// `z.v` is admitted under `tso`, and so is a `finish` that reads `x.v`
+/// after the `join`.
+///
+/// The AC's unaccessed `z` is "a `Cell` `z` that no attempt accesses". Under
+/// EN-1 instantiation every `Cell::set` attempt is instantiated on every
+/// `Cell` of the universe, so a `Cell` `z` is always written and shared.
+/// This test realises the AC's intent, a reader of a location nothing
+/// writes is admitted, with a `Spare` object `z` that no attempt's operation
+/// touches, not its letter. QSL-1040 asks for the spec ruling.
+#[trace("TC-665", "FR-220-AC-15")]
+#[test]
+fn a_constraint_reading_a_shared_location_settles_the_multi_location_shape() {
+    const SEEN: &str = "event Seen by c as (s: Boolean) { s and k.v >= 0 };";
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let read_x = Case::over_object(
+        &object_unit("Cell", &sb_with_event(SEEN), "{ d }"),
+        "cells",
+        "x",
+        false,
+    );
+
+    for model in [MemoryModelName::Tso, MemoryModelName::Ra] {
+        let selection = [select("SB::Both", model)];
+        let outcome = read_x.check(&selection, ModelCheckItem::DeadlockFreedom, None);
+        let ModelCheckOutcome::Memory {
+            cause: MemoryCause::WeakAccessShape(shape),
+            stats,
+        } = &outcome
+        else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(stats.product_states, 0);
+        assert_eq!(shape.site, "Both/right/R/Seen");
+        let AccessShape::MultiLocation { locations } = &shape.shape else {
+            panic!("{shape:?}");
+        };
+        let accesses = read_x.accesses(&selection);
+        let names: Vec<(String, String)> = locations
+            .iter()
+            .map(|location| named(&accesses, location))
+            .collect();
+        assert_eq!(names, vec![name("x", "v")]);
+        assert_eq!(
+            accesses.node_reads("Both/right/R/Seen"),
+            locations.as_slice()
+        );
+        let text: Json = serde_json::from_str(&shape.shape_text().expect("text")).expect("JSON");
+        assert_eq!(text["type"], json!("multi-location"));
+        assert_eq!(text["locations"][0]["field"], json!("v"));
+    }
+    assert!(matches!(
+        read_x.check(&[], ModelCheckItem::DeadlockFreedom, None),
+        ModelCheckOutcome::Holds { .. }
+    ));
+
+    // The event alone beside a store makes the location shared.
+    let alone = format!(
+        "parallel Both {{ branch left sequence L {{ {} }} \
+         branch right sequence R {{ {SEEN} }} }} join all [left, right];",
+        attempt("Sx", "w", "Cell::set", "", "IsX, StoreOne"),
+    );
+    let alone = Case::over_object(&object_unit("Cell", &alone, "{ d }"), "cells", "x", false);
+    let accesses = alone.accesses(&tso);
+    let shared: BTreeSet<(String, String)> = accesses
+        .shared()
+        .iter()
+        .map(|location| named(&accesses, location))
+        .collect();
+    assert_eq!(shared, BTreeSet::from([name("x", "v")]));
+
+    // A cell no attempt accesses is not shared with the reader.
+    let read_z = Case::over_object(
+        &object_unit("Spare", &sb_with_event(SEEN), "{ d }"),
+        "spares",
+        "z",
+        true,
+    );
+    assert!(read_z
+        .accesses(&tso)
+        .node_reads("Both/right/R/Seen")
+        .is_empty());
+    assert!(matches!(
+        read_z.check(&tso, ModelCheckItem::DeadlockFreedom, None),
+        ModelCheckOutcome::Holds { .. }
+    ));
+
+    // A `finish` is no reader: it reads `x.v` after the `join`.
+    let finish = Case::over_object(
+        &object_unit("Cell", &sb_run("", "", ""), "{ d and k.v >= 0 }"),
+        "cells",
+        "x",
+        false,
+    );
+    let selection = [select("SB::Both", MemoryModelName::Tso)];
+    assert!(matches!(
+        finish.check(&selection, ModelCheckItem::DeadlockFreedom, None),
+        ModelCheckOutcome::Holds { .. }
+    ));
+}
+
+/// The refusal `case` settles under `tso` before exploring: the shape's
+/// site, whether it names a transition, and the names of its locations.
+fn tso_shape(case: &Case) -> (String, bool, Vec<(String, String)>) {
+    let selection = [select("SB::Both", MemoryModelName::Tso)];
+    let outcome = case.check(&selection, ModelCheckItem::DeadlockFreedom, None);
+    let ModelCheckOutcome::Memory {
+        cause: MemoryCause::WeakAccessShape(shape),
+        stats,
+    } = &outcome
+    else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(stats.product_states, 0);
+    let AccessShape::MultiLocation { locations } = &shape.shape else {
+        panic!("{shape:?}");
+    };
+    let accesses = case.accesses(&selection);
+    let names = locations
+        .iter()
+        .map(|location| named(&accesses, location))
+        .collect();
+    (shape.site.clone(), shape.transition.is_some(), names)
+}
+
+/// FR-220 "Sharing and classification" (ADR-025 MA-1): an `effect`,
+/// `commit`, `send` or `receive` node in a branch of a weak `parallel` is a
+/// reader of the location its constraint reads, as an `event` is, beside a
+/// branch whose attempt stores it.
+#[trace("TC-665")]
+#[test]
+fn an_effect_commit_send_or_receive_constraint_reads_toward_sharing() {
+    let store = attempt("Sx", "w", "Cell::set", "", "IsX, StoreOne");
+    let channel = "channel ch from w to w carries Boolean ordering unordered \
+                   delivery unknown capacity 2 overflow block;";
+    let cases = [
+        (
+            "Both/left/L/Eff",
+            "",
+            format!(
+                "branch left sequence L {{ {} effect Eff of L::A as (e: Boolean) \
+                 {{ e and k.v >= 0 }}; }} branch right sequence R {{ {store} }}",
+                attempt("A", "c", "Core::read1", "", "ReadsY1, Read1"),
+            ),
+        ),
+        (
+            "Both/left/L/Ok",
+            "",
+            format!(
+                "branch left sequence L {{ commit Ok by w as (ok: Boolean) {{ k.v >= 0 }}; }} \
+                 branch right sequence R {{ {store} }}"
+            ),
+        ),
+        (
+            "Both/left/L/Tx",
+            channel,
+            format!(
+                "branch left sequence L {{ send Tx via ch as (tx: Boolean) \
+                 {{ tx and k.v >= 0 }}; }} branch right sequence R {{ {store} }}"
+            ),
+        ),
+        (
+            "Both/r/Rx",
+            channel,
+            format!(
+                "branch s sequence Sender {{ send Tx via ch as (tx: Boolean) {{ tx }}; {store} }} \
+                 branch r receive Rx via ch of s::Sender::Tx as (rx: Boolean) \
+                 {{ rx and k.v >= 0 }};"
+            ),
+        ),
+    ];
+    for (site, members, branches) in cases {
+        let run = format!("parallel Both {{ {branches} }} join all [{}];", {
+            if site == "Both/r/Rx" {
+                "s, r"
+            } else {
+                "left, right"
+            }
+        });
+        let unit = contracts() + &protocol_with("SB", members, &run);
+        let unit = unit.replace("over (k: M::Core)", "over (k: M::Cell)");
+        let case = Case::over_object(&unit, "cells", "x", false);
+        let (found, _, names) = tso_shape(&case);
+        assert_eq!(found, site);
+        assert_eq!(names, vec![name("x", "v")], "{site}");
+    }
+}
+
+/// The settlement order of the pre-check, and a reader's missing transition,
+/// are the lead's defaults pending the spec ruling QSL-1040; FR-220 states
+/// neither. An attempt's `MultiLocation` shape settles before a reader's,
+/// when both exist, and carries a transition; a reader's has none.
+#[test]
+fn an_attempt_shape_settles_before_a_reader_shape_and_a_reader_has_no_transition() {
+    const SEEN: &str = "event Seen by c as (s: Boolean) { s and k.v >= 0 };";
+    let both = format!(
+        "parallel Both {{ branch left sequence L {{ {} }} \
+         branch right sequence R {{ {SEEN} {} {} }} }} join all [left, right];",
+        attempt("Bx", "w", "Cell::both", "", "BothX, BothOne"),
+        attempt("Lx", "c", "Core::read2", "", "ReadsX2, Read2"),
+        attempt("Lw", "c", "Core::read3", "", "ReadsX3, ReadW"),
+    );
+    let case = Case::over_object(&object_unit("Cell", &both, "{ d }"), "cells", "x", false);
+    let (site, transition, _) = tso_shape(&case);
+    assert_eq!(site, "Both/left/L/Bx");
+    assert!(transition);
+
+    let reader = Case::over_object(
+        &object_unit("Cell", &sb_with_event(SEEN), "{ d }"),
+        "cells",
+        "x",
+        false,
+    );
+    let (site, transition, _) = tso_shape(&reader);
+    assert_eq!(site, "Both/right/R/Seen");
+    assert!(!transition);
+}
+
+/// A reader constraint that calls a function has no footprint rule
+/// (QSpec FR-383), so the weak `parallel` is refused with the clause's own
+/// reason, and the same protocol checks under `sc`.
+#[trace("TC-665")]
+#[test]
+fn a_reader_constraint_with_no_footprint_rule_refuses_with_its_reason() {
+    let event = "event Seen by c as (s: Boolean) { s and inc(k.v) >= 0 };";
+    let unit = "function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }\n".to_owned()
+        + &object_unit("Cell", &sb_with_event(event), "{ d }");
+    let case = Case::over_object(&unit, "cells", "x", false);
+    let refusal = case
+        .system(&[select("SB::Both", MemoryModelName::Tso)], Tso::default())
+        .err()
+        .expect("refused");
+    let ProtocolRefusal::NodeFootprint { node, refusal } = &refusal else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(node, "Both/right/R/Seen");
+    assert!(refusal.to_string().contains("function call"), "{refusal}");
+    assert!(case.system(&[], Sc).is_ok());
 }
 
 /// FR-220-AC-4 (TC-665 step 4): `SB` under `sc` with every ordering

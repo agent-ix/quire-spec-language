@@ -174,6 +174,12 @@ pub(crate) fn document() -> Vec<u8> {
                 ],
                 "relationships": [],
             })),
+            wire_type(&ident("Spare"), "object_type", json!({
+                "supertypes": [],
+                "fields": fields("Spare", &["v"]),
+                "operations": [],
+                "relationships": [],
+            })),
             wire_type(&ident("Core"), "object_type", json!({
                 "supertypes": [],
                 "fields": fields("Core", &["r1", "r2", "r3", "r4"]),
@@ -187,7 +193,11 @@ pub(crate) fn document() -> Vec<u8> {
                 "relationships": [],
             })),
         ],
-        "populations": [population("cells", "Cell"), population("cores", "Core")],
+        "populations": [
+            population("cells", "Cell"),
+            population("cores", "Core"),
+            population("spares", "Spare"),
+        ],
     })
     .to_string()
     .into_bytes()
@@ -353,17 +363,29 @@ pub(crate) struct Documents {
     pub(crate) packages: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     pub(crate) initial: DocumentRef,
+    /// Whether the universe also holds the `Spare` object `z`.
+    spare: bool,
 }
 
 impl Documents {
     /// Cells `x` (`id` 0) and `y` (`id` 1) at `v = w = 0`, and `core` with
     /// every register at 3, "not yet read".
     pub(crate) fn new() -> Self {
-        Self::with_cells(&["x", "y"])
+        Self::build(&["x", "y"], false)
     }
 
     /// [`Self::new`] with the cells `cells` (`x`, `y`, `z` in `id` order 0, 1, 2).
     pub(crate) fn with_cells(cells: &[&'static str]) -> Self {
+        Self::build(cells, false)
+    }
+
+    /// [`Self::new`] with the `Spare` object `z`, which no operation touches,
+    /// in the universe.
+    pub(crate) fn with_spare_cell() -> Self {
+        Self::build(&["x", "y"], true)
+    }
+
+    fn build(cells: &[&'static str], spare: bool) -> Self {
         let int = |value: i64| json!({"integer": value.to_string()});
         let cell = |key: &str, id: i64| {
             json!({"key": key, "type": ident("Cell"),
@@ -376,6 +398,12 @@ impl Documents {
             .collect();
         let header = json!({"identity": PACKAGE, "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", hex(&document_digest(&document())))});
+        let spares: Vec<Json> = if spare {
+            vec![json!({"key": "z", "type": ident("Spare"),
+                "fields": {"v": int(0)}})]
+        } else {
+            Vec::new()
+        };
         let snapshot = json!({
             "format": "quire.state.snapshot/v1",
             "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
@@ -383,6 +411,7 @@ impl Documents {
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [
+                {"population": ident("spares"), "complete": true, "objects": spares},
                 {"population": ident("cells"), "complete": true,
                     "objects": objects},
                 {"population": ident("cores"), "complete": true,
@@ -407,15 +436,25 @@ impl Documents {
                 revision: "fixture:1".to_owned(),
                 digest,
             },
+            spare,
         }
     }
 
-    /// The universes: `cells` the cells of the snapshot, `cores` `{core}`.
+    /// The universes: `cells` the cells of the snapshot, `spares` the spare
+    /// object if present, `cores` `{core}`.
     pub(crate) fn universes(&self) -> Vec<PopulationUniverse> {
         vec![
             PopulationUniverse {
                 population: key("cells"),
                 keys: self.cells.iter().map(|name| (*name).to_owned()).collect(),
+            },
+            PopulationUniverse {
+                population: key("spares"),
+                keys: if self.spare {
+                    vec!["z".to_owned()]
+                } else {
+                    Vec::new()
+                },
             },
             PopulationUniverse {
                 population: key("cores"),
