@@ -50,6 +50,7 @@ mod protocol_reference;
 mod reachability;
 mod receiver_frames;
 mod temporal_clause;
+mod timed_source;
 mod union_nodes;
 mod variant_types;
 
@@ -1393,6 +1394,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
+            }
+            Err(EmitRefusal::TimedModelNotEmitted { .. }) => {
+                panic!("the fixture set declares no timed model")
             }
         }
     }

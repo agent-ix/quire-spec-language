@@ -32,8 +32,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_forms::{
     AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
     Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, PopulationBoundForm,
-    RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind, TypeForm,
-    TypeFormHead, UnitForm,
+    RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind,
+    TimeInvariantForm, TimeSourceForm, TypeForm, TypeFormHead, UnitForm, UrgentForm,
 };
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -685,6 +685,36 @@ enum Declared {
     Enum,
 }
 
+/// A timed declaration with the complete S2 form and source span that S3
+/// needs to check it (FR-230).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimedDeclaration {
+    /// `time Model dense/tick ...`.
+    TimeSource(TimeSourceForm),
+    /// `time invariant ...`.
+    TimeInvariant(TimeInvariantForm),
+    /// `urgent ...`.
+    Urgent(UrgentForm),
+}
+
+impl TimedDeclaration {
+    pub(super) const fn construct(&self) -> TimedConstruct {
+        match self {
+            Self::TimeSource(_) => TimedConstruct::TimeSource,
+            Self::TimeInvariant(_) => TimedConstruct::TimeInvariant,
+            Self::Urgent(_) => TimedConstruct::Urgent,
+        }
+    }
+
+    pub(super) const fn span(&self) -> Span {
+        match self {
+            Self::TimeSource(form) => form.span,
+            Self::TimeInvariant(form) => form.span,
+            Self::Urgent(form) => form.span,
+        }
+    }
+}
+
 /// The unit's declarations, split by kind, and the names they bind.
 struct Unit {
     aliases: Vec<AliasForm>,
@@ -726,8 +756,8 @@ struct Unit {
     /// Each `hybrid` declaration's form, in source order, resolved by the
     /// caller into the unit's `HybridDeclaration`s (FR-447).
     hybrids: Vec<qsl_forms::HybridForm>,
-    /// The timed declarations (FR-393), refused until FR-230 checks them.
-    timed: Vec<(TimedConstruct, Span)>,
+    /// The timed declarations in source order, with their complete S2 forms.
+    timed: Vec<TimedDeclaration>,
     /// Each state-graph claim's form, in source order, resolved by the
     /// caller into `StateGraphDeclaration`s (FR-165).
     state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
@@ -801,14 +831,13 @@ impl Unit {
                 DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
                 DeclarationForm::Hybrid(hybrid) => unit.hybrids.push(*hybrid),
                 DeclarationForm::TimeSource(time) => {
-                    unit.timed.push((TimedConstruct::TimeSource, time.span));
+                    unit.timed.push(TimedDeclaration::TimeSource(*time))
                 }
                 DeclarationForm::TimeInvariant(invariant) => {
-                    unit.timed
-                        .push((TimedConstruct::TimeInvariant, invariant.span));
+                    unit.timed.push(TimedDeclaration::TimeInvariant(*invariant))
                 }
                 DeclarationForm::Urgent(urgent) => {
-                    unit.timed.push((TimedConstruct::Urgent, urgent.span));
+                    unit.timed.push(TimedDeclaration::Urgent(*urgent))
                 }
                 DeclarationForm::HyperBehaviours(clause) => unit
                     .hyper_clauses
@@ -2454,16 +2483,9 @@ impl PackageDeclarations {
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let mut unit = Unit::new(forms);
-        // FR-393: the timed declarations build at S2; until FR-230's check
-        // reads them, each refuses here rather than compile unchecked.
-        let mut errors: Vec<AssemblyError> = unit
-            .timed
-            .iter()
-            .map(|(construct, span)| AssemblyError {
-                cause: AssemblyCause::TimedNotChecked(*construct),
-                span: *span,
-            })
-            .collect();
+        // FR-393: retain the parsed timed forms through S2. FR-230 checks
+        // their meaning, including the facet gate, at S3.
+        let mut errors: Vec<AssemblyError> = Vec::new();
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -3429,6 +3451,7 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        package.timed_forms = unit.timed;
         // FR-451: a declaration is located under its own spaced name.
         declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {
             (

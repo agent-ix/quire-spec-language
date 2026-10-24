@@ -539,6 +539,66 @@ impl AdmittedModel {
         self.alias.as_deref()
     }
 
+    /// The package operations a tick source's `operation`,
+    /// `Owner::operation`, or `M::Owner::operation` name can denote. The
+    /// returned declaration identities distinguish a resolved operation
+    /// from merely retaining its source spelling.
+    pub(crate) fn tick_operation_keys(&self, written: &str) -> Vec<&DeclarationKey> {
+        let (owner, operation) = match written.rsplit_once("::") {
+            Some((owner, operation)) => {
+                let owner = match owner.split_once("::") {
+                    Some((qualifier, owner))
+                        if self.alias() == Some(qualifier) && !owner.contains("::") =>
+                    {
+                        owner
+                    }
+                    Some(_) => return Vec::new(),
+                    None => owner,
+                };
+                (Some(owner), operation)
+            }
+            None => (None, written),
+        };
+        let owners: Vec<&DeclarationKey> = owner
+            .into_iter()
+            .flat_map(|name| {
+                self.operation_owners()
+                    .filter(move |(key, _)| key.node.rsplit('/').next() == Some(name))
+                    .map(|(key, _)| key)
+            })
+            .collect();
+        if owner.is_some() && owners.is_empty() {
+            return Vec::new();
+        }
+        let candidates: Vec<_> = self
+            .index
+            .operations()
+            .filter(|record| {
+                (owner.is_none()
+                    || owners
+                        .iter()
+                        .any(|target| self.reaches_owner(target, &record.owner)))
+                    && crate::model::intake::member_identity_name(
+                        &record.owner.node,
+                        &record.key.node,
+                    ) == Some(operation)
+            })
+            .collect();
+        candidates
+            .iter()
+            .filter(|record| {
+                owner.is_none()
+                    || owners.len() != 1
+                    || !candidates.iter().any(|other| {
+                        other.key != record.key
+                            && other.owner != record.owner
+                            && self.reaches_owner(&other.owner, &record.owner)
+                    })
+            })
+            .map(|record| &record.key)
+            .collect()
+    }
+
     /// The domain package's model selection.
     pub fn selection(&self) -> &DomainPackageRef {
         &self.selection
