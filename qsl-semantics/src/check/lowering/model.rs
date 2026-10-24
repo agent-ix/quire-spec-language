@@ -626,6 +626,32 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// Every semantic object-type model node in this selected package, in
+    /// declaration-key order. FR-230 resolves a time-source alias only when
+    /// this package names exactly one such node.
+    pub(crate) fn object_type_model_node_keys(
+        &self,
+        identity: qsl_foundation::IdentityLimits,
+    ) -> Vec<NodeKey> {
+        self.object_types()
+            .filter_map(|(declaration, _)| self.model_node_key(declaration, identity))
+            .collect()
+    }
+
+    /// The declaring object type's effective identity and operation name for
+    /// one admitted FCD operation member.
+    pub(crate) fn operation_anchor_declaration(
+        &self,
+        key: &DeclarationKey,
+    ) -> Option<(EffectiveId, String)> {
+        let Some(DomainPackageRecord::OperationMember(operation)) = self.records.get(key) else {
+            return None;
+        };
+        let declaring = self.effective_id(&operation.owner)?;
+        let name = crate::model::intake::member_identity_name(&operation.owner.node, &key.node)?;
+        Some((declaring, name.to_owned()))
+    }
+
     /// Every operation owner of this package that `M::T::op` can name: an
     /// object type, a process or a state machine (FR-104, FR-115, FR-121),
     /// with its declaration key and effective identity.

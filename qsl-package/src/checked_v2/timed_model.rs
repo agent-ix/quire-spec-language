@@ -6,8 +6,8 @@ use std::str::FromStr;
 
 use quire_contract_model::{
     CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
-    CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm, LiteralKind, NominalIdentityPreimage,
-    TimedModelForm,
+    CheckedOccurrenceRole, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm, LiteralKind,
+    NominalIdentityPreimage, TimedModelForm,
 };
 use quire_exact::{Integer, Rational};
 
@@ -234,6 +234,87 @@ pub struct CheckedClockConstraint {
 }
 
 impl CheckedTimedModel {
+    /// Construct the timed root and source represented by one S3 time
+    /// declaration. The emitter rekeys both placeholders from their bodies.
+    pub(crate) fn from_checked_time_source(
+        source: &qsl_semantics::check::ModelTimeSource,
+        source_id: CheckedNodeId,
+        root_id: CheckedNodeId,
+        owner: CheckedNodeOwner,
+        text_type: CheckedNodeId,
+        rational_type: CheckedNodeId,
+        source_alias: &str,
+    ) -> Option<Self> {
+        let model = checked_id(source.model_node);
+        let source_metadata = TimedNodeMetadata {
+            node_id: source_id.clone(),
+            schema_version: "quire.checked-semantic-graph/v2".into(),
+            semantic_type: source_id,
+            dependencies: Vec::new(),
+            occurrences: vec![CheckedOccurrence {
+                role: CheckedOccurrenceRole::Expression,
+                ordinal: 0,
+            }],
+            recursion_group: None,
+            nominal_identity_preimage: None,
+            declaration: None,
+            owner: None,
+        };
+        let (kind, model_ref, operation, period, period_type) = match &source.source {
+            qsl_semantics::check::TimeSourceKind::Dense => {
+                (CheckedTimeSourceKind::Dense, None, None, None, None)
+            }
+            qsl_semantics::check::TimeSourceKind::Tick { period, .. } => (
+                CheckedTimeSourceKind::Tick,
+                Some(model.clone()),
+                Some(checked_id(source.tick_operation_anchor?)),
+                Some(format!("{}/{}", period.numerator(), period.denominator())),
+                Some(rational_type),
+            ),
+        };
+        let timed_source = CheckedTimeSource {
+            metadata: source_metadata,
+            kind,
+            unit: checked_id(source.unit_node),
+            model: model_ref,
+            operation,
+            period,
+            period_type,
+        };
+        let root_metadata = TimedNodeMetadata {
+            node_id: root_id.clone(),
+            schema_version: "quire.checked-semantic-graph/v2".into(),
+            semantic_type: root_id,
+            dependencies: Vec::new(),
+            occurrences: vec![CheckedOccurrence {
+                role: CheckedOccurrenceRole::Declaration,
+                ordinal: 0,
+            }],
+            recursion_group: None,
+            nominal_identity_preimage: None,
+            declaration: Some(CheckedDeclaration {
+                qualified_name: vec![source_alias.into(), "Timed".into()],
+            }),
+            owner: Some(owner),
+        };
+        Some(Self {
+            metadata: root_metadata,
+            model: model.clone(),
+            time_dimension: checked_id(source.time_dimension),
+            source: timed_source,
+            clock_places: Vec::new(),
+            resets: Vec::new(),
+            guards: Vec::new(),
+            invariants: Vec::new(),
+            urgencies: Vec::new(),
+            normalized_constraints: Vec::new(),
+            literal_types: TimedLiteralTypes {
+                text: text_type,
+                integer: None,
+            },
+        })
+    }
+
     /// Reconstruct every admitted timed-model root and its typed children.
     ///
     /// IR admission has already checked each closed body and all typed edges;
@@ -323,6 +404,13 @@ impl CheckedTimedModel {
         );
         nodes.push(write_root(self));
         Ok(nodes)
+    }
+}
+
+fn checked_id(key: quire_exact::NodeKey) -> CheckedNodeId {
+    CheckedNodeId {
+        domain: quire_exact::NODE_KEY_DOMAIN.into(),
+        digest: key.to_string().into(),
     }
 }
 
