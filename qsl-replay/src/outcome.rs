@@ -194,8 +194,10 @@ pub enum ItemLabel {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ParityReason {
     reason: &'static str,
-    proved: &'static str,
-    replayed: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    proved: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replayed: Option<&'static str>,
 }
 
 /// The typed cause an item's terminal record carries: its FR-331 spelling in
@@ -455,8 +457,8 @@ impl ItemCause {
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
                 item.parity = Some(ParityReason {
                     reason: parity.as_str(),
-                    proved: parity.proved().category().as_str(),
-                    replayed: parity.replayed().category().as_str(),
+                    proved: parity.proved().map(|verdict| verdict.category().as_str()),
+                    replayed: parity.replayed().map(|verdict| verdict.category().as_str()),
                 });
             }
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayRefused(code)) => {

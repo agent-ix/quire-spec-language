@@ -304,9 +304,9 @@ pub use request::{
     ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
-    read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, InputArmResult,
-    InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason, SeparationRefusal,
-    Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
+    read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,
+    InputArmResult, InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason,
+    SeparationRefusal, Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // QSpec FR-323: the replay target a packet, envelope and request each carry.

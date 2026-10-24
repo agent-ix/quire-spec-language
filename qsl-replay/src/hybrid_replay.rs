@@ -159,7 +159,7 @@ impl ExactCheck {
 }
 
 /// A reproduced hybrid trace (QSpec FR-331 `hybrid-counterexample`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HybridCounterexample {
     /// What the trace reproduces.
     pub kind: HybridCounterexampleKind,
@@ -167,8 +167,36 @@ pub struct HybridCounterexample {
     pub trace: HybridTrace,
 }
 
+impl HybridCounterexample {
+    pub(crate) fn measured_bytes(&self) -> usize {
+        fn rational(value: &quire_exact::Rational) -> usize {
+            value.numerator().to_string().len() + value.denominator().to_string().len()
+        }
+        fn interval(value: &ExactInterval) -> usize {
+            rational(&value.lower) + rational(&value.upper)
+        }
+        fn state(value: &TraceState) -> usize {
+            interval(&value.time) + value.enclosure.iter().map(interval).sum::<usize>() + 8
+        }
+        let trace = &self.trace;
+        state(&trace.start)
+            + trace
+                .jumps
+                .iter()
+                .map(|jump| {
+                    8 + jump.before.as_ref().map_or(0, |before| {
+                        interval(&before.time)
+                            + before.enclosure.iter().map(interval).sum::<usize>()
+                    }) + state(&jump.state)
+                })
+                .sum::<usize>()
+            + trace.delta.as_ref().map_or(0, rational)
+            + trace.loop_to.map_or(0, |_| 8)
+    }
+}
+
 /// What a reproduced trace shows.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HybridCounterexampleKind {
     /// The claim is false on the replayed behaviour.
     Formula,
@@ -183,7 +211,7 @@ pub enum HybridCounterexampleKind {
 }
 
 /// The instant of a behaviour at which an expression has no value.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UndefinedInstant {
     /// The trace state whose dwell, or whose own point, holds the instant:
     /// 0 for `start`, `k` for the state of `jumps[k - 1]`.
