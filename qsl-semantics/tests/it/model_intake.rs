@@ -66,6 +66,80 @@ fn parse_document(bytes: &[u8]) -> PackageDocument {
         .expect("the test document parses as JSON")
 }
 
+#[test]
+fn the_model_reader_cohort_admits_dimensions_and_scaled_units() {
+    let mut document: Value = serde_json::from_slice(include_bytes!(
+        "../../../tests/fixtures/spine-model.semantic-ir.json"
+    ))
+    .expect("the authored model fixture is JSON");
+    let origin = document["types"][0]["origin"].clone();
+    document["dimensions"] = serde_json::json!([{
+        "identity": "ix://acme/orders/dimension/Time", "name": "Time",
+        "base": true, "terms": [], "origin": origin
+    }]);
+    document["units"] = serde_json::json!([
+        {"identity": "ix://acme/orders/unit/s", "name": "s",
+         "dimension": "ix://acme/orders/dimension/Time", "scale": "1", "offset": "0",
+         "origin": origin},
+        {"identity": "ix://acme/orders/unit/ms", "name": "ms",
+         "dimension": "ix://acme/orders/dimension/Time", "target": "ix://acme/orders/unit/s",
+         "scale": "1/1000", "offset": "0", "origin": origin}
+    ]);
+    let bytes = serde_json::to_vec(&document).expect("serialize authored model");
+    let parsed = parse_document(&bytes);
+    let records = read_records("acme/orders", &parsed)
+        .expect("the FCD reader admits the original model with its dimension/unit graph");
+    assert!(!records.is_empty());
+
+    document["units"][1]["target"] = "ix://acme/orders/unit/missing".into();
+    let invalid = parse_document(&serde_json::to_vec(&document).expect("serialize mutation"));
+    let errors = read_records("acme/orders", &invalid)
+        .expect_err("the cohort must retain the owner's unresolved-unit refusal");
+    assert_eq!(errors.len(), 1);
+    assert!(
+        errors[0].detail.contains("UNRESOLVED_UNIT_REF"),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn the_selected_frontend_publishes_adjacent_semantic_kernel_unions() {
+    let root = fcd_fixtures_dir().join("../../..");
+    let schema_root = root.join("packages/semantic-core/generated/json-schema");
+    for name in [
+        "ConstraintDecl",
+        "EnumValuesConstraintValues",
+        "MinConstraintValue",
+        "MaxConstraintValue",
+        "ExclusiveMinConstraintValue",
+        "ExclusiveMaxConstraintValue",
+        "TypeRefTarget",
+    ] {
+        let schema: Value = serde_json::from_slice(
+            &std::fs::read(schema_root.join(format!("{name}.json")))
+                .expect("the selected frontend's semantic-core schema exists"),
+        )
+        .expect("the producer schema is JSON");
+        let branches = schema["oneOf"].as_array().expect("a closed union");
+        assert!(branches.len() >= 2, "{name}");
+        for branch in branches {
+            assert_eq!(branch["type"], "object", "{name}");
+            assert!(branch["properties"]["kind"]["const"].is_string(), "{name}");
+            assert!(branch["properties"]["value"].is_object(), "{name}");
+            assert_eq!(
+                branch["required"],
+                serde_json::json!(["kind", "value"]),
+                "{name}"
+            );
+            assert_eq!(
+                branch["unevaluatedProperties"],
+                serde_json::json!({"not": {}}),
+                "{name}"
+            );
+        }
+    }
+}
+
 /// Resolves to the checked-out `agent-ix-extraction-frontend` git
 /// dependency's own `fixtures` directory
 /// (`crates/extraction-frontend/fixtures` in the pinned
