@@ -55,7 +55,12 @@ fn the_header_profile_catalog_admits_the_temporal_layer() {
             .identity
     ));
 
-    let source = b"language \"ix:native\" edition \"1-draft\";\nprofile t = \"quire.temporal.complete/v1\";\n";
+    let source = concat!(
+        "language \"ix:native\" edition \"1-draft\";\n",
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        "record Reading { datum: Integer; }\n",
+    )
+    .as_bytes();
     let parsed = complete::parse_with_catalog(
         identity("temporal"),
         "temporal.native",
