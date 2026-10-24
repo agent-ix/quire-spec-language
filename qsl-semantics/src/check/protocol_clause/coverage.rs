@@ -58,7 +58,7 @@ fn covered_construct(kind: ProtocolConstructKind) -> bool {
         | K::Relationship
         | K::Related
         | K::ReplicatedRole => true,
-        K::JoinPredicate => false,
+        K::JoinPredicate => true,
     }
 }
 

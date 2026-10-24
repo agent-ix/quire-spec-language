@@ -228,13 +228,11 @@ list.
     a proper subtype's reference is a `Reference<T>`; or a reference's
     `identity` is empty or not UTF-8, which the kernel's object identity
     constructor never accepts (FR-100);
-  - a `set` or `ordered-set` holds two elements the kernel's equality
-    relates (decimals compare by numeric value, so `1.0` and `1.00` are
-    duplicates, though FR-070 gives them distinct value texts);
-  - a decoded `set` or `ordered-set` whose elements bear a float. S3 admits
-    no declared set type whose element type bears a float (QSpec
-    FR-144-AC-6, FR-323-AC-3), so such a value matches no declared type and
-    fails conversion as a kind mismatch.
+  - a `set` or `ordered-set` holds two elements the kernel's collection
+    membership relation relates (decimals compare by numeric value, so `1.0`
+    and `1.00` are duplicates, though FR-070 gives them distinct value texts;
+    floats compare by bits, so `+0` and `-0` and two NaN payloads are not
+    duplicates and two identical bit patterns are).
 - An enum member converts to the kernel member with its declared rank. A
   text converts to a kernel text of the declared text type. A String object
   converts to a kernel String of its exact scalar sequence, which no content

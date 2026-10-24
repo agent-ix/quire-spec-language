@@ -38,11 +38,29 @@ pub struct CheckedRequirement {
     pub span: Span,
 }
 
-/// The unit's declarations a requirement name may resolve to: its
-/// `temporal` clauses by name, and the kind of every other declaration.
+/// Retain callable identity for semantic dispatch; other keywords are only
+/// diagnostic labels for declarations that cannot be join functions.
+#[derive(Clone, Copy)]
+pub(crate) enum UnitDeclarationKind {
+    Callable(qsl_forms::DeclarationKind),
+    Other(&'static str),
+}
+
+impl UnitDeclarationKind {
+    fn keyword(self) -> &'static str {
+        match self {
+            Self::Callable(qsl_forms::DeclarationKind::Function) => "function",
+            Self::Callable(qsl_forms::DeclarationKind::Predicate) => "predicate",
+            Self::Other(keyword) => keyword,
+        }
+    }
+}
+
+/// The declarations a requirement name may resolve to, retaining first-entry
+/// precedence and the owner's callable kind.
 pub(crate) struct UnitDeclarations<'u> {
     temporal: BTreeMap<&'u str, usize>,
-    other: BTreeMap<&'u str, &'static str>,
+    other: BTreeMap<&'u str, UnitDeclarationKind>,
     protocols: BTreeMap<&'u str, usize>,
 }
 
@@ -53,7 +71,7 @@ impl<'u> UnitDeclarations<'u> {
     pub(crate) fn new(
         temporal: &'u [TemporalDeclaration],
         protocols: &'u [ProtocolDeclarationForm],
-        other: impl IntoIterator<Item = (&'u str, &'static str)>,
+        other: impl IntoIterator<Item = (&'u str, UnitDeclarationKind)>,
     ) -> Self {
         let mut declarations = Self {
             temporal: BTreeMap::new(),
@@ -74,12 +92,36 @@ impl<'u> UnitDeclarations<'u> {
             declarations
                 .other
                 .entry(protocol.name.name.as_str())
-                .or_insert("protocol");
+                .or_insert(UnitDeclarationKind::Other("protocol"));
         }
         for (name, kind) in other {
             declarations.other.entry(name).or_insert(kind);
         }
         declarations
+    }
+
+    /// The declared keyword for a name in this unit, including temporal
+    /// clauses and protocols.
+    pub(crate) fn kind(&self, name: &str) -> Option<&'static str> {
+        if self.temporal.contains_key(name) {
+            Some("temporal")
+        } else {
+            self.other
+                .get(name)
+                .copied()
+                .map(UnitDeclarationKind::keyword)
+        }
+    }
+
+    /// A callable's owner kind, with the same resolution precedence as `kind`.
+    pub(crate) fn callable_kind(&self, name: &str) -> Option<qsl_forms::DeclarationKind> {
+        if self.temporal.contains_key(name) {
+            return None;
+        }
+        match self.other.get(name)? {
+            UnitDeclarationKind::Callable(kind) => Some(*kind),
+            UnitDeclarationKind::Other(_) => None,
+        }
     }
 }
 
@@ -112,7 +154,7 @@ pub(crate) fn check(
             refusals.push(refusal(match declarations.other.get(name.name.as_str()) {
                 Some(kind) => ProtocolAnchorCause::RequirementKind {
                     name: name.name.clone(),
-                    kind,
+                    kind: kind.keyword(),
                     span: name.span,
                 },
                 None => ProtocolAnchorCause::MissingRequirement {

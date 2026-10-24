@@ -42,6 +42,11 @@ fn a_contract_entry_naming_two_clauses_of_one_name_refuses() {
         &std::collections::BTreeSet::new(),
         &scope,
         &signatures,
+        &super::super::super::protocol_requirement::UnitDeclarations::new(
+            &[],
+            &[],
+            std::iter::empty(),
+        ),
         &assembled.protocol_attempts[0],
         &assembled.state_clauses,
         super::super::Selections::default(),

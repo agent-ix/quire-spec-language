@@ -245,6 +245,43 @@ fn channel_premises_admit_exactly_their_queue_steps() {
     assert_eq!(records, [json!(queued[0])]);
 }
 
+/// FR-205-AC-6 (TC-650): two protocols of one package each declare `channel
+/// Pay`. Their subjects' state keys hold `queues` entries, and the
+/// identities of `duplicate` and `lose` hold channel names, each in its own
+/// protocol's qualified name; nothing of one names the other's channel.
+#[trace("TC-650", "FR-205-AC-6")]
+#[test]
+fn two_protocols_declaring_one_channel_name_keep_their_queues_apart() {
+    let members = channel(
+        "Pay",
+        "ordering fifo by (m: Boolean) { true } delivery unknown capacity 2 overflow block",
+    );
+    let run = "sequence Main { send S1 via Pay as (s1: Boolean) { s1 }; }";
+    let unit = contracts("self.v = 0")
+        + &protocol("Pipeline", &members, run, "d")
+        + &protocol("Billing", &members, run, "d");
+    let case = Case::new(&unit, &[0]);
+    for (name, other) in [("Pipeline", "Billing"), ("Billing", "Pipeline")] {
+        let subject = case.subject(name);
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let sent = follow(&reached, &[(StepKind::Send, "S1")]);
+        let held = key(&system, &reached[sent].state)["queues"].to_string();
+        assert!(held.contains(&format!("{name}::Pay")), "{name}: {held}");
+        assert!(!held.contains(&format!("{other}::Pay")), "{name}: {held}");
+        for kind in [StepKind::Duplicate, StepKind::Lose] {
+            let (transition, _) = reached[sent]
+                .steps
+                .iter()
+                .find(|(transition, _)| transition.kind() == kind)
+                .unwrap_or_else(|| panic!("{name}: no {kind:?}"));
+            let identity = identity(&system, transition).to_string();
+            assert!(identity.contains(&format!("{name}::Pay")), "{identity}");
+            assert!(!identity.contains(&format!("{other}::Pay")), "{identity}");
+        }
+    }
+}
+
 /// FR-206-AC-7 (TC-651, ADR-027 ST-3, PX-1): over a `fifo` channel `ch` of
 /// capacity 2, each `send` binds its binder to the payload and its step
 /// carries the send record `{channel, payload, outcome, displaced}`, with

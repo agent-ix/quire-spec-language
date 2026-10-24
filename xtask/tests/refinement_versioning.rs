@@ -67,21 +67,16 @@ fn broken() -> String {
     broken
 }
 
-/// The unit with a well-typed protocol whose `join predicate` join the checker
-/// does not read yet (`unsupported_construct`/`not-yet-implemented`). A
-/// predicate join stays unchecked until its vector spec (STD-190) lands, so the
-/// fixture does not depend on a construct the clause checker is gaining.
+/// The unit with a checked `on each` temporal clause. S3 checks it, but S4
+/// has no emitter for that activation and refuses it as not yet implemented.
 fn unsupported() -> String {
-    unit()
-        + "protocol Flow using v over (input: Boolean) on origin {\n\
-           role R on Config::ConfigVersion;\n\
-           run parallel P { \
-           branch east sequence E { attempt Tried by R on Config::ConfigVersion::attemptUpdate \
-           contracts [] as (tried: Boolean) { true }; } \
-           branch west sequence W { } } \
-           join predicate(done) [east, west];\n\
-           finish End as (outcome: Boolean) { true };\n\
-           }\n"
+    unit().replace(
+        "profile v = \"quire.model.complete/v1\";\n",
+        "profile v = \"quire.model.complete/v1\";\n\
+             profile t = \"quire.temporal.infinite-trace/v1\";\n",
+    ) + "temporal Unemitted using t over (c: Config::ConfigVersion) \
+           clock \"model-steps\" on each (d: Config::ConfigVersion) \
+           when (d.versionNumber >= 0) { eventually holds(c.versionNumber <= 1000) }\n"
 }
 
 /// The unit with more work in `ParentOrder` and the same meaning.
@@ -677,7 +672,10 @@ fn the_real_corpus_passes_and_the_seeded_copy_fails() {
 #[test]
 #[trace("TC-865", "FR-343-AC-5")]
 fn an_unsupported_compile_on_either_side_is_unresolved() {
-    for (prior, superseding) in [(unit(), unsupported()), (unsupported(), unit())] {
+    for (side, prior, superseding) in [
+        ("superseding", unit(), unsupported()),
+        ("prior", unsupported(), unit()),
+    ] {
         let corpus = corpus(&[(
             "pair",
             Pair::new(prior, superseding, vec![clause_case("healthy-parent")]),
@@ -691,6 +689,21 @@ fn an_unsupported_compile_on_either_side_is_unresolved() {
                 "unresolved (unsupported)"
             )]
         );
+        let entry = &listed(&report)[0];
+        let other = if side == "prior" {
+            "superseding"
+        } else {
+            "prior"
+        };
+        assert_ne!(entry[other]["class"], "unsupported", "{side} side");
+        let unsupported_side = &entry[side];
+        assert_eq!(unsupported_side["class"], "unsupported", "{side} side");
+        assert_eq!(unsupported_side["stage"], "compile");
+        assert_eq!(
+            unsupported_side["codes"][0]["code"],
+            "unsupported_construct"
+        );
+        assert_eq!(unsupported_side["codes"][0]["cause"], "not-yet-implemented");
         assert_eq!(report.verdict, Verdict::Unsupported);
         assert_eq!(report.exit, 21);
     }
