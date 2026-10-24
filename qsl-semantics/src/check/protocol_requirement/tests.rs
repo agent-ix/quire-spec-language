@@ -17,6 +17,7 @@ mod fixture {
 }
 use fixture::{obligation_model, HEADER};
 
+#[trace("TC-1065", "FR-218-AC-31")]
 #[test]
 fn join_kind_retains_first_declaration_and_diagnostic_keyword() {
     use super::UnitDeclarationKind::{Callable, Other};

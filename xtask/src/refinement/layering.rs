@@ -1626,6 +1626,7 @@ mod tests {
         assert!(!differs_only_by_profile_identity(parent.as_bytes(), changed.as_bytes()).unwrap());
     }
 
+    #[trace("TC-868", "FR-345-AC-5")]
     #[test]
     fn profile_metadata_uses_tokens_without_admitting_the_body() {
         let text = "// profile ignored = \"not-a-profile\";\nprofile\n v // identity\n =\n \"quire.state.core/v1\";\ninvariant Broken { @ }";
@@ -1634,8 +1635,45 @@ mod tests {
         assert_eq!(&text[start..end], identity);
         assert!(profile_identity_span(b"// profile v = \"ignored\";\n").is_err());
         assert!(profile_identity_span(b"profile v = \"one\"; profile w = \"two\";").is_err());
+
+        let temp = crate::test_support::tempdir();
+        let root = write_pair(
+            temp.path(),
+            "token-profile",
+            "case",
+            EDGES[0],
+            "parent.native",
+            "child.native",
+            "invariant I using v { @ }\n",
+        );
+        for name in ["parent.native", "child.native"] {
+            let path = root.join(name);
+            let source = fs::read_to_string(&path)
+                .unwrap()
+                .replace("profile v =", "profile\n v // identity\n =");
+            fs::write(path, source).unwrap();
+        }
+        let child_path = root.join("child.native");
+        let child = fs::read_to_string(&child_path)
+            .unwrap()
+            .replace("invariant I", "invariant J");
+        fs::write(child_path, child).unwrap();
+        let report = compare(
+            temp.path(),
+            |_| panic!("mismatched pair must not compile"),
+            &RegistrySnapshot::default(),
+            None,
+        );
+        assert!(report.results.iter().any(|result| matches!(result,
+            EntryResult::ToolFailure { entry, defect, .. }
+                if entry.ends_with("token-profile/entry.json")
+                    && defect == "parent and child differ outside the profile identity string"
+        )));
+        assert_eq!(report.verdict, super::super::report::Verdict::ToolFailure);
+        assert_eq!(report.exit, 30);
     }
 
+    #[trace("TC-868", "FR-345-AC-7")]
     #[test]
     fn distinguishing_checks_the_typed_code_not_the_cause_text() {
         for (code, expected) in [
@@ -1688,6 +1726,7 @@ mod tests {
         }
     }
 
+    #[trace("TC-868", "FR-345-AC-8")]
     #[test]
     fn entry_kind_is_closed_at_json_intake() {
         for (wire, expected) in [
@@ -1705,5 +1744,53 @@ mod tests {
             "kind": "unknown", "packages": [], "dependencies": [],
         }))
         .is_err());
+
+        let temp = crate::test_support::tempdir();
+        write_pair(
+            temp.path(),
+            "valid",
+            "case",
+            EDGES[0],
+            "parent.native",
+            "child.native",
+            "invariant I using v { true }\n",
+        );
+        let invalid = temp.path().join("invalid");
+        fs::create_dir(&invalid).unwrap();
+        fs::write(
+            invalid.join("entry.json"),
+            serde_json::to_vec(&json!({
+                "kind": "case", "packages": [], "dependencies": [], "expected": "holds",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut calls = 0;
+        let report = compare(
+            temp.path(),
+            |_| {
+                calls += 1;
+                Compilation::classified(F, Vec::new())
+            },
+            &RegistrySnapshot::default(),
+            None,
+        );
+        assert_eq!(calls, 2, "the valid entry still compiles both units");
+        let defects: Vec<_> = report
+            .results
+            .iter()
+            .filter_map(|result| match result {
+                EntryResult::ToolFailure { entry, defect, .. }
+                    if entry.ends_with("invalid/entry.json") =>
+                {
+                    Some(defect)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(defects.len(), 1);
+        assert!(defects[0].contains("unknown field `expected`"));
+        assert_eq!(report.verdict, super::super::report::Verdict::ToolFailure);
+        assert_eq!(report.exit, 30);
     }
 }
