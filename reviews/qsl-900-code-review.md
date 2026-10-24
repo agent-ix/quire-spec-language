@@ -49,3 +49,27 @@ Gates run (own target dir, one cargo job at a time): `cargo test -p qsl-route -p
 ## Verdict
 
 CHANGES REQUESTED. Settlement soundness is correct where it matters most: `Refuted` is reachable only through exact replay reproducing the trace, and every other path is `Inconclusive`, `Incomplete` or a refusal. The hybrid label is derived from S3's classification without reclassifying. Trace attributes are used throughout and no deprecated doc lines are added. No downstream breakage was found. Before merge, FND-001 should be fixed by deriving `ClaimHorizon` from `CheckedHybridClaim`, and FND-002 should be either wired or explicitly deferred with the AC-1 tag narrowed. FND-003 and FND-006 overstate matrix coverage for ACs the PR body says are deferred.
+
+## New findings (disposition pass 1)
+
+Disposition pass 1, reviewing fix commit 70e7e960f.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | The FND-005 fix makes `TerminalRecord::from_plugin_proof` refuse every `BoundedSolver` basis (`Malformed` at `/basis/type`). FR-290-AC-5 still says each basis `read_plugin_basis` reads, the `bounded-solver` values included, "passed to `TerminalRecord::from_plugin_proof`, settles `proved` with `trusted`", and FR-289-AC-9 says a process provider's `proved` settles with "the reported basis". Code and spec now disagree. Choosing refusal over trusting an unchecked basis is the safer side, but FR-290-AC-5 needs amending to send `bounded-solver` through `from_hybrid_plugin_proof`. The test `every_plugin_basis_is_trusted` (FR-289-AC-9) now asserts the refusal. | qsl-replay/src/proof_result/plugin.rs:257-273; qsl-replay/tests/terminal_record_facade.rs:582-601; spec/functional/FR-290-settle-plugin-results-as-typed-terminal-records.md:542 |
+| FND-010 | low | `settle_hybrid_candidates(candidate_count: usize)` sees only a count, so it returns `Unsupported(HybridProviderAbsent)` for any item with an empty set, a non-hybrid item included. The caller must already know the item carries `hybrid-dynamics`. Taking the `RequirementItem` (or its `requirements()`) would make the map impossible to misapply. | qsl-replay/src/hybrid.rs:410-419 |
+
+## Dispositions
+
+Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `ClaimHorizon::of(&CheckedHybridClaim)` derives the horizon from the claim's own clock and horizon. `settle(graph, claim, meter)` no longer takes a horizon, and `settlement_basis(&CheckedHybridClaim)` and `from_hybrid_plugin_proof(.., &CheckedHybridClaim)` derive it the same way. A mismatched or negative horizon reads as unbounded, which no bounded proof covers. Tested by `coverage_is_decided_from_the_checked_claims_own_horizon` over real `SlowEnough`/`Positive` claims. |
+| FND-002 | fixed | `settle_hybrid_candidates` maps an empty hybrid candidate set to `Unsupported(HybridProviderAbsent)`. The root test `hybrid_request_items` runs a real checked graph through the registry and this map. Production negotiation lives in quire-contract-codegen, so the CG call site is follow-up work. Accepted as the wiring hook (see FND-010). |
+| FND-003 | fixed | `read_first_party_solver_basis` refuses `flowpipe-unrounded` and `unclassified` `bounded-solver` bases as `Malformed`/`InvalidValue` at `/basis/method`, tested by `a_first_party_entry_with_an_unsound_method_is_refused` under FR-250-AC-6. |
+| FND-004 | fixed | `terminal_value` and `basis` are now private; `settle` and `settlement_basis` are the public entry points. |
+| FND-005 | fixed | `from_plugin_proof` refuses a `BoundedSolver` basis, and coverage-checked admission goes through `from_hybrid_plugin_proof`. This opens the spec drift recorded as FND-009. |
+| FND-006 | fixed | The route_registry tests are now tagged `FR-075-AC-19` and `FR-075-AC-20` only. |
+| FND-007 | fixed | The test is retagged with plain `#[trace("TC-1187", "FR-447-AC-17")]`, and the matrix indexes it. It now also checks that a non-temporal item gets no label. It still asserts the `requirements()` accessor rather than serialized bytes, because this repo has no wire writer for request items. |
+| FND-008 | fixed | The root test `hybrid_request_items` now has `Reaches`, a real temporal claim over a non-hybrid model, which carries no label and routes to EN-6 only. The semantics test comment now says the bare declaration has no claim. |

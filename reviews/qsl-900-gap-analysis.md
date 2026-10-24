@@ -34,3 +34,22 @@ FAIL under the gap-analysis rule, because two touched criteria are untagged (FR-
 - Reverse gaps: none. Stubs: none in production code. Hollow evidence: FND-004.
 - Semantic review: reviewer-scoped to the touched FR-250 criteria; the full fan-out semantic review was not run.
 - Plan completion: not assessed
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at 70e7e960f. The matrix was recomputed with `quire matrix --scope <worktree> --format json`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-290-AC-5 is tagged, and its text says each `bounded-solver` value `read_plugin_basis` reads, "passed to `TerminalRecord::from_plugin_proof`, settles `proved` with `trusted`". At 70e7e960f `from_plugin_proof` refuses every `BoundedSolver` basis, and the tagged test never exercises that clause, so the tag covers a clause the code now contradicts (code SR-16365 FND-009). | qsl-replay/src/proof_result/plugin_tests.rs; qsl-replay/src/proof_result/plugin.rs:257-273 |
+
+## Dispositions
+
+Round 1, at 70e7e960f9d9c27607e6630c646f87c6399b7a7e.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-447-AC-17 is now tagged in the computed matrix by `request_writer_keeps_hybrid_dynamics_in_the_item_identity`, which uses plain `#[trace("TC-1187", "FR-447-AC-17")]`. |
+| FND-002 | deferred | QSL-1035 owns FR-250-AC-5. It stays untagged at 70e7e960f, and no tag claims it. |
+| FND-003 | deferred | QSL-1035 owns FR-250-AC-3. The inflated tag is gone, the matrix now reports AC-3 honestly as untagged, and no tag claims it. |
+| FND-004 | fixed | AC-1's unsupported clause now runs a real checked graph through the registry and `settle_hybrid_candidates`, in `a_checked_hybrid_claim_routes_to_the_hybrid_provider_only`. AC-6's first-party `/basis/method` refusal is implemented in `read_first_party_solver_basis` and tested in `a_first_party_entry_with_an_unsound_method_is_refused`. |

@@ -147,16 +147,32 @@ fn a_checked_hybrid_claim_routes_to_the_hybrid_provider_only() {
             (true, Vec::new())
         ]
     );
-    let hybrid_candidates = alone[1].1.len();
+    let label = |labelled: bool| -> &'static [&'static str] {
+        if labelled {
+            &["hybrid-dynamics"]
+        } else {
+            &[]
+        }
+    };
+    let settled: Vec<_> = alone
+        .iter()
+        .map(|(labelled, candidates)| settle_hybrid_candidates(label(*labelled), candidates.len()))
+        .collect();
+    // Only the hybrid item is settled; `Reaches` has a candidate, and an
+    // unlabelled item with none would still not be a hybrid item.
     assert_eq!(
-        settle_hybrid_candidates(hybrid_candidates),
-        Some(TerminalValue::Unsupported(
-            UnavailabilityCause::HybridProviderAbsent
-        ))
+        settled,
+        vec![
+            None,
+            Some(TerminalValue::Unsupported(
+                UnavailabilityCause::HybridProviderAbsent
+            ))
+        ]
     );
+    assert_eq!(settle_hybrid_candidates(&[], 0), None);
     assert_eq!(
         UnavailabilityCause::HybridProviderAbsent.as_str(),
         "unsupported-requested-capability"
     );
-    assert_eq!(settle_hybrid_candidates(1), None);
+    assert_eq!(settle_hybrid_candidates(&["hybrid-dynamics"], 1), None);
 }

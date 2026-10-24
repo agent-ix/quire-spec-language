@@ -407,15 +407,20 @@ impl SolverResult {
     }
 }
 
-/// FR-250: a hybrid item whose negotiated candidate set (FR-075, with
+/// FR-250: a hybrid item (its FR-331 `requirements` member holds
+/// `hybrid-dynamics`) whose negotiated candidate set (FR-075, with
 /// `candidate_count` backends) is empty settles `unsupported`,
-/// `unsupported-requested-capability`. `None` when a candidate exists and the
-/// item is the provider's to settle. Negotiation itself is the caller's
-/// (FR-057); this is the map from its empty set to the item's terminal value.
-pub fn settle_hybrid_candidates(candidate_count: usize) -> Option<TerminalValue> {
-    (candidate_count == 0).then_some(TerminalValue::Unsupported(
-        UnavailabilityCause::HybridProviderAbsent,
-    ))
+/// `unsupported-requested-capability`. `None` for an item without the
+/// requirement, or when a candidate exists and the item is the provider's to
+/// settle. Negotiation itself is the caller's (FR-057); this is the map from
+/// its empty set to the item's terminal value.
+pub fn settle_hybrid_candidates(
+    requirements: &[&str],
+    candidate_count: usize,
+) -> Option<TerminalValue> {
+    (requirements.contains(&"hybrid-dynamics") && candidate_count == 0).then_some(
+        TerminalValue::Unsupported(UnavailabilityCause::HybridProviderAbsent),
+    )
 }
 
 /// What settling a provider's result produced: the terminal value and, when

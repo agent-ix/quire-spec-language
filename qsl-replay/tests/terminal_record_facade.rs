@@ -576,10 +576,12 @@ fn refused_plugin_results_carry_pl7_diagnostics() {
     assert_eq!(record.value(), &TerminalValue::Failed);
 }
 
-/// FR-289-AC-9 / TC-773: every basis PL-7 lets a plugin carry, a
-/// bounded-solver one included, settles `proved` with `trusted` and the
-/// plugin's identity.
-#[trace("TC-773", "FR-289-AC-9")]
+/// Every non-solver basis PL-7 lets a plugin carry settles `proved` with
+/// `trusted` and the plugin's identity. A `bounded-solver` basis is refused
+/// here: only a hybrid claim's coverage admits it
+/// (`TerminalRecord::from_hybrid_plugin_proof`, FR-250). That contradicts
+/// FR-289-AC-9 and FR-290-AC-5 as written, which QSL-1036 amends, so this
+/// test claims neither.
 #[test]
 fn every_plugin_basis_is_trusted() {
     use qsl_replay::ProofBasis;
