@@ -2950,6 +2950,7 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        let mut lowered_hybrid_claims = Vec::with_capacity(checked_hybrid_claim_list.len());
         if lowered_hybrids.len() == checked_hybrid_models.len() {
             for (index, claim) in checked_hybrid_claim_list.iter().enumerate() {
                 let (Some(model), Some(lowered)) = (
@@ -2958,14 +2959,15 @@ impl PackageDeclarations {
                 ) else {
                     continue;
                 };
-                if let Err(refusal) = lowering.hybrid_claim(&lowering::HybridClaimInput {
+                match lowering.hybrid_claim(&lowering::HybridClaimInput {
                     index,
                     claim,
                     model,
                     lowered,
                     signatures: signatures.as_slice(),
                 }) {
-                    refusals.push(refusal);
+                    Ok(lowered) => lowered_hybrid_claims.push((index, lowered)),
+                    Err(refusal) => refusals.push(refusal),
                 }
             }
         }
@@ -3311,6 +3313,64 @@ impl PackageDeclarations {
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
+        // FR-447 "The provider request": one `temporal-satisfaction` record
+        // per checked hybrid claim, keyed by the claim's `claim` occurrence,
+        // carrying the hybrid-dynamics requirement every hybrid claim has
+        // (every checked hybrid model has a `Hybrid` variable).
+        for (index, lowered) in lowered_hybrid_claims {
+            let location = lowering::hybrid_location(lowering::HybridSite::Claim(index));
+            let unkeyable = || {
+                vec![CheckRefusal {
+                    location: location.clone(),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]
+            };
+            let claim = occurrences
+                .iter_role(family::OccurrenceRole::Claim)
+                .find(|(node, _, at)| *node == lowered.key && **at == location)
+                .map(|(_, origin, _)| origin)
+                .ok_or_else(unkeyable)?;
+            let checked_claim = checked_hybrid_claim_list.get(index).ok_or_else(unkeyable)?;
+            let bounded = checked_claim.horizon.is_some();
+            // The class S3 recorded for each variable; the request label is
+            // read from it, never classified again (FR-250).
+            let hybrid_dynamics = checked_hybrid_models
+                .get(checked_claim.model.get())
+                .ok_or_else(unkeyable)?
+                .variables
+                .iter()
+                .any(|variable| variable.class == hybrid::VariableClass::Hybrid);
+            let mut domains = std::collections::BTreeMap::new();
+            if !bounded {
+                domains.insert(
+                    qsl_foundation::bound::DomainKey::Node {
+                        node: claims::wire(lowered.key),
+                        path: Vec::new(),
+                    },
+                    qsl_foundation::bound::DomainKind::InfiniteTrace,
+                );
+            }
+            let requirement = crate::family::Requirements::new(
+                crate::check::Capability::TemporalSatisfaction,
+                crate::family::ClaimExtent::from_domains(domains),
+            );
+            let record = claims::RequirementRecord::unguarded(
+                if hybrid_dynamics {
+                    requirement.with_hybrid_dynamics()
+                } else {
+                    requirement
+                },
+                ValueType::Boolean,
+                claims::wire(lowered.boolean),
+                references::ModelReferences::new(Default::default(), [], None),
+            );
+            match requirements.entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone())) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(record);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+            }
+        }
         // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
         // computed by the same `state_clause::frame_record` a `pre`/`post`
