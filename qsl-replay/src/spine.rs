@@ -780,15 +780,6 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `{entry}` names `{clause_anchor}`, not the attempt's own anchor \
                      `{attempt_anchor}`"
                 ),
-                ProtocolAnchorCause::JoinFunctionMissing { function, .. } => {
-                    format!("{message}: the join function `{function}` is not declared")
-                }
-                ProtocolAnchorCause::JoinFunctionKind { function, kind, .. } => {
-                    format!("{message}: the join function `{function}` names a `{kind}`")
-                }
-                ProtocolAnchorCause::JoinFunctionType { function, .. } => {
-                    format!("{message}: the join function `{function}` has the wrong signature")
-                }
                 ProtocolAnchorCause::Unimplemented {
                     name, construct, ..
                 } => format!(
