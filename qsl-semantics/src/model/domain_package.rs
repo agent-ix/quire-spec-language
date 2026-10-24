@@ -333,15 +333,17 @@ impl std::str::FromStr for NativeValueType {
     }
 }
 
-/// A field, parameter or result's resolved value type: QSL's own closed
-/// native vocabulary, declaring no node of any package, or a node of some
-/// package. The sole output shape [`crate::model::intake`]'s unified
-/// `typeRef` resolver produces -- never a synthetic `DeclarationKey` under a
-/// made-up "quire/native" package.
+/// A field, parameter or result's resolved type: a `Clock` place, QSL's own
+/// closed native value vocabulary, no node of any package, a node of some
+/// package, or a unit of the compiling unit. Clock is represented separately
+/// because it is not a value in QSL's ordinary data algebra.
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValueTypeRef {
+    /// A clock place: `ix://quire/native/Clock`. Clock is a place in a timed
+    /// model, not a value type in QSL's ordinary data algebra.
+    Clock,
     /// A native value type: `ix://quire/native/<Name>`.
     Native(NativeValueType),
     /// A node of a package: `ix://<package>/<artifact id>`.
@@ -352,10 +354,11 @@ pub enum ValueTypeRef {
 
 impl ValueTypeRef {
     /// This value type's own declaration key, when it names a node of a
-    /// package; `None` for a native value type, which names no node.
+    /// package; `None` for Clock, native value types and units, which name no
+    /// package node.
     pub fn as_package(&self) -> Option<&DeclarationKey> {
         match self {
-            Self::Native(_) | Self::Unit(_) => None,
+            Self::Clock | Self::Native(_) | Self::Unit(_) => None,
             Self::Package(key) => Some(key),
         }
     }
@@ -366,6 +369,7 @@ impl std::fmt::Display for ValueTypeRef {
     /// resolving to it would spell it on the wire.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Clock => f.write_str("ix://quire/native/Clock"),
             Self::Native(native) => write!(f, "ix://quire/native/{}", native.as_str()),
             Self::Package(key) => f.write_str(&key.node),
             Self::Unit(name) => write!(f, "ix://quire/unit/{name}"),

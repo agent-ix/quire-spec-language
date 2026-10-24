@@ -114,6 +114,9 @@ pub struct ProtocolTraceSubject {
     /// The `max_store_buffer` the run used; `None` for the default 4
     /// (FR-225).
     pub max_store_buffer: Option<u64>,
+    /// The `max_messages` the run used; `None` runs with the default 4
+    /// (FR-225).
+    pub max_messages: Option<u64>,
     /// The `max_live_instances` the run used; `None` for the default 3
     /// (ADR-027 AE-4). A trace's `activate` steps replay under it.
     pub max_live_instances: Option<u64>,
@@ -640,7 +643,11 @@ pub fn replay_protocol_trace(
                 meter,
             };
             let live_instances = live_instance_bound(subject.max_live_instances);
-            let settlement = match SubjectMemory::of(&subject.memory, subject.max_store_buffer) {
+            let settlement = match SubjectMemory::of(
+                &subject.memory,
+                subject.max_store_buffer,
+                subject.max_messages,
+            ) {
                 SubjectMemory::Sc => replayed.settle(
                     &ProtocolSystem::new(model, &protocol_subject, Sc)
                         .map_err(built)?

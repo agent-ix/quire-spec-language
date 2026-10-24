@@ -2926,6 +2926,12 @@ impl PackageDeclarations {
             .enumerate()
             .map(|(index, form)| clause_location(index, &form.name))
             .collect();
+        // FR-105 "Outputs": each clause's qualified operation reference, where
+        // the frame's `generated` occurrence is placed if the clause is the
+        // first to name the operation.
+        let reference_locations: Vec<Location> = (0..state_clause_forms.len())
+            .map(lowering::state_operation_location)
+            .collect();
         // FR-114: every protocol attempt's own real location
         // (never `generated_location`), the same reason a clause's own
         // `AnchorInput::location` must be real (FR-096).
@@ -2964,14 +2970,15 @@ impl PackageDeclarations {
             .collect();
         let mut anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
             .iter()
-            .zip(&clause_locations)
-            .filter_map(|(form, location)| {
+            .zip(clause_locations.iter().zip(&reference_locations))
+            .filter_map(|(form, (location, reference))| {
                 form.operation
                     .as_ref()
                     .map(|operation| lowering::AnchorInput {
                         declaring: operation.declaring,
                         operation: &operation.declaration,
                         location,
+                        reference,
                     })
             })
             .collect();
@@ -2981,6 +2988,7 @@ impl PackageDeclarations {
                     declaring: bound.operation.declaring,
                     operation: &bound.operation.declaration,
                     location,
+                    reference: location,
                 });
             }
         }
@@ -2990,6 +2998,7 @@ impl PackageDeclarations {
                     declaring: template.operation.declaring,
                     operation: &template.operation.declaration,
                     location,
+                    reference: location,
                 });
             }
         }
@@ -3087,6 +3096,7 @@ impl PackageDeclarations {
                                 declaring: operation.declaring,
                                 operation: &operation.declaration,
                                 location,
+                                reference: location,
                             }),
                         parameters: &typed.parameters,
                         body: typed.body.root(),
@@ -3118,6 +3128,7 @@ impl PackageDeclarations {
                             declaring: bound.operation.declaring,
                             operation: &bound.operation.declaration,
                             location,
+                            reference: location,
                         },
                         frame_population: bound.frame_population,
                     };
@@ -3146,6 +3157,7 @@ impl PackageDeclarations {
                             declaring: template.operation.declaring,
                             operation: &template.operation.declaration,
                             location,
+                            reference: location,
                         },
                         frame_population: template.frame_population,
                     };

@@ -101,11 +101,9 @@ fn s2_keeps_a_dense_time_member_for_the_temporal_layer() {
     );
 }
 
-/// Fails today at QSL model intake (`model/intake.rs`, "names no native value
-/// type QSL declares"): QSL-1030 must admit the native Clock `typeRef`. FCD I1
-/// already accepts the field. Untagged while ignored so it verifies nothing.
+/// QSL-1030: the native Clock field with `unique:false` is admitted as a
+/// model place while S3 checks the package's time source.
 #[test]
-#[ignore = "QSL-1030: model intake rejects the ix://quire/native/Clock field typeRef"]
 fn a_package_clock_field_is_admitted_beside_a_checked_time_source() {
     let body = "dimension Time;\nunit ms : Time = rational(1, 1);\ntime Config dense unit ms;\n";
     let declarations = admit_and_assemble_with_profiles(
