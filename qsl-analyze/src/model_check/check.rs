@@ -314,6 +314,7 @@ enum Finish {
     Violated(Box<Violation>),
     Undecided(UndecidedCause),
     Stopped(IncompleteCause, Option<ReachedLimit>),
+    Memory(MemoryCause),
 }
 
 /// A violation: its kind, the node it is at, and the `over` binding the
@@ -1049,6 +1050,12 @@ fn check_reduced(
                     stats: total,
                 })
             }
+            Err(Halt::Finish(Finish::Memory(cause))) => {
+                return Ok(ModelCheckOutcome::Memory {
+                    cause,
+                    stats: total,
+                })
+            }
             Err(Halt::Finish(Finish::Violated(violation))) => {
                 let Violation { kind, at, binding } = *violation;
                 // FR-161 "Length and limits": a stop while concretising
@@ -1071,6 +1078,10 @@ fn check_reduced(
                             stats: total,
                         })
                     }
+                    Err(Halt::Finish(Finish::Memory(cause))) => Ok(ModelCheckOutcome::Memory {
+                        cause,
+                        stats: total,
+                    }),
                     Err(Halt::Finish(Finish::Violated(_))) => {
                         Err(fault("a-concretised-path-ends-once"))
                     }
@@ -1566,6 +1577,10 @@ impl<S: SubjectSystem> Run<'_, S> {
             Err(Halt::Finish(Finish::Stopped(cause, limit))) => Ok(ModelCheckOutcome::Stopped {
                 cause,
                 limit,
+                stats: self.stats(),
+            }),
+            Err(Halt::Finish(Finish::Memory(cause))) => Ok(ModelCheckOutcome::Memory {
+                cause,
                 stats: self.stats(),
             }),
             Err(Halt::Finish(Finish::Violated(violation))) => {
@@ -2381,6 +2396,12 @@ impl<S: SubjectSystem> Run<'_, S> {
     /// or protocol constraint the expansion evaluated undefined ends the run
     /// with a violation; otherwise a refused one leaves it undecided.
     fn contracts(&self, at: usize, findings: &[ModelFinding]) -> Step<()> {
+        if let Some(shape) = findings.iter().find_map(|finding| match finding {
+            ModelFinding::WeakAccessShape(shape) => Some(shape),
+            _ => None,
+        }) {
+            return Err(Finish::Memory(MemoryCause::WeakAccessShape(shape.clone())).into());
+        }
         if let Some((locus, guard_of, cause)) = undefined_finding(findings) {
             let site = Self::site(&self.nodes[at], locus, guard_of);
             return Err(Finish::violated(

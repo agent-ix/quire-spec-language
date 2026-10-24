@@ -41,7 +41,7 @@ use crate::model_check::state_graph::WitnessSource;
 use crate::proof_result::{
     Certification, DeclineCode, IncompleteCause, InconclusiveCause, InstanceBound, ProofBasis,
     ReportedInconclusiveCause, SymmetryBrokenCause, TerminalRecord, TerminalValue,
-    UnavailabilityCause,
+    UnavailabilityCause, WeakAccessFailure,
 };
 use crate::result::ReplayResult;
 use crate::spine::kernel_undefined_reason;
@@ -269,17 +269,29 @@ pub struct ItemCause {
     /// limited states.
     #[serde(skip_serializing_if = "Option::is_none")]
     states: Option<u64>,
-    /// A `weak-access-shape` cause's site (QSpec FR-439).
+    /// Every `weak-access-shape` failure, with its shape written as JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
-    site: Option<String>,
-    /// A `weak-access-shape` cause's transition identity, in its canonical
-    /// text.
+    failures: Option<Vec<ItemWeakAccessFailure>>,
+}
+
+/// One `weak-access-shape` failure in an item cause.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct ItemWeakAccessFailure {
+    site: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     transition: Option<String>,
-    /// A `weak-access-shape` cause's shape, in its canonical text, written
-    /// to the wire as the JSON it is.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "raw_json")]
+    #[serde(serialize_with = "raw_json")]
     shape: Option<String>,
+}
+
+impl From<&WeakAccessFailure> for ItemWeakAccessFailure {
+    fn from(failure: &WeakAccessFailure) -> Self {
+        Self {
+            site: failure.site.clone(),
+            transition: failure.transition.clone(),
+            shape: Some(failure.shape.clone()),
+        }
+    }
 }
 
 /// `text`, canonical JSON, written as the JSON value it spells; text that is
@@ -344,9 +356,7 @@ impl ItemCause {
             total: None,
             bound: None,
             states: None,
-            site: None,
-            transition: None,
-            shape: None,
+            failures: None,
         }
     }
 
@@ -568,14 +578,8 @@ impl OutcomeItem {
                     UnavailabilityCause::TotalAboveDrawRange { total } => {
                         item.total = Some(total.to_string());
                     }
-                    UnavailabilityCause::WeakAccessShape {
-                        site,
-                        transition,
-                        shape,
-                    } => {
-                        item.site = Some(site.clone());
-                        item.transition.clone_from(transition);
-                        item.shape = Some(shape.clone());
+                    UnavailabilityCause::WeakAccessShape { failures } => {
+                        item.failures = Some(failures.iter().map(Into::into).collect());
                     }
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent

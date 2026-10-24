@@ -66,7 +66,8 @@ use crate::value::evaluate_protocol_slot;
 use steps::ProtocolExpansion;
 
 pub use access::{
-    AccessShape, AttemptInstance, InstanceAccess, WeakAccessShape, WeakAccesses, WeakAttempt,
+    AccessShape, AttemptInstance, InstanceAccess, WeakAccessFailure, WeakAccessShape, WeakAccesses,
+    WeakAttempt,
 };
 pub use fairness::{
     protocol_constraints, FairnessOrigin, ProtocolClass, ProtocolFairness, ProtocolFairnessError,
@@ -847,18 +848,6 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         {
             return Err(ProtocolRefusal::Unsupported(Unsupported::WeakMemory));
         }
-        if let Some(node) = selection::weak_join(protocol, &governing) {
-            let site = protocol
-                .controls
-                .controls
-                .iter()
-                .find(|control| control.node == node)
-                .map(|control| control.path.join("/"))
-                .ok_or_else(|| ProtocolRefusal::fault("a-parallel-is-a-control"))?;
-            return Err(ProtocolRefusal::WeakAccessShape(Box::new(
-                WeakAccessShape::join_policy(site),
-            )));
-        }
         let program = Program::new(protocol)?;
         let enabled = access::classify(
             &model,
@@ -869,9 +858,6 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             &over,
             access::ClassificationMode::Enabled,
         )?;
-        if let Some(shape) = enabled.first_shape() {
-            return Err(ProtocolRefusal::WeakAccessShape(Box::new(shape)));
-        }
         let weak = access::classify(
             &model,
             protocol,
