@@ -4470,7 +4470,7 @@ impl CheckedGraph {
     }
 
     /// ADR-012 §15.7: the domain key of `domain`, a population a checked
-    /// clause ranges over ([`TemporalClaim::population`]): the one key
+    /// clause ranges over ([`TemporalClaim::populations`]): the one key
     /// [`Self::population_domain`] and a requirement record build.
     pub fn population_key(
         &self,
