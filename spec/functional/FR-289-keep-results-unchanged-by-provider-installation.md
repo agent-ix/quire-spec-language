@@ -77,8 +77,9 @@ Candidate sets (FR-075) and FR-331 terminal records.
   `TerminalValue::from_replay_refusal` does. A replay that reproduced
   something other than a violation, and a witness-arm replay result, settle
   `failed`.
-- A process provider's `proved` result settles `proved` with the certification
-  `trusted`, the provider's `BackendId` and the basis the provider reports
+- A process provider's `proved` result with a basis admitted for that item's
+  kind settles `proved` with the certification `trusted`, the provider's
+  `BackendId` and the basis the provider reports
   (ADR-029 PL-7, "Trusted proofs": `exhaustive`, `bounded-complete`, `inductive`, `reduced`, `bounded-solver` and `inductive-solver`, each `trusted` whatever a first-party engine's label is), except the bases whose certificate or
   evidence only the core establishes (ADR-018 §1, ADR-026, ADR-028; QSpec
   FR-331 "Certification"): the Kani check count (`bounded-proof`), a
@@ -86,6 +87,10 @@ Candidate sets (FR-075) and FR-331 terminal records.
   (`witnessed`), `exact-value`, `value-bounds` and `zone-certified`. QSL has no
   `ProofBasis` variant for the last three today, so the code refuses the
   first three, and a variant added later must be refused too.
+- For a hybrid claim, a `bounded-solver` proof is admitted only through
+  FR-290's hybrid proof settlement, which checks its coverage against the
+  claim under FR-250; insufficient coverage settles `inconclusive`,
+  `InsufficientHorizon`, never `proved`.
 - The causes `replay-parity`, `replay-refused` and `kani_vacuous_proof` (the
   plugin wire's spellings; QSpec FR-331 keeps the AD-016 underscore spelling
   for the last, whereas QSL's outcome document writes `kani-vacuous-proof`) are
@@ -106,7 +111,7 @@ Candidate sets (FR-075) and FR-331 terminal records.
 | FR-289-AC-6 | A replay refusal of a process provider's counterexample settles as `TerminalValue::from_replay_refusal` does, a fault `failed`. | Test (TC-773) |
 | FR-289-AC-7 | A witness-arm replay result for a process provider's counterexample settles `failed`. | Test (TC-773) |
 | FR-289-AC-8 | An input-arm replay that reproduced something other than a violation settles `failed` with no replay result. | Test (TC-773) |
-| FR-289-AC-9 | A process provider's `proved` result settles `proved` with certification `trusted`, the provider's `BackendId` and the reported basis. | Test (TC-773) |
+| FR-289-AC-9 | A process provider's `proved` result with a basis admitted for its item settles `proved` with certification `trusted`, the provider's `BackendId` and the reported basis. For a hybrid claim, a `bounded-solver` proof settles through FR-290's coverage check: sufficient coverage settles `proved`, `trusted`; insufficient coverage settles `inconclusive`, `InsufficientHorizon`, never `proved`. A `bounded-solver` basis on a non-hybrid item is refused under FR-290. | Test (TC-773) |
 | FR-289-AC-10 | A process provider's `proved` result reporting any of the six bases only the core establishes (`bounded-proof`, `closed-form`, `witnessed`, `exact-value`, `value-bounds`, `zone-certified`) is refused; for the three with a `ProofBasis` variant today the test checks each. | Test (TC-773) |
 | FR-289-AC-11 | A provider result naming the cause kind `replay-parity`, `replay-refused` or `kani_vacuous_proof` (QSpec FR-331 spellings) is refused by the cause-kind reader, and its item settles `failed`. | Test (TC-773) |
 | FR-289-AC-12 | A provider `inconclusive` result carrying the typed cause `ReplayParity` or `ReplayRefused` is refused, and its item settles `failed`. | Test (TC-773) |

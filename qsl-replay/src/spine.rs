@@ -570,6 +570,13 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnresolvedQuantityName { name } => {
             format!("no dimension or unit is named `{name}`")
         }
+        AssemblyCause::UnresolvedModelQuantityType {
+            name,
+            member_identity,
+            member_path,
+        } => format!(
+            "model member `{member_identity}` has {member_path} naming undeclared unit `{name}`"
+        ),
         AssemblyCause::QuantityCycle { .. } => "a dimension or unit reaches itself".to_owned(),
         AssemblyCause::ZeroDenominator => "an exact number has a zero denominator".to_owned(),
         AssemblyCause::DecimalScaleLimit(limit) => format!(
