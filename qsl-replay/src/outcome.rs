@@ -583,6 +583,7 @@ impl OutcomeItem {
                     | UnavailabilityCause::MissingFairnessPremise { .. }
                     | UnavailabilityCause::UnsupportedReduction { .. }
                     | UnavailabilityCause::HiddenFieldLiveness
+                    | UnavailabilityCause::UnsupportedHyperForm { .. }
                     | UnavailabilityCause::StrongAbstractFairness
                     | UnavailabilityCause::NotMarkov
                     | UnavailabilityCause::ConfidenceBeyondPrecision

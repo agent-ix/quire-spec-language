@@ -25,10 +25,11 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    compile_package, deadlock_freedom_clause, replay_model_trace, DependencyInput, DigestDomain,
-    DigestRecord, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement,
-    ModelTraceSubject, QualifiedName, ReplayLimits, ReplayRequestWire, ReplaySource,
-    StateEnvironment, TemporalCounterexample, WireNodeId, Witness, WitnessEnvelope, WitnessPacket,
+    compile_package, deadlock_freedom_clause, replay_model_trace, settle_model_check,
+    CertificateRequest, DependencyInput, DigestDomain, DigestRecord, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject, QualifiedName,
+    ReplayLimits, ReplayRequestWire, ReplaySource, StateEnvironment, TemporalCounterexample,
+    WireNodeId, Witness, WitnessEnvelope, WitnessPacket,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -499,7 +500,14 @@ pub(crate) fn replay_unit(
     clause: Option<(WireNodeId, OccurrenceKey)>,
     letters: &dyn ModelLetters,
 ) -> ModelTraceSettlement {
-    let package_id = compile_package(
+    replay_unit_result(unit, subject, payload, clause, letters)
+        .expect("the counterexample replays")
+        .settlement
+}
+
+/// The package id `unit` compiles to.
+pub(crate) fn unit_package_id(unit: &ReplayUnit<'_>) -> DigestRecord {
+    compile_package(
         SourceIdentity::new(AUTHORITY, unit.identity, "git", "1"),
         unit.path,
         unit.text,
@@ -509,7 +517,18 @@ pub(crate) fn replay_unit(
         ReplayLimits::default(),
     )
     .expect("the unit compiles")
-    .package_id();
+    .package_id()
+}
+
+/// [`replay_unit`]'s whole result, as the replay `settle_model_check` takes.
+pub(crate) fn replay_unit_result(
+    unit: &ReplayUnit<'_>,
+    subject: &ModelTraceSubject,
+    payload: TemporalCounterexample,
+    clause: Option<(WireNodeId, OccurrenceKey)>,
+    letters: &dyn ModelLetters,
+) -> Result<qsl_replay::ModelTraceReplayResult, qsl_replay::ReplayRefusal> {
+    let package_id = unit_package_id(unit);
     let sha256_jcs = |bytes: &[u8]| {
         let digest = *package_input([bytes]).keys().next().expect("one package");
         (
@@ -585,8 +604,6 @@ pub(crate) fn replay_unit(
     )
     .expect("a complete packet reconstructs");
     replay_model_trace(wire, subject, &envelope, letters, ReplayLimits::default())
-        .expect("the counterexample replays")
-        .settlement
 }
 
 impl World {
@@ -625,6 +642,42 @@ impl World {
             payload,
             None,
             &NoAtoms,
+        )
+    }
+
+    /// FR-127: `outcome` of clause `clause` (its atoms read by `atoms`)
+    /// settled through `settle_model_check`, a refutation by replaying its
+    /// counterexample through FR-128.
+    pub(crate) fn settle_clause(
+        &self,
+        clause: usize,
+        atoms: Vec<Atom>,
+        outcome: &ModelCheckOutcome,
+    ) -> qsl_replay::ModelCheckRecord {
+        let letters = Letters::new(self, clause, atoms);
+        let unit = self.replay_unit();
+        let package_id = unit_package_id(&unit);
+        settle_model_check(
+            outcome,
+            &ModelCheckLimits::default(),
+            &package_id,
+            &CertificateRequest {
+                subject: self.subject(),
+                item: ModelCheckItem::Clause {
+                    clause: &self.clauses[clause],
+                    letters: &letters,
+                },
+            },
+            &Cancel::new(),
+            |counterexample| {
+                replay_unit_result(
+                    &unit,
+                    &self.trace_subject(),
+                    counterexample.clone(),
+                    Some(clause_identity(&self.package, clause)),
+                    &letters,
+                )
+            },
         )
     }
 
