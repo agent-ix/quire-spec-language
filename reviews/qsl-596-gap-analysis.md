@@ -77,6 +77,12 @@ Delta 877c0f924..4a190547d against the STD-444 amendments: FR-280 Behavior 4 and
 | --- | --- | --- | --- |
 | FND-010 | low | The new FR-281-AC-11 tests are tagged `TC-762`, but AC-11 is in TC-763's scope (FR-281-AC-4 to AC-7, AC-11). Retag them `#[trace("TC-763", "FR-281-AC-11")]`. | qsl-analyze/src/analyze.rs:710; qsl-analyze/src/analyze/items.rs:243-370 |
 
+## New findings (disposition pass 5)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | The rewrite of `statistical_refusals_follow_the_table` dropped its only assertion on a non-predicate map row (`EveryScheduler` settles through the map), and its doc comment still claims "`NotStatistical` is a disposition; the rest settle through FR-192's map" with no assertion for either. Coverage of the `settled =>` arm for the other `StatisticalRefusal` rows, and of the `NotStatistical` disposition at the classifier, is now unasserted in this test. Fix: restore an `EveryScheduler` (or any request row) case through `settled`, and assert `statistical_refusal(NotStatistical)` is `Refused(NotStatistical)`, or trim the doc comment. | qsl-analyze/src/analyze/items.rs:357-414 |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -110,3 +116,12 @@ Delta 877c0f924..4a190547d against the STD-444 amendments: FR-280 Behavior 4 and
 | FND-008 | fixed | 861ef597f. The classifier tests call `admission`, `symmetry`, `model_refusal` and `statistical_refusal` directly and assert each full diagnostic, including `Admission(Refused)` `wrong-role-mapping` and Symmetry `invalid-value`. |
 | FND-009 | fixed | 861ef597f. AC-8, AC-10 and AC-11 are tagged, and the PR body records the open AC-11 EN-1 `Integer` case and the test-engine parts. |
 | FND-010 | deferred | A trace-tag nit, not a correctness bug. Per the last-round rule, it is deferred to part 2. |
+
+### Round 5 (13bf91e3c)
+
+Focused tests at 13bf91e3c: lib `analyze::` 8 passed; it `analyze::`/`statistical` 44 passed. TC-763's scope is FR-281-AC-4 to AC-7 and AC-11 (spec/test-cases/TC-763, line 15); TC-762's is AC-1 to AC-3 and AC-8 to AC-10. Every AC-11 test now carries TC-763, and the AC-8/AC-10 tests keep TC-762.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-010 | fixed | 13bf91e3c. The five AC-11 tests (analyze.rs:710; items.rs:239, 270, 284, 362) are tagged `#[trace("TC-763", "FR-281-AC-11")]`. Supersedes the round-4 `deferred` row. |
+| FND-011 | deferred | New this round, low, test coverage only; the fix's behaviour is pinned (red check passes). Fold into QSL-596 part 2 with the AC-11 test-engine work. |

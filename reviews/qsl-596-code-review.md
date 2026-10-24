@@ -66,6 +66,12 @@ Delta 877c0f924..4a190547d (the STD-444 rework; the main merge 877c0f924 is excl
 | --- | --- | --- | --- |
 | FND-010 | high | `statistical_refusal` intercepts `R::PredicateRefused` before FR-192's map (`settle_statistical_refusal`). The PR body and the QSL-596 comment of 13:01Z say the map "returns no record for PredicateRefused". That is false at #1299's current head (87620e97a): there `settle_statistical_refusal` settles every `PredicateRefused` by FR-192-AC-7's rows (`predicate_refused`: `KernelRefused` gets its own code and cause, `Incomplete` gets `incomplete`/`limit-reached`). #1299 is landing separately. Once both land, `analyze` overrides the correct map for EN-4. It returns `failed` with `runtime_invariant`/`established-invariant-broken` for a predicate meter exhaustion that should be `incomplete`, and for a kernel refusal that should carry its own code. The provider entry (`serve_request`) returns the correct record, so FR-280's analyze-equals-entry rule breaks too. Fix: delete both `R::PredicateRefused` arms and let `settled =>` call the map. Before #1299, `Err(_)` already falls back to `failed` with `BROKEN`; if needed, keep the `FamilyRefused` code under `Err(UnsettledRefusal::PredicateRefused)` only. | qsl-analyze/src/analyze/items.rs:196-206 |
 
+## New findings (disposition pass 5)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | The PR body is stale after 13bf91e3c and the #1299 merge. Under "Open spec points and inherited gaps", the FR-192-AC-7 bullet says FR-192's map "returns no record for `PredicateRefused`, so `analyze` inherits the gap" and that every non-family predicate refusal settles `failed`/`established-invariant-broken`. Both are false now: `settle_statistical_refusal` settles every `PredicateRefused` by `predicate_refused` (qsl-replay/src/statistical/settle.rs:261-280), and `analyze` no longer intercepts it. The opening paragraph still says the PR is "Based on `qsl-570-rem-impl` (#1299)" and that the #1299 files "drop out when it lands"; #1299 is on main and the diff against main has no #1299 files. The QSL-596 comment of 2026-10-23T13:01Z makes the same false claim. Fix: delete the FR-192-AC-7 bullet (or replace it with "FR-192-AC-7: `analyze` settles a refused predicate through FR-192's map, the record the provider entry returns"), drop the "Based on qsl-570-rem-impl" sentence, and post a one-line correction on QSL-596 superseding 13:01Z. | PR #1362 body; QSL-596 comment 79457d07 |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -95,3 +101,13 @@ FND-001 to FND-004 are already fixed. No new row is needed: `to_terminal` and `#
 | FND-008 | fixed | 861ef597f. Translation and Footprint now settle `unsupported_construct`/`expression-form`. That is an existing FR-272 cause (qsl-eval/src/temporal/outcome.rs:182, qsl-replay/src/spine/bind.rs:240), not an invented one. Extent, Protocol, Encoding, Key and Item still have no spec code; that is deferred to draco (STD-444 follow-up, recorded on QSL-596 at 13:01Z). |
 | FND-009 | deferred | Recorded in a `settle` doc comment. It is unreachable until the `Engine` trait lands (part 2). |
 | FND-010 | still-open | This is a correctness bug: once #1299 lands it gives wrong EN-4 records and breaks analyze-equals-entry. Fix in this PR. |
+
+### Round 5 (13bf91e3c)
+
+Delta 0a7c21b1e..13bf91e3c. The merge eb1da2dcf takes main's `statistical/provider.rs`, `tests/it/statistical_witness_replay.rs` and `reviews/qsl-570-rem-*.md` unchanged (`git diff origin/main` on those paths is empty). Focused checks at 13bf91e3c: lib `analyze::` 8 passed; it `analyze::`/`statistical` 44 passed; clippy -D warnings (qsl-analyze, all targets) clean. Red check: with the two deleted `R::PredicateRefused` arms put back, `statistical_refusals_follow_the_table` fails (panic "expected the map's record", items.rs:377), so the new test pins the fix.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | 13bf91e3c. Superseded by FND-010's fix: a refused predicate now settles by FR-192-AC-7's rows through the map. |
+| FND-010 | fixed | 13bf91e3c. Both `R::PredicateRefused` arms are deleted; `settled =>` calls `settle_statistical_refusal`, whose `predicate_refused` gives the own code, `incomplete`/`limit-reached` or `BROKEN`. The test asserts analyze's record equals the map's for a family refusal, an exhausted `WorkUnits` meter and `NotBoolean`. |
+| FND-011 | still-open | New this round. PR-body and QSL-596 text only; no code change needed. |
