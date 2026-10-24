@@ -13,9 +13,9 @@ use std::collections::BTreeMap;
 use quire_exact::ObjectReference;
 use quire_semantic_value::catalog::{render_identity, CatalogCode, CatalogCoded};
 
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::observation::AdmissionRecord;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::call::WrongSnapshotCause;
 
 /// ADR-013 T-6: `ProtocolClause`'s evaluation-time refusal cause, carrying

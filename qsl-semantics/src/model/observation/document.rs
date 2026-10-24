@@ -19,9 +19,9 @@ use super::{
     PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter, SelectedObject,
     SnapshotValue,
 };
-use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::OperationDeclaration;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::declaration::{
     CompositeShape, FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
@@ -62,7 +62,7 @@ pub(super) struct DocAnchor {
 
 /// An object's own `"type"` member: a raw producer identity string, not
 /// yet resolved against a re-derived view (`find_declaration` does that
-/// resolution, matching a [`DeclarationKey`](crate::model::key::DeclarationKey)'s
+/// resolution, matching a [`DeclarationKey`](quire_checked::key::DeclarationKey)'s
 /// `node` half only -- this document reader never learns the matching
 /// `package` half, only the domain package's own intake does, TC-260's
 /// own typestate rule (FR-088-AC-8): no "type"-named field under `model`

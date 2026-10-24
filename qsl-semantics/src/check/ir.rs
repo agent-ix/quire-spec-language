@@ -4,8 +4,8 @@
 
 use super::lowering::AuthoredBound;
 use super::navigation::EndSide;
-use crate::model::key::DeclarationKey;
 use qsl_foundation::absence::AbsenceMode;
+use quire_checked::key::DeclarationKey;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
@@ -785,7 +785,7 @@ pub enum NodeKind {
         /// The source operator.
         operator: IntegerDivisionOperator,
         /// The package's admitted law, absent only for `mod`.
-        selection: Option<crate::value::definition::AdmittedIntegerDivision>,
+        selection: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
         /// The dividend.
         left: NodeId,
         /// The divisor.

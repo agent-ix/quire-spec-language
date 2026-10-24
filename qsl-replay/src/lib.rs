@@ -325,11 +325,11 @@ pub use witness::{
 // name and build them through this crate (ADR-011 FB-05). The node and
 // occurrence identities are built from the `WireNodeId`, `Origin` and
 // `Identifier` re-exported above.
-pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
     SelectedObject,
 };
+pub use quire_checked::key::DeclarationKey;
 
 // FR-122: the state-clause counterexample's replay entry, payload and
 // result, and the FR-106 observation types a payload is built from and a

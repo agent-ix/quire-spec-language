@@ -15,7 +15,7 @@ use qsl_semantics::model::domain_package::{
     RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
     ScalarValueDomain, ValueTypeRef,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::{Presence, ValueType};
 use quire_semantic_value::declaration::FieldRef;
 

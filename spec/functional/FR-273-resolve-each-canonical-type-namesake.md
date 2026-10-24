@@ -136,7 +136,7 @@ FR-273-AC-n.
 | 33 | `quire_exact::location::Location` (O-12) | root `package::view::Location` | the serialized view of a declaration location | delete; removed with M-6c (ADR-011 §7.3) |
 | 34 | `qsl_foundation::source::provenance::OccurrenceKey` (O-07) | root `protocol_artifact::occurrence::OccurrenceKey` | a validated runtime workflow key | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
 | 35 | `qsl_foundation::source::provenance::RawSourceRef` (O-07, digest domain `quire.source.bytes/v1`) | `qsl_replay::identity::RawSourceRef` | a definition-document reference whose digest is in any domain | rename `DefinitionSourceRef` |
-| 36 | `qsl_semantics::model::key::DeclarationKey` (O-03) | root `linking::DeclarationKey` | a declaration path within one requirement owner (lane-private, ADR-013 §6) | delete; removed with M-6e, SEAM-2, which still imports it (ADR-011 §7.3 and the SEAM-1 row) |
+| 36 | `quire_checked::key::DeclarationKey` (O-03) | root `linking::DeclarationKey` | a declaration path within one requirement owner (lane-private, ADR-013 §6) | delete; removed with M-6e, SEAM-2, which still imports it (ADR-011 §7.3 and the SEAM-1 row) |
 | 37 | `qsl_cst::ParsedSource` (O-15) | root `linking::composed::ParsedSource` | parsed evidence kept when namespace admission fails | delete; removed with M-6e, SEAM-2 (ADR-011 §7.3) |
 | 38 | `qsl_package::checked::CheckedPackage` (O-15) | root `checking::CheckedPackage<'a>` | native-v1 checked clauses that keep the linked AST (lane-private, ADR-013 §6) | delete; removed with M-6c (ADR-011 §7.3) |
 | 39 | `qsl_package::checked::EmittedPackage` (O-15) | root `protocol_artifact::native::EmittedPackage` | the bytes of a native protocol artifact | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
@@ -148,7 +148,7 @@ FR-273-AC-n.
 | 45 | `qsl_foundation::source::provenance::OccurrenceKey` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_foundation::source::provenance::OccurrenceKey` |
 | 46 | `quire_exact::location::Origin` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Origin`, the owner crate's public path |
 | 47 | `quire_exact::integer::Integer` (O-13) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Integer`, the owner crate's public path |
-| 48 | `qsl_semantics::model::key::DeclarationKey` (O-03) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_semantics::model::key::DeclarationKey` |
+| 48 | `quire_checked::key::DeclarationKey` (O-03) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_checked::key::DeclarationKey` |
 
 ## Shared-leaf namesakes
 
@@ -214,7 +214,7 @@ gate. Row n is checked by FR-273-AC-n, and FR-273-AC-51 checks both.
 | FR-273-AC-45 | The `pub use` of `OccurrenceKey` in `qsl-replay/src/lib.rs` names `qsl_foundation::source::provenance::OccurrenceKey` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
 | FR-273-AC-46 | The `pub use` of `Origin` in `qsl-replay/src/lib.rs` names `quire_exact::Origin` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
 | FR-273-AC-47 | The `pub use` of `Integer` in `qsl-replay/src/lib.rs` names `quire_exact::Integer` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
-| FR-273-AC-48 | The `pub use` of `DeclarationKey` in `qsl-replay/src/lib.rs` names `qsl_semantics::model::key::DeclarationKey` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
+| FR-273-AC-48 | The `pub use` of `DeclarationKey` in `qsl-replay/src/lib.rs` names `quire_checked::key::DeclarationKey` with no `as` rename, and the canonical-types gate reports no `re-export` finding for it. | Test (TC-748) |
 | FR-273-AC-49 | A scan of the module-level items, type aliases and `pub use` items of `quire-semantic-value`'s `location` module finds `ExpressionLocation`, a declaration and a child-index path to an expression, and no item, alias or re-export whose identifier is `Location`; the same scan over a copy of the module with `pub type Location = ExpressionLocation;` added reports that alias. | Test (TC-748) |
 | FR-273-AC-50 | A scan of the module-level items, type aliases and `pub use` items of `quire-semantic-value`'s `location` module finds `ExpressionOwner`, the declaration a location belongs to, and no item, alias or re-export whose identifier is `Origin`; the same scan over a copy of the module with `pub use self::ExpressionOwner as Origin;` added reports that re-export. | Test (TC-748) |
 | FR-273-AC-51 | FR-401's interface type that locates an expression resolves at `quire_semantic_value::location::ExpressionLocation`, the owner of an `ExpressionLocation` at `quire_semantic_value::location::ExpressionOwner`, and neither `quire_semantic_value::location::Location` nor `quire_semantic_value::location::Origin` resolves. | Test (TC-748) |

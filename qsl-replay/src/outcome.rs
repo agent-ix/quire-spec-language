@@ -1594,7 +1594,7 @@ mod tests {
     fn reduction_cause_wire_keeps_its_payload() {
         use crate::proof_result::{ReductionKind, SymmetryBrokenCause};
         use qsl_eval::simulation::Permutation;
-        use qsl_semantics::model::key::DeclarationKey;
+        use quire_checked::key::DeclarationKey;
         use quire_semantic_value::fairness::PropertyForm;
 
         let population = DeclarationKey {

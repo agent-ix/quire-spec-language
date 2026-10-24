@@ -14,11 +14,11 @@ use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
     DomainPackageRecord, OperationMemberRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::population::{
     admit_binding, all_instances, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome,
     PopulationAdmissionLimits, PopulationDocument, PopulationMember, ReferenceKey,
 };
+use quire_checked::key::DeclarationKey;
 use serde_json::json;
 
 fn key(node: &str) -> DeclarationKey {

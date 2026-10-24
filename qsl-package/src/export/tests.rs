@@ -14,7 +14,7 @@ use qsl_semantics::check::{
     MalformedEntry, ObjectBinding, OperationKey, PackageDeclarations, PopulationBinding, RustField,
     RustParameter, RustPath, RustReceiver,
 };
-use qsl_semantics::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 use quire_exact::Identifier;
 use quire_semantic_value::checking::CheckingLimits;
 

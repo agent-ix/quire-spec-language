@@ -1077,7 +1077,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ix_trace_rs::trace;
-    use qsl_semantics::model::key::DeclarationKey;
+    use quire_checked::key::DeclarationKey;
 
     use super::*;
 

@@ -71,7 +71,7 @@
 //! runtime binding's model exports: that is model data, not package data
 //! (see `resolve_target`).
 
-use crate::model::key::{DeclarationKey, EffectiveId};
+use crate::model::key::EffectiveId;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{
     all_instances, lookup, AllInstancesOutcome, LookupKey, LookupOutcome, PopulationBinding,
@@ -79,6 +79,7 @@ use crate::model::population::{
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 use quire_semantic_value::catalog::InternalFault;
 
 use quire_exact::{

@@ -122,8 +122,8 @@ fn admitted_owner_fixture(
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
     };
-    use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+    use quire_checked::key::DeclarationKey;
 
     let owner_key = DeclarationKey::fixture("model.A");
     let domain = DomainPackage::new(

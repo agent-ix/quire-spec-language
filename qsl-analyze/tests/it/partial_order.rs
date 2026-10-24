@@ -188,8 +188,8 @@ fn counters_por<'r, 'a>(
 }
 
 /// The declaration key of `Counter.v`.
-fn counter_field() -> qsl_semantics::model::key::DeclarationKey {
-    qsl_semantics::model::key::DeclarationKey {
+fn counter_field() -> quire_checked::key::DeclarationKey {
+    quire_checked::key::DeclarationKey {
         package: "test/sym".to_owned(),
         node: "ix://test/sym/Counter/v".to_owned(),
     }

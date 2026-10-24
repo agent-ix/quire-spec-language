@@ -17,10 +17,11 @@ use qsl_semantics::model::domain_package::{
     OperationResult, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
 };
 use qsl_semantics::model::index::ModelIndex;
-use qsl_semantics::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
+use qsl_semantics::model::key::{EffectiveId, RULE_REDEFINE};
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
+use quire_checked::key::DeclarationKey;
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {

@@ -16,7 +16,7 @@ use crate::model::domain_package::{
     RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
     ValueTypeRef,
 };
-use crate::model::key::DeclarationKey;
+use quire_checked::key::DeclarationKey;
 
 // The fixture's plain constructor serves the other protocol tests.
 #[allow(dead_code)]

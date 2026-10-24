@@ -21,10 +21,10 @@ use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, OriginalDeclaration,
 };
 use crate::model::intake::{member_identity_name, type_identity_segment};
-use crate::model::key::DeclarationKey;
 use crate::model::normalize::{MemberPath, MemberRoot, ModelRefusal, ModelRefusalCause};
 use crate::model::systems::{classify, Kind, SystemsClassification};
 use qsl_foundation::diagnostic::Code;
+use quire_checked::key::DeclarationKey;
 
 /// What one admitted declaration is: its record shape, refined by FR-152's
 /// kind mapping for the systems records.
