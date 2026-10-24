@@ -37,3 +37,13 @@ What holds:
 ## Verdict
 
 FAIL, not mergeable as is. The wording follows #1431 faithfully and validates cleanly, but #1451 made it stale (FND-001): it asserts "exactly three, no fourth" against a four-member enum on main. Spec-owner (draco:QSL) edit needed for FND-001, which must decide on `Clock`. FND-002 and FND-003 are low and can go in the same edit.
+
+## Dispositions
+
+Round 1, reviewed at a0c1f73089e82a6788816c9226e2f3dcd9b8555c, which contains origin/main a971cc496. The spec owner (draco:QSL) chose four members. `make check-spec-validation` exits 0 at both head and main, and the output is identical (18 warnings). A grep of spec/ and docs/ for "two-member", "three-member", "Native and Package" and the two-member `ValueTypeRef{...}` form finds no live statement left. The remaining mentions are in historical spec/reviews/ records.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-088-AC-8, the FR-088 O-14 line, TC-260 (renamed `TC-260-value-type-ref-is-exactly-four-member-union.md`, id unchanged, "fifth variant") and ADR-016 FE-4 now list `Clock`, `Native`, `Package` and `Unit`, which matches main's enum. |
+| FND-002 | fixed | ADR-013 O-14 Public type now reads `ValueTypeRef{Clock, Native(NativeValueType), Package(DeclarationKey), Unit(String)}`. |
+| FND-003 | fixed | FR-088-AC-8 now says the `String` of `Unit` is a unit name the assembler resolves (FR-056-AC-42), not a type name. TC-260 steps 1 and 3 say the same. |

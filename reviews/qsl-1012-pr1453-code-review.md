@@ -30,3 +30,11 @@ Checks run:
 ## Verdict
 
 FAIL, not mergeable as is. The test change is sound and kills both mutations. But against current main it asserts a three-member union where the code has four, so merging it leaves TC-260 red. Rebase, add `Clock` to the expected list, and get the matching spec decision from the spec owner (SR-17016).
+
+## Dispositions
+
+Round 1, reviewed at a0c1f73089e82a6788816c9226e2f3dcd9b8555c. That head contains origin/main a971cc496, whose `ValueTypeRef` is exactly `{Clock, Native(NativeValueType), Package(DeclarationKey), Unit(String)}`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The branch now includes main, and the test was renamed to `tc_260_value_type_ref_is_the_four_member_union`. It expects `("Clock", vec![])`, `("Native", ..)`, `("Package", ..)` and `("Unit", ..)`. `cargo test --locked -p xtask --lib typestate_scan` passes 12/12. Two mutations kill it: dropping the Unit row from the expected list, and adding a fifth variant `Extra(String)` (behind `#[cfg(any())]` so it still compiles), where left shows five members. |
