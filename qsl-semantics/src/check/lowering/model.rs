@@ -46,6 +46,9 @@ pub struct AdmittedModel {
     alias: Option<String>,
     selection: DomainPackageRef,
     records: BTreeMap<DeclarationKey, DomainPackageRecord>,
+    /// FCD dimensions and units retained for FR-230's owner-qualified graph.
+    pub(crate) dimensions: Vec<crate::model::domain_package::PackageDimensionRecord>,
+    pub(crate) units: Vec<crate::model::domain_package::PackageUnitRecord>,
     types: BTreeMap<EffectiveId, DeclarationKey>,
     index: std::sync::Arc<crate::model::index::ModelIndex>,
     /// Each type's direct supertypes, from the inherit facts of its effective
@@ -446,6 +449,8 @@ impl AdmittedModel {
                 .iter()
                 .map(|record| (record.key().clone(), record.clone()))
                 .collect(),
+            dimensions: domain_package.dimensions.clone(),
+            units: domain_package.units.clone(),
             types: view
                 .type_identities()
                 .iter()
@@ -475,6 +480,8 @@ impl AdmittedModel {
                 .iter()
                 .map(|record| (record.key().clone(), record.clone()))
                 .collect(),
+            dimensions: domain_package.dimensions.clone(),
+            units: domain_package.units.clone(),
             types: types.into_iter().collect(),
         }
     }

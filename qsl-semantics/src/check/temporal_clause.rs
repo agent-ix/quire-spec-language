@@ -1574,8 +1574,12 @@ pub fn check_clauses(
         None,
         Vec::new(),
     );
-    let units =
-        super::time_units::TimeUnits::new(&package.units, package.nominal_spans.keys().copied());
+    let units = super::time_units::TimeUnits::new(
+        &package.units,
+        package.nominal_spans.keys().copied(),
+        &package.models,
+        package.identity,
+    );
     let declarations = TemporalDeclarations {
         scope: &scope,
         selections: &package.temporal_selections,
