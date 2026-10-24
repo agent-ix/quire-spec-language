@@ -1257,6 +1257,30 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::MissingClock { .. } => {
                     format!("{message}: a clause over this subject must write a `clock` member")
                 }
+                TemporalCause::TimedFacetRequired { owner, .. } => format!(
+                    "{message}: `{owner}` is a timed declaration, which needs the \
+                     `quire.temporal.complete/v1` layer"
+                ),
+                TemporalCause::DuplicateTimeSource { model, .. } => {
+                    format!("{message}: model `{model}` already has a time source")
+                }
+                TemporalCause::MissingTimedModel { name, .. } => {
+                    format!("{message}: the time source names no admitted model `{name}`")
+                }
+                TemporalCause::UrgencyWithoutTimeSource { .. } => {
+                    format!("{message}: `urgent when` needs a model with a time source")
+                }
+                TemporalCause::InvalidTickPeriod { .. } => {
+                    format!("{message}: a tick period must be positive")
+                }
+                TemporalCause::MissingTickOperation { name, .. } => {
+                    format!(
+                        "{message}: the tick operation `{name}` names no operation of the model"
+                    )
+                }
+                TemporalCause::AmbiguousTickOperation { name, .. } => {
+                    format!("{message}: the tick operation `{name}` resolves more than once")
+                }
             };
         }
         _ => {}
