@@ -2,7 +2,7 @@
 //! TC-774: FR-290-AC-5 to FR-290-AC-14, the plugin result readers and the
 //! plugin replay context.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
@@ -63,12 +63,81 @@ fn settle_basis(basis: ProofBasis) -> TerminalRecord {
     TerminalRecord::from_plugin_proof(RequestIndex::new(0), plugin(), basis).unwrap()
 }
 
+#[trace("TC-774", "FR-290-AC-18")]
+#[test]
+fn hybrid_plugin_basis_reads_coverage_and_the_closed_method_table() {
+    let bounded = json!({"type":"bounded-solver","method":"unclassified",
+        "horizon":{"numerator":"10","denominator":"1"},"jumps":0,"exhaustive":[]});
+    assert_eq!(
+        read_plugin_basis(&bounded),
+        Ok(ProofBasis::BoundedSolver {
+            method: SolverMethod::Unclassified,
+            horizon: SolverHorizon::new(quire_exact::Rational::from_integer(Integer::from(10_i64)))
+                .expect("nonnegative"),
+            jumps: 0,
+            exhaustive: BTreeSet::new(),
+        })
+    );
+    assert_eq!(
+        read_plugin_basis(&json!({"type":"inductive-solver","method":"inductive-enclosure"})),
+        Ok(ProofBasis::InductiveSolver {
+            method: SolverMethod::InductiveEnclosure
+        })
+    );
+    for invalid_basis in [
+        json!({"type":"bounded-solver","method":"inductive-enclosure","horizon":{"numerator":"10","denominator":"1"},"jumps":0,"exhaustive":[]}),
+        json!({"type":"inductive-solver","method":"delta-complete"}),
+        json!({"type":"bounded-solver","method":"dreal","horizon":{"numerator":"10","denominator":"1"},"jumps":0,"exhaustive":[]}),
+    ] {
+        assert_eq!(
+            read_plugin_basis(&invalid_basis),
+            Err(invalid("/basis/method"))
+        );
+    }
+    let mut missing_exhaustive = bounded.clone();
+    missing_exhaustive
+        .as_object_mut()
+        .expect("object")
+        .remove("exhaustive");
+    assert_eq!(
+        read_plugin_basis(&missing_exhaustive),
+        Err(missing("/basis/exhaustive"))
+    );
+    for exhaustive in [json!(["time", "time"]), json!(["positions"])] {
+        let mut bad = bounded.clone();
+        bad["exhaustive"] = exhaustive;
+        assert_eq!(read_plugin_basis(&bad), Err(invalid("/basis/exhaustive")));
+    }
+}
+
+#[trace("TC-774", "FR-290-AC-18")]
+#[test]
+fn hybrid_plugin_cause_reads_insufficient_horizon() {
+    let cause = json!({"type":"insufficient-horizon", "horizon":
+        {"numerator":"1","denominator":"1"}, "jumps":1, "exhaustive":["time"]});
+    let horizon = SolverHorizon::new(quire_exact::Rational::from_integer(Integer::from(1_i64)))
+        .expect("nonnegative");
+    let expected = InconclusiveCause::InsufficientHorizon {
+        horizon,
+        jumps: 1,
+        exhaustive: BTreeSet::from([crate::hybrid::BoundDimension::Time]),
+    };
+    assert_eq!(read_plugin_inconclusive_cause(&cause), Ok(expected.clone()));
+    let record = TerminalRecord::from_plugin_inconclusive(RequestIndex::new(0), plugin(), expected)
+        .expect("plugin cause is admitted");
+    let item = serde_json::to_value(crate::outcome::OutcomeItem::from_terminal(&record))
+        .expect("serializes");
+    assert_eq!(item["cause"]["kind"], "insufficient-horizon");
+    assert_eq!(item["cause"]["exhaustive"], json!(["time"]));
+    assert_eq!(item["cause"]["jumps"], 1);
+}
+
 /// FR-290-AC-5.
 #[trace("TC-774", "FR-290-AC-5")]
 #[test]
 fn tc_774_basis_reader_accepts_the_plugin_spellings() {
     let horizon = json!({"denominator": "2", "numerator": "5"});
-    let solver = |method: &str| json!({"type": "bounded-solver", "horizon": horizon, "jumps": 3, "method": method});
+    let solver = |method: &str| json!({"type": "bounded-solver", "horizon": horizon, "jumps": 3, "method": method, "exhaustive": []});
     let five_halves = SolverHorizon::new(
         quire_exact::Rational::new(Integer::from(5_i64), Integer::from(2_i64)).unwrap(),
     )
@@ -94,7 +163,8 @@ fn tc_774_basis_reader_accepts_the_plugin_spellings() {
             Ok(ProofBasis::BoundedSolver {
                 method: expected,
                 horizon: five_halves.clone(),
-                jumps: 3
+                jumps: 3,
+                exhaustive: BTreeSet::new(),
             })
         );
     }
@@ -147,7 +217,7 @@ fn tc_774_basis_reader_refuses_in_order() {
     let spelling = |pointer: &str| PluginResultRefusal::UnknownSpelling {
         pointer: pointer.to_owned(),
     };
-    let solver = |horizon: Value, method: &str| json!({"type": "bounded-solver", "horizon": horizon, "jumps": 1, "method": method});
+    let solver = |horizon: Value, method: &str| json!({"type": "bounded-solver", "horizon": horizon, "jumps": 1, "method": method, "exhaustive": []});
     let one = json!({"denominator": "1", "numerator": "1"});
     let cases: Vec<(Value, PluginResultRefusal)> = vec![
         (json!({"type": "replay-parity"}), spelling("/basis/type")),
@@ -180,13 +250,7 @@ fn tc_774_basis_reader_refuses_in_order() {
             json!({"type": "inductive", "depth": 9_007_199_254_740_992_u64}),
             invalid("/basis/depth"),
         ),
-        (
-            solver(one.clone(), "dreal"),
-            PluginResultRefusal::Unsupported {
-                pointer: "/basis/method".to_owned(),
-                feature: "dreal".to_owned(),
-            },
-        ),
+        (solver(one.clone(), "dreal"), invalid("/basis/method")),
         (solver(one, ""), invalid("/basis/method")),
         (
             solver(
@@ -269,7 +333,13 @@ fn tc_774_cause_reader_accepts_the_plugin_spellings() {
             "sufficient-test-failed",
             InconclusiveCause::SufficientTestFailed,
         ),
-        ("solver-inconclusive", InconclusiveCause::SolverInconclusive),
+        (
+            "solver-inconclusive",
+            InconclusiveCause::SolverInconclusive {
+                trace: None,
+                replay: None,
+            },
+        ),
         ("match-undetermined", InconclusiveCause::MatchUndetermined),
         ("vacuous-match", InconclusiveCause::VacuousMatch),
     ] {

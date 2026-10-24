@@ -153,6 +153,7 @@ pub struct Requirements {
     fairness: BTreeSet<FairnessKind>,
     unsupported: Option<UnsupportedItem>,
     model_subject: bool,
+    hybrid_dynamics: bool,
     evidence: Option<ClaimEvidence>,
 }
 
@@ -165,6 +166,7 @@ impl Requirements {
             fairness: BTreeSet::new(),
             unsupported: None,
             model_subject: false,
+            hybrid_dynamics: false,
             evidence: None,
         }
     }
@@ -194,6 +196,19 @@ impl Requirements {
     /// Whether the item is over a model subject.
     pub fn model_subject(&self) -> bool {
         self.model_subject
+    }
+
+    /// Mark a temporal claim whose checked subject contains hybrid dynamics.
+    /// The provider request writes `hybrid-dynamics` for this item.
+    #[must_use]
+    pub fn with_hybrid_dynamics(mut self) -> Self {
+        self.hybrid_dynamics = self.kind == Capability::TemporalSatisfaction;
+        self
+    }
+
+    /// Whether this item needs a provider with hybrid dynamics.
+    pub fn hybrid_dynamics(&self) -> bool {
+        self.hybrid_dynamics
     }
 
     /// The requirements of an item the request writer disposes

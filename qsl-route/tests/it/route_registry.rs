@@ -19,9 +19,10 @@ use qsl_foundation::bound::DomainKind;
 use qsl_foundation::digest::ByteDigest;
 use qsl_foundation::BackendId;
 use qsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, EvidenceKind,
-    ItemEvidence, ManifestDigest, Mode, ProviderOrigin, RegistrationCause, RegistrationRefusal,
-    Registry,
+    descriptor_from_manifest, descriptor_from_manifest_with_dynamics, BackendDescriptor, Candidate,
+    CandidateOutcome, DynamicsDefect, DynamicsKind, DynamicsMember, EvidenceKind,
+    FairnessKindsMember, FairnessLabel, ItemEvidence, ManifestDigest, Mode, ProviderOrigin,
+    RegistrationCause, RegistrationRefusal, Registry, SolverBounds,
 };
 use qsl_semantics::check::Capability;
 
@@ -57,6 +58,154 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
         .iter()
         .map(|candidate| candidate.id().as_str().to_owned())
         .collect()
+}
+
+#[trace("TC-193", "FR-075-AC-19")]
+#[test]
+fn hybrid_and_discrete_items_route_to_their_advertised_dynamics() {
+    let discrete = backend(
+        "qsl-model-check",
+        b"discrete",
+        [(Capability::TemporalSatisfaction, Mode::Bounded)],
+    );
+    let hybrid = backend(
+        "hybrid-fixture",
+        b"hybrid",
+        [(Capability::TemporalSatisfaction, Mode::Bounded)],
+    )
+    .with_dynamics(
+        Some(BTreeSet::from([DynamicsKind::Hybrid])),
+        Some(SolverBounds {
+            max_solver_steps: Some(1_000_000),
+            max_solver_time: Some(60),
+        }),
+    )
+    .expect("fixture advertises both solver bounds");
+    for descriptors in [
+        [discrete.clone(), hybrid.clone()],
+        [hybrid.clone(), discrete.clone()],
+    ] {
+        let mut registry = Registry::new();
+        for descriptor in descriptors {
+            registry.register(descriptor).expect("distinct identities");
+        }
+        assert_eq!(
+            set_ids(
+                registry.candidates_for_dynamics(Capability::TemporalSatisfaction, None, true,)
+            ),
+            ["hybrid-fixture"]
+        );
+        assert_eq!(
+            set_ids(registry.candidates_for_dynamics(
+                Capability::TemporalSatisfaction,
+                None,
+                false,
+            )),
+            ["qsl-model-check"]
+        );
+        assert!(set_ids(registry.candidates_for_dynamics(
+            Capability::TemporalSatisfaction,
+            Some(&BackendId::new("qsl-model-check")),
+            true,
+        ))
+        .is_empty());
+    }
+}
+
+#[trace("TC-193", "FR-075-AC-20")]
+#[test]
+fn hybrid_manifest_admission_checks_dynamics_after_fairness_and_evidence() {
+    let admit = |dynamics, fairness, bounds| {
+        descriptor_from_manifest_with_dynamics(
+            Candidate::new(BackendId::new("hybrid-fixture")),
+            ProviderOrigin::Linked,
+            digest(b"hybrid-manifest"),
+            [(Some("temporal-satisfaction"), Some("bounded"))],
+            Some(&["collection"]),
+            fairness,
+            None,
+            dynamics,
+            bounds,
+        )
+    };
+    let fairness = [FairnessLabel::Text("weak")];
+    let good_fairness = Some(FairnessKindsMember::List(&fairness));
+    let kinds = ["hybrid"];
+    let duplicate = ["hybrid", "hybrid"];
+    let unknown = ["continuous"];
+    let full_bounds = Some(SolverBounds {
+        max_solver_steps: Some(1_000_000),
+        max_solver_time: Some(60),
+    });
+    let defect = |dynamics, bounds| {
+        admit(dynamics, good_fairness, bounds)
+            .expect_err("defective dynamics must refuse")
+            .cause()
+            .clone()
+    };
+    assert_eq!(
+        defect(Some(DynamicsMember::NotAList), full_bounds),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::NotAList)
+    );
+    assert_eq!(
+        defect(Some(DynamicsMember::List(&[])), full_bounds),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::Empty)
+    );
+    assert_eq!(
+        defect(Some(DynamicsMember::List(&unknown)), full_bounds),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::UnknownLabel("continuous".into()))
+    );
+    assert_eq!(
+        defect(Some(DynamicsMember::List(&duplicate)), full_bounds),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::DuplicateLabel("hybrid".into()))
+    );
+    assert_eq!(
+        defect(
+            Some(DynamicsMember::List(&kinds)),
+            Some(SolverBounds {
+                max_solver_steps: Some(1_000_000),
+                max_solver_time: None,
+            })
+        ),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::MissingBounds("max_solver_time"))
+    );
+    assert_eq!(
+        defect(
+            Some(DynamicsMember::List(&kinds)),
+            Some(SolverBounds {
+                max_solver_steps: Some(0),
+                max_solver_time: Some(60),
+            })
+        ),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::InvalidBound("max_solver_steps"))
+    );
+    assert_eq!(
+        defect(
+            Some(DynamicsMember::List(&kinds)),
+            Some(SolverBounds {
+                max_solver_steps: Some(1_000_000),
+                max_solver_time: Some(0),
+            })
+        ),
+        RegistrationCause::InvalidDynamics(DynamicsDefect::InvalidBound("max_solver_time"))
+    );
+    assert_eq!(
+        admit(
+            Some(DynamicsMember::List(&kinds)),
+            Some(FairnessKindsMember::List(&[FairnessLabel::Text("other")])),
+            full_bounds,
+        )
+        .expect_err("fairness is checked first")
+        .catalog_code()
+        .cause(),
+        "invalid-fairness-kinds"
+    );
+    assert_eq!(
+        admit(None, good_fairness, None)
+            .expect("absent dynamics is admitted")
+            .dynamics(),
+        None
+    );
 }
 
 /// TC-193 (FR-075-AC-1, FR-075-AC-5): the candidate set for an unnamed

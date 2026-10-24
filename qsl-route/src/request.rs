@@ -98,6 +98,7 @@ pub struct RequestItem {
     index: RequestIndex,
     occurrence: OccurrenceKey,
     kind: Capability,
+    hybrid_dynamics: bool,
     extent: ExtentClassification,
     domains: Vec<ProofBound>,
     unsupported: Option<UnsupportedItem>,
@@ -123,6 +124,16 @@ impl RequestItem {
     /// The requested capability kind.
     pub fn kind(&self) -> Capability {
         self.kind
+    }
+
+    /// The FR-331 `requirements` member. Empty for an ordinary item and
+    /// exactly `hybrid-dynamics` for a checked hybrid claim.
+    pub fn requirements(&self) -> &'static [&'static str] {
+        if self.hybrid_dynamics {
+            &["hybrid-dynamics"]
+        } else {
+            &[]
+        }
     }
 
     /// The FR-331 extent classification.
@@ -291,6 +302,7 @@ impl RequestWriter {
             index,
             occurrence,
             kind: requirements.kind(),
+            hybrid_dynamics: requirements.hybrid_dynamics(),
             extent,
             domains,
             unsupported: requirements.unsupported().cloned(),
@@ -361,6 +373,7 @@ pub struct RequirementItem {
     index: RequestIndex,
     occurrence: OccurrenceKey,
     kind: Capability,
+    hybrid_dynamics: bool,
     extent: ExtentClassification,
     unbounded: Vec<(DomainKey, DomainKind)>,
     proof_bounds: Vec<ProofBound>,
@@ -403,6 +416,15 @@ impl RequirementItem {
     /// The record's capability kind.
     pub fn kind(&self) -> Capability {
         self.kind
+    }
+
+    /// The provider item requirement labels in wire order.
+    pub fn requirements(&self) -> &'static [&'static str] {
+        if self.hybrid_dynamics {
+            &["hybrid-dynamics"]
+        } else {
+            &[]
+        }
     }
 
     /// The extent classification [`RequestWriter::item`] computes from the
@@ -609,6 +631,7 @@ pub fn items_with_evidence(
             index: RequestIndex::new(position),
             occurrence: occurrence.clone(),
             kind: requirements.kind(),
+            hybrid_dynamics: requirements.hybrid_dynamics(),
             extent,
             unbounded,
             proof_bounds: Vec::new(),
@@ -667,9 +690,13 @@ fn candidates_of(
         Some(kind) => {
             registry.candidates_for_evidence(requirements.kind(), &ItemEvidence::Kind(kind), named)
         }
-        None => {
-            registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness())
-        }
+        None => registry.candidates_for_temporal_dynamics(
+            requirements.kind(),
+            named,
+            requirements.fairness(),
+            &Default::default(),
+            requirements.hybrid_dynamics(),
+        ),
     };
     match outcome {
         // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).
@@ -718,6 +745,29 @@ mod tests {
 
     fn depth(maximum: u64) -> FiniteBound {
         FiniteBound::depth(maximum).unwrap()
+    }
+
+    /// FR-447-AC-17: the hybrid claim's item carries exactly the member
+    /// `"requirements": ["hybrid-dynamics"]` and an ordinary item none, so
+    /// the label is part of the item's identity; the label is written only
+    /// on a `temporal-satisfaction` item, and writing the same record twice
+    /// gives equal items.
+    #[trace("TC-1187", "FR-447-AC-17")]
+    #[test]
+    fn request_writer_keeps_hybrid_dynamics_in_the_item_identity() {
+        let ordinary = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+        let hybrid = ordinary.clone().with_hybrid_dynamics();
+        let value = Requirements::new(Capability::ValueValidity, ClaimExtent::Bounded)
+            .with_hybrid_dynamics();
+        let mut writer = RequestWriter::new();
+        let first = writer.item(occurrence(), &ordinary);
+        let second = writer.item(occurrence(), &hybrid);
+        let third = writer.item(occurrence(), &value);
+        let items = writer.finish();
+        assert_eq!(items[first.get()].requirements(), &[] as &[&str]);
+        assert_eq!(items[second.get()].requirements(), ["hybrid-dynamics"]);
+        assert_eq!(items[third.get()].requirements(), &[] as &[&str]);
+        assert_ne!(items[first.get()], items[second.get()]);
     }
 
     /// TC-438 (ADR-014 §4; §10 scenarios 2 and 3): a bounded item is

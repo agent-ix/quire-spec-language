@@ -1067,3 +1067,59 @@ fn calls_of_pure_functions_lower_and_foreign_bodies_refuse() {
         (Code::IllTyped, "type-mismatch", "bad(v)".to_owned())
     );
 }
+
+/// FR-250-AC-1, FR-447 "The provider request": each checked hybrid claim
+/// has one `temporal-satisfaction` requirement record carrying the
+/// hybrid-dynamics requirement S3's variable classification gives it,
+/// `bounded` for a claim with a horizon and unbounded for one without; a
+/// hybrid declaration with no claim has no record. A claim over a model
+/// that is not hybrid gets no label (the root test `hybrid_request_items`).
+#[trace("TC-705", "FR-250-AC-1")]
+#[test]
+fn each_hybrid_claim_has_a_hybrid_dynamics_requirement_record() {
+    use crate::check::Capability;
+    use crate::family::ClaimExtent;
+
+    let records = |declarations: &str| {
+        let graph = check(declarations).unwrap_or_else(|refusals| panic!("{refusals:?}"));
+        graph
+            .requirements()
+            .values()
+            .map(|record| record.requirements().clone())
+            .collect::<Vec<_>>()
+    };
+
+    let bounded = records(&slow_enough("always [0, 10] holds(h.v < 30)"));
+    let [bounded] = bounded.as_slice() else {
+        panic!("one record: {bounded:?}");
+    };
+    assert_eq!(bounded.kind(), Capability::TemporalSatisfaction);
+    assert!(bounded.hybrid_dynamics());
+    assert!(matches!(bounded.extent(), ClaimExtent::Bounded));
+
+    let unbounded = records(&slow_enough("always holds(h.v < 30)"));
+    let [unbounded] = unbounded.as_slice() else {
+        panic!("one record: {unbounded:?}");
+    };
+    assert_eq!(unbounded.kind(), Capability::TemporalSatisfaction);
+    assert!(unbounded.hybrid_dynamics());
+    assert!(matches!(unbounded.extent(), ClaimExtent::Unbounded(_)));
+
+    // The model's classification: `v` and `a` hybrid, `t` a clock.
+    let classes: Vec<_> = model(&use_case())
+        .variables
+        .iter()
+        .map(|variable| variable.class)
+        .collect();
+    assert_eq!(
+        classes,
+        [
+            VariableClass::Hybrid,
+            VariableClass::Hybrid,
+            VariableClass::Clock
+        ]
+    );
+
+    // A hybrid declaration alone is no claim, so it has no record.
+    assert!(records(&use_case()).is_empty());
+}

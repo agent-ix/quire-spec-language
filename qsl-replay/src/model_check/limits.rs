@@ -155,7 +155,7 @@ impl ModelCheckLimit {
                 crate::limits::AccountingLimits::setting_of(counter).name()
             }
             Self::MaxCandidates => "expansion.max_candidates",
-            Self::SolverSteps => "max_solver_steps",
+            Self::SolverSteps => "hybrid.max_solver_steps",
             Self::WitnessSamples => "witness_samples",
             Self::MaxWalkSteps => "max_walk_steps",
             Self::MaxWitnessSet => "max_witness_set",

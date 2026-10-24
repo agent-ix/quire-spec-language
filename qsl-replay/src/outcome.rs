@@ -23,6 +23,7 @@
 //! violation; the label `undefined` appears only as the category of a
 //! non-proof evaluation outcome such as `execute`.
 
+use crate::hybrid::{BoundDimension, SolverHorizon};
 use qsl_cst::format::FormatRefusal;
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
 use qsl_foundation::digest::DigestRecord;
@@ -33,6 +34,7 @@ use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::CancelCause;
 use quire_semantic_value::catalog::Category;
 use serde::{Serialize, Serializer};
+use std::collections::BTreeSet;
 
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::state_graph::WitnessSource;
@@ -211,6 +213,12 @@ pub struct ItemCause {
     parity: Option<ParityReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     depth: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    horizon: Option<SolverHorizon>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jumps: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exhaustive: Option<BTreeSet<BoundDimension>>,
     #[serde(
         serialize_with = "cancel_source",
         skip_serializing_if = "Option::is_none"
@@ -315,6 +323,9 @@ impl ItemCause {
             code: None,
             parity: None,
             depth: None,
+            horizon: None,
+            jumps: None,
+            exhaustive: None,
             source: None,
             rule: None,
             certificate_at: None,
@@ -365,6 +376,15 @@ impl ItemCause {
             ) => {
                 item.depth = Some(*depth);
             }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::InsufficientHorizon {
+                horizon,
+                jumps,
+                exhaustive,
+            }) => {
+                item.horizon = Some(horizon.clone());
+                item.jumps = Some(*jumps);
+                item.exhaustive = Some(exhaustive.clone());
+            }
             ReportedInconclusiveCause::Cause(
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
@@ -373,7 +393,7 @@ impl ItemCause {
                 | InconclusiveCause::VacuousMatch
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
-                | InconclusiveCause::SolverInconclusive,
+                | InconclusiveCause::SolverInconclusive { .. },
             ) => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {
                 reduction,
@@ -558,6 +578,7 @@ impl OutcomeItem {
                         item.shape = Some(shape.clone());
                     }
                     UnavailabilityCause::SolverAbsent
+                    | UnavailabilityCause::HybridProviderAbsent
                     | UnavailabilityCause::BackendAbsent
                     | UnavailabilityCause::MissingFairnessPremise { .. }
                     | UnavailabilityCause::UnsupportedReduction { .. }

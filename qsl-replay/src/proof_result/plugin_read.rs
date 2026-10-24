@@ -11,6 +11,7 @@
 //! plugin. Those are the [`BASIS`] and [`CAUSE`] tables below.
 
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
@@ -19,11 +20,15 @@ use super::{
     AppliedReduction, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, ProofBasis,
     Proviso, ReductionKind,
 };
-use crate::hybrid::{SolverHorizon, SolverMethod};
+use crate::hybrid::{BoundDimension, SolverHorizon, SolverMethod};
 use crate::witness::{CanonicalAssignment, WitnessValue};
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, Rational};
 use quire_semantic_value::fairness::PropertyForm;
+
+mod trace;
+
+pub use trace::read_plugin_inconclusive_cause_over;
 
 /// The largest FR-331 count, 2^53 - 1.
 const MAX_COUNT: u64 = (1 << 53) - 1;
@@ -44,7 +49,11 @@ const BASIS: &[Spelling] = &[
     spelling("exhaustive", &[]),
     spelling("bounded-complete", &["depth"]),
     spelling("inductive", &["depth"]),
-    spelling("bounded-solver", &["horizon", "jumps", "method"]),
+    spelling(
+        "bounded-solver",
+        &["exhaustive", "horizon", "jumps", "method"],
+    ),
+    spelling("inductive-solver", &["method"]),
     spelling("reduced", &["reductions"]),
 ];
 
@@ -65,6 +74,7 @@ const CAUSE: &[Spelling] = &[
     spelling("no-instance", &[]),
     spelling("sufficient-test-failed", &[]),
     spelling("solver-inconclusive", &[]),
+    spelling("insufficient-horizon", &["exhaustive", "horizon", "jumps"]),
     spelling("match-undetermined", &[]),
     spelling("vacuous-match", &[]),
     spelling("bound-reached", &["depth"]),
@@ -238,6 +248,38 @@ fn refuse_core_only_basis(kind: &str) -> Result<(), PluginResultRefusal> {
     }
 }
 
+/// Read the `basis` of a first-party `uncertified` solver entry: a
+/// `bounded-solver` or `inductive-solver` basis as for a plugin, except that
+/// a `bounded-solver` whose `method` is `flowpipe-unrounded` or
+/// `unclassified` is refused `invalid_result`/`invalid-value` at
+/// `/basis/method`, since no outcome of those kinds is sound (FR-250, QSpec
+/// FR-193 "Solver result on the wire").
+///
+/// # Errors
+///
+/// [`PluginResultRefusal`] as for [`read_plugin_basis`]; `Unsupported` at
+/// `/basis/type` for any other basis.
+#[ix_trace_rs::string_edge]
+pub fn read_first_party_solver_basis(basis: &Value) -> Result<ProofBasis, PluginResultRefusal> {
+    let kind = basis
+        .as_object()
+        .and_then(|members| members.get("type"))
+        .and_then(Value::as_str);
+    if !matches!(kind, Some("bounded-solver" | "inductive-solver")) {
+        return Err(PluginResultRefusal::Unsupported {
+            pointer: child("/basis", "type"),
+            feature: kind.unwrap_or_default().to_owned(),
+        });
+    }
+    match read_plugin_basis(basis)? {
+        ProofBasis::BoundedSolver {
+            method: SolverMethod::FlowpipeUnrounded | SolverMethod::Unclassified,
+            ..
+        } => Err(invalid(child("/basis", "method"))),
+        read => Ok(read),
+    }
+}
+
 /// Read a plugin's `proved` entry's `basis` member into a [`ProofBasis`]
 /// (FR-290, "Basis and cause"). The checks run in the order of the
 /// requirement's steps 1 to 8, and the first refusal is returned.
@@ -262,14 +304,29 @@ pub fn read_plugin_basis(basis: &Value) -> Result<ProofBasis, PluginResultRefusa
             depth: count(members, "depth", BASE, false)?,
         },
         "bounded-solver" => {
+            let exhaustive = read_exhaustive(
+                member(members, "exhaustive", BASE)?,
+                child(BASE, "exhaustive"),
+            )?;
             let horizon = read_horizon(member(members, "horizon", BASE)?, child(BASE, "horizon"))?;
             let jumps = count(members, "jumps", BASE, false)?;
             let method = read_method(member(members, "method", BASE)?, child(BASE, "method"))?;
+            if method == SolverMethod::InductiveEnclosure {
+                return Err(invalid(child(BASE, "method")));
+            }
             ProofBasis::BoundedSolver {
                 method,
                 horizon,
                 jumps,
+                exhaustive,
             }
+        }
+        "inductive-solver" => {
+            let method = read_method(member(members, "method", BASE)?, child(BASE, "method"))?;
+            if method != SolverMethod::InductiveEnclosure {
+                return Err(invalid(child(BASE, "method")));
+            }
+            ProofBasis::InductiveSolver { method }
         }
         _ => ProofBasis::Reduced {
             reductions: read_reductions(
@@ -287,13 +344,34 @@ fn read_method(value: &Value, pointer: String) -> Result<SolverMethod, PluginRes
         SolverMethod::DeltaComplete,
         SolverMethod::FlowpipeOutwardRounded,
         SolverMethod::FlowpipeUnrounded,
+        SolverMethod::InductiveEnclosure,
+        SolverMethod::Unclassified,
     ]
     .into_iter()
     .find(|candidate| candidate.as_str() == method)
-    .ok_or_else(|| PluginResultRefusal::Unsupported {
-        pointer,
-        feature: method.to_owned(),
-    })
+    .ok_or_else(|| invalid(pointer))
+}
+
+#[ix_trace_rs::string_edge]
+fn read_exhaustive(
+    value: &Value,
+    pointer: String,
+) -> Result<BTreeSet<BoundDimension>, PluginResultRefusal> {
+    let labels = value
+        .as_array()
+        .ok_or_else(|| wrong_kind(pointer.clone()))?;
+    let mut dimensions = BTreeSet::new();
+    for label in labels {
+        let dimension = match label.as_str() {
+            Some("time") => BoundDimension::Time,
+            Some("jumps") => BoundDimension::Jumps,
+            _ => return Err(invalid(pointer)),
+        };
+        if !dimensions.insert(dimension) {
+            return Err(invalid(pointer));
+        }
+    }
+    Ok(dimensions)
 }
 
 /// A canonical decimal integer: an optional `-`, then digits with no leading
@@ -504,7 +582,18 @@ pub fn read_plugin_inconclusive_cause(
         "no-initial-state" => InconclusiveCause::NoInitialState,
         "no-instance" => InconclusiveCause::NoInstance,
         "sufficient-test-failed" => InconclusiveCause::SufficientTestFailed,
-        "solver-inconclusive" => InconclusiveCause::SolverInconclusive,
+        "solver-inconclusive" => InconclusiveCause::SolverInconclusive {
+            trace: None,
+            replay: None,
+        },
+        "insufficient-horizon" => InconclusiveCause::InsufficientHorizon {
+            exhaustive: read_exhaustive(
+                member(members, "exhaustive", BASE)?,
+                child(BASE, "exhaustive"),
+            )?,
+            horizon: read_horizon(member(members, "horizon", BASE)?, child(BASE, "horizon"))?,
+            jumps: count(members, "jumps", BASE, false)?,
+        },
         "match-undetermined" => InconclusiveCause::MatchUndetermined,
         "vacuous-match" => InconclusiveCause::VacuousMatch,
         "bound-reached" => InconclusiveCause::BoundReached {

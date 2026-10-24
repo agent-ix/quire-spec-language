@@ -105,6 +105,14 @@ pub(crate) struct LoweredHybridModel {
     pub(crate) modes: Vec<NodeKey>,
 }
 
+/// A lowered hybrid claim's keys.
+pub(crate) struct LoweredHybridClaim {
+    /// The `temporal`/`temporal_clause` node.
+    pub(crate) key: NodeKey,
+    /// The claim's `Boolean` result type node.
+    pub(crate) boolean: NodeKey,
+}
+
 /// One checked hybrid claim, as lowering reads it.
 pub(crate) struct HybridClaimInput<'a> {
     /// The claim's index among the unit's hybrid claims.
@@ -310,11 +318,12 @@ impl Lowering<'_> {
 
     /// Lower and key the hybrid claim `input` as a
     /// `temporal`/`temporal_clause` node, recording its one `claim`
-    /// occurrence at its declared name. Returns the clause node's key.
+    /// occurrence at its declared name. Returns the clause node's key and its
+    /// `Boolean` result type node.
     pub(crate) fn hybrid_claim(
         &mut self,
         input: &HybridClaimInput<'_>,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<LoweredHybridClaim, CheckRefusal> {
         let claim = input.claim;
         let at = hybrid_location(HybridSite::Claim(input.index));
         let boolean = self.type_node(&ValueType::Boolean, &at)?;
@@ -390,7 +399,7 @@ impl Lowering<'_> {
             ),
         )?;
         self.record(key, OccurrenceRole::Claim, at);
-        Ok(key)
+        Ok(LoweredHybridClaim { key, boolean })
     }
 
     /// The `temporal`/`fairness` node of `constraint` (QSpec FR-481 "Hybrid

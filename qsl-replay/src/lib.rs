@@ -132,14 +132,15 @@ pub use execute::{
     ValueParityPreimage, ValueParityReport, ValueParityResult,
 };
 pub use hybrid::{
-    NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+    settle_hybrid_candidates, BoundDimension, ClaimHorizon, HybridSettlement, NegativeHorizon,
+    SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
 };
 pub use hybrid_replay::{
     admit as admit_hybrid_trace, exact_replay, static_replay, ExactCheck, ExactGap, ExactInterval,
-    ExactReal, ExactReplay, ExpansionGap, ExpressionLocus, ExpressionSite, HybridCounterexample,
-    HybridCounterexampleKind, HybridReplayMeter, HybridReplayRefusal, HybridTrace, JsonPointer,
-    Root, StaticCheck, StaticReplay, TermLocus, TraceBefore, TraceFault, TraceJump, TraceRefusal,
-    TraceState, UndefinedCause, UndefinedInstant,
+    ExactReal, ExactRecord, ExactReplay, ExpansionGap, ExpressionLocus, ExpressionSite,
+    HybridCounterexample, HybridCounterexampleKind, HybridReplayMeter, HybridReplayRefusal,
+    HybridTrace, JsonPointer, ReplayRecord, Root, StaticCheck, StaticReplay, TermLocus,
+    TraceBefore, TraceFault, TraceJump, TraceRefusal, TraceState, UndefinedCause, UndefinedInstant,
 };
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
@@ -217,15 +218,16 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, read_plugin_assignments, read_plugin_basis,
-    read_plugin_cause_kind, read_plugin_certification, read_plugin_inconclusive_cause,
-    AppliedReduction, BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet,
-    IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember,
-    PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis, ProofRefusalCause,
-    ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind,
-    ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
-    StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal, TerminalRecord,
-    TerminalRecordRefusal, TerminalValue, UnavailabilityCause, ValueFault,
+    read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,
+    read_plugin_basis, read_plugin_cause_kind, read_plugin_certification,
+    read_plugin_inconclusive_cause, read_plugin_inconclusive_cause_over, AppliedReduction,
+    BackendProviderSource, Certification, DeclineCode, EmptyEnvelopeSet, IncompleteCause,
+    InconclusiveCause, InstanceBound, MemoryBound, MemoryBoundMember, PluginReplayContext,
+    PluginReplayRefusal, PluginResultRefusal, ProofBasis, ProofRefusalCause, ProofResultEnvelope,
+    ProofResultRefusal, Proviso, QslOnlyCause, ReductionKind, ReportedInconclusiveCause,
+    SettlementBasis, StatedInstanceBound, StatedMemoryBound, StatisticalRequestRefusal,
+    SymmetryBrokenCause, SymmetryRefusal, TerminalRecord, TerminalRecordRefusal, TerminalValue,
+    UnavailabilityCause, ValueFault,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

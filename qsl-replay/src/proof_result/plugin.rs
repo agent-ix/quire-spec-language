@@ -11,9 +11,11 @@ use super::{
     REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND,
 };
 use crate::execute::ReplayRefusal;
+use crate::hybrid::{ClaimHorizon, SolverCoverage};
 use crate::outcome::OutcomeDiagnostic;
 use crate::result::{InputSettlement, ReplayResult};
 use qsl_foundation::{BackendId, RequestIndex};
+use qsl_semantics::check::CheckedHybridClaim;
 use quire_semantic_value::catalog::Category;
 
 /// A cause settled by QSL's own replay or Kani mapping, never by a provider
@@ -252,8 +254,25 @@ impl TerminalRecord {
 
     /// A plugin's `proved` result: `proved` with the basis the plugin
     /// reports, the certification `trusted` and `plugin`'s identity
-    /// (ADR-029 PL-7, RU-4). The Kani check-count basis is refused.
+    /// (ADR-029 PL-7, RU-4). The Kani check-count basis is refused, and so
+    /// is a `bounded-solver` basis, which only a hybrid claim's coverage can
+    /// admit ([`TerminalRecord::from_hybrid_plugin_proof`], FR-250): it is
+    /// `Malformed` at `/basis/type`.
     pub fn from_plugin_proof(
+        request_index: RequestIndex,
+        plugin: BackendId,
+        basis: ProofBasis,
+    ) -> Result<Self, PluginResultRefusal> {
+        if matches!(basis, ProofBasis::BoundedSolver { .. }) {
+            return Err(PluginResultRefusal::Malformed {
+                pointer: "/basis/type".to_owned(),
+                cause: ValueFault::InvalidValue,
+            });
+        }
+        Self::trusted_proof(request_index, plugin, basis)
+    }
+
+    fn trusted_proof(
         request_index: RequestIndex,
         plugin: BackendId,
         basis: ProofBasis,
@@ -271,6 +290,7 @@ impl TerminalRecord {
             | ProofBasis::BoundedComplete { .. }
             | ProofBasis::Inductive { .. }
             | ProofBasis::BoundedSolver { .. }
+            | ProofBasis::InductiveSolver { .. }
             | ProofBasis::Reduced { .. } => {}
         }
         Ok(Self::with_backend(
@@ -281,6 +301,44 @@ impl TerminalRecord {
                 certification: Certification::Trusted,
             },
         ))
+    }
+
+    /// A trusted plugin proof over a hybrid claim. A bounded solver basis
+    /// settles `proved` only if it covers every state the claim reads;
+    /// otherwise its bounds settle `insufficient-horizon` (FR-250-AC-7).
+    /// Other admitted plugin bases retain their FR-290 settlement.
+    pub fn from_hybrid_plugin_proof(
+        request_index: RequestIndex,
+        plugin: BackendId,
+        basis: ProofBasis,
+        claim: &CheckedHybridClaim,
+    ) -> Result<Self, PluginResultRefusal> {
+        let claim = ClaimHorizon::of(claim);
+        if let ProofBasis::BoundedSolver {
+            horizon,
+            jumps,
+            exhaustive,
+            ..
+        } = &basis
+        {
+            let coverage = SolverCoverage::Bounded {
+                horizon: horizon.clone(),
+                jumps: *jumps,
+                exhaustive: exhaustive.clone(),
+            };
+            if !coverage.covers(&claim) {
+                return Self::from_plugin_inconclusive(
+                    request_index,
+                    plugin,
+                    InconclusiveCause::InsufficientHorizon {
+                        horizon: horizon.clone(),
+                        jumps: *jumps,
+                        exhaustive: exhaustive.clone(),
+                    },
+                );
+            }
+        }
+        Self::trusted_proof(request_index, plugin, basis)
     }
 
     /// A plugin's `inconclusive` result with the typed cause the driver read

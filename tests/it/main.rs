@@ -73,6 +73,7 @@ mod value_parity_profile_selections;
 mod fairness_item_path;
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;
+mod hybrid_request_items;
 mod layer_crate_reexports;
 mod linking;
 mod located_json;

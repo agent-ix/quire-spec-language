@@ -84,6 +84,32 @@ impl StaticCheck {
     }
 }
 
+/// The replay outcomes kept with a trace on an `inconclusive` record: QSpec
+/// FR-193's `replay` member, `static` and, when exact replay ran and did not
+/// reproduce, `exact`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayRecord {
+    /// The static replay outcome.
+    pub static_outcome: StaticReplay,
+    /// The exact replay outcome, when exact replay ran and did not
+    /// reproduce the trace.
+    pub exact: Option<ExactRecord>,
+}
+
+/// An exact replay outcome that settles no value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExactRecord {
+    /// The trace is not eligible for exact replay.
+    NotExact,
+    /// The first exact check that fails.
+    NotReproduced {
+        /// The RFC 6901 pointer of the member the check reads.
+        at: JsonPointer,
+        /// Which check.
+        check: ExactCheck,
+    },
+}
+
 /// The outcome of exact replay (FR-450 "Outputs").
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExactReplay {

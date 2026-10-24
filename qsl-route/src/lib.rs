@@ -120,6 +120,35 @@ pub enum EvidenceKind {
     Exact,
 }
 
+/// A temporal provider's declared dynamics (FR-075-AC-19).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DynamicsKind {
+    /// Discrete state transitions and clocks.
+    Discrete,
+    /// Continuous variables or flows requiring a hybrid solver.
+    Hybrid,
+}
+
+impl DynamicsKind {
+    /// The exact FR-331 manifest spelling.
+    pub const fn to_wire(self) -> &'static str {
+        match self {
+            Self::Discrete => "discrete",
+            Self::Hybrid => "hybrid",
+        }
+    }
+
+    /// Read an exact manifest spelling.
+    #[ix_trace_rs::string_edge]
+    pub fn from_wire(label: &str) -> Option<Self> {
+        match label {
+            "discrete" => Some(Self::Discrete),
+            "hybrid" => Some(Self::Hybrid),
+            _ => None,
+        }
+    }
+}
+
 impl From<qsl_semantics::family::ClaimEvidence> for EvidenceKind {
     fn from(evidence: qsl_semantics::family::ClaimEvidence) -> Self {
         match evidence {
@@ -127,6 +156,15 @@ impl From<qsl_semantics::family::ClaimEvidence> for EvidenceKind {
             qsl_semantics::family::ClaimEvidence::Exact => EvidenceKind::Exact,
         }
     }
+}
+
+/// The bounds a hybrid provider publishes in its descriptor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SolverBounds {
+    /// The provider's solver step budget.
+    pub max_solver_steps: Option<u64>,
+    /// The provider's solver time budget, in seconds.
+    pub max_solver_time: Option<u64>,
 }
 
 impl EvidenceKind {
@@ -245,6 +283,8 @@ pub struct BackendDescriptor {
     fairness_kinds: BTreeSet<FairnessKind>,
     memory_models: BTreeSet<MemoryModelName>,
     evidence_kinds: BTreeSet<EvidenceKind>,
+    dynamics: Option<BTreeSet<DynamicsKind>>,
+    solver_bounds: Option<SolverBounds>,
 }
 
 /// Convert one already-read FR-331 provider manifest into its routed
@@ -323,11 +363,80 @@ pub fn descriptor_from_manifest<'a>(
         domains,
         fairness_kinds,
         evidence_kinds,
+        dynamics: None,
+        solver_bounds: None,
         // Remaining work: QSpec FR-331-AC-30's `memory_models` member is not
         // read here yet, so a manifest descriptor advertises `sc` only, as a
         // descriptor without the member does (FR-226).
         memory_models: BTreeSet::new(),
     })
+}
+
+/// A manifest's supplied `dynamics` member before validation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DynamicsMember<'a> {
+    /// Labels in source order, including repetitions.
+    List(&'a [&'a str]),
+    /// A present member whose value is not an array.
+    NotAList,
+}
+
+/// Convert a provider manifest including its optional temporal dynamics.
+/// Checks the existing descriptor fields first, then dynamics, preserving
+/// FR-075's refusal precedence and an absent member exactly.
+#[allow(clippy::too_many_arguments)]
+pub fn descriptor_from_manifest_with_dynamics<'a>(
+    backend: Candidate,
+    origin: ProviderOrigin,
+    manifest_digest: ManifestDigest,
+    advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
+    domains: Option<&[&str]>,
+    fairness_kinds: Option<FairnessKindsMember<'_>>,
+    evidence_kinds: Option<&[&str]>,
+    dynamics: Option<DynamicsMember<'_>>,
+    bounds: Option<SolverBounds>,
+) -> Result<BackendDescriptor, RegistrationRefusal> {
+    let descriptor = descriptor_from_manifest(
+        backend,
+        origin,
+        manifest_digest,
+        advertised,
+        domains,
+        fairness_kinds,
+        evidence_kinds,
+    )?;
+    if !descriptor.advertises_kind(Capability::TemporalSatisfaction) {
+        return Ok(descriptor);
+    }
+    let kinds = match dynamics {
+        None => None,
+        Some(DynamicsMember::NotAList) => {
+            return Err(descriptor.dynamics_refusal(DynamicsDefect::NotAList));
+        }
+        Some(DynamicsMember::List([])) => {
+            return Err(descriptor.dynamics_refusal(DynamicsDefect::Empty));
+        }
+        Some(DynamicsMember::List(labels)) => {
+            let mut kinds = BTreeSet::new();
+            for label in labels {
+                let Some(kind) = DynamicsKind::from_wire(label) else {
+                    return Err(descriptor
+                        .dynamics_refusal(DynamicsDefect::UnknownLabel((*label).to_owned())));
+                };
+                kinds.insert(kind);
+            }
+            if kinds.len() != labels.len() {
+                let mut seen = BTreeSet::new();
+                let repeated = labels.iter().find(|label| !seen.insert(**label));
+                if let Some(label) = repeated {
+                    return Err(descriptor
+                        .dynamics_refusal(DynamicsDefect::DuplicateLabel((*label).to_string())));
+                }
+            }
+            Some(kinds)
+        }
+    };
+    descriptor.with_dynamics(kinds, bounds)
 }
 
 /// One element of a manifest's `fairness_kinds` list as the driver read it.
@@ -449,7 +558,85 @@ impl BackendDescriptor {
             fairness_kinds: BTreeSet::new(),
             memory_models: BTreeSet::new(),
             evidence_kinds,
+            dynamics: None,
+            solver_bounds: None,
         })
+    }
+
+    /// Admit typed temporal dynamics and their published solver bounds.
+    /// An absent member stays absent, although candidates read it as
+    /// `{discrete}`. A non-temporal descriptor ignores the supplied member.
+    pub fn with_dynamics(
+        mut self,
+        dynamics: Option<BTreeSet<DynamicsKind>>,
+        bounds: Option<SolverBounds>,
+    ) -> Result<Self, RegistrationRefusal> {
+        if !self.advertises_kind(Capability::TemporalSatisfaction) {
+            return Ok(self);
+        }
+        if let Some(ref kinds) = dynamics {
+            if kinds.is_empty() {
+                return Err(self.dynamics_refusal(DynamicsDefect::Empty));
+            }
+            if kinds.contains(&DynamicsKind::Hybrid) {
+                let Some(bounds) = bounds else {
+                    return Err(
+                        self.dynamics_refusal(DynamicsDefect::MissingBounds("max_solver_steps"))
+                    );
+                };
+                if bounds.max_solver_steps.is_none() {
+                    return Err(
+                        self.dynamics_refusal(DynamicsDefect::MissingBounds("max_solver_steps"))
+                    );
+                }
+                if bounds.max_solver_time.is_none() {
+                    return Err(
+                        self.dynamics_refusal(DynamicsDefect::MissingBounds("max_solver_time"))
+                    );
+                }
+                if bounds.max_solver_steps == Some(0) {
+                    return Err(
+                        self.dynamics_refusal(DynamicsDefect::InvalidBound("max_solver_steps"))
+                    );
+                }
+                if bounds.max_solver_time == Some(0) {
+                    return Err(
+                        self.dynamics_refusal(DynamicsDefect::InvalidBound("max_solver_time"))
+                    );
+                }
+            }
+        }
+        self.dynamics = dynamics;
+        self.solver_bounds = bounds;
+        Ok(self)
+    }
+
+    fn dynamics_refusal(&self, defect: DynamicsDefect) -> RegistrationRefusal {
+        RegistrationRefusal {
+            backend: self.backend.clone(),
+            manifest_digest: self.manifest_digest,
+            cause: RegistrationCause::InvalidDynamics(defect),
+        }
+    }
+
+    /// The descriptor member as supplied; `None` stays absent on the wire.
+    pub fn dynamics(&self) -> Option<&BTreeSet<DynamicsKind>> {
+        self.dynamics.as_ref()
+    }
+
+    /// Whether the temporal provider serves this item's dynamics.
+    fn serves_dynamics(&self, kind: Capability, hybrid: bool) -> bool {
+        if kind != Capability::TemporalSatisfaction {
+            return true;
+        }
+        let wanted = if hybrid {
+            DynamicsKind::Hybrid
+        } else {
+            DynamicsKind::Discrete
+        };
+        self.dynamics
+            .as_ref()
+            .map_or(!hybrid, |kinds| kinds.contains(&wanted))
     }
 
     /// Advertise the fairness kinds this backend decides (FR-134, QSpec
@@ -719,6 +906,23 @@ pub enum FairnessKindsDefect {
     DuplicateLabel(String),
 }
 
+/// Why a temporal provider's `dynamics` member was refused.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DynamicsDefect {
+    /// The supplied member was not a list.
+    NotAList,
+    /// The list had no labels.
+    Empty,
+    /// A label was neither `discrete` nor `hybrid`.
+    UnknownLabel(String),
+    /// A label occurred more than once.
+    DuplicateLabel(String),
+    /// A hybrid provider omitted this required published bound.
+    MissingBounds(&'static str),
+    /// A published hybrid solver bound was zero.
+    InvalidBound(&'static str),
+}
+
 /// Why a registration is refused: the FR-290 registration causes, all
 /// under code `invalid_capability` (FR-057-AC-8).
 ///
@@ -746,6 +950,8 @@ pub enum RegistrationCause {
     /// A `probabilistic-satisfaction` backend's evidence kinds are defective
     /// (FR-075-AC-11).
     UnknownEvidenceKind(EvidenceKindsDefect),
+    /// A temporal provider supplied defective dynamics or missing solver bounds.
+    InvalidDynamics(DynamicsDefect),
 }
 
 impl RegistrationCause {
@@ -759,6 +965,7 @@ impl RegistrationCause {
             Self::InvalidDomains(_) => "invalid-domains",
             Self::InvalidFairnessKinds(_) => "invalid-fairness-kinds",
             Self::UnknownEvidenceKind(_) => "unknown-evidence-kind",
+            Self::InvalidDynamics(_) => "invalid-dynamics",
         }
     }
 }
@@ -1091,7 +1298,14 @@ impl Registry {
         required: &BTreeSet<FairnessKind>,
         resolved: &BTreeSet<MemoryModelName>,
     ) -> CandidateOutcome {
-        self.compute(kind, &ItemEvidence::Absent, named, required, resolved)
+        self.compute(
+            kind,
+            &ItemEvidence::Absent,
+            named,
+            required,
+            resolved,
+            false,
+        )
     }
 
     /// Compute the candidate set of a `probabilistic-satisfaction` item
@@ -1110,7 +1324,45 @@ impl Registry {
         evidence: &ItemEvidence,
         named: Option<&BackendId>,
     ) -> CandidateOutcome {
-        self.compute(kind, evidence, named, &BTreeSet::new(), &BTreeSet::new())
+        self.compute(
+            kind,
+            evidence,
+            named,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            false,
+        )
+    }
+
+    /// Compute candidates for a temporal item, filtering by the item's
+    /// `hybrid-dynamics` requirement (FR-075-AC-19). For other capability
+    /// kinds the flag has no effect.
+    pub fn candidates_for_dynamics(
+        &self,
+        kind: Capability,
+        named: Option<&BackendId>,
+        hybrid: bool,
+    ) -> CandidateOutcome {
+        self.candidates_for_temporal_dynamics(
+            kind,
+            named,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            hybrid,
+        )
+    }
+
+    /// Apply fairness, memory-model, and dynamics filters to one temporal
+    /// item's candidate set without weakening any of them.
+    pub fn candidates_for_temporal_dynamics(
+        &self,
+        kind: Capability,
+        named: Option<&BackendId>,
+        fairness: &BTreeSet<FairnessKind>,
+        models: &BTreeSet<MemoryModelName>,
+        hybrid: bool,
+    ) -> CandidateOutcome {
+        self.compute(kind, &ItemEvidence::Absent, named, fairness, models, hybrid)
     }
 
     fn compute(
@@ -1120,6 +1372,7 @@ impl Registry {
         named: Option<&BackendId>,
         required: &BTreeSet<FairnessKind>,
         resolved: &BTreeSet<MemoryModelName>,
+        hybrid: bool,
     ) -> CandidateOutcome {
         let in_scope: Vec<&BackendDescriptor> = match named {
             Some(id) => match self.held.get(id) {
@@ -1134,6 +1387,7 @@ impl Registry {
                 descriptor.advertises_kind(kind)
                     && descriptor.serves_evidence(kind, evidence)
                     && descriptor.decides_models(resolved)
+                    && descriptor.serves_dynamics(kind, hybrid)
             })
             .collect();
         let (kept, left_out): (Vec<&BackendDescriptor>, Vec<&BackendDescriptor>) = capable
