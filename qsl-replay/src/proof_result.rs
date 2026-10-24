@@ -41,7 +41,8 @@ mod plugin_replay;
 pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause, ValueFault};
 pub use plugin_read::{
     read_first_party_solver_basis, read_plugin_assignments, read_plugin_basis,
-    read_plugin_certification, read_plugin_inconclusive_cause, read_plugin_inconclusive_cause_over,
+    read_plugin_certification, read_plugin_hybrid_counterexample, read_plugin_inconclusive_cause,
+    read_plugin_inconclusive_cause_over,
 };
 pub use plugin_replay::{PluginReplayContext, PluginReplayRefusal};
 

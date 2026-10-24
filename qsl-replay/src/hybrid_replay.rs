@@ -350,6 +350,9 @@ pub enum HybridReplayRefusal {
     /// Exact replay does not decide this claim form.
     #[error(transparent)]
     Exact(#[from] ExactGap),
+    /// The provider counterexample kind is outside the currently admitted wire arm.
+    #[error("the provider's hybrid counterexample kind is not admitted")]
+    UnsupportedCounterexampleKind,
     /// The caller's accounting work limit denied the next replay step.
     #[error("hybrid replay exhausted the caller's accounting counter {counter:?}")]
     ResourceExhausted {
