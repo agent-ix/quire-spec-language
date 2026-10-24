@@ -795,6 +795,7 @@ fn a_lower_layer_naming_quire_eval_fails_the_placement_check() {
     let package = |name: &str, normal: &[&str]| PackageDependencies {
         name: name.to_owned(),
         normal: normal.iter().map(|d| (*d).to_owned()).collect(),
+        optional_normal: Vec::new(),
         dev: Vec::new(),
         build: Vec::new(),
         shipped_features: Vec::new(),
