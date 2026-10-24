@@ -3,6 +3,9 @@
 //! ADR-029 CB-3) -- the in-process analysis engines, above the qualified
 //! core. Nothing in layers K to 6, R or tool depends on it.
 //!
+//! [`analyze`] is the `analyze` operation (FR-281): it routes items to the
+//! engines below by their manifests and settles each result.
+//!
 //! [`zone_check`] holds the native zone engine EN-6's difference-bound
 //! matrices (ADR-026 EZ-2, FR-238). The zone certificate checker in
 //! `qsl-replay` keeps its own DBM code and never calls this one (ADR-026
@@ -18,6 +21,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod analyze;
 pub mod exact_probabilistic;
 pub mod model_check;
 pub mod schedulability;

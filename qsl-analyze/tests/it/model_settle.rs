@@ -56,15 +56,39 @@ pub(crate) struct Case {
     unit: Vec<u8>,
     documents: Documents,
     initial: Vec<DocumentRef>,
-    package_id: DigestRecord,
+    pub(crate) package_id: DigestRecord,
     checked: CheckedPackage,
     outcome: ModelCheckOutcome,
 }
 
 impl Case {
+    /// The deadlock-freedom item `analyze` runs (FR-281): the run, its
+    /// closure checker's request, the `package_id` the run checked, and the
+    /// counterexample replay of [`replay`] over this case's source.
+    pub(crate) fn model_item(&self) -> qsl_analyze::analyze::ModelItem<'_> {
+        qsl_analyze::analyze::ModelItem {
+            request: ModelCheckRequest {
+                subject: subject(
+                    &self.checked,
+                    &self.documents,
+                    self.initial.clone(),
+                    &["c"],
+                    UNLIMITED,
+                ),
+                item: ModelCheckItem::DeadlockFreedom,
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
+            },
+            certificate: self.request(),
+            package_id: self.package_id,
+            replay: Box::new(|payload| replay(self, payload.clone())),
+        }
+    }
+
     /// The deadlock-freedom item's certificate request over the case's
     /// subject.
-    fn request(&self) -> CertificateRequest<'_> {
+    pub(crate) fn request(&self) -> CertificateRequest<'_> {
         CertificateRequest {
             subject: subject(
                 &self.checked,

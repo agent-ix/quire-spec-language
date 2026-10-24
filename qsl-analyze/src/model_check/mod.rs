@@ -19,6 +19,7 @@ pub(crate) mod false_extension;
 mod graph;
 mod hyper;
 mod liveness;
+pub mod manifest;
 mod product;
 mod quotient;
 mod reduce;

@@ -14,6 +14,7 @@
 
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use quire_semantic_value::catalog::Category;
 
@@ -34,7 +35,7 @@ use crate::model_check::replay::{
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
-    TerminalValue, UnavailabilityCause,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 use qsl_eval::simulation::protocol::{
     activates_on_each, live_instance_bound, ProtocolTransition, SubjectMemory, WeakAccessShape,
@@ -102,8 +103,11 @@ pub enum Truth {
     Unavailable,
 }
 
-/// One EN-1 item's terminal record (FR-127 Outputs).
+/// One EN-1 item's terminal record (FR-127 Outputs). Only the settlement maps
+/// of this crate construct one, so a `refuted` record always came from a
+/// reproduced replay.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
     /// The terminal value.
     pub value: TerminalValue,
@@ -138,6 +142,33 @@ pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
     /// AE-4, FR-209); `None` for a protocol that does not activate `on each`
     /// and for a model subject.
     pub instance_bound: Option<StatedInstanceBound>,
+}
+
+impl<T: SubjectTransition> ModelCheckRecord<T> {
+    /// This record as the FR-331 terminal record of the item at
+    /// `request_index`, produced by `backend` (FR-280, FR-281). Its
+    /// counterexample stays on this record: the terminal record carries the
+    /// value alone.
+    ///
+    /// # Errors
+    ///
+    /// [`TerminalRecordRefusal::RefutedWithoutCounterexample`] for a
+    /// `refuted` value with no counterexample: the settlement keeps one only
+    /// when replay reproduced it.
+    pub fn to_terminal(
+        &self,
+        request_index: RequestIndex,
+        backend: BackendId,
+    ) -> Result<TerminalRecord, TerminalRecordRefusal> {
+        if matches!(self.value, TerminalValue::Refuted) && self.counterexample.is_none() {
+            return Err(TerminalRecordRefusal::RefutedWithoutCounterexample);
+        }
+        Ok(TerminalRecord::with_backend(
+            request_index,
+            backend,
+            self.value.clone(),
+        ))
+    }
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package
