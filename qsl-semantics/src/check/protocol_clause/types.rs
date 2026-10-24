@@ -124,6 +124,8 @@ pub struct CheckedProtocol {
     /// Every `parallel`'s join as written: its policy, the labels it awaits
     /// and its `outstanding` rule (ADR-027 ST-7), in source order.
     pub parallels: Vec<CheckedParallel>,
+    /// Predicate joins awaiting function-node identities from S4.
+    pub(crate) pending_predicate_joins: Vec<PendingPredicateJoin>,
     /// The `finish` node and its name (ADR-027 ST-9); `None` only for a
     /// form that declares none, which the grammar does not admit.
     pub finish: Option<(ProtocolNodeId, String)>,
@@ -136,6 +138,15 @@ pub struct CheckedProtocol {
     /// `repeat` it decides (ADR-027 RR-2, RR-4; FR-218 "Scopes"), filled in
     /// by `check::mod`'s own pipeline once the channels are checked.
     pub owners: Vec<CheckedOwner>,
+}
+
+/// Predicate join data held privately until the named function has a node key.
+#[derive(Clone, Debug)]
+pub(crate) struct PendingPredicateJoin {
+    pub(crate) node: ProtocolNodeId,
+    pub(crate) name: String,
+    pub(crate) joined: Vec<String>,
+    pub(crate) outstanding: Option<CheckedOutstanding>,
 }
 
 /// A node and the role that owns it (ADR-027 RR-2).
@@ -192,8 +203,12 @@ pub enum CheckedJoinPolicy {
     Any,
     /// `join quorum(n)`.
     Quorum(u64),
-    /// `join predicate(name)`, whose function no checker reads yet.
-    Predicate,
+    /// `join predicate(name)`, holding the checked function identity once
+    /// function-node keying completes.
+    Predicate {
+        /// The checked function node key.
+        function: quire_exact::NodeKey,
+    },
 }
 
 /// What a join does with the branches it leaves outstanding (QSpec FR-228).

@@ -2017,6 +2017,7 @@ impl PackageDeclarations {
                 &self.native_names,
                 &scope,
                 &signatures,
+                &unit_declarations,
                 attempts,
                 &state_clause_forms,
                 protocol_clause::Selections {
@@ -3020,6 +3021,38 @@ impl PackageDeclarations {
             lowered.functions,
             lowered.binders,
         );
+        // FR-218: bind each already-checked predicate join to its function
+        // node key after the function declarations have been lowered.
+        for protocol_index in 0..self.protocols.len() {
+            let Some(checked_index) = protocol_places[protocol_index] else {
+                continue;
+            };
+            let Some(checked) = checked_protocols.get_mut(checked_index) else {
+                return Err(vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                }]);
+            };
+            for pending in std::mem::take(&mut checked.pending_predicate_joins) {
+                let name = &pending.name;
+                let identity = signatures
+                    .position(name)
+                    .and_then(|index| identities.get(index).copied().flatten());
+                let Some(identity) = identity else {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]);
+                };
+                checked.parallels.push(CheckedParallel {
+                    node: pending.node,
+                    policy: CheckedJoinPolicy::Predicate { function: identity },
+                    joined: pending.joined,
+                    outstanding: pending.outstanding,
+                });
+            }
+            checked.parallels.sort_by_key(|parallel| parallel.node.0);
+        }
         // ADR-012 §13.5, ADR-011 E7: exactly one record per claim site,
         // keyed by the `expression` occurrence recorded at the site's own
         // location (ADR-013 O-07). A claim that cannot be keyed is a fault,

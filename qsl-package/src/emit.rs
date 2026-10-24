@@ -90,10 +90,10 @@ use quire_contract_model::{
     CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
     CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
-    CheckedPackageLockV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm,
-    ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedPackageLockV2, CheckedPackageV2, CheckedRational, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage,
+    NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -107,12 +107,13 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    HeaderLayer, Member, ModelEntry, NodeOwner,
+    HeaderLayer, Member, ModelEntry, NodeOwner, TemporalEntry,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
+use crate::checked_v2::CheckedTimedModel;
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -200,6 +201,13 @@ pub enum EmitRefusal {
         /// The unit's selected header profile identity, when it selects one.
         profile: Option<&'static str>,
     },
+    /// The typed timed models do not describe exactly the timed nodes in the
+    /// already-admitted base package.
+    #[error("typed timed models do not match the admitted package's timed-node set")]
+    TimedModelNodeSetMismatch,
+    /// A typed timed model cannot be serialized with its available literals.
+    #[error("typed timed-model writer invariant: {0}")]
+    TimedModelWriterInvariant(&'static str),
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -221,6 +229,8 @@ impl EmitRefusal {
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
             Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::TimedModelNodeSetMismatch => Code::RuntimeInvariant,
+            Self::TimedModelWriterInvariant(_) => Code::RuntimeInvariant,
         }
     }
 
@@ -234,7 +244,9 @@ impl EmitRefusal {
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
             | Self::Abstraction(_)
-            | Self::Cancelled { .. } => None,
+            | Self::Cancelled { .. }
+            | Self::TimedModelNodeSetMismatch
+            | Self::TimedModelWriterInvariant(_) => None,
         }
     }
 }
@@ -884,8 +896,9 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
 /// the catalog's edition; then the header-selected layers and every layer
 /// their `requires` closure names, in the lock's row order, and no layer
 /// that requires a selected layer; then the qualification-catalog rows
-/// QSpec FR-001 selects for those layers; then each law definition the
-/// bodies name that is not already selected.
+/// QSpec FR-001 selects for those layers; then the complete-model and
+/// complete-temporal lock rows when their layers are selected; then each law
+/// definition the bodies name that is not already selected.
 ///
 /// A unit whose header selects no layer selects the `always` rows: the
 /// lock's `without_layer` rows are for a unit that selects layers none of
@@ -922,6 +935,13 @@ fn catalog_selections(
             closure
                 .contains(&HeaderLayer::ModelComplete)
                 .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .into_iter()
+                .flatten(),
+        )
+        .chain(
+            closure
+                .contains(&HeaderLayer::TemporalComplete)
+                .then(|| lock.temporal_catalog().iter().map(TemporalEntry::reference))
                 .into_iter()
                 .flatten(),
         )
@@ -1046,6 +1066,230 @@ pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
         return Ok(emission.clone());
     }
     emit_checked_with_cancel(package, &Cancel::new())
+}
+
+/// Rebuild the structural identities and references of typed timed nodes
+/// after their bodies are serialized. Timed graph edges are acyclic by the
+/// closed FR-322 forms, so repeated digest passes propagate child-key changes
+/// to their parents.
+fn rekey_timed_model_nodes(
+    nodes: &mut [CheckedSemanticNodeV2],
+    source_map: &mut [CheckedSourceMapEntry],
+) -> Result<(), EmitRefusal> {
+    let timed_count = nodes
+        .iter()
+        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .count();
+    for _ in 0..=timed_count.saturating_mul(timed_count).max(1) {
+        let mut changes = Vec::new();
+        for node in nodes
+            .iter_mut()
+            .filter(|node| node.node_tag.as_ref() == "timed_model")
+        {
+            node.dependencies = body_reference_targets(&node.body);
+            let old = node.node_id.clone();
+            let new = timed_model_node_id(node)?;
+            if new != old {
+                changes.push((old, new));
+            }
+        }
+        if changes.is_empty() {
+            return Ok(());
+        }
+        for (old, new) in changes {
+            for node in nodes.iter_mut() {
+                replace_node_id(node, &old, &new)?;
+            }
+            for entry in source_map.iter_mut() {
+                if entry.node_id == old {
+                    entry.node_id = new.clone();
+                }
+            }
+        }
+    }
+    Err(EmitRefusal::TimedModelWriterInvariant(
+        "timed-node identity propagation did not converge",
+    ))
+}
+
+/// FR-322's structural identity preimage for one closed timed-model node.
+fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, EmitRefusal> {
+    if node.recursion_group.is_some() {
+        return Err(EmitRefusal::TimedModelWriterInvariant(
+            "timed nodes cannot belong to a recursion group",
+        ));
+    }
+    let semantic_type = if node.semantic_type == node.node_id {
+        serde_json::Value::Null
+    } else {
+        serde_json::to_value(&node.semantic_type).map_err(encoding)?
+    };
+    let mut preimage = serde_json::json!({
+        "version": "quire.structural-node/v1",
+        "node_tag": node.node_tag,
+        "semantic_form": node.semantic_form,
+        "semantic_type": semantic_type,
+        "declaration": node.declaration,
+        "recursion": null,
+        "body": node.body,
+    });
+    if let Some(owner) = &node.owner {
+        preimage["owner"] = serde_json::to_value(owner).map_err(encoding)?;
+    }
+    let digest =
+        quire_canonical::sha256(&preimage, crate::checked::EMIT_LIMITS).map_err(encoding)?;
+    Ok(CheckedNodeId {
+        domain: NODE_KEY_DOMAIN.into(),
+        digest: digest.to_string().into(),
+    })
+}
+
+/// The unique digest-ascending reference targets directly named by a body.
+fn body_reference_targets(body: &serde_json::Value) -> Vec<CheckedNodeId> {
+    fn visit(value: &serde_json::Value, targets: &mut Vec<CheckedNodeId>) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if fields.get("term") == Some(&serde_json::Value::String("reference".into())) {
+                    if let Ok(target) = serde_json::from_value(fields["target"].clone()) {
+                        targets.push(target);
+                    }
+                }
+                fields.values().for_each(|child| visit(child, targets));
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|child| visit(child, targets)),
+            _ => {}
+        }
+    }
+    let mut targets = Vec::new();
+    visit(body, &mut targets);
+    targets.sort_by(|left, right| left.digest.cmp(&right.digest));
+    targets.dedup();
+    targets
+}
+
+/// Replace one checked NodeId throughout a timed node's serialized fields.
+fn replace_node_id(
+    node: &mut CheckedSemanticNodeV2,
+    old: &CheckedNodeId,
+    new: &CheckedNodeId,
+) -> Result<(), EmitRefusal> {
+    let mut wire = serde_json::to_value(&*node).map_err(encoding)?;
+    fn visit(value: &mut serde_json::Value, old: &CheckedNodeId, new: &CheckedNodeId) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if fields.get("domain").and_then(serde_json::Value::as_str) == Some(NODE_KEY_DOMAIN)
+                    && fields.get("digest").and_then(serde_json::Value::as_str)
+                        == Some(old.digest.as_ref())
+                {
+                    *value = serde_json::to_value(new).expect("CheckedNodeId serializes");
+                    return;
+                }
+                fields.values_mut().for_each(|child| visit(child, old, new));
+            }
+            serde_json::Value::Array(items) => {
+                items.iter_mut().for_each(|child| visit(child, old, new));
+            }
+            _ => {}
+        }
+    }
+    visit(&mut wire, old, new);
+    *node = serde_json::from_value(wire).map_err(encoding)?;
+    Ok(())
+}
+
+/// Emit a complete admitted package using typed timed models for its timed
+/// nodes. The base package supplies the already-checked non-timed graph,
+/// lock, source map, capability report and diagnostics; every timed node is
+/// rewritten from `models` in its original graph position. The supplied
+/// models must cover the base package's timed-node identities exactly.
+///
+/// Timed-node identities are recomputed from their written bodies, dependent
+/// timed references and source-map entries are updated, and the package
+/// identity is recomputed before the IR encoder writes the package.
+pub fn emit_timed_models(
+    base: &CheckedPackageV2,
+    models: &[CheckedTimedModel],
+) -> Result<Emission, EmitRefusal> {
+    let expected = base
+        .graph()
+        .nodes
+        .iter()
+        .filter(|node| node.node_tag.as_ref() == "timed_model")
+        .map(|node| node.node_id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut timed = BTreeMap::new();
+    for model in models {
+        let written = model
+            .write_nodes()
+            .map_err(EmitRefusal::TimedModelWriterInvariant)?;
+        for node in written {
+            if node.node_tag.as_ref() != "timed_model"
+                || timed.insert(node.node_id.clone(), node).is_some()
+            {
+                return Err(EmitRefusal::TimedModelNodeSetMismatch);
+            }
+        }
+    }
+    if expected != timed.keys().cloned().collect() {
+        return Err(EmitRefusal::TimedModelNodeSetMismatch);
+    }
+
+    let mut nodes = base
+        .graph()
+        .nodes
+        .iter()
+        .map(|node| {
+            if node.node_tag.as_ref() == "timed_model" {
+                timed
+                    .remove(&node.node_id)
+                    .ok_or(EmitRefusal::TimedModelNodeSetMismatch)
+            } else {
+                Ok(node.clone())
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !timed.is_empty() {
+        return Err(EmitRefusal::TimedModelNodeSetMismatch);
+    }
+
+    let lock = base.lock().clone();
+    let mut source_map = base.source_map().to_vec();
+    rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+    let semantic_graph = CheckedSemanticGraphV2 {
+        graph_version: base.graph().graph_version.clone(),
+        nodes,
+    };
+    let identity = base.identity_preimage();
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: &identity.version,
+        edition: &identity.edition,
+        profile_selections: &identity.profile_selections,
+        definition_selections: &identity.definition_selections,
+        model_selections: &identity.model_selections,
+        required_features: &identity.required_features,
+        dependency_selections: &identity.dependency_selections,
+        identity_projection: &semantic_graph.nodes,
+    };
+    let capability_report = base.capability_report().to_vec();
+    let diagnostics = base.diagnostics().clone();
+    let package = EmittedPackage::new(&preimage, |package_id: PackageId| {
+        encode_checked_package_v2(
+            &preimage,
+            &semantic_id(package_id),
+            &lock,
+            &semantic_graph,
+            &source_map,
+            &capability_report,
+            &diagnostics,
+            crate::checked::EMIT_LIMITS,
+        )
+        .map_err(EmitRefusal::from)
+    })?;
+    Ok(Emission {
+        package,
+        omitted: Vec::new(),
+        evidence: own_evidence(&lock),
+    })
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
