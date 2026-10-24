@@ -19,9 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
-use qsl_semantics::check::{
-    Activation, CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode,
-};
+use qsl_semantics::check::{CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{EffectiveId, Incomplete, Meter, ObjectReference, ValueType};
 use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
@@ -40,14 +38,24 @@ pub enum LettersRefusal {
     /// clause has no instance (FR-125 Instancing).
     #[error("the clause's `over` parameter is not an object reference")]
     OverNotReference,
-    /// The clause is `on each` with a `when` condition, which the checked
-    /// clause does not keep for evaluation.
-    #[error("the clause's `when` activation condition is not available to evaluate")]
-    GuardedActivation,
 }
 
 /// The `holds` atoms of one checked temporal clause, read at the states of a
 /// [`ModelSystem`].
+///
+/// This seam must not get a production caller of `check_model` before QSL-1039
+/// lands: [`ModelLetters::atom`] has no channel for a refused or faulted
+/// `holds` evaluation (for example an authored population bound exceeded,
+/// FR-380, or a population a snapshot does not list complete), which
+/// [`ClauseLetters`] can only turn into a panic. Every atom read also
+/// observes its state afresh (the state's digest and observation are
+/// recomputed per call) and charges the engine's meter only for the
+/// evaluation itself, not the observation; QSL-1039 owns both.
+///
+/// A key with no conforming object makes every atom of the clause read
+/// `absent-key` undefined, including an atom that does not read the
+/// parameter (FR-125 says "every read through the bound parameter"); QSL-1038
+/// owns the exact rule.
 pub struct ClauseLetters<'s, 'a> {
     system: &'s ModelSystem<'a>,
     node: &'s TemporalClauseNode,
@@ -58,12 +66,15 @@ pub struct ClauseLetters<'s, 'a> {
 impl<'a> ModelSystem<'a> {
     /// The [`ModelLetters`] of `node` over this system.
     ///
+    /// The seam must not get a production caller of `check_model` before
+    /// QSL-1039 lands; see [`ClauseLetters`].
+    ///
     /// # Errors
     ///
     /// [`LettersRefusal::OverNotReference`] when the clause's `over`
-    /// parameter is not an object reference;
-    /// [`LettersRefusal::GuardedActivation`] for an `on each` clause with a
-    /// `when` condition.
+    /// parameter is not an object reference. An emitted clause activates
+    /// `on origin` (FR-337), so it has no `when` condition to read
+    /// (Remaining work: QSL-898).
     pub fn clause_letters<'s>(
         &'s self,
         node: &'s TemporalClauseNode,
@@ -71,9 +82,6 @@ impl<'a> ModelSystem<'a> {
         let ValueType::Reference(parameter) = node.clause().over().1 else {
             return Err(LettersRefusal::OverNotReference);
         };
-        if node.clause().activation() == (Activation::Each { guarded: true }) {
-            return Err(LettersRefusal::GuardedActivation);
-        }
         Ok(ClauseLetters {
             system: self,
             node,
@@ -127,9 +135,9 @@ impl ModelLetters for ClauseLetters<'_, '_> {
     /// # Panics
     ///
     /// When `atom` is no `holds` atom of the clause, when `state` is no
-    /// state of the system, or when the evaluation faults or is refused:
-    /// the seam has no channel for them, and each is a defect, never a
-    /// reading.
+    /// state of the system, or when the evaluation faults, is refused or
+    /// completes no Boolean: the seam has no channel for them (QSL-1039),
+    /// and none is a reading.
     fn atom(
         &self,
         atom: FormulaNodeId,
@@ -137,12 +145,11 @@ impl ModelLetters for ClauseLetters<'_, '_> {
         state: &ModelSimState,
         meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete> {
-        let (body, slots) = self
-            .node
-            .condition(atom)
-            .unwrap_or_else(|| panic!("the engine reads only the clause's `holds` atoms"));
+        let (body, slots) = self.node.condition(atom).unwrap_or_else(|| {
+            panic!("QSL-1039: the engine reads only the clause's `holds` atoms")
+        });
         let walk = walk_of(self.system, state, None)
-            .unwrap_or_else(|stop| panic!("the state is observable: {stop:?}"));
+            .unwrap_or_else(|stop| panic!("QSL-1039: the state is observable: {stop:?}"));
         let Some(bound) = self.bound(&walk, instance) else {
             return Ok(AtomReading::Undefined(UndefinedCause::Family(
                 UndefinedRecord {
@@ -158,7 +165,7 @@ impl ModelLetters for ClauseLetters<'_, '_> {
             Some(bound),
             meter,
         )
-        .unwrap_or_else(|fault| panic!("the evaluator does not fault: {fault:?}"));
+        .unwrap_or_else(|fault| panic!("QSL-1039: the evaluator does not fault: {fault:?}"));
         match verdict(&evaluation.outcome) {
             Verdict::True => Ok(AtomReading::True),
             Verdict::False => Ok(AtomReading::False),
@@ -168,14 +175,16 @@ impl ModelLetters for ClauseLetters<'_, '_> {
                 } else if let ClauseOutcome::Incomplete(incomplete) = outcome {
                     Err(incomplete)
                 } else {
-                    panic!("a `holds` condition is neither refused nor non-Boolean: {outcome:?}")
+                    panic!(
+                        "QSL-1039: the `holds` condition was refused or completed no Boolean: {outcome:?}"
+                    )
                 }
             }
         }
     }
 
-    /// An unguarded clause activates at every position it reads
-    /// ([`ClauseLetters`] is never built for a guarded one).
+    /// An emitted clause activates `on origin` (FR-337) and has no `when`
+    /// condition, so it activates wherever it is read.
     fn activation(
         &self,
         _instance: &ModelInstance,

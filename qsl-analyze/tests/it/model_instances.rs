@@ -18,7 +18,8 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
-    ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    ExpansionLimits, LettersRefusal, ModelSimState, ModelSimulationRequest, ModelSystem,
+    PopulationUniverse,
 };
 use qsl_eval::simulation::{NotSimulated, RequiresBound};
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
@@ -590,8 +591,14 @@ impl World {
     /// The package declaring the clause `C`, `on origin`, over `x: M::<over>`
     /// with `formula`, and its checked node index.
     fn formula(&self, over: &str, formula: &str) -> CheckedPackage {
+        self.clause_text(&format!("M::{over}"), "on origin", formula)
+    }
+
+    /// The package declaring the clause `C` over `x: <over>` with the
+    /// activation `activation` and `formula`.
+    fn clause_text(&self, over: &str, activation: &str, formula: &str) -> CheckedPackage {
         let body = format!(
-            "temporal C using t0 over (x: M::{over}) clock \"model-steps\" on origin {{ {formula} }}\n"
+            "temporal C using t0 over (x: {over}) clock \"model-steps\" {activation} {{ {formula} }}\n"
         );
         let graph = declarations_in(PACKAGE, &self.document, &body)
             .with_unwritten_terminals()
@@ -721,7 +728,7 @@ fn the_bound_parameter_reads_as_the_reference_of_the_object_held_under_its_key()
 /// its instance and is not `NoInstance`. Not covered: the guard exception, and
 /// the half of the criterion that needs `dogs` beside `animals`, which S3
 /// refuses for a clause over `Dog` (two populations cover it).
-#[trace("TC-520", "FR-125-AC-12")]
+#[trace("TC-520")]
 #[test]
 fn a_key_holding_no_object_of_the_type_reads_absent_key() {
     let world = world(
@@ -775,4 +782,24 @@ fn a_key_holding_no_object_of_the_type_reads_absent_key() {
             .expect("checked"),
         ModelCheckOutcome::Violated { .. }
     ));
+}
+
+/// `ModelSystem::clause_letters` refuses a clause whose `over` parameter is
+/// no object reference.
+#[trace("TC-520")]
+#[test]
+fn letters_refuse_a_non_reference_over() {
+    let world = world(&[P1], &[("P1", &[("l", "Lamp")])]);
+    let package = world.clause_text("Integer", "on origin", "always holds(true)");
+    let system = ModelSystem::new(
+        world
+            .subject(&package, universes(&[("P1", &["l"])]))
+            .simulation,
+    )
+    .expect("the subject admits");
+    let node = &package.graph().temporal_clauses()[0];
+    assert_eq!(
+        system.clause_letters(node).err(),
+        Some(LettersRefusal::OverNotReference)
+    );
 }
