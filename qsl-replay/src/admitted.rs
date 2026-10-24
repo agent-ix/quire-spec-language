@@ -636,6 +636,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::WrongObservation { .. }
             | ReplayRefusal::Admission(_)
             | ReplayRefusal::UnusedObjectEnvironment
+            | ReplayRefusal::UnusedProfileSelections { .. }
             | ReplayRefusal::ForeignReference { .. }
             | ReplayRefusal::ObjectEnvironment(_)
             | ReplayRefusal::ModelTrace(_)

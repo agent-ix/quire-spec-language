@@ -1281,6 +1281,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::WrongObservation { .. }
         | ReplayRefusal::Admission(_)
         | ReplayRefusal::UnusedObjectEnvironment
+        | ReplayRefusal::UnusedProfileSelections { .. }
         | ReplayRefusal::ForeignReference { .. }
         | ReplayRefusal::ObjectEnvironment(_)
         | ReplayRefusal::UnknownParameter(_)

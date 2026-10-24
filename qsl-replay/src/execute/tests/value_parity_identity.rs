@@ -496,7 +496,9 @@ fn tc_1252_the_content_identity_and_occurrence_bind_into_the_claim() {
 }
 
 /// The lock of `call_site`'s package bytes selects no profile for this unit.
-/// The request carries an empty list (pending FR-484 profile-selection ruling).
+/// The request still carries an empty list: STD-443 fixes a value-parity
+/// claim's `profile_selections` empty (FR-484), and lock rows bind through
+/// `package_id` alone.
 fn assert_lock_selects_no_profile(package: &[u8]) {
     let wire: serde_json::Value = serde_json::from_slice(package).expect("package JSON");
     assert_eq!(wire["lock"]["profile_selections"], serde_json::json!([]));
@@ -504,7 +506,7 @@ fn assert_lock_selects_no_profile(package: &[u8]) {
 
 /// FR-484-AC-9: the input-arm packet filled from `call_site` reconstructs,
 /// round-trips, and the request built from the admitted envelope replays.
-#[trace("TC-1252", "FR-484-AC-9")]
+#[trace("TC-1252", "FR-484-AC-9", "FR-484-AC-11")]
 #[test]
 fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
     let source = unit();
@@ -514,6 +516,7 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
         let located = site(&source, function);
         assert_lock_selects_no_profile(&located.package);
         let wire = retained_request(&source, function, value);
+        assert!(wire.profile_selections.is_empty());
         let identity = *located
             .site
             .value_parity
@@ -640,4 +643,125 @@ fn tc_1252_the_supplied_ceilings_bind_into_the_claim() {
     assert_ne!(a.claim(), omitted.claim());
     assert_ne!(h.claim(), omitted.claim());
     assert_ne!(a.claim(), h.claim());
+}
+
+/// Replace the request's one source with bytes no recompile admits, keeping
+/// its digest and byte provision consistent so the request still decodes.
+fn make_unrecompilable(wire: &mut ReplayRequestWire) {
+    let bytes = b"this is not a unit";
+    let digest = source_digest(bytes);
+    wire.source_digests[0].5 = digest.hex();
+    wire.byte_provision = vec![(
+        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+        digest.hex(),
+        bytes.to_vec(),
+    )];
+}
+
+fn quire_selection() -> ProfileSelection {
+    ProfileSelection::new("quire.profile.v1".to_owned(), "x".to_owned())
+}
+
+/// FR-484-AC-12: a value-parity request carrying a profile selection
+/// refuses `UnusedProfileSelections` before the recompile, whatever the
+/// generated outcome, identity or package id; selections the request decode
+/// refuses never reach the entry.
+#[trace("TC-1252", "FR-484-AC-12")]
+#[test]
+fn tc_1252_a_profile_selection_refuses_before_the_recompile() {
+    let source = unit();
+    let selection = quire_selection();
+    let stale_package = (
+        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+        DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
+    );
+    // (generated outcome, replace the identity, replace the package id)
+    let cases = [
+        (4, false, false),
+        (5, false, false),
+        (4, true, false),
+        (4, false, true),
+    ];
+    for (generated, zero_identity, stale) in cases {
+        let mut wire = retained_request(&source, "inc", 3);
+        wire.profile_selections = vec![selection.clone()];
+        if zero_identity {
+            wire.obligation_identity = [0; 32];
+        }
+        if stale {
+            wire.package_id = stale_package.clone();
+        }
+        // A recompile would refuse this source: the refusal comes before it.
+        make_unrecompilable(&mut wire);
+        let claim = value_claim(integer(generated));
+        let sent = crate::ValueIdentity::sent(&wire, &claim);
+        let report = replay_value_parity(wire, claim, ReplayLimits::default());
+        let refusal = refusal_of(&report);
+        let ReplayRefusal::UnusedProfileSelections { selections } = refusal else {
+            panic!("expected UnusedProfileSelections: {:?}", report.result());
+        };
+        assert_eq!(selections, &vec![selection.clone()]);
+        assert_eq!(
+            refusal.to_string(),
+            "invalid_runtime_input/unknown-member: `profile_selections` is supplied for a function-value parity claim, which has no proving run"
+        );
+        assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+        assert_eq!(refusal.cause(), Some("unknown-member"));
+        assert_eq!(
+            report.terminal_value(),
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                Code::InvalidRuntimeInput
+            ))
+        );
+        assert_eq!(report.claim(), &sent);
+    }
+
+    // Selections outside FR-071's closed set refuse at decode, including a
+    // lock row mapped to a selection; the entry is never reached.
+    for (profile, value) in [
+        ("quire.profile.unknown/v1", "x"),
+        ("quire.temporal.infinite-trace/v1", "temporal_profile"),
+        ("quire.protocol.finite-global/v1", "protocol_profile"),
+    ] {
+        let mut wire = retained_request(&source, "inc", 3);
+        wire.profile_selections = vec![ProfileSelection::new(profile.to_owned(), value.to_owned())];
+        let report = replay_generated(wire, integer(4), ReplayLimits::default());
+        let refusal = refusal_of(&report);
+        assert!(
+            !matches!(refusal, ReplayRefusal::UnusedProfileSelections { .. }),
+            "{profile}: {refusal:?}"
+        );
+        assert_eq!(refusal.code(), Code::UnknownProfile, "{profile}");
+        assert!(
+            refusal
+                .to_string()
+                .starts_with("unknown_profile/unsupported-selection:"),
+            "{profile}: {refusal}"
+        );
+    }
+
+    // The empty list is the form: it replays.
+    let wire = retained_request(&source, "inc", 3);
+    assert!(wire.profile_selections.is_empty());
+    let report = replay_generated(wire, integer(4), ReplayLimits::default());
+    assert_eq!(value_kind(report.result()), "agrees");
+}
+
+/// FR-484-AC-13: the replay-target refusal comes before the profile check.
+#[trace("TC-1252", "FR-484-AC-13")]
+#[test]
+fn tc_1252_the_target_refusal_precedes_the_profile_refusal() {
+    let source = unit();
+    for (target, pointer) in non_function_targets() {
+        let mut wire = retained_request(&source, "inc", 3);
+        wire.profile_selections = vec![quire_selection()];
+        make_unrecompilable(&mut wire);
+        wire.replay_target = target.into();
+        let report = replay_generated(wire, integer(4), ReplayLimits::default());
+        assert_wrong_target(
+            refusal_of(&report),
+            crate::ReplayEntry::ReplayValueParity,
+            pointer,
+        );
+    }
 }
