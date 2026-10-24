@@ -86,6 +86,10 @@ zero-based position in the previous mode's transition list. Reading resolves
 those names in the same checked model and reconstructs the typed indices.
 Unknown or out-of-range mode, variable, or transition references are refused.
 A round trip with the same checked model returns an equal typed cause.
+`DisagreementCause::proved` and `replayed` return `Some(verdict)` for
+`Verdicts`, `NoValue` and `Witness`, and `None` for `HybridTrace`, which
+has no pair of verdicts. This preserves the typed cause without inventing a
+verdict for an exact-replay failure.
 
 ## Acceptance Criteria
 
