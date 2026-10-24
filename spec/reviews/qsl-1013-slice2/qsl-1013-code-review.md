@@ -26,3 +26,11 @@ Commands run, each in its own target dir and one at a time: `cargo test -p qsl-s
 | FND-001 | high | S4 refuses every checked graph with a time source as `TimedModelNotEmitted`. FR-230 says "S4 SHALL not refuse a successfully checked timed model as `TimedModelNotEmitted`" (AC-32). The guard's doc and message ("has no checked-package/v2 node", "cannot be written to a checked-package/v2 graph yet") are false at head: QSL-1022 (#1412), IR-992 and STD-447 are Done and `emit_timed_models`/`CheckedTimedModel` exist. No follow-up ticket was found that maps `CheckedGraph::time_sources` to timed_model nodes and removes the guard. | qsl-package/src/emit.rs:205-211, qsl-package/src/emit.rs:1438-1442 |
 | FND-002 | medium | `TemporalCause::AmbiguousTickOperation` and the override filter of `AdmittedModel::tick_operation_keys` (the `owners.len() != 1` / `reaches_owner` exclusion) have no test. No vector writes an unqualified or owner-qualified operation that two unrelated owners declare. | qsl-semantics/src/check/lowering/model.rs:546-605, qsl-semantics/src/check/mod.rs:1042 |
 | FND-003 | low | `units.target` returning `Ok(None)` (a zero-scale time unit, whose reciprocal is undefined) is refused as `TimedNotChecked{TimeSource}` (`unsupported_construct`/`not-yet-implemented`). That misreports a malformed unit as unimplemented. | qsl-semantics/src/check/mod.rs:1001-1008 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | The guard is kept as a tracked fail-closed interim. Its doc, error message and inline comment now say so, and cite FR-230-AC-32, TC-685 step 26 and emit_timed_models. QSL-1032 (Backlog, QSL V1 Architecture Spine) owns mapping CheckedGraph::time_sources into timed_model nodes and removing the guard. |
+| FND-002 | fixed | Verified at c643f88da. |
+| FND-003 | fixed | Verified at c643f88da. |

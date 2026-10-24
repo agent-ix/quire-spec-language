@@ -24,3 +24,11 @@ Plan completion: not assessed. `quire matrix --format tsv` at head completed in 
 | FND-001 | medium | `a_checked_time_source_cannot_emit_as_an_untimed_package` is tagged `#[trace("TC-685")]` and asserts `EmitRefusal::TimedModelNotEmitted`. TC-685 step 26 requires "the S4 path has no `TimedModelNotEmitted` refusal", so the trace counts as TC-685 evidence a test of the opposite behavior. | qsl-package/src/emit/tests/timed_source.rs:7-10, spec/test-cases/TC-685-s3-checks-time-declarations-and-clock-constraints.md:81 |
 | FND-002 | medium | The ignore reason on `a_package_clock_field_reaches_the_timed_model_check` ("QSL model intake does not admit the ix://quire/native/Clock field typeRef") is inaccurate for the test as written. Run with `--include-ignored`, it fails earlier, at FCD I1: `agent-ix.semantic-ir.INVALID_CLOCK_FIELD` at `fields[2].multiplicity`, because `clock_document()` writes multiplicity `"required", 1`. QSL-1030 notes the fixture needs `unique:false`. The test also asserts only that S2 assembly succeeds, although its name says it reaches the timed-model check. | qsl-semantics/tests/it/timed_declarations.rs:40-48, qsl-semantics/tests/it/timed_declarations.rs:108-121 |
 | FND-003 | low | Both `#[ignore]` reasons omit their tracking tickets (QSL-1030, QSL-1031). `quire trace --id TC-685` lists both ignored tests as `verifies` claims, the same as passing ones. | qsl-semantics/tests/it/timed_declarations.rs:109, qsl-semantics/tests/it/timed_declarations.rs:124 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified at c643f88da. |
+| FND-002 | fixed | Verified at c643f88da. |
+| FND-003 | fixed | Verified at c643f88da. |
