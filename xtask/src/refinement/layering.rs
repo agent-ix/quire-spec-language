@@ -6,11 +6,14 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use logos::Logos;
+use qsl_cst::token::Kind;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{Setting, SettingLimits, SourceIdentity};
+use qsl_foundation::{Code, Setting, SettingLimits, SourceIdentity};
 use qsl_replay::spine::{
-    self, CheckedUnit, DependencyInput, ParseRequest, RefinementClass, SpineLimits, SuppliedLibrary,
+    self, CheckedUnit, DependencyInput, ParseRequest, RefinementClass, RefusalCause, SpineLimits,
+    SuppliedLibrary,
 };
 use qsl_replay::Cancel;
 use qsl_route::routing::Disposition;
@@ -115,7 +118,7 @@ struct DependencyFile {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EntryFile {
-    kind: String,
+    kind: EntryKind,
     parent: Option<SourceFile>,
     child: Option<SourceFile>,
     unit: Option<SourceFile>,
@@ -124,6 +127,24 @@ struct EntryFile {
     dependencies: Vec<DependencyFile>,
     #[serde(default)]
     limits: BTreeMap<String, u64>,
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum EntryKind {
+    Case,
+    Distinguishing,
+    Witness,
+}
+
+impl std::fmt::Display for EntryKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Case => "case",
+            Self::Distinguishing => "distinguishing",
+            Self::Witness => "witness",
+        })
+    }
 }
 
 /// One corpus input, assembled before any compile runs.
@@ -377,13 +398,13 @@ pub struct Compilation {
     /// The FR-341 compile class.
     pub class: RefinementClass,
     /// Catalog codes and causes of the compile result, in order.
-    pub codes: Vec<super::report::CodeReport>,
+    pub codes: Vec<RefusalCause>,
     checked: Option<CheckedUnit>,
 }
 
 impl Compilation {
     /// A test or alternate compile seam's typed classification.
-    pub fn classified(class: RefinementClass, codes: Vec<super::report::CodeReport>) -> Self {
+    pub fn classified(class: RefinementClass, codes: Vec<RefusalCause>) -> Self {
         Self {
             class,
             codes,
@@ -443,15 +464,7 @@ fn classify_failure(failure: spine::FrontEndFailure) -> Compilation {
     match spine::refusal_or_fault(failure) {
         Ok(refusal) => {
             let classification = spine::classify_refusal(&refusal);
-            let codes = refusal
-                .causes()
-                .iter()
-                .map(|cause| super::report::CodeReport {
-                    code: cause.code.as_str(),
-                    cause: cause.cause,
-                })
-                .collect();
-            Compilation::classified(classification.class, codes)
+            Compilation::classified(classification.class, refusal.causes())
         }
         Err(_) => Compilation::classified(RefinementClass::ToolFailure, Vec::new()),
     }
@@ -460,26 +473,27 @@ fn classify_failure(failure: spine::FrontEndFailure) -> Compilation {
 fn profile_identity_span(bytes: &[u8]) -> Result<(String, usize, usize), String> {
     let text = std::str::from_utf8(bytes).map_err(|_| "the unit is not UTF-8".to_owned())?;
     let mut found = None;
-    let mut offset = 0;
-    for line in text.split_inclusive('\n') {
-        if line.trim_start().starts_with("profile ") {
+    // Read header metadata with the language's token vocabulary. Parsing the
+    // whole unit here would turn body syntax/limit results into loader faults.
+    let mut tokens = Kind::lexer(text)
+        .spanned()
+        .filter(|(kind, _)| kind != &Ok(Kind::Comment));
+    while let Some((kind, _)) = tokens.next() {
+        if kind == Ok(Kind::Profile) {
             if found.is_some() {
                 return Err("the unit has more than one profile declaration".to_owned());
             }
-            let open = line
-                .find('"')
-                .ok_or_else(|| "the profile declaration has no quoted identity".to_owned())?;
-            let close = line[open + 1..]
-                .find('"')
-                .map(|index| open + 1 + index)
-                .ok_or_else(|| "the profile identity is not closed".to_owned())?;
-            found = Some((
-                line[open + 1..close].to_owned(),
-                offset + open + 1,
-                offset + close,
-            ));
+            let (
+                Some((Ok(Kind::Identifier(_)), _)),
+                Some((Ok(Kind::Equal), _)),
+                Some((Ok(Kind::Text(identity)), span)),
+                Some((Ok(Kind::Semicolon), _)),
+            ) = (tokens.next(), tokens.next(), tokens.next(), tokens.next())
+            else {
+                return Err("the profile declaration has no quoted identity".to_owned());
+            };
+            found = Some((identity, span.start + 1, span.end - 1));
         }
-        offset += line.len();
     }
     found.ok_or_else(|| "the unit has no profile declaration".to_owned())
 }
@@ -607,8 +621,8 @@ fn load_entry(directory: &Path) -> Result<LoadedEntry, String> {
             return Err(format!("limits.{name} is not a compile setting"));
         }
     }
-    match file.kind.as_str() {
-        "case" | "distinguishing" => {
+    match file.kind {
+        EntryKind::Case | EntryKind::Distinguishing => {
             let parent_file = file
                 .parent
                 .ok_or_else(|| format!("{} requires parent", file.kind))?;
@@ -632,7 +646,7 @@ fn load_entry(directory: &Path) -> Result<LoadedEntry, String> {
                     child.layer.identity()
                 )
             })?;
-            if file.kind == "case" {
+            if file.kind == EntryKind::Case {
                 Ok(LoadedEntry::Case {
                     edge,
                     parent,
@@ -646,7 +660,7 @@ fn load_entry(directory: &Path) -> Result<LoadedEntry, String> {
                 })
             }
         }
-        "witness" => {
+        EntryKind::Witness => {
             let unit_file = file
                 .unit
                 .ok_or_else(|| "witness requires unit".to_owned())?;
@@ -668,9 +682,6 @@ fn load_entry(directory: &Path) -> Result<LoadedEntry, String> {
             }
             Ok(LoadedEntry::Witness { layer, unit })
         }
-        other => Err(format!(
-            "kind {other:?} is not case, witness or distinguishing"
-        )),
     }
 }
 
@@ -757,7 +768,7 @@ pub fn compare(
                     && parent_compile
                         .codes
                         .iter()
-                        .any(|code| code.code == "unsupported_construct");
+                        .any(|code| code.code == Code::UnsupportedConstruct);
                 let result =
                     if parent_prohibited && child_compile.class == RefinementClass::Admitted {
                         CaseResult::Holds
@@ -861,7 +872,11 @@ fn side_result(compilation: Compilation) -> SideResult {
     SideResult {
         class: super::report::class_name(compilation.class),
         stage: "compile",
-        codes: compilation.codes,
+        codes: compilation
+            .codes
+            .iter()
+            .map(super::report::code_report)
+            .collect(),
     }
 }
 
@@ -874,7 +889,11 @@ fn witness_result(
     if compilation.class != RefinementClass::Admitted {
         return WitnessResult {
             class: super::report::class_name(compilation.class),
-            codes: compilation.codes,
+            codes: compilation
+                .codes
+                .iter()
+                .map(super::report::code_report)
+                .collect(),
             candidates: Vec::new(),
             reason: Some("witness unit did not compile as admitted".to_owned()),
             result: CaseResult::Regression,
@@ -883,7 +902,11 @@ fn witness_result(
     let Some(checked) = compilation.checked else {
         return WitnessResult {
             class: "admitted",
-            codes: compilation.codes,
+            codes: compilation
+                .codes
+                .iter()
+                .map(super::report::code_report)
+                .collect(),
             candidates: Vec::new(),
             reason: Some("compile seam returned no checked unit".to_owned()),
             result: CaseResult::ToolFailure,
@@ -893,7 +916,11 @@ fn witness_result(
     let [clause] = graph.state_clauses() else {
         return WitnessResult {
             class: "admitted",
-            codes: compilation.codes,
+            codes: compilation
+                .codes
+                .iter()
+                .map(super::report::code_report)
+                .collect(),
             candidates: Vec::new(),
             reason: Some(format!(
                 "witness unit has {} compiled state clauses; expected exactly one",
@@ -912,7 +939,11 @@ fn witness_result(
         CandidateOutcome::UnknownBackend(_) => {
             return WitnessResult {
                 class: "admitted",
-                codes: compilation.codes,
+                codes: compilation
+                    .codes
+                    .iter()
+                    .map(super::report::code_report)
+                    .collect(),
                 candidates: Vec::new(),
                 reason: Some("unnamed candidate lookup returned an unknown backend".to_owned()),
                 result: CaseResult::ToolFailure,
@@ -922,7 +953,11 @@ fn witness_result(
     if candidate_set.is_empty() {
         return WitnessResult {
             class: "admitted",
-            codes: compilation.codes,
+            codes: compilation
+                .codes
+                .iter()
+                .map(super::report::code_report)
+                .collect(),
             candidates: Vec::new(),
             reason: Some("empty candidate set".to_owned()),
             result: CaseResult::Regression,
@@ -939,7 +974,11 @@ fn witness_result(
             .collect();
         return WitnessResult {
             class: "admitted",
-            codes: compilation.codes,
+            codes: compilation
+                .codes
+                .iter()
+                .map(super::report::code_report)
+                .collect(),
             candidates,
             reason: Some("not-negotiated".to_owned()),
             result: CaseResult::UnresolvedUnsupported,
@@ -969,7 +1008,11 @@ fn witness_result(
         .collect();
     WitnessResult {
         class: "admitted",
-        codes: compilation.codes,
+        codes: compilation
+            .codes
+            .iter()
+            .map(super::report::code_report)
+            .collect(),
         candidates,
         reason: None,
         result: if supported {
@@ -1236,9 +1279,10 @@ mod tests {
                     other => panic!("unexpected source path {other}"),
                 };
                 let codes = if input.path == "parent-distinguishing.native" {
-                    vec![super::super::report::CodeReport {
-                        code: "unsupported_construct",
+                    vec![RefusalCause {
+                        code: Code::UnsupportedConstruct,
                         cause: Some("declaration-form"),
+                        limit: None,
                     }]
                 } else {
                     Vec::new()
@@ -1305,9 +1349,10 @@ mod tests {
             |input| match input.path.as_str() {
                 "parent.native" => Compilation::classified(
                     F,
-                    vec![super::super::report::CodeReport {
-                        code: "unsupported_construct",
+                    vec![RefusalCause {
+                        code: Code::UnsupportedConstruct,
                         cause: Some("declaration-form"),
+                        limit: None,
                     }],
                 ),
                 "child.native" => Compilation::classified(A, Vec::new()),
@@ -1579,5 +1624,173 @@ mod tests {
         assert!(differs_only_by_profile_identity(parent.as_bytes(), child.as_bytes()).unwrap());
         let changed = child.replace("invariant I", "invariant J");
         assert!(!differs_only_by_profile_identity(parent.as_bytes(), changed.as_bytes()).unwrap());
+    }
+
+    #[trace("TC-868", "FR-345-AC-5")]
+    #[test]
+    fn profile_metadata_uses_tokens_without_admitting_the_body() {
+        let text = "// profile ignored = \"not-a-profile\";\nprofile\n v // identity\n =\n \"quire.state.core/v1\";\ninvariant Broken { @ }";
+        let (identity, start, end) = profile_identity_span(text.as_bytes()).unwrap();
+        assert_eq!(identity, "quire.state.core/v1");
+        assert_eq!(&text[start..end], identity);
+        assert!(profile_identity_span(b"// profile v = \"ignored\";\n").is_err());
+        assert!(profile_identity_span(b"profile v = \"one\"; profile w = \"two\";").is_err());
+
+        let temp = crate::test_support::tempdir();
+        let root = write_pair(
+            temp.path(),
+            "token-profile",
+            "case",
+            EDGES[0],
+            "parent.native",
+            "child.native",
+            "invariant I using v { @ }\n",
+        );
+        for name in ["parent.native", "child.native"] {
+            let path = root.join(name);
+            let source = fs::read_to_string(&path)
+                .unwrap()
+                .replace("profile v =", "profile\n v // identity\n =");
+            fs::write(path, source).unwrap();
+        }
+        let child_path = root.join("child.native");
+        let child = fs::read_to_string(&child_path)
+            .unwrap()
+            .replace("invariant I", "invariant J");
+        fs::write(child_path, child).unwrap();
+        let report = compare(
+            temp.path(),
+            |_| panic!("mismatched pair must not compile"),
+            &RegistrySnapshot::default(),
+            None,
+        );
+        assert!(report.results.iter().any(|result| matches!(result,
+            EntryResult::ToolFailure { entry, defect, .. }
+                if entry.ends_with("token-profile/entry.json")
+                    && defect == "parent and child differ outside the profile identity string"
+        )));
+        assert_eq!(report.verdict, super::super::report::Verdict::ToolFailure);
+        assert_eq!(report.exit, 30);
+    }
+
+    #[trace("TC-868", "FR-345-AC-7")]
+    #[test]
+    fn distinguishing_checks_the_typed_code_not_the_cause_text() {
+        for (code, expected) in [
+            (Code::UnsupportedConstruct, CaseResult::Holds),
+            (Code::IllTyped, CaseResult::Regression),
+        ] {
+            let temp = crate::test_support::tempdir();
+            write_pair(
+                temp.path(),
+                "typed-code",
+                "distinguishing",
+                EDGES[0],
+                "parent.native",
+                "child.native",
+                "invariant I using v { true }\n",
+            );
+            let report = compare(
+                temp.path(),
+                |input| {
+                    if input.path == "parent.native" {
+                        Compilation::classified(
+                            P,
+                            vec![RefusalCause {
+                                code,
+                                cause: Some("unsupported_construct"),
+                                limit: None,
+                            }],
+                        )
+                    } else {
+                        Compilation::classified(A, Vec::new())
+                    }
+                },
+                &RegistrySnapshot::default(),
+                None,
+            );
+            let comparison = report
+                .results
+                .iter()
+                .find_map(|result| match result {
+                    EntryResult::Edge { comparisons, .. } => comparisons.first(),
+                    _ => None,
+                })
+                .expect("the populated edge");
+            assert_eq!(comparison.result, expected);
+            assert_eq!(comparison.parent.codes[0].code, code.as_str());
+            assert_eq!(
+                comparison.parent.codes[0].cause,
+                Some("unsupported_construct")
+            );
+        }
+    }
+
+    #[trace("TC-868", "FR-345-AC-8")]
+    #[test]
+    fn entry_kind_is_closed_at_json_intake() {
+        for (wire, expected) in [
+            ("case", EntryKind::Case),
+            ("distinguishing", EntryKind::Distinguishing),
+            ("witness", EntryKind::Witness),
+        ] {
+            let entry: EntryFile = serde_json::from_value(json!({
+                "kind": wire, "packages": [], "dependencies": [],
+            }))
+            .unwrap();
+            assert!(entry.kind == expected);
+        }
+        assert!(serde_json::from_value::<EntryFile>(json!({
+            "kind": "unknown", "packages": [], "dependencies": [],
+        }))
+        .is_err());
+
+        let temp = crate::test_support::tempdir();
+        write_pair(
+            temp.path(),
+            "valid",
+            "case",
+            EDGES[0],
+            "parent.native",
+            "child.native",
+            "invariant I using v { true }\n",
+        );
+        let invalid = temp.path().join("invalid");
+        fs::create_dir(&invalid).unwrap();
+        fs::write(
+            invalid.join("entry.json"),
+            serde_json::to_vec(&json!({
+                "kind": "case", "packages": [], "dependencies": [], "expected": "holds",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut calls = 0;
+        let report = compare(
+            temp.path(),
+            |_| {
+                calls += 1;
+                Compilation::classified(F, Vec::new())
+            },
+            &RegistrySnapshot::default(),
+            None,
+        );
+        assert_eq!(calls, 2, "the valid entry still compiles both units");
+        let defects: Vec<_> = report
+            .results
+            .iter()
+            .filter_map(|result| match result {
+                EntryResult::ToolFailure { entry, defect, .. }
+                    if entry.ends_with("invalid/entry.json") =>
+                {
+                    Some(defect)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(defects.len(), 1);
+        assert!(defects[0].contains("unknown field `expected`"));
+        assert_eq!(report.verdict, super::super::report::Verdict::ToolFailure);
+        assert_eq!(report.exit, 30);
     }
 }
