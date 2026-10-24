@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::MemoryModelName;
-use qsl_semantics::check::{CheckedJoinPolicy, CheckedProtocol, ProtocolNodeId};
+use qsl_semantics::check::{CheckedProtocol, ProtocolNodeId};
 
 /// One entry of a request's `memory` member (QSpec FR-331).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -267,25 +267,6 @@ impl MemorySelectionRefusal {
     pub fn cause(&self) -> &'static str {
         "invalid-value"
     }
-}
-
-/// FR-219 "Request selection" (ADR-025 MM-3): the first `parallel`, in
-/// declaration order, whose governing model is weak and whose join is not
-/// `all` with no `outstanding` clause.
-pub(crate) fn weak_join(
-    protocol: &CheckedProtocol,
-    governing: &BTreeMap<ProtocolNodeId, MemoryModelName>,
-) -> Option<ProtocolNodeId> {
-    protocol
-        .parallels
-        .iter()
-        .find(|parallel| {
-            governing
-                .get(&parallel.node)
-                .is_some_and(|model| model.is_weak())
-                && (parallel.policy != CheckedJoinPolicy::All || parallel.outstanding.is_some())
-        })
-        .map(|parallel| parallel.node)
 }
 
 /// The memory model a protocol system runs a subject under, by its resolved

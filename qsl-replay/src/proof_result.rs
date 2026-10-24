@@ -409,17 +409,12 @@ pub enum UnavailabilityCause {
         reduction: ReductionKind,
     },
     /// ADR-025 MA-4, MV-1 (QSpec FR-439): the EN-1 pre-check found an
-    /// access that is not one access under its weak memory model, or a weak
-    /// `parallel` whose join is not `all`. Wire cause `weak-access-shape`.
+    /// access shape under a weak memory model, including every failure
+    /// found at the first failing state. Wire cause `weak-access-shape`.
     WeakAccessShape {
-        /// The node it was found at, by its static declaration path.
-        site: String,
-        /// The attempt instance's transition identity, in its canonical
-        /// text; none for a join policy.
-        transition: Option<String>,
-        /// The shape's canonical text: `{"type":"multi-location",
-        /// "locations":[...]}` or `{"type":"join-policy"}`.
-        shape: String,
+        /// Every `{site, transition, shape}` failure at the first failing
+        /// state, in the order required by FR-220 and ADR-025 MA-4.
+        failures: Vec<WeakAccessFailure>,
     },
     /// ADR-020 AX-5: a refinement with a hidden abstract field and a
     /// non-empty `F_A` has no liveness half to decide. Wire cause
@@ -467,6 +462,18 @@ pub enum UnavailabilityCause {
         /// The punctual interval's span.
         span: qsl_foundation::Span,
     },
+}
+
+/// One wire failure in FR-220's `WeakAccessShape.failures` list.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct WeakAccessFailure {
+    /// The node's static declaration path.
+    pub site: String,
+    /// The canonical transition identity; none for a node reader or join
+    /// policy.
+    pub transition: Option<String>,
+    /// The canonical JSON text of the shape.
+    pub shape: String,
 }
 
 /// FR-235 V-8: an item the request writer disposed `Unsupported` settles

@@ -106,6 +106,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         &self,
         state: &ProtocolState<M>,
     ) -> Result<(ProtocolExpansion<M>, Cut), ExpansionStop> {
+        if let Some(shape) = self.state_access_shape(state)? {
+            return Ok((
+                Expansion {
+                    successors: Vec::new(),
+                    findings: vec![ModelFinding::WeakAccessShape(Box::new(shape))],
+                },
+                Cut::default(),
+            ));
+        }
         let mut gathered = Gathered {
             budget: self.model.budget(),
             successors: Vec::new(),
@@ -228,6 +237,52 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             },
             gathered.cut,
         ))
+    }
+
+    /// FR-220 MA-4: combine the currently retained EN-1 access failures with
+    /// join-policy failures on forks active in this protocol state.
+    fn state_access_shape(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<Option<super::access::WeakAccessShape>, ExpansionStop> {
+        let mut failures = self
+            .enabled
+            .first_shape()?
+            .map_or_else(Vec::new, |shape| shape.failures);
+
+        let active_forks: BTreeSet<_> = state
+            .instances
+            .values()
+            .flat_map(|instance| instance.threads.values())
+            .filter_map(|thread| match (thread.disposition, thread.rest) {
+                (Disposition::Running, Rest::Fork(node)) => Some(node),
+                _ => None,
+            })
+            .collect();
+        for node in active_forks {
+            if !self
+                .governing
+                .get(&node)
+                .is_some_and(|model| model.is_weak())
+            {
+                continue;
+            }
+            let Some(join) = self.program.joins.get(&node) else {
+                return Err(ExpansionStop::from(ProtocolRefusal::fault(
+                    "a-weak-parallel-has-a-join",
+                )));
+            };
+            if matches!(join.policy, CheckedJoinPolicy::All) && join.outstanding.is_none() {
+                continue;
+            }
+            let site = self
+                .program
+                .text(node)
+                .map_err(ExpansionStop::from)?
+                .to_owned();
+            failures.extend(super::access::WeakAccessShape::join_policy(site).failures);
+        }
+        Ok(super::access::WeakAccessShape::from_failures(failures)?)
     }
 
     /// The steps of the thread `path` at the event node `node`, by its kind,
