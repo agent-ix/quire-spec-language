@@ -5,10 +5,15 @@
 //! The outcomes are the engine's own, settled through the replay that gates
 //! each refutation, or built by hand where a row has no engine run.
 //!
-//! Not claimed here: FR-182-AC-1 to AC-3 and AC-7, whose `proved` rows need
-//! FR-163's product-closure certificate and checker, the SMT `k`-induction
-//! row and the HP-1 rows; AC-4 to AC-6, which are HP-1's; and the "published defaults"
-//! marking of a `proved` record in FR-184-AC-1.
+//! Not claimed here: FR-182-AC-1, AC-2 and AC-7, whose `proved` rows need
+//! FR-163's product-closure certificate and checker and the SMT `k`-induction
+//! row; AC-3, whose HP-4 half is asserted below and whose other halves
+//! (the vacuous match, the witness-set and tuple limits) belong to other
+//! tests; AC-4 to AC-6, which are HP-1's; and the "published defaults"
+//! marking of a `proved` record in FR-184-AC-1. Nothing in production calls
+//! `settle_hyper_form` yet: the negotiation wiring in the CG repository and
+//! `qsl-route` is tracked by the ticket "Wire settle_hyper_form into
+//! negotiation (CG) and qsl-route".
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{ModelCheckRefusal, Reductions};
@@ -570,11 +575,13 @@ fn a_reduction_outcome_settles_by_its_cause_and_a_reduced_hold_waits_for_the_che
     );
 }
 
-/// FR-173-AC-2: each clause S3 classifies `Other` settles `unsupported`,
+/// Each clause S3 classifies `Other` settles `unsupported`,
 /// `unsupported-requested-capability`, naming its rule, from its form alone:
 /// `settle_hyper_form` reads the classification and no run, and an admitted
-/// form settles nothing there.
-#[trace("TC-598", "FR-173-AC-2")]
+/// form settles nothing there. The call is made directly; that negotiation
+/// calls it for every item is tracked by the ticket "Wire settle_hyper_form
+/// into negotiation (CG) and qsl-route".
+#[trace("TC-598")]
 #[test]
 fn an_other_clause_settles_unsupported_at_negotiation_with_no_run() {
     let safe = "holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b)";
@@ -694,6 +701,7 @@ fn an_empty_universe_settles_no_instance_and_a_missing_one_requires_a_bound() {
         ));
     }
 
+    // The same clauses over a population with no universe.
     let mut unbounded = World::with_vaults(
         Vault::Secure,
         &[("v", (0, 0))],
@@ -702,6 +710,12 @@ fn an_empty_universe_settles_no_instance_and_a_missing_one_requires_a_bound() {
     unbounded.bounded = false;
     assert!(matches!(
         unbounded.run(ModelCheckLimits::default(), &Cancel::new()),
+        Err(ModelCheckRefusal::RequiresBound(_))
+    ));
+    let mut power = World::with_second_vaults(Vault::Secure, &vault, &vault, saves_power);
+    power.other_universe = None;
+    assert!(matches!(
+        power.run_selecting(Reductions::default()),
         Err(ModelCheckRefusal::RequiresBound(_))
     ));
 }
