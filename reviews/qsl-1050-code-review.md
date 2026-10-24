@@ -90,3 +90,19 @@ target dir:
 - CI: guard, cla/gate, language-boundary and publish-status pass.
   `cla / cla-check` fails. The PR is BEHIND main, and main changed only
   FR-203's use-case line, which does not conflict.
+
+## Dispositions
+
+Round 1, checked at e3ab7aea0 (fix commit e3ab7aea0, which follows the
+origin/main merge ead77dd81). Gates: qsl-replay limits 2/2 and qsl-analyze
+`exact_probabilistic` 22/22 pass; clippy `-D warnings`, `cargo fmt --all
+--check` and string-edge are clean. Reviewer mutants, each with its own
+target dir, were both killed by the new pair test (limits.rs:245): k1
+reverted `ExactProbMaxStates.as_str()` to kebab `max-states`, and k2 set
+`ExactProbMaxAutomatonStates.setting()` to `model_check.max_automaton_states`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The three EN-5 variants' `as_str()` now return `max_states`, `max_transitions` and `max_automaton_states`, and the new pair test asserts each (limit, setting) pair. The EN-1 kebab spellings are left to QSL-1059. |
+| FND-002 | fixed | The `ProductStop::Limit` doc now says "An EN-5 product budget (FR-203)". The `ModelCheckLimit` doc now covers EN-1 or EN-5. The variant docs now name the fields actually read (`ModelCheckLimits::limits.max_states`, and so on), not a type that does not exist. |
+| FND-003 | accepted-no-change | The coder declined `#[trace("TC-1161")]`. The test asserts only the EN-5 variants' half of TC-1161 step 2, not its settings-operation results (`max_states=0`, `witness_samples=0`). A TC tag would make TC-1161 look implemented, and untagged tests are allowed in this repo. The tag belongs with the full TC-1161 implementation (QSL-1059 or later). |

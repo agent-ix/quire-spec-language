@@ -59,3 +59,11 @@ limit-name half of the FR-255-AC-12 pair.
 - Semantic review (intent, test and code): skipped. This was a reviewer
   subagent run with no user opt-in.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, checked at e3ab7aea0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The EN-5 (limit, setting) pairs now equal their FR-255 engine-table rows: (`max_states`, `exact_prob.max_states`), (`max_transitions`, `exact_prob.max_transitions`) and (`max_automaton_states`, `exact_prob.max_automaton_states`). `exact_prob_product_bounds_pair_a_snake_case_limit_with_an_exact_prob_setting` asserts them, and a kebab-revert mutant fails it. FR-255-AC-12 stays untagged, correctly, because its other clauses are unasserted. The EN-1 pairs are QSL-1059. |
