@@ -688,7 +688,10 @@ fn each_outcome_settles_its_row_of_the_map() {
     };
     assert_eq!(stopped.value, TerminalValue::Incomplete(limit_reached));
     assert_eq!(limit_reached.as_str(), "limit-reached");
-    assert_eq!(ModelCheckLimit::MaxStates.setting(), "max_states");
+    assert_eq!(
+        ModelCheckLimit::MaxStates.setting(),
+        "model_check.max_states"
+    );
     assert_eq!(
         (
             stopped.label,

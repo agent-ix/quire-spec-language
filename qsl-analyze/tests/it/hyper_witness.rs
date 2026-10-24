@@ -792,10 +792,13 @@ fn a_request_that_sets_neither_budget_runs_under_the_published_defaults() {
     assert_eq!(defaults.max_relation_tuples, 16_777_216);
     assert_eq!(DEFAULT_MAX_WITNESS_SET, 65_536);
     assert_eq!(DEFAULT_MAX_RELATION_TUPLES, 16_777_216);
-    assert_eq!(ModelCheckLimit::MaxWitnessSet.setting(), "max_witness_set");
+    assert_eq!(
+        ModelCheckLimit::MaxWitnessSet.setting(),
+        "model_check.max_witness_set"
+    );
     assert_eq!(
         ModelCheckLimit::MaxRelationTuples.setting(),
-        "max_relation_tuples"
+        "model_check.max_relation_tuples"
     );
     assert!(matches!(
         run(&secure(), defaults),
