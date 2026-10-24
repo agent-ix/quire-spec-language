@@ -88,7 +88,9 @@ use crate::model::operation::OperationLookup;
 pub(crate) mod condition;
 mod timed;
 
-pub use timed::{ModelTimeBinding, ModelTimeSource, TimeSourceKind, TimedPropertyForm};
+pub use timed::{
+    ModelTimeBinding, ModelTimeSource, TimeNominalNode, TimeSourceKind, TimedPropertyForm,
+};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "check.temporal";

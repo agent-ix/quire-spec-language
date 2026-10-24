@@ -1031,6 +1031,18 @@ impl Scope {
         }
     }
 
+    /// The admitted operation declaration of `name` on its declaring type.
+    pub(crate) fn operation_declaration(
+        &self,
+        declaring: quire_exact::EffectiveId,
+        name: &str,
+    ) -> Option<&crate::model::operation::OperationDeclaration> {
+        self.operations
+            .declared_by(declaring)
+            .iter()
+            .find(|operation| operation.name() == name)
+    }
+
     /// This scope with the object types the admitted models' `symmetric`
     /// populations cover (FR-150).
     pub(crate) fn with_symmetric_objects(

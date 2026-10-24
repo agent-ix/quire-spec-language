@@ -61,12 +61,41 @@ pub struct ModelTimeSource {
     /// The model: the alias of the `model` declaration that selects its
     /// domain package, or the package identity when no alias names it.
     pub model: String,
+    /// The complete source `time` declaration, for FR-322 occurrence mapping.
+    pub span: Span,
+    /// The selected package's unique semantic model-root node.
+    pub model_node: quire_exact::NodeKey,
+    /// The FCD declaration key of a tick operation, used by S4 to build its
+    /// checked operation-anchor node.
+    pub tick_operation_key: Option<quire_checked::key::DeclarationKey>,
+    /// The source span of the qualified tick-operation reference.
+    pub tick_operation_span: Option<qsl_foundation::Span>,
+    /// The checked `operation_anchor` node for the resolved tick operation.
+    pub tick_operation_anchor: Option<quire_exact::NodeKey>,
     /// The source kind.
     pub source: TimeSourceKind,
     /// The time unit `u`, by its declared name in the package's unit graph.
     pub unit: String,
+    /// The resolved unit node, retained for checked-package emission.
+    pub unit_node: quire_exact::NodeKey,
     /// The exact nominal `Time` dimension node selected by `unit` (FR-230-AC-33).
     pub time_dimension: quire_exact::NodeKey,
+    /// Nominal dimension and unit nodes needed by the timed root, including
+    /// the resolved unit's target chain.
+    pub nominal_nodes: Vec<TimeNominalNode>,
+}
+
+/// A nominal unit-graph node that S4 must include when a timed model names it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TimeNominalNode {
+    /// The exact nominal node identity.
+    pub key: quire_exact::NodeKey,
+    /// `dimension` or `unit`.
+    pub form: String,
+    /// The canonical nominal identity preimage bytes.
+    pub preimage: Vec<u8>,
+    /// Nominal nodes named by the preimage.
+    pub dependencies: Vec<quire_exact::NodeKey>,
 }
 
 /// A clause's `model-time` binding (FR-233's `ModelClockBinding::ModelTime`):

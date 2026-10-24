@@ -317,7 +317,7 @@ impl SolverResult {
         }
     }
 
-    /// FR-250 with FR-450: the map of [`Self::terminal_value`], and for a
+    /// FR-250 with FR-450: the map of `Self::terminal_value`, and for a
     /// reported trace its replay against the claim's model in `graph`. The
     /// trace is admitted first (QSpec FR-193 "Hybrid trace"); static replay
     /// keeps its outcome with the trace on the `inconclusive` record, and a

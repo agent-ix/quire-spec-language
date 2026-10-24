@@ -30,13 +30,13 @@ use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{AccessClass, AccessOrdering};
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::Value;
-use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::access::location_enc;
+use super::fairness::ProtocolFairness;
 use super::identity::ThreadPath;
 use super::memory::{
-    buffer_location, Access, Chosen, FootprintStep, GatedStep, MemoryModel, MemoryStep,
-    MemoryStepId, ReadChoice, SharedCell, Written,
+    buffer_location, Access, Chosen, FootprintStep, GatedStep, MemoryBranch, MemoryModel,
+    MemoryStep, MemoryStepId, ReadChoice, SharedCell, Written,
 };
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::encode::{map_enc, value_enc, Enc};
@@ -44,6 +44,9 @@ use crate::simulation::model::{Cell, ModelSimState};
 
 /// The published default of a memory bound (ADR-025 MB-2).
 pub const DEFAULT_MEMORY_BOUND: u64 = 4;
+
+/// The name of `tso`'s memory step (ADR-025 TSO-5).
+const FLUSH: &str = "flush";
 
 /// FR-221: the x86-TSO memory model, with its store buffer bound
 /// (FR-225).
@@ -275,7 +278,7 @@ impl MemoryModel for Tso {
                 Some(MemoryStep {
                     identity: MemoryStepId {
                         model: MemoryModelName::Tso,
-                        step: "flush",
+                        step: FLUSH,
                         thread: thread.clone(),
                     },
                     component: next,
@@ -347,10 +350,21 @@ impl MemoryModel for Tso {
         Cow::Borrowed(model)
     }
 
-    /// MF-1's flush fairness is FR-228's; no infinite-trace clause over a
-    /// protocol subject is decided yet (FR-215), so none is added here.
-    fn fairness(&self) -> Vec<FairnessConstraint> {
-        Vec::new()
+    /// MF-1: `fair weak each flush(b)` for each thread `b` of each `tso`
+    /// `parallel`, one member per branch whose threads it covers.
+    fn fairness(&self, branches: &[MemoryBranch]) -> Vec<ProtocolFairness> {
+        branches
+            .iter()
+            .filter(|branch| branch.model == MemoryModelName::Tso)
+            .map(|branch| {
+                ProtocolFairness::memory_step(
+                    MemoryModelName::Tso,
+                    FLUSH,
+                    branch.parallel.clone(),
+                    branch.branch.clone(),
+                )
+            })
+            .collect()
     }
 
     /// MR-1 under `tso`, for a thread with a buffer:

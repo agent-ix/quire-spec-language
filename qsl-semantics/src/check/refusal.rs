@@ -1076,6 +1076,13 @@ pub enum TemporalCause {
         /// The alias name's span.
         span: Span,
     },
+    /// FR-230: a `time` declaration names more than one semantic model node.
+    AmbiguousTimedModel {
+        /// The alias as written.
+        name: String,
+        /// The alias name's span.
+        span: Span,
+    },
     /// FR-230: `urgent when` has no timed model to bind its predicate.
     UrgencyWithoutTimeSource {
         /// The urgency declaration's span.
@@ -1302,6 +1309,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { span, .. }
             | Self::DuplicateTimeSource { span, .. }
             | Self::MissingTimedModel { span, .. }
+            | Self::AmbiguousTimedModel { span, .. }
             | Self::UrgencyWithoutTimeSource { span }
             | Self::InvalidTickPeriod { span }
             | Self::MalformedTimeUnit { span, .. }
@@ -1335,6 +1343,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { .. } => Code::UnsupportedConstruct,
             Self::DuplicateTimeSource { .. } => Code::InvalidTimedModel,
             Self::MissingTimedModel { .. } => Code::MissingDeclaration,
+            Self::AmbiguousTimedModel { .. } => Code::AmbiguousDeclaration,
             Self::UrgencyWithoutTimeSource { .. } => Code::MissingDeclaration,
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 Code::InvalidModelBinding
@@ -1377,6 +1386,7 @@ impl TemporalCause {
             Self::TimedFacetRequired { .. } => "declaration-form",
             Self::DuplicateTimeSource { .. } => "duplicate-time-source",
             Self::MissingTimedModel { .. } => "missing-name",
+            Self::AmbiguousTimedModel { .. } => "ambiguous-name",
             Self::UrgencyWithoutTimeSource { .. } => "missing-name",
             Self::InvalidTickPeriod { .. } | Self::MalformedTimeUnit { .. } => {
                 "malformed-declaration"

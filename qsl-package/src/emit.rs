@@ -580,9 +580,7 @@ impl<'g> Candidate<'g> {
     }
 
     /// The node as FR-322 writes it.
-    fn wire_node(
-        &self,
-    ) -> Result<CheckedSemanticNodeV2<impl quire_canonical::Encode>, EmitRefusal> {
+    fn wire_node(&self) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
         let node = self.node;
         Ok(CheckedSemanticNodeV2 {
             node_id: self.id.clone(),
@@ -605,7 +603,7 @@ impl<'g> Candidate<'g> {
                     .collect(),
             }),
             owner: node.owner().map(wire_owner),
-            body: node.wire_body().map_err(encoding)?,
+            body: serde_json::from_value(node.wire_body().map_err(encoding)?).map_err(encoding)?,
         })
     }
 }
@@ -1169,6 +1167,31 @@ fn body_reference_targets(body: &CheckedTerm) -> Vec<CheckedNodeId> {
     targets
 }
 
+/// The checked primitive type used by an existing literal of `kind`.
+fn literal_type(nodes: &[CheckedSemanticNodeV2], kind: &str) -> Option<CheckedNodeId> {
+    fn visit(term: &CheckedTerm, kind: &str) -> Option<CheckedNodeId> {
+        match term {
+            CheckedTerm::Literal {
+                type_id,
+                value_kind,
+                ..
+            } if value_kind.as_wire() == kind => Some(type_id.clone()),
+            CheckedTerm::Aggregate { members } => {
+                members.iter().find_map(|member| visit(member, kind))
+            }
+            CheckedTerm::Binding { value, .. } => visit(value, kind),
+            CheckedTerm::Application { arguments, .. } => {
+                arguments.iter().find_map(|argument| visit(argument, kind))
+            }
+            CheckedTerm::ExtensionForm { clauses, .. } => {
+                clauses.iter().find_map(|clause| visit(clause, kind))
+            }
+            _ => None,
+        }
+    }
+    nodes.iter().find_map(|node| visit(&node.body, kind))
+}
+
 /// Emit a complete admitted package using typed timed models for its timed
 /// nodes. The base package supplies the already-checked non-timed graph,
 /// lock, source map, capability report and diagnostics; every timed node is
@@ -1444,13 +1467,6 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
-    // Interim guard until QSL-1032 emits the checked time sources as typed
-    // timed models on this path.
-    if let Some(source) = graph.time_sources().first() {
-        return Err(EmitRefusal::TimedModelNotEmitted {
-            model: source.model.clone(),
-        });
-    }
     let abstraction = package
         .abstraction()
         .map(|relation| graph.abstraction_nodes(relation))
@@ -1477,9 +1493,9 @@ fn emit_package_inner(
         return Err(EmitRefusal::NothingToEmit { omitted });
     }
     let order = graph_order(&kept);
-    let (source_map, mut sources) = source_map(&order, &regions)?;
+    let (mut source_map, mut sources) = source_map(&order, &regions)?;
     sources.insert(source_artifact(graph.source()));
-    let nodes = order
+    let wire_nodes = order
         .iter()
         .map(
             |candidate| match denied().or_else(|| fault(&candidate.id)) {
@@ -1488,6 +1504,192 @@ fn emit_package_inner(
             },
         )
         .collect::<Result<Vec<_>, _>>()?;
+    let mut nodes = wire_nodes;
+    if !graph.time_sources().is_empty() {
+        let text_type = literal_type(&nodes, "text")
+            .unwrap_or_else(|| node_id(qsl_semantics::check::builtin_text_type_key()));
+        let rational_type = node_id(qsl_semantics::check::builtin_rational_type_key());
+        for (index, source) in graph.time_sources().iter().enumerate() {
+            let placeholder = |kind: &str| CheckedNodeId {
+                domain: NODE_KEY_DOMAIN.into(),
+                digest: format!("timed-{kind}-{index}").into(),
+            };
+            let model = CheckedTimedModel::from_checked_time_source(
+                source,
+                placeholder("source"),
+                placeholder("root"),
+                CheckedNodeOwner::Source {
+                    authority: graph.source().authority().into(),
+                    identity: graph.source().identity().into(),
+                },
+                text_type.clone(),
+                rational_type.clone(),
+                &source.model,
+            )
+            .ok_or(EmitRefusal::TimedModelWriterInvariant(
+                "checked tick source has no operation anchor",
+            ))?;
+            let source_region = SourceRegion::new(
+                graph.source().clone(),
+                source.span.start as u64,
+                source.span.end as u64,
+            )
+            .map_err(encoding)?;
+            if !nodes.iter().any(|node| node.node_id == text_type) {
+                let occurrence = CheckedOccurrence {
+                    role: CheckedOccurrenceRole::Generated,
+                    ordinal: 0,
+                };
+                source_map.push(CheckedSourceMapEntry {
+                    node_id: text_type.clone(),
+                    role: occurrence.role.clone(),
+                    ordinal: occurrence.ordinal,
+                    regions: vec![CheckedSourceRegion {
+                        source: source_artifact(graph.source()),
+                        start: source_region.start(),
+                        end: source_region.end(),
+                    }],
+                });
+                nodes.push(CheckedSemanticNodeV2 {
+                    node_id: text_type.clone(),
+                    schema_version: GRAPH_V2.into(),
+                    node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
+                    semantic_form: "text".into(),
+                    semantic_type: text_type.clone(),
+                    dependencies: Vec::new(),
+                    occurrences: vec![occurrence],
+                    recursion_group: None,
+                    nominal_identity_preimage: None,
+                    declaration: None,
+                    owner: None,
+                    body: CheckedTerm::Aggregate {
+                        members: Vec::new(),
+                    },
+                });
+            }
+            if matches!(
+                &source.source,
+                qsl_semantics::check::TimeSourceKind::Tick { .. }
+            ) && !nodes.iter().any(|node| node.node_id == rational_type)
+            {
+                let occurrence = CheckedOccurrence {
+                    role: CheckedOccurrenceRole::Generated,
+                    ordinal: 0,
+                };
+                source_map.push(CheckedSourceMapEntry {
+                    node_id: rational_type.clone(),
+                    role: occurrence.role.clone(),
+                    ordinal: occurrence.ordinal,
+                    regions: vec![CheckedSourceRegion {
+                        source: source_artifact(graph.source()),
+                        start: source_region.start(),
+                        end: source_region.end(),
+                    }],
+                });
+                nodes.push(CheckedSemanticNodeV2 {
+                    node_id: rational_type.clone(),
+                    schema_version: GRAPH_V2.into(),
+                    node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
+                    semantic_form: "rational".into(),
+                    semantic_type: rational_type.clone(),
+                    dependencies: Vec::new(),
+                    occurrences: vec![occurrence],
+                    recursion_group: None,
+                    nominal_identity_preimage: None,
+                    declaration: None,
+                    owner: None,
+                    body: CheckedTerm::Aggregate {
+                        members: Vec::new(),
+                    },
+                });
+            }
+            for nominal in &source.nominal_nodes {
+                let id = node_id(nominal.key);
+                if nodes.iter().any(|node| node.node_id == id) {
+                    continue;
+                }
+                let preimage = serde_json::from_slice(&nominal.preimage).map_err(encoding)?;
+                let preimage = serde_json::from_value(preimage).map_err(encoding)?;
+                let declaration_name = match &preimage {
+                    NominalIdentityPreimage::Dimension(preimage) => {
+                        preimage.qualified_declaration.clone()
+                    }
+                    NominalIdentityPreimage::Unit(preimage) => {
+                        preimage.qualified_declaration.clone()
+                    }
+                    _ => {
+                        return Err(EmitRefusal::TimedModelWriterInvariant(
+                            "a timed unit graph node must be a dimension or unit",
+                        ));
+                    }
+                };
+                let semantic_type = if nominal.form == "unit" {
+                    nominal.dependencies.first().copied().map(node_id).ok_or(
+                        EmitRefusal::TimedModelWriterInvariant(
+                            "a unit node must name its dimension",
+                        ),
+                    )?
+                } else {
+                    id.clone()
+                };
+                let occurrence = CheckedOccurrence {
+                    role: CheckedOccurrenceRole::Declaration,
+                    ordinal: 0,
+                };
+                source_map.push(CheckedSourceMapEntry {
+                    node_id: id.clone(),
+                    role: occurrence.role.clone(),
+                    ordinal: occurrence.ordinal,
+                    regions: vec![CheckedSourceRegion {
+                        source: source_artifact(graph.source()),
+                        start: source_region.start(),
+                        end: source_region.end(),
+                    }],
+                });
+                nodes.push(CheckedSemanticNodeV2 {
+                    node_id: id.clone(),
+                    schema_version: GRAPH_V2.into(),
+                    node_tag: CheckedNodeTag::ScalarType.as_wire().into(),
+                    semantic_form: nominal.form.as_str().into(),
+                    semantic_type,
+                    dependencies: nominal.dependencies.iter().copied().map(node_id).collect(),
+                    occurrences: vec![occurrence],
+                    recursion_group: None,
+                    nominal_identity_preimage: Some(preimage),
+                    declaration: Some(CheckedDeclaration {
+                        qualified_name: declaration_name,
+                    }),
+                    owner: None,
+                    body: CheckedTerm::Aggregate {
+                        members: Vec::new(),
+                    },
+                });
+            }
+            for node in model
+                .write_nodes()
+                .map_err(EmitRefusal::TimedModelWriterInvariant)?
+            {
+                let occurrence =
+                    node.occurrences
+                        .first()
+                        .ok_or(EmitRefusal::TimedModelWriterInvariant(
+                            "timed nodes must retain their source occurrence",
+                        ))?;
+                source_map.push(CheckedSourceMapEntry {
+                    node_id: node.node_id.clone(),
+                    role: occurrence.role.clone(),
+                    ordinal: occurrence.ordinal,
+                    regions: vec![CheckedSourceRegion {
+                        source: source_artifact(graph.source()),
+                        start: source_region.start(),
+                        end: source_region.end(),
+                    }],
+                });
+                nodes.push(node);
+            }
+        }
+        rekey_timed_model_nodes(&mut nodes, &mut source_map)?;
+    }
     let (profile_selections, mut laws) = split_laws(&order);
     // The IEEE trigger includes a declared float with no IEEE application.
     // Keep the selected, admitted policy even when no node needs its law.

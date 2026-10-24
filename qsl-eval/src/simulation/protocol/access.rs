@@ -4,10 +4,10 @@
 //! instantiated attempt in it is, and the access shapes the pre-check
 //! settles `WeakAccessShape`.
 //!
-//! EN-1 instantiates each attempt's read and write footprints per FR-120
-//! transition identity, over every receiver of its receiver type and every
-//! argument vector (FR-155 "State-free"), with the clauses its `contracts`
-//! select (ADR-027 FT-1). A location is shared in an outermost weak
+//! EN-1 instantiates each attempt's read and write footprints per admitted
+//! FR-120 application, over the receivers and argument vectors whose
+//! selected effective preconditions hold, with the clauses its `contracts`
+//! select (ADR-025 MA-1; ADR-027 FT-1). A location is shared in an outermost weak
 //! `parallel` when two attempts in different branches of one `parallel` of
 //! its subtree touch it and one of them writes it, a write meeting what the
 //! other touches (FR-155's `affects`); every other location an attempt
@@ -102,39 +102,205 @@ pub enum AccessShape {
     /// `join-policy`: a weak `parallel` whose join is not `all` with no
     /// `outstanding` clause.
     JoinPolicy,
+    /// An instantiated access class does not admit its selected ordering.
+    OrderingMismatch {
+        /// The instantiated access class.
+        access: AccessClass,
+        /// The ordering, `None` for an RMW with no ordering.
+        ordering: Option<AccessOrdering>,
+    },
 }
 
-/// The pre-check's V-8 cause `WeakAccessShape{site, transition, shape}`
+/// One entry in the pre-check's V-8 `WeakAccessShape.failures` list
 /// (ADR-025 MA-4, MV-1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeakAccessFailure {
+    /// The node's static declaration path.
+    pub site: String,
+    /// The attempt instance's model transition; none for a reader or join
+    /// policy.
+    pub transition: Option<ModelTransition>,
+    /// The shape that failed.
+    pub shape: AccessShape,
+    wire: Enc,
+}
+
+/// The pre-check's V-8 cause `WeakAccessShape{failures}` (ADR-025 MA-4,
+/// MV-1). The headline fields retain the first failure for callers that need
+/// a concise diagnostic; `failures` carries every failure at the state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WeakAccessShape {
     /// The node it is found at, by its static declaration path: the attempt,
     /// or the `parallel`.
     pub site: String,
-    /// The attempt instance's transition identity; none for a join policy.
+    /// The attempt instance's transition identity; none for a node failure.
     pub transition: Option<ModelTransition>,
     /// The shape.
     pub shape: AccessShape,
+    /// Every failure, in deterministic pre-check order.
+    pub failures: Vec<WeakAccessFailure>,
     /// The shape in QSpec FR-439's typed form.
     wire: Enc,
 }
 
 impl WeakAccessShape {
     pub(crate) fn join_policy(site: String) -> Self {
+        Self::single(
+            site,
+            None,
+            AccessShape::JoinPolicy,
+            Enc::tagged("join-policy", Vec::new()),
+        )
+    }
+
+    fn ordering_mismatch(
+        site: String,
+        transition: ModelTransition,
+        access: AccessClass,
+        ordering: Option<AccessOrdering>,
+    ) -> Self {
+        let access_text = match access {
+            AccessClass::Load => "load",
+            AccessClass::Store => "store",
+            AccessClass::Rmw => "rmw",
+            AccessClass::Local => "local",
+        };
+        let ordering_text = ordering.map_or(Enc::Null, |ordering| {
+            Enc::text(match ordering {
+                AccessOrdering::Relaxed => "relaxed",
+                AccessOrdering::Acquire => "acquire",
+                AccessOrdering::Release => "release",
+                AccessOrdering::AcqRel => "acq_rel",
+                AccessOrdering::SeqCst => "seq_cst",
+            })
+        });
+        Self::single(
+            site,
+            Some(transition),
+            AccessShape::OrderingMismatch { access, ordering },
+            Enc::tagged(
+                "ordering-mismatch",
+                vec![
+                    ("access", Enc::text(access_text)),
+                    ("ordering", ordering_text),
+                ],
+            ),
+        )
+    }
+
+    fn single(
+        site: String,
+        transition: Option<ModelTransition>,
+        shape: AccessShape,
+        wire: Enc,
+    ) -> Self {
+        let failure = WeakAccessFailure {
+            site: site.clone(),
+            transition: transition.clone(),
+            shape: shape.clone(),
+            wire: wire.clone(),
+        };
         Self {
             site,
-            transition: None,
-            shape: AccessShape::JoinPolicy,
-            wire: Enc::tagged("join-policy", Vec::new()),
+            transition,
+            shape,
+            failures: vec![failure],
+            wire,
         }
     }
 
-    /// The shape's canonical text: `{"type":"multi-location","locations":
-    /// [...]}` or `{"type":"join-policy"}` (QSpec FR-439).
+    pub(crate) fn from_failures(
+        failures: Vec<WeakAccessFailure>,
+    ) -> Result<Option<Self>, ProtocolRefusal> {
+        let mut keyed = failures
+            .into_iter()
+            .map(|failure| {
+                let transition_bytes = failure
+                    .transition
+                    .as_ref()
+                    .map(|transition| {
+                        transition
+                            .canonical_bytes(quire_canonical::Limits::new(u64::MAX))
+                            .map_err(|_| ProtocolRefusal::fault("a-weak-access-transition-encodes"))
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                Ok((
+                    failure.transition.is_none(),
+                    transition_bytes,
+                    failure.site.clone(),
+                    failure,
+                ))
+            })
+            .collect::<Result<Vec<_>, ProtocolRefusal>>()?;
+        keyed.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+        });
+        let (failures, transition_texts): (Vec<_>, Vec<_>) = keyed
+            .into_iter()
+            .map(|(_, bytes, _, failure)| {
+                let transition_text =
+                    if bytes.is_empty() {
+                        None
+                    } else {
+                        Some(String::from_utf8(bytes).map_err(|_| {
+                            ProtocolRefusal::fault("a-weak-access-transition-is-utf8")
+                        })?)
+                    };
+                Ok((failure, transition_text))
+            })
+            .collect::<Result<Vec<_>, ProtocolRefusal>>()?
+            .into_iter()
+            .unzip();
+        let Some(first) = failures.first().cloned() else {
+            return Ok(None);
+        };
+        let wire = Enc::Array(
+            failures
+                .iter()
+                .zip(transition_texts)
+                .map(|(failure, transition_text)| {
+                    Enc::Object(vec![
+                        ("site", Enc::text(failure.site.clone())),
+                        ("transition", transition_text.map_or(Enc::Null, Enc::text)),
+                        ("shape", failure.wire.clone()),
+                    ])
+                })
+                .collect(),
+        );
+        Ok(Some(Self {
+            site: first.site.clone(),
+            transition: first.transition.clone(),
+            shape: first.shape.clone(),
+            failures,
+            wire,
+        }))
+    }
+
+    /// Every `{site, transition, shape}` failure as canonical JSON.
     ///
     /// # Errors
     ///
     /// [`quire_canonical::Error`] when the text exceeds the identity limits.
+    pub fn failures_text(&self) -> Result<String, quire_canonical::Error> {
+        self.wire
+            .canonical_text(quire_canonical::Limits::new(u64::MAX))
+    }
+
+    /// The first failure's shape as canonical JSON.
+    pub fn shape_text(&self) -> Result<String, quire_canonical::Error> {
+        self.failures
+            .first()
+            .ok_or_else(|| quire_canonical::Error::Serialize("no weak-access failures".into()))?
+            .shape_text()
+    }
+}
+
+impl WeakAccessFailure {
+    /// The shape's canonical text.
     pub fn shape_text(&self) -> Result<String, quire_canonical::Error> {
         self.wire
             .canonical_text(quire_canonical::Limits::new(u64::MAX))
@@ -190,29 +356,42 @@ impl WeakAccesses {
         self.cells.get(location)
     }
 
-    /// The first shape the pre-check settles: the first instance, attempts in
-    /// ascending node and instances in ascending transition identity, that
-    /// is not one access, else the first node, in ascending node order,
-    /// whose constraint reads a shared location. A node has no transition.
-    pub(crate) fn first_shape(&self) -> Option<WeakAccessShape> {
-        let attempt = self.attempts.values().find_map(|attempt| {
-            attempt.instances.iter().find_map(|instance| {
-                let InstanceAccess::Shape { locations } = &instance.access else {
-                    return None;
-                };
-                Some(self.multi_location(
-                    attempt.node.clone(),
-                    Some(instance.transition.clone()),
-                    locations,
-                ))
-            })
-        });
-        attempt.or_else(|| {
-            self.readers
-                .values()
-                .find(|(_, locations)| !locations.is_empty())
-                .map(|(node, locations)| self.multi_location(node.clone(), None, locations))
-        })
+    /// Every access or reader shape the pre-check settles at this state.
+    pub(crate) fn first_shape(&self) -> Result<Option<WeakAccessShape>, ProtocolRefusal> {
+        let mut failures = Vec::new();
+        for attempt in self.attempts.values() {
+            for instance in &attempt.instances {
+                match &instance.access {
+                    InstanceAccess::Shape { locations } => failures.push(self.multi_location(
+                        attempt.node.clone(),
+                        Some(instance.transition.clone()),
+                        locations,
+                    )),
+                    InstanceAccess::Access { class, .. }
+                        if ordering_mismatch(*class, attempt.ordering) =>
+                    {
+                        failures.push(WeakAccessShape::ordering_mismatch(
+                            attempt.node.clone(),
+                            instance.transition.clone(),
+                            *class,
+                            attempt.ordering,
+                        ));
+                    }
+                    InstanceAccess::Access { .. } => {}
+                }
+            }
+        }
+        for (node, locations) in self.readers.values() {
+            if !locations.is_empty() {
+                failures.push(self.multi_location(node.clone(), None, locations));
+            }
+        }
+        WeakAccessShape::from_failures(
+            failures
+                .into_iter()
+                .flat_map(|shape| shape.failures)
+                .collect(),
+        )
     }
 
     fn multi_location(
@@ -221,13 +400,13 @@ impl WeakAccesses {
         transition: Option<ModelTransition>,
         locations: &[Location],
     ) -> WeakAccessShape {
-        WeakAccessShape {
+        WeakAccessShape::single(
             site,
             transition,
-            shape: AccessShape::MultiLocation {
+            AccessShape::MultiLocation {
                 locations: locations.to_vec(),
             },
-            wire: Enc::tagged(
+            Enc::tagged(
                 "multi-location",
                 vec![(
                     "locations",
@@ -239,7 +418,22 @@ impl WeakAccesses {
                     ),
                 )],
             ),
-        }
+        )
+    }
+}
+
+fn ordering_mismatch(class: AccessClass, ordering: Option<AccessOrdering>) -> bool {
+    match class {
+        AccessClass::Load => matches!(
+            ordering,
+            Some(AccessOrdering::Release | AccessOrdering::AcqRel)
+        ),
+        AccessClass::Store => matches!(
+            ordering,
+            Some(AccessOrdering::Acquire | AccessOrdering::AcqRel)
+        ),
+        AccessClass::Rmw => ordering.is_none(),
+        AccessClass::Local => ordering.is_some(),
     }
 }
 
@@ -310,6 +504,15 @@ struct Footprinted {
     writes: BTreeSet<Location>,
 }
 
+/// Which EN-1 footprint set to derive (ADR-025 MA-1).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ClassificationMode {
+    /// Guard-agnostic footprints that reserve memory-model backing.
+    Potential,
+    /// Applications enabled in the supplied model observation.
+    Enabled,
+}
+
 /// EN-1 (MA-1, MA-2): instantiate and classify every attempt of every
 /// `parallel` `governing` resolves weak, over the identities of `initial`.
 ///
@@ -324,6 +527,7 @@ pub(crate) fn classify(
     governing: &BTreeMap<ProtocolNodeId, MemoryModelName>,
     initial: Option<&ModelSimState>,
     over: &Value,
+    mode: ClassificationMode,
 ) -> Result<WeakAccesses, ProtocolRefusal> {
     let Some(initial) = initial else {
         return Ok(WeakAccesses::default());
@@ -409,11 +613,23 @@ pub(crate) fn classify(
             name: &attempt.operation,
             receiver: attempt.receiver,
         };
-        let mut instances = Vec::new();
-        for transition in model
-            .attempt_identities(initial, &operation)
-            .map_err(unlisted)?
-        {
+        let transitions = match mode {
+            ClassificationMode::Potential => model
+                .attempt_identities(initial, &operation)
+                .map_err(unlisted)?,
+            ClassificationMode::Enabled => {
+                let selected = |clause| attempt.contracts.contains(&clause);
+                model
+                    .apply_operation(initial, &operation, &selected, &mut model.budget())
+                    .map_err(unlisted)?
+                    .successors
+                    .into_iter()
+                    .map(|applied| applied.transition)
+                    .collect()
+            }
+        };
+        let mut instances = BTreeMap::new();
+        for transition in transitions {
             let footprint = model
                 .footprint_selecting(&transition, Some(&attempt.contracts))
                 .map_err(|_| ProtocolRefusal::Unsupported(super::Unsupported::AccessFootprint))?;
@@ -423,13 +639,15 @@ pub(crate) fn classify(
                     .filter(|location| !matches!(location, Location::Protocol(_)))
                     .collect()
             };
-            instances.push(Footprinted {
-                transition,
-                reads: model_only(footprint.reads),
-                writes: model_only(footprint.writes),
-            });
+            instances
+                .entry(transition.clone())
+                .or_insert_with(|| Footprinted {
+                    transition,
+                    reads: model_only(footprint.reads),
+                    writes: model_only(footprint.writes),
+                });
         }
-        footprints.insert(*node, instances);
+        footprints.insert(*node, instances.into_values().collect());
     }
 
     // MA-1: two touches in different branches of one `parallel` conflict
