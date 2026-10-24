@@ -628,7 +628,7 @@ fn assert_no_consumption(meter: &Meter) {
 #[test]
 fn call_supplied_polls_the_callers_handle_and_the_meters_at_the_first_charge() {
     use qsl_eval::value::CheckedPackageEvaluation as _;
-    use qsl_semantics::value::supplied::{SuppliedLimits, SuppliedRun};
+    use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 
     let package = package(vec![two_arguments()]);
     let objects = ObjectEnvironment::default();

@@ -1172,7 +1172,7 @@ mod tests {
     #[test]
     #[trace("TC-721", "FR-255-AC-4")]
     fn limits_supplied_is_complete_and_u64_or_the_request_refuses() {
-        use qsl_semantics::value::supplied::SuppliedLimits;
+        use quire_semantic_value::supplied_stop::SuppliedLimits;
         let read = |text: &str| serde_json::from_str::<wire::Limits>(text);
         assert_eq!(read("{}").expect("no limits").supplied, None);
         assert_eq!(
