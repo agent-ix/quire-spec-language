@@ -93,9 +93,9 @@ pub use syntax::{
     StepLabelForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
     TemporalOperator, TemporalOperatorForm, TemporalOperatorUse, TermOperator,
     TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm,
-    TimeSourceSyntax, TimedIntervalForm, TransitionForm, TreeRefusal, TupleForm, TypeForm,
-    TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm, UrgentTarget, UsingAlias,
-    WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
+    TimeSourceSyntax, TimedIntervalForm, TimedUpper, TransitionForm, TreeRefusal, TupleForm,
+    TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm, UrgentTarget,
+    UsingAlias, WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

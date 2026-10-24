@@ -5,22 +5,21 @@
 
 use std::collections::BTreeMap;
 
-use ix_trace_rs::string_edge;
 use qsl_forms::{BinaryOperator, ExprId, ExprNode, ExpressionForm, HybridForm, SpanId};
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::Span;
 use quire_exact::{Identifier, Integer};
 use quire_semantic_value::location::{Location, Origin};
 
+use super::callee::Callees;
 use super::cause::MalformedReason;
-use super::term::{lower, lower_at, Binder, Env, Kind, Lowered, Meter, Stop};
+use super::term::{is_qualified, lower, lower_at, Binder, Env, Kind, Lowered, Meter, Stop};
 use super::{
     CheckedHybridModel, CheckedMode, CheckedTransition, CompareOp, ContinuousVariable, HybridCause,
-    HybridTerm, InitialEntry, ModeIndex, ResetConstraint, VariableClass, VariableIndex,
+    HybridModelIndex, HybridTerm, InitialEntry, ModeIndex, ResetConstraint, VariableClass,
+    VariableIndex,
 };
-use crate::check::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, StageLimitCause,
-};
+use crate::check::refusal::{CheckCause, CheckRefusal, CheckingStage, StageLimitCause};
 
 /// A `hybrid` declaration as the assembler hands it to the check: its form,
 /// and the profile selection its `using` alias resolved to.
@@ -36,6 +35,8 @@ pub struct HybridDeclaration {
 pub(in crate::check) struct HybridChecked {
     /// The models that checked clean, in source order.
     pub(in crate::check) models: Vec<CheckedHybridModel>,
+    /// Each clean model's position by declared name, for the claims over it.
+    pub(in crate::check) index: BTreeMap<String, HybridModelIndex>,
     /// Every refusal, in source order.
     pub(in crate::check) refusals: Vec<CheckRefusal>,
 }
@@ -45,11 +46,13 @@ pub(in crate::check) struct HybridChecked {
 /// that finds any refusal refuses the package.
 pub(in crate::check) fn check_models(
     declarations: &[HybridDeclaration],
+    callees: &Callees<'_>,
     node_limit: u64,
     nodes_used: &mut u64,
 ) -> HybridChecked {
     let mut checked = HybridChecked {
         models: Vec::new(),
+        index: BTreeMap::new(),
         refusals: Vec::new(),
     };
     let mut names: BTreeMap<&str, Span> = BTreeMap::new();
@@ -70,13 +73,16 @@ pub(in crate::check) fn check_models(
                 names.insert(form.name.name.as_str(), form.name.span);
             }
         }
-        let model = check_one(form, &mut meter, &mut stops);
+        let model = check_one(form, callees, &mut meter, &mut stops);
         let limit_reached = stops.iter().any(|stop| matches!(stop, Stop::Limit { .. }));
+        let clean = stops.is_empty();
         checked.refusals.extend(stops.into_iter().map(refusal));
-        if let Some(model) = model {
-            if checked.refusals.is_empty() {
-                checked.models.push(model);
-            }
+        if let (Some(model), true) = (model, clean) {
+            checked.index.insert(
+                form.name.name.clone(),
+                HybridModelIndex::new(checked.models.len()),
+            );
+            checked.models.push(model);
         }
         if limit_reached {
             break;
@@ -87,19 +93,27 @@ pub(in crate::check) fn check_models(
 
 /// The refusal of a declaration that checks but that no S4 emission writes
 /// yet (FR-447).
-pub(in crate::check) fn not_emitted(form: &HybridForm) -> CheckRefusal {
+pub(super) fn into_refusal(stop: Stop) -> CheckRefusal {
+    refusal(stop)
+}
+
+pub(in crate::check) fn not_emitted(name: &qsl_forms::DeclaredName) -> CheckRefusal {
     refusal(Stop::Cause(HybridCause::NotEmitted {
-        name: form.name.name.clone(),
-        span: form.name.span,
+        name: name.name.clone(),
+        span: name.span,
     }))
 }
 
 fn refusal(stop: Stop) -> CheckRefusal {
     let cause = match stop {
         Stop::Cause(cause) => CheckCause::Hybrid(Box::new(cause)),
-        Stop::Limit { limit, actual } => CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+        Stop::Limit {
+            kind,
+            limit,
+            actual,
+        } => CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::Nodes,
+            kind,
             limit,
             actual,
             region: None,
@@ -156,6 +170,7 @@ fn boolean(
 
 fn check_one(
     form: &HybridForm,
+    callees: &Callees<'_>,
     meter: &mut Meter<'_>,
     stops: &mut Vec<Stop>,
 ) -> Option<CheckedHybridModel> {
@@ -210,10 +225,14 @@ fn check_one(
     let env = Env {
         variables: &by_name,
         reset: false,
+        claim: None,
+        callees,
     };
     let reset_env = Env {
         variables: &by_name,
         reset: true,
+        claim: None,
+        callees,
     };
 
     // Each mode: invariant, exactly one rate per variable, transitions.
@@ -370,14 +389,6 @@ fn check_one(
         }),
         _ => None,
     }
-}
-
-/// Whether an equation's left side is a qualified name with a `::` segment
-/// (FR-447 "Continuous variables and flows"). `#[string_edge]`: the
-/// qualified spelling is the one source-text distinction S2 leaves to S3.
-#[string_edge]
-fn is_qualified(name: &str) -> bool {
-    name.contains("::")
 }
 
 /// Whether the expression is the numeric literal `1`, as written: `2 - 1`
