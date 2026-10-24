@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use quire_contract_model::{
-    CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedOccurrence, CheckedPackageV2,
-    CheckedSemanticNodeV2, CheckedTerm, LiteralKind, NominalIdentityPreimage, TimedModelForm,
+    CheckedDeclaration, CheckedNodeId, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
+    CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm, LiteralKind, NominalIdentityPreimage,
+    TimedModelForm,
 };
 use quire_exact::{Integer, Rational};
 
@@ -243,7 +244,9 @@ impl CheckedTimedModel {
             .graph()
             .nodes
             .iter()
-            .filter(|node| node.node_tag.as_ref() == "timed_model")
+            .filter(|node| {
+                CheckedNodeTag::from_wire(&node.node_tag) == Some(CheckedNodeTag::TimedModel)
+            })
             .cloned()
             .collect::<Vec<_>>();
         Self::from_nodes(&nodes)
@@ -256,12 +259,16 @@ impl CheckedTimedModel {
     ) -> Result<Vec<Self>, &'static str> {
         let nodes = wire_nodes
             .iter()
-            .filter(|node| node.node_tag.as_ref() == "timed_model")
+            .filter(|node| {
+                CheckedNodeTag::from_wire(&node.node_tag) == Some(CheckedNodeTag::TimedModel)
+            })
             .map(|node| (node.node_id.clone(), node))
             .collect::<BTreeMap<_, _>>();
         let mut roots = nodes
             .values()
-            .filter(|node| node.semantic_form.as_ref() == "timed_model")
+            .filter(|node| {
+                TimedModelForm::from_wire(&node.semantic_form) == Some(TimedModelForm::Model)
+            })
             .copied()
             .collect::<Vec<_>>();
         roots.sort_by(|a, b| a.node_id.digest.cmp(&b.node_id.digest));
@@ -728,7 +735,7 @@ fn project_source(node: &CheckedSemanticNodeV2) -> Result<CheckedTimeSource, &'s
 }
 
 fn project_place(node: &CheckedSemanticNodeV2) -> Result<CheckedClockPlace, &'static str> {
-    if node.semantic_form.as_ref() != "clock_place" {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Place) {
         return Err("clock place reference has wrong form");
     }
     let body = &node.body;
@@ -800,7 +807,7 @@ fn project_resolved_step(value: &CheckedTerm) -> Result<ResolvedClockPathStep, &
 }
 
 fn project_reset(node: &CheckedSemanticNodeV2) -> Result<CheckedClockReset, &'static str> {
-    if node.semantic_form.as_ref() != "clock_reset" {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Reset) {
         return Err("clock reset reference has wrong form");
     }
     let body = &node.body;
@@ -851,7 +858,7 @@ fn project_constraint(
     node: &CheckedSemanticNodeV2,
     unit: CheckedNodeId,
 ) -> Result<CheckedClockConstraint, &'static str> {
-    if node.semantic_form.as_ref() != "clock_constraint" {
+    if TimedModelForm::from_wire(&node.semantic_form) != Some(TimedModelForm::Constraint) {
         return Err("clock constraint reference has wrong form");
     }
     let body = &node.body;
