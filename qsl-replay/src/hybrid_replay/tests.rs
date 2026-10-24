@@ -743,14 +743,15 @@ fn expanding_a_deep_term_uses_caller_fuel() {
 mod settlement {
     use super::*;
     use crate::hybrid::{
-        BoundDimension, ClaimHorizon, SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome,
-        SolverResult,
+        BoundDimension, SolverCoverage, SolverHorizon, SolverMethod, SolverOutcome, SolverResult,
     };
     use crate::model_check::limits::ModelCheckLimit;
     use crate::proof_result::{
-        read_plugin_inconclusive_cause_over, IncompleteCause, InconclusiveCause,
-        PluginResultRefusal, TerminalValue, ValueFault,
+        read_first_party_solver_basis, read_plugin_inconclusive_cause_over, Certification,
+        IncompleteCause, InconclusiveCause, PluginResultRefusal, ProofBasis, TerminalRecord,
+        TerminalValue, ValueFault,
     };
+    use qsl_foundation::{BackendId, RequestIndex};
     use quire_exact::LimitKind;
     use serde_json::{json, Value};
     use std::collections::BTreeSet;
@@ -767,10 +768,6 @@ mod settlement {
         }
     }
 
-    fn horizon() -> ClaimHorizon {
-        ClaimHorizon::ModelTime(Some(SolverHorizon::new(n(12)).expect("non-negative")))
-    }
-
     fn settle(
         unit: &Unit,
         name: &str,
@@ -780,7 +777,6 @@ mod settlement {
         result.settle(
             &unit.graph,
             claim(unit, name),
-            &horizon(),
             &mut HybridReplayMeter::new(work_units),
         )
     }
@@ -1025,5 +1021,140 @@ mod settlement {
                 pointer: "/cause/replay".to_owned()
             })
         );
+    }
+
+    fn proof(method: SolverMethod, seconds: i64) -> SolverResult {
+        SolverResult {
+            method,
+            outcome: SolverOutcome::Unsat,
+            coverage: SolverCoverage::Bounded {
+                horizon: SolverHorizon::new(n(seconds)).expect("non-negative"),
+                jumps: 3,
+                exhaustive: BTreeSet::from([BoundDimension::Time]),
+            },
+        }
+    }
+
+    /// FR-250-AC-7: coverage is decided from the checked claim's own clock
+    /// and horizon, so the same `Bounded{10, 3, {Time}}` proof settles
+    /// `proved` over `SlowEnough` (10 s) and `insufficient-horizon` over
+    /// `Positive` (12 s); a plugin's `trusted` proof is checked the same way,
+    /// and the plain plugin path admits no `bounded-solver` basis.
+    #[trace("TC-705", "FR-250-AC-7")]
+    #[test]
+    fn coverage_is_decided_from_the_checked_claims_own_horizon() {
+        let unit = braking_unit(FLOW, "v = 0");
+        let proved = settle(
+            &unit,
+            "SlowEnough",
+            &proof(SolverMethod::DeltaComplete, 10),
+            u64::MAX,
+        )
+        .expect("settles");
+        assert!(matches!(proved.value, TerminalValue::Proved { .. }));
+        let short = settle(
+            &unit,
+            "Positive",
+            &proof(SolverMethod::DeltaComplete, 10),
+            u64::MAX,
+        )
+        .expect("settles");
+        assert!(matches!(
+            short.value,
+            TerminalValue::Inconclusive(InconclusiveCause::InsufficientHorizon { .. })
+        ));
+        assert_eq!(
+            proof(SolverMethod::DeltaComplete, 10).settlement_basis(claim(&unit, "Positive")),
+            crate::proof_result::SettlementBasis::Unsettled
+        );
+
+        let basis = |seconds: i64| ProofBasis::BoundedSolver {
+            method: SolverMethod::Unclassified,
+            horizon: SolverHorizon::new(n(seconds)).expect("non-negative"),
+            jumps: 1,
+            exhaustive: BTreeSet::from([BoundDimension::Time]),
+        };
+        let plugin = || BackendId::new("acme");
+        let record = |name: &str, basis| {
+            TerminalRecord::from_hybrid_plugin_proof(
+                RequestIndex::new(0),
+                plugin(),
+                basis,
+                claim(&unit, name),
+            )
+            .expect("admitted")
+        };
+        assert!(matches!(
+            record("SlowEnough", basis(1)).value(),
+            TerminalValue::Inconclusive(InconclusiveCause::InsufficientHorizon { .. })
+        ));
+        assert!(matches!(
+            record("SlowEnough", basis(10)).value(),
+            TerminalValue::Proved {
+                certification: Certification::Trusted,
+                ..
+            }
+        ));
+        assert!(matches!(
+            record("Positive", basis(10)).value(),
+            TerminalValue::Inconclusive(InconclusiveCause::InsufficientHorizon { .. })
+        ));
+        assert!(matches!(
+            record(
+                "SlowEnough",
+                ProofBasis::InductiveSolver {
+                    method: SolverMethod::InductiveEnclosure
+                }
+            )
+            .value(),
+            TerminalValue::Proved { .. }
+        ));
+        assert_eq!(
+            TerminalRecord::from_plugin_proof(RequestIndex::new(0), plugin(), basis(10)).err(),
+            Some(PluginResultRefusal::Malformed {
+                pointer: "/basis/type".to_owned(),
+                cause: ValueFault::InvalidValue,
+            })
+        );
+    }
+
+    /// FR-250-AC-6: a first-party `uncertified` `bounded-solver` entry whose
+    /// method is `flowpipe-unrounded` or `unclassified` is refused
+    /// `invalid_result`/`invalid-value` at `/basis/method`; a classified
+    /// method and an `inductive-solver` entry read.
+    #[trace("TC-705", "FR-250-AC-6")]
+    #[test]
+    fn a_first_party_entry_with_an_unsound_method_is_refused() {
+        let bounded = |method: &str| {
+            json!({"type": "bounded-solver", "method": method, "jumps": 3,
+                "exhaustive": ["time"],
+                "horizon": {"numerator": "10", "denominator": "1"}})
+        };
+        for method in ["flowpipe-unrounded", "unclassified"] {
+            assert_eq!(
+                read_first_party_solver_basis(&bounded(method)),
+                Err(PluginResultRefusal::Malformed {
+                    pointer: "/basis/method".to_owned(),
+                    cause: ValueFault::InvalidValue,
+                })
+            );
+        }
+        assert!(matches!(
+            read_first_party_solver_basis(&bounded("delta-complete")),
+            Ok(ProofBasis::BoundedSolver {
+                method: SolverMethod::DeltaComplete,
+                ..
+            })
+        ));
+        assert!(matches!(
+            read_first_party_solver_basis(
+                &json!({"type": "inductive-solver", "method": "inductive-enclosure"})
+            ),
+            Ok(ProofBasis::InductiveSolver { .. })
+        ));
+        assert!(matches!(
+            read_first_party_solver_basis(&json!({"type": "exhaustive"})),
+            Err(PluginResultRefusal::Unsupported { .. })
+        ));
     }
 }

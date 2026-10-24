@@ -20,8 +20,9 @@ use crate::hybrid_replay::{
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
-use qsl_semantics::check::{CheckedGraph, CheckedHybridClaim};
+use qsl_semantics::check::{CheckedGraph, CheckedHybridClaim, HybridClock, HybridHorizon};
 use quire_exact::LimitKind;
 
 /// The kind of method a provider ran. QSL decides soundness from the kind
@@ -177,6 +178,25 @@ pub enum ClaimHorizon {
     ModelSteps(Option<u64>),
 }
 
+impl ClaimHorizon {
+    /// The clock and horizon of `claim`, as S3 recorded them (FR-447
+    /// "Horizon"); coverage is decided from nothing else. A horizon whose
+    /// kind does not fit the clock, which S3 never records, reads as
+    /// unbounded, which no bounded proof covers.
+    pub fn of(claim: &CheckedHybridClaim) -> Self {
+        match (claim.clock, &claim.horizon) {
+            (HybridClock::ModelTime, Some(HybridHorizon::Seconds(seconds))) => {
+                Self::ModelTime(SolverHorizon::new(seconds.clone()).ok())
+            }
+            (HybridClock::ModelSteps, Some(HybridHorizon::Positions(positions))) => {
+                Self::ModelSteps(Some(*positions))
+            }
+            (HybridClock::ModelSteps, _) => Self::ModelSteps(None),
+            (HybridClock::ModelTime, _) => Self::ModelTime(None),
+        }
+    }
+}
+
 /// The part of a hybrid behavior a solver result established (FR-250).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SolverCoverage {
@@ -241,9 +261,10 @@ impl SolverResult {
     /// FR-250's method and coverage map for a checked claim, before any
     /// replay. A sound proof settles `proved` only when its coverage includes
     /// the claim; a sound bounded result that falls short names its actual
-    /// bounds. A reported trace is kept unreplayed. No provider assertion of
+    /// bounds. A reported trace is kept unreplayed, so this is private:
+    /// [`Self::settle`] admits and replays it first. No provider assertion of
     /// soundness is read.
-    pub fn terminal_value(&self, claim: &ClaimHorizon) -> TerminalValue {
+    fn terminal_value(&self, claim: &ClaimHorizon) -> TerminalValue {
         match &self.outcome {
             SolverOutcome::Stopped(SolverStop::Time) => {
                 TerminalValue::Incomplete(IncompleteCause::TimedOut)
@@ -313,10 +334,9 @@ impl SolverResult {
         &self,
         graph: &CheckedGraph,
         claim: &CheckedHybridClaim,
-        horizon: &ClaimHorizon,
         meter: &mut HybridReplayMeter,
     ) -> Result<HybridSettlement, HybridReplayRefusal> {
-        let value = self.terminal_value(horizon);
+        let value = self.terminal_value(&ClaimHorizon::of(claim));
         let Some(trace) = self.outcome.trace() else {
             return Ok(HybridSettlement::without_counterexample(value));
         };
@@ -369,7 +389,11 @@ impl SolverResult {
     /// The QSpec FR-243 basis the result settles with: `closed-scope` for a
     /// proof within its horizon and jump bound, `unsettled` for an
     /// inconclusive result, `unavailable` for a stopped solver.
-    pub fn basis(&self, claim: &ClaimHorizon) -> SettlementBasis {
+    pub fn settlement_basis(&self, claim: &CheckedHybridClaim) -> SettlementBasis {
+        self.basis(&ClaimHorizon::of(claim))
+    }
+
+    fn basis(&self, claim: &ClaimHorizon) -> SettlementBasis {
         match &self.outcome {
             SolverOutcome::Stopped(_) => SettlementBasis::Unavailable,
             outcome
@@ -381,6 +405,17 @@ impl SolverResult {
             _ => SettlementBasis::Unsettled,
         }
     }
+}
+
+/// FR-250: a hybrid item whose negotiated candidate set (FR-075, with
+/// `candidate_count` backends) is empty settles `unsupported`,
+/// `unsupported-requested-capability`. `None` when a candidate exists and the
+/// item is the provider's to settle. Negotiation itself is the caller's
+/// (FR-057); this is the map from its empty set to the item's terminal value.
+pub fn settle_hybrid_candidates(candidate_count: usize) -> Option<TerminalValue> {
+    (candidate_count == 0).then_some(TerminalValue::Unsupported(
+        UnavailabilityCause::HybridProviderAbsent,
+    ))
 }
 
 /// What settling a provider's result produced: the terminal value and, when
@@ -409,7 +444,6 @@ mod tests {
     use crate::model_check::limits::ModelCheckLimit;
     use crate::outcome::OutcomeItem;
     use crate::proof_result::TerminalRecord;
-    use crate::proof_result::UnavailabilityCause;
     use ix_trace_rs::trace;
     use qsl_foundation::RequestIndex;
     use quire_exact::Integer;
@@ -518,20 +552,6 @@ mod tests {
             result.basis(&ClaimHorizon::ModelTime(None)),
             SettlementBasis::Unsettled
         );
-    }
-
-    #[trace("TC-705", "FR-250-AC-1")]
-    #[test]
-    fn absent_hybrid_provider_settles_unsupported_requested_capability() {
-        let record = TerminalRecord::from_value(
-            RequestIndex::new(0),
-            TerminalValue::Unsupported(UnavailabilityCause::HybridProviderAbsent),
-        );
-        let item = serde_json::to_value(OutcomeItem::from_terminal(&record)).expect("serializes");
-        assert_eq!(item["result"], "unsupported");
-        assert_eq!(item["category"], "unsupported");
-        assert_eq!(item["cause"]["kind"], "unsupported-requested-capability");
-        assert_eq!(item["cause"]["code"], "unsupported_projection");
     }
 
     #[trace("TC-705", "FR-250-AC-6")]

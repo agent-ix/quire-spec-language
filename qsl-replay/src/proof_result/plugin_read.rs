@@ -248,6 +248,38 @@ fn refuse_core_only_basis(kind: &str) -> Result<(), PluginResultRefusal> {
     }
 }
 
+/// Read the `basis` of a first-party `uncertified` solver entry: a
+/// `bounded-solver` or `inductive-solver` basis as for a plugin, except that
+/// a `bounded-solver` whose `method` is `flowpipe-unrounded` or
+/// `unclassified` is refused `invalid_result`/`invalid-value` at
+/// `/basis/method`, since no outcome of those kinds is sound (FR-250, QSpec
+/// FR-193 "Solver result on the wire").
+///
+/// # Errors
+///
+/// [`PluginResultRefusal`] as for [`read_plugin_basis`]; `Unsupported` at
+/// `/basis/type` for any other basis.
+#[ix_trace_rs::string_edge]
+pub fn read_first_party_solver_basis(basis: &Value) -> Result<ProofBasis, PluginResultRefusal> {
+    let kind = basis
+        .as_object()
+        .and_then(|members| members.get("type"))
+        .and_then(Value::as_str);
+    if !matches!(kind, Some("bounded-solver" | "inductive-solver")) {
+        return Err(PluginResultRefusal::Unsupported {
+            pointer: child("/basis", "type"),
+            feature: kind.unwrap_or_default().to_owned(),
+        });
+    }
+    match read_plugin_basis(basis)? {
+        ProofBasis::BoundedSolver {
+            method: SolverMethod::FlowpipeUnrounded | SolverMethod::Unclassified,
+            ..
+        } => Err(invalid(child("/basis", "method"))),
+        read => Ok(read),
+    }
+}
+
 /// Read a plugin's `proved` entry's `basis` member into a [`ProofBasis`]
 /// (FR-290, "Basis and cause"). The checks run in the order of the
 /// requirement's steps 1 to 8, and the first refusal is returned.

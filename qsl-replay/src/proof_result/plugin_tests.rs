@@ -132,64 +132,6 @@ fn hybrid_plugin_cause_reads_insufficient_horizon() {
     assert_eq!(item["cause"]["jumps"], 1);
 }
 
-#[trace("TC-705", "FR-250-AC-7", "TC-774", "FR-290-AC-18")]
-#[test]
-fn hybrid_plugin_proof_checks_coverage_before_trusting_it() {
-    let bounded = |seconds: i64| ProofBasis::BoundedSolver {
-        method: SolverMethod::Unclassified,
-        horizon: SolverHorizon::new(quire_exact::Rational::from_integer(Integer::from(seconds)))
-            .expect("nonnegative"),
-        jumps: 1,
-        exhaustive: BTreeSet::from([crate::hybrid::BoundDimension::Time]),
-    };
-    let claim = crate::hybrid::ClaimHorizon::ModelTime(Some(
-        SolverHorizon::new(quire_exact::Rational::from_integer(Integer::from(10_i64)))
-            .expect("nonnegative"),
-    ));
-    let short = TerminalRecord::from_hybrid_plugin_proof(
-        RequestIndex::new(0),
-        plugin(),
-        bounded(1),
-        &claim,
-    )
-    .expect("bounded basis admitted");
-    assert!(matches!(
-        short.value(),
-        TerminalValue::Inconclusive(InconclusiveCause::InsufficientHorizon { .. })
-    ));
-    let covered = TerminalRecord::from_hybrid_plugin_proof(
-        RequestIndex::new(0),
-        plugin(),
-        bounded(10),
-        &claim,
-    )
-    .expect("bounded basis admitted");
-    assert!(matches!(
-        covered.value(),
-        TerminalValue::Proved {
-            certification: Certification::Trusted,
-            ..
-        }
-    ));
-    let unbounded = crate::hybrid::ClaimHorizon::ModelTime(None);
-    let inductive = TerminalRecord::from_hybrid_plugin_proof(
-        RequestIndex::new(0),
-        plugin(),
-        ProofBasis::InductiveSolver {
-            method: SolverMethod::InductiveEnclosure,
-        },
-        &unbounded,
-    )
-    .expect("inductive basis admitted");
-    assert!(matches!(
-        inductive.value(),
-        TerminalValue::Proved {
-            certification: Certification::Trusted,
-            ..
-        }
-    ));
-}
-
 /// FR-290-AC-5.
 #[trace("TC-774", "FR-290-AC-5")]
 #[test]

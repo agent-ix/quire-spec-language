@@ -1071,8 +1071,9 @@ fn calls_of_pure_functions_lower_and_foreign_bodies_refuse() {
 /// FR-250-AC-1, FR-447 "The provider request": each checked hybrid claim
 /// has one `temporal-satisfaction` requirement record carrying the
 /// hybrid-dynamics requirement S3's variable classification gives it,
-/// `bounded` for a claim with a horizon and unbounded for one without, and
-/// a temporal claim over no hybrid model has none.
+/// `bounded` for a claim with a horizon and unbounded for one without; a
+/// hybrid declaration with no claim has no record. A claim over a model
+/// that is not hybrid gets no label (the root test `hybrid_request_items`).
 #[trace("TC-705", "FR-250-AC-1")]
 #[test]
 fn each_hybrid_claim_has_a_hybrid_dynamics_requirement_record() {
@@ -1119,5 +1120,6 @@ fn each_hybrid_claim_has_a_hybrid_dynamics_requirement_record() {
         ]
     );
 
+    // A hybrid declaration alone is no claim, so it has no record.
     assert!(records(&use_case()).is_empty());
 }

@@ -587,18 +587,24 @@ fn every_plugin_basis_is_trusted() {
         qsl_replay::Integer::from(5_i64),
     ))
     .unwrap();
+    // A `bounded-solver` basis needs a hybrid claim's coverage (FR-250).
+    assert!(TerminalRecord::from_plugin_proof(
+        RequestIndex::new(0),
+        BackendId::new("acme-prover"),
+        ProofBasis::BoundedSolver {
+            method: qsl_replay::SolverMethod::DeltaComplete,
+            horizon,
+            jumps: 4,
+            exhaustive: std::collections::BTreeSet::new(),
+        },
+    )
+    .is_err());
     for basis in [
         ProofBasis::Exhaustive,
         ProofBasis::BoundedComplete { depth: 3 },
         ProofBasis::Inductive { depth: 2 },
         ProofBasis::Reduced {
             reductions: Vec::new(),
-        },
-        ProofBasis::BoundedSolver {
-            method: qsl_replay::SolverMethod::DeltaComplete,
-            horizon,
-            jumps: 4,
-            exhaustive: std::collections::BTreeSet::new(),
         },
     ] {
         let record = TerminalRecord::from_plugin_proof(

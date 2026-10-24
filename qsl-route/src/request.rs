@@ -747,17 +747,26 @@ mod tests {
         FiniteBound::depth(maximum).unwrap()
     }
 
-    #[ix_trace_rs::trace("TC-1187", "FR-447-AC-17", "FR-250-AC-1")]
+    /// FR-447-AC-17: the hybrid claim's item carries exactly the member
+    /// `"requirements": ["hybrid-dynamics"]` and an ordinary item none, so
+    /// the label is part of the item's identity; the label is written only
+    /// on a `temporal-satisfaction` item, and writing the same record twice
+    /// gives equal items.
+    #[trace("TC-1187", "FR-447-AC-17")]
     #[test]
     fn request_writer_keeps_hybrid_dynamics_in_the_item_identity() {
         let ordinary = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
         let hybrid = ordinary.clone().with_hybrid_dynamics();
+        let value = Requirements::new(Capability::ValueValidity, ClaimExtent::Bounded)
+            .with_hybrid_dynamics();
         let mut writer = RequestWriter::new();
         let first = writer.item(occurrence(), &ordinary);
         let second = writer.item(occurrence(), &hybrid);
+        let third = writer.item(occurrence(), &value);
         let items = writer.finish();
-        assert!(items[first.get()].requirements().is_empty());
+        assert_eq!(items[first.get()].requirements(), &[] as &[&str]);
         assert_eq!(items[second.get()].requirements(), ["hybrid-dynamics"]);
+        assert_eq!(items[third.get()].requirements(), &[] as &[&str]);
         assert_ne!(items[first.get()], items[second.get()]);
     }
 
