@@ -6,10 +6,10 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, BuiltinType, DeclarationForm, ExactValueKind, FormsCause, IntervalUpper,
-    OperatorInterval, ParsedUnit, QuantityForm, TemporalNodeForm, TemporalOperatorForm,
-    TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedUpper, TypeFormHead, UrgentForm,
-    UrgentTarget,
+    build_unit, BinaryOperator, BuiltinType, DeclarationForm, ExactValueKind, ExprNode, FormsCause,
+    IntervalUpper, OperatorInterval, ParsedUnit, QuantityForm, TemporalNodeForm,
+    TemporalOperatorForm, TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedUpper,
+    TypeFormHead, UrgentForm, UrgentTarget,
 };
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::Integer;
@@ -229,6 +229,105 @@ fn the_rpc_declarations_build_their_time_forms_in_order_with_spans() {
         slice(&text, tick.span),
         "time Rpc tick Call::send period rational(1,2) ms unit ms;"
     );
+}
+
+/// TC-685 S2 evidence for FR-230-AC-4: the guard tree preserves its ordered
+/// `and`/`or`/clock comparisons, and a 10^40 bound remains an exact natural.
+#[trace("TC-685")]
+#[test]
+fn large_clock_bound_and_disjunctive_guard_keep_their_source_forms() {
+    let huge = "10000000000000000000000000000000000000000";
+    let body = format!(
+        "time invariant large when {{ (self.x < 1 or self.x > 2) and self.ready }} {{ self.x <= {huge} ms }}"
+    );
+    let (text, unit) = build(&body);
+    let [form] = unit.forms() else {
+        panic!("one invariant: {:?}", unit.forms());
+    };
+    let invariant = time_invariant(form.form());
+    let expression = &invariant.guard.expression;
+    let ExprNode::Binary {
+        operator: BinaryOperator::And,
+        left,
+        ..
+    } = expression.root_node()
+    else {
+        panic!("and is the guard root: {:?}", expression.root_node());
+    };
+    let ExprNode::Binary {
+        operator: BinaryOperator::Or,
+        left: lower,
+        right: upper,
+    } = expression.at(*left).node()
+    else {
+        panic!("or is left of and: {:?}", expression.at(*left).node());
+    };
+    assert!(matches!(
+        expression.at(*lower).node(),
+        ExprNode::Binary {
+            operator: BinaryOperator::Less,
+            ..
+        }
+    ));
+    assert!(matches!(
+        expression.at(*upper).node(),
+        ExprNode::Binary {
+            operator: BinaryOperator::Greater,
+            ..
+        }
+    ));
+    let [bound] = invariant.bounds.as_slice() else {
+        panic!("one exact bound: {:?}", invariant.bounds);
+    };
+    assert_eq!(bound.bound.magnitude.kind, ExactValueKind::Natural);
+    assert_eq!(bound.bound.magnitude.first, Integer::power_of_ten(40));
+    assert_eq!(slice(&text, bound.bound.span), format!("{huge} ms"));
+}
+
+/// TC-685 S2 evidence for ADR-026's `send` reset and `reply` guard. S2
+/// retains them as clause expression forms without resolving a Clock field.
+#[trace("TC-685")]
+#[test]
+fn reply_guard_and_send_reset_keep_their_clock_expression_forms() {
+    let (text, unit) = build(
+        "pre ReplyGuard using t on Rpc::Call::reply { self.inflight and self.x >= 1 ms }\n\
+         post SendReset using t on Rpc::Call::send { self.x = 0 }",
+    );
+    let [reply, send] = unit.forms() else {
+        panic!("two clauses: {:?}", unit.forms());
+    };
+    let DeclarationForm::StateClause(reply) = reply.form() else {
+        panic!("reply precondition: {:?}", reply.form());
+    };
+    assert!(matches!(
+        reply.body.root_node(),
+        ExprNode::Binary {
+            operator: BinaryOperator::And,
+            ..
+        }
+    ));
+    assert!(reply.body.iter().any(|node| matches!(
+        node.node(),
+        ExprNode::Binary {
+            operator: BinaryOperator::GreaterOrEqual,
+            ..
+        }
+    )));
+    assert!(reply.body.iter().any(|node| matches!(node.node(), ExprNode::Quantity(quantity) if quantity.unit.name == "ms" && slice(&text, quantity.span) == "1 ms")));
+
+    let DeclarationForm::StateClause(send) = send.form() else {
+        panic!("send postcondition: {:?}", send.form());
+    };
+    assert!(matches!(
+        send.body.root_node(),
+        ExprNode::Binary {
+            operator: BinaryOperator::Equal,
+            ..
+        }
+    ));
+    assert!(send.body.iter().any(
+        |node| matches!(node.node(), ExprNode::Integer(value) if *value == Integer::from(0_i64))
+    ));
 }
 
 /// FR-393-AC-2 (TC-1078 step 2): `time invariant`, `time` and `urgent` each

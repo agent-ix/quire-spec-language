@@ -82,7 +82,9 @@ impl TimeUnits {
     /// (`root = scale × name`), or why `name` is not a time unit, in
     /// FR-230's order.
     pub fn scale(&self, name: &str) -> Result<&Rational, TimeUnitCause> {
-        let time = self.time.ok_or(TimeUnitCause::NoTimeDimension)?;
+        let time = self.time.ok_or(TimeUnitCause::NoTimeDimension {
+            name: TIME_DIMENSION,
+        })?;
         let unit = self
             .units
             .get(name)

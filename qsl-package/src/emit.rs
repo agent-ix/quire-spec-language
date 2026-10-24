@@ -202,6 +202,19 @@ pub enum EmitRefusal {
         /// The unit's selected header profile identity, when it selects one.
         profile: Option<&'static str>,
     },
+    /// Interim fail-closed guard: this emission path does not yet map a
+    /// checked time source into `timed_model` nodes, and it cannot omit one
+    /// because the time source is part of the package's meaning.
+    /// [`emit_timed_models`] writes typed timed models; QSL-1032 maps
+    /// `CheckedGraph::time_sources` into them here and removes this guard
+    /// (FR-230-AC-32, TC-685 step 26).
+    #[error(
+        "timed model `{model}` is not yet mapped to checked-package/v2 timed nodes on this path (QSL-1032)"
+    )]
+    TimedModelNotEmitted {
+        /// The first timed model's alias.
+        model: String,
+    },
     /// The typed timed models do not describe exactly the timed nodes in the
     /// already-admitted base package.
     #[error("typed timed models do not match the admitted package's timed-node set")]
@@ -229,7 +242,9 @@ impl EmitRefusal {
             Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
-            Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::TimedModelNodeSetMismatch => Code::RuntimeInvariant,
             Self::TimedModelWriterInvariant(_) => Code::RuntimeInvariant,
         }
@@ -239,7 +254,9 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
-            Self::ProbabilisticModelNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
+                Some("not-yet-implemented")
+            }
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -1424,6 +1441,13 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
+    // Interim guard until QSL-1032 emits the checked time sources as typed
+    // timed models on this path.
+    if let Some(source) = graph.time_sources().first() {
+        return Err(EmitRefusal::TimedModelNotEmitted {
+            model: source.model.clone(),
+        });
+    }
     let abstraction = package
         .abstraction()
         .map(|relation| graph.abstraction_nodes(relation))
