@@ -413,28 +413,24 @@ fn an_incomplete_or_refused_match_is_undetermined_and_never_holds() {
     }
 }
 
-/// A counterexample of an `align skip` clause is not replayed yet: FR-183
-/// checks the marks and the projected prefix of a `Projected` one, and does not
-/// state the replay of an `Undefined` one, whose paths differ in length and
-/// whose position counts visible steps. Until that is built the replay refuses
-/// both as unsupported rather than reading them as lockstep ones.
+/// The replay of an `Undefined` counterexample of an `align skip` clause is
+/// not stated by FR-183: its paths differ in length and its position counts
+/// visible steps, so the replay refuses it as unsupported rather than reading
+/// it as a lockstep one.
 #[trace("TC-603")]
 #[test]
-fn a_counterexample_of_an_align_skip_clause_is_refused_by_replay_until_fr_183() {
-    let projected = World::busy(Vault::BusyLeaky, &IDLE, &aligned(&[]));
+fn an_undefined_counterexample_of_an_align_skip_clause_is_refused_by_replay() {
     let undefined = World::busy(Vault::Busy, &[(1, 0, 1)], &aligned(&[INVERSE]));
-    for world in [&projected, &undefined] {
-        let counterexample = refuted(run(world));
-        assert!(counterexample.marks_match_kind());
-        let Err(ReplayRefusal::ModelTrace(refusal)) = world.replay(&counterexample) else {
-            panic!("expected the replay to refuse");
-        };
-        assert_eq!(*refusal, ModelTraceRefusal::HyperProjected);
-    }
+    let counterexample = refuted(run(&undefined));
     assert!(matches!(
-        refuted(run(&undefined)).kind,
+        counterexample.kind,
         HyperCounterexampleKind::Undefined(_)
     ));
+    assert!(counterexample.marks_match_kind());
+    let Err(ReplayRefusal::ModelTrace(refusal)) = undefined.replay(&counterexample) else {
+        panic!("expected the replay to refuse");
+    };
+    assert_eq!(*refusal, ModelTraceRefusal::HyperProjected);
 }
 
 /// The marks belong to a `Projected` counterexample: one for every step of
