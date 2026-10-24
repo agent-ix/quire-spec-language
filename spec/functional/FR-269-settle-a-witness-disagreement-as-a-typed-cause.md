@@ -18,11 +18,10 @@ relationships:
 
 ## Description
 
-FR-072's `DisagreementCause` SHALL gain one variant, `Witness`, for a
-replay whose verdict agrees with the proved one but whose separating
-witness does not: the record differs from the re-derived one, is present on
-one side only, or fails the separation check (ADR-031 SW-12, SW-13). Like
-`Verdicts` and `NoValue`, it settles `inconclusive` and is never repaired.
+FR-072's shared `DisagreementCause` SHALL carry typed replay
+disagreements. This requirement defines its `Witness` variant; FR-450 adds
+the `HybridTrace` variant and extends this same cause codec. Each
+disagreement settles `inconclusive` and is never repaired.
 
 ## Inputs
 
@@ -47,17 +46,24 @@ one side only, or fails the separation check (ADR-031 SW-12, SW-13). Like
 
 ## Behavior
 
-## Hybrid trace disagreement
+- `DisagreementCause::proved` and `replayed` SHALL return the
+  `Witness` variant's verdicts, matched with no `_` arm.
+- A `Witness` cause SHALL settle `inconclusive`. A `Witness`-arm result
+  with this cause SHALL carry no QSpec FR-351 record of its own, so no
+  consumer reads a disputed record as evidence.
+- The cause SHALL serialize and read back with `given` and `derived` each
+  present in full or absent (QSpec FR-351 has no partial record), and a
+  reader SHALL refuse a `Witness` cause whose `failure` is not one of the
+  values above, and a record whose deciding element is a record or tuple
+  whose slots do not fit its declaration's shape (QSpec FR-351-AC-5).
+- Two results that differ only in their `Witness` cause's `given` or
+  `derived` record SHALL compare unequal.
+
+### Hybrid trace disagreement
 
 FR-450 adds `DisagreementCause::HybridTrace(HybridTraceDisagreement)`
-directly to this shared cause type and codec. The cause records a provider's
-hybrid counterexample when exact replay returns `NotReproduced` or
-`NotExact`; its wire shape is:
-
-```json
-{"cause":"hybrid-trace","disagreement":{"type":"not-reproduced","counterexample":{"kind":"formula","trace":{}}}}
-```
-
+directly to this shared cause type and codec. Its wire shape is
+`{"cause":"hybrid-trace","disagreement":{"type":<arm>,"counterexample":<HybridCounterexample>}}`.
 The `disagreement.type` is exactly `not-reproduced` or `not-exact`.
 `disagreement.counterexample` is the complete QSpec FR-193
 `HybridCounterexample`, including both `kind` and `trace`; the trace uses
@@ -66,13 +72,12 @@ witness cause. The enclosing terminal cause remains `replay-parity`.
 
 The shared cause codec SHALL extend its existing methods directly:
 `DisagreementCause::to_json(hybrid_model: Option<&CheckedHybridModel>)`
-and
-`DisagreementCause::from_json(text, package, hybrid_model:
-Option<&CheckedHybridModel>)`. The caller supplies the checked model bound
-to the routed hybrid claim. A `HybridTrace` cause requires that model;
-absence is refused. For every other cause, the existing package context
-continues to resolve package declarations and the optional model is unused.
-No adapter or parallel hybrid-only cause codec is introduced.
+and `DisagreementCause::from_json(text, package, hybrid_model: Option<&CheckedHybridModel>)`.
+The caller supplies the checked model bound to the routed hybrid claim. A
+`HybridTrace` cause requires that model; absence is refused. For every
+other cause, the existing package context continues to resolve package
+declarations and the optional model is unused. No adapter or parallel
+hybrid-only cause codec is introduced.
 
 When writing a hybrid trace, the codec maps each typed mode index to that
 mode's name in the supplied checked model and each enclosure position to the
@@ -81,20 +86,6 @@ zero-based position in the previous mode's transition list. Reading resolves
 those names in the same checked model and reconstructs the typed indices.
 Unknown or out-of-range mode, variable, or transition references are refused.
 A round trip with the same checked model returns an equal typed cause.
-
-
-- `DisagreementCause::proved` and `replayed` SHALL return the `Witness`
-  variant's verdicts, matched with no `_` arm.
-- A `Witness` cause SHALL settle `inconclusive`. A `Witness`-arm result with
-  this cause SHALL carry no QSpec FR-351 record of its own, so no consumer reads a
-  disputed record as evidence.
-- The cause SHALL serialize and read back with `given` and `derived` each
-  present in full or absent (QSpec FR-351 has no partial record), and a
-  reader SHALL refuse a `Witness` cause whose `failure` is not one of the
-  values above, and a record whose deciding element is a record or tuple
-  whose slots do not fit its declaration's shape (QSpec FR-351-AC-5).
-- Two results that differ only in their `Witness` cause's `given` or
-  `derived` record SHALL compare unequal.
 
 ## Acceptance Criteria
 
