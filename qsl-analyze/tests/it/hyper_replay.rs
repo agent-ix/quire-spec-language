@@ -4,10 +4,9 @@
 //!
 //! The counterexamples are the engine's own (FR-176, FR-177) or built from
 //! their traces by changing one thing, and each refusal is the one thing
-//! changed. The facade entry `replay_model_trace_tuple`, the `Projected` and
-//! `StepTuple` arms and the recompile that resolves the clause are not built
-//! (S4 does not yet emit a hyper clause), so FR-183-AC-2, AC-3 and AC-5 are
-//! not claimed.
+//! changed. The facade entry `replay_model_trace_tuple`, the `StepTuple` arm
+//! and the recompile that resolves the clause are not built (S4 does not yet
+//! emit a hyper clause), so FR-183-AC-2 and AC-5 are not claimed.
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
@@ -17,10 +16,11 @@ use qsl_replay::{
     settle_hyper_check, DisagreementCause, HyperCounterexample, HyperCounterexampleKind,
     HyperLocus, HyperOutcome, HyperStep, InconclusiveCause, ModelCheckLimit, ModelCheckLimits,
     ModelStep, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, ReachedLimit,
-    ReplayRefusal, RunStats, TerminalValue,
+    ReplayRefusal, RunStats, StepMark, TerminalValue,
 };
 use quire_exact::{Cancel, Incomplete, Meter, Undefined};
 
+use crate::hyper_projected::{aligned, IDLE, MID_OPERATION};
 use crate::hyper_witness::{members, ExhaustedExistential, GUARDED, GUARDED_CLAUSE};
 use crate::hyper_world::{high, low, non_interference, opaque, Vault, World, EQUAL_INPUTS, STARTS};
 
@@ -94,7 +94,7 @@ fn the_leaky_lockstep_counterexample_replays_to_its_evaluated_witness() {
     assert_eq!(world.replay(&counterexample).expect("settles"), replayed);
 }
 
-/// FR-183 criterion 3, the refusals that settle no result (not claimed whole): a counterexample with one
+/// FR-183 criterion 3, the refusals that settle no result: a counterexample with one
 /// trace one step shorter; with `b`'s inputs changed to 1, which makes `μ_U`
 /// false; with one post-state digest altered; with a loop that does not
 /// close; and with a stutter marker on a state that is not terminal.
@@ -150,7 +150,7 @@ fn a_counterexample_that_breaks_a_replay_rule_is_refused() {
     );
 }
 
-/// FR-183 criterion 3, last sentence (not claimed whole): a counterexample under `fair weak
+/// FR-183 criterion 3, last sentence: a counterexample under `fair weak
 /// V::Vault::reset` on `a` whose loop never takes or disables `reset` is
 /// refused as unfair. The loop is the engine's counterexample of the same
 /// clause without the fairness set.
@@ -976,4 +976,146 @@ fn a_witness_replay_through_a_state_with_a_refused_contract_reproduces_nothing()
     };
     counterexample.trace_position = 2;
     no_value_settlement(world.replay(&counterexample));
+}
+
+/// FR-183 "Projected" (HP-6): the engine's `Projected` counterexamples of the
+/// leaky vault replay to `reproduced-with-evaluated-witness` at their
+/// projected position: the one whose secret-1 run takes a skipped `mix` before
+/// its visible `step`, so the traces' total lengths are 1 and 2, and the one
+/// started idle, whose lengths are 1 and 1. Replaying one twice gives equal
+/// results.
+#[trace("TC-608")]
+#[test]
+fn a_projected_counterexample_replays_to_its_evaluated_witness() {
+    for starts in [&MID_OPERATION, &IDLE] {
+        let world = World::busy(Vault::BusyLeaky, starts, &aligned(&[]));
+        let counterexample = refuted(&world);
+        assert_eq!(counterexample.kind, HyperCounterexampleKind::Projected);
+        let lengths: Vec<_> = counterexample
+            .traces
+            .iter()
+            .map(|trace| trace.steps.len())
+            .collect();
+        assert_eq!(
+            lengths.iter().max(),
+            Some(if starts == &MID_OPERATION { &2 } else { &1 })
+        );
+        let replayed = world.replay(&counterexample).expect("the replay settles");
+        assert_eq!(
+            replayed,
+            ModelTraceSettlement::Reproduced {
+                value: ModelTraceValue::Truth(false),
+                trace_position: Some(1),
+            }
+        );
+        assert_eq!(world.replay(&counterexample).expect("settles"), replayed);
+    }
+}
+
+/// FR-183 "Projected": a `Projected` counterexample whose projected prefix is
+/// not a bad prefix of the body settles `inconclusive`: both traces take the
+/// same run, so the outputs never differ.
+#[trace("TC-608")]
+#[test]
+fn a_projected_counterexample_on_which_the_body_holds_is_inconclusive() {
+    let world = World::busy(Vault::BusyLeaky, &IDLE, &aligned(&[]));
+    let mut counterexample = refuted(&world);
+    counterexample.traces[1] = counterexample.traces[0].clone();
+    counterexample.traces[1].variable = "b".to_owned();
+    assert!(matches!(
+        world.replay(&counterexample),
+        Ok(ModelTraceSettlement::Inconclusive(
+            DisagreementCause::Verdicts { .. }
+        ))
+    ));
+}
+
+/// FR-183 "Projected": the refusals that settle no result. A `step` marked
+/// skipped, a `mix` marked visible, a trace with one visible step fewer, a
+/// position other than the visible step count, a stutter step and a joint
+/// visible step at which `μ_U` is false are each refused.
+#[trace("TC-608")]
+#[test]
+fn a_projected_counterexample_that_breaks_a_replay_rule_is_refused() {
+    let world = World::busy(Vault::BusyLeaky, &MID_OPERATION, &aligned(&[]));
+    let counterexample = refuted(&world);
+    let shape = |changed: &HyperCounterexample| {
+        assert!(changed.marks_match_kind());
+        assert!(matches!(
+            refusal(world.replay(changed)),
+            ModelTraceRefusal::HyperShape { .. }
+        ));
+    };
+    // The trace that takes a skipped `mix` first, and the one that does not.
+    let (long, short) = if counterexample.traces[0].steps.len() == 2 {
+        (0, 1)
+    } else {
+        (1, 0)
+    };
+    assert_eq!(counterexample.traces[long].marks[0], StepMark::Skipped);
+
+    let mut skipped_step = counterexample.clone();
+    skipped_step.traces[short].marks[0] = StepMark::Skipped;
+    shape(&skipped_step);
+
+    let mut visible_mix = counterexample.clone();
+    visible_mix.traces[long].marks[0] = StepMark::Visible;
+    shape(&visible_mix);
+
+    let mut fewer = counterexample.clone();
+    fewer.traces[short].steps.clear();
+    fewer.traces[short].marks.clear();
+    shape(&fewer);
+
+    let mut elsewhere = counterexample.clone();
+    elsewhere.trace_position = 2;
+    shape(&elsewhere);
+
+    let mut stutter = counterexample;
+    stutter.traces[short].steps[0] = HyperStep::TerminalStutter;
+    shape(&stutter);
+
+    // `b` takes `step(1)` where `a` takes `step(0)`: both re-execute, and
+    // `μ_U` is false at the one joint visible step.
+    let idle = World::busy(Vault::BusyLeaky, &IDLE, &aligned(&[]));
+    let mut unmatched = refuted(&idle);
+    let system = ModelSystem::new(idle.subject().simulation).expect("the subject admits");
+    let initial = system.initial()[unmatched.traces[1].initial as usize].clone();
+    let (step, _) = take(&idle, &initial, 1);
+    unmatched.traces[1].steps = vec![HyperStep::Model(step)];
+    assert_eq!(
+        refusal(idle.replay(&unmatched)),
+        ModelTraceRefusal::HyperUnmatched { joint: 1 }
+    );
+}
+
+/// FR-183 "Projected": a `Projected` counterexample handed in with a
+/// clause that has no `align skip` list is refused as the shape it breaks.
+#[trace("TC-608")]
+#[test]
+fn a_projected_counterexample_of_a_lockstep_clause_is_refused() {
+    let projected = World::busy(Vault::BusyLeaky, &IDLE, &aligned(&[]));
+    let counterexample = refuted(&projected);
+    let lockstep = World::busy(
+        Vault::BusyLeaky,
+        &IDLE,
+        &non_interference(crate::hyper_world::EQUAL_INPUTS),
+    );
+    assert!(matches!(
+        refusal(lockstep.replay(&counterexample)),
+        ModelTraceRefusal::HyperShape { .. }
+    ));
+}
+
+/// FR-183-AC-3: every refusal it lists settles no result: §8.1's counterexample
+/// with one trace one step shorter, with `b`'s inputs changed so `μ_U` is false,
+/// with one post-state digest altered, a `Projected` counterexample with a
+/// `step` marked skipped, and the `Lockstep` counterexample whose loop is unfair
+/// under its own fairness set.
+#[trace("TC-608", "FR-183-AC-3")]
+#[test]
+fn every_listed_refusal_settles_no_result() {
+    a_counterexample_that_breaks_a_replay_rule_is_refused();
+    a_projected_counterexample_that_breaks_a_replay_rule_is_refused();
+    a_loop_that_is_unfair_under_its_own_fairness_set_is_refused();
 }

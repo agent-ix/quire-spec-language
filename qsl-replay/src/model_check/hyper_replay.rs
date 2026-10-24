@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-183 (ADR-023 HX-2, HX-5): [`replay_hyper_trace_tuple`], the replay of a
-//! hyper counterexample's `Lockstep`, `WitnessExhausted` and `Undefined` arms
+//! FR-183 (ADR-023 HX-2, HX-5, PA-7): [`replay_hyper_trace_tuple`], the replay
+//! of a hyper counterexample's `Lockstep`, `WitnessExhausted`, `Projected` and
+//! `Undefined` arms
 //! through each trace variable's `ModelSystem`.
 //!
 //! It re-executes every trace from its initial snapshot, a step's post-state
@@ -32,13 +33,23 @@
 //!   reads them, and settles `Reproduced` exactly when the first expression
 //!   with no value is the payload's, at its position, with its cause.
 //!
+//! - `Projected` (HP-6): each trace's skipped marks name operations of the
+//!   clause's `align skip` list and its visible marks name none, the traces
+//!   take equal numbers of visible steps, `trace_position` is that number,
+//!   and `μ_U` holds at every joint visible step. The replay then evaluates
+//!   the body three-valued over the joint projected prefix, whose position
+//!   `j` reads each trace's state after its `j`-th visible step (FR-178):
+//!   `false` settles `Reproduced` at `trace_position`, anything else
+//!   `Inconclusive`. A trace of a projected counterexample has no loop and no
+//!   fairness to check.
+//!
 //! The facade entry `replay_model_trace_tuple` recompiles the package and
 //! resolves the clause, which the S4 emission of a hyper clause will supply;
 //! this function takes the recompiled clause and the admitted systems it
 //! would hand over. A counterexample that breaks QSpec FR-400's reader rules
-//! is refused here as the shape it breaks. The other arms (`projected`,
-//! `step-tuple`) join with their replays: `projected` is refused as not yet
-//! implemented.
+//! is refused here as the shape it breaks. The `step-tuple` arm joins with
+//! its replay. An `Undefined` counterexample of an `align skip` clause holds
+//! skipped steps, unmarked, and is refused as not yet implemented.
 
 use qsl_eval::automaton::translate_negation;
 use qsl_eval::hyper::{
@@ -48,9 +59,11 @@ use qsl_eval::hyper::{
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{
-    evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
-    TemporalPosition, TupleLetters, UndefinedCause,
+    evaluate_projected_prefix, evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace,
+    LetterStop, TemporalOutcome, TemporalPosition, TupleLetters, UndefinedCause,
 };
+use std::collections::BTreeSet;
+
 use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits};
@@ -60,7 +73,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::{Lasso, ModelStep};
 use crate::model_check::hyper_counterexample::{
-    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace, HyperUndefined,
+    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace,
+    HyperUndefined, StepMark,
 };
 use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::model_check::replay::{
@@ -101,8 +115,12 @@ pub struct HyperReplay<'a, 's> {
 /// is not a step (`HyperShape`); an `initial` outside its subject, a step
 /// that is not enabled, a post-state digest no successor has, a loop that does
 /// not close and a stutter step at a state that is not terminal, as FR-128
-/// does; a counterexample of an `align skip` clause, `HyperProjected`; a joint step at which `μ_U` is false (`HyperUnmatched`); and a trace
-/// that is unfair on its own loop (`HyperUnfair`). An expansion that stops, a
+/// does; an `Undefined` counterexample of an `align skip` clause,
+/// `HyperProjected`; a `Projected` counterexample with a mark that does not
+/// agree with the `align skip` list, unequal visible counts or a step that is a
+/// stutter (`HyperShape`); a joint step at which `μ_U` is false
+/// (`HyperUnmatched`); and a trace that is unfair on its own loop
+/// (`HyperUnfair`). An expansion that stops, a
 /// meter that runs out or a cancellation completes no value; a witness set
 /// that would pass `max_witness_set` stops the replay at that limit.
 ///
@@ -118,13 +136,8 @@ pub fn replay_hyper_trace_tuple(
             "marks its steps other than as its kind does: every step of a projected one and none of any other",
         ));
     }
-    match counterexample.kind {
-        HyperCounterexampleKind::Projected => {
-            return Err(refused(ModelTraceRefusal::HyperProjected));
-        }
-        HyperCounterexampleKind::Lockstep { .. }
-        | HyperCounterexampleKind::WitnessExhausted { .. }
-        | HyperCounterexampleKind::Undefined(_) => {}
+    if counterexample.kind == HyperCounterexampleKind::Projected {
+        return projected(replay, counterexample);
     }
     // A clause with `align skip` is read over projected prefixes, so even an
     // `Undefined` counterexample of one has paths of unequal length and
@@ -170,21 +183,11 @@ fn shape(
     replay: &HyperReplay<'_, '_>,
     counterexample: &HyperCounterexample,
 ) -> Result<(), ReplayRefusal> {
-    let quantifiers = replay.clause.quantifiers();
     let traced = match counterexample.kind {
         HyperCounterexampleKind::WitnessExhausted { .. } => replay.clause.universals(),
-        _ => quantifiers.len(),
+        _ => replay.clause.quantifiers().len(),
     };
-    if counterexample.traces.len() != traced || replay.systems.len() != quantifiers.len() {
-        return Err(shape_error("does not hold one trace per trace variable"));
-    }
-    for (trace, quantifier) in counterexample.traces.iter().zip(quantifiers) {
-        if trace.variable != quantifier.variable || trace.alias != quantifier.alias.as_str() {
-            return Err(shape_error(
-                "names a trace variable or alias the clause does not",
-            ));
-        }
-    }
+    about_clause(replay, counterexample, traced)?;
     let steps = counterexample.steps();
     if counterexample
         .traces
@@ -192,14 +195,6 @@ fn shape(
         .any(|trace| trace.steps.len() != steps)
     {
         return Err(shape_error("holds traces of unequal step counts"));
-    }
-    let bound: Vec<(String, String)> = replay
-        .instance
-        .iter()
-        .map(|binding| (binding.parameter.clone(), binding.instance.key.clone()))
-        .collect();
-    if counterexample.instance != bound {
-        return Err(shape_error("names an instance other than the request's"));
     }
     match &counterexample.kind {
         HyperCounterexampleKind::Lockstep { loop_entry } => {
@@ -239,6 +234,36 @@ fn shape(
                 return Err(shape_error("names a state for other than each variable"));
             }
         }
+    }
+    Ok(())
+}
+
+/// The checks of a counterexample's shape that every kind shares: `traced`
+/// traces, each with its quantifier's variable and alias in quantifier order,
+/// and the request's instance.
+fn about_clause(
+    replay: &HyperReplay<'_, '_>,
+    counterexample: &HyperCounterexample,
+    traced: usize,
+) -> Result<(), ReplayRefusal> {
+    let quantifiers = replay.clause.quantifiers();
+    if counterexample.traces.len() != traced || replay.systems.len() != quantifiers.len() {
+        return Err(shape_error("does not hold one trace per trace variable"));
+    }
+    for (trace, quantifier) in counterexample.traces.iter().zip(quantifiers) {
+        if trace.variable != quantifier.variable || trace.alias != quantifier.alias.as_str() {
+            return Err(shape_error(
+                "names a trace variable or alias the clause does not",
+            ));
+        }
+    }
+    let bound: Vec<(String, String)> = replay
+        .instance
+        .iter()
+        .map(|binding| (binding.parameter.clone(), binding.instance.key.clone()))
+        .collect();
+    if counterexample.instance != bound {
+        return Err(shape_error("names an instance other than the request's"));
     }
     Ok(())
 }
@@ -354,11 +379,20 @@ fn matched(
     let labels: Vec<StepLabel<'_>> = (0..replay.clause.universals())
         .map(|component| label(counterexample, component, joint))
         .collect();
+    Ok(universal_reading(replay, &labels))
+}
+
+/// `μ_U` over the universal components' step `labels`; `None` when its
+/// evaluation is refused or incomplete.
+fn universal_reading(
+    replay: &HyperReplay<'_, '_>,
+    labels: &[StepLabel<'_>],
+) -> Option<MatchReading> {
     let mut meter = Meter::new(replay.meter);
-    Ok(replay
+    replay
         .matcher
-        .universal(replay.instance, &labels, &mut meter)
-        .ok())
+        .universal(replay.instance, labels, &mut meter)
+        .ok()
 }
 
 /// `μ_E` over joint step `joint`, which reads every component's step.
@@ -899,4 +933,169 @@ fn evaluated(
         transition: found.transition.clone(),
         cause: found.cause.clone(),
     })
+}
+
+/// HP-6 (FR-183 "Projected"): the marks agree with the `align skip` list, the
+/// visible counts are equal and `μ_U` holds at every joint visible step; the
+/// body is then read three-valued over the joint projected prefix, and a bad
+/// prefix reproduces.
+fn projected(
+    replay: &HyperReplay<'_, '_>,
+    counterexample: &HyperCounterexample,
+) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    if replay.clause.form() != Some(&HyperForm::ProjectionAligned) {
+        return Err(shape_error(
+            "is of a clause that is not a projection-aligned hyperproperty",
+        ));
+    }
+    about_clause(replay, counterexample, replay.clause.quantifiers().len())?;
+    let visible = visible_steps(replay, counterexample)?;
+    let projected = visible.first().map_or(0, Vec::len);
+    if visible.iter().any(|steps| steps.len() != projected) {
+        return Err(shape_error("holds traces of unequal visible step counts"));
+    }
+    if counterexample.trace_position != u64::try_from(projected).unwrap_or(u64::MAX) {
+        return Err(shape_error(
+            "names a joint position other than its visible step count",
+        ));
+    }
+    let Some(executed) = execute(replay, counterexample)? else {
+        return Ok(no_value());
+    };
+    for joint in 1..=projected {
+        let labels: Vec<StepLabel<'_>> = (0..replay.clause.universals())
+            .map(|component| {
+                match &counterexample.traces[component].steps[visible[component][joint - 1]] {
+                    HyperStep::Model(step) => StepLabel::Operation(&step.transition),
+                    HyperStep::TerminalStutter => StepLabel::Stutter,
+                }
+            })
+            .collect();
+        let reading = if replay.clause.mu_universal().is_empty() {
+            Some(MatchReading::Holds)
+        } else {
+            universal_reading(replay, &labels)
+        };
+        match reading {
+            Some(MatchReading::Holds) => {}
+            Some(_) => {
+                return Err(refused(ModelTraceRefusal::HyperUnmatched {
+                    joint: u64::try_from(joint).unwrap_or(u64::MAX),
+                }))
+            }
+            None => return Ok(no_value()),
+        }
+    }
+    // Projected position 0 is a trace's initial state; position `j` is the
+    // state its `j`-th visible step enters.
+    let entered: Vec<Vec<usize>> = visible
+        .iter()
+        .map(|steps| {
+            std::iter::once(0)
+                .chain(steps.iter().map(|step| step + 1))
+                .collect()
+        })
+        .collect();
+    let mut letters = ProjectedLetters {
+        letters: replay.letters,
+        instance: replay.instance,
+        executed: &executed,
+        entered: &entered,
+    };
+    let mut meter = Meter::new(replay.meter).with_cancel(replay.cancel.clone());
+    let outcome = evaluate_projected_prefix(
+        replay.clause,
+        u64::try_from(projected + 1).unwrap_or(u64::MAX),
+        &mut letters,
+        &mut meter,
+    )
+    .map_err(|_| fault("the-evaluator-reads-the-projected-prefix"))?;
+    Ok(match outcome {
+        TemporalOutcome::Violated { .. } => ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: Some(counterexample.trace_position),
+        },
+        TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => no_value(),
+        other => ModelTraceSettlement::Inconclusive(disagreement(other.category())),
+    })
+}
+
+/// The indices of each trace's visible steps, after checking that each
+/// skipped mark names an operation of the clause's `align skip` list in its
+/// trace's subject and each visible mark one that is not. A projected path
+/// holds no stutter step (FR-178).
+fn visible_steps(
+    replay: &HyperReplay<'_, '_>,
+    counterexample: &HyperCounterexample,
+) -> Result<Vec<Vec<usize>>, ReplayRefusal> {
+    let mut visible = Vec::with_capacity(counterexample.traces.len());
+    for (trace, system) in counterexample.traces.iter().zip(&replay.systems) {
+        let listed: BTreeSet<&str> = replay
+            .clause
+            .align_skip()
+            .iter()
+            .filter_map(|key| system.operation_text_of(key))
+            .collect();
+        let mut steps = Vec::new();
+        for (index, (step, mark)) in trace.steps.iter().zip(&trace.marks).enumerate() {
+            let HyperStep::Model(step) = step else {
+                return Err(shape_error(
+                    "holds a terminal stutter step in a projected path",
+                ));
+            };
+            let skipped = listed.contains(step.transition.operation());
+            match (mark, skipped) {
+                (StepMark::Skipped, true) => {}
+                (StepMark::Visible, false) => steps.push(index),
+                (StepMark::Skipped, false) => {
+                    return Err(shape_error(
+                        "marks a step skipped whose operation is not in the `align skip` list",
+                    ))
+                }
+                (StepMark::Visible, true) => {
+                    return Err(shape_error(
+                        "marks a step visible whose operation is in the `align skip` list",
+                    ))
+                }
+            }
+        }
+        visible.push(steps);
+    }
+    Ok(visible)
+}
+
+/// The body's atoms on the joint projected prefix: component `c` at projected
+/// position `p` reads the state its `p`-th visible step entered, which is
+/// `entered[c][p]` of its re-executed positions (FR-178 "Projection").
+struct ProjectedLetters<'a> {
+    letters: &'a dyn HyperLetters,
+    instance: &'a [ParameterBinding],
+    executed: &'a [Vec<Position>],
+    entered: &'a [Vec<usize>],
+}
+
+impl TupleLetters for ProjectedLetters<'_> {
+    fn atom(
+        &mut self,
+        atom: FormulaNodeId,
+        _joint: TemporalPosition,
+        components: &[ComponentPosition],
+        meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        let mut states: Vec<&ModelSimState> = Vec::with_capacity(components.len());
+        for (component, read) in components.iter().enumerate() {
+            let projected = usize::try_from(read.position.index())
+                .map_err(|_| LetterStop::Fault(fault_of("a-position-fits-usize")))?;
+            let position = self
+                .entered
+                .get(component)
+                .and_then(|entered| entered.get(projected))
+                .and_then(|index| self.executed.get(component)?.get(*index))
+                .ok_or_else(|| LetterStop::Fault(fault_of("a-projected-position-is-a-state")))?;
+            states.push(&position.state);
+        }
+        self.letters
+            .atom(atom, self.instance, &states, meter)
+            .map_err(LetterStop::Incomplete)
+    }
 }

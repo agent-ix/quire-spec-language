@@ -207,9 +207,9 @@ pub enum ModelTraceRefusal {
         /// The loop's entry position.
         entry: usize,
     },
-    /// A hyper counterexample of an `align skip` clause (HP-6), `Projected`
-    /// or `Undefined`, which FR-183's HP-6 replay (ADR-023 PA-7) checks and
-    /// replay does not build yet.
+    /// An `Undefined` hyper counterexample of an `align skip` clause (HP-6),
+    /// whose unmarked paths hold skipped steps and whose replay FR-183 does
+    /// not state.
     #[error("unsupported_construct/not-yet-implemented: replay of a counterexample of an `align skip` clause")]
     HyperProjected,
     /// A hyper counterexample whose traces do not match the clause: in
