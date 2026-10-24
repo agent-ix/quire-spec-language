@@ -977,7 +977,9 @@ fn l09_only_a_nominal_qualified_declaration_names_an_export() {
         .position(|node| node["node_id"]["digest"] == json!(hex("K::limit")))
         .unwrap();
     let mut unknown_tag = nodes.clone();
-    unknown_tag[index]["node_tag"] = json!("constant");
+    // This layer requires the projected tag to be a string. The closed V2
+    // tag set is validated by IR's checked-package reader before projection.
+    unknown_tag[index]["node_tag"] = Value::Bool(true);
     let (root, library) = supply(jcs(&preimage_value(unknown_tag)), "Status");
     assert_library_refusal(
         resolve_libraries(&root, &[library]),
