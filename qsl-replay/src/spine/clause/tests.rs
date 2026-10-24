@@ -5192,6 +5192,7 @@ mod call_site_owners;
 mod clause_paths;
 mod clause_set;
 mod frame;
+mod frame_occurrence_region;
 mod frame_replay;
 mod invocation_parameters;
 mod layers;
