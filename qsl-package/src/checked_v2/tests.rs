@@ -20,6 +20,8 @@ use sha2::{Digest, Sha256};
 use super::{read_checked_package_v2, read_v2, Read, V2ReadLimits, V2ReadRefusal};
 use std::collections::BTreeMap;
 
+mod timed_model_wire_port;
+
 use qsl_foundation::diagnostic::{Code, LimitExceeded, LimitKind, Locus};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -1966,6 +1968,7 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
 
     let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
         .expect("QSL writes the checked timed model into a complete package");
+    timed_model_wire_port::observe("standard", &timed_models, emission.package().bytes());
     let emitted_package: Value =
         serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
     assert_eq!(
@@ -2095,6 +2098,7 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
 
     let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
         .expect("a no-clock model writes without an integer literal type");
+    timed_model_wire_port::observe("dense", &timed_models, emission.package().bytes());
     let emitted: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
     let (_, round_trip) = read_fixture_wire(&emitted);
     let Read::Verified {
@@ -2232,6 +2236,11 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     for (case, mut expected) in cases {
         let emission = crate::emit::emit_timed_models(&admitted, &[expected.clone()])
             .unwrap_or_else(|error| panic!("{case} mutation emits: {error}"));
+        timed_model_wire_port::observe(
+            case,
+            std::slice::from_ref(&expected),
+            emission.package().bytes(),
+        );
         let wire: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
         assert_ne!(
             wire["package_id"]["digest"],
