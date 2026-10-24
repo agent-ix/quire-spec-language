@@ -44,8 +44,12 @@ EN-1 steps (not S3 results):
     branch-local register and touches no shared location on instantiation, and on an `acquire` attempt that reads a branch-local register
     and writes two shared fields, under `tso` (FR-220-AC-14).
 14. Run the pre-check on FR-220-AC-15's `event` reader beside the storing
-    branch under `tso` and under `sc`, on the `z.v` reader of the variant whose universe also holds an unaccessed `z`, and on the
-    `finish` reader.
+    branch under `tso` and under `sc`, on the `z.v` reader of the variant whose
+    universe also holds an unaccessed `z`, and on the `finish` reader. Include
+    the same item with the storing attempt given `acquire` and verify that the
+    attempt's ordering-mismatch and reader's multi-location entries are
+    returned together, in typed protocol transition identity order, with the
+    reader's `transition` set to `None`.
 
 Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 
@@ -64,5 +68,5 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 - Step 10: `Sx` and `Sy` are stores, `Ly` and `Lx` are loads, and (`c1`, `r`), (`c2`, `r`) are branch-local.
 - Step 11: two stores to one shared location.
 - Step 12: the register is branch-local.
-- Step 13: under `tso` and `ra`, V-8 `WeakAccessShape` with the `ordering-mismatch` shape FR-220-AC-14 writes for each, no state explored; under `sc`, each admitted; the local access settles `ordering-mismatch` with `access` `local`; the two-field attempt settles `multi-location` and no ordering mismatch.
-- Step 14: V-8 `WeakAccessShape` with `MultiLocation` naming the `event` and `(x, v)` under `tso`; admitted under `sc`, for the unshared reader and for the `finish` reader.
+- Step 13: under `tso` and `ra`, V-8 `WeakAccessShape.failures` contains the `ordering-mismatch` entry FR-220-AC-14 specifies for each case, with no state explored; under `sc`, each is admitted; the local access has `access` `local`; the two-field attempt has only `multi-location` for its own shape, while the pre-check continues collecting other failures.
+- Step 14: under `tso`, the base example has a `MultiLocation` entry for the `event` reader and not for the ordinary store. With the store's ordering changed to `acquire`, one V-8 `WeakAccessShape.failures` list contains the reader's `MultiLocation` and the store's `OrderingMismatch`; both share ascending JCS-byte order of typed protocol transition identities, and the reader entry's `transition` is `None`. Under `sc`, the item is admitted for the shared reader, the unshared reader and the `finish` reader.

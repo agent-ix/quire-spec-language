@@ -59,13 +59,19 @@ weak model corresponds to real accesses.
   Store, Rmw, Local}` over its shared footprint (ADR-025 MA-2).
 - A checked `fence` control with its ordering.
 - The S3 refusals `ill_typed`/`operator-ineligible` for an attempt's ordering and
-  `unsupported_construct`/`declaration-form` for an access shape, and the pre-check's V-8 `WeakAccessShape{site, transition, shape}`,
-  with `shape` one of three shapes: QSpec FR-439's `MultiLocation{locations}`
-  (`multi-location`) for an attempt of FR-220's shape and `JoinPolicy`
-  (`join-policy`) for a weak `parallel` that joins `any` (FR-219), and
-  `OrderingMismatch{access, ordering}` (`ordering-mismatch`) for an
-  instantiated attempt whose access class does not take its ordering (EN-1
-  ordering rule).
+  `unsupported_construct`/`declaration-form` for an access shape, and the pre-check's V-8 `WeakAccessShape{failures}`. This keeps the existing
+  `weak-access-shape` cause discriminator and replaces its singular
+  `site`, `transition` and `shape` members with a `failures` array. Each failure
+  is `{site, transition, shape}`;
+  `shape` is QSpec FR-439's `MultiLocation{locations}` (`multi-location`),
+  `JoinPolicy` (`join-policy`) or `OrderingMismatch{access, ordering}`
+  (`ordering-mismatch`). The list contains every failure from instantiated
+  attempts and failing protocol nodes in combined ascending JCS-byte order of
+  typed protocol transition identity (ADR-027 TS-2); an attempt carries its
+  transition identity and a node-based failure carries `transition: None`.
+  A node-based entry is ordered by the applicable node transition identity; a
+  node reader specifically uses its event transition identity. Its first
+  entry supplies the headline reason, with no category precedence.
 
 ## Behavior
 
@@ -140,8 +146,9 @@ possible takes it.
 `release`, `seq_cst` or none; an RMW one of the five and always has one; a
 local access takes none).
 
-- The EN-1 pre-check SHALL, under a resolved weak model, settle V-8
-  `WeakAccessShape{site, transition, shape: OrderingMismatch{access, ordering}}`
+- The EN-1 pre-check SHALL, under a resolved weak model, add to the item's
+  `WeakAccessShape.failures` list an entry
+  `{site, transition, shape: OrderingMismatch{access, ordering}}`
   for an instantiated load that carries `release` or `acq_rel`, an
   instantiated store that carries `acquire` or `acq_rel`, an instantiated
   RMW that carries no ordering, and an instantiated local access (class
@@ -153,11 +160,12 @@ local access takes none).
   `{"type":"ordering-mismatch","access":<"load"|"store"|"rmw"|"local">,"ordering":<ordering>}`,
   `ordering` being the ordering's spelling (`relaxed`, `acquire`, `release`,
   `acq_rel`, `seq_cst`) or `null` when the attempt carries none.
-- The pre-check SHALL test an instantiated attempt for the `MultiLocation`
-  shape (Access shape) first. An attempt with a `MultiLocation` shape has no
-  load, store, RMW or local class (ADR-025 MA-2 classifies an attempt over
-  at most one shared location), so it SHALL settle `MultiLocation` and SHALL
-  NOT be tested for an ordering mismatch.
+- The pre-check SHALL collect every failure entry selected by the rules below;
+  it SHALL NOT stop at the first failure or prioritize a failure category.
+  Within one attempt, the ordering rule and Access shape rule determine which
+  shape applies: an attempt with `MultiLocation` has no access class and is not
+  tested for `OrderingMismatch`. Entries from distinct attempts and node readers
+  are ordered together by typed protocol transition identity as stated above.
 - Under `sc`, an attempt whose instantiated class does not take its ordering
   SHALL be admitted, because orderings change no behaviour under `sc`.
 
@@ -172,13 +180,15 @@ local access takes none).
   instantiation.
 - When the resolved model is weak and the pre-check finds on instantiation an
   attempt whose shared footprint holds two or more locations, an any-object
-  location or a population membership, the pre-check SHALL return the item's V-8
-  outcome, `WeakAccessShape{site, transition, shape: MultiLocation{locations}}`.
+  location or a population membership, the pre-check SHALL add its
+  `MultiLocation{locations}` entry to the item's V-8
+  `WeakAccessShape.failures` list.
 - When the resolved model is weak and a reader reads a location that is
-  shared, the pre-check SHALL return the item's V-8 outcome,
-  `WeakAccessShape{site, transition, shape: MultiLocation{locations}}`, naming
-  the reader and the shared locations it reads. Under `sc` the reader SHALL be
-  admitted.
+  shared, the pre-check SHALL add a `MultiLocation{locations}` entry naming the
+  reader and the shared locations it reads, with `transition: None`. All such
+  entries and instantiated-attempt failures SHALL appear together in the same
+  V-8 cause in canonical transition-identity order. Under `sc` the reader
+  SHALL be admitted.
 - Under `sc`, every attempt SHALL be admitted whatever its shape.
 
 ## Acceptance Criteria
@@ -198,8 +208,8 @@ local access takes none).
 | FR-220-AC-11 | EN-1 classifies ADR-025 §10's `SB` instantiated under `tso` and under `ra` with `Sx` and `Sy` as stores, `Ly` and `Lx` as loads, and (`c1`, `r`), (`c2`, `r`) branch-local. | Test (EN-1 sharing; TC-665 step 10) |
 | FR-220-AC-12 | EN-1 classifies AC-7's two `relaxed` stores as two stores to one shared location. | Test (EN-1 sharing; TC-665 step 11) |
 | FR-220-AC-13 | EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. | Test (EN-1 sharing; TC-665 step 12) |
-| FR-220-AC-14 | The EN-1 pre-check settles V-8 `WeakAccessShape` with `OrderingMismatch` before any state is explored, under `tso` and under `ra`: an instantiated load with `release` as `{"type":"ordering-mismatch","access":"load","ordering":"release"}`, a load with `acq_rel` as `{"type":"ordering-mismatch","access":"load","ordering":"acq_rel"}`, a store with `acquire` as `{"type":"ordering-mismatch","access":"store","ordering":"acquire"}`, a store with `acq_rel` as `{"type":"ordering-mismatch","access":"store","ordering":"acq_rel"}`, and an RMW with no ordering as `{"type":"ordering-mismatch","access":"rmw","ordering":null}`. Under `sc` each is admitted. An attempt with `release` that writes a branch-local register (so S3 admits it) and, on instantiation, touches no shared location is a local access and settles `{"type":"ordering-mismatch","access":"local","ordering":"release"}`. An attempt with `acquire` that reads a branch-local register and writes two shared fields, which S3 admits because it reads, settles `MultiLocation` naming both fields and is not tested for an ordering mismatch. | Test (EN-1 pre-check; TC-665 step 13) |
-| FR-220-AC-15 | In `SB`'s `parallel` under `tso`, a branch holding an `event` whose constraint reads `x.v` beside the branch whose attempt stores `x.v` settles V-8 `WeakAccessShape` with `MultiLocation` naming the event and `(x, v)`; under `sc`, and in a variant of `SB` whose universe also holds a `Cell` `z` that no attempt accesses, with the `event` reading `z.v`, the item is admitted. A `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
+| FR-220-AC-14 | The EN-1 pre-check collects V-8 `WeakAccessShape.failures` before any state is explored under `tso` and under `ra`: an instantiated load with `release` as `{"type":"ordering-mismatch","access":"load","ordering":"release"}`, a load with `acq_rel` as `{"type":"ordering-mismatch","access":"load","ordering":"acq_rel"}`, a store with `acquire` as `{"type":"ordering-mismatch","access":"store","ordering":"acquire"}`, a store with `acq_rel` as `{"type":"ordering-mismatch","access":"store","ordering":"acq_rel"}`, and an RMW with no ordering as `{"type":"ordering-mismatch","access":"rmw","ordering":null}`. Under `sc` each is admitted. An attempt with `release` that writes a branch-local register (so S3 admits it) and, on instantiation, touches no shared location is a local access and contributes `{"type":"ordering-mismatch","access":"local","ordering":"release"}`. An attempt with `acquire` that reads a branch-local register and writes two shared fields, which S3 admits because it reads, contributes its `MultiLocation` entry and is not tested for ordering mismatch. The pre-check does not stop at that entry; all other applicable failures are collected in canonical order. | Test (EN-1 pre-check; TC-665 step 13) |
+| FR-220-AC-15 | In `SB`'s `parallel` under `tso`, an `event` reader whose constraint reads `x.v` beside the branch whose attempt stores `x.v` contributes a `MultiLocation` entry and settles V-8 `WeakAccessShape.failures`; the ordinary storing attempt is not itself a failing shape. In a variant where that store carries `acquire`, the reader entry and the store attempt's `OrderingMismatch` entry are both returned in one list, ordered together by ascending JCS bytes of their typed protocol transition identities (ADR-027 TS-2); the reader entry names the event and `(x, v)` and has `transition: None`, and the attempt entry names its instantiated transition. The first entry supplies the headline reason, without category precedence. Under `sc`, and in a variant of `SB` whose universe also holds a `Cell` `z` that no attempt accesses, with the `event` reading `z.v`, the item is admitted. A `finish` whose constraint reads `x.v` after the `join` raises no refusal under `tso`. | Test (EN-1 pre-check; TC-665 step 14) |
 
 ## Dependencies
 
