@@ -659,6 +659,26 @@ fn state_generated_occurrences_have_authored_regions() {
             region.start() < region.end(),
             "generated occurrence must be placed"
         );
+        if matches!(&location.origin, Origin::TypeDeclaration { .. }) {
+            // The frame's occurrence for the named operation sits at the
+            // operation reference of the first clause naming it.
+            assert_eq!(location.depth(), 0, "the reference is one position");
+            let reference = &source
+                [usize::try_from(region.start()).unwrap()..usize::try_from(region.end()).unwrap()];
+            assert!(
+                reference.ends_with("::attemptUpdate"),
+                "the operation reference: {reference:?}"
+            );
+            let clause = source
+                .find(" VersionUnchanged using ")
+                .expect("the clause naming the operation");
+            assert_eq!(
+                usize::try_from(region.start()).unwrap(),
+                clause + source[clause..].find(" on ").unwrap() + " on ".len(),
+                "the reference follows the clause's `on`"
+            );
+            continue;
+        }
         let Origin::StateClause {
             clause: name,
             index,

@@ -35,7 +35,7 @@ use crate::model::operation::OperationDeclaration;
 use crate::value::member::Member;
 use qsl_forms::StateClauseKind;
 use quire_checked::key::DeclarationKey;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::{Location, Origin as LocationOrigin};
 
 /// The operation a `pre` or `post` clause names, as lowering reads it.
 pub(crate) struct AnchorInput<'a> {
@@ -48,14 +48,30 @@ pub(crate) struct AnchorInput<'a> {
     /// unit (never [`generated_location`]): the `frame` and
     /// `operation_anchor` nodes carry no source position of their own (the
     /// operation is declared in the domain package, not the unit), so their
-    /// `generated` occurrence needs one clause's own location to resolve a
-    /// region at all (FR-096; the SR-751 round-2 finding this field fixes,
-    /// `EmitRefusal::UnlocatedOccurrence` at every clause naming an
-    /// operation). Which clause's location is used, when several name the
-    /// same operation, is unconstrained by FR-105: it decides only the
-    /// source-map region the occurrence is placed at, never the node's
-    /// identity, its dependencies or its ordinal.
+    /// nodes are keyed under one clause's own location. It never decides the
+    /// node's identity, its dependencies or its ordinal.
     pub(crate) location: &'a Location,
+    /// Where the frame's `generated` occurrence for this operation is
+    /// placed if this is the first clause or attempt naming it (FR-105
+    /// "Outputs"): the operation reference's own position, a real location
+    /// of the unit. A clause's is [`state_operation_location`]; an
+    /// attempt's or template's is its own `location`.
+    pub(crate) reference: &'a Location,
+}
+
+/// The `Origin::TypeDeclaration` name under which the qualified operation
+/// reference (`M::T::op`) of the `pre` or `post` clause at `clause`, its
+/// index among the unit's state clauses, is located (FR-105 "Outputs").
+/// Spaced, so it names no declared type.
+pub(crate) fn state_operation_site(clause: usize) -> String {
+    format!("state clause {clause} operation")
+}
+
+/// The root location of [`state_operation_site`].
+pub(crate) fn state_operation_location(clause: usize) -> Location {
+    Location::root(LocationOrigin::TypeDeclaration {
+        name: state_operation_site(clause),
+    })
 }
 
 /// One checked state clause, as lowering reads it.
@@ -403,13 +419,13 @@ impl Lowering<'_> {
         }
         ordered.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
         for (_, name, anchor) in ordered {
-            // `anchor.location` is a real clause location (never
-            // `generated_location`): the sort above already fixed this
-            // operation's ordinal independently of it, so which clause's
-            // location is used here decides only the occurrence's source
-            // region.
+            // `anchor.reference` is a real position of the first clause or
+            // attempt naming the operation (never `generated_location`): the
+            // sort above already fixed this operation's ordinal
+            // independently of it, so it decides only the occurrence's
+            // source region (FR-105 "Outputs").
             let (_, frame) = self.frame_node(anchor, anchor.location)?;
-            self.frame_occurrence(anchor.declaring, &name, frame, anchor.location)?;
+            self.frame_occurrence(anchor.declaring, &name, frame, anchor.reference)?;
         }
         Ok(())
     }
