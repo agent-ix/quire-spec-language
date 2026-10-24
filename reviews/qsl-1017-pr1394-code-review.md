@@ -34,3 +34,19 @@ Examined FR-447-AC-5, AC-12, AC-13, AC-14, AC-15, AC-16 and the FR-447 S4 emissi
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | fixed | Commit `03ed8c629` records `named_target: Option<ModeIndex>` in `HybridFairness`, sets it from the source `::` form, emits the model-node/mode member for `None`, and reconstructs it on read-back. The two source spellings now have distinct asserted wire members. |
+| FND-002 | still-open | Found in this pass at `1511a4e09`. No fix has landed. `cargo fmt --all` must be applied to `qsl-package/src/lib.rs`. |
+| FND-002 | fixed | At `75ccf93f2`, the commit after merge `9c39880ef` reflows the `checked_v2` re-export in `qsl-package/src/lib.rs` to rustfmt layout with the same names, and `cargo fmt --all -- --check` is clean. This row supersedes the prior still-open row. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The merge resolution of the `checked_v2` re-export in `qsl-package/src/lib.rs` is not rustfmt-clean: `UnsupportedWire,` is left alone on one line and `V2ReadLimits, V2ReadRefusal,` on the next. `cargo fmt --all -- --check` reports `Diff in qsl-package/src/lib.rs:34`, so the repo gate (Makefile lines 42 and 206) fails at head `1511a4e09`. Run `cargo fmt --all`; no semantic change is needed. | qsl-package/src/lib.rs:33-42 |
+
+## Disposition pass 2 scope
+
+This was a narrow re-review of head `1511a4e09` after the base was retargeted to `main` (`90294374b`, the #1392 squash). `git diff origin/main...HEAD` covers 25 files, all of them #1394's own. The `origin/main` tree is identical to the final pr2 tip `4e7bdb23`. The diff from `3c2b04a1b` to `1511a4e09` contains exactly STD-449 (#1422): `checked_v2/tests.rs`, `Cargo.lock` and two spec lines. STD-449's hunks reverse-apply cleanly at HEAD, so nothing from main was lost. The `qsl-semantics` and `qsl-forms` files are byte-identical to `3c2b04a1b`. The conformance test's main-side trace tag (TC-685, FR-230-AC-36/37, QSpec TC-367, FR-447-AC-13) is kept. The `admission_corpus` change replaces the old QSL-900 "not emitted" class for `CheckedNodeKind::Hybrid` with admitted rows for all three IR `HybridForm` variants (Model, Mode, Transition) over a `Braking2` fixture. That leaves no kind classified twice or left unclassified. The `HybridCause::NotEmitted` and `with_unwritten_hybrids` removals belong to the PR and were already present at `ea936f7f0`. FR-447 trace tag counts are unchanged from `3c2b04a1b`. `quire matrix` shows FR-447-AC-5, AC-12, AC-13, AC-14, AC-15 and AC-16 as tagged. `cargo test -p qsl-package --lib` passed 259 tests and `cargo test -p qsl-semantics --lib -- hybrid` passed 16, both with QSPEC_DIR set.
+
+## Disposition pass 3 scope
+
+Head `75ccf93f2`. Merge `9c39880ef` brings in exactly main's `90294374b..2986c57cf` delta (IR-588, #1382), with no extra hunks. `git diff origin/main...HEAD` still covers the PR's own 25 files. Commit `75ccf93f2` changes only `qsl-package/src/lib.rs`, a formatting-only change with the same export names, and this review file. `cargo test -p qsl-package --lib -- hybrid admission_corpus` passed 17 tests at this head.

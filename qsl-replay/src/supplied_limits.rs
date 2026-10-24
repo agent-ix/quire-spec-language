@@ -2,7 +2,7 @@
 //! replay request and the command request.
 
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::value::supplied::SuppliedLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 /// Why a wire `limits.supplied` object is refused before anything is
 /// consumed (QSpec FR-323 AC-10): the object is closed and complete, and

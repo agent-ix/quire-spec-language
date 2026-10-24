@@ -20,7 +20,7 @@ use crate::model::origin::JsonValue;
 use qsl_foundation::diagnostic::{JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
 use quire_exact::UniverseId;
-use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::{render_identity, CatalogCode};
 
 /// The offered model selection at a `foreign-model-selection` refusal's
 /// two sites (#163 review finding: each offered value stays distinguishable
@@ -1900,22 +1900,6 @@ pub mod fixtures {
             computed_deleted: std::collections::BTreeSet::new(),
         },
         ]
-    }
-}
-
-/// The payload rendering of a member identity. A population member's
-/// identity is a JSON string, so a well-formed identity is valid UTF-8 and
-/// renders as itself. Bytes that are not UTF-8 render as
-/// `identity bytes 0x<lowercase hex> (not UTF-8)`: two distinct malformed
-/// identities never render alike, and a malformed identity never renders as
-/// a lossy decoding that could equal a real member's.
-pub fn render_identity(identity: &[u8]) -> String {
-    match std::str::from_utf8(identity) {
-        Ok(identity) => identity.to_owned(),
-        Err(_) => format!(
-            "identity bytes 0x{} (not UTF-8)",
-            crate::model::key::hex(identity)
-        ),
     }
 }
 

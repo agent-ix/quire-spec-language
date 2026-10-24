@@ -15,9 +15,10 @@ use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
     compile_package, run_with_requirements, Call, CallArgument, CallOutcome, DependencyInput,
     Integer, ObjectEnvironment, OccurrenceKey, ReplayLimits, RunRefusal, RunWithRequirements,
-    SourceIdentity, SpineLimits, StageLimits, SuppliedLimits, Value,
+    SourceIdentity, SpineLimits, StageLimits, Value,
 };
 use quire_exact::Cancel;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 /// Fixture K (FR-395): four records, in package order: `sq`'s `integer.mul`
 /// (0), the `x + 1` node's ordinal 0, which is `inc`'s add (1), and its

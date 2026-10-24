@@ -12,13 +12,14 @@ use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{default_accounting, SpineLimits};
 use qsl_replay::{
     run_with_requirements, Call, CallArgument, DependencyInput, Integer, ObjectEnvironment,
-    OccurrenceKey, SuppliedLimits, Value,
+    OccurrenceKey, Value,
 };
 use qsl_route::request::items_from_requirements;
 use qsl_route::Registry;
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const K: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\

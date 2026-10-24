@@ -54,6 +54,8 @@
 //! operation application in its body (FR-062 "Requirement records of a
 //! value function"), which `check` keys by occurrence (ADR-012 §13.5).
 
+use quire_semantic_value::catalog::STATE_MODEL_CATALOG_PREFIX;
+
 mod contract;
 mod outcome;
 pub mod requirements;
@@ -68,7 +70,7 @@ pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use outcome::CheckOutcome;
 pub use requirements::{
-    classify_domains, classify_extent, ClaimExtent, ClassifyFailure, Requirements,
+    classify_domains, classify_extent, ClaimEvidence, ClaimExtent, ClassifyFailure, Requirements,
     UnboundedDomains, UnsupportedItem,
 };
 
@@ -122,7 +124,7 @@ impl FamilyKind {
     pub const fn catalog_code_prefix(self) -> &'static str {
         match self {
             Self::Value => "value",
-            Self::StateModel => "state-model",
+            Self::StateModel => STATE_MODEL_CATALOG_PREFIX,
             Self::SumCase => "sum-case",
             Self::TemporalTrace => "temporal-trace",
             Self::ProtocolClause => "protocol-clause",

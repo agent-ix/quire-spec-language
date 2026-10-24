@@ -14,7 +14,7 @@ Verify that spine `compile` admits a header profile only when its identity
 is a `header_selectable_layers` row's, refuses every other header profile
 with its catalogued code and cause, and restricts each declaration to its
 selected layer's forms. Scope: FR-110-AC-1 to FR-110-AC-3 and FR-110-AC-5
-to FR-110-AC-12.
+to FR-110-AC-13.
 
 This catches a resolver that accepts any catalog row as a profile, a parser
 that still accepts a header `version` or `digest`, and a resolver that stops
@@ -40,7 +40,8 @@ identity from the catalog, never from a literal.
    compile a unit with profiles `v` and `u`, both `R`'s identity.
 6. For each QSpec AD-003 layer (`quire.state.core/v1`,
    `quire.state.queries/v1`, `quire.state.graph/v1`,
-   `quire.value.complete/v1`, `quire.model.complete/v1`), compile a unit
+   `quire.value.complete/v1`, `quire.model.complete/v1`,
+   `quire.temporal.complete/v1`), compile a unit
    whose one profile `v` names the layer and whose one declaration uses
    only that layer's forms. Read each emitted lock.
 7. Compile a unit whose profile `v` names `quire.state.core/v1` and whose
@@ -68,7 +69,11 @@ identity from the catalog, never from a literal.
     then over the unit with `test:unknown-profile`, and over the unit with
     the `ieee_profile` row's identity (FR-110-AC-12).
 
-Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-12", "TC-490")]` over the
+12. Compile a unit whose profile `v` names `quire.temporal.complete/v1` and
+    whose declarations hold one equality of each FR-110-AC-10 operand
+    family (FR-110-AC-13).
+
+Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-13", "TC-490")]` over the
 criteria each step backs.
 
 ## Expected Results
@@ -102,3 +107,4 @@ criteria each step backs.
 - Step 9: each equality compiles or refuses `unsupported_construct`/`expression-form` at the operator's span, naming the selected layer and the admitting layer, as FR-110-AC-10 lists; `r = 1` refuses `ill_typed`/`type-mismatch` with no layer refusal (FR-110-AC-10).
 - Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
 - Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every `qualification_catalog` identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
+- Step 12: the unit compiles; its `definition_selections` hold the six layers of FR-110-AC-13 and the `package_selection` rows of the three locks, written out as a literal; every equality compiles (FR-110-AC-13).

@@ -366,8 +366,9 @@ fn admit_values(
     if let Some(cause) = cancel.cause() {
         return Err(cancelled(cause));
     }
-    let mut run = qsl_semantics::value::supplied::SuppliedRun::new(call.supplied, cancel.clone())
-        .map_err(|stop| Box::new(RunRefusal::Supplied(stop)))?;
+    let mut run =
+        quire_semantic_value::supplied_stop::SuppliedRun::new(call.supplied, cancel.clone())
+            .map_err(|stop| Box::new(RunRefusal::Supplied(stop)))?;
     qsl_eval::value::admit_arguments(parameters, arguments, objects, types, &mut run).map_err(
         |failure| match failure {
             quire_eval::CallFailure::Cancelled(cause) => cancelled(cause),

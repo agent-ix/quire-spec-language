@@ -18,6 +18,7 @@ const QUERIES: &str = "quire.state.queries/v1";
 const GRAPH: &str = "quire.state.graph/v1";
 const VALUE: &str = "quire.value.complete/v1";
 const MODEL: &str = "quire.model.complete/v1";
+const TEMPORAL: &str = "quire.temporal.complete/v1";
 
 const PREDICATE: &str = "predicate Id using v(b: Boolean): Boolean { b }\n";
 
@@ -109,14 +110,14 @@ fn the_value_layer_selects_state_core_and_the_qualification_rows() {
     assert_eq!(selected, expected);
 }
 
-/// FR-110-AC-7: for each of the five layers, a unit whose one header profile
+/// FR-110-AC-7: for each of the six layers, a unit whose one header profile
 /// names the layer and whose declarations use only that layer's forms
 /// compiles, and its lock holds the layer and every layer its `requires`
 /// closure names and no layer that requires it.
 #[trace("TC-490", "FR-110-AC-7")]
 #[test]
 fn each_layer_compiles_its_own_forms_and_locks_its_closure() {
-    let cases: [(&str, &str); 5] = [
+    let cases: [(&str, &str); 6] = [
         (CORE, "invariant Any using v on M::Node at current { true }\n"),
         (
             QUERIES,
@@ -135,6 +136,11 @@ fn each_layer_compiles_its_own_forms_and_locks_its_closure() {
         ),
         (
             MODEL,
+            "function f using v(n: Integer): Boolean pure { n > 0 }\n\
+             invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }\n",
+        ),
+        (
+            TEMPORAL,
             "function f using v(n: Integer): Boolean pure { n > 0 }\n\
              invariant NoCycle using v on M::Node at current { not reaches(self, self, next) }\n",
         ),
@@ -157,6 +163,20 @@ fn each_layer_compiles_its_own_forms_and_locks_its_closure() {
             );
         }
     }
+}
+
+/// A temporal selection admits value and graph equality through its required
+/// model layer, with no second header profile.
+#[trace("TC-490", "FR-110-AC-13")]
+#[test]
+fn temporal_layer_admits_value_and_graph_equalities() {
+    let declarations = "record R { n: Integer; }\n\
+        function records using t(a: R, b: R): Boolean pure { a = b }\n\
+        function references using t(a: Reference<M::Node>, b: Reference<M::Node>): Boolean pure { a = b }\n\
+        function sequences using t(a: Sequence<Integer>[0, 3], b: Sequence<Integer>[0, 3]): Boolean pure { a = b }\n";
+    compile(&[("t", TEMPORAL)], declarations)
+        .1
+        .expect("the temporal layer admits equality from its model closure");
 }
 
 /// FR-110-AC-8: a unit naming `quire.state.core/v1` whose declaration calls a
@@ -295,10 +315,16 @@ fn declaration(
 }
 
 fn form_cases() -> Vec<FormCase> {
-    use HeaderLayer::{ModelComplete, StateGraph, StateQueries, ValueComplete};
-    const FROM_QUERIES: &[HeaderLayer] = &[StateQueries, StateGraph, ValueComplete, ModelComplete];
-    const VALUE_AND_UP: &[HeaderLayer] = &[ValueComplete, ModelComplete];
-    const NAVIGATION: &[HeaderLayer] = &[StateGraph, ModelComplete];
+    use HeaderLayer::{ModelComplete, StateGraph, StateQueries, TemporalComplete, ValueComplete};
+    const FROM_QUERIES: &[HeaderLayer] = &[
+        StateQueries,
+        StateGraph,
+        ValueComplete,
+        ModelComplete,
+        TemporalComplete,
+    ];
+    const VALUE_AND_UP: &[HeaderLayer] = &[ValueComplete, ModelComplete, TemporalComplete];
+    const NAVIGATION: &[HeaderLayer] = &[StateGraph, ModelComplete, TemporalComplete];
     const EVERY: &[HeaderLayer] = &HeaderLayer::ALL;
     vec![
         declaration(
@@ -510,4 +536,11 @@ fn value_complete_admits_its_forms() {
 #[test]
 fn model_complete_admits_every_form() {
     every_form_under(MODEL);
+}
+
+/// The temporal layer also admits the model layer's complete form closure.
+#[trace("TC-490", "FR-110-AC-13")]
+#[test]
+fn temporal_complete_admits_the_model_form_closure() {
+    every_form_under(TEMPORAL);
 }

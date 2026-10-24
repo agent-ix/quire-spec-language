@@ -17,6 +17,7 @@ use crate::error::{Error, Result};
 use crate::Outcome;
 
 pub mod compare;
+pub mod layering;
 pub mod report;
 pub mod versioning;
 
@@ -29,15 +30,16 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
     let [gate, corpus] = operands else {
         return Err(Error::Usage(USAGE));
     };
-    if gate.to_str() != Some("versioning") {
-        return Err(Error::Usage(USAGE));
-    }
-    let report = versioning::run(Path::new(corpus), workspace_root);
-    let stdout = report
-        .to_json()
-        .map_err(|source| Error::RefinementReport { source })?;
-    Ok(Outcome {
-        stdout,
-        code: report.verdict.exit_code(),
-    })
+    let path = Path::new(corpus);
+    let (stdout, code) = match gate.to_str() {
+        Some("versioning") => {
+            let report = versioning::run(path, workspace_root);
+            let stdout = report
+                .to_json()
+                .map_err(|source| Error::RefinementReport { source })?;
+            (stdout, report.verdict.exit_code())
+        }
+        _ => return Err(Error::Usage(USAGE)),
+    };
+    Ok(Outcome { stdout, code })
 }

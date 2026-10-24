@@ -120,6 +120,15 @@ pub enum EvidenceKind {
     Exact,
 }
 
+impl From<qsl_semantics::family::ClaimEvidence> for EvidenceKind {
+    fn from(evidence: qsl_semantics::family::ClaimEvidence) -> Self {
+        match evidence {
+            qsl_semantics::family::ClaimEvidence::Statistical => EvidenceKind::Statistical,
+            qsl_semantics::family::ClaimEvidence::Exact => EvidenceKind::Exact,
+        }
+    }
+}
+
 impl EvidenceKind {
     /// Both FR-290 evidence kinds. The order carries no meaning; the slice
     /// exists so [`EvidenceKind::from_wire`] derives from

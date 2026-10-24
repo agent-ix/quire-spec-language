@@ -19,10 +19,11 @@ use qsl_replay::{
     CallArgument, CallOutcome, CallerLimits, CanonicalAssignment, DependencyInput, DomainKey,
     DomainKind, FiniteBound, InconclusiveCause, Integer, ObjectEnvironment, PluginReplayContext,
     PluginReplayRefusal, ProofBound, ReplayLimits, ReplayRequestWire, RequestIndex, RunRefusal,
-    RunWithReplayContext, SourceIdentity, SpineLimits, SuppliedLimits, TerminalRecord,
-    TerminalValue, Value, WireNodeId, WitnessValue,
+    RunWithReplayContext, SourceIdentity, SpineLimits, TerminalRecord, TerminalValue, Value,
+    WireNodeId, WitnessValue,
 };
 use quire_exact::Cancel;
+use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n";
