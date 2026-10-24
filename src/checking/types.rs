@@ -159,6 +159,10 @@ fn domain_leaf_type<'a>(
             | NativeValueType::Text
             | NativeValueType::Timestamp,
         ) => return None,
+        // A unit type names a unit of the compiling QSL unit, not a native
+        // scalar leaf or a package node, so the domain checker leaves it
+        // unmapped.
+        ValueTypeRef::Unit(_) => return None,
         ValueTypeRef::Package(key) => {
             NativeType::Domain(DomainType::new(package, package.declaration_by_key(key)?)?)
         }
@@ -809,5 +813,20 @@ mod profile_tests {
         assert!(string.integer().is_none());
         assert!(!uuid.dimensionless());
         assert!(!string.dimensionless());
+    }
+
+    #[test]
+    fn unit_value_type_is_not_a_domain_leaf() {
+        let package = qsl_semantics::model::admitted::AdmittedPackage::admit(
+            qsl_semantics::model::domain_package::DomainPackage::new(
+                qsl_semantics::model::domain_package::DomainPackageRef::fixture("unit-leaf"),
+                Vec::new(),
+            ),
+            &mut qsl_semantics::model::accounting::Meter::new(
+                qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+            ),
+        )
+        .expect("an empty synthetic package supplies the context");
+        assert!(domain_leaf_type(&package, &ValueTypeRef::Unit("ms".into())).is_none());
     }
 }
