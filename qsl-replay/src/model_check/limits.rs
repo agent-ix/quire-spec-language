@@ -193,8 +193,9 @@ pub struct ReachedLimit {
 #[cfg(test)]
 mod tests {
     use super::ModelCheckLimit;
+    use ix_trace_rs::trace;
 
-    /// Trace: FR-126-AC-19, FR-127-AC-16, FR-255-AC-9
+    #[trace("TC-521", "FR-126-AC-19")]
     #[test]
     fn evaluation_meter_stop_names_the_accounting_setting() {
         assert_eq!(

@@ -347,7 +347,7 @@ mod tests {
             text_scalars: 64,
             normalized_scalars: 64,
             unit_edges: 64,
-            value_occurrences: 64,
+            value_occurrences: 7,
             work_units: 4_096,
             result_units: 64,
         }
@@ -357,9 +357,7 @@ mod tests {
         settle_statistical(
             outcome,
             SubjectLimits {
-                expansion: ExpansionLimits {
-                    max_candidates: 512,
-                },
+                expansion: ExpansionLimits { max_candidates: 2 },
                 meter: &meter(),
             },
         )
@@ -384,7 +382,7 @@ mod tests {
     /// `runtime_invariant`/`established-invariant-broken` when internal and
     /// its own cause otherwise; an unsupported run settles `unsupported`
     /// with its cause.
-    #[trace("TC-627", "FR-192-AC-1", "FR-127-AC-16", "FR-255-AC-9")]
+    #[trace("TC-627", "FR-192-AC-1")]
     #[test]
     fn each_outcome_row_settles_as_the_map_states() {
         for (decision, category) in [
@@ -460,13 +458,32 @@ mod tests {
         assert_eq!(integer_bits["cause"]["limit"], "integer_bits");
         assert_eq!(integer_bits["cause"]["value"], 64);
         assert_eq!(integer_bits["cause"]["setting"], "accounting.integer_bits");
+        let occurrences = expansion(
+            Some(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::ValueOccurrences,
+            )),
+            exhausted,
+        );
+        assert_eq!(
+            occurrences.value,
+            incomplete(
+                ModelCheckLimit::EvaluationMeter {
+                    counter: quire_exact::LimitKind::ValueOccurrences
+                },
+                7
+            )
+        );
+        let json = wire(occurrences);
+        assert_eq!(json["cause"]["limit"], "value_occurrences");
+        assert_eq!(json["cause"]["value"], 7);
+        assert_eq!(json["cause"]["setting"], "accounting.value_occurrences");
         assert_eq!(
             expansion(Some(ExpansionLimit::MaxCandidates), exhausted).value,
-            incomplete(ModelCheckLimit::MaxCandidates, 512)
+            incomplete(ModelCheckLimit::MaxCandidates, 2)
         );
         let candidates = wire(expansion(Some(ExpansionLimit::MaxCandidates), exhausted));
         assert_eq!(candidates["cause"]["limit"], "max_candidates");
-        assert_eq!(candidates["cause"]["value"], 512);
+        assert_eq!(candidates["cause"]["value"], 2);
         assert_eq!(candidates["cause"]["setting"], "expansion.max_candidates");
         let internal = expansion(None, BROKEN);
         assert_eq!(internal.value, TerminalValue::Failed);
