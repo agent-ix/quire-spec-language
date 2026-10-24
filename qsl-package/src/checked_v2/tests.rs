@@ -2202,7 +2202,9 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
         .find(|node| {
             node.node_tag.as_ref() == "value"
                 && node.semantic_form.as_ref() == "literal"
-                && node.body.to_string().contains("audit")
+                && serde_json::to_string(&node.body)
+                    .expect("the checked body serializes")
+                    .contains("audit")
         })
         .expect("fixture text key value")
         .node_id

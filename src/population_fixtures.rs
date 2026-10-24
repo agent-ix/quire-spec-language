@@ -41,7 +41,7 @@ use quire_contract_model::{
     ApplicationNodeDraft, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits,
     CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticGraphV2, CheckedSemanticId,
-    CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedTerm,
 };
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -378,16 +378,17 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
 
 /// The `max` of a population node's body, when it has one.
 fn population_max(node: &CheckedSemanticNodeV2) -> Option<u64> {
-    node.body
-        .get("members")?
-        .as_array()?
-        .iter()
-        .find(|member| member.get("name").and_then(|name| name.as_str()) == Some("max"))?
-        .get("value")?
-        .get("value")?
-        .as_str()?
-        .parse()
-        .ok()
+    let CheckedTerm::Aggregate { members } = &node.body else {
+        return None;
+    };
+    let value = members.iter().find_map(|member| match member {
+        CheckedTerm::Binding { name, value } if name.as_ref() == "max" => Some(value.as_ref()),
+        _ => None,
+    })?;
+    let CheckedTerm::Literal { value, .. } = value else {
+        return None;
+    };
+    value.as_str()?.parse().ok()
 }
 
 /// The ceiling on canonical bytes and visits of the identity derivations.
@@ -557,23 +558,13 @@ fn rename(
         node.dependencies.iter_mut().for_each(renamed);
         node.dependencies
             .sort_by(|left, right| left.digest.cmp(&right.digest));
-        let mut pending = vec![&mut node.body];
-        while let Some(term) = pending.pop() {
-            match term {
-                serde_json::Value::Object(members) => {
-                    let names_old = members.get("domain").and_then(|domain| domain.as_str())
-                        == Some(&*old.domain)
-                        && members.get("digest").and_then(|digest| digest.as_str())
-                            == Some(&*old.digest);
-                    if names_old {
-                        members.insert("digest".to_owned(), new.into());
-                    }
-                    pending.extend(members.values_mut());
-                }
-                serde_json::Value::Array(items) => pending.extend(items.iter_mut()),
-                _ => {}
-            }
-        }
+        node.body.replace_node_id(
+            old,
+            &CheckedNodeId {
+                domain: old.domain.clone(),
+                digest: new.into(),
+            },
+        );
     }
     for row in source_map {
         renamed(&mut row.node_id);

@@ -92,8 +92,9 @@ use quire_contract_model::{
     CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
     CheckedPackageLockV2, CheckedPackageV2, CheckedRational, CheckedSelection,
     CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage,
-    NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm,
+    NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm, DOMAIN_PACKAGE_DIGEST,
+    PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -561,7 +562,9 @@ impl<'g> Candidate<'g> {
     }
 
     /// The node as FR-322 writes it.
-    fn wire_node(&self) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
+    fn wire_node(
+        &self,
+    ) -> Result<CheckedSemanticNodeV2<impl quire_canonical::Encode>, EmitRefusal> {
         let node = self.node;
         Ok(CheckedSemanticNodeV2 {
             node_id: self.id.clone(),
@@ -1098,7 +1101,7 @@ fn rekey_timed_model_nodes(
         }
         for (old, new) in changes {
             for node in nodes.iter_mut() {
-                replace_node_id(node, &old, &new)?;
+                node.replace_node_id(&old, &new);
             }
             for entry in source_map.iter_mut() {
                 if entry.node_id == old {
@@ -1119,82 +1122,54 @@ fn timed_model_node_id(node: &CheckedSemanticNodeV2) -> Result<CheckedNodeId, Em
             "timed nodes cannot belong to a recursion group",
         ));
     }
-    let semantic_type = if node.semantic_type == node.node_id {
-        serde_json::Value::Null
-    } else {
-        serde_json::to_value(&node.semantic_type).map_err(encoding)?
-    };
-    let mut preimage = serde_json::json!({
-        "version": "quire.structural-node/v1",
-        "node_tag": node.node_tag,
-        "semantic_form": node.semantic_form,
-        "semantic_type": semantic_type,
-        "declaration": node.declaration,
-        "recursion": null,
-        "body": node.body,
-    });
-    if let Some(owner) = &node.owner {
-        preimage["owner"] = serde_json::to_value(owner).map_err(encoding)?;
-    }
-    let digest =
-        quire_canonical::sha256(&preimage, crate::checked::EMIT_LIMITS).map_err(encoding)?;
+    let digest = quire_canonical::sha256(&TimedNodePreimage(node), crate::checked::EMIT_LIMITS)
+        .map_err(encoding)?;
     Ok(CheckedNodeId {
         domain: NODE_KEY_DOMAIN.into(),
         digest: digest.to_string().into(),
     })
 }
 
-/// The unique digest-ascending reference targets directly named by a body.
-fn body_reference_targets(body: &serde_json::Value) -> Vec<CheckedNodeId> {
-    fn visit(value: &serde_json::Value, targets: &mut Vec<CheckedNodeId>) {
-        match value {
-            serde_json::Value::Object(fields) => {
-                if fields.get("term") == Some(&serde_json::Value::String("reference".into())) {
-                    if let Ok(target) = serde_json::from_value(fields["target"].clone()) {
-                        targets.push(target);
-                    }
-                }
-                fields.values().for_each(|child| visit(child, targets));
-            }
-            serde_json::Value::Array(items) => items.iter().for_each(|child| visit(child, targets)),
-            _ => {}
+/// The timed-node structural preimage, encoded through the shared canonical writer.
+struct TimedNodePreimage<'a>(&'a CheckedSemanticNodeV2);
+
+impl quire_canonical::Encode for TimedNodePreimage<'_> {
+    fn encode_into<S: quire_canonical::Sink + ?Sized>(
+        &self,
+        writer: &mut quire_canonical::Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        let node = self.0;
+        writer.begin_object()?;
+        writer.name("version")?;
+        writer.string("quire.structural-node/v1")?;
+        writer.name("node_tag")?;
+        writer.string(&node.node_tag)?;
+        writer.name("semantic_form")?;
+        writer.string(&node.semantic_form)?;
+        writer.name("semantic_type")?;
+        let semantic_type = (node.semantic_type != node.node_id).then_some(&node.semantic_type);
+        writer.serialize(&semantic_type)?;
+        writer.name("declaration")?;
+        writer.serialize(&node.declaration)?;
+        writer.name("recursion")?;
+        writer.serialize(&Option::<u8>::None)?;
+        writer.name("body")?;
+        node.body.encode_into(writer)?;
+        if let Some(owner) = &node.owner {
+            writer.name("owner")?;
+            writer.serialize(owner)?;
         }
+        writer.end_object()
     }
+}
+
+/// The unique digest-ascending reference targets directly named by a body.
+fn body_reference_targets(body: &CheckedTerm) -> Vec<CheckedNodeId> {
     let mut targets = Vec::new();
-    visit(body, &mut targets);
+    body.visit_reference_targets(&mut |target| targets.push(target.clone()));
     targets.sort_by(|left, right| left.digest.cmp(&right.digest));
     targets.dedup();
     targets
-}
-
-/// Replace one checked NodeId throughout a timed node's serialized fields.
-fn replace_node_id(
-    node: &mut CheckedSemanticNodeV2,
-    old: &CheckedNodeId,
-    new: &CheckedNodeId,
-) -> Result<(), EmitRefusal> {
-    let mut wire = serde_json::to_value(&*node).map_err(encoding)?;
-    fn visit(value: &mut serde_json::Value, old: &CheckedNodeId, new: &CheckedNodeId) {
-        match value {
-            serde_json::Value::Object(fields) => {
-                if fields.get("domain").and_then(serde_json::Value::as_str) == Some(NODE_KEY_DOMAIN)
-                    && fields.get("digest").and_then(serde_json::Value::as_str)
-                        == Some(old.digest.as_ref())
-                {
-                    *value = serde_json::to_value(new).expect("CheckedNodeId serializes");
-                    return;
-                }
-                fields.values_mut().for_each(|child| visit(child, old, new));
-            }
-            serde_json::Value::Array(items) => {
-                items.iter_mut().for_each(|child| visit(child, old, new));
-            }
-            _ => {}
-        }
-    }
-    visit(&mut wire, old, new);
-    *node = serde_json::from_value(wire).map_err(encoding)?;
-    Ok(())
 }
 
 /// Emit a complete admitted package using typed timed models for its timed
