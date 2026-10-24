@@ -73,3 +73,21 @@ gap is medium: FND-001, a surviving mutation on the production record path.
 - Semantic review: the clause-by-clause test-to-AC check is in the Summary
   above.
 - Plan completion: not assessed.
+
+## Dispositions
+
+Round 1. Reviewed at `9c2ae662e392b056a6d1d02acff55577ac1213f6`. The matrix
+(`quoin matrix --repo . --json` at this head) reads:
+
+- FR-125-AC-11 tagged by `the_bound_parameter_reads_as_the_reference_of_the_object_held_under_its_key`.
+- FR-125-AC-12 tagged by `a_key_holding_no_object_of_the_type_reads_absent_key`.
+- FR-336-AC-1 tagged by `an_unbounded_population_stays_in_the_requirement_record` and by qsl-package `the_emitted_record_carries_the_population_domain_and_no_universe`.
+
+Mutation M3 (the production record keys every population as the first) is
+now killed by `two_populations_of_the_over_type_are_both_domains_of_the_clause`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

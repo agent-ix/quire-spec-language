@@ -356,8 +356,7 @@ impl TemporalClaim {
     /// [`CheckedGraph::population_key`](crate::check::CheckedGraph::population_key).
     ///
     /// A population whose member type is a subtype of the `over` type
-    /// overlaps it but is not listed here (a QSL-1038 review follow-up
-    /// ticket owns that gap).
+    /// overlaps it but is not listed here (QSL-1051 owns that gap).
     pub fn populations(&self) -> &[PopulationDomain] {
         &self.populations
     }

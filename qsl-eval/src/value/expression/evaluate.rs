@@ -637,7 +637,7 @@ pub(crate) struct Machine<'a, 'm> {
     absent_parameter: Option<AbsentParameter>,
     /// The claim body's `lookup` reference operands that read the absent
     /// parameter as the guard, by node id. A guard reached through a `let`
-    /// alias or a helper is not recognised (QSL-1038 follow-up tickets).
+    /// alias or a helper is not recognised (QSL-1054 asks the spec whether it should be).
     guard_operands: std::collections::BTreeSet<NodeId>,
 }
 
